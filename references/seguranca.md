@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.1 | **Atualizado:** 2026-06-14
+**Versão:** 0.2.3 | **Atualizado:** 2026-06-14
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -85,18 +85,78 @@ CREATE POLICY "lojas_delete_proprio"
   USING (auth.uid() = dono_id);
 ```
 
+#### Helper `public.loja_esta_ativa(uuid) → boolean`
+
+Migration: `20260614002000_rls_catalogo.sql`
+
+Função `security definer` usada pelas policies de leitura pública de catálogo para verificar se uma loja está ativa sem expor a linha de `lojas` ao anon.
+
+```sql
+CREATE FUNCTION public.loja_esta_ativa(p_loja_id uuid)
+  RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT EXISTS (SELECT 1 FROM public.lojas WHERE lojas.id = p_loja_id AND lojas.ativo = true);
+$$;
+
+REVOKE ALL ON FUNCTION public.loja_esta_ativa(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.loja_esta_ativa(uuid) TO anon, authenticated, service_role;
+```
+
+**Por que não usar `EXISTS (SELECT 1 FROM lojas WHERE ativo = true)` diretamente nas policies:**
+
+A tabela `lojas` não tem SELECT público para anon (§19 — a vitrine usa `vitrine_lojas`). Um `EXISTS` contra `lojas` rodando sob RLS do anon retorna sempre zero linhas, tornando o catálogo inteiro invisível. A função `security definer` contorna esse bloqueio respondendo só o booleano — não expõe `dono_id`, `assinatura_*`, `hotmart_*` nem `consentimento_*`.
+
+**Regra para devs e agentes:** toda policy de leitura pública de catálogo (produtos, categorias, formas de pagamento) que precise verificar se a loja está ativa deve usar `public.loja_esta_ativa(loja_id)`. Nunca copiar o padrão `EXISTS (SELECT 1 FROM lojas WHERE ativo = true)` — quebra silenciosamente para anon.
+
+---
+
+#### Helper `public.pedido_aceita_itens(uuid) → boolean`
+
+Migration: `20260614002500_rls_cupons_pedidos.sql`
+
+Função `security definer` usada pela policy `itens_pedido_insert_publico` para verificar se um pedido aceita novos itens sem expor a tabela `pedidos` ao anon.
+
+```sql
+CREATE FUNCTION public.pedido_aceita_itens(p_pedido_id uuid)
+  RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.pedidos p
+    JOIN public.lojas l ON l.id = p.loja_id
+    WHERE p.id = p_pedido_id
+      AND p.status = 'pendente'
+      AND l.ativo = true
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.pedido_aceita_itens(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.pedido_aceita_itens(uuid) TO anon, authenticated, service_role;
+```
+
+**Por que não usar `EXISTS (SELECT 1 FROM pedidos …)` diretamente na policy:**
+
+A tabela `pedidos` não tem SELECT público para anon (anti-enumeração de pedidos alheios). Um `EXISTS` contra `pedidos` rodando sob RLS do anon retorna sempre zero linhas, bloqueando todo INSERT de item. A função `security definer` contorna isso respondendo só o booleano — mesmo padrão de `loja_esta_ativa`.
+
+**Regra para devs e agentes:** toda policy de INSERT público em `itens_pedido` deve usar `public.pedido_aceita_itens(pedido_id)`. Nunca `WITH CHECK (true)` — permite anexar item a pedido alheio ou pedido já confirmado/cancelado. Nunca `EXISTS` direto em `pedidos` — quebra silenciosamente para anon.
+
+---
+
 #### `produtos`
 
 ```sql
 -- Leitura pública de produtos disponíveis
+-- Usa public.loja_esta_ativa() em vez de EXISTS direto em lojas:
+-- a tabela base não tem SELECT público para anon (§19), então um EXISTS
+-- rodando sob RLS retornaria zero linhas e o catálogo ficaria invisível.
 CREATE POLICY "produtos_leitura_publica"
   ON produtos FOR SELECT
   USING (
     disponivel = true
-    AND EXISTS (
-      SELECT 1 FROM lojas
-      WHERE lojas.id = produtos.loja_id AND lojas.ativo = true
-    )
+    AND public.loja_esta_ativa(produtos.loja_id)
   );
 
 -- Lojista vê todos os próprios (disponível ou não)
@@ -122,7 +182,7 @@ CREATE POLICY "produtos_escrita_propria"
 ```sql
 CREATE POLICY "categorias_leitura_publica"
   ON categorias FOR SELECT
-  USING (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = categorias.loja_id AND lojas.ativo = true));
+  USING (public.loja_esta_ativa(categorias.loja_id));
 
 CREATE POLICY "categorias_escrita_propria"
   ON categorias FOR ALL
@@ -172,15 +232,17 @@ ALTER TABLE pedidos ADD COLUMN token_acesso uuid NOT NULL DEFAULT gen_random_uui
 Policies:
 
 ```sql
--- Cliente cria pedido sem login
+-- Cliente cria pedido sem login — só em loja ativa (endurecida: não mais WITH CHECK (true))
 CREATE POLICY "pedidos_insert_publico"
   ON pedidos FOR INSERT
-  WITH CHECK (true);
+  WITH CHECK (public.loja_esta_ativa(loja_id));
 
 -- Lojista vê e gerencia pedidos da própria loja
+-- WITH CHECK anti-troca de loja_id: impede UPDATE que mova pedido para outra loja
 CREATE POLICY "pedidos_acesso_lojista"
   ON pedidos FOR ALL
-  USING (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()));
+  USING  (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()));
 ```
 
 **Leitura pela confirmação = Server Component escopado por token**, nunca SELECT público:
@@ -193,15 +255,21 @@ const pedido = await buscarPedidoPorToken(pedidoId, token)
 if (!pedido) notFound()
 ```
 
-O token é gerado no INSERT, retornado uma vez ao cliente, e funciona como senha do pedido. Sem token + id corretos, ninguém lê o pedido. Não criar policy de SELECT público em `pedidos`.
+O token é gerado no INSERT e funciona como senha do pedido. Sem token + id corretos, ninguém lê o pedido. Não criar policy de SELECT público em `pedidos`.
+
+**Regra para devs e agentes:**
+- INSERT anon em `pedidos` não usa `RETURNING` (não há SELECT anon; `RETURNING` exige SELECT policy).
+- A Server Action lê o token do pedido **depois** via `service_role` (`WHERE id = $1 AND token_acesso = $2`), nunca via anon.
+- Toda leitura de pedido pelo cliente final (confirmação, status) usa `service_role` com o token como segundo fator — nunca SELECT anon.
 
 #### `itens_pedido`
 
 ```sql
--- Cliente insere itens (sem login)
+-- Cliente insere itens (sem login) — só em pedido pendente de loja ativa (endurecida: não mais WITH CHECK (true))
+-- Usa helper security definer porque anon não tem SELECT em pedidos (ver helper abaixo)
 CREATE POLICY "itens_pedido_insert_publico"
   ON itens_pedido FOR INSERT
-  WITH CHECK (true);
+  WITH CHECK (public.pedido_aceita_itens(pedido_id));
 
 -- Lojista vê itens dos próprios pedidos
 CREATE POLICY "itens_pedido_lojista"
@@ -228,7 +296,9 @@ CREATE POLICY "taxas_leitura_publica" ON taxas_entrega FOR SELECT
   USING (EXISTS (SELECT 1 FROM zonas_entrega z WHERE z.id = taxas_entrega.zona_id AND z.ativo = true));
 CREATE POLICY "bairros_leitura_publica" ON bairros_zona FOR SELECT
   USING (EXISTS (SELECT 1 FROM zonas_entrega z WHERE z.id = bairros_zona.zona_id AND z.ativo = true));
-CREATE POLICY "pagamentos_leitura_publica" ON formas_pagamento FOR SELECT USING (true);
+-- Filtra por loja ativa (não USING(true)): sem isso, config Pix de loja inativa vaza ao anon.
+CREATE POLICY "pagamentos_leitura_publica" ON formas_pagamento FOR SELECT
+  USING (public.loja_esta_ativa(formas_pagamento.loja_id));
 
 -- Escrita: só lojista dono
 CREATE POLICY "zonas_escrita_propria" ON zonas_entrega FOR ALL
