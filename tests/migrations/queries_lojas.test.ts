@@ -26,11 +26,13 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  */
 
 const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+// DONO_A2 é um dono distinto que possui a loja inativa (RN-01: 1 conta = 1 loja).
+const DONO_A2 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab";
 const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const DONO_C = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // dono sem loja (RN-01 = 0)
 
 const SLUG_A = "loja-a-ativa"; // dono A, ativa
-const SLUG_A2 = "loja-a-inativa"; // dono A, INATIVA — só visível via base (dono) / service
+const SLUG_A2 = "loja-a2-inativa"; // dono A2, INATIVA — só visível via base (dono) / service
 const SLUG_B = "loja-b-ativa"; // dono B, ativa
 const SLUG_LIVRE = "slug-que-ninguem-usa";
 
@@ -40,14 +42,20 @@ async function garantirDonos(t: TestDb): Promise<void> {
   await t.db.query(
     `insert into auth.users (id, email) values
        ($1, 'dono-a@teste.local'),
-       ($2, 'dono-b@teste.local'),
-       ($3, 'dono-c@teste.local')
+       ($2, 'dono-a2@teste.local'),
+       ($3, 'dono-b@teste.local'),
+       ($4, 'dono-c@teste.local')
      on conflict (id) do nothing`,
-    [DONO_A, DONO_B, DONO_C],
+    [DONO_A, DONO_A2, DONO_B, DONO_C],
   );
 }
 
-/** Cenário base via service (bypass RLS): A ativa, A2 inativa (dono A), B ativa (dono B). */
+/**
+ * Cenário base via service (bypass RLS):
+ *   A  ativa  (dono A),
+ *   A2 inativa (dono A2 — RN-01: cada conta tem no máximo 1 loja),
+ *   B  ativa  (dono B).
+ */
 async function criarCenario(t: TestDb): Promise<Lojas> {
   await garantirDonos(t);
   return t.asService(async (db) => {
@@ -59,7 +67,7 @@ async function criarCenario(t: TestDb): Promise<Lojas> {
     const a2 = await db.query<{ id: string }>(
       `insert into public.lojas (dono_id, slug, nome, ativo)
        values ($1, $2, 'Loja A2', false) returning id`,
-      [DONO_A, SLUG_A2],
+      [DONO_A2, SLUG_A2],
     );
     const b = await db.query<{ id: string }>(
       `insert into public.lojas (dono_id, slug, nome, ativo)
@@ -160,7 +168,7 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
         [DONO_A],
       ),
     );
-    // A tem 2 lojas no cenário (A ativa + A2 inativa). O ponto crítico: a linha
+    // RN-01: A tem exatamente 1 loja (lojaA ativa). O ponto crítico: a linha
     // completa É visível ao dono e traz colunas sensíveis (que a view não traz).
     expect(r.rows.length).toBeGreaterThanOrEqual(1);
     const chaves = Object.keys(r.rows[0]);
@@ -168,8 +176,10 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
     expect(chaves).toContain("assinatura_status");
   });
 
-  it("[7] buscarLojaDoDono: dono A vê a própria loja INATIVA pela tabela (1 linha)", async () => {
-    const r = await t.asUser(DONO_A, (db) =>
+  it("[7] buscarLojaDoDono: dono A2 vê a própria loja INATIVA pela tabela (1 linha)", async () => {
+    // RN-01: lojaA2 (inativa) pertence a DONO_A2. Verificamos que o dono consegue
+    // ler a própria loja inativa — mesma garantia de negócio, apenas dono distinto.
+    const r = await t.asUser(DONO_A2, (db) =>
       db.query<{ id: string }>(`select * from public.lojas where id = $1`, [ids.lojaA2]),
     );
     expect(r.rows.length).toBe(1);
@@ -233,14 +243,15 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
   });
 
   // ───────────────────────── contarLojasDoDono → TABELA lojas, role service_role
-  it("[15] contarLojasDoDono: service conta 2 lojas do dono A", async () => {
+  it("[15] contarLojasDoDono: service conta 1 loja do dono A (RN-01: 1 conta = 1 loja)", async () => {
     // SQL equivalente: select count(*) from lojas where dono_id = $1 (head:true, count:exact)
+    // RN-01: DONO_A tem exatamente 1 loja (lojaA ativa). A loja inativa pertence a DONO_A2.
     const r = await t.asService((db) =>
       db.query<{ n: number }>(`select count(*)::int as n from public.lojas where dono_id = $1`, [
         DONO_A,
       ]),
     );
-    expect(r.rows[0].n).toBe(2);
+    expect(r.rows[0].n).toBe(1);
   });
 
   it("[16] contarLojasDoDono: service conta 1 loja do dono B", async () => {
@@ -270,12 +281,12 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
       ]),
     );
     expect(r.rows[0].n).toBe(0);
-    // fonte de verdade: A realmente tem 2.
+    // fonte de verdade: A realmente tem 1 loja (RN-01: 1 conta = 1 loja).
     const real = await t.asService((db) =>
       db.query<{ n: number }>(`select count(*)::int as n from public.lojas where dono_id = $1`, [
         DONO_A,
       ]),
     );
-    expect(real.rows[0].n).toBe(2);
+    expect(real.rows[0].n).toBe(1);
   });
 });

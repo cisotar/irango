@@ -31,28 +31,34 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
 
 // IDs fixos para asserts determinísticos.
 const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+// DONO_A2 é um dono distinto que possui a loja inativa (RN-01: 1 conta = 1 loja).
+const DONO_A2 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab";
 const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
 const SLUG_A = "loja-a-ativa";
-const SLUG_A2 = "loja-a-inativa";
+const SLUG_A2 = "loja-a2-inativa"; // pertence a DONO_A2 (RN-01)
 const SLUG_B = "loja-b-ativa";
 
 type Lojas = { lojaA: string; lojaA2: string; lojaB: string };
 
-/** Cria os dois donos em auth.users via superuser (service_role não tem grant em auth). */
+/** Cria os donos em auth.users via superuser (service_role não tem grant em auth). */
 async function garantirDonos(t: TestDb): Promise<void> {
   await t.db.query(
     `insert into auth.users (id, email) values
        ($1, 'dono-a@teste.local'),
-       ($2, 'dono-b@teste.local')
+       ($2, 'dono-a2@teste.local'),
+       ($3, 'dono-b@teste.local')
      on conflict (id) do nothing`,
-    [DONO_A, DONO_B],
+    [DONO_A, DONO_A2, DONO_B],
   );
 }
 
 /**
- * Cria o cenário base via asService (bypass RLS): A ativa, A2 inativa (mesmo dono A),
- * B ativa (dono B). Retorna os ids.
+ * Cria o cenário base via asService (bypass RLS):
+ *   A  ativa  (dono A),
+ *   A2 inativa (dono A2 — RN-01: cada conta tem no máximo 1 loja),
+ *   B  ativa  (dono B).
+ * Retorna os ids.
  */
 async function criarCenario(t: TestDb): Promise<Lojas> {
   await garantirDonos(t);
@@ -65,7 +71,7 @@ async function criarCenario(t: TestDb): Promise<Lojas> {
     const a2 = await db.query<{ id: string }>(
       `insert into public.lojas (dono_id, slug, nome, ativo)
        values ($1, $2, 'Loja A2', false) returning id`,
-      [DONO_A, SLUG_A2],
+      [DONO_A2, SLUG_A2],
     );
     const b = await db.query<{ id: string }>(
       `insert into public.lojas (dono_id, slug, nome, ativo)
@@ -182,9 +188,11 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
   });
 
   // ───────────────────────────── Leitura própria (lojas_leitura_propria)
-  it("[3] dono A lê a PRÓPRIA loja mesmo INATIVA (1 linha)", async () => {
+  it("[3] dono A2 lê a PRÓPRIA loja mesmo INATIVA (1 linha)", async () => {
     // RED: deny-all → 0. GREEN: lojas_leitura_propria (auth.uid()=dono_id) → 1.
-    const r = await t.asUser(DONO_A, (db) =>
+    // RN-01: lojaA2 pertence a DONO_A2 (cada conta tem 1 loja); verificamos que
+    // o dono consegue ler a própria loja inativa — mesma garantia, dono distinto.
+    const r = await t.asUser(DONO_A2, (db) =>
       db.query<{ id: string }>(`select id from public.lojas where id = $1`, [ids.lojaA2]),
     );
     expect(r.rows.length).toBe(1);
@@ -199,8 +207,9 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
     expect(r.rows[0].id).toBe(ids.lojaA);
   });
 
-  it("[5] dono B NÃO vê a loja A2 INATIVA de A (isolamento — 0 linhas)", async () => {
+  it("[5] dono B NÃO vê a loja A2 INATIVA de A2 (isolamento — 0 linhas)", async () => {
     // B só enxergaria A2 se houvesse vazamento entre lojas. A2 é inativa: nem público.
+    // RN-01: lojaA2 pertence a DONO_A2; verificamos que DONO_B não consegue vê-la.
     const r = await t.asUser(DONO_B, (db) =>
       db.query(`select id from public.lojas where id = $1`, [ids.lojaA2]),
     );
@@ -267,10 +276,13 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
   });
 
   // ───────────────────────────── Insert próprio (lojas_insert_proprio)
-  it("[11] dono A INSERE loja com dono_id = auth.uid() (aceito, persistiu)", async () => {
-    // RED: deny-all → INSERT recusado, nada persiste. GREEN: WITH CHECK passa, 1 linha.
+  it("[11] dono A NÃO INSERE segunda loja (RN-01: único índice lojas_dono_unico bloqueia)", async () => {
+    // RN-01: unique index `lojas_dono_unico on lojas(dono_id)` garante 1 conta = 1 loja.
+    // DONO_A já possui lojaA; tentar inserir uma segunda deve ser REJEITADO
+    // (unique violation), independente da policy de INSERT passar o WITH CHECK.
+    // GREEN: a policy lojas_insert_proprio permite a tentativa, mas o UNIQUE a bloqueia.
     const slug = "loja-a-nova";
-    let inseriu = false;
+    let rejeitou = false;
     try {
       await t.asUser(DONO_A, (db) =>
         db.query(`insert into public.lojas (dono_id, slug, nome) values ($1, $2, 'A Nova')`, [
@@ -278,12 +290,11 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
           slug,
         ]),
       );
-      inseriu = true;
     } catch {
-      inseriu = false;
+      rejeitou = true;
     }
-    expect(inseriu).toBe(true);
-    expect(await existeSlug(t, slug)).toBe(true);
+    expect(rejeitou).toBe(true);
+    expect(await existeSlug(t, slug)).toBe(false);
   });
 
   it("[12] dono B NÃO insere loja forjando dono_id = A (WITH CHECK, nada persiste)", async () => {

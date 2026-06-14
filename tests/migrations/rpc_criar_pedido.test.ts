@@ -29,6 +29,8 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  */
 
 const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+// RN-01: lojaInativa pertence a DONO_A2 (conta separada) para satisfazer 1 conta = 1 loja.
+const DONO_A2 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab";
 
 type Cenario = {
   lojaAtiva: string;
@@ -40,9 +42,11 @@ type Cenario = {
 
 async function garantirDono(t: TestDb): Promise<void> {
   await t.db.query(
-    `insert into auth.users (id, email) values ($1, 'dono-a@teste.local')
-       on conflict (id) do nothing`,
-    [DONO_A],
+    `insert into auth.users (id, email) values
+       ($1, 'dono-a@teste.local'),
+       ($2, 'dono-a2@teste.local')
+     on conflict (id) do nothing`,
+    [DONO_A, DONO_A2],
   );
 }
 
@@ -60,7 +64,7 @@ async function semearCenario(t: TestDb): Promise<Cenario> {
     );
     const lojaInativa = await ins(
       `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-inativa','Loja Inativa',false) returning id`,
-      [DONO_A],
+      [DONO_A2],
     );
 
     const produto1 = await ins(

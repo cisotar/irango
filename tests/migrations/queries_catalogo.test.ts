@@ -23,11 +23,13 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  */
 
 const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+// DONO_A2 é um dono distinto que possui a loja inativa (RN-01: 1 conta = 1 loja).
+const DONO_A2 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab";
 const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
 type Cenario = {
   lojaA: string; // dono A, ATIVA
-  lojaInativa: string; // dono A, INATIVA
+  lojaInativa: string; // dono A2, INATIVA (RN-01: cada conta tem 1 loja)
   lojaB: string; // dono B, ATIVA
   catA: string; // categoria da loja A
   catInativa: string; // categoria da loja inativa
@@ -42,9 +44,10 @@ async function garantirDonos(t: TestDb): Promise<void> {
   await t.db.query(
     `insert into auth.users (id, email) values
        ($1, 'dono-a@teste.local'),
-       ($2, 'dono-b@teste.local')
+       ($2, 'dono-a2@teste.local'),
+       ($3, 'dono-b@teste.local')
      on conflict (id) do nothing`,
-    [DONO_A, DONO_B],
+    [DONO_A, DONO_A2, DONO_B],
   );
 }
 
@@ -60,7 +63,7 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
     const lojaInativa = (
       await db.query<{ id: string }>(
         `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-inativa','Loja Inativa',false) returning id`,
-        [DONO_A],
+        [DONO_A2],
       )
     ).rows[0].id;
     const lojaB = (
@@ -227,8 +230,10 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     expect(ids).toContain(c.prodAIndisp); // indisponível visível para o dono
   });
 
-  it("[8] dono A lê o produto da PRÓPRIA loja inativa (é dono dela)", async () => {
-    const r = await t.asUser(DONO_A, (db) =>
+  it("[8] dono A2 lê o produto da PRÓPRIA loja inativa (é dono dela)", async () => {
+    // RN-01: lojaInativa pertence a DONO_A2. Verificamos que o dono consegue
+    // ler produtos da própria loja inativa — mesma garantia, dono distinto.
+    const r = await t.asUser(DONO_A2, (db) =>
       db.query<{ id: string }>(`select * from public.produtos where id = $1`, [c.prodInativa]),
     );
     expect(r.rows.map((x) => x.id)).toEqual([c.prodInativa]);

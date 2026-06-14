@@ -35,10 +35,12 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
 
 const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+// RN-01: cada conta só pode ter 1 loja. lojaInativa pertence a DONO_A2 (conta separada).
+const DONO_A2 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab";
 
 type Cenario = {
   lojaA: string; // dono A, ATIVA
-  lojaInativa: string; // dono A, INATIVA (config não deve vazar a anon)
+  lojaInativa: string; // dono A2, INATIVA (config não deve vazar a anon)
   lojaB: string; // dono B, ATIVA
   cupomA: string; // cupom da loja A (PROMO10)
   cupomB: string; // cupom da loja B
@@ -52,9 +54,10 @@ async function garantirDonos(t: TestDb): Promise<void> {
   await t.db.query(
     `insert into auth.users (id, email) values
        ($1, 'dono-a@teste.local'),
-       ($2, 'dono-b@teste.local')
+       ($2, 'dono-b@teste.local'),
+       ($3, 'dono-a2@teste.local')
      on conflict (id) do nothing`,
-    [DONO_A, DONO_B],
+    [DONO_A, DONO_B, DONO_A2],
   );
 }
 
@@ -72,7 +75,7 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
     );
     const lojaInativa = await ins(
       `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-inativa','Loja Inativa',false) returning id`,
-      [DONO_A],
+      [DONO_A2],
     );
     const lojaB = await ins(
       `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-b','Loja B',true) returning id`,

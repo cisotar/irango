@@ -32,3 +32,10 @@ Server Actions de auth (015). UI das páginas (034).
 ## Critério de aceite
 - [ ] (crítica) Teste/verificação: acesso a `/painel` sem sessão redireciona a `/login`; usuário logado em `/login` vai a `/painel`; callback estabelece sessão
 - [ ] (crítica, DELTA Hotmart) Teste vermelho: loja `ativa` acessa `/painel`; `trial` válido acessa; `inadimplente` dentro da carência acessa (com banner); `suspensa` → redirect `/painel/assinatura-bloqueada`; `cancelada` fora da carência → redirect; `trial` expirado → redirect; `/painel/configuracoes/assinatura` e `/painel/assinatura-bloqueada` seguem acessíveis com assinatura inválida
+
+---
+
+## DELTA da auditoria 015 (obrigatório)
+- [ ] Guard server-side do painel DEVE checar `user.email_confirmed_at` — promover de opcional para **obrigatório**. Sessão com email não confirmado → redirect p/ confirmação (não confiar só na config "Confirm email" do painel Supabase — defesa em profundidade, §17).
+- [ ] Sessão autenticada SEM loja (`buscarLojaDoDono === null`, ex.: user órfão) → redirect p/ onboarding, nunca acessa painel.
+- [ ] **Gate de deploy:** confirmar manualmente "Confirm email" = ON no painel cloud gdlegxatwylhkjcrusyk.

@@ -49,6 +49,30 @@ const COLUNAS_MONETARIAS: Array<[string, string]> = [
 
 const DONO_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
+// Donos extras para lojas criadas individualmente (RN-01: 1 conta = 1 loja).
+// Cada slug de loja de teste recebe seu próprio dono único.
+const DONOS_EXTRAS: Record<string, string> = {
+  "tz-default":       "00000001-0000-0000-0000-000000000001",
+  "status-default":   "00000002-0000-0000-0000-000000000002",
+  "ativo-default":    "00000003-0000-0000-0000-000000000003",
+  "pedido-default":   "00000004-0000-0000-0000-000000000004",
+  "chk-produto":      "00000005-0000-0000-0000-000000000005",
+  "chk-cupom-valor":  "00000006-0000-0000-0000-000000000006",
+  "chk-cupom-tipo":   "00000007-0000-0000-0000-000000000007",
+  "chk-item-qtd":     "00000008-0000-0000-0000-000000000008",
+  "chk-taxa":         "00000009-0000-0000-0000-000000000009",
+  "chk-status":       "0000000a-0000-0000-0000-00000000000a",
+  "chk-zona-tipo":    "0000000b-0000-0000-0000-00000000000b",
+  "chk-numeric-prec": "0000000c-0000-0000-0000-00000000000c",
+  "chk-pagto-tipo":   "0000000d-0000-0000-0000-00000000000d",
+  "slug-dup":         "0000000e-0000-0000-0000-00000000000e",
+  "cupom-dup":        "0000000f-0000-0000-0000-00000000000f",
+  "fk-cascade":       "00000010-0000-0000-0000-000000000010",
+  "fk-setnull-cat":   "00000011-0000-0000-0000-000000000011",
+  "token-distinto":   "00000012-0000-0000-0000-000000000012",
+  "fk-setnull-prod":  "00000013-0000-0000-0000-000000000013",
+};
+
 /**
  * Afirma que a promise rejeita por VIOLAÇÃO DE CONSTRAINT (CHECK/UNIQUE/NOT NULL),
  * não por "relation does not exist". Sem isso, um INSERT inválido contra tabela
@@ -75,21 +99,22 @@ async function expectViolacao(p: Promise<unknown>): Promise<void> {
  * Garante o auth.users do dono. INSERT em auth.users roda como superuser do pglite
  * (`t.db` direto) porque service_role não tem GRANT no schema auth no bootstrap.
  */
-async function garantirDono(t: TestDb): Promise<void> {
+async function garantirDono(t: TestDb, donoId: string = DONO_ID, email?: string): Promise<void> {
   await t.db.query(
-    `insert into auth.users (id, email) values ($1, 'dono@teste.local')
+    `insert into auth.users (id, email) values ($1, $2)
      on conflict (id) do nothing`,
-    [DONO_ID],
+    [donoId, email ?? `dono-${donoId}@teste.local`],
   );
 }
 
-/** Cria uma loja válida (dono já garantido) e retorna o id da loja. */
+/** Cria uma loja válida com dono próprio (RN-01) e retorna o id da loja. */
 async function criarLoja(t: TestDb, slug: string): Promise<string> {
-  await garantirDono(t);
+  const donoId = DONOS_EXTRAS[slug] ?? DONO_ID;
+  await garantirDono(t, donoId);
   return t.asService(async (db) => {
     const r = await db.query<{ id: string }>(
       `insert into public.lojas (dono_id, slug, nome) values ($1, $2, 'Loja Teste') returning id`,
-      [DONO_ID, slug],
+      [donoId, slug],
     );
     return r.rows[0].id;
   });
@@ -99,8 +124,11 @@ describe("001 migration schema inicial (RED)", () => {
   let t: TestDb;
   beforeAll(async () => {
     t = await createTestDb();
-    // Garante o auth.users do dono para os INSERTs de loja diretos (defaults/slug).
+    // Garante o auth.users do dono principal e de todos os donos extras (RN-01).
     await garantirDono(t);
+    for (const [, donoId] of Object.entries(DONOS_EXTRAS)) {
+      await garantirDono(t, donoId);
+    }
   });
   afterAll(async () => {
     await t.close();
@@ -210,7 +238,7 @@ describe("001 migration schema inicial (RED)", () => {
         db.query<{ timezone: string }>(
           `insert into public.lojas (dono_id, slug, nome)
            values ($1, 'tz-default', 'L') returning timezone`,
-          [DONO_ID],
+          [DONOS_EXTRAS["tz-default"]],
         ),
       );
       expect(r.rows[0].timezone).toBe("America/Sao_Paulo");
@@ -221,7 +249,7 @@ describe("001 migration schema inicial (RED)", () => {
         db.query<{ assinatura_status: string }>(
           `insert into public.lojas (dono_id, slug, nome)
            values ($1, 'status-default', 'L') returning assinatura_status`,
-          [DONO_ID],
+          [DONOS_EXTRAS["status-default"]],
         ),
       );
       expect(r.rows[0].assinatura_status).toBe("trial");
@@ -232,7 +260,7 @@ describe("001 migration schema inicial (RED)", () => {
         db.query<{ ativo: boolean }>(
           `insert into public.lojas (dono_id, slug, nome)
            values ($1, 'ativo-default', 'L') returning ativo`,
-          [DONO_ID],
+          [DONOS_EXTRAS["ativo-default"]],
         ),
       );
       expect(r.rows[0].ativo).toBe(true);

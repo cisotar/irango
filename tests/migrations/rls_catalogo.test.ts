@@ -36,6 +36,8 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
 // IDs fixos para asserts determinísticos.
 const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+// RN-01: cada conta só pode ter 1 loja. lojaAInativa pertence a DONO_A2 (conta separada).
+const DONO_A2 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab";
 
 type Cenario = {
   // lojas
@@ -65,14 +67,15 @@ type Cenario = {
   formaInativa: string; // forma de loja inativa → não pública
 };
 
-/** Cria os dois donos em auth.users via superuser (service_role não tem grant em auth). */
+/** Cria os donos em auth.users via superuser (service_role não tem grant em auth). */
 async function garantirDonos(t: TestDb): Promise<void> {
   await t.db.query(
     `insert into auth.users (id, email) values
        ($1, 'dono-a@teste.local'),
-       ($2, 'dono-b@teste.local')
+       ($2, 'dono-b@teste.local'),
+       ($3, 'dono-a2@teste.local')
      on conflict (id) do nothing`,
-    [DONO_A, DONO_B],
+    [DONO_A, DONO_B, DONO_A2],
   );
 }
 
@@ -92,7 +95,7 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
     );
     const lojaAInativa = await ins(
       `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-a-inativa','Loja A Inativa',false) returning id`,
-      [DONO_A],
+      [DONO_A2],
     );
     const lojaB = await ins(
       `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-b','Loja B',true) returning id`,

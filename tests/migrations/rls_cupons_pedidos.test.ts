@@ -42,6 +42,8 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
 // IDs fixos para asserts determinísticos.
 const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+// RN-01: dono extra para loja-off usada no teste [19b] (DONO_A já tem lojaA).
+const DONO_OFF = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 
 type Cenario = {
   lojaA: string; // dono A
@@ -54,14 +56,15 @@ type Cenario = {
   tokenA: string; // token_acesso do pedidoA (capturado)
 };
 
-/** Cria os dois donos em auth.users via superuser (service_role não tem grant em auth). */
+/** Cria os donos em auth.users via superuser (service_role não tem grant em auth). */
 async function garantirDonos(t: TestDb): Promise<void> {
   await t.db.query(
     `insert into auth.users (id, email) values
        ($1, 'dono-a@teste.local'),
-       ($2, 'dono-b@teste.local')
+       ($2, 'dono-b@teste.local'),
+       ($3, 'dono-off@teste.local')
      on conflict (id) do nothing`,
-    [DONO_A, DONO_B],
+    [DONO_A, DONO_B, DONO_OFF],
   );
 }
 
@@ -445,7 +448,7 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
     const lojaInativa = await t.asService((db) =>
       db.query<{ id: string }>(
         `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-off','Off',false) returning id`,
-        [DONO_A],
+        [DONO_OFF],
       ),
     );
     const MARCADOR = "Pedido Loja Inativa";

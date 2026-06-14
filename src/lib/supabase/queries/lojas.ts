@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, Tables } from "@/lib/database.types";
+import type { Database, Tables, TablesInsert } from "@/lib/database.types";
 
 /**
  * Queries reusáveis de `lojas` (issue 023). Acesso centralizado respeitando RLS.
@@ -100,4 +100,26 @@ export async function contarLojasDoDono(client: Client, donoId: string): Promise
     .eq("dono_id", donoId);
   if (error) throw error;
   return count ?? 0;
+}
+
+/**
+ * INSERT autoritativo de loja no cadastro (issue 015). Encapsula a escrita
+ * (NUNCA `.from('lojas').insert` inline — DRY de queries, architecture.md §8).
+ *
+ * Exige client **service_role**: roda logo após o `signUp`, quando o cookie de
+ * sessão pode não estar disponível de forma síncrona, e a RLS de INSERT
+ * (`auth.uid() = dono_id`) ainda não enxergaria a sessão. O `dados` já vem
+ * montado pela action — `dono_id` do retorno do signUp, consentimento/trial
+ * decididos pelo servidor (o client nunca envia esses campos).
+ *
+ * Propaga o `error` do PostgREST (seguranca.md §14) — a action trata 23505
+ * (corrida de slug / índice único de dono).
+ */
+export async function criarLoja(
+  client: Client,
+  dados: TablesInsert<"lojas">,
+): Promise<LojaCompleta> {
+  const { data, error } = await client.from("lojas").insert(dados).select("*").single();
+  if (error) throw error;
+  return data;
 }

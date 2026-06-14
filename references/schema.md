@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.3 | **Atualizado:** 2026-06-14
+**Versão:** 0.1.4 | **Atualizado:** 2026-06-14
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -262,6 +262,10 @@ CREATE TABLE webhook_eventos_hotmart (
 ```sql
 -- Lookup de loja por slug (rota pública /loja/[slug])
 CREATE UNIQUE INDEX ON lojas(slug);
+
+-- RN-01: 1 conta = 1 loja (reforça contarLojasDoDono na action de cadastro)
+-- Migration: 20260614003500_unique_loja_por_dono.sql
+CREATE UNIQUE INDEX lojas_dono_unico ON lojas(dono_id);
 
 -- Produtos por loja (listagem do painel e vitrine)
 CREATE INDEX ON produtos(loja_id, disponivel, ordem);

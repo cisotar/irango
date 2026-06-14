@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.4 | **Atualizado:** 2026-06-14
+**Versão:** 0.2.5 | **Atualizado:** 2026-06-14
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -726,12 +726,28 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 
 ---
 
-## 17. Confirmação de Email
+## 17. Confirmação de Email e Fluxo de Cadastro
 
 Supabase permite signup sem confirmar email — qualquer um cria loja com email falso.
 
 - **Ativar "Confirm email"** no painel Supabase Auth — lojista só acessa o painel após confirmar.
 - Loja recém-criada fica inativa (`ativo = false`) até confirmação, ou bloquear acesso ao painel via guard que checa `email_confirmed_at`.
+
+### Fluxo de cadastro (Server Action `cadastrar`)
+
+Sequência executada inteiramente no servidor (nunca no cliente):
+
+1. `supabase.auth.signUp(email, senha)` via cliente anon — retorna `user.id`.
+2. `criarLoja({ dono_id: user.id, ... })` executado com **service_role** — `dono_id` vem do `user` retornado pelo Auth, nunca do payload enviado pelo cliente.
+3. Loja nasce com `ativo = false` (sobrescreve o DEFAULT do schema). Só vai à vitrine após confirmar email + completar perfil (guard na issue 016).
+4. `consentimento_em` e `consentimento_versao` são gravados no mesmo INSERT da loja — nunca enviados pelo cliente como campo livre.
+5. `assinatura_status = 'trial'` e `assinatura_fim_periodo = now() + interval '14 days'` gravados SERVER-SIDE no mesmo INSERT.
+
+**RN-01 — 1 conta = 1 loja:** a action chama `contarLojasDoDono(user.id)` antes do INSERT; se retornar ≥ 1, abort com erro. O banco garante a mesma regra via índice único `lojas_dono_unico` (ver `schema.md §3`).
+
+### Anti-enumeração no login
+
+A action `entrar` retorna sempre a mesma mensagem genérica independentemente de o email não existir, senha errada ou conta suspensa — impede enumeração de contas por tentativa e erro.
 
 ---
 
