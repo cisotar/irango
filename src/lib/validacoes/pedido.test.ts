@@ -476,6 +476,21 @@ describe("schemaItemPedido — [083] opcionais", () => {
     expect(r.success).toBe(false);
   });
 
+  it("rejeita opcional com quantidade > 99 (teto anti-overflow — achado auditoria)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({
+        itens: [
+          {
+            produto_id: UUID2,
+            quantidade: 1,
+            opcionais: [{ opcional_id: UUID3, quantidade: 999999 }],
+          },
+        ],
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
   it("aceita item SEM opcionais (compatibilidade checkout — campo opcional)", () => {
     const r = schemaPayloadPedido.safeParse(
       payloadEntrega({

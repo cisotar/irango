@@ -39,8 +39,20 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 }));
 
 const buscarProdutosPorIds = vi.fn();
+// [085] Leituras de opcionais do BANCO usadas pelo recálculo autoritativo:
+//  - buscarOpcionaisPorIds(client, ids): linhas de `opcionais` por id, trazendo
+//    loja_id / categoria_opcional_id / nome / preco / ativo (fonte de verdade do
+//    preço e dos gates RN-O3/O5/O6). NOVA leitura esperada da action.
+//  - buscarOpcionaisPorCategoria(client, categoriaIds) (081, existente): mapa
+//    categoria_id(produto) → grupos; usado para validar RN-O4 (opcional permitido
+//    para a categoria do produto). Já existe na query de produtos; a action o
+//    reusa como conjunto de categoria_opcional_id permitidos por categoria.
+const buscarOpcionaisPorIds = vi.fn();
+const buscarOpcionaisPorCategoria = vi.fn();
 vi.mock("@/lib/supabase/queries/produtos", () => ({
   buscarProdutosPorIds: (...a: unknown[]) => buscarProdutosPorIds(...a),
+  buscarOpcionaisPorIds: (...a: unknown[]) => buscarOpcionaisPorIds(...a),
+  buscarOpcionaisPorCategoria: (...a: unknown[]) => buscarOpcionaisPorCategoria(...a),
 }));
 
 const listarZonasComTaxas = vi.fn();
@@ -61,6 +73,15 @@ const PROD_1 = "aaaaaaaa-0000-0000-0000-000000000001"; // R$ 25,00 na loja A
 const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000002"; // R$ 10,00 na loja A
 const PROD_B = "bbbbbbbb-0000-0000-0000-000000000001"; // produto da loja B
 const CUPOM_ID = "cccccccc-0000-0000-0000-000000000001";
+// [085] opcionais — fixtures
+const CAT_PROD_PAES = "dddddddd-0000-0000-0000-000000000001"; // categoria de PRODUTO do PROD_1
+const CAT_OPC_LATICINIOS = "eeeeeeee-0000-0000-0000-000000000001"; // categoria de OPCIONAL associada a Pães
+const CAT_OPC_EMBALAGENS = "eeeeeeee-0000-0000-0000-000000000002"; // categoria de OPCIONAL NÃO associada a Pães
+const OPC_BRIE = "ffffffff-0000-0000-0000-000000000001"; // Brie extra +8,00 (loja A, Laticínios, ativo)
+const OPC_GELEIA = "ffffffff-0000-0000-0000-000000000002"; // Geleia +6,00 (loja A, Laticínios, ativo)
+const OPC_INATIVO = "ffffffff-0000-0000-0000-000000000003"; // ativo=false
+const OPC_OUTRA_LOJA = "ffffffff-0000-0000-0000-000000000004"; // loja_id = LOJA_B
+const OPC_CAT_NAO_ASSOC = "ffffffff-0000-0000-0000-000000000005"; // categoria_opcional não associada à categoria do produto
 
 // Horários abertos 24h todos os dias (loja sempre aberta nos testes felizes).
 const HORARIO_ABERTO = {
@@ -136,6 +157,39 @@ function cupomRow(over: Partial<Tables<"cupons">> = {}): Tables<"cupons"> {
   };
 }
 
+/** Linha de `opcionais` como vinda do banco (fonte de verdade do preço/loja/ativo). */
+function opcionalRow(
+  over: Partial<Tables<"opcionais">> = {},
+): Pick<Tables<"opcionais">, "id" | "loja_id" | "categoria_opcional_id" | "nome" | "preco" | "ativo"> {
+  return {
+    id: OPC_BRIE,
+    loja_id: LOJA_A,
+    categoria_opcional_id: CAT_OPC_LATICINIOS,
+    nome: "Brie extra",
+    preco: 8.0,
+    ativo: true,
+    ...over,
+  };
+}
+
+/**
+ * Mapa de RN-O4 (081): categoria de PRODUTO → grupos de opcional permitidos.
+ * A action usa as `categoriaOpcionalId` dos grupos como o conjunto permitido.
+ * Por padrão, a categoria do PROD_1 (Pães) permite Laticínios — NÃO Embalagens.
+ */
+function permitidosPaesLaticinios() {
+  return {
+    [CAT_PROD_PAES]: [
+      {
+        categoriaOpcionalId: CAT_OPC_LATICINIOS,
+        categoriaOpcionalNome: "Laticínios",
+        ordem: 0,
+        opcionais: [],
+      },
+    ],
+  };
+}
+
 // Zona que atende o CEP do payload com taxa 5.00.
 function zonasComFrete5() {
   return [
@@ -177,6 +231,9 @@ function cenarioFeliz() {
   buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
   listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
   buscarCupomPorCodigo.mockResolvedValue(null);
+  // [085] sem opcionais por padrão: nenhuma leitura de opcional retorna nada.
+  buscarOpcionaisPorIds.mockResolvedValue([]);
+  buscarOpcionaisPorCategoria.mockResolvedValue({});
   fakeClient.rpc.mockResolvedValue({
     data: [{ pedido_id: "ped-1", token_acesso: "tok-1" }],
     error: null,
@@ -478,5 +535,181 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     const r = await criarPedido(payloadBase({ itens: [] }));
     expect(r).toEqual({ erro: expect.any(String) });
     expect(buscarProdutosPorIds).not.toHaveBeenCalled();
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // [085] OPCIONAIS — recálculo autoritativo + snapshot (spec RN-O1..O6)
+  //
+  // Contrato esperado da action (fase GREEN):
+  //  - lê os opcionais escolhidos do BANCO por id (buscarOpcionaisPorIds): nunca
+  //    confia em preço do cliente (RN-O1/O2);
+  //  - RN-O3: opcional cujo loja_id ≠ pedido.loja_id → recusa o pedido inteiro;
+  //  - RN-O4: opcional cuja categoria_opcional_id NÃO está nos grupos permitidos
+  //    da categoria do produto (buscarOpcionaisPorCategoria) → recusa;
+  //  - RN-O5: opcional ausente do retorno do banco (inexistente) ou ativo=false → recusa;
+  //  - RN-O1: subtotal_item = (produto.preco + Σ op.preco × op.qtd) × qtd_item,
+  //    preços do banco; p_total = subtotal + frete − desconto;
+  //  - RN-O6: cada item passado à RPC carrega seus opcionais com snapshot do banco
+  //    (nome_snapshot / preco_snapshot / quantidade).
+  //  Shape esperado de p_itens com opcionais (a verificar no contrato GREEN):
+  //    { produto_id, nome, preco, quantidade,
+  //      opcionais: [{ opcional_id, nome_snapshot, preco_snapshot, quantidade }] }
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Caminho feliz com PROD_1 categorizado (Pães) e dois opcionais válidos. */
+  function cenarioOpcionaisValidos() {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([produtoRow({ categoria_id: CAT_PROD_PAES })]);
+    buscarOpcionaisPorCategoria.mockResolvedValue(permitidosPaesLaticinios());
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_BRIE, nome: "Brie extra", preco: 8.0 }),
+      opcionalRow({ id: OPC_GELEIA, nome: "Geleia", preco: 6.0 }),
+    ]);
+  }
+
+  // 1) RN-O1 — recálculo COM opcionais usando preço do banco
+  it("[085] RN-O1: item com 2 opcionais → p_total = (produto + Σ op×qtd) × qtd_item + frete − desconto (preços do BANCO)", async () => {
+    cenarioOpcionaisValidos();
+    // produto 25 + (brie 8×1 + geleia 6×2 = 20) = 45; × 2 itens = 90 subtotal; + 5 frete = 95
+    await criarPedido(
+      payloadBase({
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 2,
+            opcionais: [
+              { opcional_id: OPC_BRIE, quantidade: 1 },
+              { opcional_id: OPC_GELEIA, quantidade: 2 },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_subtotal: number;
+      p_total: number;
+    };
+    expect(args.p_subtotal).toBe(90.0);
+    expect(args.p_total).toBe(95.0);
+  });
+
+  // 2) RN-O3 — opcional de OUTRA loja → recusa o pedido inteiro
+  it("[085] RN-O3: opcional de OUTRA loja → pedido recusado integralmente (não chama a RPC)", async () => {
+    cenarioOpcionaisValidos();
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_OUTRA_LOJA, loja_id: LOJA_B }),
+    ]);
+    const r = await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 1, opcionais: [{ opcional_id: OPC_OUTRA_LOJA, quantidade: 1 }] }],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // 3) RN-O4 — opcional cuja categoria NÃO está associada à categoria do produto → recusa
+  it("[085] RN-O4: opcional de categoria NÃO associada à categoria do produto → recusado", async () => {
+    cenarioOpcionaisValidos();
+    // opcional existe, é da loja A e ativo, mas pertence a Embalagens — que NÃO está
+    // nos grupos permitidos da categoria do produto (só Laticínios).
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_CAT_NAO_ASSOC, categoria_opcional_id: CAT_OPC_EMBALAGENS }),
+    ]);
+    const r = await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 1, opcionais: [{ opcional_id: OPC_CAT_NAO_ASSOC, quantidade: 1 }] }],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // 4) RN-O5 — opcional inativo / inexistente → recusa
+  it("[085] RN-O5: opcional ativo=false → recusado (não chama a RPC)", async () => {
+    cenarioOpcionaisValidos();
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_INATIVO, ativo: false }),
+    ]);
+    const r = await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 1, opcionais: [{ opcional_id: OPC_INATIVO, quantidade: 1 }] }],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("[085] RN-O5: opcional inexistente (faltando no retorno do banco) → recusado", async () => {
+    cenarioOpcionaisValidos();
+    buscarOpcionaisPorIds.mockResolvedValue([]); // pediu OPC_BRIE, banco não retornou
+    const r = await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 1, opcionais: [{ opcional_id: OPC_BRIE, quantidade: 1 }] }],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // 5) RN-O1/O2 — preço adulterado no payload é IGNORADO (servidor usa o banco)
+  it("[085] RN-O1/O2: preço adulterado no opcional é ignorado — cálculo usa o preço do BANCO", async () => {
+    cenarioOpcionaisValidos();
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_BRIE, nome: "Brie extra", preco: 8.0 }),
+    ]);
+    // O .strict() do 083 já barraria { preco } no opcional; aqui garantimos que,
+    // mesmo se vazasse, o servidor recalcula do banco. Enviamos só ids+qtd válidos
+    // e provamos que o total reflete o preço REAL (8,00), não um payload de 0,01.
+    await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 1, opcionais: [{ opcional_id: OPC_BRIE, quantidade: 1 }] }],
+      }),
+    );
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_subtotal: number; p_total: number };
+    // produto 25 + brie 8 = 33 subtotal; + 5 frete = 38 — preço do banco, não 0,01.
+    expect(args.p_subtotal).toBe(33.0);
+    expect(args.p_total).toBe(38.0);
+  });
+
+  // 6) RN-O6 — snapshot do banco repassado à RPC por item
+  it("[085] RN-O6: a action passa à RPC, por item, opcionais com nome_snapshot/preco_snapshot do BANCO + quantidade", async () => {
+    cenarioOpcionaisValidos();
+    await criarPedido(
+      payloadBase({
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 2,
+            opcionais: [
+              { opcional_id: OPC_BRIE, quantidade: 1 },
+              { opcional_id: OPC_GELEIA, quantidade: 2 },
+            ],
+          },
+        ],
+      }),
+    );
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_itens: {
+        produto_id: string;
+        nome: string;
+        preco: number;
+        quantidade: number;
+        opcionais: { opcional_id: string; nome_snapshot: string; preco_snapshot: number; quantidade: number }[];
+      }[];
+    };
+    expect(args.p_itens).toEqual([
+      {
+        produto_id: PROD_1,
+        nome: "Pizza",
+        preco: 25.0,
+        quantidade: 2,
+        opcionais: [
+          { opcional_id: OPC_BRIE, nome_snapshot: "Brie extra", preco_snapshot: 8.0, quantidade: 1 },
+          { opcional_id: OPC_GELEIA, nome_snapshot: "Geleia", preco_snapshot: 6.0, quantidade: 2 },
+        ],
+      },
+    ]);
   });
 });

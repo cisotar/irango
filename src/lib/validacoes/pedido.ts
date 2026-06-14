@@ -23,10 +23,13 @@ const schemaItemPedido = z
         z
           .object({
             opcional_id: z.guid(),
-            quantidade: z.number().int().positive(),
+            // teto 99 igual ao item (achado auditoria 085): sem limite, qtd
+            // absurda estoura numeric(10,2) e polui pedido com total irreal.
+            quantidade: z.number().int().min(1).max(99),
           })
           .strict(),
       )
+      .max(50) // teto de opcionais distintos por item (anti payload gigante)
       .optional(),
   })
   .strict();

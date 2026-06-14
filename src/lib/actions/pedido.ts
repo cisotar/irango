@@ -16,7 +16,11 @@
 import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
-import { buscarProdutosPorIds } from "@/lib/supabase/queries/produtos";
+import {
+  buscarProdutosPorIds,
+  buscarOpcionaisPorIds,
+  buscarOpcionaisPorCategoria,
+} from "@/lib/supabase/queries/produtos";
 import {
   listarZonasComTaxas,
   listarFormasPagamento,
@@ -79,12 +83,45 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     const produtos = await buscarProdutosPorIds(svc, ids);
     const porId = new Map(produtos.map((p) => [p.id, p]));
 
+    // (4b) Opcionais (085): preço/loja/categoria/ativo vêm SEMPRE do banco
+    //      (RN-O1/O2). Lê todos os opcional_id escolhidos e a allowlist por
+    //      categoria de produto (RN-O4). `[]`/`{}` quando não há opcionais.
+    const opcionalIds = [
+      ...new Set(
+        dados.itens.flatMap((i) => (i.opcionais ?? []).map((o) => o.opcional_id)),
+      ),
+    ];
+    const opcionaisBanco = await buscarOpcionaisPorIds(svc, opcionalIds);
+    const opcionalPorId = new Map(opcionaisBanco.map((o) => [o.id, o]));
+
+    const categoriaIds = [
+      ...new Set(
+        produtos
+          .map((p) => p.categoria_id)
+          .filter((c): c is string => c != null),
+      ),
+    ];
+    const allowlistPorCategoria = await buscarOpcionaisPorCategoria(svc, categoriaIds);
+
+    type OpcionalSnapshot = {
+      opcional_id: string;
+      nome_snapshot: string;
+      preco_snapshot: number;
+      quantidade: number;
+    };
     const itensSnapshot: {
       produto_id: string;
       nome: string;
       preco: number;
       quantidade: number;
+      opcionais?: OpcionalSnapshot[];
     }[] = [];
+    const itensCalculo: {
+      preco: number;
+      quantidade: number;
+      opcionais?: { preco: number; quantidade: number }[];
+    }[] = [];
+
     for (const item of dados.itens) {
       const produto = porId.get(item.produto_id);
       if (
@@ -94,17 +131,53 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       ) {
         return { erro: ERRO_GENERICO };
       }
+
+      // Conjunto de categorias de opcional permitidas para a categoria do produto.
+      const permitidas = new Set(
+        (produto.categoria_id
+          ? allowlistPorCategoria[produto.categoria_id] ?? []
+          : []
+        ).map((g) => g.categoriaOpcionalId),
+      );
+
+      const opcionaisSnapshot: OpcionalSnapshot[] = [];
+      const opcionaisCalculo: { preco: number; quantidade: number }[] = [];
+      for (const escolhido of item.opcionais ?? []) {
+        const opcional = opcionalPorId.get(escolhido.opcional_id);
+        // RN-O5: inexistente/inativo · RN-O3: cross-loja · RN-O4: categoria
+        // não associada → recusa o PEDIDO INTEIRO antes de chamar a RPC.
+        if (
+          opcional == null ||
+          !opcional.ativo ||
+          opcional.loja_id !== dados.loja_id ||
+          !permitidas.has(opcional.categoria_opcional_id)
+        ) {
+          return { erro: ERRO_GENERICO };
+        }
+        opcionaisSnapshot.push({
+          opcional_id: opcional.id,
+          nome_snapshot: opcional.nome,
+          preco_snapshot: opcional.preco,
+          quantidade: escolhido.quantidade,
+        });
+        opcionaisCalculo.push({ preco: opcional.preco, quantidade: escolhido.quantidade });
+      }
+
       itensSnapshot.push({
         produto_id: produto.id,
         nome: produto.nome,
         preco: produto.preco,
         quantidade: item.quantidade,
+        ...(opcionaisSnapshot.length > 0 ? { opcionais: opcionaisSnapshot } : {}),
+      });
+      itensCalculo.push({
+        preco: produto.preco,
+        quantidade: item.quantidade,
+        ...(opcionaisCalculo.length > 0 ? { opcionais: opcionaisCalculo } : {}),
       });
     }
 
-    const subtotal = calcularSubtotal(
-      itensSnapshot.map(({ preco, quantidade }) => ({ preco, quantidade })),
-    );
+    const subtotal = calcularSubtotal(itensCalculo);
 
     // (5) Frete autoritativo (RN-C2): retirada → frete 0, servidor ignora endereço.
     //     Entrega → calcularFrete com zonas do banco. Fora de área → recusa.

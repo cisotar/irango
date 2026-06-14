@@ -123,6 +123,32 @@ export async function buscarProdutosPorIds(
   return data ?? [];
 }
 
+/** Subconjunto de `opcionais` que entra no recálculo autoritativo do pedido. */
+export type OpcionalParaPedido = Pick<
+  Tables<"opcionais">,
+  "id" | "loja_id" | "categoria_opcional_id" | "nome" | "preco" | "ativo"
+>;
+
+/**
+ * Insumo do recálculo autoritativo de opcionais (issue 085, seguranca.md §10):
+ * retorna preco/loja_id/categoria_opcional_id/nome/ativo REAIS dos opcionais
+ * pelos ids. NÃO filtra por `ativo` (o recálculo precisa enxergar o inativo para
+ * recusá-lo — RN-O5). Exige client com visibilidade adequada (service_role no
+ * fluxo de pedido). Lista vazia → `[]` sem consultar o banco. Propaga `error` (§14).
+ */
+export async function buscarOpcionaisPorIds(
+  client: Client,
+  ids: string[],
+): Promise<OpcionalParaPedido[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await client
+    .from("opcionais")
+    .select("id, loja_id, categoria_opcional_id, nome, preco, ativo")
+    .in("id", ids);
+  if (error) throw error;
+  return data ?? [];
+}
+
 /** Linha de `categoria_produto_opcionais` com a categoria de opcional e seus itens aninhados. */
 type LinhaCategoriaOpcional = {
   categoria_id: string;

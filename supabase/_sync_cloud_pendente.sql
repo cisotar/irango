@@ -650,3 +650,105 @@ create policy "ipo_leitura_lojista"
       where ip.id = itens_pedido_opcionais.item_pedido_id and l.dono_id = auth.uid()
     )
   );
+
+-- ╔═══ 20260614008000_rpc_criar_pedido_opcionais.sql
+-- Emenda criar_pedido: persiste opcionais por item em itens_pedido_opcionais
+-- (snapshot imutável, RN-O6) na MESMA transação. Assinatura inalterada
+-- (opcionais viajam dentro do jsonb p_itens) → CREATE OR REPLACE.
+create or replace function public.criar_pedido(
+  p_loja_id          uuid,
+  p_nome_cliente     text,
+  p_telefone_cliente text,
+  p_endereco_entrega jsonb,
+  p_forma_pagamento  text,
+  p_observacoes      text,
+  p_subtotal         numeric,
+  p_taxa_entrega     numeric,
+  p_desconto         numeric,
+  p_total            numeric,
+  p_cupom_id         uuid,
+  p_cupom_codigo     text,
+  p_itens            jsonb,
+  p_tipo_entrega     text,
+  p_troco_para       numeric
+)
+  returns table (pedido_id uuid, token_acesso uuid)
+  language plpgsql
+  security invoker
+  set search_path = public
+as $$
+declare
+  v_desconto     numeric := p_desconto;
+  v_total        numeric := p_total;
+  v_cupom_codigo text    := p_cupom_codigo;
+  v_pedido_id    uuid;
+  v_token        uuid;
+  v_item         jsonb;
+  v_item_id      uuid;
+begin
+  if not public.loja_esta_ativa(p_loja_id) then
+    raise exception 'loja_inativa';
+  end if;
+
+  if p_cupom_id is not null then
+    update public.cupons
+       set usos_contagem = usos_contagem + 1
+     where id = p_cupom_id
+       and (usos_maximos is null or usos_contagem < usos_maximos);
+    if not found then
+      v_desconto := 0;
+      v_cupom_codigo := null;
+      v_total := p_subtotal + p_taxa_entrega;
+    end if;
+  end if;
+
+  insert into public.pedidos (
+    loja_id, nome_cliente, telefone_cliente, endereco_entrega,
+    subtotal, desconto, taxa_entrega, total, forma_pagamento,
+    cupom_codigo, observacoes, status, tipo_entrega, troco_para
+  )
+  values (
+    p_loja_id, p_nome_cliente, p_telefone_cliente, p_endereco_entrega,
+    p_subtotal, v_desconto, p_taxa_entrega, v_total, p_forma_pagamento,
+    v_cupom_codigo, p_observacoes, 'pendente', p_tipo_entrega, p_troco_para
+  )
+  returning id, public.pedidos.token_acesso into v_pedido_id, v_token;
+
+  for v_item in select * from jsonb_array_elements(p_itens)
+  loop
+    insert into public.itens_pedido (pedido_id, produto_id, nome, preco, quantidade)
+    values (
+      v_pedido_id,
+      (v_item->>'produto_id')::uuid,
+      v_item->>'nome',
+      (v_item->>'preco')::numeric,
+      (v_item->>'quantidade')::int
+    )
+    returning id into v_item_id;
+
+    if jsonb_typeof(v_item->'opcionais') = 'array' then
+      insert into public.itens_pedido_opcionais (
+        item_pedido_id, opcional_id, nome_snapshot, preco_snapshot, quantidade
+      )
+      select v_item_id,
+             (o->>'opcional_id')::uuid,
+             o->>'nome_snapshot',
+             (o->>'preco_snapshot')::numeric,
+             (o->>'quantidade')::int
+      from jsonb_array_elements(v_item->'opcionais') as o;
+    end if;
+  end loop;
+
+  return query select v_pedido_id, v_token;
+end;
+$$;
+
+revoke all on function public.criar_pedido(
+  uuid, text, text, jsonb, text, text, numeric, numeric, numeric, numeric, uuid, text, jsonb, text, numeric
+) from public;
+revoke all on function public.criar_pedido(
+  uuid, text, text, jsonb, text, text, numeric, numeric, numeric, numeric, uuid, text, jsonb, text, numeric
+) from anon, authenticated;
+grant execute on function public.criar_pedido(
+  uuid, text, text, jsonb, text, text, numeric, numeric, numeric, numeric, uuid, text, jsonb, text, numeric
+) to service_role;
