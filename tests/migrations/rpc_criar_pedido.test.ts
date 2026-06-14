@@ -109,7 +109,13 @@ async function chamarCriarPedido(
     // [071] tipo_entrega + troco_para persistidos pela RPC.
     tipo_entrega?: string;
     troco_para?: number | null;
-    itens: { produto_id: string; nome: string; preco: number; quantidade: number }[];
+    itens: {
+      produto_id: string;
+      nome: string;
+      preco: number;
+      quantidade: number;
+      opcionais?: { opcional_id: string; nome_snapshot: string; preco_snapshot: number; quantidade: number }[];
+    }[];
   },
 ): Promise<{ pedido_id: string; token_acesso: string }> {
   return t.asService(async (db) => {
@@ -346,5 +352,440 @@ describe("014 RPC public.criar_pedido — atomicidade + trava de cupom (camada 1
 
     const depois = await contar(t, `select 1 from public.pedidos where loja_id = $1`, [c.lojaInativa]);
     expect(depois).toBe(antes); // nada inserido (transação abortou)
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 085/086 — Integração DB-real: RPC criar_pedido com OPCIONAIS
+// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * Prove que a RPC persiste snapshots de opcionais na MESMA transação e que
+ * atomicidade, ON DELETE SET NULL e CHECK constraints funcionam no banco real.
+ *
+ * A action (pedido.test.ts) já testa mock-level: validações RN-O3/O4/O5.
+ * Aqui focamos no que é RESPONSABILIDADE DA RPC:
+ *  - persistência do snapshot (nome_snapshot/preco_snapshot/quantidade)
+ *  - recálculo do total com opcionais (a action envia os valores já calculados;
+ *    provamos que a RPC persiste o que recebe e os opcionais entram corretos)
+ *  - atomicidade total (pedido + itens + opcionais — ou nada)
+ *  - ON DELETE SET NULL em opcional_id após deletar o opcional
+ *  - regressão: pedido sem opcionais segue criando normalmente
+ *  - CHECK constraints reforçadas no banco (preco_snapshot >= 0, quantidade > 0)
+ */
+
+type CenarioOpcionais = {
+  lojaAtiva: string;
+  produto1: string; // preco 25.00
+  opcAtivoId: string; // opcional ativo, preco 8.00
+};
+
+async function semearOpcionais(t: TestDb): Promise<CenarioOpcionais> {
+  const DONO_OPC = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  await t.db.query(
+    `insert into auth.users (id, email) values ($1, 'dono-opc@teste.local') on conflict (id) do nothing`,
+    [DONO_OPC],
+  );
+
+  return t.asService(async (db) => {
+    const ins = async (sql: string, params: unknown[]) => {
+      const r = await db.query<{ id: string }>(sql, params);
+      return r.rows[0].id;
+    };
+
+    const lojaAtiva = await ins(
+      `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-opc','Loja Opcionais',true) returning id`,
+      [DONO_OPC],
+    );
+    const produto1 = await ins(
+      `insert into public.produtos (loja_id, nome, preco, disponivel) values ($1,'Pão Artesanal',25.00,true) returning id`,
+      [lojaAtiva],
+    );
+    const opcCat = await ins(
+      `insert into public.opcionais_categorias (loja_id, nome) values ($1,'Laticínios') returning id`,
+      [lojaAtiva],
+    );
+    const opcAtivoId = await ins(
+      `insert into public.opcionais (loja_id, categoria_opcional_id, nome, preco, ativo)
+         values ($1,$2,'Brie extra',8.00,true) returning id`,
+      [lojaAtiva, opcCat],
+    );
+
+    return { lojaAtiva, produto1, opcAtivoId };
+  });
+}
+
+describe("085/086 RPC criar_pedido — integração com opcionais (pglite)", () => {
+  let t: TestDb;
+  let co: CenarioOpcionais;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    co = await semearOpcionais(t);
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  // ──────────────────────── [O1] snapshot persistido com valores exatos
+  it("[O1] item com 2 opcionais → itens_pedido_opcionais tem 2 linhas com snapshot correto", async () => {
+    // preco do produto: 25.00 | opcionais: Brie extra 8.00 × 2 e Geleia 6.00 × 1
+    // Criamos um segundo opcional inline via service antes do teste
+    const opcId2 = await t.asService(async (db) => {
+      // Pega a categoria de opcional já criada para reusar
+      const catR = await db.query<{ id: string }>(
+        `select id from public.opcionais_categorias where loja_id = $1 limit 1`,
+        [co.lojaAtiva],
+      );
+      const r = await db.query<{ id: string }>(
+        `insert into public.opcionais (loja_id, categoria_opcional_id, nome, preco, ativo)
+           values ($1,$2,'Geleia artesanal',6.00,true) returning id`,
+        [co.lojaAtiva, catR.rows[0].id],
+      );
+      return r.rows[0].id;
+    });
+
+    // subtotal = (25 + 8×2 + 6×1) × 1 = 47
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 47.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 47.0,
+      itens: [
+        {
+          produto_id: co.produto1,
+          nome: "Pão Artesanal",
+          preco: 25.0,
+          quantidade: 1,
+          opcionais: [
+            { opcional_id: co.opcAtivoId, nome_snapshot: "Brie extra", preco_snapshot: 8.0, quantidade: 2 },
+            { opcional_id: opcId2, nome_snapshot: "Geleia artesanal", preco_snapshot: 6.0, quantidade: 1 },
+          ],
+        },
+      ],
+    });
+
+    expect(r.pedido_id).toBeTruthy();
+
+    // localiza o item gerado
+    const itemRow = await t.asService((db) =>
+      db.query<{ id: string }>(
+        `select id from public.itens_pedido where pedido_id = $1`,
+        [r.pedido_id],
+      ),
+    );
+    const itemPedidoId = itemRow.rows[0].id;
+
+    // verifica as 2 linhas de opcionais
+    const opRows = await t.asService((db) =>
+      db.query<{ nome_snapshot: string; preco_snapshot: string; quantidade: number; item_pedido_id: string }>(
+        `select nome_snapshot, preco_snapshot, quantidade, item_pedido_id
+           from public.itens_pedido_opcionais
+          where item_pedido_id = $1
+          order by nome_snapshot`,
+        [itemPedidoId],
+      ),
+    );
+
+    expect(opRows.rows.length).toBe(2);
+
+    // linha "Brie extra"
+    const brie = opRows.rows.find((r) => r.nome_snapshot === "Brie extra");
+    expect(brie).toBeDefined();
+    expect(Number(brie!.preco_snapshot)).toBe(8.0);
+    expect(brie!.quantidade).toBe(2);
+    expect(brie!.item_pedido_id).toBe(itemPedidoId);
+
+    // linha "Geleia artesanal"
+    const geleia = opRows.rows.find((r) => r.nome_snapshot === "Geleia artesanal");
+    expect(geleia).toBeDefined();
+    expect(Number(geleia!.preco_snapshot)).toBe(6.0);
+    expect(geleia!.quantidade).toBe(1);
+    expect(geleia!.item_pedido_id).toBe(itemPedidoId);
+  });
+
+  // ──────────────────────── [O2] total recalculado com opcionais bate
+  it("[O2] total persistido pelo servidor bate com (produto + Σ op×qtd) × qtd_item + frete − desconto", async () => {
+    // 1 item, quantidade 2: produto 25 + opcional Brie 8×3 = 49; × 2 = 98; + frete 7 − desconto 0 = 105
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 98.0, // (25 + 8×3) × 2 = 49 × 2
+      taxa_entrega: 7.0,
+      desconto: 0,
+      total: 105.0,
+      itens: [
+        {
+          produto_id: co.produto1,
+          nome: "Pão Artesanal",
+          preco: 25.0,
+          quantidade: 2,
+          opcionais: [
+            { opcional_id: co.opcAtivoId, nome_snapshot: "Brie extra", preco_snapshot: 8.0, quantidade: 3 },
+          ],
+        },
+      ],
+    });
+
+    const ped = await t.asService((db) =>
+      db.query<{ subtotal: string; taxa_entrega: string; total: string }>(
+        `select subtotal, taxa_entrega, total from public.pedidos where id = $1`,
+        [r.pedido_id],
+      ),
+    );
+
+    expect(Number(ped.rows[0].subtotal)).toBe(98.0);
+    expect(Number(ped.rows[0].taxa_entrega)).toBe(7.0);
+    expect(Number(ped.rows[0].total)).toBe(105.0);
+
+    // os opcionais do item foram persistidos com quantidade=3
+    const opRows = await t.asService((db) =>
+      db.query<{ quantidade: number }>(
+        `select ipo.quantidade
+           from public.itens_pedido_opcionais ipo
+           join public.itens_pedido ip on ip.id = ipo.item_pedido_id
+          where ip.pedido_id = $1`,
+        [r.pedido_id],
+      ),
+    );
+    expect(opRows.rows.length).toBe(1);
+    expect(opRows.rows[0].quantidade).toBe(3);
+  });
+
+  // ──────────────────────── [O3] atomicidade (RN-O6): falha no INSERT de opcional → rollback total
+  it("[O3] falha no opcional (preco_snapshot = -1) → rollback total: pedidos/itens/opcionais intocados", async () => {
+    const antesPedidos = await contar(t, `select 1 from public.pedidos where loja_id = $1`, [co.lojaAtiva]);
+    const antesItens = await contar(t, `select 1 from public.itens_pedido ip join public.pedidos p on p.id = ip.pedido_id where p.loja_id = $1`, [co.lojaAtiva]);
+    const antesOpcionais = await contar(t, `select 1 from public.itens_pedido_opcionais ipo join public.itens_pedido ip on ip.id = ipo.item_pedido_id join public.pedidos p on p.id = ip.pedido_id where p.loja_id = $1`, [co.lojaAtiva]);
+
+    // preco_snapshot = -1 viola CHECK → a RPC deve lançar e abortar toda a transação
+    let lançou = false;
+    try {
+      await chamarCriarPedido(t, {
+        loja_id: co.lojaAtiva,
+        subtotal: 25.0,
+        taxa_entrega: 0,
+        desconto: 0,
+        total: 25.0,
+        itens: [
+          {
+            produto_id: co.produto1,
+            nome: "Pão Artesanal",
+            preco: 25.0,
+            quantidade: 1,
+            opcionais: [
+              { opcional_id: co.opcAtivoId, nome_snapshot: "Brie extra", preco_snapshot: -1, quantidade: 1 },
+            ],
+          },
+        ],
+      });
+    } catch {
+      lançou = true;
+    }
+
+    expect(lançou).toBe(true);
+
+    // contagens inalteradas — rollback total
+    const depoisPedidos = await contar(t, `select 1 from public.pedidos where loja_id = $1`, [co.lojaAtiva]);
+    const depoisItens = await contar(t, `select 1 from public.itens_pedido ip join public.pedidos p on p.id = ip.pedido_id where p.loja_id = $1`, [co.lojaAtiva]);
+    const depoisOpcionais = await contar(t, `select 1 from public.itens_pedido_opcionais ipo join public.itens_pedido ip on ip.id = ipo.item_pedido_id join public.pedidos p on p.id = ip.pedido_id where p.loja_id = $1`, [co.lojaAtiva]);
+
+    expect(depoisPedidos).toBe(antesPedidos);
+    expect(depoisItens).toBe(antesItens);
+    expect(depoisOpcionais).toBe(antesOpcionais);
+  });
+
+  // ──────────────────────── [O4] ON DELETE SET NULL em opcional_id
+  it("[O4] deletar opcional após pedido → opcional_id vira NULL mas nome/preco_snapshot imutáveis", async () => {
+    // cria pedido com o opcional ativo
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 33.0, // 25 + 8×1
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 33.0,
+      itens: [
+        {
+          produto_id: co.produto1,
+          nome: "Pão Artesanal",
+          preco: 25.0,
+          quantidade: 1,
+          opcionais: [
+            { opcional_id: co.opcAtivoId, nome_snapshot: "Brie extra", preco_snapshot: 8.0, quantidade: 1 },
+          ],
+        },
+      ],
+    });
+
+    // localiza a linha em itens_pedido_opcionais
+    const itemId = await t.asService(async (db) => {
+      const row = await db.query<{ id: string }>(
+        `select id from public.itens_pedido where pedido_id = $1`,
+        [r.pedido_id],
+      );
+      return row.rows[0].id;
+    });
+
+    const ipoAntes = await t.asService((db) =>
+      db.query<{ opcional_id: string | null; nome_snapshot: string; preco_snapshot: string }>(
+        `select opcional_id, nome_snapshot, preco_snapshot
+           from public.itens_pedido_opcionais
+          where item_pedido_id = $1`,
+        [itemId],
+      ),
+    );
+    expect(ipoAntes.rows[0].opcional_id).toBe(co.opcAtivoId);
+    expect(ipoAntes.rows[0].nome_snapshot).toBe("Brie extra");
+    expect(Number(ipoAntes.rows[0].preco_snapshot)).toBe(8.0);
+
+    // deleta o opcional (como service)
+    await t.asService((db) =>
+      db.query(`delete from public.opcionais where id = $1`, [co.opcAtivoId]),
+    );
+
+    // a linha do snapshot persiste mas opcional_id = NULL (ON DELETE SET NULL)
+    const ipoDepois = await t.asService((db) =>
+      db.query<{ opcional_id: string | null; nome_snapshot: string; preco_snapshot: string }>(
+        `select opcional_id, nome_snapshot, preco_snapshot
+           from public.itens_pedido_opcionais
+          where item_pedido_id = $1`,
+        [itemId],
+      ),
+    );
+    expect(ipoDepois.rows.length).toBe(1); // linha não foi removida com cascata
+    expect(ipoDepois.rows[0].opcional_id).toBeNull(); // ON DELETE SET NULL aplicou
+    expect(ipoDepois.rows[0].nome_snapshot).toBe("Brie extra"); // snapshot imutável
+    expect(Number(ipoDepois.rows[0].preco_snapshot)).toBe(8.0); // snapshot imutável
+  });
+
+  // ──────────────────────── [O5] regressão: pedido sem opcionais segue normal
+  it("[O5] pedido sem opcionais: cria pedido + itens sem linhas em itens_pedido_opcionais (regressão)", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      itens: [{ produto_id: co.produto1, nome: "Pão Artesanal", preco: 25.0, quantidade: 1 }],
+    });
+
+    expect(r.pedido_id).toBeTruthy();
+    expect(r.token_acesso).toBeTruthy();
+
+    const itens = await contar(t, `select 1 from public.itens_pedido where pedido_id = $1`, [r.pedido_id]);
+    expect(itens).toBe(1);
+
+    const opcionais = await contar(
+      t,
+      `select 1 from public.itens_pedido_opcionais ipo
+         join public.itens_pedido ip on ip.id = ipo.item_pedido_id
+        where ip.pedido_id = $1`,
+      [r.pedido_id],
+    );
+    expect(opcionais).toBe(0); // nenhum opcional → 0 linhas
+  });
+
+  // ──────────────────────── [O6] CHECK constraints diretas no banco
+  it("[O6a] INSERT direto com preco_snapshot = -1 viola CHECK (rejeitado; nada persiste)", async () => {
+    // Cria um item_pedido válido para usar como FK
+    const itemId = await t.asService(async (db) => {
+      const ped = await db.query<{ id: string }>(
+        `insert into public.pedidos (loja_id, nome_cliente, subtotal, total)
+           values ($1,'Cli CHECK',25,25) returning id`,
+        [co.lojaAtiva],
+      );
+      const item = await db.query<{ id: string }>(
+        `insert into public.itens_pedido (pedido_id, nome, preco, quantidade)
+           values ($1,'Pão',25,1) returning id`,
+        [ped.rows[0].id],
+      );
+      return item.rows[0].id;
+    });
+
+    // Precisa de um opcional válido — cria novo pois o anterior foi deletado em [O4]
+    const opcNovo = await t.asService(async (db) => {
+      const cat = await db.query<{ id: string }>(
+        `select id from public.opcionais_categorias where loja_id = $1 limit 1`,
+        [co.lojaAtiva],
+      );
+      const r = await db.query<{ id: string }>(
+        `insert into public.opcionais (loja_id, categoria_opcional_id, nome, preco, ativo)
+           values ($1,$2,'Queijo fresco',5.00,true) returning id`,
+        [co.lojaAtiva, cat.rows[0].id],
+      );
+      return r.rows[0].id;
+    });
+
+    let rejeitou = false;
+    try {
+      await t.asService((db) =>
+        db.query(
+          `insert into public.itens_pedido_opcionais
+             (item_pedido_id, opcional_id, nome_snapshot, preco_snapshot, quantidade)
+             values ($1,$2,'Queijo fresco',-1,1)`,
+          [itemId, opcNovo],
+        ),
+      );
+    } catch {
+      rejeitou = true;
+    }
+    expect(rejeitou).toBe(true);
+
+    const n = await contar(
+      t,
+      `select 1 from public.itens_pedido_opcionais where item_pedido_id = $1`,
+      [itemId],
+    );
+    expect(n).toBe(0);
+  });
+
+  it("[O6b] INSERT direto com quantidade = 0 viola CHECK (rejeitado; nada persiste)", async () => {
+    const itemId = await t.asService(async (db) => {
+      const ped = await db.query<{ id: string }>(
+        `insert into public.pedidos (loja_id, nome_cliente, subtotal, total)
+           values ($1,'Cli CHECK2',25,25) returning id`,
+        [co.lojaAtiva],
+      );
+      const item = await db.query<{ id: string }>(
+        `insert into public.itens_pedido (pedido_id, nome, preco, quantidade)
+           values ($1,'Pão',25,1) returning id`,
+        [ped.rows[0].id],
+      );
+      return item.rows[0].id;
+    });
+
+    const opcNovo2 = await t.asService(async (db) => {
+      const cat = await db.query<{ id: string }>(
+        `select id from public.opcionais_categorias where loja_id = $1 limit 1`,
+        [co.lojaAtiva],
+      );
+      const r = await db.query<{ id: string }>(
+        `insert into public.opcionais (loja_id, categoria_opcional_id, nome, preco, ativo)
+           values ($1,$2,'Manteiga',3.00,true) returning id`,
+        [co.lojaAtiva, cat.rows[0].id],
+      );
+      return r.rows[0].id;
+    });
+
+    let rejeitou = false;
+    try {
+      await t.asService((db) =>
+        db.query(
+          `insert into public.itens_pedido_opcionais
+             (item_pedido_id, opcional_id, nome_snapshot, preco_snapshot, quantidade)
+             values ($1,$2,'Manteiga',3.00,0)`,
+          [itemId, opcNovo2],
+        ),
+      );
+    } catch {
+      rejeitou = true;
+    }
+    expect(rejeitou).toBe(true);
+
+    const n = await contar(
+      t,
+      `select 1 from public.itens_pedido_opcionais where item_pedido_id = $1`,
+      [itemId],
+    );
+    expect(n).toBe(0);
   });
 });
