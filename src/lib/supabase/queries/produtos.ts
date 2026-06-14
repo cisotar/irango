@@ -13,6 +13,23 @@ type Client = SupabaseClient<Database>;
 
 export type Produto = Tables<"produtos">;
 
+/** Item de opcional para exibição na vitrine (sem cálculo — só dados). */
+export type OpcionalDisponivel = Pick<Tables<"opcionais">, "id" | "nome" | "preco" | "ordem">;
+
+/**
+ * Grupo de opcionais de um produto: uma categoria de opcional + seus itens ativos,
+ * derivada da `categoria_id` do produto via `categoria_produto_opcionais`.
+ */
+export type GrupoOpcional = {
+  categoriaOpcionalId: string;
+  categoriaOpcionalNome: string;
+  ordem: number;
+  opcionais: OpcionalDisponivel[];
+};
+
+/** Mapa categoria_id (de produto) → grupos de opcional disponíveis. */
+export type OpcionaisPorCategoria = Record<string, GrupoOpcional[]>;
+
 /** Grupo do catálogo público: uma categoria (ou "Outros") + seus produtos. */
 export type GrupoCatalogo = {
   /** id do grupo: id da categoria, ou null para "Outros". */
@@ -104,4 +121,68 @@ export async function buscarProdutosPorIds(
   const { data, error } = await client.from("produtos").select("*").in("id", ids);
   if (error) throw error;
   return data ?? [];
+}
+
+/** Linha de `categoria_produto_opcionais` com a categoria de opcional e seus itens aninhados. */
+type LinhaCategoriaOpcional = {
+  categoria_id: string;
+  opcionais_categorias: {
+    id: string;
+    nome: string;
+    ordem: number;
+    opcionais: OpcionalDisponivel[];
+  } | null;
+};
+
+/**
+ * Opcionais disponíveis por `categoria_id` de produto (vitrine SSR, issue 081).
+ * JOIN `categoria_produto_opcionais → opcionais_categorias → opcionais` filtrado
+ * pelas categorias de produto recebidas. A SEGURANÇA é 100% da RLS pública (080):
+ * sob role anon, `opcionais` só vem com `ativo = true` e os três níveis só de loja
+ * ativa — esta função NÃO reimplementa filtro de loja/ativo, só JOIN + agrupamento.
+ * Nenhum preço é calculado aqui (preco é dado de exibição/preview).
+ *
+ * Retorna mapa `categoria_id → grupos`, grupos ordenados por `opcionais_categorias.ordem`
+ * e itens por `opcionais.ordem`. Categoria sem associação (ou cujo grupo ficou sem
+ * opcionais visíveis) simplesmente não aparece no mapa. Lista vazia → `{}` sem consulta.
+ * Propaga `error` (§14).
+ */
+export async function buscarOpcionaisPorCategoria(
+  client: Client,
+  categoriaIds: string[],
+): Promise<OpcionaisPorCategoria> {
+  if (categoriaIds.length === 0) return {};
+
+  const { data, error } = await client
+    .from("categoria_produto_opcionais")
+    .select(
+      "categoria_id, opcionais_categorias(id, nome, ordem, opcionais(id, nome, preco, ordem))",
+    )
+    .in("categoria_id", categoriaIds);
+  if (error) throw error;
+
+  const linhas = (data ?? []) as unknown as LinhaCategoriaOpcional[];
+  const mapa: OpcionaisPorCategoria = {};
+
+  for (const linha of linhas) {
+    const cat = linha.opcionais_categorias;
+    if (!cat) continue;
+
+    const opcionais = [...(cat.opcionais ?? [])].sort((a, b) => a.ordem - b.ordem);
+    if (opcionais.length === 0) continue; // grupo sem item visível (RLS escondeu todos)
+
+    const grupos = (mapa[linha.categoria_id] ??= []);
+    grupos.push({
+      categoriaOpcionalId: cat.id,
+      categoriaOpcionalNome: cat.nome,
+      ordem: cat.ordem,
+      opcionais,
+    });
+  }
+
+  for (const grupos of Object.values(mapa)) {
+    grupos.sort((a, b) => a.ordem - b.ordem);
+  }
+
+  return mapa;
 }

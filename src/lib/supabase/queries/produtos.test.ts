@@ -5,6 +5,7 @@ import {
   buscarCatalogoPublico,
   buscarProdutosDoLojista,
   buscarProdutosPorIds,
+  buscarOpcionaisPorCategoria,
 } from "./produtos";
 
 /**
@@ -197,5 +198,104 @@ describe("024 buscarProdutosPorIds — contrato TS (camada 2, mock)", () => {
   it("PROPAGA o error do PostgREST (não mascara como [])", async () => {
     const { client } = makeClient({ data: null, error: { message: "boom" } });
     await expect(buscarProdutosPorIds(client, ["p1"])).rejects.toBeTruthy();
+  });
+});
+
+// ───────────────────────── buscarOpcionaisPorCategoria (issue 081 — vitrine SSR)
+/**
+ * Contrato que a GREEN precisa satisfazer (issue 081):
+ *  - fonte: TABELA `categoria_produto_opcionais`, filtrada por `categoria_id IN (...)`,
+ *    com `opcionais_categorias` e seus `opcionais` ANINHADOS no select (join PostgREST);
+ *  - a SEGURANÇA é 100% da RLS pública da 080 (loja ativa + ativo=true) — a função
+ *    NÃO reimplementa filtro de loja/ativo, só JOIN + agrupamento;
+ *  - retorna, por `categoria_id` do produto, grupos de opcional ordenados por `ordem`
+ *    com itens ordenados por `ordem`;
+ *  - categoria sem associação (ou lista vazia de ids) → mapa sem aquela chave / vazio;
+ *  - PROPAGA error (§14). Nenhum preço calculado — só dados de exibição.
+ */
+describe("081 buscarOpcionaisPorCategoria — contrato TS (camada 2, mock)", () => {
+  // Linhas como o PostgREST devolveria: cada associação traz a categoria de opcional
+  // aninhada e, dentro dela, os opcionais (já filtrados pela RLS pública).
+  function linhasAssoc() {
+    return [
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: {
+          id: "oc-laticinios",
+          nome: "Laticínios",
+          ordem: 1,
+          opcionais: [
+            { id: "o-catupiry", nome: "Catupiry", preco: 5, ordem: 1 },
+            { id: "o-brie", nome: "Brie extra", preco: 8, ordem: 0 },
+          ],
+        },
+      },
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: {
+          id: "oc-doces",
+          nome: "Doces",
+          ordem: 0,
+          opcionais: [{ id: "o-doce", nome: "Doce de leite", preco: 4, ordem: 0 }],
+        },
+      },
+    ];
+  }
+
+  it("consulta categoria_produto_opcionais filtrando categoria_id IN (...) com opcionais aninhados", async () => {
+    const { client, calls } = makeClient({ data: linhasAssoc(), error: null });
+
+    await buscarOpcionaisPorCategoria(client, ["cat-paes"]);
+
+    expect(calls.from).toHaveBeenCalledWith("categoria_produto_opcionais");
+    expect(calls.in).toHaveBeenCalledWith("categoria_id", ["cat-paes"]);
+    const selectArg = String(calls.select.mock.calls[0]?.[0] ?? "");
+    expect(selectArg).toContain("opcionais_categorias");
+    expect(selectArg).toContain("opcionais");
+  });
+
+  it("agrupa por categoria de opcional e ordena grupos por `ordem` e itens por `ordem`", async () => {
+    const { client } = makeClient({ data: linhasAssoc(), error: null });
+
+    const mapa = await buscarOpcionaisPorCategoria(client, ["cat-paes"]);
+    const grupos = mapa["cat-paes"];
+
+    // Grupos ordenados por ordem: Doces (0) antes de Laticínios (1).
+    expect(grupos.map((g) => g.categoriaOpcionalNome)).toEqual(["Doces", "Laticínios"]);
+    // Itens de Laticínios ordenados por ordem: Brie (0) antes de Catupiry (1).
+    const latic = grupos.find((g) => g.categoriaOpcionalId === "oc-laticinios")!;
+    expect(latic.opcionais.map((o) => o.id)).toEqual(["o-brie", "o-catupiry"]);
+    // Estrutura de item: id/nome/preco/ordem (dados de exibição, nenhum cálculo).
+    expect(latic.opcionais[0]).toEqual({ id: "o-brie", nome: "Brie extra", preco: 8, ordem: 0 });
+  });
+
+  it("categoria SEM associação não aparece no mapa (ou mapa vazio)", async () => {
+    const { client } = makeClient({ data: [], error: null });
+    const mapa = await buscarOpcionaisPorCategoria(client, ["cat-bebidas"]);
+    expect(mapa["cat-bebidas"] ?? []).toEqual([]);
+  });
+
+  it("lista de categorias vazia → mapa vazio, sem consultar o banco", async () => {
+    const { client, calls } = makeClient({ data: [], error: null });
+    const mapa = await buscarOpcionaisPorCategoria(client, []);
+    expect(mapa).toEqual({});
+    expect(calls.from).not.toHaveBeenCalled();
+  });
+
+  it("ignora grupo sem opcionais visíveis (RLS escondeu todos / categoria vazia)", async () => {
+    const linhas = [
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: { id: "oc-vazia", nome: "Vazia", ordem: 0, opcionais: [] },
+      },
+    ];
+    const { client } = makeClient({ data: linhas, error: null });
+    const mapa = await buscarOpcionaisPorCategoria(client, ["cat-paes"]);
+    expect(mapa["cat-paes"] ?? []).toEqual([]);
+  });
+
+  it("PROPAGA o error do PostgREST (não mascara como mapa vazio)", async () => {
+    const { client } = makeClient({ data: null, error: { message: "rls denied" } });
+    await expect(buscarOpcionaisPorCategoria(client, ["cat-paes"])).rejects.toBeTruthy();
   });
 });
