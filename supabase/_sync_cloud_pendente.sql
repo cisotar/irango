@@ -227,3 +227,51 @@ as
 
 grant select on public.vitrine_lojas to anon, authenticated;
 
+
+-- ╔═══ 20260614005500_pedidos_tipo_entrega_troco.sql
+-- Issue 067 — adicionar `tipo_entrega` e `troco_para` à tabela `pedidos`.
+-- `tipo_entrega`: NOT NULL DEFAULT 'entrega' + CHECK (retirada|entrega).
+-- `troco_para`: numeric(10,2) nullable (informativo, RN-C3).
+-- RLS: policies existentes cobrem as novas colunas — nenhuma policy nova.
+
+ALTER TABLE public.pedidos
+  ADD COLUMN tipo_entrega text NOT NULL DEFAULT 'entrega'
+    CHECK (tipo_entrega IN ('retirada', 'entrega')),
+  ADD COLUMN troco_para   numeric(10,2);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Origem: supabase/migrations/20260614006000_lojas_taxa_fora_zona_view.sql
+-- Issue 068 — lojas.taxa_entrega_fora_zona + view vitrine_lojas
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE public.lojas
+  ADD COLUMN taxa_entrega_fora_zona numeric(10,2);
+
+DROP VIEW IF EXISTS public.vitrine_lojas;
+
+CREATE VIEW public.vitrine_lojas
+  WITH (security_invoker = false)
+AS
+  SELECT
+    id,
+    slug,
+    nome,
+    telefone,
+    whatsapp,
+    ativo,
+    endereco_rua,
+    endereco_numero,
+    endereco_bairro,
+    endereco_cidade,
+    endereco_estado,
+    endereco_cep,
+    tema,
+    horarios,
+    timezone,
+    assinatura_status,
+    assinatura_fim_periodo,
+    taxa_entrega_fora_zona
+  FROM public.lojas
+  WHERE ativo = true;
+
+GRANT SELECT ON public.vitrine_lojas TO anon, authenticated;
+

@@ -135,6 +135,8 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
     // issue 058 — estado de assinatura exposto para checagem de disponibilidade.
     expect(chaves).toContain("assinatura_status");
     expect(chaves).toContain("assinatura_fim_periodo");
+    // issue 068 — frete fora-de-zona exposto para preview no checkout.
+    expect(chaves).toContain("taxa_entrega_fora_zona");
   });
 
   it("[3] buscarLojaPorSlug: anon NÃO vê loja INATIVA pela view → 0 linhas (null)", async () => {

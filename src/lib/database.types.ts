@@ -238,6 +238,7 @@ export type Database = {
           id: string
           nome: string
           slug: string
+          taxa_entrega_fora_zona: number | null
           telefone: string | null
           tema: Json
           timezone: string
@@ -266,6 +267,7 @@ export type Database = {
           id?: string
           nome: string
           slug: string
+          taxa_entrega_fora_zona?: number | null
           telefone?: string | null
           tema?: Json
           timezone?: string
@@ -294,6 +296,7 @@ export type Database = {
           id?: string
           nome?: string
           slug?: string
+          taxa_entrega_fora_zona?: number | null
           telefone?: string | null
           tema?: Json
           timezone?: string
@@ -316,8 +319,10 @@ export type Database = {
           subtotal: number
           taxa_entrega: number
           telefone_cliente: string | null
+          tipo_entrega: string
           token_acesso: string
           total: number
+          troco_para: number | null
         }
         Insert: {
           criado_em?: string
@@ -333,8 +338,10 @@ export type Database = {
           subtotal: number
           taxa_entrega?: number
           telefone_cliente?: string | null
+          tipo_entrega?: string
           token_acesso?: string
           total: number
+          troco_para?: number | null
         }
         Update: {
           criado_em?: string
@@ -350,8 +357,10 @@ export type Database = {
           subtotal?: number
           taxa_entrega?: number
           telefone_cliente?: string | null
+          tipo_entrega?: string
           token_acesso?: string
           total?: number
+          troco_para?: number | null
         }
         Relationships: [
           {
@@ -567,6 +576,7 @@ export type Database = {
           id: string | null
           nome: string | null
           slug: string | null
+          taxa_entrega_fora_zona: number | null
           telefone: string | null
           tema: Json | null
           timezone: string | null
@@ -586,6 +596,7 @@ export type Database = {
           id?: string | null
           nome?: string | null
           slug?: string | null
+          taxa_entrega_fora_zona?: number | null
           telefone?: string | null
           tema?: Json | null
           timezone?: string | null
@@ -605,6 +616,7 @@ export type Database = {
           id?: string | null
           nome?: string | null
           slug?: string | null
+          taxa_entrega_fora_zona?: number | null
           telefone?: string | null
           tema?: Json | null
           timezone?: string | null

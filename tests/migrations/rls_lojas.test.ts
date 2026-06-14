@@ -156,6 +156,8 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
     // issue 058 — estado de assinatura exposto para a checagem de disponibilidade.
     expect(chaves).toContain("assinatura_status");
     expect(chaves).toContain("assinatura_fim_periodo");
+    // issue 068 — frete fora-de-zona exposto para preview no checkout.
+    expect(chaves).toContain("taxa_entrega_fora_zona");
   });
 
   it("[1c] anon NÃO lê linhas de loja ATIVA direto da tabela base (0 linhas)", async () => {
