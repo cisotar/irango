@@ -114,7 +114,8 @@ export function calcularFrete(
 
   return {
     atendido: true,
-    taxa: gratis ? 0 : arredondar(taxa),
+    // piso 0: taxa negativa no banco não pode reduzir o total que o cliente paga.
+    taxa: gratis ? 0 : Math.max(0, arredondar(taxa)),
     zonaId: escolhida.id,
     gratis,
   };

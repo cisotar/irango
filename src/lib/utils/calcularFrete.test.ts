@@ -254,4 +254,15 @@ describe("calcularFrete", () => {
     expect(r.atendido).toBe(false);
     expect(r.zonaId).toBeNull();
   });
+
+  // 16. FIX auditoria: taxa negativa no banco NÃO pode reduzir o total.
+  // Piso 0 — o cliente nunca paga frete negativo.
+  it("zona com taxa negativa retorna taxa:0 (piso), atendido:true", () => {
+    const zona = zonaBairro({
+      taxa: { taxa: -5, pedido_minimo_gratis: null, raio_max_km: null },
+    });
+    const r = calcularFrete([zona], enderecoCentro, 30);
+    expect(r.taxa).toBe(0);
+    expect(r.atendido).toBe(true);
+  });
 });
