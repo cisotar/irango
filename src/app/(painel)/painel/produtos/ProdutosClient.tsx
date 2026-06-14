@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
+import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
 import {
   removerProduto,
   alternarDisponibilidade,
@@ -78,6 +79,7 @@ export function ProdutosClient({
 
   // Produto pendente de remoção (controla o AlertDialog).
   const [aRemover, setARemover] = useState<Produto | null>(null);
+  const [categoriasAbertas, setCategoriasAbertas] = useState(false);
   const [removendo, startRemocao] = useTransition();
   const [alternando, startAlternar] = useTransition();
 
@@ -134,10 +136,15 @@ export function ProdutosClient({
         <h1 className="font-heading text-xl font-semibold text-foreground">
           Produtos
         </h1>
-        <Button onClick={abrirCriar}>
-          <Plus className="size-4" />
-          Novo produto
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setCategoriasAbertas(true)}>
+            Categorias
+          </Button>
+          <Button onClick={abrirCriar}>
+            <Plus className="size-4" />
+            Novo produto
+          </Button>
+        </div>
       </div>
 
       {produtos.length === 0 && (
@@ -208,6 +215,13 @@ export function ProdutosClient({
           </section>
         ))}
       </div>
+
+      {/* Gestão de categorias de produto */}
+      <GerenciarCategorias
+        categorias={categorias}
+        open={categoriasAbertas}
+        onOpenChange={setCategoriasAbertas}
+      />
 
       {/* Sheet de criar/editar */}
       <Sheet open={formAberto} onOpenChange={setFormAberto}>
