@@ -94,7 +94,7 @@ export default async function VitrinePage({ params }: PageProps) {
           timezone={loja.timezone ?? "America/Sao_Paulo"}
           whatsapp={loja.whatsapp}
         />
-        <main className="mx-auto w-full max-w-5xl px-4 py-6">
+        <main className="mx-auto w-full max-w-3xl px-4 py-6 pb-28">
           <div className="flex flex-col items-center gap-3 py-20 text-center">
             <span aria-hidden className="text-4xl">
               🔒
@@ -165,7 +165,7 @@ export default async function VitrinePage({ params }: PageProps) {
           whatsapp={loja.whatsapp}
         />
 
-        <main className="mx-auto w-full max-w-5xl px-4 py-6">
+        <main className="mx-auto w-full max-w-3xl px-4 py-6 pb-28">
           {temVazio ? (
             <div className="flex flex-col items-center gap-3 py-20 text-center">
               <span aria-hidden className="text-4xl">

@@ -19,10 +19,21 @@ function logoSeguro(url?: string): string | null {
   return url && url.startsWith("https://") ? url : null;
 }
 
+/** Formata dígitos do WhatsApp em (DD) NNNNN-NNNN (com ou sem DDI 55). */
+function formatarWhatsapp(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  const nac = d.length > 11 && d.startsWith("55") ? d.slice(2) : d;
+  if (nac.length === 11) return `(${nac.slice(0, 2)}) ${nac.slice(2, 7)}-${nac.slice(7)}`;
+  if (nac.length === 10) return `(${nac.slice(0, 2)}) ${nac.slice(2, 6)}-${nac.slice(6)}`;
+  return raw;
+}
+
 /**
- * Cabeçalho da vitrine. Fundo aplica o tema da loja (`--cor-primaria`); o texto
- * é SEMPRE branco (não derivado da luminância do tema — contraste seguro,
- * design-system §4). Apresentação pura — sem lógica de domínio.
+ * Cabeçalho da vitrine — espelha design-claude/vitrine/header-loja.html: banda
+ * na cor da loja (`--cor-primaria`), logo CIRCULAR, nome em caixa-alta e os
+ * contatos em coluna; o conjunto é centralizado. O texto é SEMPRE branco (não
+ * derivado da luminância do tema — contraste seguro, design-system §4).
+ * Apresentação pura — sem lógica de domínio.
  */
 export function HeaderLoja({
   nome,
@@ -34,45 +45,46 @@ export function HeaderLoja({
   const logo = logoSeguro(logoUrl);
 
   return (
-    <header className="sticky top-0 z-30 bg-[var(--cor-primaria)] px-4 py-4 text-white">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
-          {logo ? (
-            <Image
-              src={logo}
-              alt={nome}
-              width={56}
-              height={56}
-              unoptimized
-              className="size-14 rounded-lg object-cover"
-            />
-          ) : (
-            <div
-              aria-hidden
-              className="flex size-14 items-center justify-center rounded-lg bg-[var(--cor-destaque)] text-xl font-bold text-white"
-            >
-              {nome.charAt(0).toUpperCase()}
-            </div>
-          )}
-
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold text-white">{nome}</h1>
-            {whatsapp ? (
-              <a
-                href={`https://wa.me/${whatsapp.replace(/\D/g, "")}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-0.5 inline-flex items-center gap-1 text-sm text-white/80 hover:text-white"
-              >
-                <MessageCircle aria-hidden className="size-4" />
-                WhatsApp
-              </a>
-            ) : null}
+    <header className="bg-[var(--cor-primaria)] px-4 py-5 text-white">
+      <div className="mx-auto flex max-w-3xl items-center justify-center gap-4">
+        {logo ? (
+          <Image
+            src={logo}
+            alt={nome}
+            width={70}
+            height={70}
+            unoptimized
+            className="size-[70px] shrink-0 rounded-full border-[3px] border-white/35 object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden
+            className="flex size-[70px] shrink-0 items-center justify-center rounded-full border-[3px] border-white/35 bg-[#4a3a22] text-3xl font-black"
+          >
+            {nome.charAt(0).toUpperCase()}
           </div>
-        </div>
+        )}
 
-        <div className="md:shrink-0">
-          <BadgeStatus horarios={horarios} timezone={timezone} />
+        <div className="min-w-0">
+          <h1 className="mb-2 text-2xl font-black uppercase tracking-wide">
+            {nome}
+          </h1>
+
+          <div className="mb-2">
+            <BadgeStatus horarios={horarios} timezone={timezone} />
+          </div>
+
+          {whatsapp ? (
+            <a
+              href={`https://wa.me/${whatsapp.replace(/\D/g, "")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-6 items-center gap-2 text-sm text-white/90 hover:text-white focus-visible:rounded focus-visible:outline-2 focus-visible:outline-white"
+            >
+              <MessageCircle aria-hidden className="size-4 shrink-0" />
+              {formatarWhatsapp(whatsapp)}
+            </a>
+          ) : null}
         </div>
       </div>
     </header>

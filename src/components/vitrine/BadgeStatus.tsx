@@ -19,8 +19,9 @@ export function BadgeStatus({ horarios, timezone }: BadgeStatusProps) {
   const { aberta, proximaAbertura } = useLojaAberta(horarios, timezone);
 
   if (aberta) {
+    // Cores exatas do design-claude (badge "Aberto agora"): #dcfce7/#166534/#86efac.
     return (
-      <Badge className="border-transparent bg-green-100 text-green-800">
+      <Badge className="border-[#86efac] bg-[#dcfce7] font-bold text-[#166534]">
         <Dot aria-hidden className="size-3.5" />
         Aberto agora
       </Badge>
@@ -28,7 +29,7 @@ export function BadgeStatus({ horarios, timezone }: BadgeStatusProps) {
   }
 
   return (
-    <Badge className="border-transparent bg-gray-100 text-gray-700">
+    <Badge className="border-[#e5e0d5] bg-[#eeeae0] font-bold text-[#6b5d4f]">
       <Clock aria-hidden className="size-3.5" />
       Fechado
       {proximaAbertura ? ` · abre às ${proximaAbertura}` : null}
