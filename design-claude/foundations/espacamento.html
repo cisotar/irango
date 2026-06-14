@@ -1,0 +1,59 @@
+<!-- @dsCard group="Foundations" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foundations · Espaçamento e Raio</title>
+<style>
+  :root {
+    --cor-destaque: #2d3a27;
+    --marrom-cafe: #2e2610;
+    --texto: #3e2723;
+    --preto: #111111;
+    --branco: #ffffff;
+    --borda-nav: #dccbb0;
+    --cinza-medio: #eeeeee;
+    --cinza-claro: #f9f9f9;
+    --sombra-suave: rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); padding: 24px 16px; }
+  h1 { font-size: 1.5rem; font-weight: 900; margin: 0 0 4px; color: var(--marrom-cafe); }
+  p.sub { margin: 0 0 24px; color: #6b5d4f; font-size: 0.9rem; }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: var(--marrom-cafe); font-weight: 700; margin: 28px 0 12px; }
+  .item { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .label { width: 60px; font-family: ui-monospace, monospace; font-size: 0.8rem; color: #6b5d4f; }
+  .bar { height: 18px; background: var(--cor-destaque); border-radius: 3px; }
+  .uso { font-size: 0.78rem; color: #6b5d4f; }
+  .radii { display: flex; gap: 18px; flex-wrap: wrap; }
+  .radbox {
+    width: 110px; height: 90px; background: var(--branco); border: 1px solid var(--cinza-medio);
+    box-shadow: 0 4px 12px var(--sombra-suave); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px;
+  }
+  .radbox .v { font-weight: 900; color: var(--preto); }
+  .radbox .u { font-size: 0.7rem; color: #6b5d4f; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Espaçamento e Raio</h1>
+  <p class="sub">Escala de 4 em 4px. Raios distintos por superfície.</p>
+
+  <h2>Espaçamento (gaps e padding)</h2>
+  <div class="item"><span class="label">4px</span><div class="bar" style="width:4px"></div><span class="uso">gap mínimo entre rótulo e valor</span></div>
+  <div class="item"><span class="label">8px</span><div class="bar" style="width:8px"></div><span class="uso">padding interno compacto</span></div>
+  <div class="item"><span class="label">10px</span><div class="bar" style="width:10px"></div><span class="uso">gap do grid de produtos (mobile)</span></div>
+  <div class="item"><span class="label">12px</span><div class="bar" style="width:12px"></div><span class="uso">padding de card</span></div>
+  <div class="item"><span class="label">16px</span><div class="bar" style="width:16px"></div><span class="uso">padding de seção</span></div>
+  <div class="item"><span class="label">20px</span><div class="bar" style="width:20px"></div><span class="uso">gap do grid (desktop)</span></div>
+
+  <h2>Raios</h2>
+  <div class="radii">
+    <div class="radbox" style="border-radius:12px"><span class="v">12px</span><span class="u">card / banner</span></div>
+    <div class="radbox" style="border-radius:10px"><span class="v">10px</span><span class="u">botão</span></div>
+    <div class="radbox" style="border-radius:8px"><span class="v">8px</span><span class="u">input</span></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!-- @dsCard group="Foundations" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foundations · Cores</title>
+<style>
+  :root {
+    /* Tema por loja (defaults iRango) */
+    --cor-primaria: #332616;
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Neutros / sistema */
+    --marrom-cafe: #2e2610;
+    --texto: #3e2723;
+    --preto: #111111;
+    --branco: #ffffff;
+    --borda-nav: #dccbb0;
+    --cinza-medio: #eeeeee;
+    --cinza-claro: #f9f9f9;
+    /* Sombra */
+    --sombra-suave: rgba(0,0,0,0.1);
+    --sombra-media: rgba(0,0,0,0.15);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); padding: 24px 16px; }
+  h1 { font-size: 1.5rem; font-weight: 900; margin: 0 0 4px; color: var(--marrom-cafe); }
+  p.sub { margin: 0 0 24px; color: #6b5d4f; font-size: 0.9rem; }
+  h2 {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--marrom-cafe); font-weight: 700; margin: 28px 0 12px;
+    border-bottom: 1px solid var(--borda-nav); padding-bottom: 6px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+  .swatch {
+    background: var(--branco); border: 1px solid var(--cinza-medio);
+    border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px var(--sombra-suave);
+  }
+  .chip { height: 72px; }
+  .meta { padding: 10px 12px; }
+  .meta .nome { font-weight: 700; font-size: 0.8rem; color: var(--preto); }
+  .meta .hex { font-size: 0.75rem; color: #6b5d4f; font-family: ui-monospace, monospace; }
+  .meta .uso { font-size: 0.7rem; color: #6b5d4f; margin-top: 4px; }
+  .bordered { border: 1px solid var(--borda-nav); }
+  .shadow-demo { display:flex; gap:14px; flex-wrap:wrap; }
+  .shadow-box { width:120px; height:60px; border-radius:12px; background:var(--branco); display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:#6b5d4f; }
+  .s-suave { box-shadow: 0 4px 12px var(--sombra-suave); }
+  .s-media { box-shadow: 0 4px 12px var(--sombra-media); }
+</style>
+</head>
+<body>
+  <h1>Cores</h1>
+  <p class="sub">Tokens de cor do iRango. O tema da loja é customizável pelo lojista; o sistema é fixo.</p>
+
+  <h2>Tema por loja (customizável)</h2>
+  <div class="grid">
+    <div class="swatch">
+      <div class="chip" style="background:var(--cor-primaria)"></div>
+      <div class="meta"><div class="nome">--cor-primaria</div><div class="hex">#332616</div><div class="uso">Banda header/rodapé</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip bordered" style="background:var(--cor-fundo)"></div>
+      <div class="meta"><div class="nome">--cor-fundo</div><div class="hex">#f5f0e6</div><div class="uso">Fundo da página</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip" style="background:var(--cor-destaque)"></div>
+      <div class="meta"><div class="nome">--cor-destaque</div><div class="hex">#2d3a27</div><div class="uso">Preço, CTA, barra carrinho</div></div>
+    </div>
+  </div>
+
+  <h2>Sistema (fixo)</h2>
+  <div class="grid">
+    <div class="swatch">
+      <div class="chip" style="background:var(--marrom-cafe)"></div>
+      <div class="meta"><div class="nome">--marrom-cafe</div><div class="hex">#2e2610</div><div class="uso">Título de seção + linha</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip" style="background:var(--texto)"></div>
+      <div class="meta"><div class="nome">--texto</div><div class="hex">#3e2723</div><div class="uso">Texto padrão</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip" style="background:var(--preto)"></div>
+      <div class="meta"><div class="nome">--preto</div><div class="hex">#111111</div><div class="uso">Nome de produto</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip bordered" style="background:var(--branco)"></div>
+      <div class="meta"><div class="nome">--branco</div><div class="hex">#ffffff</div><div class="uso">Fundo de card</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip" style="background:var(--borda-nav)"></div>
+      <div class="meta"><div class="nome">--borda-nav</div><div class="hex">#dccbb0</div><div class="uso">Borda de banner</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip bordered" style="background:var(--cinza-medio)"></div>
+      <div class="meta"><div class="nome">--cinza-medio</div><div class="hex">#eeeeee</div><div class="uso">Borda de card</div></div>
+    </div>
+    <div class="swatch">
+      <div class="chip bordered" style="background:var(--cinza-claro)"></div>
+      <div class="meta"><div class="nome">--cinza-claro</div><div class="hex">#f9f9f9</div><div class="uso">Superfície neutra</div></div>
+    </div>
+  </div>
+
+  <h2>Sombras</h2>
+  <div class="shadow-demo">
+    <div class="shadow-box s-suave">--sombra-suave</div>
+    <div class="shadow-box s-media">--sombra-media</div>
+  </div>
+</body>
+</html>

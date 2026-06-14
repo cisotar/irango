@@ -1,0 +1,52 @@
+<!-- @dsCard group="Vitrine" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Header da Loja</title>
+<style>
+  :root {
+    --cor-primaria: #332616;
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;
+    --branco: #ffffff;
+    --borda-nav: #dccbb0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); }
+  .header {
+    background: var(--cor-primaria); color: var(--branco); width: 100%;
+    padding: 20px 16px; display: flex; align-items: center; justify-content: center; gap: 16px;
+  }
+  .logo {
+    width: 70px; height: 70px; border-radius: 50%; flex-shrink: 0;
+    border: 3px solid rgba(255,255,255,0.35); object-fit: cover;
+    background: #4a3a22 center/cover; display: flex; align-items: center; justify-content: center;
+    font-size: 1.8rem;
+  }
+  .info { min-width: 0; }
+  .nome { font-size: 1.35rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px; }
+  .contatos { display: flex; flex-direction: column; gap: 4px; }
+  .contato {
+    display: inline-flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.9);
+    font-size: 0.85rem; text-decoration: none; min-height: 24px;
+  }
+  .contato:focus-visible { outline: 2px solid var(--branco); outline-offset: 2px; border-radius: 4px; }
+  .contato .ico { font-size: 1rem; width: 20px; text-align: center; }
+</style>
+</head>
+<body>
+  <header class="header">
+    <div class="logo" aria-hidden="true">🛒</div>
+    <div class="info">
+      <h1 class="nome">Empório iRango</h1>
+      <div class="contatos">
+        <a class="contato" href="#" aria-label="Instagram da loja"><span class="ico" aria-hidden="true">📷</span>@emporio.irango</a>
+        <a class="contato" href="#" aria-label="WhatsApp da loja"><span class="ico" aria-hidden="true">💬</span>(11) 99999-0000</a>
+      </div>
+    </div>
+  </header>
+</body>
+</html>

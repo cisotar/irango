@@ -1,0 +1,45 @@
+<!-- @dsCard group="Vitrine" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Barra de Carrinho</title>
+<style>
+  :root {
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;
+    --branco: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); min-height: 100vh; }
+  .barra-carrinho {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+    background: var(--cor-destaque); color: #f5f0e6;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 18px; min-height: 64px; box-shadow: 0 -4px 16px rgba(0,0,0,0.2);
+  }
+  .barra-carrinho .esq { display: flex; flex-direction: column; gap: 2px; line-height: 1.1; }
+  .barra-carrinho .qtd { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; }
+  .barra-carrinho .total { font-size: 1.3rem; font-weight: 900; }
+  .ver {
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.4); color: #fff;
+    border-radius: 10px; padding: 0 16px; min-height: 44px; display: inline-flex; align-items: center; gap: 8px;
+    font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer;
+  }
+  .ver:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  .hint { text-align: center; color: #6b5d4f; font-size: 0.8rem; padding: 24px 16px; }
+</style>
+</head>
+<body>
+  <p class="hint">A barra fica fixa no rodapé enquanto o cliente navega. Valor é estimativa de UX.</p>
+  <nav class="barra-carrinho" aria-label="Resumo do carrinho">
+    <div class="esq">
+      <span class="qtd">3 itens</span>
+      <span class="total">R$ 54,30</span>
+    </div>
+    <button class="ver">Ver carrinho <span aria-hidden="true">🛒</span></button>
+  </nav>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!-- @dsCard group="Vitrine" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Título de Seção</title>
+<style>
+  :root {
+    --cor-fundo: #f5f0e6;
+    --marrom-cafe: #2e2610;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); padding: 32px 16px; }
+  .titulo-secao { display: flex; align-items: center; gap: 14px; max-width: 430px; margin: 0 auto 28px; }
+  .titulo-secao::before, .titulo-secao::after {
+    content: ""; flex: 1; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--marrom-cafe), transparent);
+  }
+  .titulo-secao h2 {
+    margin: 0; font-size: 1rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--marrom-cafe); white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+  <div class="titulo-secao"><h2>Mais Pedidos</h2></div>
+  <div class="titulo-secao"><h2>Padaria</h2></div>
+  <div class="titulo-secao"><h2>Bebidas</h2></div>
+</body>
+</html>
