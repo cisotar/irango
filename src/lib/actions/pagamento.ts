@@ -12,7 +12,7 @@
 //   - erro genérico no catch.
 
 import { revalidatePath } from "next/cache";
-import { schemaFormaPagamento } from "@/lib/validacoes/pagamento";
+import { schemaFormaPagamento, schemaPixQrUrl } from "@/lib/validacoes/pagamento";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import type { Json } from "@/lib/database.types";
@@ -84,6 +84,79 @@ export async function atualizarFormaPagamento(
   } catch (e) {
     console.error("[atualizarFormaPagamento]", e);
     return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+  }
+}
+
+/**
+ * Persiste a URL pública do QR Code Pix no jsonb `config` de uma forma Pix
+ * existente (issue 075). Recebe `pix_qr_url` do client após o upload no bucket
+ * `pix-qr`; valida com `schemaPixQrUrl` (URL DEVE pertencer ao Storage do
+ * iRango); atualiza via MERGE no jsonb preservando `chave`/`tipo_chave`.
+ *
+ * Segurança:
+ *   - `loja_id` NUNCA vem do payload — derivado da loja do dono autenticado.
+ *   - O path no bucket (`{loja_id}/...`) é garantido pela RLS do bucket (074).
+ *   - URL externa é rejeitada por `schemaPixQrUrl`.
+ *   - O UPDATE é escopado por `tipo = 'pix'` além de `id` (RLS escrita própria).
+ */
+export async function salvarQrPix(
+  formaId: string,
+  pixQrUrl: unknown,
+): Promise<ResultadoPagamento> {
+  // Valida que a URL pertence ao Storage do iRango — rejeita URL externa.
+  const parsed = schemaPixQrUrl.safeParse(pixQrUrl);
+  if (!parsed.success) {
+    return { ok: false, erro: "URL do QR deve pertencer ao Storage do iRango." };
+  }
+  try {
+    const supabase = await createClient();
+    // Deriva loja_id do dono para confirmar escopo — RLS já barra, mas é defesa em profundidade.
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // MERGE preserva chave/tipo_chave: jsonb_set não está disponível aqui,
+    // então usamos RPC de MERGE via UPDATE com concatenação jsonb no Postgres.
+    // Alternativa portável: buscar config atual, mesclar em JS, salvar.
+    const { data: formaAtual, error: erroBusca } = await supabase
+      .from("formas_pagamento")
+      .select("config")
+      .eq("id", formaId)
+      .eq("loja_id", loja.id)
+      .eq("tipo", "pix")
+      .maybeSingle();
+    if (erroBusca) {
+      console.error("[salvarQrPix] busca", erroBusca);
+      return { ok: false, erro: "Não foi possível salvar o QR Pix." };
+    }
+    if (formaAtual == null) {
+      return { ok: false, erro: "Forma de pagamento Pix não encontrada." };
+    }
+
+    // Mescla a URL no config existente, preservando chave/tipo_chave.
+    const configAtual =
+      formaAtual.config &&
+      typeof formaAtual.config === "object" &&
+      !Array.isArray(formaAtual.config)
+        ? (formaAtual.config as Record<string, unknown>)
+        : {};
+    const configNovo: Json = { ...configAtual, pix_qr_url: parsed.data } as Json;
+
+    const { error } = await supabase
+      .from("formas_pagamento")
+      .update({ config: configNovo })
+      .eq("id", formaId)
+      .eq("loja_id", loja.id)
+      .eq("tipo", "pix");
+    if (error) {
+      console.error("[salvarQrPix]", error);
+      return { ok: false, erro: "Não foi possível salvar o QR Pix." };
+    }
+    revalidatePath(ROTA);
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarQrPix]", e);
+    return { ok: false, erro: "Não foi possível salvar o QR Pix." };
   }
 }
 

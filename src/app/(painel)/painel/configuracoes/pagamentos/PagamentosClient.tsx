@@ -26,6 +26,8 @@ import type { FormaPagamento } from "@/lib/supabase/queries/entregaPagamento";
 
 export type PagamentosClientProps = {
   formas: FormaPagamento[];
+  /** ID da loja (derivado do servidor) — repassado ao FormPagamento para o upload de QR Pix. */
+  lojaId: string;
 };
 
 type TipoPagamento = "pix" | "dinheiro" | "link" | "cartao";
@@ -63,7 +65,7 @@ const TIPOS: {
   },
 ];
 
-export function PagamentosClient({ formas }: PagamentosClientProps) {
+export function PagamentosClient({ formas, lojaId }: PagamentosClientProps) {
   const router = useRouter();
 
   const [formAberto, setFormAberto] = useState(false);
@@ -197,6 +199,7 @@ export function PagamentosClient({ formas }: PagamentosClientProps) {
               <FormPagamento
                 key={`${tipoEmEdicao}-${formaEmEdicao?.id ?? "novo"}`}
                 tipo={tipoEmEdicao}
+                lojaId={lojaId}
                 onSucesso={aoSalvar}
                 inicial={
                   formaEmEdicao

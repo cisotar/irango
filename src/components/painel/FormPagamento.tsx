@@ -7,11 +7,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { schemaFormaPagamento } from "@/lib/validacoes/pagamento";
 import {
   salvarFormaPagamento,
   atualizarFormaPagamento,
+  salvarQrPix,
 } from "@/lib/actions/pagamento";
+import { UploadQrPix } from "@/components/painel/UploadQrPix";
 import type { Json } from "@/lib/database.types";
 
 type TipoChavePix = "cpf" | "cnpj" | "email" | "telefone" | "aleatoria";
@@ -20,6 +23,12 @@ export type FormPagamentoProps = {
   tipo: "pix" | "link";
   /** Se presente (com `id`), o form opera em modo edição. */
   inicial?: { id: string; config: Json };
+  /**
+   * ID da loja (derivado do servidor) — necessário para construir o path do
+   * bucket `pix-qr` no upload de QR Code (`{lojaId}/qr.{ext}`).
+   * Obrigatório quando `tipo === "pix"`.
+   */
+  lojaId?: string;
   onSucesso?: () => void;
 };
 
@@ -36,13 +45,17 @@ function lerCampo(config: Json | undefined, campo: string): string {
 }
 
 /**
- * Form de forma de pagamento Pix/Link (issue 047). Client component.
+ * Form de forma de pagamento Pix/Link (issue 047 + 075). Client component.
  *
  * Valida no client com `schemaFormaPagamento` (022) — gate de UX. A Server
  * Action (032/047) revalida o MESMO schema (chave Pix malformada faria o
  * comprador pagar pra ninguém) e deriva `loja_id` do dono.
+ *
+ * Para Pix: inclui upload opcional de QR Code (issue 075). O upload ocorre no
+ * browser (client Supabase autenticado, RLS do bucket 074 garante o escopo) e
+ * persiste a URL via `salvarQrPix` (Server Action) separada do submit principal.
  */
-export function FormPagamento({ tipo, inicial, onSucesso }: FormPagamentoProps) {
+export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagamentoProps) {
   const ehEdicao = inicial?.id != null;
 
   const [tipoChave, setTipoChave] = useState<TipoChavePix>(
@@ -51,7 +64,13 @@ export function FormPagamento({ tipo, inicial, onSucesso }: FormPagamentoProps) 
   const [chave, setChave] = useState(lerCampo(inicial?.config, "chave"));
   const [url, setUrl] = useState(lerCampo(inicial?.config, "url"));
 
+  // URL do QR Pix — carregada do config inicial; atualizada após upload.
+  const [pixQrUrl, setPixQrUrl] = useState<string>(
+    lerCampo(inicial?.config, "pix_qr_url"),
+  );
+
   const [enviando, startEnvio] = useTransition();
+  const [salvandoQr, startSalvarQr] = useTransition();
 
   function montarPayload() {
     if (tipo === "pix") {
@@ -83,6 +102,29 @@ export function FormPagamento({ tipo, inicial, onSucesso }: FormPagamentoProps) 
       }
       toast.success("Forma de pagamento salva!");
       onSucesso?.();
+    });
+  }
+
+  /**
+   * Chamado pelo `UploadQrPix` após upload bem-sucedido. Persiste a URL via
+   * Server Action — separado do submit principal para que chave Pix e QR sejam
+   * salvos independentemente.
+   */
+  function aoUploadQrConcluido(urlPublica: string) {
+    if (!inicial?.id) {
+      // Forma ainda não existe: guarda em memória; será persistido ao salvar.
+      setPixQrUrl(urlPublica);
+      return;
+    }
+    startSalvarQr(async () => {
+      // URL vazia = remoção do QR (upload de novo arquivo ou clique em remover).
+      const urlParaSalvar = urlPublica || undefined;
+      const resultado = await salvarQrPix(inicial.id, urlParaSalvar);
+      if (!resultado.ok) {
+        toast.error(resultado.erro);
+        return;
+      }
+      setPixQrUrl(urlPublica);
     });
   }
 
@@ -131,6 +173,24 @@ export function FormPagamento({ tipo, inicial, onSucesso }: FormPagamentoProps) 
               required
             />
           </div>
+
+          {lojaId && (
+            <>
+              <Separator />
+              <UploadQrPix
+                lojaId={lojaId}
+                urlAtual={pixQrUrl || null}
+                onUploadConcluido={aoUploadQrConcluido}
+                disabled={enviando || salvandoQr}
+              />
+              {salvandoQr && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  Salvando QR...
+                </p>
+              )}
+            </>
+          )}
         </>
       )}
 
@@ -148,7 +208,7 @@ export function FormPagamento({ tipo, inicial, onSucesso }: FormPagamentoProps) 
         </div>
       )}
 
-      <Button type="submit" className="w-full" disabled={enviando}>
+      <Button type="submit" className="w-full" disabled={enviando || salvandoQr}>
         {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
         {ehEdicao ? "Salvar alterações" : "Ativar"}
       </Button>

@@ -24,5 +24,5 @@ export default async function PagamentosPage(): Promise<ReactElement> {
 
   const formas = await listarFormasPagamento(supabase, loja.id);
 
-  return <PagamentosClient formas={formas} />;
+  return <PagamentosClient formas={formas} lojaId={loja.id} />;
 }
