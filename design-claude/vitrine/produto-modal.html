@@ -642,8 +642,8 @@
               id="qtd-1"
               role="status"
               aria-live="polite"
-              aria-label="Quantidade: 1"
-            >1</span>
+              aria-label="Quantidade: 0"
+            >0</span>
             <button
               class="stepper-btn"
               aria-label="Aumentar quantidade"
@@ -663,7 +663,8 @@
         itens com preço adicional, vinculação ao pedido_item.
         ════════════════════════════════════════════════════════════════
       -->
-      <div class="secao" aria-label="Opcionais (seção aspiracional — não implementado)">
+      <!-- hidden inicial: só aparece quando qtd ≥ 1 -->
+      <div class="secao" id="secao-opcionais-1" aria-label="Opcionais (seção aspiracional — não implementado)" hidden aria-hidden="true">
         <p class="secao-titulo">
           Opcionais
           <span style="font-size:0.65rem;color:var(--texto-muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px;">em breve</span>
@@ -731,21 +732,23 @@
     </div>
     <!-- /corpo -->
 
-    <!-- Subtotal ao vivo -->
-    <div class="subtotal-row" aria-live="polite" aria-atomic="true">
+    <!-- Subtotal ao vivo — oculto quando qtd = 0 -->
+    <div class="subtotal-row" id="subtotal-row-1" aria-live="polite" aria-atomic="true" hidden aria-hidden="true">
       <span class="subtotal-label">Subtotal do item</span>
-      <span class="subtotal-valor" id="subtotal-1">R$ 18,90</span>
+      <span class="subtotal-valor" id="subtotal-1">R$ 0,00</span>
     </div>
 
     <!-- Footer -->
     <div class="modal-footer">
       <button
         class="btn-adicionar"
-        aria-label="Adicionar 1 Pão de queijo artesanal ao carrinho por R$ 18,90"
+        aria-label="Selecione a quantidade para adicionar ao carrinho"
         id="btn-add-1"
+        disabled
+        aria-disabled="true"
       >
         <span class="btn-label">Adicionar ao carrinho</span>
-        <span class="btn-preco" id="btn-preco-1">R$ 18,90</span>
+        <span class="btn-preco" id="btn-preco-1">R$ 0,00</span>
       </button>
       <a class="link-carrinho" href="#" tabindex="0" aria-label="Ver itens no carrinho">
         Ver carrinho (3 itens · R$ 54,30)
@@ -877,36 +880,137 @@
      Em produção: estado gerenciado via React/Zustand/carrinho.
 ════════════════════════════════════════════════════════════════════ -->
 <script>
+  /* ── Utilitário de formatação ─────────────────────────────────────── */
   function fmt(val) {
     return 'R$ ' + val.toFixed(2).replace('.', ',');
   }
 
+  /* ── Auto-scroll: leva o topo da seção opcionais ao topo do corpo
+        rolável do modal. Usa offsetTop relativo ao container para não
+        depender do scroll da janela (modal em fluxo dentro da .page). ── */
+  function scrollParaOpcionais(elSecao) {
+    /* Sobe na árvore até achar o primeiro ancestral rolável */
+    function acharScrollavel(el) {
+      let pai = el.parentElement;
+      while (pai && pai !== document.body) {
+        const style = window.getComputedStyle(pai);
+        const overflow = style.overflowY;
+        if ((overflow === 'auto' || overflow === 'scroll') && pai.scrollHeight > pai.clientHeight) {
+          return pai;
+        }
+        pai = pai.parentElement;
+      }
+      return null; /* sem container rolável interno → rola a janela */
+    }
+
+    /* Calcula offset acumulado do elemento até o container */
+    function offsetRelativo(el, container) {
+      let top = 0;
+      let cur = el;
+      while (cur && cur !== container) {
+        top += cur.offsetTop;
+        cur = cur.offsetParent;
+      }
+      return top;
+    }
+
+    const container = acharScrollavel(elSecao);
+
+    if (container) {
+      /* Rola o container interno para que o topo da seção fique no topo visível */
+      container.scrollTo({
+        top: offsetRelativo(elSecao, container),
+        behavior: 'smooth'
+      });
+    } else {
+      /* Fallback: sem container rolável — usa scrollIntoView na janela */
+      elSecao.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  /* ── alterarQtd: stepper principal do modal normal ─────────────────
+     Parâmetros:
+       idQtd       — id do <span> com o valor numérico
+       delta       — +1 ou -1
+       idSubtotal  — id do <span> do subtotal ao vivo
+       precoUnit   — preço unitário do produto (number)
+  ──────────────────────────────────────────────────────────────────── */
   function alterarQtd(idQtd, delta, idSubtotal, precoUnit) {
-    const elQtd     = document.getElementById(idQtd);
-    const elSub     = document.getElementById(idSubtotal);
-    const elBtnPreco = document.getElementById('btn-preco-1');
-    const elBtnAdd   = document.getElementById('btn-add-1');
-    const elBtnMenos = document.getElementById('btn-menos-1');
+    const elQtd         = document.getElementById(idQtd);
+    const elSub         = document.getElementById(idSubtotal);
+    const elSubRow      = document.getElementById('subtotal-row-1');
+    const elBtnPreco    = document.getElementById('btn-preco-1');
+    const elBtnAdd      = document.getElementById('btn-add-1');
+    const elBtnMenos    = document.getElementById('btn-menos-1');
+    const elOpcionais   = document.getElementById('secao-opcionais-1');
 
-    let qtd = parseInt(elQtd.textContent, 10) + delta;
-    if (qtd < 1) qtd = 1;
+    const qtdAnterior = parseInt(elQtd.textContent, 10);
+    let qtd = qtdAnterior + delta;
+    if (qtd < 0) qtd = 0; /* piso em 0, não em 1 */
 
+    /* Atualiza display e aria do valor de quantidade */
     elQtd.textContent = qtd;
     elQtd.setAttribute('aria-label', 'Quantidade: ' + qtd);
 
+    /* Subtotal = qtd × preço (opcionais não somados: aspiracional) */
     const total = qtd * precoUnit;
-    elSub.textContent = fmt(total);
 
-    if (elBtnPreco) elBtnPreco.textContent = fmt(total);
+    /* ── Visibilidade condicional (qtd = 0 → oculto, qtd ≥ 1 → visível) */
+    const visivel = qtd >= 1;
+    const revelouAgora = visivel && qtdAnterior === 0; /* transição 0 → 1 */
+
+    /* Seção opcionais */
+    if (elOpcionais) {
+      if (visivel) {
+        elOpcionais.removeAttribute('hidden');
+        elOpcionais.removeAttribute('aria-hidden');
+      } else {
+        elOpcionais.setAttribute('hidden', '');
+        elOpcionais.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    /* Subtotal-row */
+    if (elSubRow) {
+      if (visivel) {
+        elSubRow.removeAttribute('hidden');
+        elSubRow.removeAttribute('aria-hidden');
+      } else {
+        elSubRow.setAttribute('hidden', '');
+        elSubRow.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    /* Texto e aria do subtotal */
+    if (elSub) elSub.textContent = fmt(total);
+
+    /* Botão "Adicionar" */
     if (elBtnAdd) {
+      elBtnAdd.disabled = !visivel;
+      elBtnAdd.setAttribute('aria-disabled', visivel ? 'false' : 'true');
       elBtnAdd.setAttribute(
         'aria-label',
-        'Adicionar ' + qtd + ' Pão de queijo artesanal ao carrinho por ' + fmt(total)
+        visivel
+          ? 'Adicionar ' + qtd + ' Pão de queijo artesanal ao carrinho por ' + fmt(total)
+          : 'Selecione a quantidade para adicionar ao carrinho'
       );
     }
 
-    /* Desabilita "−" quando qtd = 1 */
-    if (elBtnMenos) elBtnMenos.disabled = qtd <= 1;
+    /* Preço no badge do botão */
+    if (elBtnPreco) elBtnPreco.textContent = visivel ? fmt(total) : 'R$ 0,00';
+
+    /* Botão "−": desabilita em 0 */
+    if (elBtnMenos) elBtnMenos.disabled = qtd <= 0;
+
+    /* ── Auto-scroll ao revelar opcionais (0 → 1) ───────────────────
+       Aguarda ~50 ms para o layout assentar (hidden removido → reflow)
+       antes de calcular o offset e iniciar o scroll suave.
+    ──────────────────────────────────────────────────────────────────*/
+    if (revelouAgora && elOpcionais) {
+      setTimeout(function () {
+        scrollParaOpcionais(elOpcionais);
+      }, 50);
+    }
   }
 </script>
 </body>
