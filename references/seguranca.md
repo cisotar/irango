@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.3 | **Atualizado:** 2026-06-14
+**Versão:** 0.2.4 | **Atualizado:** 2026-06-14
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -403,6 +403,14 @@ const dados = schemaProduto.parse(formData)
 | `SUPABASE_SERVICE_ROLE_KEY` | ❌ **jamais** | só Server Actions e Route Handlers | **não — nunca chega ao browser** |
 | Qualquer outra key/secret | ❌ **jamais** | só servidor | **não** |
 
+### `createServiceClient()` — módulo server-only
+
+`src/lib/supabase/service.ts` exporta `createServiceClient()`, que cria um cliente Supabase com a `SERVICE_ROLE_KEY` (BYPASSRLS). O arquivo tem `import "server-only"` no topo — o build quebra se qualquer código `'use client'` tentar importá-lo.
+
+**Regra:** só usar em Server Action ou Route Handler. Toda query feita com este cliente **deve escopar manualmente** (por `loja_id`, token, etc.) — RLS não protege.
+
+Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via RPC (issue 014), ler pedido por `id + token_acesso` (issues 026/037), checar unicidade de slug (issue 030), webhook Hotmart (issue 057).
+
 ### Regra do prefixo Next.js
 
 Next.js expõe pro browser **apenas** variáveis com prefixo `NEXT_PUBLIC_`. Qualquer variável sem esse prefixo é invisível no client — mesmo que o código tente acessar, retorna `undefined`.
@@ -599,6 +607,37 @@ async function criarPedido(body) {
 | `preco` / `subtotal` / `desconto` / `taxa_entrega` / `total` | ❌ ignorado | **recalculado do zero** |
 
 `itens_pedido.preco` e `itens_pedido.nome` guardam o **snapshot do valor do banco** no momento do pedido — nunca o valor que veio do client.
+
+### Payload zod `.strict()` — sem campos monetários
+
+O schema zod do payload recebido pela action usa `.strict()`, que rejeita qualquer campo não declarado. Campos monetários (`subtotal`, `desconto`, `taxa_entrega`, `total`) não são declarados no schema — mesmo que o cliente os envie, o parser os rejeita antes do código rodar.
+
+```ts
+// lib/validacoes/pedido.ts
+export const schemaCriarPedido = z.object({
+  loja_id: z.string().uuid(),
+  nome_cliente: z.string().min(1),
+  telefone_cliente: z.string().optional(),
+  endereco_entrega: z.object({ rua: z.string(), ... }).optional(),
+  forma_pagamento: z.string(),
+  codigo_cupom: z.string().optional(),
+  observacoes: z.string().optional(),
+  itens: z.array(z.object({ produto_id: z.string().uuid(), quantidade: z.number().int().positive() })).min(1),
+  // NÃO declara preco / subtotal / desconto / taxa_entrega / total — .strict() os rejeita
+}).strict()
+```
+
+### RPC transacional `public.criar_pedido`
+
+A parte que precisa de atomicidade (trava de cupom + INSERT pedido + INSERT itens) é delegada à função Postgres `public.criar_pedido(...)`. Migration: `20260614003000_rpc_criar_pedido.sql`.
+
+**Garantias da RPC:**
+- `SECURITY INVOKER` + `SET search_path = public` — sem elevação de privilégio; proteção contra search_path hijack (mesmo padrão de `loja_esta_ativa`).
+- `REVOKE ALL … FROM public, anon, authenticated` + `GRANT EXECUTE … TO service_role` — anon nunca executa diretamente; só a Server Action via `createServiceClient()` pode chamar.
+- Trava atômica de cupom: `UPDATE cupons SET usos_contagem = usos_contagem + 1 WHERE … AND usos_contagem < usos_maximos RETURNING id`. Se `NOT FOUND` (esgotado na corrida), anula desconto e recomputa total — não rejeita o pedido (decisão de produto: cupom esgotado simultaneamente não bloqueia a compra).
+- INSERT `pedidos` + INSERT `itens_pedido` (snapshot `nome`/`preco`) na mesma transação — atomicidade garantida.
+
+**Regra para devs e agentes:** toda operação multi-tabela com trava de concorrência segue este padrão — função Postgres `SECURITY INVOKER` + REVOKE/GRANT service_role + `SET search_path`. Nunca INSERT direto de pedido sem passar pela RPC.
 
 ---
 

@@ -67,6 +67,28 @@ export async function slugExiste(
 }
 
 /**
+ * Loja por id para o recálculo autoritativo de pedido (issue 014). Fonte:
+ * TABELA `lojas` (não a view `vitrine_lojas`, que esconde `ativo`/`horarios`/
+ * `timezone`/`assinatura_*` necessários a `lojaAberta`/`assinaturaPermiteAcesso`).
+ *
+ * EXIGE client **service_role** (BYPASSRLS) injetado pelo caller (Server Action
+ * 014): precisa enxergar a loja mesmo inativa para barrá-la no guard da action.
+ * O payload do pedido traz `loja_id` (não slug). Loja inexistente → `null`.
+ */
+export async function buscarLojaParaPedido(
+  client: Client,
+  lojaId: string,
+): Promise<LojaCompleta | null> {
+  const { data, error } = await client
+    .from("lojas")
+    .select("*")
+    .eq("id", lojaId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Contagem autoritativa de lojas de um dono (RN-01: uma loja por dono).
  * Fonte: TABELA `lojas`. Exige client **service_role** — RLS esconderia lojas de
  * outro `auth.uid()`. Injetado pelo caller (issue 030).

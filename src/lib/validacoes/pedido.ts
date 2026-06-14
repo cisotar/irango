@@ -11,7 +11,10 @@ import { z } from "zod";
 
 const schemaItemPedido = z
   .object({
-    produto_id: z.uuid(),
+    // z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
+    // RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda e
+    // os ids de teste). gen_random_uuid() continua produzindo v4 válido.
+    produto_id: z.guid(),
     quantidade: z.number().int().min(1).max(99),
   })
   .strict();
@@ -29,7 +32,7 @@ const schemaEnderecoEntrega = z
 
 export const schemaPayloadPedido = z
   .object({
-    loja_id: z.uuid(),
+    loja_id: z.guid(),
     itens: z.array(schemaItemPedido).min(1),
     endereco_entrega: schemaEnderecoEntrega,
     forma_pagamento: z.enum(["pix", "dinheiro", "link", "cartao"]),
@@ -38,7 +41,12 @@ export const schemaPayloadPedido = z
       .regex(/^[A-Za-z0-9]{3,20}$/)
       .optional(),
     nome_cliente: z.string().trim().min(1).max(120),
-    telefone_cliente: z.string().optional(),
-    observacoes: z.string().optional(),
+    // Limites de tamanho: anti-abuso de storage (colunas text sem limite no banco).
+    telefone_cliente: z
+      .string()
+      .trim()
+      .regex(/^\+?[\d\s()-]{8,20}$/)
+      .optional(),
+    observacoes: z.string().trim().max(500).optional(),
   })
   .strict();
