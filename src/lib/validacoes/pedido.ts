@@ -16,6 +16,18 @@ const schemaItemPedido = z
     // os ids de teste). gen_random_uuid() continua produzindo v4 válido.
     produto_id: z.guid(),
     quantidade: z.number().int().min(1).max(99),
+    // opcionais: [083] cliente envia apenas opcional_id + quantidade — NUNCA
+    // preco/nome. .strict() no objeto bloqueia injeção de valores monetários (RN-O2).
+    opcionais: z
+      .array(
+        z
+          .object({
+            opcional_id: z.guid(),
+            quantidade: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 

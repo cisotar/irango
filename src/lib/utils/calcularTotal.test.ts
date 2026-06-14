@@ -133,3 +133,91 @@ describe("calcularTotal — paridade preview (cliente) ↔ recálculo (servidor)
     expect(servidor.total).toBe(75.96); // 73.40 − 7.34 + 9.90
   });
 });
+
+// ---------------------------------------------------------------------------
+// Opcionais de produto (issue 082)
+// Um item pode ter opcionais (adicionais, extras) com preco e quantidade
+// próprios. O subtotal do item é:
+//   (preco_produto + Σ(preco_opcional × qtd_opcional)) × quantidade_item
+// Isso garante que adicionais entram no cálculo ANTES de multiplicar a
+// quantidade do item (ex.: X hambúrgueres com Y extras cada).
+// ---------------------------------------------------------------------------
+
+describe("calcularSubtotal — opcionais (adicionais)", () => {
+  it("item com 2 opcionais: soma (preco_produto + Σ opcionais) × qtd_item", () => {
+    // item: preco=20, qtd=1; opcionais: [3×1, 2×1] → (20+3+2)×1 = 25
+    const subtotal = calcularSubtotal([
+      {
+        preco: 20,
+        quantidade: 1,
+        opcionais: [
+          { preco: 3, quantidade: 1 },
+          { preco: 2, quantidade: 1 },
+        ],
+      },
+    ]);
+    expect(subtotal).toBe(25);
+  });
+
+  it("item sem opcionais → resultado idêntico ao cálculo original (retrocompat)", () => {
+    // Garante que a extensão não quebra o comportamento anterior
+    expect(calcularSubtotal([{ preco: 10, quantidade: 2 }])).toBe(20);
+    expect(calcularSubtotal([item({ preco: 7.9, quantidade: 3 })])).toBe(23.7);
+  });
+
+  it("arredondamento 2 casas sem float drift com opcionais (0.1+0.2 = 0.30)", () => {
+    // preco=0, qtd=1; opcional preco=0.1 qtd=1 + opcional preco=0.2 qtd=1
+    // → (0 + 0.1 + 0.2) × 1 = 0.30 (não 0.30000000000000004)
+    const subtotal = calcularSubtotal([
+      {
+        preco: 0,
+        quantidade: 1,
+        opcionais: [
+          { preco: 0.1, quantidade: 1 },
+          { preco: 0.2, quantidade: 1 },
+        ],
+      },
+    ]);
+    expect(subtotal).toBe(0.3);
+  });
+
+  it("quantidade do item multiplica produto+opcionais juntos (2 hambúrgueres com extras)", () => {
+    // item: preco=15, qtd=2; opcionais: [preco=5, qtd=1]
+    // → (15 + 5×1) × 2 = 40
+    const subtotal = calcularSubtotal([
+      {
+        preco: 15,
+        quantidade: 2,
+        opcionais: [{ preco: 5, quantidade: 1 }],
+      },
+    ]);
+    expect(subtotal).toBe(40);
+  });
+
+  it("opcional com quantidade > 1: preco_opcional × qtd_opcional (2 queijos extras)", () => {
+    // item: preco=10, qtd=1; opcional preco=2 qtd=3 → (10 + 2×3) × 1 = 16
+    const subtotal = calcularSubtotal([
+      {
+        preco: 10,
+        quantidade: 1,
+        opcionais: [{ preco: 2, quantidade: 3 }],
+      },
+    ]);
+    expect(subtotal).toBe(16);
+  });
+
+  it("múltiplos itens, alguns com e alguns sem opcionais", () => {
+    // item1: preco=10, qtd=1, sem opcionais → 10
+    // item2: preco=5, qtd=2, opcional [preco=1, qtd=2] → (5 + 1×2)×2 = 14
+    // total = 24
+    const subtotal = calcularSubtotal([
+      { preco: 10, quantidade: 1 },
+      {
+        preco: 5,
+        quantidade: 2,
+        opcionais: [{ preco: 1, quantidade: 2 }],
+      },
+    ]);
+    expect(subtotal).toBe(24);
+  });
+});

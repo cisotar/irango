@@ -421,3 +421,82 @@ describe("schemaPayloadPedido — [069] troco_para", () => {
     expect(r.success).toBe(false);
   });
 });
+
+// ===========================================================================
+// [083] opcionais por item — RN-O2: cliente envia apenas opcional_id+quantidade,
+// nunca preco/nome. .strict() no objeto opcional bloqueia injeção de valores.
+// TDD RED — testes escritos antes da implementação (issue 083, crítica).
+// ===========================================================================
+
+const UUID3 = "33333333-3333-4333-8333-333333333333";
+
+describe("schemaItemPedido — [083] opcionais", () => {
+  it("aceita item com opcionais válidos (opcional_id uuid + quantidade positiva)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({
+        itens: [
+          {
+            produto_id: UUID2,
+            quantidade: 1,
+            opcionais: [{ opcional_id: UUID3, quantidade: 2 }],
+          },
+        ],
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita opcional com campo 'preco' extra (.strict — RN-O2)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({
+        itens: [
+          {
+            produto_id: UUID2,
+            quantidade: 1,
+            opcionais: [{ opcional_id: UUID3, quantidade: 1, preco: 5 }],
+          },
+        ],
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita opcional com quantidade = 0 (.positive())", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({
+        itens: [
+          {
+            produto_id: UUID2,
+            quantidade: 1,
+            opcionais: [{ opcional_id: UUID3, quantidade: 0 }],
+          },
+        ],
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("aceita item SEM opcionais (compatibilidade checkout — campo opcional)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({
+        itens: [{ produto_id: UUID2, quantidade: 2 }],
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita opcional_id que não é uuid", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({
+        itens: [
+          {
+            produto_id: UUID2,
+            quantidade: 1,
+            opcionais: [{ opcional_id: "nao-e-uuid", quantidade: 1 }],
+          },
+        ],
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+});
