@@ -377,6 +377,19 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     expect(args.p_total).toBe(50.0); // subtotal 50, sem frete
   });
 
+  it("retirada NÃO persiste endereço — minimização PII/LGPD (achado auditoria)", async () => {
+    cenarioFeliz();
+    // Cliente envia endereço mesmo em retirada; servidor descarta (grava null).
+    await criarPedido(
+      payloadBase({
+        tipo_entrega: "retirada",
+        endereco_entrega: { cep: "01000-000", rua: "Rua X", numero: "10", bairro: "Centro" },
+      }),
+    );
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_endereco_entrega: unknown };
+    expect(args.p_endereco_entrega).toBeNull();
+  });
+
   it("[071] RN-C4 entrega fora de zona com taxa_entrega_fora_zona=8 → frete 8", async () => {
     buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
     listarFormasPagamento.mockResolvedValue(formasComPix());

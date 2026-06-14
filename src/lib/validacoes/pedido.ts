@@ -42,9 +42,14 @@ export const schemaPayloadPedido = z
     // condicional: obrigatório quando tipo_entrega='entrega', ignorado em 'retirada'.
     endereco_entrega: schemaEnderecoEntrega.optional(),
     forma_pagamento: z.enum(["pix", "dinheiro", "link", "cartao"]),
+    // Normaliza p/ maiúsculas igual ao cupomSchema (cupons são gravados upper).
+    // Sem isso, "promo10" no checkout não casaria o cupom "PROMO10" do banco e o
+    // desconto do preview seria silenciosamente perdido no pedido (paridade preview↔real).
     codigo_cupom: z
       .string()
-      .regex(/^[A-Za-z0-9]{3,20}$/)
+      .trim()
+      .toUpperCase()
+      .pipe(z.string().regex(/^[A-Z0-9]{3,20}$/))
       .optional(),
     // troco_para: informativo ao lojista (RN-C3) — positivo se presente.
     // NÃO entra em nenhum cálculo; servidor persiste mas ignora no total.

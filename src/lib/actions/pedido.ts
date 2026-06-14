@@ -170,7 +170,10 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       p_loja_id: dados.loja_id,
       p_nome_cliente: dados.nome_cliente,
       p_telefone_cliente: dados.telefone_cliente ?? null,
-      p_endereco_entrega: dados.endereco_entrega,
+      // Minimização de PII (LGPD §20): retirada não tem entrega → não persistir
+      // endereço, mesmo que o cliente o tenha enviado no payload.
+      p_endereco_entrega:
+        dados.tipo_entrega === "retirada" ? null : dados.endereco_entrega,
       p_forma_pagamento: dados.forma_pagamento,
       p_observacoes: dados.observacoes ?? null,
       p_subtotal: subtotal,

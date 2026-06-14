@@ -265,6 +265,12 @@ describe("schemaPayloadPedido — codigo_cupom", () => {
     );
     expect(r.success).toBe(false);
   });
+
+  it("normaliza cupom p/ maiúsculas (paridade preview↔real — achado auditoria)", () => {
+    const r = schemaPayloadPedido.safeParse(payload({ codigo_cupom: "promo10" }));
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.codigo_cupom).toBe("PROMO10");
+  });
 });
 
 // ===========================================================================
