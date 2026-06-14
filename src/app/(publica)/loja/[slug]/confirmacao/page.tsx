@@ -46,6 +46,31 @@ function rotuloForma(tipo: string | null): string {
   }
 }
 
+/** Rótulo do tipo de entrega. */
+function rotuloTipoEntrega(tipo: string | null): string {
+  if (tipo === "retirada") return "Retirada no local";
+  if (tipo === "entrega") return "Entrega";
+  return tipo ?? "—";
+}
+
+/**
+ * Formata endereço de entrega a partir do JSONB `endereco_entrega`.
+ * O objeto pode conter campos livres; só lemos os conhecidos (rua, numero, bairro, cidade, estado, cep).
+ */
+function formatarEndereco(endereco: unknown): string {
+  if (endereco == null || typeof endereco !== "object") return "—";
+  const e = endereco as Record<string, unknown>;
+  const str = (v: unknown): string =>
+    typeof v === "string" && v.trim() !== "" ? v.trim() : "";
+
+  const linha1 = [str(e.rua), str(e.numero)].filter(Boolean).join(", ");
+  const linha2 = [str(e.bairro), str(e.cidade), str(e.estado)]
+    .filter(Boolean)
+    .join(" — ");
+  const cep = str(e.cep) ? `CEP ${str(e.cep)}` : "";
+  return [linha1, linha2, cep].filter(Boolean).join(" · ") || "—";
+}
+
 /**
  * Instrução de pagamento a partir do `config` (JSONB) da forma da loja.
  * Lê apenas campos previsíveis e os trata como texto — nada é interpretado.
@@ -59,6 +84,26 @@ function instrucaoPagamento(config: unknown): string | null {
   }
   if (typeof c.instrucoes === "string" && c.instrucoes.trim() !== "") {
     return c.instrucoes;
+  }
+  return null;
+}
+
+/**
+ * Instrução fixa por forma de pagamento quando não há config da loja.
+ * Dinheiro com troco → inclui valor do troco.
+ */
+function instrucaoPadrao(
+  forma: string | null,
+  troco: number | null,
+): string | null {
+  if (forma === "dinheiro") {
+    if (troco && troco > 0) {
+      return `Pague em dinheiro na entrega. Troco para ${formatarMoeda(troco)}.`;
+    }
+    return "Pague em dinheiro na entrega.";
+  }
+  if (forma === "cartao") {
+    return "Pague com cartão no momento da entrega.";
   }
   return null;
 }
@@ -136,8 +181,14 @@ export default async function ConfirmacaoPage({
               </div>
             )}
             <div className="flex justify-between">
-              <dt className="text-muted-foreground">Entrega</dt>
-              <dd>{formatarMoeda(ped.taxa_entrega)}</dd>
+              <dt className="text-muted-foreground">
+                {ped.tipo_entrega === "retirada" ? "Taxa de entrega" : "Entrega"}
+              </dt>
+              <dd>
+                {ped.tipo_entrega === "retirada" && ped.taxa_entrega === 0
+                  ? "Grátis"
+                  : formatarMoeda(ped.taxa_entrega)}
+              </dd>
             </div>
             <div className="flex justify-between text-base font-semibold">
               <dt>Total</dt>
@@ -147,11 +198,39 @@ export default async function ConfirmacaoPage({
 
           <Separator />
 
+          {/* Tipo de entrega */}
+          <div className="text-sm">
+            <p className="text-muted-foreground">Tipo</p>
+            <p className="font-medium">{rotuloTipoEntrega(ped.tipo_entrega)}</p>
+          </div>
+
+          {/* Endereço — só exibe em entregas domiciliares */}
+          {ped.tipo_entrega === "entrega" && (
+            <div className="text-sm">
+              <p className="text-muted-foreground">Endereço de entrega</p>
+              <p className="font-medium">{formatarEndereco(ped.endereco_entrega)}</p>
+            </div>
+          )}
+
+          <Separator />
+
           <div className="text-sm">
             <p className="text-muted-foreground">Forma de pagamento</p>
             <p className="font-medium">{rotuloForma(ped.forma_pagamento)}</p>
-            {instrucao && (
+            {/* Troco — só exibe em dinheiro com troco_para preenchido */}
+            {ped.forma_pagamento === "dinheiro" && ped.troco_para && ped.troco_para > 0 && (
+              <p className="mt-1 text-sm font-medium">
+                Troco para {formatarMoeda(ped.troco_para)}
+              </p>
+            )}
+            {instrucao ? (
               <p className="mt-1 rounded-md bg-muted p-3 text-sm">{instrucao}</p>
+            ) : (
+              instrucaoPadrao(ped.forma_pagamento, ped.troco_para) && (
+                <p className="mt-1 rounded-md bg-muted p-3 text-sm">
+                  {instrucaoPadrao(ped.forma_pagamento, ped.troco_para)}
+                </p>
+              )
             )}
           </div>
         </CardContent>
