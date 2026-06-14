@@ -16,8 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useCarrinho, linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { validarCupom } from "@/lib/actions/cupom";
-import { calcularTotal } from "@/lib/utils/calcularTotal";
+import { calcularTotal, calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { FormEndereco, type EnderecoEntrega } from "./FormEndereco";
 
 export type ZonaEntrega = { id: string; nome: string; taxa_entrega: number };
@@ -177,6 +178,19 @@ export function Carrinho({
               <ul className="divide-y">
                 {itens.map((item) => {
                   const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
+                  const opcionais =
+                    item.opcionais?.filter((o) => o.quantidade > 0) ?? [];
+                  // PREVIEW (§10): preço da linha COM opcionais via calcularSubtotal (082).
+                  const subtotalItem = calcularSubtotal([
+                    {
+                      preco: item.preco,
+                      quantidade: item.quantidade,
+                      opcionais: opcionais.map((o) => ({
+                        preco: o.preco,
+                        quantidade: o.quantidade,
+                      })),
+                    },
+                  ]);
                   return (
                   <li key={linhaId} className="flex gap-3 py-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -188,8 +202,16 @@ export function Carrinho({
                     <div className="flex flex-1 flex-col gap-1">
                       <span className="text-sm font-medium">{item.nome}</span>
                       <span className="text-sm text-muted-foreground">
-                        {formatarMoeda(item.preco)}
+                        {formatarMoeda(subtotalItem)}
                       </span>
+                      <ListaOpcionaisItem
+                        opcionais={opcionais.map((o) => ({
+                          id: o.opcionalId,
+                          nome: o.nome,
+                          preco: o.preco,
+                          quantidade: o.quantidade,
+                        }))}
+                      />
                       <div className="mt-1 flex items-center gap-2">
                         <Button
                           variant="outline"

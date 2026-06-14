@@ -18,6 +18,7 @@ import {
 import { listarFormasPagamento } from "@/lib/supabase/queries/entregaPagamento";
 import { resolverAcaoConfirmacao } from "@/lib/utils/confirmacao";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { ConfirmacaoClient } from "./ConfirmacaoClient";
 
 type PageProps = {
@@ -157,14 +158,35 @@ export default async function ConfirmacaoPage({
 
         <CardContent className="flex flex-col gap-4">
           <section aria-label="Itens do pedido" className="flex flex-col gap-2">
-            {ped.itens_pedido.map((item) => (
-              <div key={item.id} className="flex justify-between text-sm">
-                <span>
-                  {item.quantidade}× {item.nome}
-                </span>
-                <span>{formatarMoeda(item.preco * item.quantidade)}</span>
-              </div>
-            ))}
+            {ped.itens_pedido.map((item) => {
+              // SNAPSHOT autoritativo (RN-O6): nome/preço do momento do pedido,
+              // lidos por token (server-side) — NUNCA recalculados dos opcionais
+              // atuais. O total do pedido (ped.total) é o final do servidor.
+              const opcionais = item.itens_pedido_opcionais ?? [];
+              const acrescimo = opcionais.reduce(
+                (s, o) => s + o.preco_snapshot * o.quantidade,
+                0,
+              );
+              const totalItem = (item.preco + acrescimo) * item.quantidade;
+              return (
+                <div key={item.id} className="flex flex-col gap-0.5">
+                  <div className="flex justify-between text-sm">
+                    <span>
+                      {item.quantidade}× {item.nome}
+                    </span>
+                    <span>{formatarMoeda(totalItem)}</span>
+                  </div>
+                  <ListaOpcionaisItem
+                    opcionais={opcionais.map((o) => ({
+                      id: o.id,
+                      nome: o.nome_snapshot,
+                      preco: o.preco_snapshot,
+                      quantidade: o.quantidade,
+                    }))}
+                  />
+                </div>
+              );
+            })}
           </section>
 
           <Separator />

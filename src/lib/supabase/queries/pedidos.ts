@@ -15,8 +15,16 @@ type Client = SupabaseClient<Database>;
 export type Pedido = Tables<"pedidos">;
 /** Row da TABELA `itens_pedido`. */
 export type ItemPedido = Tables<"itens_pedido">;
-/** Pedido com itens aninhados (join). */
-export type PedidoComItens = Pedido & { itens_pedido: ItemPedido[] };
+/** Row da TABELA `itens_pedido_opcionais` — snapshot imutável do opcional (RN-O6). */
+export type ItemPedidoOpcional = Tables<"itens_pedido_opcionais">;
+/** Item do pedido com seus opcionais (snapshot) aninhados. */
+export type ItemPedidoComOpcionais = ItemPedido & {
+  itens_pedido_opcionais: ItemPedidoOpcional[];
+};
+/** Pedido com itens aninhados (join), cada item com seus opcionais (snapshot). */
+export type PedidoComItens = Pedido & {
+  itens_pedido: ItemPedidoComOpcionais[];
+};
 
 /** Filtros opcionais da listagem do lojista. */
 export type FiltrosPedidos = { status?: string };
@@ -33,7 +41,7 @@ export async function buscarPedidoPorToken(
 ): Promise<PedidoComItens | null> {
   const { data, error } = await client
     .from("pedidos")
-    .select("*, itens_pedido(*)")
+    .select("*, itens_pedido(*, itens_pedido_opcionais(*))")
     .eq("id", pedidoId)
     .eq("token_acesso", token)
     .maybeSingle();
@@ -48,7 +56,7 @@ export async function listarPedidosDoDono(
 ): Promise<PedidoComItens[]> {
   let query = client
     .from("pedidos")
-    .select("*, itens_pedido(*)")
+    .select("*, itens_pedido(*, itens_pedido_opcionais(*))")
     .order("criado_em", { ascending: false });
   if (filtros?.status !== undefined) {
     query = query.eq("status", filtros.status);
@@ -65,7 +73,7 @@ export async function buscarPedidoDoDono(
 ): Promise<PedidoComItens | null> {
   const { data, error } = await client
     .from("pedidos")
-    .select("*, itens_pedido(*)")
+    .select("*, itens_pedido(*, itens_pedido_opcionais(*))")
     .eq("id", pedidoId)
     .maybeSingle();
   if (error) throw error;

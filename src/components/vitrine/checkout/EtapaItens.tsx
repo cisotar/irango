@@ -14,9 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { validarCupomAction } from "@/lib/actions/cupomPreview";
 import type { ItemCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId } from "@/hooks/useCarrinho";
+import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { ResumoValores } from "./ResumoValores";
 
 export type EtapaItensProps = {
@@ -90,6 +92,20 @@ export function EtapaItens({
           </h2>
           {itens.map((item) => {
             const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
+            const opcionais =
+              item.opcionais?.filter((o) => o.quantidade > 0) ?? [];
+            // PREVIEW (seguranca.md §10): subtotal da linha COM opcionais via
+            // calcularSubtotal (082). O servidor recalcula tudo do banco.
+            const subtotalItem = calcularSubtotal([
+              {
+                preco: item.preco,
+                quantidade: item.quantidade,
+                opcionais: opcionais.map((o) => ({
+                  preco: o.preco,
+                  quantidade: o.quantidade,
+                })),
+              },
+            ]);
             return (
             <div key={linhaId} className="flex items-center gap-3">
               <div className="min-w-0 flex-1">
@@ -99,6 +115,14 @@ export function EtapaItens({
                 <p className="text-xs text-muted-foreground">
                   {formatarMoeda(item.preco)} cada
                 </p>
+                <ListaOpcionaisItem
+                  opcionais={opcionais.map((o) => ({
+                    id: o.opcionalId,
+                    nome: o.nome,
+                    preco: o.preco,
+                    quantidade: o.quantidade,
+                  }))}
+                />
               </div>
 
               <div className="flex items-center gap-1">
@@ -128,7 +152,7 @@ export function EtapaItens({
               </div>
 
               <span className="w-20 text-right text-sm font-semibold text-primary">
-                {formatarMoeda(item.preco * item.quantidade)}
+                {formatarMoeda(subtotalItem)}
               </span>
 
               <Button
