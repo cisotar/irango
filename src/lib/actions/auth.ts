@@ -19,14 +19,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { contarLojasDoDono, slugExiste, criarLoja } from "@/lib/supabase/queries/lojas";
 import { reconciliarAssinatura } from "@/lib/assinatura/reconciliar";
+import { VERSAO_TERMOS } from "@/lib/constants/termos";
 
 export type ResultadoCadastro = { ok: true } | { ok: false; erro: string };
 export type ResultadoLogin = { ok: true } | { ok: false; erro: string };
 
-// D8: versão corrente dos Termos/Privacidade. Constante de configuração (não é
-// dado pessoal — permitido em código, seguranca.md §8). Bump quando os termos
-// mudarem (futuro: re-consentimento).
-const VERSAO_TERMOS = "2026-06-13";
+// D8: versão corrente dos Termos/Privacidade — agora em @/lib/constants/termos
+// (compartilhada com as páginas públicas /termos e /privacidade, issue 062).
 
 const TRIAL_DIAS = 14; // RN-A6 (modelo-negocio.md §5)
 const MAX_TENTATIVAS_SLUG = 50;
