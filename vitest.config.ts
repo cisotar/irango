@@ -4,6 +4,18 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   plugins: [tsconfigPaths(), react()],
+  resolve: {
+    // `server-only` lança ao ser importado fora da condição `react-server`. Sob
+    // vitest (node), módulos server-only importados DIRETO no teste (ex.:
+    // reconciliacao_assinatura) usam o stub vazio que o pacote expõe na condição
+    // react-server. Testes de action que mockam o módulo não são afetados.
+    alias: [
+      {
+        find: /^server-only$/,
+        replacement: new URL("./node_modules/server-only/empty.js", import.meta.url).pathname,
+      },
+    ],
+  },
   test: {
     environment: "node",
     globals: true,

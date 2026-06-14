@@ -56,6 +56,41 @@ export async function vincularLojaAoEvento(
   if (error) throw error;
 }
 
+export type EventoOrfao = {
+  evento_id: string;
+  /** Nome EXTERNO Hotmart (ex.: PURCHASE_APPROVED). */
+  evento_tipo: string | null;
+  /** Payload bruto — derivar subscriber_code/plano/proximaCobranca. */
+  payload: Database["public"]["Tables"]["webhook_eventos_hotmart"]["Row"]["payload"];
+  /** Ordenação cronológica do fold. */
+  processado_em: string;
+};
+
+/**
+ * Eventos AINDA não reconciliados (`loja_id IS NULL`) cujo comprador casa EXATO
+ * com o email normalizado. Match exato (`eq`) sobre o email em lower(trim) — o
+ * webhook (057, route.ts) já grava `email_comprador` em lower(trim). NUNCA `ilike`:
+ * o LIKE trata `_` e `%` do email do atacante como wildcard (ex.: `vic_im@x` casa
+ * `victim@x`) → roubo de assinatura órfã alheia (auditoria 059, FIX 1 CRÍTICA).
+ * Ordem cronológica (`processado_em ASC`) para o fold consolidar o estado final.
+ * Escopo manual: `webhook_eventos_hotmart` é deny-all/PII — exige service_role
+ * (BYPASSRLS). Propaga error (seguranca.md §14).
+ */
+export async function buscarEventosOrfaosPorEmail(
+  client: Client,
+  email: string,
+): Promise<EventoOrfao[]> {
+  const alvo = email.trim().toLowerCase();
+  const { data, error } = await client
+    .from("webhook_eventos_hotmart")
+    .select("evento_id, evento_tipo, payload, processado_em")
+    .is("loja_id", null)
+    .eq("email_comprador", alvo)
+    .order("processado_em", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as EventoOrfao[];
+}
+
 export type DadosAssinatura = {
   status: StatusAssinatura;
   /** Novo fim do ciclo pago. Só estende/define quando o evento renova. */

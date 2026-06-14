@@ -50,6 +50,12 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   criarLoja: (...a: unknown[]) => criarLoja(...a),
 }));
 
+// ── reconciliação de assinatura órfã (059) ────────────────────────────────────
+const reconciliarAssinatura = vi.fn();
+vi.mock("@/lib/assinatura/reconciliar", () => ({
+  reconciliarAssinatura: (...a: unknown[]) => reconciliarAssinatura(...a),
+}));
+
 import { cadastrar, entrar } from "./auth";
 
 const PAYLOAD_OK = { email: "joao@teste.com", senha: "senha1234", aceiteTermos: true as const };
@@ -63,6 +69,7 @@ beforeEach(() => {
   slugExiste.mockResolvedValue(false);
   criarLoja.mockResolvedValue({ id: "loja-1", dono_id: USER_ID });
   deleteUser.mockResolvedValue({ error: null });
+  reconciliarAssinatura.mockResolvedValue(undefined);
 });
 
 describe("cadastrar — caminho feliz", () => {
@@ -181,6 +188,46 @@ describe("cadastrar — slug e compensação", () => {
     expect(deleteUser).toHaveBeenCalledWith(USER_ID); // compensação best-effort
     // erro genérico — não vaza detalhe interno (seguranca.md §14)
     expect(JSON.stringify(r)).not.toContain("senha");
+    spy.mockRestore();
+  });
+});
+
+describe("cadastrar — gate de reconciliação por posse do email (059 FIX 2 ALTA)", () => {
+  it("ATAQUE: email_confirmed_at NULL → NÃO reconcilia (posse do email não comprovada)", async () => {
+    // Com "Confirm email" ON, o signUp devolve user sem email_confirmed_at. Um
+    // atacante poderia cadastrar com o email exato da vítima; reconciliar aqui
+    // roubaria a assinatura órfã dela ANTES de provar posse. O gate bloqueia.
+    signUp.mockResolvedValue({
+      data: { user: { id: USER_ID, email_confirmed_at: null } },
+      error: null,
+    });
+    const r = await cadastrar(PAYLOAD_OK);
+    expect(r).toEqual({ ok: true }); // cadastro segue (loja em trial)
+    expect(reconciliarAssinatura).not.toHaveBeenCalled();
+  });
+
+  it("email_confirmed_at setado → reconcilia (posse comprovada)", async () => {
+    signUp.mockResolvedValue({
+      data: { user: { id: USER_ID, email_confirmed_at: "2026-06-14T10:00:00Z" } },
+      error: null,
+    });
+    const r = await cadastrar(PAYLOAD_OK);
+    expect(r).toEqual({ ok: true });
+    expect(reconciliarAssinatura).toHaveBeenCalledTimes(1);
+    // reconcilia pela loja criada e pelo email AUTENTICADO (RN-A1), via service_role
+    expect(reconciliarAssinatura).toHaveBeenCalledWith(fakeService, PAYLOAD_OK.email, "loja-1");
+  });
+
+  it("reconciliação falha → cadastro NÃO derruba (best-effort), retorna ok", async () => {
+    signUp.mockResolvedValue({
+      data: { user: { id: USER_ID, email_confirmed_at: "2026-06-14T10:00:00Z" } },
+      error: null,
+    });
+    reconciliarAssinatura.mockRejectedValue(new Error("falha reconciliacao"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await cadastrar(PAYLOAD_OK);
+    expect(r).toEqual({ ok: true });
+    expect(deleteUser).not.toHaveBeenCalled(); // loja já existe — sem compensação
     spy.mockRestore();
   });
 });

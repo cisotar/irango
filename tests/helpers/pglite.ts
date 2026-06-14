@@ -83,7 +83,12 @@ function migrationFiles(): string[] {
  * em ordem. Cada teste deve criar o seu (isolamento total entre testes).
  */
 export async function createTestDb(): Promise<TestDb> {
-  const db = new PGlite();
+  // Fidelidade ao Supabase/PostgREST: timestamps voltam como STRING ISO (JSON),
+  // não como `Date`. Sem isso, duas leituras do mesmo timestamptz produzem
+  // objetos `Date` distintos (`toBe`/`Object.is` falha mesmo com valor igual) —
+  // divergindo do client real. OIDs: timestamptz=1184, timestamp=1114, date=1082.
+  const passthrough = (v: string) => v;
+  const db = new PGlite({ parsers: { 1184: passthrough, 1114: passthrough, 1082: passthrough } });
   await db.exec(BOOTSTRAP_SQL);
 
   for (const file of migrationFiles()) {
