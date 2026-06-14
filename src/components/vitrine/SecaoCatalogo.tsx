@@ -8,6 +8,8 @@ import {
   type ProdutoModalDados,
 } from "@/components/vitrine/ProdutoModal";
 import { useCarrinho } from "@/hooks/useCarrinho";
+import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
+import type { OpcionalCarrinho } from "@/types/dominio";
 
 /** Produto no shape que a vitrine renderiza (subconjunto de produtos). */
 export type ProdutoCatalogo = {
@@ -16,6 +18,8 @@ export type ProdutoCatalogo = {
   descricao: string | null;
   preco: number;
   foto_url: string | null;
+  /** Categoria de produto — usada para resolver os opcionais (issue 087). */
+  categoria_id: string | null;
 };
 
 /** Uma categoria (ou "Outros") com seus produtos disponíveis. */
@@ -27,6 +31,11 @@ export type CategoriaComProdutos = {
 
 type SecaoCatalogoProps = {
   categorias: CategoriaComProdutos[];
+  /**
+   * Mapa categoria_id (de produto) → grupos de opcional disponíveis (SSR, 081).
+   * Produto sem categoria ou sem associação → sem opcionais no modal.
+   */
+  opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
 };
 
 /** Slug-âncora estável por grupo (categorias têm id; "Outros" não). */
@@ -45,7 +54,10 @@ function fotoSegura(url: string | null): string | undefined {
  * confirmação sobe para `useCarrinho().adicionar`. Preço/subtotal são preview — o
  * servidor recalcula valores no checkout (seguranca.md §10).
  */
-export function SecaoCatalogo({ categorias }: SecaoCatalogoProps) {
+export function SecaoCatalogo({
+  categorias,
+  opcionaisPorCategoria = {},
+}: SecaoCatalogoProps) {
   const { adicionar } = useCarrinho();
   const [produtoSelecionado, setProdutoSelecionado] =
     useState<ProdutoModalDados | null>(null);
@@ -58,12 +70,20 @@ export function SecaoCatalogo({ categorias }: SecaoCatalogoProps) {
       descricao: produto.descricao,
       preco: produto.preco,
       fotoUrl: produto.foto_url,
+      gruposOpcionais: produto.categoria_id
+        ? opcionaisPorCategoria[produto.categoria_id]
+        : undefined,
     });
     setModalAberto(true);
   };
 
-  // Confirmação do modal: adiciona a quantidade escolhida ao carrinho.
-  const confirmarAdicao = (produtoId: string, quantidade: number) => {
+  // Confirmação do modal: adiciona a quantidade + opcionais escolhidos ao carrinho.
+  // Os opcionais carregam preço só como PREVIEW (o servidor recalcula — §10).
+  const confirmarAdicao = (
+    produtoId: string,
+    quantidade: number,
+    opcionais: OpcionalCarrinho[],
+  ) => {
     if (!produtoSelecionado || produtoSelecionado.id !== produtoId) return;
     adicionar(
       {
@@ -71,6 +91,7 @@ export function SecaoCatalogo({ categorias }: SecaoCatalogoProps) {
         nome: produtoSelecionado.nome,
         preco: produtoSelecionado.preco,
         fotoUrl: fotoSegura(produtoSelecionado.fotoUrl),
+        ...(opcionais.length > 0 ? { opcionais } : {}),
       },
       quantidade,
     );

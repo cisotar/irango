@@ -49,7 +49,12 @@ export type EtapaPagamentoProps = {
   lojaSlug: string;
   lojaAberta: boolean;
   formasPagamento: FormaPagamentoWizard[];
-  itens: { produtoId: string; quantidade: number }[];
+  itens: {
+    produtoId: string;
+    quantidade: number;
+    // Opcionais escolhidos — só id + quantidade (RN-O2). NUNCA preço.
+    opcionais?: { opcionalId: string; quantidade: number }[];
+  }[];
   estado: EstadoWizard;
   subtotal: number;
   desconto: number;
@@ -101,6 +106,16 @@ export function EtapaPagamento({
       itens: itens.map((i) => ({
         produto_id: i.produtoId,
         quantidade: i.quantidade,
+        // Opcionais: só opcional_id + quantidade (RN-O2). O servidor valida loja,
+        // ativo e categoria e recalcula o preço do banco (085, seguranca.md §10).
+        ...(i.opcionais && i.opcionais.length > 0
+          ? {
+              opcionais: i.opcionais.map((o) => ({
+                opcional_id: o.opcionalId,
+                quantidade: o.quantidade,
+              })),
+            }
+          : {}),
       })),
       forma_pagamento: estado.formaPagamento,
       nome_cliente: estado.nome.trim(),

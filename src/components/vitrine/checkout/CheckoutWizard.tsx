@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { useCarrinho } from "@/hooks/useCarrinho";
+import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
 import { IndicadorEtapas } from "./IndicadorEtapas";
 import { EtapaItens } from "./EtapaItens";
@@ -73,9 +74,20 @@ export function CheckoutWizard({
     if (montado) salvarEstadoWizard(estado);
   }, [estado, montado]);
 
-  // Subtotal preview a partir dos itens do carrinho (UX — servidor recalcula).
+  // Subtotal preview a partir dos itens do carrinho, incluindo opcionais (087).
+  // Reusa calcularSubtotal (082). UX — servidor recalcula tudo do banco (§10).
   const subtotalPreview = useMemo(
-    () => itens.reduce((acc, i) => acc + i.preco * i.quantidade, 0),
+    () =>
+      calcularSubtotal(
+        itens.map((i) => ({
+          preco: i.preco,
+          quantidade: i.quantidade,
+          opcionais: i.opcionais?.map((o) => ({
+            preco: o.preco,
+            quantidade: o.quantidade,
+          })),
+        })),
+      ),
     [itens],
   );
 
@@ -155,6 +167,14 @@ export function CheckoutWizard({
           itens={itens.map((i) => ({
             produtoId: i.produtoId,
             quantidade: i.quantidade,
+            ...(i.opcionais && i.opcionais.length > 0
+              ? {
+                  opcionais: i.opcionais.map((o) => ({
+                    opcionalId: o.opcionalId,
+                    quantidade: o.quantidade,
+                  })),
+                }
+              : {}),
           }))}
           estado={estado}
           subtotal={subtotalPreview}

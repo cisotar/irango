@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { useCarrinho } from "@/hooks/useCarrinho";
+import { useCarrinho, linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { validarCupom } from "@/lib/actions/cupom";
 import { calcularTotal } from "@/lib/utils/calcularTotal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
@@ -45,7 +45,12 @@ type EstadoCupom =
 
 /** Estado persistido para o checkout — SEM valores monetários (seguranca.md §10). */
 type EstadoCheckout = {
-  itens: { produtoId: string; quantidade: number }[];
+  // Só id + quantidade por item e por opcional — nenhum preço (seguranca.md §10).
+  itens: {
+    produtoId: string;
+    quantidade: number;
+    opcionais?: { opcionalId: string; quantidade: number }[];
+  }[];
   zonaId: string | null;
   formaPagamentoId: string | null;
   endereco: EnderecoEntrega | null;
@@ -110,10 +115,19 @@ export function Carrinho({
 
   const finalizar = useCallback(() => {
     const estado: EstadoCheckout = {
-      // Só id + quantidade — nenhum valor monetário (seguranca.md §10).
+      // Só ids + quantidades — nenhum valor monetário (seguranca.md §10). Os
+      // opcionais escolhidos seguem para o checkout (preço recalculado lá).
       itens: itens.map((i) => ({
         produtoId: i.produtoId,
         quantidade: i.quantidade,
+        ...(i.opcionais && i.opcionais.length > 0
+          ? {
+              opcionais: i.opcionais.map((o) => ({
+                opcionalId: o.opcionalId,
+                quantidade: o.quantidade,
+              })),
+            }
+          : {}),
       })),
       zonaId,
       formaPagamentoId,
@@ -161,8 +175,10 @@ export function Carrinho({
           <>
             <div className="flex flex-col gap-4 overflow-y-auto p-4">
               <ul className="divide-y">
-                {itens.map((item) => (
-                  <li key={item.produtoId} className="flex gap-3 py-3">
+                {itens.map((item) => {
+                  const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
+                  return (
+                  <li key={linhaId} className="flex gap-3 py-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={item.fotoUrl ?? "/placeholder-produto.png"}
@@ -180,7 +196,7 @@ export function Carrinho({
                           size="icon"
                           className="size-11"
                           aria-label={`Diminuir ${item.nome}`}
-                          onClick={() => decrementar(item.produtoId)}
+                          onClick={() => decrementar(linhaId)}
                         >
                           <Minus aria-hidden />
                         </Button>
@@ -195,7 +211,7 @@ export function Carrinho({
                           size="icon"
                           className="size-11"
                           aria-label={`Aumentar ${item.nome}`}
-                          onClick={() => incrementar(item.produtoId)}
+                          onClick={() => incrementar(linhaId)}
                         >
                           <Plus aria-hidden />
                         </Button>
@@ -204,14 +220,15 @@ export function Carrinho({
                           size="icon"
                           className="ml-auto size-11"
                           aria-label={`Remover ${item.nome}`}
-                          onClick={() => remover(item.produtoId)}
+                          onClick={() => remover(linhaId)}
                         >
                           <Trash2 aria-hidden />
                         </Button>
                       </div>
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
 
               <Separator />

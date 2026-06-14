@@ -18,7 +18,10 @@ import {
 } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
-import { buscarCatalogoPublico } from "@/lib/supabase/queries/produtos";
+import {
+  buscarCatalogoPublico,
+  buscarOpcionaisPorCategoria,
+} from "@/lib/supabase/queries/produtos";
 import { schemaTema } from "@/lib/validacoes/loja";
 import type { Horarios } from "@/lib/utils/lojaAberta";
 import {
@@ -121,6 +124,17 @@ export default async function VitrinePage({ params }: PageProps) {
   ]);
   const grupos = await buscarCatalogoPublico(db, lojaId, categorias);
 
+  // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
+  // opcionais ativos de loja ativa. Buscados pelas categorias do catálogo.
+  // NUNCA buscado no client. Preços aqui são PREVIEW (servidor recalcula — §10).
+  const categoriaIds = grupos
+    .map((g) => g.id)
+    .filter((id): id is string => id !== null);
+  const opcionaisPorCategoria = await buscarOpcionaisPorCategoria(
+    db,
+    categoriaIds,
+  );
+
   const tema = resolverTema(loja.tema);
 
   const categoriasComProdutos: CategoriaComProdutos[] = grupos.map((grupo) => ({
@@ -132,6 +146,7 @@ export default async function VitrinePage({ params }: PageProps) {
       descricao: p.descricao,
       preco: p.preco,
       foto_url: p.foto_url,
+      categoria_id: p.categoria_id,
     })),
   }));
 
@@ -179,7 +194,10 @@ export default async function VitrinePage({ params }: PageProps) {
               </p>
             </div>
           ) : (
-            <SecaoCatalogo categorias={categoriasComProdutos} />
+            <SecaoCatalogo
+              categorias={categoriasComProdutos}
+              opcionaisPorCategoria={opcionaisPorCategoria}
+            />
           )}
         </main>
 

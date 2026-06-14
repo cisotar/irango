@@ -37,7 +37,12 @@ type ItemNav = {
 const ITENS: ItemNav[] = [
   { href: "/painel", rotulo: "Dashboard", icone: LayoutDashboard },
   { href: "/painel/pedidos", rotulo: "Pedidos", icone: ClipboardList },
-  { href: "/painel/produtos", rotulo: "Produtos", icone: Package },
+  {
+    href: "/painel/produtos",
+    rotulo: "Produtos",
+    icone: Package,
+    subitens: [{ href: "/painel/produtos/opcionais", rotulo: "Opcionais" }],
+  },
   { href: "/painel/cupons", rotulo: "Cupons", icone: Ticket },
   {
     href: "/painel/configuracoes",

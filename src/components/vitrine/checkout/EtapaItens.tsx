@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { validarCupomAction } from "@/lib/actions/cupomPreview";
 import type { ItemCarrinho } from "@/types/dominio";
+import { linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { ResumoValores } from "./ResumoValores";
 
 export type EtapaItensProps = {
@@ -24,9 +25,10 @@ export type EtapaItensProps = {
   subtotal: number;
   desconto: number;
   codigoCupom: string | null;
-  onIncrementar: (produtoId: string) => void;
-  onDecrementar: (produtoId: string) => void;
-  onRemover: (produtoId: string) => void;
+  /** id = linhaCarrinhoId(produtoId, opcionais) — distingue linhas com opcionais diferentes. */
+  onIncrementar: (linhaId: string) => void;
+  onDecrementar: (linhaId: string) => void;
+  onRemover: (linhaId: string) => void;
   /** Aplica/remove cupom: código + desconto preview confirmados pelo servidor. */
   onAplicarCupom: (codigo: string, descontoPreview: number) => void;
   onRemoverCupom: () => void;
@@ -86,8 +88,10 @@ export function EtapaItens({
           <h2 className="text-sm font-semibold text-foreground">
             Itens do pedido
           </h2>
-          {itens.map((item) => (
-            <div key={item.produtoId} className="flex items-center gap-3">
+          {itens.map((item) => {
+            const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
+            return (
+            <div key={linhaId} className="flex items-center gap-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">
                   {item.nome}
@@ -104,7 +108,7 @@ export function EtapaItens({
                   size="icon"
                   className="size-8"
                   aria-label={`Diminuir ${item.nome}`}
-                  onClick={() => onDecrementar(item.produtoId)}
+                  onClick={() => onDecrementar(linhaId)}
                 >
                   <Minus className="size-3.5" aria-hidden />
                 </Button>
@@ -117,7 +121,7 @@ export function EtapaItens({
                   size="icon"
                   className="size-8"
                   aria-label={`Aumentar ${item.nome}`}
-                  onClick={() => onIncrementar(item.produtoId)}
+                  onClick={() => onIncrementar(linhaId)}
                 >
                   <Plus className="size-3.5" aria-hidden />
                 </Button>
@@ -133,12 +137,13 @@ export function EtapaItens({
                 size="icon"
                 className="size-8 text-muted-foreground"
                 aria-label={`Remover ${item.nome}`}
-                onClick={() => onRemover(item.produtoId)}
+                onClick={() => onRemover(linhaId)}
               >
                 <Trash2 className="size-4" aria-hidden />
               </Button>
             </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
