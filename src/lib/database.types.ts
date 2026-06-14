@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       bairros_zona: {
@@ -61,18 +86,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "categoria_produto_opcionais_categoria_id_fkey"
-            columns: ["categoria_id"]
+            foreignKeyName: "categoria_produto_opcionais_categoria_id_loja_id_fkey"
+            columns: ["categoria_id", "loja_id"]
             isOneToOne: false
             referencedRelation: "categorias"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "loja_id"]
           },
           {
-            foreignKeyName: "categoria_produto_opcionais_categoria_opcional_id_fkey"
-            columns: ["categoria_opcional_id"]
+            foreignKeyName: "categoria_produto_opcionais_categoria_opcional_id_loja_id_fkey"
+            columns: ["categoria_opcional_id", "loja_id"]
             isOneToOne: false
             referencedRelation: "opcionais_categorias"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "loja_id"]
           },
           {
             foreignKeyName: "categoria_produto_opcionais_loja_id_fkey"
@@ -815,16 +840,73 @@ export type Database = {
       }
     }
     Functions: {
+      criar_pedido: {
+        Args: {
+          p_cupom_codigo: string
+          p_cupom_id: string
+          p_desconto: number
+          p_endereco_entrega: Json
+          p_forma_pagamento: string
+          p_itens: Json
+          p_loja_id: string
+          p_nome_cliente: string
+          p_observacoes: string
+          p_subtotal: number
+          p_taxa_entrega: number
+          p_telefone_cliente: string
+          p_tipo_entrega: string
+          p_total: number
+          p_troco_para: number
+        }
+        Returns: {
+          pedido_id: string
+          token_acesso: string
+        }[]
+      }
       item_pedido_aceita_opcionais: {
         Args: { p_item_pedido_id: string }
         Returns: boolean
       }
       loja_esta_ativa: { Args: { p_loja_id: string }; Returns: boolean }
-      pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
       loja_por_email_dono: {
         Args: { p_email: string }
-        Returns: Database["public"]["Tables"]["lojas"]["Row"][]
+        Returns: {
+          assinatura_atualizada_em: string | null
+          assinatura_fim_periodo: string | null
+          assinatura_inicio: string | null
+          assinatura_status: string
+          ativo: boolean
+          atualizado_em: string
+          consentimento_em: string | null
+          consentimento_versao: string | null
+          criado_em: string
+          dono_id: string
+          endereco_bairro: string | null
+          endereco_cep: string | null
+          endereco_cidade: string | null
+          endereco_estado: string | null
+          endereco_numero: string | null
+          endereco_rua: string | null
+          horarios: Json
+          hotmart_plano: string | null
+          hotmart_subscriber_code: string | null
+          id: string
+          nome: string
+          slug: string
+          taxa_entrega_fora_zona: number | null
+          telefone: string | null
+          tema: Json
+          timezone: string
+          whatsapp: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "lojas"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
+      pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
@@ -953,6 +1035,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
