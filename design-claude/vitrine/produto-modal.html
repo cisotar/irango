@@ -1,0 +1,919 @@
+<!-- @dsCard group="Vitrine" -->
+<!--
+  produto-modal.html
+  Modal/bottom-sheet de detalhe de produto — abre ao tocar num CardProduto na vitrine.
+  Mundo: Vitrine (tema da loja).
+
+  NOTA DE ESCOPO:
+  A seção de Opcionais/Add-ons é ASPIRACIONAL — o modelo de dados atual
+  (produtos: nome, descricao, preco, foto_url, categoria_id, disponivel) NÃO tem
+  opcionais. A feature exigiria schema + spec separados. O restante
+  (quantidade, observação, subtotal, adicionar ao carrinho) está 100% disponível.
+
+  Sem CDN externo. Fonte: system font stack. Ícones: emoji/SVG inline.
+-->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Modal de Produto</title>
+<style>
+  /* ── Tokens — Mundo Vitrine (tema da loja) ─────────────────────────── */
+  :root {
+    --cor-primaria:  #332616; /* header/hero do modal                   */
+    --cor-fundo:     #f5f0e6; /* fundo da vitrine                       */
+    --cor-destaque:  #2d3a27; /* preço, CTA, stepper ativo              */
+    --marrom-cafe:   #2e2610; /* título de seção                        */
+    --texto:         #3e2723; /* texto padrão                           */
+    --texto-muted:   #6b5d4f; /* secundário, legenda                    */
+    --borda-nav:     #dccbb0; /* divisores, bordas                      */
+    --branco:        #ffffff;
+    --cinza-medio:   #eeeeee;
+    --cinza-claro:   #f9f9f9;
+    --sombra-suave:  rgba(0,0,0,0.10);
+    --sombra-media:  rgba(0,0,0,0.15);
+    --sombra-modal:  rgba(0,0,0,0.55);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                 Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ── Demo shell ─────────────────────────────────────────────────────── */
+  body {
+    background: #b5a898;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    padding: 24px 0 60px;
+  }
+  .demo-label {
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.85;
+    text-align: center;
+    padding: 0 16px;
+  }
+
+  /* ── Vitrine de fundo (simulada) ─────────────────────────────────────── */
+  .vitrine-bg {
+    width: 100%;
+    max-width: 430px;
+    background: var(--cor-fundo);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    position: relative;
+  }
+
+  /* ── Overlay ─────────────────────────────────────────────────────────── */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    border-radius: 16px;
+    z-index: 10;
+  }
+
+  /* ── Modal bottom-sheet ──────────────────────────────────────────────── */
+  /*
+    Mobile: sobe de baixo, ocupa até 92vh, scroll interno.
+    Desktop (≥769px): flutua centralizado como card (max 520px).
+    A animação slide-up é ilustrativa — em produção usa transform + transition.
+  */
+  .modal {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 20;
+    background: var(--branco);
+    border-radius: 20px 20px 0 0;
+    max-height: 92%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.25);
+    /* Simula estado "aberto" — em produção: transform: translateY(0) */
+  }
+
+  /* ── Drag handle ──────────────────────────────────────────────────────── */
+  .drag-handle-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 4px;
+    cursor: grab;
+    flex-shrink: 0;
+    background: var(--branco);
+  }
+  .drag-handle {
+    width: 40px; height: 4px;
+    background: var(--borda-nav);
+    border-radius: 2px;
+  }
+
+  /* ── Hero (cor primária da loja, texto branco) ───────────────────────── */
+  .hero {
+    background: var(--cor-primaria);
+    padding: 16px 20px 20px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .hero-img-wrap {
+    flex-shrink: 0;
+    position: relative;
+  }
+  .hero-img {
+    width: 110px; height: 110px;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.30);
+    background: linear-gradient(135deg, #4a3a22, #6b5131);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.8rem;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  /* Badge de categoria — sobre a imagem, canto superior esquerdo */
+  .badge-categoria {
+    position: absolute;
+    top: -6px; left: -6px;
+    background: #c8a54a; /* tom âmbar/dourado discreto */
+    color: #1a1000;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    white-space: nowrap;
+  }
+  .hero-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .hero-nome {
+    font-size: 1.05rem;
+    font-weight: 900;
+    color: var(--branco);
+    line-height: 1.25;
+    /* contraste: #fff sobre #332616 = ~10:1 — WCAG AAA */
+  }
+  .hero-desc {
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.82);
+    line-height: 1.4;
+  }
+  .hero-preco {
+    font-size: 1.4rem;
+    font-weight: 900;
+    color: #f5d78c; /* dourado claro sobre primária — contraste ≥4.5:1 */
+    margin-top: 4px;
+  }
+  /* Botão fechar no canto superior direito do hero */
+  .btn-fechar {
+    position: absolute;
+    top: 10px; right: 12px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.30);
+    color: var(--branco);
+    border-radius: 50%;
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; font-weight: 900;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.15s;
+  }
+  .btn-fechar:hover { background: rgba(255,255,255,0.25); }
+  .btn-fechar:focus-visible {
+    outline: 3px solid var(--branco);
+    outline-offset: 2px;
+  }
+
+  /* ── Corpo (scrollável) ──────────────────────────────────────────────── */
+  .corpo {
+    overflow-y: auto;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* ── Seção genérica ──────────────────────────────────────────────────── */
+  .secao {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--cinza-medio);
+  }
+  .secao:last-child { border-bottom: none; }
+  .secao-titulo {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--marrom-cafe);
+    margin-bottom: 12px;
+  }
+
+  /* ── Stepper de quantidade ───────────────────────────────────────────── */
+  .qtd-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .qtd-label {
+    font-size: 0.9rem;
+    color: var(--texto);
+    line-height: 1.3;
+  }
+  .qtd-unitario {
+    font-size: 0.78rem;
+    color: var(--texto-muted);
+    margin-top: 2px;
+  }
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--cinza-claro);
+    border: 1.5px solid var(--borda-nav);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .stepper-btn {
+    background: transparent;
+    border: none;
+    color: var(--cor-destaque);
+    font-size: 1.3rem;
+    font-weight: 900;
+    width: 44px; height: 44px; /* toque ≥44×44px */
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.12s;
+    flex-shrink: 0;
+  }
+  .stepper-btn:hover { background: var(--cinza-medio); }
+  .stepper-btn:active { background: var(--borda-nav); }
+  .stepper-btn:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: -2px;
+  }
+  .stepper-btn:disabled {
+    color: var(--borda-nav);
+    cursor: not-allowed;
+  }
+  .stepper-valor {
+    min-width: 36px;
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--texto);
+    padding: 0 4px;
+    border-left: 1px solid var(--borda-nav);
+    border-right: 1px solid var(--borda-nav);
+  }
+
+  /* ── Opcionais (ASPIRACIONAL) ────────────────────────────────────────── */
+  /*
+    Cada grupo tem um nome e N itens.
+    Cada item tem nome + preço + mini-stepper.
+    Nota: ainda não existe no modelo de dados.
+  */
+  .opcional-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--cinza-medio);
+  }
+  .opcional-item:last-child { border-bottom: none; }
+  .opcional-info { flex: 1; min-width: 0; }
+  .opcional-nome {
+    font-size: 0.88rem;
+    color: var(--texto);
+    font-weight: 500;
+  }
+  .opcional-preco {
+    font-size: 0.78rem;
+    color: var(--cor-destaque);
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  /* Mini-stepper para opcional (compacto) */
+  .mini-stepper {
+    display: flex;
+    align-items: center;
+    border: 1.5px solid var(--borda-nav);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--cinza-claro);
+    flex-shrink: 0;
+  }
+  .mini-btn {
+    background: transparent;
+    border: none;
+    color: var(--cor-destaque);
+    font-size: 1.1rem;
+    font-weight: 900;
+    width: 36px; height: 36px; /* mínimo 36px; o group inteiro > 44px */
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .mini-btn:hover { background: var(--cinza-medio); }
+  .mini-btn:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: -2px;
+  }
+  .mini-btn:disabled { color: var(--borda-nav); cursor: not-allowed; }
+  .mini-valor {
+    min-width: 28px;
+    text-align: center;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--texto);
+    border-left: 1px solid var(--borda-nav);
+    border-right: 1px solid var(--borda-nav);
+    padding: 0 2px;
+  }
+  .grupo-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--texto-muted);
+    padding: 12px 0 4px;
+    border-top: 1px solid var(--cinza-medio);
+    margin-top: 4px;
+  }
+  .grupo-label:first-child { border-top: none; padding-top: 0; }
+
+  /* ── Observação ──────────────────────────────────────────────────────── */
+  .campo-obs label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--marrom-cafe);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .campo-obs textarea {
+    width: 100%;
+    min-height: 76px;
+    padding: 10px 12px;
+    border: 1.5px solid var(--borda-nav);
+    border-radius: 10px;
+    background: var(--cinza-claro);
+    color: var(--texto);
+    font-family: inherit;
+    font-size: 0.88rem;
+    resize: vertical;
+    line-height: 1.45;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .campo-obs textarea::placeholder { color: var(--texto-muted); }
+  .campo-obs textarea:focus {
+    outline: none;
+    border-color: var(--cor-destaque);
+    box-shadow: 0 0 0 3px rgba(45,58,39,0.15);
+  }
+  .campo-obs textarea:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: -1px;
+  }
+
+  /* ── Subtotal ao vivo ─────────────────────────────────────────────────── */
+  .subtotal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    background: var(--cinza-claro);
+    border-top: 1px solid var(--cinza-medio);
+    flex-shrink: 0;
+  }
+  .subtotal-label {
+    font-size: 0.8rem;
+    color: var(--texto-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .subtotal-valor {
+    font-size: 1.2rem;
+    font-weight: 900;
+    color: var(--cor-destaque);
+  }
+
+  /* ── Footer fixo ─────────────────────────────────────────────────────── */
+  .modal-footer {
+    padding: 12px 16px 20px; /* 20px extra para safe-area iOS */
+    background: var(--branco);
+    border-top: 1px solid var(--cinza-medio);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .btn-adicionar {
+    width: 100%;
+    background: var(--cor-destaque);
+    color: var(--branco);
+    border: none;
+    border-radius: 12px;
+    min-height: 52px; /* toque generoso */
+    font-size: 1rem;
+    font-weight: 900;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    gap: 8px;
+    transition: background 0.15s, transform 0.1s;
+    letter-spacing: 0.2px;
+  }
+  .btn-adicionar:hover { background: #1e2a1a; }
+  .btn-adicionar:active { transform: scale(0.99); }
+  .btn-adicionar:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: 3px;
+  }
+  .btn-adicionar:disabled {
+    background: #9a9a9a;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn-label { font-size: 1rem; font-weight: 900; }
+  .btn-preco {
+    font-size: 1.05rem;
+    font-weight: 900;
+    background: rgba(255,255,255,0.15);
+    padding: 4px 10px;
+    border-radius: 8px;
+  }
+  .link-carrinho {
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--cor-destaque);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    min-height: 36px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .link-carrinho:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* ── Estado ESGOTADO ─────────────────────────────────────────────────── */
+  .modal.esgotado .hero-img { filter: grayscale(0.7) brightness(0.75); }
+  .modal.esgotado .hero-preco { text-decoration: line-through; opacity: 0.6; }
+  .badge-esgotado {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #8B4513;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.4);
+    margin-top: 4px;
+    width: fit-content;
+  }
+  .btn-adicionar.desativado {
+    background: #9a9a9a;
+    cursor: not-allowed;
+  }
+  .btn-adicionar.desativado:hover { background: #9a9a9a; }
+  .btn-adicionar.desativado:active { transform: none; }
+
+  /* ── Desktop: modal centralizado ──────────────────────────────────────── */
+  @media (min-width: 769px) {
+    .vitrine-bg {
+      max-width: 900px;
+      min-height: 500px;
+    }
+    .overlay { border-radius: 16px; }
+    .modal {
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 480px;
+      max-height: 85vh;
+      border-radius: 20px;
+      bottom: auto;
+    }
+    .drag-handle-wrap { display: none; } /* sem drag handle em desktop */
+  }
+
+  /* ── Vitrine simulada (só estética de demo) ──────────────────────────── */
+  .vitrine-sim {
+    padding: 20px 16px 80px;
+    background: var(--cor-fundo);
+    min-height: 560px;
+    position: relative;
+  }
+  .vsim-header {
+    background: var(--cor-primaria);
+    margin: -20px -16px 16px;
+    padding: 20px 16px;
+    color: var(--branco);
+    font-weight: 900;
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .vsim-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    opacity: 0.35; /* esmaecida atrás do overlay */
+    pointer-events: none;
+    user-select: none;
+  }
+  .vsim-card {
+    background: var(--branco);
+    border: 1px solid var(--cinza-medio);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px var(--sombra-suave);
+  }
+  .vsim-img {
+    height: 100px;
+    background: linear-gradient(135deg, #e8dcc4, #d8c4a0);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem;
+  }
+  .vsim-body { padding: 10px; font-size: 0.8rem; font-weight: 700; color: var(--texto); }
+  .vsim-preco { color: var(--cor-destaque); font-weight: 900; font-size: 0.95rem; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+  <p class="demo-label">Estado Normal — Bottom-sheet (mobile)</p>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       INSTÂNCIA 1: Estado Normal (produto disponível)
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="vitrine-bg" style="min-height: 640px;">
+    <!-- Vitrine simulada ao fundo -->
+    <div class="vitrine-sim" aria-hidden="true">
+      <div class="vsim-header">Empório iRango</div>
+      <div class="vsim-grid">
+        <div class="vsim-card">
+          <div class="vsim-img">🧀</div>
+          <div class="vsim-body">Pão de queijo artesanal<div class="vsim-preco">R$ 18,90</div></div>
+        </div>
+        <div class="vsim-card">
+          <div class="vsim-img">🥪</div>
+          <div class="vsim-body">Sanduíche natural<div class="vsim-preco">R$ 15,00</div></div>
+        </div>
+        <div class="vsim-card">
+          <div class="vsim-img">🍰</div>
+          <div class="vsim-body">Bolo de cenoura<div class="vsim-preco">R$ 9,50</div></div>
+        </div>
+        <div class="vsim-card">
+          <div class="vsim-img">☕</div>
+          <div class="vsim-body">Café coado 300ml<div class="vsim-preco">R$ 7,90</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Overlay -->
+    <div class="overlay" aria-hidden="true" id="overlay-1"></div>
+
+    <!-- Modal -->
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-nome-1"
+      id="modal-1"
+    >
+      <!-- Drag handle (decorativo, mobile only) -->
+      <div class="drag-handle-wrap" aria-hidden="true">
+        <div class="drag-handle"></div>
+      </div>
+
+      <!-- Hero -->
+      <div class="hero">
+        <div class="hero-img-wrap">
+          <div class="hero-img" role="img" aria-label="Foto do produto: pão de queijo">🧀</div>
+          <span class="badge-categoria">Salgados</span>
+        </div>
+        <div class="hero-info">
+          <h2 class="hero-nome" id="modal-nome-1">Pão de queijo artesanal — 12 un</h2>
+          <p class="hero-desc">
+            Feito com polvilho azedo e queijo minas, assado na hora. Crocante por fora, macio por dentro.
+          </p>
+          <p class="hero-preco" aria-label="Preço: R$ 18,90">R$ 18,90</p>
+        </div>
+        <button
+          class="btn-fechar"
+          aria-label="Fechar detalhes do produto"
+          onclick="document.getElementById('overlay-1').click()"
+        >✕</button>
+      </div>
+
+      <!-- Corpo scrollável -->
+      <div class="corpo" id="corpo-1">
+
+        <!-- Seção: Quantidade -->
+        <div class="secao">
+          <p class="secao-titulo">Quantidade</p>
+          <div class="qtd-row">
+            <div>
+              <p class="qtd-label">Unidades</p>
+              <p class="qtd-unitario">Cada unidade · R$ 18,90</p>
+            </div>
+            <div
+              class="stepper"
+              role="group"
+              aria-label="Selecionar quantidade"
+            >
+              <button
+                class="stepper-btn"
+                aria-label="Diminuir quantidade"
+                id="btn-menos-1"
+                disabled
+                onclick="alterarQtd('qtd-1', -1, 'subtotal-1', 18.90)"
+              >−</button>
+              <span
+                class="stepper-valor"
+                id="qtd-1"
+                role="status"
+                aria-live="polite"
+                aria-label="Quantidade: 1"
+              >1</span>
+              <button
+                class="stepper-btn"
+                aria-label="Aumentar quantidade"
+                onclick="alterarQtd('qtd-1', +1, 'subtotal-1', 18.90)"
+              >+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ASPIRACIONAL: opcionais ainda não existem no modelo de dados; feature futura -->
+        <!--
+          ════════════════════════════════════════════════════════════════
+          ASPIRACIONAL — Seção Opcionais/Add-ons
+          Esta seção é referência visual para feature futura.
+          O modelo atual (tabela produtos) não tem opcionais.
+          Implementar exigirá: tabela produto_opcionais, grupos,
+          itens com preço adicional, vinculação ao pedido_item.
+          ════════════════════════════════════════════════════════════════
+        -->
+        <div class="secao" aria-label="Opcionais (seção aspiracional — não implementado)">
+          <p class="secao-titulo">
+            Opcionais
+            <span style="font-size:0.65rem;color:var(--texto-muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px;">em breve</span>
+          </p>
+
+          <!-- Grupo 1: Acompanhamentos -->
+          <p class="grupo-label">Acompanhamentos</p>
+
+          <div class="opcional-item">
+            <div class="opcional-info">
+              <p class="opcional-nome">Geleia artesanal de goiaba</p>
+              <p class="opcional-preco">+ R$ 6,00</p>
+            </div>
+            <div class="mini-stepper" role="group" aria-label="Quantidade de Geleia artesanal">
+              <button class="mini-btn" aria-label="Remover Geleia artesanal" disabled>−</button>
+              <span class="mini-valor" role="status" aria-live="polite">0</span>
+              <button class="mini-btn" aria-label="Adicionar Geleia artesanal">+</button>
+            </div>
+          </div>
+
+          <div class="opcional-item">
+            <div class="opcional-info">
+              <p class="opcional-nome">Manteiga de garrafa</p>
+              <p class="opcional-preco">+ R$ 4,00</p>
+            </div>
+            <div class="mini-stepper" role="group" aria-label="Quantidade de Manteiga de garrafa">
+              <button class="mini-btn" aria-label="Remover Manteiga de garrafa" disabled>−</button>
+              <span class="mini-valor" role="status" aria-live="polite">0</span>
+              <button class="mini-btn" aria-label="Adicionar Manteiga de garrafa">+</button>
+            </div>
+          </div>
+
+          <!-- Grupo 2: Recheio extra -->
+          <p class="grupo-label">Recheio extra</p>
+
+          <div class="opcional-item">
+            <div class="opcional-info">
+              <p class="opcional-nome">Queijo coalho extra</p>
+              <p class="opcional-preco">+ R$ 5,00</p>
+            </div>
+            <div class="mini-stepper" role="group" aria-label="Quantidade de Queijo coalho extra">
+              <button class="mini-btn" aria-label="Remover Queijo coalho extra" disabled>−</button>
+              <span class="mini-valor" role="status" aria-live="polite">0</span>
+              <button class="mini-btn" aria-label="Adicionar Queijo coalho extra">+</button>
+            </div>
+          </div>
+        </div>
+        <!-- /ASPIRACIONAL -->
+
+        <!-- Seção: Observação -->
+        <div class="secao campo-obs">
+          <label for="obs-1">Observação</label>
+          <textarea
+            id="obs-1"
+            name="observacao"
+            placeholder="Ex.: sem cebola, bem passado, embalar separado…"
+            maxlength="280"
+            aria-describedby="obs-hint-1"
+          ></textarea>
+          <p id="obs-hint-1" style="font-size:0.72rem;color:var(--texto-muted);margin-top:6px;">
+            Opcional · até 280 caracteres
+          </p>
+        </div>
+
+      </div>
+      <!-- /corpo -->
+
+      <!-- Subtotal ao vivo -->
+      <div class="subtotal-row" aria-live="polite" aria-atomic="true">
+        <span class="subtotal-label">Subtotal do item</span>
+        <span class="subtotal-valor" id="subtotal-1">R$ 18,90</span>
+      </div>
+
+      <!-- Footer fixo -->
+      <div class="modal-footer">
+        <button
+          class="btn-adicionar"
+          aria-label="Adicionar 1 Pão de queijo artesanal ao carrinho por R$ 18,90"
+          id="btn-add-1"
+        >
+          <span class="btn-label">Adicionar ao carrinho</span>
+          <span class="btn-preco" id="btn-preco-1">R$ 18,90</span>
+        </button>
+        <a class="link-carrinho" href="#" tabindex="0" aria-label="Ver itens no carrinho">
+          Ver carrinho (3 itens · R$ 54,30)
+        </a>
+      </div>
+    </div>
+    <!-- /modal -->
+  </div>
+  <!-- /vitrine-bg instância 1 -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       INSTÂNCIA 2: Estado Esgotado
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <p class="demo-label">Estado Esgotado</p>
+
+  <div class="vitrine-bg" style="min-height: 480px;">
+    <div class="vitrine-sim" aria-hidden="true">
+      <div class="vsim-header">Empório iRango</div>
+      <div class="vsim-grid">
+        <div class="vsim-card"><div class="vsim-img">🥐</div><div class="vsim-body">Croissant de manteiga<div class="vsim-preco">R$ 12,50</div></div></div>
+        <div class="vsim-card"><div class="vsim-img">🥪</div><div class="vsim-body">Sanduíche natural<div class="vsim-preco">R$ 15,00</div></div></div>
+      </div>
+    </div>
+
+    <div class="overlay" aria-hidden="true"></div>
+
+    <div
+      class="modal esgotado"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-nome-2"
+      id="modal-2"
+    >
+      <div class="drag-handle-wrap" aria-hidden="true">
+        <div class="drag-handle"></div>
+      </div>
+
+      <div class="hero">
+        <div class="hero-img-wrap">
+          <div class="hero-img" role="img" aria-label="Foto do produto: croissant de manteiga — esgotado">🥐</div>
+          <span class="badge-categoria">Padaria</span>
+        </div>
+        <div class="hero-info">
+          <h2 class="hero-nome" id="modal-nome-2">Croissant de manteiga francês</h2>
+          <p class="hero-desc">
+            Croissant laminado artesanal, feito com manteiga francesa AOP. Assado diariamente às 6h.
+          </p>
+          <p class="hero-preco" aria-label="Preço: R$ 12,50 — produto esgotado">R$ 12,50</p>
+          <!-- Badge esgotado: usa cor + texto (não só cor) — WCAG 1.4.1 -->
+          <span class="badge-esgotado" role="status" aria-live="polite">
+            <span aria-hidden="true">✕</span> Esgotado
+          </span>
+        </div>
+        <button class="btn-fechar" aria-label="Fechar detalhes do produto">✕</button>
+      </div>
+
+      <div class="corpo">
+        <!-- Seção Quantidade desabilitada -->
+        <div class="secao">
+          <p class="secao-titulo">Quantidade</p>
+          <div class="qtd-row">
+            <div>
+              <p class="qtd-label" style="opacity:0.5;">Unidades</p>
+              <p class="qtd-unitario">Produto indisponível no momento</p>
+            </div>
+            <div class="stepper" role="group" aria-label="Quantidade indisponível" aria-disabled="true" style="opacity:0.45;pointer-events:none;">
+              <button class="stepper-btn" aria-label="Diminuir quantidade" disabled>−</button>
+              <span class="stepper-valor">1</span>
+              <button class="stepper-btn" aria-label="Aumentar quantidade" disabled>+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Observação desabilitada -->
+        <div class="secao campo-obs">
+          <label for="obs-2" style="opacity:0.5;">Observação</label>
+          <textarea
+            id="obs-2"
+            disabled
+            placeholder="Produto esgotado — não é possível adicionar ao carrinho"
+            style="opacity:0.45;cursor:not-allowed;"
+            aria-disabled="true"
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Subtotal -->
+      <div class="subtotal-row" style="opacity:0.45;">
+        <span class="subtotal-label">Subtotal do item</span>
+        <span class="subtotal-valor">R$ 12,50</span>
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer">
+        <button
+          class="btn-adicionar desativado"
+          disabled
+          aria-label="Produto esgotado — não é possível adicionar ao carrinho"
+          aria-disabled="true"
+        >
+          <span class="btn-label">Produto esgotado</span>
+          <span class="btn-preco" style="opacity:0.6;">R$ 12,50</span>
+        </button>
+        <a class="link-carrinho" href="#" tabindex="0" aria-label="Ver itens no carrinho">
+          Ver carrinho (3 itens · R$ 54,30)
+        </a>
+      </div>
+    </div>
+  </div>
+  <!-- /vitrine-bg instância 2 -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       JavaScript — interatividade ilustrativa (stepper + subtotal)
+       Em produção: estado gerenciado via React/Zustand/carrinho.
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <script>
+    function fmt(val) {
+      return 'R$ ' + val.toFixed(2).replace('.', ',');
+    }
+
+    function alterarQtd(idQtd, delta, idSubtotal, precoUnit) {
+      const elQtd = document.getElementById(idQtd);
+      const elSub = document.getElementById(idSubtotal);
+      const elBtnPreco = document.getElementById('btn-preco-1');
+      const elBtnAdd = document.getElementById('btn-add-1');
+      const elBtnMenos = document.getElementById('btn-menos-1');
+
+      let qtd = parseInt(elQtd.textContent, 10) + delta;
+      if (qtd < 1) qtd = 1;
+
+      elQtd.textContent = qtd;
+      elQtd.setAttribute('aria-label', 'Quantidade: ' + qtd);
+
+      const total = qtd * precoUnit;
+      elSub.textContent = fmt(total);
+
+      if (elBtnPreco) elBtnPreco.textContent = fmt(total);
+      if (elBtnAdd) {
+        elBtnAdd.setAttribute(
+          'aria-label',
+          'Adicionar ' + qtd + ' Pão de queijo artesanal ao carrinho por ' + fmt(total)
+        );
+      }
+
+      // Desabilita "−" quando qtd = 1
+      if (elBtnMenos) elBtnMenos.disabled = qtd <= 1;
+    }
+  </script>
+</body>
+</html>
