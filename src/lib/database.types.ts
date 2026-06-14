@@ -70,6 +70,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "categorias_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       cupons: {
@@ -120,6 +127,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cupons_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       formas_pagamento: {
@@ -147,6 +161,13 @@ export type Database = {
             columns: ["loja_id"]
             isOneToOne: false
             referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "formas_pagamento_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
             referencedColumns: ["id"]
           },
         ]
@@ -340,6 +361,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pedidos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       produtos: {
@@ -395,6 +423,13 @@ export type Database = {
             columns: ["loja_id"]
             isOneToOne: false
             referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "produtos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
             referencedColumns: ["id"]
           },
         ]
@@ -467,6 +502,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "webhook_eventos_hotmart_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       zonas_entrega: {
@@ -499,14 +541,75 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "zonas_entrega_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
     Views: {
-      [_ in never]: never
+      vitrine_lojas: {
+        Row: {
+          ativo: boolean | null
+          endereco_bairro: string | null
+          endereco_cep: string | null
+          endereco_cidade: string | null
+          endereco_estado: string | null
+          endereco_numero: string | null
+          endereco_rua: string | null
+          horarios: Json | null
+          id: string | null
+          nome: string | null
+          slug: string | null
+          telefone: string | null
+          tema: Json | null
+          timezone: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          endereco_bairro?: string | null
+          endereco_cep?: string | null
+          endereco_cidade?: string | null
+          endereco_estado?: string | null
+          endereco_numero?: string | null
+          endereco_rua?: string | null
+          horarios?: Json | null
+          id?: string | null
+          nome?: string | null
+          slug?: string | null
+          telefone?: string | null
+          tema?: Json | null
+          timezone?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          endereco_bairro?: string | null
+          endereco_cep?: string | null
+          endereco_cidade?: string | null
+          endereco_estado?: string | null
+          endereco_numero?: string | null
+          endereco_rua?: string | null
+          horarios?: Json | null
+          id?: string | null
+          nome?: string | null
+          slug?: string | null
+          telefone?: string | null
+          tema?: Json | null
+          timezone?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      loja_esta_ativa: { Args: { p_loja_id: string }; Returns: boolean }
+      pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
