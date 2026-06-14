@@ -27,3 +27,12 @@ export const schemaTaxa = z.object({
 export const schemaBairro = z.object({
   nome: nomeObrigatorio,
 });
+
+// Payload completo do form de zona (issue 046): zona + taxa (1:1) + bairros
+// (1:N) num só envio. ISOMÓRFICO — usado no client (gate de UX) e revalidado
+// na Server Action (autoridade). FORA daqui: loja_id/zona_id (derivados no
+// servidor), unicidade/RLS.
+export const schemaZonaCompleta = schemaZona.extend({
+  taxa: schemaTaxa,
+  bairros: z.array(nomeObrigatorio).default([]),
+});

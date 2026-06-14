@@ -8,6 +8,7 @@ import {
   type LojaCompleta,
 } from "@/lib/supabase/queries/lojas";
 import { decidirAcessoPainel } from "@/lib/utils/acessoPainel";
+import { SidebarPainel, TopbarPainel } from "@/components/painel/NavPainel";
 
 /**
  * Guard ÚNICO e AUTORITATIVO do painel (issue 016). Server Component.
@@ -48,6 +49,16 @@ export default async function PainelLayout({
     case "assinatura-bloqueada":
       redirect("/painel/assinatura-bloqueada");
     case "ok":
-      return <>{children}</>;
+      return (
+        <div className="flex min-h-svh">
+          <SidebarPainel />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <TopbarPainel />
+            <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+              {children}
+            </main>
+          </div>
+        </div>
+      );
   }
 }

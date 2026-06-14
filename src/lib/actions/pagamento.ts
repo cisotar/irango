@@ -11,12 +11,15 @@
 //     (buscarLojaDoDono), NUNCA do payload;
 //   - erro genérico no catch.
 
+import { revalidatePath } from "next/cache";
 import { schemaFormaPagamento } from "@/lib/validacoes/pagamento";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import type { Json } from "@/lib/database.types";
 
 export type ResultadoPagamento = { ok: true } | { ok: false; erro: string };
+
+const ROTA = "/painel/configuracoes/pagamentos";
 
 export async function salvarFormaPagamento(
   payload: unknown,
@@ -45,9 +48,67 @@ export async function salvarFormaPagamento(
       console.error("[salvarFormaPagamento]", error);
       return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
     }
+    revalidatePath(ROTA);
     return { ok: true };
   } catch (e) {
     console.error("[salvarFormaPagamento]", e);
     return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+  }
+}
+
+/**
+ * Atualiza a config de uma forma existente (issue 047). Escopo por `id`; a RLS
+ * `pagamentos_escrita_propria` impede tocar a de outra loja. `tipo` revalidado
+ * junto da config (discriminated union) e reafirmado no update.
+ */
+export async function atualizarFormaPagamento(
+  id: string,
+  payload: unknown,
+): Promise<ResultadoPagamento> {
+  const parsed = schemaFormaPagamento.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: "Forma de pagamento inválida." };
+  }
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("formas_pagamento")
+      .update({ tipo: parsed.data.tipo, config: parsed.data.config as Json })
+      .eq("id", id);
+    if (error) {
+      console.error("[atualizarFormaPagamento]", error);
+      return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+    }
+    revalidatePath(ROTA);
+    return { ok: true };
+  } catch (e) {
+    console.error("[atualizarFormaPagamento]", e);
+    return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+  }
+}
+
+/**
+ * Remove (desativa) uma forma de pagamento (issue 047). A tabela não tem coluna
+ * `ativo` — a presença é o que define "aceita", então desativar = remover.
+ * Escopo por `id` (RLS `pagamentos_escrita_propria`).
+ */
+export async function removerFormaPagamento(
+  id: string,
+): Promise<ResultadoPagamento> {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("formas_pagamento")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      console.error("[removerFormaPagamento]", error);
+      return { ok: false, erro: "Não foi possível remover a forma de pagamento." };
+    }
+    revalidatePath(ROTA);
+    return { ok: true };
+  } catch (e) {
+    console.error("[removerFormaPagamento]", e);
+    return { ok: false, erro: "Não foi possível remover a forma de pagamento." };
   }
 }

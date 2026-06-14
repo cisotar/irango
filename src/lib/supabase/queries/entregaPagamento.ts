@@ -19,6 +19,9 @@ type Client = SupabaseClient<Database>;
 export type FormaPagamento = Tables<"formas_pagamento">;
 export type Cupom = Tables<"cupons">;
 
+/** Zona hidratada + `nome` (a vitrine rotula a zona; `calcularFrete` não usa nome). */
+export type ZonaVitrine = ZonaComTaxa & { nome: string };
+
 /**
  * Zonas da loja já hidratadas com taxa (1:1) e bairros (1:N), no shape que
  * `calcularFrete` consome (`ZonaComTaxa`). Fonte: TABELA `zonas_entrega`,
@@ -30,11 +33,11 @@ export type Cupom = Tables<"cupons">;
 export async function listarZonasComTaxas(
   client: Client,
   lojaId: string,
-): Promise<ZonaComTaxa[]> {
+): Promise<ZonaVitrine[]> {
   const { data, error } = await client
     .from("zonas_entrega")
     .select(
-      "id, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km), bairros:bairros_zona(nome)",
+      "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km), bairros:bairros_zona(nome)",
     )
     .eq("loja_id", lojaId);
   if (error) throw error;
@@ -45,7 +48,7 @@ export async function listarZonasComTaxas(
       // 1:1: PostgREST devolve array embutido — colapsa para objeto/null.
       taxa: Array.isArray(taxa) ? (taxa[0] ?? null) : (taxa ?? null),
       bairros: (zona as { bairros: { nome: string }[] }).bairros ?? [],
-    } as ZonaComTaxa;
+    } as ZonaVitrine;
   });
 }
 
