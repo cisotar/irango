@@ -78,8 +78,28 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => Promise.resolve(authedClient),
 }));
 
-// ── service_role client (BYPASSRLS) — só para checar unicidade de slug ─────────
-const fakeService = { __role: "service" };
+// ── service_role client (BYPASSRLS) ───────────────────────────────────────────
+// Além de checar unicidade de slug, definirPublicacao faz o flip de `ativo`
+// (coluna protegida pelo trigger 057) via .from().update().eq().eq().
+const svcUpdatePatch = vi.fn();
+const svcUpdateEq = vi.fn();
+const fakeService = {
+  __role: "service",
+  from: (_tabela: string) => ({
+    update: (patch: Record<string, unknown>) => {
+      svcUpdatePatch(patch);
+      const chain = {
+        eq: (coluna: string, valor: unknown) => {
+          svcUpdateEq(coluna, valor);
+          return chain; // permite encadear .eq().eq() e ainda ser thenable
+        },
+        then: (resolve: (v: { error: null }) => unknown) =>
+          resolve({ error: null }),
+      };
+      return chain;
+    },
+  }),
+};
 const createServiceClient = vi.fn(() => fakeService);
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => createServiceClient(),
@@ -93,7 +113,12 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   slugExiste: (...a: unknown[]) => slugExiste(...a),
 }));
 
-import { salvarPerfil, salvarHorarios, salvarTema } from "./loja";
+import {
+  salvarPerfil,
+  salvarHorarios,
+  salvarTema,
+  definirPublicacao,
+} from "./loja";
 
 const PERFIL_OK = {
   nome: "Burguer do Zé",
@@ -271,5 +296,54 @@ describe("salvarTema", () => {
     for (const proibida of COLUNAS_PROIBIDAS) {
       expect(patch).not.toHaveProperty(proibida);
     }
+  });
+});
+
+// ─────────────────────────── definirPublicacao ───────────────────────────────
+describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () => {
+  const LOJA_COMPLETA = {
+    id: LOJA_ID,
+    dono_id: USER_ID,
+    slug: "burguer-do-ze",
+    nome: "Burguer do Zé",
+    whatsapp: "5511999998888",
+  };
+
+  it("publicar com perfil completo → { ok: true } e seta ativo=true via service_role", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
+    const r = await definirPublicacao(true);
+    expect(r).toEqual({ ok: true });
+    expect(svcUpdatePatch).toHaveBeenCalledWith({ ativo: true });
+    // Escopo reafirmado por id E dono_id (service_role bypassa RLS).
+    expect(svcUpdateEq).toHaveBeenCalledWith("id", LOJA_ID);
+    expect(svcUpdateEq).toHaveBeenCalledWith("dono_id", USER_ID);
+  });
+
+  it("despublicar → { ok: true } e seta ativo=false (não exige perfil completo)", async () => {
+    buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, dono_id: USER_ID, slug: "x", nome: "", whatsapp: null });
+    const r = await definirPublicacao(false);
+    expect(r).toEqual({ ok: true });
+    expect(svcUpdatePatch).toHaveBeenCalledWith({ ativo: false });
+  });
+
+  it("publicar SEM whatsapp → recusa (perfil incompleto), NÃO chama UPDATE", async () => {
+    buscarLojaDoDono.mockResolvedValue({ ...LOJA_COMPLETA, whatsapp: null });
+    const r = await definirPublicacao(true);
+    expect(r.ok).toBe(false);
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+  });
+
+  it("publicar SEM nome → recusa, NÃO chama UPDATE", async () => {
+    buscarLojaDoDono.mockResolvedValue({ ...LOJA_COMPLETA, nome: "   " });
+    const r = await definirPublicacao(true);
+    expect(r.ok).toBe(false);
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+  });
+
+  it("sem loja do dono → { ok: false } sem tocar no banco", async () => {
+    buscarLojaDoDono.mockResolvedValue(null);
+    const r = await definirPublicacao(true);
+    expect(r.ok).toBe(false);
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
   });
 });

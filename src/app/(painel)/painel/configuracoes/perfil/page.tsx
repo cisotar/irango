@@ -28,6 +28,9 @@ export default async function PerfilPage(): Promise<ReactElement> {
         telefone: loja.telefone,
         whatsapp: loja.whatsapp,
       }}
+      publicado={loja.ativo}
+      // Perfil mínimo para publicar (mesma regra do servidor em definirPublicacao).
+      podePublicar={Boolean(loja.nome?.trim() && loja.whatsapp)}
     />
   );
 }

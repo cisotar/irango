@@ -7,12 +7,13 @@ import { Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaPerfil } from "@/lib/validacoes/loja";
-import { salvarPerfil } from "@/lib/actions/loja";
+import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
 
 export type PerfilInicial = {
   nome: string;
@@ -48,7 +49,15 @@ const className =
  * `55DDXXXXXXXXX` antes do submit. O mesmo `schemaPerfil` do servidor valida
  * aqui só como gate — a Server Action revalida e checa unicidade de slug.
  */
-export function PerfilClient({ inicial }: { inicial: PerfilInicial }) {
+export function PerfilClient({
+  inicial,
+  publicado,
+  podePublicar,
+}: {
+  inicial: PerfilInicial;
+  publicado: boolean;
+  podePublicar: boolean;
+}) {
   const router = useRouter();
 
   const [nome, setNome] = useState(inicial.nome);
@@ -61,6 +70,21 @@ export function PerfilClient({ inicial }: { inicial: PerfilInicial }) {
   );
 
   const [enviando, startEnvio] = useTransition();
+  const [publicando, startPublicacao] = useTransition();
+
+  // Alterna ativo via Server Action (service_role). O servidor revalida o perfil
+  // mínimo — aqui o botão fica desabilitado como gate de UX (paridade, não fonte).
+  function alternarPublicacao() {
+    startPublicacao(async () => {
+      const r = await definirPublicacao(!publicado);
+      if (!r.ok) {
+        toast.error(r.erro);
+        return;
+      }
+      toast.success(publicado ? "Loja despublicada." : "Loja publicada!");
+      router.refresh();
+    });
+  }
 
   const urlVitrine = `${BASE_VITRINE}/${slug}`;
 
@@ -109,6 +133,39 @@ export function PerfilClient({ inicial }: { inicial: PerfilInicial }) {
       <h1 className="mb-6 font-heading text-xl font-semibold text-foreground">
         Perfil da loja
       </h1>
+
+      {/* Publicação da vitrine: a loja nasce em rascunho (oculta). Publicar exige
+          nome + WhatsApp (gate validado no servidor por definirPublicacao). */}
+      <Card className="mb-4">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-foreground">Status da vitrine</span>
+              {publicado ? (
+                <Badge variant="secondary">No ar</Badge>
+              ) : (
+                <Badge variant="outline">Rascunho</Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {publicado
+                ? "Sua vitrine está visível e aceitando pedidos."
+                : podePublicar
+                  ? "Sua vitrine está oculta. Publique para receber pedidos."
+                  : "Preencha nome e WhatsApp e salve antes de publicar."}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant={publicado ? "outline" : "default"}
+            disabled={publicando || (!publicado && !podePublicar)}
+            onClick={alternarPublicacao}
+          >
+            {publicando && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {publicado ? "Despublicar" : "Publicar loja"}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-6">

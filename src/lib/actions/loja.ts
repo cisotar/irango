@@ -82,6 +82,52 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoSalvar> {
   }
 }
 
+const ERRO_PERFIL_INCOMPLETO =
+  "Complete nome e WhatsApp antes de publicar a loja.";
+
+/**
+ * Publica (ativo=true) ou despublica (ativo=false) a vitrine da loja do dono.
+ *
+ * `ativo` é coluna PROTEGIDA pelo trigger anti-billing (057) — o dono não pode
+ * alterá-la via client autenticado. Por isso o flip roda no service_role
+ * (BYPASSRLS). Como o service_role ignora RLS, o escopo é reafirmado À MÃO por
+ * `id` + `dono_id` da loja JÁ resolvida sob RLS (buscarLojaDoDono no client
+ * autenticado) — impede ativar a loja de terceiro mesmo se `id` vazasse.
+ *
+ * Gate de publicação (não confiar no cliente): exige perfil mínimo (nome +
+ * whatsapp) verificado no servidor a partir do banco, nunca do payload.
+ */
+export async function definirPublicacao(
+  publicar: boolean,
+): Promise<ResultadoSalvar> {
+  try {
+    const supabase = await createClient();
+
+    const loja = await buscarLojaDoDono(supabase);
+    if (!loja) return { ok: false, erro: ERRO_SEM_LOJA };
+
+    // Perfil mínimo para ir ao ar: nome preenchido + whatsapp cadastrado.
+    if (publicar && (!loja.nome?.trim() || !loja.whatsapp)) {
+      return { ok: false, erro: ERRO_PERFIL_INCOMPLETO };
+    }
+
+    // service_role: trigger 057 bloqueia o dono de mexer em `ativo`. Escopo
+    // reafirmado por id + dono_id (BYPASSRLS não tem RLS para conter).
+    const { error } = await createServiceClient()
+      .from("lojas")
+      .update({ ativo: publicar })
+      .eq("id", loja.id)
+      .eq("dono_id", loja.dono_id);
+    if (error) throw error;
+
+    revalidarVitrine(loja.slug);
+    return { ok: true };
+  } catch (e) {
+    console.error("definirPublicacao:", e);
+    return { ok: false, erro: ERRO_GENERICO };
+  }
+}
+
 /** Atualiza apenas a coluna `horarios` da loja do dono autenticado. */
 export async function salvarHorarios(payload: unknown): Promise<ResultadoSalvar> {
   const parsed = schemaHorarios.safeParse(payload);
