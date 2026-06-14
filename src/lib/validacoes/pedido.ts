@@ -69,6 +69,11 @@ export const schemaPayloadPedido = z
     // troco_para: informativo ao lojista (RN-C3) — positivo se presente.
     // NÃO entra em nenhum cálculo; servidor persiste mas ignora no total.
     troco_para: z.number().positive().optional(),
+    // idempotency_key (issue 063): desduplicador idempotente gerado no client
+    // por carrinho/sessão. NÃO influencia valor/loja/autorização — a barreira de
+    // valor segue server-side (recálculo + trava de cupom + RLS). z.guid() por
+    // consistência com o resto do arquivo (NÃO z.uuid()).
+    idempotency_key: z.guid().optional(),
     nome_cliente: z.string().trim().min(1).max(120),
     // Limites de tamanho: anti-abuso de storage (colunas text sem limite no banco).
     telefone_cliente: z

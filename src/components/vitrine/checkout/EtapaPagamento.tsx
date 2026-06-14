@@ -99,10 +99,20 @@ export function EtapaPagamento({
       return;
     }
 
+    // [063] Chave de idempotência: reusa a existente (retry/duplo-clique) ou
+    // gera uma nova via CSPRNG (crypto.randomUUID — nunca derivada de dado
+    // previsível, p/ não virar oráculo do token_acesso). Persiste antes do
+    // envio p/ que uma 2ª tentativa carregue a MESMA chave → dedupe server-side.
+    const idempotencyKey = estado.idempotencyKey ?? crypto.randomUUID();
+    if (estado.idempotencyKey == null) {
+      onEstadoChange({ idempotencyKey });
+    }
+
     // Monta o payload do CLIENTE — só intenção, NUNCA valores monetários.
     const payload = {
       loja_id: lojaId,
       tipo_entrega: estado.tipoEntrega,
+      idempotency_key: idempotencyKey,
       itens: itens.map((i) => ({
         produto_id: i.produtoId,
         quantidade: i.quantidade,
@@ -147,6 +157,9 @@ export function EtapaPagamento({
         toast.error(resultado.erro);
         return;
       }
+      // [063] Pedido criado: descarta a chave p/ que um próximo carrinho
+      // (reorder na mesma sessão) gere uma chave nova e NÃO deduplique com este.
+      onEstadoChange({ idempotencyKey: null });
       router.push(
         `/loja/${lojaSlug}/confirmacao?pedido=${resultado.pedidoId}&token=${encodeURIComponent(
           resultado.token_acesso,

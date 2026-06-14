@@ -35,6 +35,11 @@ export type EstadoWizard = {
   nome: string;
   telefone: string;
   observacoes: string;
+  // [063] Chave de idempotência (anti duplo-submit). Gerada via CSPRNG por
+  // tentativa de checkout; persiste no sessionStorage p/ que um retry/duplo-clique
+  // reuse a MESMA chave → a RPC criar_pedido deduplica server-side (1 pedido,
+  // 1 consumo de cupom). Limpa no sucesso p/ um novo carrinho ganhar chave nova.
+  idempotencyKey: string | null;
 };
 
 export const ESTADO_INICIAL: EstadoWizard = {
@@ -46,6 +51,7 @@ export const ESTADO_INICIAL: EstadoWizard = {
   nome: "",
   telefone: "",
   observacoes: "",
+  idempotencyKey: null,
 };
 
 /** Lê o estado do wizard do sessionStorage de forma defensiva (SSR-safe). */

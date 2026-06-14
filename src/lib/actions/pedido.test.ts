@@ -712,4 +712,47 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
       },
     ]);
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // [063] idempotency_key — propagação da action para a RPC
+  //
+  // Prova que a action:
+  //  - passa p_idempotency_key ao RPC quando o payload traz a chave;
+  //  - passa p_idempotency_key: null quando o payload NÃO traz a chave.
+  //
+  // Crítico: um bug de propagação (ex. esquecer o campo no objeto de args)
+  // faria a RPC nunca deduplicar, mesmo com schema e RPC corretos.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const CHAVE_IDEMP = "77777777-7777-4777-8777-777777777777";
+
+  it("[063-A1] action propaga idempotency_key do payload como p_idempotency_key na chamada da RPC", async () => {
+    cenarioFeliz();
+    await criarPedido(payloadBase({ idempotency_key: CHAVE_IDEMP }));
+
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const [fn, args] = fakeClient.rpc.mock.calls[0] as [string, Record<string, unknown>];
+    expect(fn).toBe("criar_pedido");
+    expect(args.p_idempotency_key).toBe(CHAVE_IDEMP);
+  });
+
+  it("[063-A2] action passa p_idempotency_key: null à RPC quando payload não traz idempotency_key", async () => {
+    cenarioFeliz();
+    // payload sem idempotency_key (campo opcional ausente)
+    await criarPedido(payloadBase());
+
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as Record<string, unknown>;
+    // 'p_idempotency_key' deve existir na chamada com valor null (não omitido),
+    // para que o parâmetro DEFAULT NULL da RPC funcione corretamente.
+    expect(Object.prototype.hasOwnProperty.call(args, "p_idempotency_key")).toBe(true);
+    expect(args.p_idempotency_key).toBeNull();
+  });
+
+  it("[063-A3] idempotency_key inválido (não-uuid) → schema rejeita; p_idempotency_key nunca chega à RPC", async () => {
+    cenarioFeliz();
+    const r = await criarPedido(payloadBase({ idempotency_key: "nao-e-uuid" }));
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.3 | **Atualizado:** 2026-06-14
+**Versão:** 0.2.4 | **Atualizado:** 2026-06-14
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -310,7 +310,7 @@ const items = order.order_items
 | Subdomínio por loja | não implementado | fase 2 |
 | Integração Correios/frete calculado | não implementado — fase 1 só frete fixo | fase 2 |
 | Painel super-admin do SaaS | não implementado | fase 2 |
-| Idempotência em `criarPedido` | sem chave de idempotência — reenvio de form cria pedido duplicado | issue 063 |
+| Idempotência em `criarPedido` | `idempotency_key uuid` em `pedidos` + índice UNIQUE PARCIAL; client gera via `crypto.randomUUID()` por carrinho/sessão; RPC faz dedupe antes da trava de cupom | implementado (issue 063) |
 | Reconciliação CEP↔bairro no frete | bairro vem do form; não validado contra CEP real — cliente pode forçar zona mais barata | issue 064 |
 | Guard `email_confirmed_at` no painel | loja nasce `ativo=false`; acesso ao painel deve checar confirmação de email antes de liberar operações | issue 016 |
 | Reconciliação de user órfão | signUp pode criar `auth.user` sem loja se a action falhar após o signUp; limpeza não implementada | issue 065 |

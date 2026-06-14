@@ -515,3 +515,58 @@ describe("schemaItemPedido — [083] opcionais", () => {
     expect(r.success).toBe(false);
   });
 });
+
+// ===========================================================================
+// [063] idempotency_key — z.guid().optional()
+// Borda 1: chave inválida (não-uuid) é rejeitada pelo schema ANTES de I/O.
+// Borda 2: ausência da chave é aceita (opcional) — compatibilidade legada.
+// Borda 3: presença de chave UUID válida não contamina outros campos (strict).
+// ===========================================================================
+
+describe("schemaPayloadPedido — [063] idempotency_key", () => {
+  const UUID_IDEMP = "55555555-5555-4555-8555-555555555555";
+
+  it("[063-S1] idempotency_key uuid válido → aceito (campo presente e correto)", () => {
+    const r = schemaPayloadPedido.safeParse(payload({ idempotency_key: UUID_IDEMP }));
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.idempotency_key).toBe(UUID_IDEMP);
+    }
+  });
+
+  it("[063-S2] idempotency_key ausente → aceito (campo opcional — compatibilidade legada)", () => {
+    // Payload sem idempotency_key deve seguir funcionando normalmente.
+    const p = payload();
+    const r = schemaPayloadPedido.safeParse(p);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      // campo não existe no dado parseado (undefined, não presente)
+      expect(r.data.idempotency_key).toBeUndefined();
+    }
+  });
+
+  it("[063-S3] idempotency_key string não-uuid → rejeitado por z.guid() ANTES de I/O", () => {
+    // Um cliente malicioso tenta enviar string arbitrária no lugar de uuid;
+    // o schema rejeita antes de qualquer query ser feita.
+    const r = schemaPayloadPedido.safeParse(payload({ idempotency_key: "nao-e-uuid" }));
+    expect(r.success).toBe(false);
+  });
+
+  it("[063-S4] idempotency_key string vazia → rejeitado por z.guid()", () => {
+    const r = schemaPayloadPedido.safeParse(payload({ idempotency_key: "" }));
+    expect(r.success).toBe(false);
+  });
+
+  it("[063-S5] idempotency_key numérico → rejeitado (tipo errado, schema é strict)", () => {
+    const r = schemaPayloadPedido.safeParse(payload({ idempotency_key: 12345 }));
+    expect(r.success).toBe(false);
+  });
+
+  it("[063-S6] idempotency_key presente não abre brechas para campos monetários (strict permanece)", () => {
+    // Mesmo com idempotency_key válido, .strict() deve barrar total adulterado.
+    const r = schemaPayloadPedido.safeParse(
+      payload({ idempotency_key: UUID_IDEMP, total: 0.01 }),
+    );
+    expect(r.success).toBe(false);
+  });
+});

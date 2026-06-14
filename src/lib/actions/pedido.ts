@@ -258,6 +258,9 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       p_itens: itensSnapshot,
       p_tipo_entrega: dados.tipo_entrega,
       p_troco_para: trocoPara,
+      // (063) idempotência: a chave do client só desduplica (escopada por loja
+      // pelo índice/SELECT da RPC); não influencia valor/autorização.
+      p_idempotency_key: dados.idempotency_key ?? null,
     });
 
     if (error != null || data == null || data.length === 0) {

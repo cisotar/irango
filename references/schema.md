@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.5 | **Atualizado:** 2026-06-14
+**Versão:** 0.1.6 | **Atualizado:** 2026-06-14
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -227,6 +227,10 @@ CREATE TABLE pedidos (
   forma_pagamento   text,
   cupom_codigo      text,
   observacoes       text,
+  -- Idempotência: chave gerada pelo client (crypto.randomUUID()) por carrinho/sessão.
+  -- A RPC criar_pedido retorna o mesmo pedido_id/token sem 2º INSERT nem 2º consumo de cupom.
+  -- Migration: 20260614009000_pedidos_idempotency_key.sql
+  idempotency_key   uuid,
   criado_em         timestamptz NOT NULL DEFAULT now()
 );
 ```
@@ -339,6 +343,10 @@ CREATE INDEX ON categorias(loja_id, ordem);
 
 -- Pedidos por loja ordenados por data (dashboard)
 CREATE INDEX ON pedidos(loja_id, criado_em DESC);
+
+-- Idempotência: deduplicação de pedido por loja + chave (NULL excluído do índice)
+-- Migration: 20260614009000_pedidos_idempotency_key.sql
+CREATE UNIQUE INDEX ON pedidos(loja_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 -- Cupons: busca por código dentro da loja
 CREATE UNIQUE INDEX ON cupons(loja_id, codigo);
