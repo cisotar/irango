@@ -1,0 +1,257 @@
+<!-- Mundo: Produto iRango — tokens FIXOS, SEM tema de loja -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iRango Painel · Dashboard</title>
+<style>
+  :root {
+    --irango-brand:   #332616;
+    --irango-sidebar: #2e2610;
+    --irango-cta:     #2d3a27;
+    --marrom-cafe:    #2e2610;
+    --texto:          #3e2723;
+    --texto-muted:    #6b5d4f;
+    --borda-nav:      #dccbb0;
+    --branco:         #ffffff;
+    --cinza-claro:    #f9f9f9;
+    --cinza-medio:    #eeeeee;
+    --sombra-suave:   rgba(0,0,0,0.10);
+    --sidebar-w:      240px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); min-height: 100vh; display: flex; }
+
+  /* Sidebar mínima (referência de posição — ver layout-painel.html para interatividade completa) */
+  .sidebar {
+    width: var(--sidebar-w); min-height: 100vh; flex-shrink: 0;
+    background: var(--irango-sidebar); color: var(--branco);
+    display: flex; flex-direction: column;
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 200;
+  }
+  .sidebar-logo {
+    display: flex; align-items: center; gap: 10px; padding: 20px 20px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .sidebar-logo-mark {
+    width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,0.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; font-weight: 900; flex-shrink: 0;
+  }
+  .sidebar-logo-nome { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 20px; min-height: 44px;
+    color: rgba(255,255,255,0.75); text-decoration: none; font-size: 0.88rem;
+    border-left: 3px solid transparent; transition: background 0.12s;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.06); color: var(--branco); }
+  .nav-item:focus-visible { outline: 2px solid rgba(255,255,255,0.5); outline-offset: -2px; }
+  .nav-item.ativo { background: rgba(255,255,255,0.1); color: var(--branco); border-left-color: var(--borda-nav); font-weight: 700; }
+  .nav-group-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.35); padding: 16px 20px 6px; font-weight: 700; }
+  .ico { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+  .sidebar-footer { margin-top: auto; padding: 16px 0; border-top: 1px solid rgba(255,255,255,0.08); }
+
+  /* Main */
+  .main-wrapper { margin-left: var(--sidebar-w); flex: 1; }
+  .page-content { padding: 32px; }
+  .page-header { margin-bottom: 28px; display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  .page-header h1 { margin: 0; font-size: 1.4rem; font-weight: 900; color: var(--marrom-cafe); }
+  .page-header p { margin: 4px 0 0; color: var(--texto-muted); font-size: 0.85rem; }
+
+  /* Badge loja aberta */
+  .badge-aberto { display:inline-flex; align-items:center; gap:6px; background:#dcfce7; color:#166534; border:1px solid #86efac; padding:5px 12px; border-radius:999px; font-size:0.78rem; font-weight:700; }
+
+  /* Cards métricas */
+  .metricas-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;
+    margin-bottom: 32px;
+  }
+  .metrica-card {
+    background: var(--branco); border: 1px solid var(--borda-nav);
+    border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave);
+    padding: 20px 24px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .metrica-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--texto-muted); }
+  .metrica-valor { font-size: 2rem; font-weight: 900; color: var(--marrom-cafe); line-height: 1; }
+  .metrica-sub { font-size: 0.78rem; color: var(--texto-muted); }
+  .metrica-card.destaque { border-color: var(--irango-cta); }
+  .metrica-card.destaque .metrica-valor { color: var(--irango-cta); }
+
+  /* Tabela pedidos recentes */
+  .card-tabela {
+    background: var(--branco); border: 1px solid var(--borda-nav);
+    border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave);
+    overflow: hidden;
+  }
+  .card-tabela-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 20px; border-bottom: 1px solid var(--cinza-medio);
+  }
+  .card-tabela-header h2 { margin: 0; font-size: 0.95rem; font-weight: 900; color: var(--marrom-cafe); }
+  .link-ver-todos { font-size: 0.82rem; color: var(--irango-brand); text-decoration: none; font-weight: 700; }
+  .link-ver-todos:hover { text-decoration: underline; }
+  .link-ver-todos:focus-visible { outline: 2px solid var(--irango-brand); outline-offset: 2px; border-radius: 3px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; padding: 10px 16px;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--texto-muted); background: var(--cinza-claro);
+    border-bottom: 1px solid var(--cinza-medio);
+  }
+  td { padding: 14px 16px; border-bottom: 1px solid var(--cinza-medio); font-size: 0.88rem; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf8; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px;
+    font-size: 0.75rem; font-weight: 700; line-height: 1; border: 1px solid transparent; white-space: nowrap;
+  }
+  .b-pendente   { background:#fef3c7; color:#854d0e; border-color:#fcd34d; }
+  .b-confirmado { background:#dbeafe; color:#1e40af; border-color:#93c5fd; }
+  .b-preparo    { background:#e0e7ff; color:#3730a3; border-color:#a5b4fc; }
+  .b-saiu       { background:#cffafe; color:#155e75; border-color:#67e8f9; }
+  .b-entregue   { background:#dcfce7; color:#166534; border-color:#86efac; }
+  .b-cancelado  { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+
+  .btn-ver {
+    background: none; border: 1px solid var(--borda-nav); border-radius: 8px;
+    padding: 6px 12px; font-size: 0.78rem; color: var(--texto-muted); cursor: pointer; white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-ver:hover { border-color: var(--irango-brand); color: var(--irango-brand); }
+  .btn-ver:focus-visible { outline: 2px solid var(--irango-brand); outline-offset: 2px; }
+
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main-wrapper { margin-left: 0; }
+    .page-content { padding: 20px 16px; }
+    .metricas-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    /* Tabela vira cards no mobile */
+    table thead { display: none; }
+    table, tbody, tr, td { display: block; }
+    tr { border: 1px solid var(--cinza-medio); border-radius: 10px; margin-bottom: 12px; padding: 8px 0; }
+    tr:hover td { background: transparent; }
+    td { border-bottom: none; padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; }
+    td::before { content: attr(data-label); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--texto-muted); letter-spacing: 0.5px; }
+  }
+</style>
+</head>
+<body>
+  <nav class="sidebar" aria-label="Menu do painel">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark" aria-hidden="true">iR</div>
+      <div>
+        <div class="sidebar-logo-nome">iRango</div>
+      </div>
+    </div>
+    <div class="nav-group-label">Principal</div>
+    <a href="#" class="nav-item ativo" aria-current="page"><span class="ico" aria-hidden="true">▣</span> Dashboard</a>
+    <a href="tabela-pedidos.html" class="nav-item"><span class="ico" aria-hidden="true">📋</span> Pedidos</a>
+    <a href="form-produto.html" class="nav-item"><span class="ico" aria-hidden="true">🛒</span> Produtos</a>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">🏷</span> Cupons</a>
+    <div class="nav-group-label">Configurações</div>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">⚙</span> Configurações</a>
+    <div class="sidebar-footer">
+      <a href="#" class="nav-item" style="color:rgba(255,255,255,0.5)"><span class="ico" aria-hidden="true">↩</span> Sair</a>
+    </div>
+  </nav>
+
+  <div class="main-wrapper">
+    <main class="page-content">
+      <div class="page-header">
+        <div>
+          <h1>Dashboard</h1>
+          <p>Empório iRango · Sábado, 14 jun 2026</p>
+        </div>
+        <span class="badge-aberto" role="status" aria-label="Loja aberta agora">
+          <span aria-hidden="true">●</span> Aberto agora
+        </span>
+      </div>
+
+      <!-- Métricas -->
+      <section aria-labelledby="titulo-metricas">
+        <h2 id="titulo-metricas" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;color:var(--texto-muted);margin:0 0 12px;font-weight:700;">Hoje</h2>
+        <div class="metricas-grid">
+          <div class="metrica-card">
+            <div class="metrica-label">Pedidos recebidos</div>
+            <div class="metrica-valor">17</div>
+            <div class="metrica-sub">Desde as 08h00</div>
+          </div>
+          <div class="metrica-card">
+            <div class="metrica-label">Pendentes de ação</div>
+            <div class="metrica-valor" style="color:#854d0e">3</div>
+            <div class="metrica-sub">Aguardando confirmação</div>
+          </div>
+          <div class="metrica-card destaque">
+            <div class="metrica-label">Total do dia</div>
+            <div class="metrica-valor">R$ 847</div>
+            <div class="metrica-sub">Valor já confirmado</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pedidos recentes -->
+      <div class="card-tabela">
+        <div class="card-tabela-header">
+          <h2>Pedidos recentes</h2>
+          <a href="tabela-pedidos.html" class="link-ver-todos">Ver todos →</a>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Pedido</th>
+                <th scope="col">Cliente</th>
+                <th scope="col">Total</th>
+                <th scope="col">Status</th>
+                <th scope="col"><span class="sr-only">Ações</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Pedido">#1042</td>
+                <td data-label="Cliente">Maria Silva</td>
+                <td data-label="Total">R$ 78,50</td>
+                <td data-label="Status"><span class="badge b-pendente"><span aria-hidden="true">●</span>Pendente</span></td>
+                <td data-label="Ação"><a href="pedido-detalhe.html" class="btn-ver">Ver</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1041</td>
+                <td data-label="Cliente">João Ferreira</td>
+                <td data-label="Total">R$ 124,00</td>
+                <td data-label="Status"><span class="badge b-preparo"><span aria-hidden="true">⏱</span>Em preparo</span></td>
+                <td data-label="Ação"><a href="pedido-detalhe.html" class="btn-ver">Ver</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1040</td>
+                <td data-label="Cliente">Ana Rodrigues</td>
+                <td data-label="Total">R$ 55,90</td>
+                <td data-label="Status"><span class="badge b-saiu"><span aria-hidden="true">🛵</span>Saiu pra entrega</span></td>
+                <td data-label="Ação"><a href="pedido-detalhe.html" class="btn-ver">Ver</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1039</td>
+                <td data-label="Cliente">Carlos Mendes</td>
+                <td data-label="Total">R$ 43,00</td>
+                <td data-label="Status"><span class="badge b-entregue"><span aria-hidden="true">✓</span>Entregue</span></td>
+                <td data-label="Ação"><a href="pedido-detalhe.html" class="btn-ver">Ver</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1038</td>
+                <td data-label="Cliente">Fernanda Lima</td>
+                <td data-label="Total">R$ 92,00</td>
+                <td data-label="Status"><span class="badge b-cancelado"><span aria-hidden="true">✕</span>Cancelado</span></td>
+                <td data-label="Ação"><a href="pedido-detalhe.html" class="btn-ver">Ver</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

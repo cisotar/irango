@@ -1,0 +1,281 @@
+<!-- Mundo: Vitrine pública — tokens VÊM da loja (--cor-primaria / --cor-fundo / --cor-destaque) -->
+<!-- Tela de confirmação de pedido: valor final (NÃO estimado), instrução de pagamento, CTA voltar -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empório iRango · Pedido confirmado!</title>
+<style>
+  :root {
+    /* Tema da loja — injetado via SSR */
+    --cor-primaria: #332616;
+    --cor-fundo:    #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Sistema */
+    --marrom-cafe:  #2e2610;
+    --texto:        #3e2723;
+    --texto-muted:  #6b5d4f;
+    --borda-nav:    #dccbb0;
+    --branco:       #ffffff;
+    --cinza-claro:  #f9f9f9;
+    --cinza-medio:  #eeeeee;
+    --sombra-suave: rgba(0,0,0,0.10);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); color: var(--texto); min-height: 100vh; }
+
+  .page { max-width: 480px; margin: 0 auto; background: var(--cor-fundo); min-height: 100vh; padding-bottom: 40px; }
+
+  /* Header mínimo */
+  .header {
+    background: var(--cor-primaria); color: var(--branco);
+    padding: 14px 16px; display: flex; align-items: center; justify-content: center;
+  }
+  .header-titulo { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Hero de sucesso */
+  .hero-sucesso {
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    padding: 40px 24px 32px;
+  }
+  .icone-sucesso {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: #dcfce7; border: 3px solid #86efac;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.4rem; margin-bottom: 20px;
+    animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  }
+  @keyframes popIn {
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .hero-titulo {
+    font-size: 1.4rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--marrom-cafe); margin: 0 0 8px;
+  }
+  .hero-sub { font-size: 0.9rem; color: var(--texto-muted); margin: 0; line-height: 1.5; }
+  .numero-pedido {
+    margin-top: 16px; background: var(--branco); border: 1px solid var(--borda-nav);
+    border-radius: 10px; padding: 10px 20px;
+    display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .numero-pedido .label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1px; color: var(--texto-muted); font-weight: 700; }
+  .numero-pedido .valor { font-size: 1.3rem; font-weight: 900; color: var(--marrom-cafe); font-family: ui-monospace, monospace; }
+
+  /* Cards */
+  .card {
+    background: var(--branco); border: 1px solid var(--cinza-medio);
+    border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave);
+    margin: 0 16px 12px; overflow: hidden;
+  }
+  .card-header { padding: 14px 16px; border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro); }
+  .card-header h2 { margin: 0; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--texto-muted); }
+  .card-body { padding: 16px; }
+
+  /* Instrução Pix */
+  .pix-bloco {
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .pix-chave-label { font-size: 0.82rem; color: var(--texto-muted); font-weight: 600; }
+  .pix-chave-wrap {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--borda-nav); border-radius: 10px; background: var(--cinza-claro);
+    padding: 0 12px; min-height: 52px;
+  }
+  .pix-chave-valor {
+    flex: 1; font-size: 0.92rem; color: var(--marrom-cafe); font-weight: 700;
+    font-family: ui-monospace, monospace; word-break: break-all;
+  }
+  .btn-copiar {
+    background: var(--cor-destaque); color: var(--branco);
+    border: none; border-radius: 8px; height: 44px; padding: 0 14px;
+    font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  .btn-copiar:hover { opacity: 0.85; }
+  .btn-copiar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 3px; }
+
+  .pix-instrucao {
+    background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px;
+    padding: 10px 14px; font-size: 0.82rem; color: #166534; line-height: 1.5;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+
+  /* Itens */
+  .item { display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--cinza-medio); }
+  .item:last-child { border-bottom:none; }
+  .item-img { width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,#e8dcc4,#d8c4a0);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0; }
+  .item-info { flex:1;min-width:0; }
+  .item-nome { font-size:0.85rem;font-weight:700;color:var(--texto);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .item-qtd { font-size:0.75rem;color:var(--texto-muted); }
+  .item-preco { font-weight:900;font-size:0.88rem;color:var(--cor-destaque);white-space:nowrap; }
+
+  /* Resumo */
+  .resumo-linha { display:flex;justify-content:space-between;align-items:baseline;padding:6px 0; }
+  .resumo-label { font-size:0.85rem;color:var(--texto-muted); }
+  .resumo-valor { font-size:0.85rem;font-weight:600;color:var(--texto); }
+  .resumo-linha.total { border-top:2px solid var(--borda-nav);margin-top:8px;padding-top:12px; }
+  .resumo-linha.total .resumo-label { font-size:1rem;font-weight:900;color:var(--marrom-cafe); }
+  .resumo-linha.total .resumo-valor { font-size:1.15rem;font-weight:900;color:var(--cor-destaque); }
+  /* Sem aviso "estimado" — este é o valor final do servidor */
+  .tag-final {
+    display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;
+    border:1px solid #86efac;border-radius:6px;padding:2px 8px;font-size:0.68rem;font-weight:700;
+  }
+
+  /* Botão voltar */
+  .btn-voltar-loja {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: calc(100% - 32px); margin: 20px 16px 0;
+    height: 52px; border: 2px solid var(--cor-destaque); border-radius: 12px; cursor: pointer;
+    background: var(--branco); color: var(--cor-destaque);
+    font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    text-decoration: none; transition: background 0.15s, color 0.15s;
+  }
+  .btn-voltar-loja:hover { background: var(--cor-destaque); color: var(--branco); }
+  .btn-voltar-loja:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 3px; }
+
+  /* Mensagem de tempo estimado */
+  .tempo-estimado {
+    display: flex; align-items: center; gap: 6px; justify-content: center;
+    font-size: 0.82rem; color: var(--texto-muted); margin: 16px 16px 0; text-align: center;
+  }
+
+  @media (min-width: 769px) {
+    body { background: #c8bfab; }
+    .page { box-shadow: 0 0 32px rgba(0,0,0,0.2); }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="header">
+        <span class="header-titulo">Empório iRango</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- Hero sucesso -->
+      <div class="hero-sucesso" role="status" aria-live="polite">
+        <div class="icone-sucesso" aria-hidden="true">✓</div>
+        <h1 class="hero-titulo">Pedido confirmado!</h1>
+        <p class="hero-sub">
+          Recebemos seu pedido e já estamos<br>preparando tudo com carinho.
+        </p>
+        <div class="numero-pedido">
+          <span class="label">Número do pedido</span>
+          <span class="valor">#1042</span>
+        </div>
+      </div>
+
+      <!-- Instruções Pix -->
+      <section class="card" aria-labelledby="titulo-pix">
+        <div class="card-header">
+          <h2 id="titulo-pix">Pagamento via Pix</h2>
+        </div>
+        <div class="card-body">
+          <div class="pix-bloco">
+            <p class="pix-chave-label">Chave Pix da loja (CNPJ):</p>
+            <div class="pix-chave-wrap">
+              <span class="pix-chave-valor" id="chave-pix">12.345.678/0001-90</span>
+              <button type="button" class="btn-copiar" aria-label="Copiar chave Pix"
+                onclick="navigator.clipboard.writeText('12.345.678/0001-90');this.textContent='Copiado!'">
+                Copiar
+              </button>
+            </div>
+            <div class="pix-instrucao" role="note">
+              <span aria-hidden="true">ℹ</span>
+              <span>
+                Abra o app do seu banco, acesse <strong>Pix → Pagar</strong> e use a chave acima.
+                Insira o valor de <strong>R$ 71,45</strong> e confirme.
+                Após o pagamento, o lojista confirmará e preparará seu pedido.
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Itens do pedido -->
+      <section class="card" aria-labelledby="titulo-itens">
+        <div class="card-header">
+          <h2 id="titulo-itens">Itens</h2>
+        </div>
+        <div class="card-body" style="padding-top:8px;padding-bottom:8px;">
+          <div class="item">
+            <div class="item-img" aria-hidden="true">🍞</div>
+            <div class="item-info">
+              <div class="item-nome">Pão de queijo artesanal (12 un)</div>
+              <div class="item-qtd">2 × R$ 18,00</div>
+            </div>
+            <div class="item-preco">R$ 36,00</div>
+          </div>
+          <div class="item">
+            <div class="item-img" aria-hidden="true">☕</div>
+            <div class="item-info">
+              <div class="item-nome">Café moído Espresso 250g</div>
+              <div class="item-qtd">1 × R$ 34,50</div>
+            </div>
+            <div class="item-preco">R$ 34,50</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resumo final (valor do servidor, não estimado) -->
+      <section class="card" aria-labelledby="titulo-total">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <h2 id="titulo-total">Total do pedido</h2>
+          <span class="tag-final" role="note" aria-label="Valor confirmado pelo lojista">
+            <span aria-hidden="true">✓</span> Valor confirmado
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal</span>
+            <span class="resumo-valor">R$ 70,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 8,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor" style="color:#166534">− R$ 7,05</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total a pagar</span>
+            <span class="resumo-valor">R$ 71,45</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Entrega -->
+      <section class="card" aria-labelledby="titulo-entrega">
+        <div class="card-header"><h2 id="titulo-entrega">Entrega</h2></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;gap:8px;align-items:flex-start;">
+            <span aria-hidden="true" style="font-size:1rem;flex-shrink:0">📍</span>
+            <div>
+              <div style="font-size:0.88rem;font-weight:700;color:var(--texto)">Rua das Acácias, 342 — Apto 12</div>
+              <div style="font-size:0.82rem;color:var(--texto-muted)">Saúde, São Paulo — SP · CEP 04104-001</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tempo estimado -->
+      <p class="tempo-estimado">
+        <span aria-hidden="true">⏱</span>
+        Previsão de entrega: <strong>40–60 minutos</strong>
+      </p>
+
+      <!-- CTA voltar -->
+      <a href="vitrine-completa.html" class="btn-voltar-loja">
+        ← Voltar à loja
+      </a>
+    </main>
+  </div>
+</body>
+</html>

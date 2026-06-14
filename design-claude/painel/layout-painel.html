@@ -1,0 +1,231 @@
+<!-- Mundo: Produto iRango — tokens FIXOS, SEM tema de loja -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iRango Painel · Layout Shell</title>
+<style>
+  :root {
+    --irango-brand:   #332616;
+    --irango-sidebar: #2e2610;
+    --irango-cta:     #2d3a27;
+    --marrom-cafe:    #2e2610;
+    --texto:          #3e2723;
+    --texto-muted:    #6b5d4f;
+    --borda-nav:      #dccbb0;
+    --branco:         #ffffff;
+    --cinza-claro:    #f9f9f9;
+    --cinza-medio:    #eeeeee;
+    --sombra-suave:   rgba(0,0,0,0.10);
+    --sombra-media:   rgba(0,0,0,0.15);
+    --sidebar-w:      240px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); min-height: 100vh; display: flex; }
+
+  /* ===== SIDEBAR (desktop) ===== */
+  .sidebar {
+    width: var(--sidebar-w); min-height: 100vh; flex-shrink: 0;
+    background: var(--irango-sidebar); color: var(--branco);
+    display: flex; flex-direction: column;
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 200;
+    overflow-y: auto;
+  }
+  .sidebar-logo {
+    display: flex; align-items: center; gap: 10px;
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .sidebar-logo-mark {
+    width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,0.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; font-weight: 900; color: var(--branco); flex-shrink: 0;
+  }
+  .sidebar-logo-nome { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; }
+  .sidebar-logo-sub { font-size: 0.65rem; color: rgba(255,255,255,0.5); letter-spacing: 0.5px; }
+
+  .sidebar-nav { flex: 1; padding: 12px 0; }
+  .nav-group-label {
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.35); padding: 16px 20px 6px; font-weight: 700;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; min-height: 44px;
+    color: rgba(255,255,255,0.75); text-decoration: none;
+    font-size: 0.88rem; font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: background 0.12s, color 0.12s;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.06); color: var(--branco); }
+  .nav-item:focus-visible { outline: 2px solid rgba(255,255,255,0.5); outline-offset: -2px; }
+  .nav-item.ativo {
+    background: rgba(255,255,255,0.1); color: var(--branco);
+    border-left-color: var(--borda-nav); font-weight: 700;
+  }
+  .nav-item .ico { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+  .nav-subitem {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px 8px 50px; min-height: 40px;
+    color: rgba(255,255,255,0.6); text-decoration: none;
+    font-size: 0.82rem;
+    border-left: 3px solid transparent;
+    transition: background 0.12s, color 0.12s;
+  }
+  .nav-subitem:hover { background: rgba(255,255,255,0.05); color: var(--branco); }
+  .nav-subitem:focus-visible { outline: 2px solid rgba(255,255,255,0.4); outline-offset: -2px; }
+  .nav-subitem.ativo { color: var(--branco); border-left-color: var(--borda-nav); }
+
+  .sidebar-footer {
+    padding: 16px 0;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .nav-logout { color: rgba(255,255,255,0.5) !important; }
+  .nav-logout:hover { color: #fca5a5 !important; background: rgba(239,68,68,0.08) !important; }
+
+  /* ===== TOPBAR MOBILE ===== */
+  .topbar-mobile {
+    display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 300;
+    height: 56px; background: var(--irango-sidebar); color: var(--branco);
+    align-items: center; justify-content: space-between; padding: 0 16px;
+    box-shadow: 0 2px 8px var(--sombra-media);
+  }
+  .hamburger {
+    background: none; border: none; color: var(--branco); cursor: pointer;
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; font-size: 1.3rem;
+    transition: background 0.15s;
+  }
+  .hamburger:hover { background: rgba(255,255,255,0.1); }
+  .hamburger:focus-visible { outline: 2px solid rgba(255,255,255,0.6); outline-offset: 2px; }
+  .topbar-nome { font-size: 0.95rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* Overlay mobile */
+  .sidebar-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 190;
+  }
+
+  /* ===== CONTEÚDO PRINCIPAL ===== */
+  .main-wrapper {
+    margin-left: var(--sidebar-w);
+    flex: 1; min-height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .page-content {
+    flex: 1; padding: 32px;
+  }
+  .page-header { margin-bottom: 28px; }
+  .page-header h1 { margin: 0; font-size: 1.4rem; font-weight: 900; color: var(--marrom-cafe); }
+  .page-header p { margin: 6px 0 0; color: var(--texto-muted); font-size: 0.88rem; }
+
+  /* Placeholder de conteúdo */
+  .content-placeholder {
+    background: var(--branco); border: 2px dashed var(--borda-nav);
+    border-radius: 12px; padding: 48px; text-align: center;
+    color: var(--texto-muted); font-size: 0.9rem;
+  }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 768px) {
+    .sidebar { transform: translateX(-100%); transition: transform 0.25s ease; }
+    .sidebar.aberta { transform: translateX(0); }
+    .sidebar-overlay.visivel { display: block; }
+    .topbar-mobile { display: flex; }
+    .main-wrapper { margin-left: 0; padding-top: 56px; }
+    .page-content { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Topbar mobile -->
+  <div class="topbar-mobile" role="banner">
+    <button
+      class="hamburger"
+      aria-label="Abrir menu de navegação"
+      aria-expanded="false"
+      aria-controls="sidebar"
+      onclick="toggleSidebar()"
+    >☰</button>
+    <span class="topbar-nome">iRango Painel</span>
+    <div style="width:44px"></div><!-- espaçador -->
+  </div>
+
+  <!-- Overlay -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()" aria-hidden="true"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar" aria-label="Menu do painel">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark" aria-hidden="true">iR</div>
+      <div>
+        <div class="sidebar-logo-nome">iRango</div>
+        <div class="sidebar-logo-sub">Painel do lojista</div>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <!-- Principal -->
+      <div class="nav-group-label">Principal</div>
+      <a href="dashboard.html" class="nav-item ativo" aria-current="page">
+        <span class="ico" aria-hidden="true">▣</span> Dashboard
+      </a>
+      <a href="tabela-pedidos.html" class="nav-item">
+        <span class="ico" aria-hidden="true">📋</span> Pedidos
+      </a>
+      <a href="form-produto.html" class="nav-item">
+        <span class="ico" aria-hidden="true">🛒</span> Produtos
+      </a>
+      <a href="#" class="nav-item">
+        <span class="ico" aria-hidden="true">🏷</span> Cupons
+      </a>
+
+      <!-- Configurações -->
+      <div class="nav-group-label">Configurações</div>
+      <a href="#" class="nav-item">
+        <span class="ico" aria-hidden="true">⚙</span> Configurações
+      </a>
+      <a href="#" class="nav-subitem">Perfil da loja</a>
+      <a href="#" class="nav-subitem">Horários</a>
+      <a href="#" class="nav-subitem">Zonas de entrega</a>
+      <a href="#" class="nav-subitem">Formas de pagamento</a>
+      <a href="#" class="nav-subitem ativo" aria-current="page">Tema</a>
+      <a href="config-assinatura.html" class="nav-subitem">Assinatura</a>
+    </div>
+
+    <div class="sidebar-footer">
+      <a href="#" class="nav-item nav-logout">
+        <span class="ico" aria-hidden="true">↩</span> Sair
+      </a>
+    </div>
+  </nav>
+
+  <!-- Conteúdo principal -->
+  <div class="main-wrapper">
+    <main class="page-content" id="main-content">
+      <div class="page-header">
+        <h1>Dashboard</h1>
+        <p>Bem-vindo, Empório iRango. Aqui está o resumo do seu dia.</p>
+      </div>
+      <div class="content-placeholder" role="region" aria-label="Conteúdo da página">
+        Conteúdo da página aparece aqui.
+        <br><br>
+        Veja <a href="dashboard.html">dashboard.html</a> para exemplo completo.
+      </div>
+    </main>
+  </div>
+
+<script>
+  function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    const btn = document.querySelector('.hamburger');
+    const aberta = sidebar.classList.toggle('aberta');
+    overlay.classList.toggle('visivel', aberta);
+    btn.setAttribute('aria-expanded', aberta.toString());
+  }
+</script>
+</body>
+</html>

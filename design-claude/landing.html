@@ -1,0 +1,263 @@
+<!-- Mundo: Produto iRango — tokens FIXOS, SEM tema de loja -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iRango · Crie sua loja online em minutos</title>
+<style>
+  :root {
+    --irango-brand:   #332616;
+    --irango-fundo:   #f5f0e6;
+    --irango-cta:     #2d3a27;
+    --marrom-cafe:    #2e2610;
+    --texto:          #3e2723;
+    --texto-muted:    #6b5d4f;
+    --borda-nav:      #dccbb0;
+    --branco:         #ffffff;
+    --cinza-claro:    #f9f9f9;
+    --cinza-medio:    #eeeeee;
+    --sombra-suave:   rgba(0,0,0,0.10);
+    --sombra-media:   rgba(0,0,0,0.15);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--irango-fundo); color: var(--texto); }
+
+  /* ===== TOPBAR ===== */
+  .topbar {
+    background: var(--irango-brand); color: var(--branco);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; height: 60px;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 8px var(--sombra-media);
+  }
+  .topbar-logo { font-size: 1.3rem; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: var(--branco); text-decoration: none; }
+  .topbar-logo:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 3px; border-radius: 4px; }
+  .topbar-nav { display: flex; align-items: center; gap: 12px; }
+  .topbar-nav a {
+    color: rgba(255,255,255,0.85); text-decoration: none; font-size: 0.88rem; font-weight: 600;
+    padding: 8px 12px; border-radius: 8px; min-height: 44px; display: inline-flex; align-items: center;
+    transition: background 0.15s;
+  }
+  .topbar-nav a:hover { background: rgba(255,255,255,0.1); }
+  .topbar-nav a:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 2px; }
+  .topbar-nav .btn-nav {
+    background: var(--branco); color: var(--irango-brand); font-weight: 700;
+    padding: 8px 18px; border-radius: 10px;
+  }
+  .topbar-nav .btn-nav:hover { background: var(--irango-fundo); }
+
+  /* ===== HERO ===== */
+  .hero {
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    padding: 72px 24px 64px;
+    background: linear-gradient(180deg, var(--irango-brand) 0%, #4a3220 50%, var(--irango-fundo) 100%);
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.9); border-radius: 999px;
+    padding: 6px 16px; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 900; text-transform: uppercase;
+    letter-spacing: -0.5px; line-height: 1.1; margin: 0 0 20px;
+    color: var(--branco);
+  }
+  .hero h1 span { color: #f5c57a; }
+  .hero p {
+    font-size: 1.05rem; color: rgba(255,255,255,0.8); max-width: 520px; margin: 0 0 36px; line-height: 1.6;
+  }
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .btn-cta-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--irango-cta); color: var(--branco);
+    border: none; border-radius: 12px; cursor: pointer;
+    font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 0 28px; min-height: 52px; text-decoration: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .btn-cta-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+  .btn-cta-primary:focus-visible { outline: 3px solid var(--branco); outline-offset: 3px; }
+  .btn-cta-secondary {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; color: var(--branco);
+    border: 2px solid rgba(255,255,255,0.5); border-radius: 12px; cursor: pointer;
+    font-size: 0.95rem; font-weight: 600; padding: 0 24px; min-height: 52px; text-decoration: none;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn-cta-secondary:hover { border-color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.08); }
+  .btn-cta-secondary:focus-visible { outline: 3px solid var(--branco); outline-offset: 3px; }
+
+  /* Social proof */
+  .social-proof {
+    margin-top: 40px; color: rgba(255,255,255,0.6); font-size: 0.82rem;
+    display: flex; align-items: center; gap: 8px; justify-content: center;
+  }
+  .stars { color: #f5c57a; font-size: 1rem; letter-spacing: 2px; }
+
+  /* ===== BENEFÍCIOS ===== */
+  .secao { padding: 64px 24px; max-width: 1100px; margin: 0 auto; }
+  .secao-titulo {
+    text-align: center; font-size: clamp(1.4rem, 4vw, 2rem); font-weight: 900;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--marrom-cafe); margin: 0 0 12px;
+  }
+  .secao-sub { text-align: center; color: var(--texto-muted); margin: 0 0 48px; font-size: 1rem; }
+  .cards-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;
+  }
+  .card-beneficio {
+    background: var(--branco); border: 1px solid var(--borda-nav); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave);
+    padding: 28px 24px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .card-icone {
+    width: 52px; height: 52px; border-radius: 14px;
+    background: var(--irango-fundo); display: flex; align-items: center; justify-content: center;
+    font-size: 1.6rem;
+  }
+  .card-beneficio h3 { margin: 0; font-size: 1rem; font-weight: 900; color: var(--marrom-cafe); }
+  .card-beneficio p { margin: 0; font-size: 0.88rem; color: var(--texto-muted); line-height: 1.5; }
+
+  /* ===== CTA RODAPÉ ===== */
+  .cta-rodape {
+    background: var(--irango-brand); color: var(--branco);
+    text-align: center; padding: 64px 24px;
+  }
+  .cta-rodape h2 {
+    font-size: clamp(1.5rem, 4vw, 2.2rem); font-weight: 900; text-transform: uppercase;
+    letter-spacing: 0.5px; margin: 0 0 12px; color: var(--branco);
+  }
+  .cta-rodape p { color: rgba(255,255,255,0.75); font-size: 1rem; margin: 0 0 36px; }
+  .btn-cta-grande {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--branco); color: var(--irango-brand);
+    border: none; border-radius: 12px; cursor: pointer;
+    font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 0 36px; min-height: 56px; text-decoration: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .btn-cta-grande:hover { opacity: 0.93; transform: translateY(-1px); }
+  .btn-cta-grande:focus-visible { outline: 3px solid rgba(255,255,255,0.7); outline-offset: 3px; }
+  .cta-gratis { font-size: 0.8rem; color: rgba(255,255,255,0.55); margin-top: 12px; }
+
+  /* ===== FOOTER ===== */
+  footer {
+    background: var(--marrom-cafe); color: rgba(255,255,255,0.65);
+    padding: 32px 24px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  .footer-logo { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.9); }
+  .footer-links { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  .footer-links a {
+    color: rgba(255,255,255,0.65); text-decoration: none; font-size: 0.82rem;
+    transition: color 0.15s;
+  }
+  .footer-links a:hover { color: rgba(255,255,255,0.9); }
+  .footer-links a:focus-visible { outline: 2px solid rgba(255,255,255,0.5); outline-offset: 3px; border-radius: 3px; }
+  .footer-copy { font-size: 0.75rem; }
+
+  @media (max-width: 480px) {
+    .topbar-nav a:not(.btn-nav) { display: none; }
+    .hero { padding: 48px 20px 48px; }
+  }
+</style>
+</head>
+<body>
+  <!-- Topbar -->
+  <header>
+    <nav class="topbar" aria-label="Navegação principal">
+      <a href="#" class="topbar-logo">iRango</a>
+      <div class="topbar-nav">
+        <a href="#">Como funciona</a>
+        <a href="#">Preços</a>
+        <a href="auth/login.html">Entrar</a>
+        <a href="auth/cadastro.html" class="btn-nav">Criar conta</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero" aria-labelledby="hero-titulo">
+      <div class="hero-badge">
+        <span aria-hidden="true">★</span> SaaS para comércio local
+      </div>
+      <h1 id="hero-titulo">
+        Crie sua loja<br><span>online em minutos</span>
+      </h1>
+      <p>
+        Do cadastro ao primeiro pedido, tudo no iRango. Cardápio digital, entrega configurável,
+        cupons de desconto e painel de pedidos — sem mensalidade para começar.
+      </p>
+      <div class="hero-ctas">
+        <a href="auth/cadastro.html" class="btn-cta-primary">Crie sua loja grátis</a>
+        <a href="#como-funciona" class="btn-cta-secondary">Ver como funciona</a>
+      </div>
+      <p class="social-proof">
+        <span class="stars" aria-label="5 estrelas">★★★★★</span>
+        Mais de 200 lojistas ativos
+      </p>
+    </section>
+
+    <!-- Benefícios -->
+    <section class="secao" id="como-funciona" aria-labelledby="titulo-beneficios">
+      <h2 class="secao-titulo" id="titulo-beneficios">Por que o iRango?</h2>
+      <p class="secao-sub">Tudo que você precisa para vender online, sem complicação.</p>
+
+      <div class="cards-grid">
+        <article class="card-beneficio">
+          <div class="card-icone" aria-hidden="true">🏪</div>
+          <h3>Vitrine pronta em minutos</h3>
+          <p>
+            Cadastre seus produtos, configure o horário de funcionamento e compartilhe o link.
+            Seus clientes já conseguem pedir.
+          </p>
+        </article>
+
+        <article class="card-beneficio">
+          <div class="card-icone" aria-hidden="true">🛵</div>
+          <h3>Entrega configurável por zona</h3>
+          <p>
+            Defina zonas de entrega com frete individualizado para cada bairro.
+            O sistema calcula o valor certo na hora do pedido.
+          </p>
+        </article>
+
+        <article class="card-beneficio">
+          <div class="card-icone" aria-hidden="true">🎫</div>
+          <h3>Cupons de desconto</h3>
+          <p>
+            Crie cupons de percentual ou valor fixo com validade e limite de uso.
+            Ideal para fidelizar clientes e aumentar o ticket médio.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <!-- CTA rodapé -->
+    <section class="cta-rodape" aria-labelledby="cta-titulo">
+      <h2 id="cta-titulo">Pronto para começar?</h2>
+      <p>Crie sua conta agora e comece a receber pedidos hoje mesmo.</p>
+      <a href="auth/cadastro.html" class="btn-cta-grande">Crie sua loja grátis</a>
+      <p class="cta-gratis">Sem cartão de crédito. Cancele quando quiser.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-logo">iRango</div>
+    <nav class="footer-links" aria-label="Links do rodapé">
+      <a href="#">Termos de Uso</a>
+      <a href="#">Política de Privacidade</a>
+      <a href="#">Suporte</a>
+      <a href="#">Status</a>
+    </nav>
+    <p class="footer-copy">&copy; 2026 iRango. Todos os direitos reservados.</p>
+  </footer>
+</body>
+</html>

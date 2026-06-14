@@ -1,0 +1,346 @@
+<!-- Mundo: Vitrine pública — tokens VÊM da loja (--cor-primaria / --cor-fundo / --cor-destaque) -->
+<!-- Mobile-first. Sem login. Cliente final comprando. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empório iRango · Finalizar pedido</title>
+<style>
+  :root {
+    /* Tema da loja — injetado via SSR, customizável pelo lojista */
+    --cor-primaria: #332616;
+    --cor-fundo:    #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Sistema (fixo) */
+    --marrom-cafe:  #2e2610;
+    --texto:        #3e2723;
+    --texto-muted:  #6b5d4f;
+    --borda-nav:    #dccbb0;
+    --branco:       #ffffff;
+    --cinza-claro:  #f9f9f9;
+    --cinza-medio:  #eeeeee;
+    --erro:         #991b1b;
+    --erro-bg:      #fee2e2;
+    --sombra-suave: rgba(0,0,0,0.10);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); color: var(--texto); min-height: 100vh; }
+
+  /* Page wrapper — mobile-first */
+  .page { max-width: 480px; margin: 0 auto; background: var(--cor-fundo); min-height: 100vh; padding-bottom: 24px; }
+
+  /* Header */
+  .header {
+    background: var(--cor-primaria); color: var(--branco);
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 50;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .btn-voltar {
+    background: none; border: none; color: var(--branco); cursor: pointer;
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; font-size: 1.2rem; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .btn-voltar:hover { background: rgba(255,255,255,0.12); }
+  .btn-voltar:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 2px; }
+  .header-titulo { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Seções */
+  .secao {
+    background: var(--branco); margin: 12px 16px 0;
+    border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave);
+    overflow: hidden;
+  }
+  .secao-titulo {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--texto-muted); padding: 14px 16px;
+    border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro);
+  }
+  .secao-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* Item do resumo */
+  .item-resumo { display:flex;align-items:center;gap:12px; }
+  .item-img { width:48px;height:48px;border-radius:8px;background:linear-gradient(135deg,#e8dcc4,#d8c4a0);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0; }
+  .item-info { flex:1;min-width:0; }
+  .item-nome { font-size:0.88rem;font-weight:700;color:var(--texto);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .item-qtd { font-size:0.78rem;color:var(--texto-muted); }
+  .item-preco { font-weight:900;font-size:0.9rem;color:var(--cor-destaque);white-space:nowrap; }
+
+  /* Campos do form */
+  .campo { display:flex;flex-direction:column;gap:5px; }
+  .campo label { font-size:0.8rem;font-weight:700;color:var(--texto); }
+  .campo input, .campo select {
+    height: 48px; padding: 0 14px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    font-size: 0.95rem; color: var(--texto); background: var(--cinza-claro);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit;
+  }
+  .campo select { cursor:pointer; }
+  .campo input:focus-visible, .campo select:focus-visible {
+    border-color: var(--cor-destaque); box-shadow: 0 0 0 3px rgba(45,58,39,0.15);
+  }
+  .campo input[aria-invalid="true"] { border-color: var(--erro); }
+  .campo .erro-msg { font-size: 0.75rem; color: var(--erro); display:none; }
+  .campo input[aria-invalid="true"] + .erro-msg { display:block; }
+  .campo .hint { font-size:0.75rem;color:var(--texto-muted); }
+
+  /* Linha dupla */
+  .linha-dupla { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+
+  /* Rádio de seleção */
+  .opcao-lista { display:flex;flex-direction:column;gap:8px; }
+  .opcao {
+    display:flex;align-items:center;gap:12px;
+    border:1px solid var(--cinza-medio);border-radius:10px;padding:12px 14px;
+    cursor:pointer;transition:border-color 0.15s,background 0.15s;
+    min-height:52px;
+  }
+  .opcao:hover { border-color:var(--cor-destaque); }
+  .opcao input[type="radio"] { width:20px;height:20px;accent-color:var(--cor-destaque);flex-shrink:0;cursor:pointer; }
+  .opcao input[type="radio"]:focus-visible { outline:3px solid var(--cor-destaque);outline-offset:2px; }
+  .opcao.selecionada { border-color:var(--cor-destaque);background:rgba(45,58,39,0.04); }
+  .opcao-info { flex:1; }
+  .opcao-nome { font-size:0.88rem;font-weight:700;color:var(--texto); }
+  .opcao-sub { font-size:0.78rem;color:var(--texto-muted); }
+  .opcao-preco { font-size:0.88rem;font-weight:900;color:var(--cor-destaque);white-space:nowrap; }
+
+  /* Resumo financeiro */
+  .resumo-linha { display:flex;justify-content:space-between;align-items:baseline;padding:6px 0; }
+  .resumo-label { font-size:0.85rem;color:var(--texto-muted); }
+  .resumo-valor { font-size:0.85rem;font-weight:600;color:var(--texto); }
+  .resumo-linha.total { border-top:2px solid var(--borda-nav);margin-top:8px;padding-top:12px; }
+  .resumo-linha.total .resumo-label { font-size:1rem;font-weight:900;color:var(--marrom-cafe); }
+  .resumo-linha.total .resumo-valor { font-size:1.15rem;font-weight:900;color:var(--cor-destaque); }
+  .aviso-estimado {
+    display:flex;align-items:flex-start;gap:6px;
+    background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;
+    padding:8px 12px;font-size:0.75rem;color:#854d0e;margin-top:8px;
+  }
+
+  /* Cupom */
+  .cupom-wrap { display:flex;gap:8px; }
+  .cupom-input {
+    flex:1;height:48px;padding:0 14px;border:1px solid var(--borda-nav);border-radius:10px;
+    font-size:0.95rem;color:var(--texto);background:var(--cinza-claro);outline:none;
+    transition:border-color 0.15s,box-shadow 0.15s;font-family:inherit;
+  }
+  .cupom-input:focus-visible { border-color:var(--cor-destaque);box-shadow:0 0 0 3px rgba(45,58,39,0.15); }
+  .btn-cupom {
+    height:48px;padding:0 16px;border:1px solid var(--borda-nav);border-radius:10px;
+    background:var(--branco);color:var(--texto);font-size:0.88rem;font-weight:700;cursor:pointer;
+    white-space:nowrap;transition:border-color 0.15s,color 0.15s;
+  }
+  .btn-cupom:hover { border-color:var(--cor-destaque);color:var(--cor-destaque); }
+  .btn-cupom:focus-visible { outline:2px solid var(--cor-destaque);outline-offset:2px; }
+
+  /* Botão confirmar */
+  .btn-confirmar {
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    width:calc(100% - 32px);margin:16px 16px 0;
+    height:56px;border:none;border-radius:12px;cursor:pointer;
+    background:var(--cor-destaque);color:var(--branco);
+    font-size:1rem;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.2);
+    transition:opacity 0.15s,transform 0.1s;
+  }
+  .btn-confirmar:hover { opacity:0.9;transform:translateY(-1px); }
+  .btn-confirmar:focus-visible { outline:3px solid var(--cor-destaque);outline-offset:3px; }
+  .btn-confirmar:disabled { background:#9a9a9a;cursor:not-allowed;transform:none; }
+
+  @media (min-width: 769px) {
+    body { background: #c8bfab; }
+    .page { box-shadow: 0 0 32px rgba(0,0,0,0.2); }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="header">
+        <button type="button" class="btn-voltar" aria-label="Voltar à loja">←</button>
+        <span class="header-titulo">Finalizar pedido</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- Resumo dos itens -->
+      <section class="secao" aria-labelledby="titulo-itens">
+        <h2 class="secao-titulo" id="titulo-itens">Itens do pedido</h2>
+        <div class="secao-body">
+          <div class="item-resumo">
+            <div class="item-img" aria-hidden="true">🍞</div>
+            <div class="item-info">
+              <div class="item-nome">Pão de queijo artesanal (12 un)</div>
+              <div class="item-qtd">2 unidades</div>
+            </div>
+            <div class="item-preco">R$ 36,00</div>
+          </div>
+          <div class="item-resumo">
+            <div class="item-img" aria-hidden="true">☕</div>
+            <div class="item-info">
+              <div class="item-nome">Café moído Espresso 250g</div>
+              <div class="item-qtd">1 unidade</div>
+            </div>
+            <div class="item-preco">R$ 34,50</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dados do cliente -->
+      <section class="secao" aria-labelledby="titulo-cliente">
+        <h2 class="secao-titulo" id="titulo-cliente">Seus dados</h2>
+        <div class="secao-body">
+          <div class="campo">
+            <label for="nome">Nome completo</label>
+            <input type="text" id="nome" name="nome" placeholder="Maria Silva" autocomplete="name" required>
+          </div>
+          <div class="campo">
+            <label for="telefone">WhatsApp / Telefone</label>
+            <input type="tel" id="telefone" name="telefone" placeholder="(11) 99999-9999"
+              autocomplete="tel" inputmode="tel" required>
+          </div>
+        </div>
+      </section>
+
+      <!-- Entrega -->
+      <section class="secao" aria-labelledby="titulo-entrega">
+        <h2 class="secao-titulo" id="titulo-entrega">Entrega</h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend style="font-size:0.8rem;font-weight:700;color:var(--texto);margin-bottom:8px;">Tipo de entrega</legend>
+            <div class="opcao-lista">
+              <label class="opcao selecionada">
+                <input type="radio" name="tipo-entrega" value="entrega" checked aria-describedby="entrega-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Entrega em domicílio</div>
+                  <div class="opcao-sub" id="entrega-desc">Receba no endereço</div>
+                </div>
+                <div class="opcao-preco">+ frete</div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="tipo-entrega" value="retirada" aria-describedby="retirada-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Retirada no local</div>
+                  <div class="opcao-sub" id="retirada-desc">Rua das Padarias, 88 — Vila Mariana</div>
+                </div>
+                <div class="opcao-preco" style="color:#166534">Grátis</div>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="linha-dupla">
+            <div class="campo">
+              <label for="cep">CEP</label>
+              <input type="text" id="cep" name="cep" placeholder="00000-000" inputmode="numeric" maxlength="9" autocomplete="postal-code" aria-describedby="cep-hint">
+              <span class="hint" id="cep-hint">Preenchemos o endereço automaticamente.</span>
+            </div>
+            <div class="campo">
+              <label for="numero">Número</label>
+              <input type="text" id="numero" name="numero" placeholder="342" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="complemento">Complemento</label>
+            <input type="text" id="complemento" name="complemento" placeholder="Apto, bloco, referência…" autocomplete="address-line2">
+          </div>
+
+          <div class="campo">
+            <label for="zona">Zona / Bairro de entrega</label>
+            <select id="zona" name="zona" required aria-describedby="zona-hint">
+              <option value="">Selecionar bairro…</option>
+              <option value="1">Vila Mariana — R$ 5,00</option>
+              <option value="2" selected>Saúde — R$ 7,00</option>
+              <option value="3">Ipiranga — R$ 9,00</option>
+              <option value="4">Moema — R$ 10,00</option>
+            </select>
+            <span class="hint" id="zona-hint">O frete é definido pelo lojista por zona.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Forma de pagamento -->
+      <section class="secao" aria-labelledby="titulo-pagamento">
+        <h2 class="secao-titulo" id="titulo-pagamento">Forma de pagamento</h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only">Selecione a forma de pagamento</legend>
+            <div class="opcao-lista">
+              <label class="opcao selecionada">
+                <input type="radio" name="pagamento" value="pix" checked>
+                <div class="opcao-info">
+                  <div class="opcao-nome">Pix</div>
+                  <div class="opcao-sub">Chave enviada após o pedido</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pagamento" value="dinheiro">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Dinheiro na entrega</div>
+                  <div class="opcao-sub">Troco para quanto?</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pagamento" value="cartao">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Cartão na entrega</div>
+                  <div class="opcao-sub">Crédito ou débito</div>
+                </div>
+              </label>
+            </div>
+          </fieldset>
+        </div>
+      </section>
+
+      <!-- Cupom -->
+      <section class="secao" aria-labelledby="titulo-cupom">
+        <h2 class="secao-titulo" id="titulo-cupom">Cupom de desconto</h2>
+        <div class="secao-body">
+          <div class="cupom-wrap">
+            <input type="text" class="cupom-input" placeholder="Ex.: PROMO10"
+              aria-label="Código do cupom de desconto" autocomplete="off" spellcheck="false">
+            <button type="button" class="btn-cupom">Aplicar</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resumo financeiro -->
+      <section class="secao" aria-labelledby="titulo-resumo">
+        <h2 class="secao-titulo" id="titulo-resumo">Resumo</h2>
+        <div class="secao-body" style="padding-bottom:20px;">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 70,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (cupom)</span>
+            <span class="resumo-valor" style="color:#166534">— R$ 0,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 77,50</span>
+          </div>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true">ℹ</span>
+            <span>
+              <strong>Valor estimado.</strong> O valor final é confirmado pelo lojista e pode variar
+              se houver ajuste de frete ou desconto no momento do fechamento.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <button type="button" class="btn-confirmar">
+        Confirmar pedido
+      </button>
+    </main>
+  </div>
+</body>
+</html>
