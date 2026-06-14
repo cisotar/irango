@@ -44,6 +44,9 @@ end $$;
 grant usage on schema public to anon, authenticated, service_role;
 grant usage on schema auth to anon, authenticated, service_role;
 grant create on schema public to service_role;
+-- O Supabase real concede a service_role leitura de auth.users; emulamos isso
+-- para que mapeamentos email→loja (e seus anti-falso-verde) funcionem no harness.
+grant select on auth.users to service_role;
 `;
 
 /**

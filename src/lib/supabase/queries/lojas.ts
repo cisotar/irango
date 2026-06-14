@@ -89,6 +89,30 @@ export async function buscarLojaParaPedido(
 }
 
 /**
+ * Mapeia comprador→loja pelo e-mail do DONO (issue 057, webhook Hotmart). Fonte:
+ * função SQL `public.loja_por_email_dono` (SECURITY DEFINER) — o vínculo está em
+ * `auth.users.email`, que NÃO é tabela PostgREST, logo `.from('auth.users')` não
+ * funciona nem com service_role.
+ *
+ * EXIGE client **service_role**: a função só tem `grant execute` para service_role
+ * (anon/authenticated não mapeiam e-mail→loja — PII + vínculo dono↔loja). O e-mail
+ * já vem normalizado (lower/trim) pelo caller; a função também faz `lower()` nos
+ * dois lados. Comprador sem loja → `null` (reconciliação fica p/ issue 059).
+ *
+ * Propaga o `error` do PostgREST (seguranca.md §14).
+ */
+export async function buscarLojaPorEmailDono(
+  client: Client,
+  email: string,
+): Promise<LojaCompleta | null> {
+  const { data, error } = await client
+    .rpc("loja_por_email_dono", { p_email: email })
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Contagem autoritativa de lojas de um dono (RN-01: uma loja por dono).
  * Fonte: TABELA `lojas`. Exige client **service_role** — RLS esconderia lojas de
  * outro `auth.uid()`. Injetado pelo caller (issue 030).

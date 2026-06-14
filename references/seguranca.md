@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.5 | **Atualizado:** 2026-06-14
+**Versão:** 0.2.6 | **Atualizado:** 2026-06-14
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -84,6 +84,24 @@ CREATE POLICY "lojas_delete_proprio"
   ON lojas FOR DELETE
   USING (auth.uid() = dono_id);
 ```
+
+> **Nota sobre RLS vs. colunas de billing:** RLS filtra LINHA, não COLUNA. As policies acima permitem que o lojista autenticado faça UPDATE na própria linha — sem proteção adicional, isso incluiria escrever `assinatura_status`, `assinatura_inicio`, `assinatura_fim_periodo`, `assinatura_atualizada_em`, `hotmart_subscriber_code`, `hotmart_plano` e `dono_id` via PostgREST (vetor de auto-promoção). O gate real de coluna é o trigger abaixo.
+
+#### Trigger `lojas_protege_billing_trg` — gate de coluna de billing
+
+Migration: `20260614004500_lojas_protege_billing.sql`
+
+```sql
+-- BEFORE UPDATE TRIGGER: bloqueia qualquer role ≠ service_role/postgres de
+-- alterar as colunas de billing ou o dono_id.
+-- Fecha o vetor: lojista com JWT válido não consegue escrever
+-- assinatura_status='ativa' via PATCH direto no PostgREST.
+CREATE TRIGGER lojas_protege_billing_trg
+  BEFORE UPDATE ON lojas
+  FOR EACH ROW EXECUTE FUNCTION lojas_protege_billing();
+```
+
+A função `lojas_protege_billing()` verifica `current_role` e levanta `EXCEPTION` se qualquer uma das colunas protegidas mudar fora de `service_role` ou `postgres`. A allowlist da Server Action de cadastro é camada extra de defesa (filtro no código), não o gate primário — o trigger é o gate primário no banco.
 
 #### Helper `public.loja_esta_ativa(uuid) → boolean`
 
@@ -401,6 +419,7 @@ const dados = schemaProduto.parse(formData)
 | `NEXT_PUBLIC_SUPABASE_URL` | ✅ sim | client + server | sim — é intencional |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ sim | client + server | sim — RLS protege os dados |
 | `SUPABASE_SERVICE_ROLE_KEY` | ❌ **jamais** | só Server Actions e Route Handlers | **não — nunca chega ao browser** |
+| `HOTMART_WEBHOOK_TOKEN` | ❌ **jamais** | só Route Handler `/api/webhooks/hotmart` | **não** |
 | Qualquer outra key/secret | ❌ **jamais** | só servidor | **não** |
 
 ### `createServiceClient()` — módulo server-only
@@ -543,6 +562,42 @@ WEBHOOK_SECRET=whsec_...      # idem
 ### ViaCEP — exceção documentada
 
 ViaCEP é pública, sem autenticação, sem key. Pode ser chamada diretamente do client. Qualquer outra API que adicionar no futuro: avaliar se tem credencial → se sim, mover pro servidor.
+
+### Webhook Hotmart — ÚNICA autoridade de billing
+
+`POST /api/webhooks/hotmart` — Route Handler público, runtime `nodejs`. Hotmart notifica eventos de compra/cancelamento/renovação; este handler é o único caminho pelo qual `assinatura_status` (e campos relacionados) pode mudar para `ativa`/`inadimplente`/`cancelada` — nunca via client, nunca via Server Action do painel.
+
+**Sequência de segurança (todas as etapas obrigatórias na ordem):**
+
+1. **Validação do `hottok` antes de qualquer efeito:** compara o header `x-hotmart-hottok` com `HOTMART_WEBHOOK_TOKEN` usando `timingSafeEqual` (Node.js `crypto`) — protege contra timing attack. Retorna `401` sem nenhum efeito colateral se inválido.
+2. **Idempotência via trava de INSERT:** `INSERT INTO webhook_eventos_hotmart (evento_id, ...) ON CONFLICT (evento_id) DO NOTHING`. O `UNIQUE` em `evento_id` garante que replay ou entrega dupla da Hotmart resultem em no-op — o status da loja não é aplicado duas vezes. Evento já visto retorna `200` imediatamente.
+3. **Lookup loja → email do comprador:** função SECURITY DEFINER `public.loja_por_email_dono(email text) → uuid` busca a loja pelo email do dono sem expor a tabela `lojas` ao anon. Executada via `service_role`.
+4. **Mapeamento de evento para status:** função `eventoParaStatus(tipo)` converte o tipo do evento Hotmart (ex: `'PURCHASE_APPROVED'`) para `assinatura_status` do domínio (`'ativa'`, `'inadimplente'`, `'cancelada'`). Evento desconhecido → log + `200` (não rejeita para evitar retry infinito da Hotmart).
+5. **Aplicação via `service_role`:** UPDATE em `lojas` executado com `createServiceClient()` — único role que passa pelo trigger `lojas_protege_billing_trg` (§2). Loja com status `cancelada` **não é reativada** por evento de renovação de assinatura cancelada — a lógica verifica o status atual antes de aplicar.
+
+**Função `public.loja_por_email_dono(email text) → uuid`**
+
+Migration: `20260614004500_lojas_protege_billing.sql`
+
+```sql
+-- SECURITY DEFINER: o webhook (service_role) busca a loja pelo email do comprador
+-- sem precisar de SELECT público em lojas. Retorna NULL se não encontrar.
+CREATE FUNCTION public.loja_por_email_dono(p_email text)
+  RETURNS uuid
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT l.id FROM public.lojas l
+  JOIN auth.users u ON u.id = l.dono_id
+  WHERE lower(u.email) = lower(p_email)
+  LIMIT 1;
+$$;
+
+REVOKE ALL ON FUNCTION public.loja_por_email_dono(text) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.loja_por_email_dono(text) TO service_role;
+```
+
+**Regra para devs e agentes:** nenhuma Server Action do painel pode alterar `assinatura_status`. Todo update de billing passa exclusivamente por este Route Handler — validação de token + idempotência + trigger de banco. Jamais criar atalho "admin" que escreva status de assinatura diretamente via PostgREST ou Server Action autenticada.
 
 ---
 

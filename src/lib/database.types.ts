@@ -610,6 +610,10 @@ export type Database = {
     Functions: {
       loja_esta_ativa: { Args: { p_loja_id: string }; Returns: boolean }
       pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
+      loja_por_email_dono: {
+        Args: { p_email: string }
+        Returns: Database["public"]["Tables"]["lojas"]["Row"][]
+      }
     }
     Enums: {
       [_ in never]: never

@@ -332,28 +332,43 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
     expect(await existeSlug(t, slug)).toBe(false);
   });
 
-  // ───────────────────────────── Limite documentado da RLS (gate é Server Action)
-  it("[14] DOCUMENTA O LIMITE: a RLS PERMITE o dono escrever assinatura_status", async () => {
-    // INTENCIONAL — NÃO é bug. A RLS do Postgres filtra LINHA, não COLUNA.
-    // lojas_update_proprio concede UPDATE da linha ao dono; nada na RLS impede
-    // o dono de tocar assinatura_status/hotmart_*/consentimento_* via UPDATE direto.
+  // ───────────────────────────── Gate de colunas de billing agora vive no banco (trigger)
+  it("[14] dono NÃO escreve assinatura_status — gate agora é o trigger no banco (auditoria 057)", async () => {
+    // ATUALIZADO (fix auditoria 057): antes a RLS PERMITIA o dono escrever
+    // assinatura_status (a RLS filtra LINHA, não COLUNA) e o gate vivia apenas na
+    // Server Action de perfil. Agora o trigger lojas_protege_billing_trg bloqueia
+    // a mudança de colunas de billing/identidade no próprio banco — defesa em
+    // profundidade independente da Server Action.
     //
-    // A proteção dessas colunas é garantida FORA da RLS, na Server Action de perfil
-    // (issue 030/015), que escreve apenas uma ALLOWLIST de colunas — sem assinatura_*,
-    // hotmart_*, consentimento_*. Este teste documenta o limite da RLS, não um bug.
-    //
-    // RED: deny-all ainda recusa (0 linhas). GREEN: lojas_update_proprio PERMITE (1 linha).
-    const r = await t.asUser(DONO_A, (db) =>
-      db.query(`update public.lojas set assinatura_status = 'ativa' where id = $1`, [ids.lojaA]),
+    // O trigger lança exception ⇒ o UPDATE falha. Reconferimos via asService
+    // (BYPASSRLS, fonte de verdade) que assinatura_status NÃO mudou.
+    const antes = await t.asService((db) =>
+      db.query<{ assinatura_status: string }>(
+        `select assinatura_status from public.lojas where id = $1`,
+        [ids.lojaA],
+      ),
     );
-    expect(r.affectedRows).toBe(1);
+    const statusAntes = antes.rows[0].assinatura_status;
+
+    let bloqueou = false;
+    try {
+      const r = await t.asUser(DONO_A, (db) =>
+        db.query(`update public.lojas set assinatura_status = 'ativa' where id = $1`, [ids.lojaA]),
+      );
+      bloqueou = (r.affectedRows ?? 0) === 0;
+    } catch {
+      bloqueou = true;
+    }
+    expect(bloqueou).toBe(true);
+
+    // Fonte de verdade: o valor NÃO mudou.
     const conf = await t.asService((db) =>
       db.query<{ assinatura_status: string }>(
         `select assinatura_status from public.lojas where id = $1`,
         [ids.lojaA],
       ),
     );
-    expect(conf.rows[0].assinatura_status).toBe("ativa");
+    expect(conf.rows[0].assinatura_status).toBe(statusAntes);
   });
 
   // ───────────────────────────── Sanity do BYPASSRLS
