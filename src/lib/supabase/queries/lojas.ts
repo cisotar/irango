@@ -20,6 +20,24 @@ export type LojaPublica = Tables<"vitrine_lojas">;
 export type LojaCompleta = Tables<"lojas">;
 
 /**
+ * Vitrine pública por id (role anon). Fonte: VIEW `vitrine_lojas`.
+ * Usada p/ obter `taxa_entrega_fora_zona` no preview de frete (issue 072) sem
+ * precisar de service_role. Loja inativa/inexistente → `null`.
+ */
+export async function buscarLojaPublicaPorId(
+  client: Client,
+  lojaId: string,
+): Promise<LojaPublica | null> {
+  const { data, error } = await client
+    .from("vitrine_lojas")
+    .select("*")
+    .eq("id", lojaId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Vitrine pública (SSR, role anon). Fonte: VIEW `vitrine_lojas` (já filtra `ativo = true`).
  * NUNCA a tabela `lojas`. Loja inativa/inexistente → `null`.
  */
