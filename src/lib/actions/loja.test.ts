@@ -56,13 +56,20 @@ const COLUNAS_PROIBIDAS = [
 // Captura a tabela e o patch passados ao .from(...).update(...).
 const fromTabela = vi.fn();
 const updatePatch = vi.fn();
+const updateEq = vi.fn();
 const authedClient = {
   from: (tabela: string) => {
     fromTabela(tabela);
     return {
       update: (patch: Record<string, unknown>) => {
         updatePatch(patch);
-        return Promise.resolve({ error: null });
+        // PostgREST exige WHERE (.eq) no UPDATE — a action encadeia .eq("id", …).
+        return {
+          eq: (coluna: string, valor: unknown) => {
+            updateEq(coluna, valor);
+            return Promise.resolve({ error: null });
+          },
+        };
       },
     };
   },
@@ -121,6 +128,8 @@ describe("salvarPerfil — caminho feliz", () => {
     expect(r).toEqual({ ok: true });
     expect(fromTabela).toHaveBeenCalledWith("lojas");
     expect(updatePatch).toHaveBeenCalledTimes(1);
+    // PostgREST recusa UPDATE sem WHERE (21000): a action DEVE escopar por id.
+    expect(updateEq).toHaveBeenCalledWith("id", LOJA_ID);
   });
 
   it("UPDATE roda via client AUTENTICADO (RLS lojas_update_proprio escopa por dono), NÃO service_role", async () => {

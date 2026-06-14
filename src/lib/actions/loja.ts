@@ -69,7 +69,9 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoSalvar> {
     if (dados.telefone !== undefined) patch.telefone = dados.telefone;
     if (dados.whatsapp !== undefined) patch.whatsapp = dados.whatsapp;
 
-    const { error } = await supabase.from("lojas").update(patch);
+    // .eq("id") obrigatório: PostgREST recusa UPDATE sem WHERE (21000), mesmo com
+    // RLS escopando a linha. Escopo por id da própria loja (já resolvida acima).
+    const { error } = await supabase.from("lojas").update(patch).eq("id", loja.id);
     if (error) throw error;
 
     revalidarVitrine(dados.slug, ...(dados.slug !== loja.slug ? [loja.slug] : []));
@@ -93,7 +95,8 @@ export async function salvarHorarios(payload: unknown): Promise<ResultadoSalvar>
     if (!loja) return { ok: false, erro: ERRO_SEM_LOJA };
 
     const patch = { horarios } satisfies Record<string, unknown>;
-    const { error } = await supabase.from("lojas").update(patch);
+    // .eq("id") obrigatório: PostgREST recusa UPDATE sem WHERE (21000).
+    const { error } = await supabase.from("lojas").update(patch).eq("id", loja.id);
     if (error) throw error;
 
     revalidarVitrine(loja.slug);
@@ -117,7 +120,8 @@ export async function salvarTema(payload: unknown): Promise<ResultadoSalvar> {
     if (!loja) return { ok: false, erro: ERRO_SEM_LOJA };
 
     const patch = { tema } satisfies Record<string, unknown>;
-    const { error } = await supabase.from("lojas").update(patch);
+    // .eq("id") obrigatório: PostgREST recusa UPDATE sem WHERE (21000).
+    const { error } = await supabase.from("lojas").update(patch).eq("id", loja.id);
     if (error) throw error;
 
     revalidarVitrine(loja.slug);
