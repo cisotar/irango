@@ -1,6 +1,12 @@
 "use client";
 
+import { useState } from "react";
+
 import { CardProduto } from "@/components/vitrine/CardProduto";
+import {
+  ProdutoModal,
+  type ProdutoModalDados,
+} from "@/components/vitrine/ProdutoModal";
 import { useCarrinho } from "@/hooks/useCarrinho";
 
 /** Produto no shape que a vitrine renderiza (subconjunto de produtos). */
@@ -28,13 +34,47 @@ function ancora(id: string | null, indice: number): string {
   return id ? `cat-${id}` : `grupo-${indice}`;
 }
 
+/** Só `https:` vira foto no carrinho/modal — anti-XSS (seguranca.md §15). */
+function fotoSegura(url: string | null): string | undefined {
+  return url && url.startsWith("https://") ? url : undefined;
+}
+
 /**
  * Catálogo da vitrine: seções por categoria com grid de `CardProduto`. É client
- * porque o `onAdicionar` de cada card sobe direto para `useCarrinho().adicionar`
- * (estado de UX no client; o servidor recalcula valores no checkout).
+ * porque o clique de cada card abre o `ProdutoModal` (estado de UX no client) e a
+ * confirmação sobe para `useCarrinho().adicionar`. Preço/subtotal são preview — o
+ * servidor recalcula valores no checkout (seguranca.md §10).
  */
 export function SecaoCatalogo({ categorias }: SecaoCatalogoProps) {
   const { adicionar } = useCarrinho();
+  const [produtoSelecionado, setProdutoSelecionado] =
+    useState<ProdutoModalDados | null>(null);
+  const [modalAberto, setModalAberto] = useState(false);
+
+  const abrirModal = (produto: ProdutoCatalogo) => {
+    setProdutoSelecionado({
+      id: produto.id,
+      nome: produto.nome,
+      descricao: produto.descricao,
+      preco: produto.preco,
+      fotoUrl: produto.foto_url,
+    });
+    setModalAberto(true);
+  };
+
+  // Confirmação do modal: adiciona a quantidade escolhida ao carrinho.
+  const confirmarAdicao = (produtoId: string, quantidade: number) => {
+    if (!produtoSelecionado || produtoSelecionado.id !== produtoId) return;
+    adicionar(
+      {
+        produtoId: produtoSelecionado.id,
+        nome: produtoSelecionado.nome,
+        preco: produtoSelecionado.preco,
+        fotoUrl: fotoSegura(produtoSelecionado.fotoUrl),
+      },
+      quantidade,
+    );
+  };
 
   return (
     <div className="flex flex-col gap-8">
@@ -68,23 +108,20 @@ export function SecaoCatalogo({ categorias }: SecaoCatalogoProps) {
                 descricao={produto.descricao}
                 preco={produto.preco}
                 fotoUrl={produto.foto_url}
-                onAdicionar={() =>
-                  adicionar({
-                    produtoId: produto.id,
-                    nome: produto.nome,
-                    preco: produto.preco,
-                    fotoUrl:
-                      produto.foto_url &&
-                      produto.foto_url.startsWith("https://")
-                        ? produto.foto_url
-                        : undefined,
-                  })
-                }
+                // Em vez de adicionar direto, abre o modal de detalhe do produto.
+                onAdicionar={() => abrirModal(produto)}
               />
             ))}
           </div>
         </section>
       ))}
+
+      <ProdutoModal
+        produto={produtoSelecionado}
+        open={modalAberto}
+        onOpenChange={setModalAberto}
+        onAdicionar={confirmarAdicao}
+      />
     </div>
   );
 }

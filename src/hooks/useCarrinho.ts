@@ -9,7 +9,7 @@ const CHAVE_STORAGE = "irango:carrinho";
 
 export type UseCarrinhoReturn = {
   itens: ItemCarrinho[];
-  adicionar: (item: Omit<ItemCarrinho, "quantidade">) => void;
+  adicionar: (item: Omit<ItemCarrinho, "quantidade">, quantidade?: number) => void;
   incrementar: (produtoId: string) => void;
   decrementar: (produtoId: string) => void; // remove ao chegar em 0
   remover: (produtoId: string) => void;
@@ -50,17 +50,25 @@ export function useCarrinho(): UseCarrinhoReturn {
     }
   }, [itens]);
 
-  const adicionar = useCallback((item: Omit<ItemCarrinho, "quantidade">) => {
-    setItens((atual) => {
-      const existente = atual.find((i) => i.produtoId === item.produtoId);
-      if (existente) {
-        return atual.map((i) =>
-          i.produtoId === item.produtoId ? { ...i, quantidade: i.quantidade + 1 } : i,
-        );
-      }
-      return [...atual, { ...item, quantidade: 1 }];
-    });
-  }, []);
+  // `quantidade` default 1 → retrocompat com chamadas antigas. Se o item já existe,
+  // soma a quantidade; senão, insere com a quantidade pedida (mínimo 1).
+  const adicionar = useCallback(
+    (item: Omit<ItemCarrinho, "quantidade">, quantidade = 1) => {
+      const qtd = Math.max(1, Math.floor(quantidade));
+      setItens((atual) => {
+        const existente = atual.find((i) => i.produtoId === item.produtoId);
+        if (existente) {
+          return atual.map((i) =>
+            i.produtoId === item.produtoId
+              ? { ...i, quantidade: i.quantidade + qtd }
+              : i,
+          );
+        }
+        return [...atual, { ...item, quantidade: qtd }];
+      });
+    },
+    [],
+  );
 
   const incrementar = useCallback((produtoId: string) => {
     setItens((atual) =>
