@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 // src/lib/utils/calcularFrete.ts com a função pura + estes tipos.
 import {
   calcularFrete,
+  normalizarBairro,
   type ZonaComTaxa,
   type EnderecoEntrega,
 } from "./calcularFrete";
@@ -264,5 +265,129 @@ describe("calcularFrete", () => {
     const r = calcularFrete([zona], enderecoCentro, 30);
     expect(r.taxa).toBe(0);
     expect(r.atendido).toBe(true);
+  });
+});
+
+// ===========================================================================
+// [070] normalizarBairro — função pura exportada
+// TDD RED — testes escritos antes da exportação (issue 070, crítica).
+// A fase GREEN exporta normalizarBairro de calcularFrete.ts.
+// normalizarBairro já importada no topo junto com calcularFrete.
+// ===========================================================================
+
+describe("normalizarBairro — [070]", () => {
+  it("converte para minúsculas", () => {
+    expect(normalizarBairro("CENTRO")).toBe("centro");
+  });
+
+  it("remove espaços nas pontas (trim)", () => {
+    expect(normalizarBairro("  centro  ")).toBe("centro");
+  });
+
+  it("colapsa múltiplos espaços internos em um único", () => {
+    expect(normalizarBairro("jardim  america")).toBe("jardim america");
+  });
+
+  it("remove acentos via NFD (a diferença central da issue 070 vs. impl anterior)", () => {
+    // 'Águas Claras' → 'aguas claras' (remove á, â, etc.)
+    expect(normalizarBairro("Águas Claras")).toBe("aguas claras");
+    expect(normalizarBairro("São Paulo")).toBe("sao paulo");
+    expect(normalizarBairro("Jardim América")).toBe("jardim america");
+  });
+
+  it('"Jardim América", "jardim america" e " JARDIM  AMÉRICA " todos produzem o mesmo resultado', () => {
+    const a = normalizarBairro("Jardim América");
+    const b = normalizarBairro("jardim america");
+    const c = normalizarBairro(" JARDIM  AMÉRICA ");
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+  });
+
+  it("é determinística — mesmo input sempre produz mesmo output", () => {
+    const entrada = "Bairro Ñoño";
+    expect(normalizarBairro(entrada)).toBe(normalizarBairro(entrada));
+  });
+
+  it("não colapsa espaços internos legítimos de um só espaço", () => {
+    expect(normalizarBairro("Vila Nova")).toBe("vila nova");
+  });
+});
+
+// ===========================================================================
+// [070] calcularFrete com taxaForaZona (fallback fora-de-zona)
+// TDD RED — testes escritos antes da extensão de assinatura (issue 070, crítica).
+// A fase GREEN adiciona o parâmetro taxaForaZona: number | null a calcularFrete.
+// ===========================================================================
+
+describe("calcularFrete — [070] fallback taxaForaZona", () => {
+  it("bairro sem zona + taxaForaZona definida → atendido:true com taxa do fallback", () => {
+    // Nenhuma zona cobre "Bairro Remoto", mas loja aceita entrega fora de zona
+    const r = calcularFrete([zonaBairro()], { bairro: "Bairro Remoto" }, 30, 8);
+    expect(r.atendido).toBe(true);
+    expect(r.taxa).toBe(8);
+    expect(r.zonaId).toBeNull(); // fallback, não zona específica
+    expect(r.gratis).toBe(false);
+  });
+
+  it("bairro sem zona + taxaForaZona=null → atendido:false (entrega indisponível)", () => {
+    const r = calcularFrete([zonaBairro()], { bairro: "Bairro Remoto" }, 30, null);
+    expect(r.atendido).toBe(false);
+    expect(r.taxa).toBe(0);
+    expect(r.zonaId).toBeNull();
+  });
+
+  it("bairro sem zona + taxaForaZona omitido (undefined) → atendido:false (backward compat)", () => {
+    // Sem o 4º argumento — comportamento atual preservado
+    const r = calcularFrete([zonaBairro()], { bairro: "Bairro Remoto" }, 30);
+    expect(r.atendido).toBe(false);
+  });
+
+  it("bairro com zona casa → usa zona, ignora taxaForaZona (zona vence o fallback)", () => {
+    const r = calcularFrete([zonaBairro()], enderecoCentro, 30, 99);
+    expect(r.atendido).toBe(true);
+    expect(r.taxa).toBe(7); // taxa da zona, não 99 do fallback
+    expect(r.zonaId).toBe("zona-centro");
+  });
+
+  it("acento/caixa não impedem match — 'Águas Claras' casa com bairro_zona.nome 'aguas claras'", () => {
+    const zona = zonaBairro({
+      id: "zona-aguas-claras",
+      bairros: [{ nome: "aguas claras" }],
+      taxa: { taxa: 6, pedido_minimo_gratis: null, raio_max_km: null },
+    });
+    const r = calcularFrete([zona], { bairro: "Águas Claras" }, 30, null);
+    expect(r.atendido).toBe(true);
+    expect(r.taxa).toBe(6);
+    expect(r.zonaId).toBe("zona-aguas-claras");
+  });
+
+  it("acento no nome da zona também é normalizado — 'Jardim América' no banco casa com 'jardim america' no cliente", () => {
+    const zona = zonaBairro({
+      id: "zona-jardim",
+      bairros: [{ nome: "Jardim América" }], // nome com acento no banco
+      taxa: { taxa: 5, pedido_minimo_gratis: null, raio_max_km: null },
+    });
+    const r = calcularFrete([zona], { bairro: "jardim america" }, 30, null);
+    expect(r.atendido).toBe(true);
+    expect(r.taxa).toBe(5);
+  });
+
+  it("taxaForaZona=0 é taxa válida (frete grátis fora de zona = decisão do lojista)", () => {
+    const r = calcularFrete([zonaBairro()], { bairro: "Bairro Remoto" }, 30, 0);
+    expect(r.atendido).toBe(true);
+    expect(r.taxa).toBe(0);
+    expect(r.zonaId).toBeNull();
+  });
+
+  it("lista de zonas vazia + taxaForaZona definida → atendido:true com fallback", () => {
+    const r = calcularFrete([], { bairro: "Qualquer Bairro" }, 30, 12);
+    expect(r.atendido).toBe(true);
+    expect(r.taxa).toBe(12);
+    expect(r.zonaId).toBeNull();
+  });
+
+  it("lista de zonas vazia + taxaForaZona=null → atendido:false", () => {
+    const r = calcularFrete([], { bairro: "Qualquer Bairro" }, 30, null);
+    expect(r.atendido).toBe(false);
   });
 });

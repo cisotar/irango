@@ -46,9 +46,21 @@ const FORA_DE_AREA: ResultadoFrete = {
   gratis: false,
 };
 
-/** Normaliza bairro: trim + lowercase + colapsa espaços internos. */
-function normalizarBairro(valor: string): string {
-  return valor.trim().toLowerCase().replace(/\s+/g, " ");
+/**
+ * Normaliza bairro para comparação insensível a caixa, acentos e espaços extras.
+ * Sequência: trim → NFD (separa diacríticos) → remove diacríticos → lowercase
+ * → colapsa espaços internos duplos.
+ *
+ * Determinística e pura — mesma entrada sempre produz mesma saída.
+ * Exportada para reuso em Server Actions (criarPedido, calcularFreteAction) — RN-C4.
+ */
+export function normalizarBairro(valor: string): string {
+  return valor
+    .trim()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 /** numeric(10,2): 2 casas, neutraliza float drift. Retorna number (não string). */
@@ -85,15 +97,26 @@ function zonaAtende(zona: ZonaComTaxa, endereco: EnderecoEntrega): boolean {
  * (seguranca.md §10). O caller server-side é quem garante que `zonas` já
  * pertencem à loja correta (escopo por loja_id / RLS).
  *
- * Resolução: ignora zonas inativas e sem taxa. Entre as que atendem, escolhe a
- * de MENOR taxa (melhor p/ o cliente); empate → primeira na ordem recebida.
- * Frete grátis avaliado na zona escolhida (subtotal >= pedido_minimo_gratis;
- * null = nunca grátis). Fora de área → sentinela { atendido: false, ... }.
+ * Resolução (RN-C4):
+ * 1. Ignora zonas inativas e sem taxa.
+ * 2. Entre as que atendem, escolhe a de MENOR taxa (melhor p/ o cliente);
+ *    empate → primeira na ordem recebida.
+ * 3. Frete grátis avaliado na zona escolhida (subtotal >= pedido_minimo_gratis;
+ *    null = nunca grátis).
+ * 4. Se nenhuma zona atender → usa `taxaForaZona` (RN-C4 passo 4):
+ *    - number   → atendido:true, taxa:taxaForaZona, zonaId:null
+ *    - null/undefined → FORA_DE_AREA (entrega indisponível)
+ *
+ * RN-C8: normalização nunca reduz frete — match falha → fallback (mais caro)
+ * ou indisponível, nunca zona mais barata inventada.
  */
 export function calcularFrete(
   zonas: ZonaComTaxa[],
   endereco: EnderecoEntrega,
   subtotal: number,
+  /** Taxa fixa para endereços fora das zonas configuradas (lojas.taxa_entrega_fora_zona).
+   * null | undefined = entrega indisponível fora de zona. */
+  taxaForaZona?: number | null,
 ): ResultadoFrete {
   let escolhida: ZonaComTaxa | null = null;
 
@@ -106,7 +129,18 @@ export function calcularFrete(
     }
   }
 
-  if (escolhida == null) return FORA_DE_AREA;
+  if (escolhida == null) {
+    // Nenhuma zona cobriu o endereço — aplica fallback fora-de-zona (RN-C4 passo 4).
+    if (taxaForaZona != null) {
+      return {
+        atendido: true,
+        taxa: Math.max(0, arredondar(taxaForaZona)),
+        zonaId: null,
+        gratis: false,
+      };
+    }
+    return FORA_DE_AREA;
+  }
 
   const { taxa, pedido_minimo_gratis } = escolhida.taxa!;
   const gratis =

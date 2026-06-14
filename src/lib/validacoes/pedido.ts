@@ -26,6 +26,8 @@ const schemaEnderecoEntrega = z
     numero: z.string().min(1),
     bairro: z.string().min(1),
     cidade: z.string().min(1).optional(),
+    // uf: adicionado conforme spec_checkout_pagamento.md Delta 1 (issue 069).
+    uf: z.string().length(2).optional(),
     complemento: z.string().optional(),
   })
   .strict();
@@ -33,13 +35,20 @@ const schemaEnderecoEntrega = z
 export const schemaPayloadPedido = z
   .object({
     loja_id: z.guid(),
+    // tipo_entrega: 'retirada' | 'entrega' — instrução operacional, não financeira (RN-C2).
+    tipo_entrega: z.enum(["retirada", "entrega"]),
     itens: z.array(schemaItemPedido).min(1),
-    endereco_entrega: schemaEnderecoEntrega,
+    // endereco_entrega: opcional na raiz — o refine abaixo impõe a obrigatoriedade
+    // condicional: obrigatório quando tipo_entrega='entrega', ignorado em 'retirada'.
+    endereco_entrega: schemaEnderecoEntrega.optional(),
     forma_pagamento: z.enum(["pix", "dinheiro", "link", "cartao"]),
     codigo_cupom: z
       .string()
       .regex(/^[A-Za-z0-9]{3,20}$/)
       .optional(),
+    // troco_para: informativo ao lojista (RN-C3) — positivo se presente.
+    // NÃO entra em nenhum cálculo; servidor persiste mas ignora no total.
+    troco_para: z.number().positive().optional(),
     nome_cliente: z.string().trim().min(1).max(120),
     // Limites de tamanho: anti-abuso de storage (colunas text sem limite no banco).
     telefone_cliente: z
@@ -49,4 +58,13 @@ export const schemaPayloadPedido = z
       .optional(),
     observacoes: z.string().trim().max(500).optional(),
   })
-  .strict();
+  // .strict() CRÍTICO (seguranca.md §10): rejeita qualquer campo não declarado.
+  // Campos monetários (preco/subtotal/desconto/taxa_entrega/total) não existem
+  // aqui → qualquer tentativa de injeção via DevTools é bloqueada na entrada.
+  .strict()
+  // Refinamento condicional: endereço obrigatório apenas quando tipo_entrega='entrega'.
+  // Quando 'retirada', servidor força taxa_entrega=0 independentemente (RN-C2).
+  .refine(
+    (d) => d.tipo_entrega === "retirada" || !!d.endereco_entrega,
+    { message: "Endereço obrigatório para entrega", path: ["endereco_entrega"] },
+  );

@@ -96,6 +96,8 @@ function lojaRow(over: Record<string, unknown> = {}) {
     timezone: "America/Sao_Paulo",
     assinatura_status: "ativa",
     assinatura_fim_periodo: "2099-01-01T00:00:00.000Z",
+    // [071] fallback fora-de-zona (RN-C4). null = entrega indisponível fora de zona.
+    taxa_entrega_fora_zona: null,
     ...over,
   };
 }
@@ -153,10 +155,13 @@ function formasComPix() {
   return [{ id: "f1", loja_id: LOJA_A, tipo: "pix", config: {} }];
 }
 
-/** Payload limpo (só intenção) — base dos testes; o cliente NÃO manda valores. */
+/** Payload limpo (só intenção) — base dos testes; o cliente NÃO manda valores.
+ * [069] tipo_entrega='entrega' é obrigatório no schema; endereco_entrega obrigatório
+ * para entrega (refine condicional). Builder default usa entrega c/ endereço. */
 function payloadBase(over: Record<string, unknown> = {}) {
   return {
     loja_id: LOJA_A,
+    tipo_entrega: "entrega",
     itens: [{ produto_id: PROD_1, quantidade: 2 }],
     endereco_entrega: { cep: "01000-000", rua: "Rua X", numero: "10", bairro: "Centro" },
     forma_pagamento: "pix",
@@ -345,6 +350,79 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     const r = await criarPedido(payloadBase());
     expect(r).toEqual({ erro: expect.any(String) });
     expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────── [071] tipo_entrega / troco_para / fallback fora-de-zona
+  it("[071] entrega: RPC recebe p_tipo_entrega='entrega'", async () => {
+    cenarioFeliz();
+    await criarPedido(payloadBase());
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_tipo_entrega: string };
+    expect(args.p_tipo_entrega).toBe("entrega");
+  });
+
+  it("[071] RN-C2 retirada com endereço enviado → p_taxa_entrega=0 e p_tipo_entrega='retirada'", async () => {
+    cenarioFeliz();
+    // Zona atenderia com frete 5, mas retirada FORÇA frete 0 e ignora endereço.
+    await criarPedido(
+      payloadBase({ tipo_entrega: "retirada", endereco_entrega: undefined }),
+    );
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_tipo_entrega: string;
+      p_taxa_entrega: number;
+      p_total: number;
+    };
+    expect(args.p_tipo_entrega).toBe("retirada");
+    expect(args.p_taxa_entrega).toBe(0);
+    expect(args.p_total).toBe(50.0); // subtotal 50, sem frete
+  });
+
+  it("[071] RN-C4 entrega fora de zona com taxa_entrega_fora_zona=8 → frete 8", async () => {
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    listarZonasComTaxas.mockResolvedValue([]); // nenhuma zona casa
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    fakeClient.rpc.mockResolvedValue({
+      data: [{ pedido_id: "ped-1", token_acesso: "tok-1" }],
+      error: null,
+    });
+
+    const r = await criarPedido(payloadBase());
+    expect(r).toEqual({ pedidoId: "ped-1", token_acesso: "tok-1" });
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number; p_total: number };
+    expect(args.p_taxa_entrega).toBe(8.0);
+    expect(args.p_total).toBe(58.0); // 50 subtotal + 8 fallback
+  });
+
+  it("[071] RN-C4 entrega fora de zona SEM fallback (taxa_entrega_fora_zona=null) → recusado", async () => {
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: null }));
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    listarZonasComTaxas.mockResolvedValue([]); // nenhuma zona casa
+    buscarCupomPorCodigo.mockResolvedValue(null);
+
+    const r = await criarPedido(payloadBase());
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("[071] RN-C3 troco_para persiste APENAS quando forma_pagamento='dinheiro'", async () => {
+    cenarioFeliz();
+    listarFormasPagamento.mockResolvedValue([{ id: "f1", loja_id: LOJA_A, tipo: "dinheiro", config: {} }]);
+    await criarPedido(payloadBase({ forma_pagamento: "dinheiro", troco_para: 100 }));
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_troco_para: number | null; p_total: number };
+    expect(args.p_troco_para).toBe(100);
+    // RN-C3: troco é informativo — NÃO altera o total (50 subtotal + 5 frete).
+    expect(args.p_total).toBe(55.0);
+  });
+
+  it("[071] RN-C3 troco_para é IGNORADO (null) quando pagamento não é dinheiro", async () => {
+    cenarioFeliz(); // forma pix
+    // mesmo que o cliente envie troco_para num pagamento pix, servidor grava null.
+    await criarPedido(payloadBase({ forma_pagamento: "pix", troco_para: 100 }));
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_troco_para: number | null };
+    expect(args.p_troco_para).toBeNull();
   });
 
   // ─────────────────────── tratamento de erro (§14)

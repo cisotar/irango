@@ -106,11 +106,26 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       itensSnapshot.map(({ preco, quantidade }) => ({ preco, quantidade })),
     );
 
-    // (5) Frete autoritativo a partir das zonas do banco. Fora de área → recusa.
-    const zonas = await listarZonasComTaxas(svc, dados.loja_id);
-    const frete = calcularFrete(zonas, dados.endereco_entrega, subtotal);
-    if (!frete.atendido) {
-      return { erro: "Endereço fora da área de entrega." };
+    // (5) Frete autoritativo (RN-C2): retirada → frete 0, servidor ignora endereço.
+    //     Entrega → calcularFrete com zonas do banco. Fora de área → recusa.
+    let frete: { atendido: boolean; taxa: number; zonaId: string | null; gratis: boolean };
+    if (dados.tipo_entrega === "retirada") {
+      // RN-C2: servidor força frete zero e ignora qualquer endereço enviado.
+      frete = { atendido: true, taxa: 0, zonaId: null, gratis: false };
+    } else {
+      const zonas = await listarZonasComTaxas(svc, dados.loja_id);
+      // endereco_entrega é garantido pelo refine do schema quando tipo_entrega='entrega'.
+      // 4º arg (RN-C4 passo 4): taxa_entrega_fora_zona habilita fallback fora-de-zona —
+      // null/undefined ⇒ entrega indisponível para o bairro (frete.atendido=false).
+      frete = calcularFrete(
+        zonas,
+        dados.endereco_entrega ?? {},
+        subtotal,
+        loja.taxa_entrega_fora_zona,
+      );
+      if (!frete.atendido) {
+        return { erro: "Entrega não disponível para o seu bairro." };
+      }
     }
 
     // (6) Cupom: revalidado no servidor sobre o subtotal REAL. Cupom inválido/
@@ -133,8 +148,11 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       }
     }
 
-    // (7) Total autoritativo.
+    // (7) Total autoritativo. troco_para é INFORMATIVO (RN-C3): só persiste
+    //     quando o pagamento é dinheiro; caso contrário null. Nunca entra no total.
     const { total } = calcularTotal({ subtotal, desconto, taxaEntrega: frete.taxa });
+    const trocoPara =
+      dados.forma_pagamento === "dinheiro" ? dados.troco_para ?? null : null;
 
     // (8) RPC transacional: insere pedido + itens + trava de cupom atomicamente.
     //     O retorno da RPC (criar_pedido) ainda não está nos tipos gerados — será
@@ -162,6 +180,8 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       p_cupom_id: cupomId,
       p_cupom_codigo: cupomCodigo,
       p_itens: itensSnapshot,
+      p_tipo_entrega: dados.tipo_entrega,
+      p_troco_para: trocoPara,
     });
 
     if (error != null || data == null || data.length === 0) {

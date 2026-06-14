@@ -275,3 +275,149 @@ AS
 
 GRANT SELECT ON public.vitrine_lojas TO anon, authenticated;
 
+
+-- ╔═══ 20260614006500_storage_pix_qr.sql
+-- Issue 074 — bucket `pix-qr` + policies RLS de Storage
+--
+-- Bucket público (leitura pública — vitrine exibe QR no checkout).
+-- Escrita restrita à pasta `{loja_id}/` do lojista dono.
+-- Padrão idêntico ao bucket `produtos` (seguranca.md §18).
+--
+-- NOTA: esta migration tem guard DO $$ para pglite (tests). No cloud/local
+-- Supabase o schema `storage` existe e este bloco executa normalmente.
+-- Rode este bloco no SQL Editor do projeto gdlegxatwylhkjcrusyk.
+
+-- Bucket: público para leitura (CDN serve sem token)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('pix-qr', 'pix-qr', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Leitura pública — anon/authenticated podem ler qualquer objeto do bucket
+CREATE POLICY "storage_pix_qr_leitura_publica"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'pix-qr');
+
+-- INSERT restrito ao dono da loja: path[0] deve ser id de loja do auth.uid()
+CREATE POLICY "storage_pix_qr_insert_propria"
+  ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'pix-qr'
+    AND (storage.foldername(name))[1] IN (
+      SELECT id::text FROM public.lojas WHERE dono_id = auth.uid()
+    )
+  );
+
+-- UPDATE restrito ao dono da loja
+CREATE POLICY "storage_pix_qr_update_propria"
+  ON storage.objects FOR UPDATE
+  USING (
+    bucket_id = 'pix-qr'
+    AND (storage.foldername(name))[1] IN (
+      SELECT id::text FROM public.lojas WHERE dono_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'pix-qr'
+    AND (storage.foldername(name))[1] IN (
+      SELECT id::text FROM public.lojas WHERE dono_id = auth.uid()
+    )
+  );
+
+-- DELETE restrito ao dono da loja
+CREATE POLICY "storage_pix_qr_delete_propria"
+  ON storage.objects FOR DELETE
+  USING (
+    bucket_id = 'pix-qr'
+    AND (storage.foldername(name))[1] IN (
+      SELECT id::text FROM public.lojas WHERE dono_id = auth.uid()
+    )
+  );
+
+
+-- ╔═══ 20260614007000_rpc_criar_pedido_tipo_entrega_troco.sql
+-- Issue 071 — recria `public.criar_pedido` com `tipo_entrega` e `troco_para`.
+-- Adiciona dois parâmetros à assinatura, persistindo-os no INSERT do pedido.
+-- Mantém atomicidade, trava atômica de cupom, SECURITY INVOKER e grants restritos.
+
+drop function if exists public.criar_pedido(
+  uuid, text, text, jsonb, text, text, numeric, numeric, numeric, numeric, uuid, text, jsonb
+);
+
+create function public.criar_pedido(
+  p_loja_id          uuid,
+  p_nome_cliente     text,
+  p_telefone_cliente text,
+  p_endereco_entrega jsonb,
+  p_forma_pagamento  text,
+  p_observacoes      text,
+  p_subtotal         numeric,
+  p_taxa_entrega     numeric,
+  p_desconto         numeric,
+  p_total            numeric,
+  p_cupom_id         uuid,
+  p_cupom_codigo     text,
+  p_itens            jsonb,
+  p_tipo_entrega     text,
+  p_troco_para       numeric
+)
+  returns table (pedido_id uuid, token_acesso uuid)
+  language plpgsql
+  security invoker
+  set search_path = public
+as $$
+declare
+  v_desconto     numeric := p_desconto;
+  v_total        numeric := p_total;
+  v_cupom_codigo text    := p_cupom_codigo;
+  v_pedido_id    uuid;
+  v_token        uuid;
+begin
+  if not public.loja_esta_ativa(p_loja_id) then
+    raise exception 'loja_inativa';
+  end if;
+
+  if p_cupom_id is not null then
+    update public.cupons
+       set usos_contagem = usos_contagem + 1
+     where id = p_cupom_id
+       and (usos_maximos is null or usos_contagem < usos_maximos);
+    if not found then
+      v_desconto := 0;
+      v_cupom_codigo := null;
+      v_total := p_subtotal + p_taxa_entrega;
+    end if;
+  end if;
+
+  insert into public.pedidos (
+    loja_id, nome_cliente, telefone_cliente, endereco_entrega,
+    subtotal, desconto, taxa_entrega, total, forma_pagamento,
+    cupom_codigo, observacoes, status, tipo_entrega, troco_para
+  )
+  values (
+    p_loja_id, p_nome_cliente, p_telefone_cliente, p_endereco_entrega,
+    p_subtotal, v_desconto, p_taxa_entrega, v_total, p_forma_pagamento,
+    v_cupom_codigo, p_observacoes, 'pendente', p_tipo_entrega, p_troco_para
+  )
+  returning id, public.pedidos.token_acesso into v_pedido_id, v_token;
+
+  insert into public.itens_pedido (pedido_id, produto_id, nome, preco, quantidade)
+  select v_pedido_id,
+         (i->>'produto_id')::uuid,
+         i->>'nome',
+         (i->>'preco')::numeric,
+         (i->>'quantidade')::int
+  from jsonb_array_elements(p_itens) as i;
+
+  return query select v_pedido_id, v_token;
+end;
+$$;
+
+revoke all on function public.criar_pedido(
+  uuid, text, text, jsonb, text, text, numeric, numeric, numeric, numeric, uuid, text, jsonb, text, numeric
+) from public;
+revoke all on function public.criar_pedido(
+  uuid, text, text, jsonb, text, text, numeric, numeric, numeric, numeric, uuid, text, jsonb, text, numeric
+) from anon, authenticated;
+grant execute on function public.criar_pedido(
+  uuid, text, text, jsonb, text, text, numeric, numeric, numeric, numeric, uuid, text, jsonb, text, numeric
+) to service_role;

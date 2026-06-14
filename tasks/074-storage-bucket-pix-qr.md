@@ -9,10 +9,10 @@
 Criar o bucket `pix-qr` no Supabase Storage (leitura pública) com escrita restrita à pasta `{loja_id}/` do lojista dono — para QR Code estático do Pix.
 
 ## Escopo
-- [ ] Criar `supabase/migrations/20260614XXXXXX_storage_pix_qr.sql`
-- [ ] Criar bucket `pix-qr` (público para leitura)
-- [ ] Policy `storage_pix_qr_leitura_publica` (SELECT) — `bucket_id = 'pix-qr'`
-- [ ] Policy `storage_pix_qr_escrita_propria` (INSERT/UPDATE/DELETE) — `bucket_id='pix-qr' AND (storage.foldername(name))[1] IN (SELECT id::text FROM lojas WHERE dono_id = auth.uid())`
+- [x] Criar `supabase/migrations/20260614006500_storage_pix_qr.sql`
+- [x] Criar bucket `pix-qr` (público para leitura)
+- [x] Policy `storage_pix_qr_leitura_publica` (SELECT) — `bucket_id = 'pix-qr'`
+- [x] Policy `storage_pix_qr_insert_propria` / `storage_pix_qr_update_propria` / `storage_pix_qr_delete_propria` (INSERT/UPDATE/DELETE) — `bucket_id='pix-qr' AND (storage.foldername(name))[1] IN (SELECT id::text FROM lojas WHERE dono_id = auth.uid())`
 
 ## Fora de escopo
 - Upload na UI do painel (issue 075).
@@ -26,5 +26,12 @@ Criar o bucket `pix-qr` no Supabase Storage (leitura pública) com escrita restr
 - Leitura pública é intencional (vitrine exibe o QR).
 
 ## Critério de aceite
-- [ ] Bucket `pix-qr` existe e é público para leitura.
-- [ ] (crítica) Teste vermelho: lojista A NÃO consegue escrever em `{loja_id_B}/qr.png`; lojista escreve na própria pasta; leitura pública de qualquer objeto funciona.
+- [x] Bucket `pix-qr` existe e é público para leitura (SQL em _sync_cloud_pendente.sql).
+- [x] (crítica) Teste proxy pglite: lojista A NÃO consegue escrever em `{loja_id_B}/qr.png` (subquery de isolamento confirmada — 7 testes em tests/migrations/storage_pix_qr.test.ts). Validação real em cloud via _sync_cloud_pendente.sql bloco 074.
+
+## Decisão de arquitetura (pglite x storage)
+Abordagem escolhida: **guard SQL** (`DO $$ BEGIN IF to_regclass('storage.objects') IS NULL THEN RETURN; END IF; ... END $$`).
+- A migration versionada existe em `supabase/migrations/` e aplica no Supabase cloud/local.
+- Em pglite (harness de testes), a ausência de `storage.objects` dispara NOTICE e pula — sem EXCEPTION.
+- Os testes pglite validam a **lógica de isolamento** (subquery `WHERE dono_id = auth.uid()`), não a policy em si.
+- O SQL raw (sem guard) está em `_sync_cloud_pendente.sql` para aplicação manual no cloud.

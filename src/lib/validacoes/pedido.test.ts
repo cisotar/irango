@@ -14,9 +14,11 @@ const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
 
 // Builder do payload no caminho feliz — cada teste sobrescreve o que precisa.
+// [069] tipo_entrega='entrega' é o default; endereco_entrega obrigatório para entrega.
 function payload(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     loja_id: UUID,
+    tipo_entrega: "entrega",
     itens: [{ produto_id: UUID2, quantidade: 2 }],
     endereco_entrega: {
       cep: "01001-000",
@@ -260,6 +262,155 @@ describe("schemaPayloadPedido — codigo_cupom", () => {
   it("rejeita cupom com caracteres inválidos (formato)", () => {
     const r = schemaPayloadPedido.safeParse(
       payload({ codigo_cupom: "drop table;" }),
+    );
+    expect(r.success).toBe(false);
+  });
+});
+
+// ===========================================================================
+// [069] tipo_entrega, endereço condicional e troco_para
+// TDD RED — testes escritos antes da implementação (issue 069, crítica).
+// A fase GREEN estende schemaPayloadPedido com tipo_entrega + refine condicional.
+// ===========================================================================
+
+// Builder adaptado para os novos cenários — inclui tipo_entrega e respeita
+// o refine condicional (tipo_entrega='entrega' exige endereco_entrega).
+function payloadEntrega(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    loja_id: UUID,
+    tipo_entrega: "entrega",
+    itens: [{ produto_id: UUID2, quantidade: 2 }],
+    endereco_entrega: {
+      cep: "01001-000",
+      rua: "Rua das Flores",
+      numero: "123",
+      bairro: "Centro",
+      cidade: "São Paulo",
+      uf: "SP",
+    },
+    forma_pagamento: "pix",
+    nome_cliente: "Maria Silva",
+    ...over,
+  };
+}
+
+function payloadRetirada(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    loja_id: UUID,
+    tipo_entrega: "retirada",
+    itens: [{ produto_id: UUID2, quantidade: 2 }],
+    forma_pagamento: "pix",
+    nome_cliente: "Maria Silva",
+    ...over,
+  };
+}
+
+describe("schemaPayloadPedido — [069] tipo_entrega (campo obrigatório)", () => {
+  it("aceita tipo_entrega='entrega' com endereco_entrega presente", () => {
+    const r = schemaPayloadPedido.safeParse(payloadEntrega());
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita tipo_entrega='retirada' sem endereco_entrega (endereço é opcional para retirada)", () => {
+    const r = schemaPayloadPedido.safeParse(payloadRetirada());
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita tipo_entrega ausente — campo obrigatório", () => {
+    const p = payloadEntrega();
+    delete p.tipo_entrega;
+    const r = schemaPayloadPedido.safeParse(p);
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita tipo_entrega com valor inválido fora do enum", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({ tipo_entrega: "drive-thru" }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita tipo_entrega vazio", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({ tipo_entrega: "" }),
+    );
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("schemaPayloadPedido — [069] endereço condicional (refine)", () => {
+  it("rejeita tipo_entrega='entrega' SEM endereco_entrega (refine condicional)", () => {
+    const p = payloadEntrega();
+    delete p.endereco_entrega;
+    const r = schemaPayloadPedido.safeParse(p);
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const temErroEndereco = r.error.issues.some(
+        (i) => i.path.includes("endereco_entrega"),
+      );
+      expect(temErroEndereco).toBe(true);
+    }
+  });
+
+  it("aceita tipo_entrega='retirada' mesmo com endereco_entrega undefined (não exigido)", () => {
+    const r = schemaPayloadPedido.safeParse(payloadRetirada());
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita endereco_entrega com campo uf (novo campo do spec)", () => {
+    const r = schemaPayloadPedido.safeParse(payloadEntrega());
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita endereco_entrega com campo cidade (opcional no schema existente, presença válida)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({
+        endereco_entrega: {
+          cep: "01001-000",
+          rua: "Av. Paulista",
+          numero: "1000",
+          bairro: "Bela Vista",
+          cidade: "São Paulo",
+          uf: "SP",
+        },
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("schemaPayloadPedido — [069] troco_para", () => {
+  it("aceita ausência de troco_para (opcional)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({ forma_pagamento: "dinheiro" }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita troco_para positivo com dinheiro", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({ forma_pagamento: "dinheiro", troco_para: 50 }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita troco_para negativo (deve ser positivo)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({ forma_pagamento: "dinheiro", troco_para: -10 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita troco_para = 0 (deve ser positivo, não zero)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({ forma_pagamento: "dinheiro", troco_para: 0 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita injeção de campo monetário total mesmo com troco_para presente (strict)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payloadEntrega({ forma_pagamento: "dinheiro", troco_para: 50, total: 9.99 }),
     );
     expect(r.success).toBe(false);
   });

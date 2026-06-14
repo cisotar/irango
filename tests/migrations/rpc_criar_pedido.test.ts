@@ -106,6 +106,9 @@ async function chamarCriarPedido(
     total: number;
     cupom_id?: string | null;
     cupom_codigo?: string | null;
+    // [071] tipo_entrega + troco_para persistidos pela RPC.
+    tipo_entrega?: string;
+    troco_para?: number | null;
     itens: { produto_id: string; nome: string; preco: number; quantidade: number }[];
   },
 ): Promise<{ pedido_id: string; token_acesso: string }> {
@@ -124,7 +127,9 @@ async function chamarCriarPedido(
          p_total            => $10,
          p_cupom_id         => $11,
          p_cupom_codigo     => $12,
-         p_itens            => $13::jsonb
+         p_itens            => $13::jsonb,
+         p_tipo_entrega     => $14,
+         p_troco_para       => $15
        )`,
       [
         p.loja_id,
@@ -140,6 +145,8 @@ async function chamarCriarPedido(
         p.cupom_id ?? null,
         p.cupom_codigo ?? null,
         JSON.stringify(p.itens),
+        p.tipo_entrega ?? "entrega",
+        p.troco_para ?? null,
       ],
     );
     return r.rows[0];
@@ -272,6 +279,50 @@ describe("014 RPC public.criar_pedido — atomicidade + trava de cupom (camada 1
     expect(Number(ped.rows[0].desconto)).toBe(0);
     expect(Number(ped.rows[0].total)).toBe(25.0); // 25 subtotal + 0 frete
     expect(ped.rows[0].cupom_codigo).toBeNull();
+  });
+
+  // ──────────────────────── [071] persistência de tipo_entrega + troco_para
+  it("[6] persiste p_tipo_entrega e p_troco_para nas colunas do pedido (RN-C2/C3)", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: c.lojaAtiva,
+      forma_pagamento: "dinheiro",
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      tipo_entrega: "retirada",
+      troco_para: 50.0,
+      itens: [{ produto_id: c.produto1, nome: "Pizza", preco: 25.0, quantidade: 1 }],
+    });
+    const ped = await t.asService((db) =>
+      db.query<{ tipo_entrega: string; troco_para: string | null }>(
+        `select tipo_entrega, troco_para from public.pedidos where id = $1`,
+        [r.pedido_id],
+      ),
+    );
+    expect(ped.rows[0].tipo_entrega).toBe("retirada");
+    expect(Number(ped.rows[0].troco_para)).toBe(50.0);
+  });
+
+  it("[7] troco_para NULL persiste como NULL (entrega sem troco)", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: c.lojaAtiva,
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      tipo_entrega: "entrega",
+      troco_para: null,
+      itens: [{ produto_id: c.produto1, nome: "Pizza", preco: 25.0, quantidade: 1 }],
+    });
+    const ped = await t.asService((db) =>
+      db.query<{ tipo_entrega: string; troco_para: string | null }>(
+        `select tipo_entrega, troco_para from public.pedidos where id = $1`,
+        [r.pedido_id],
+      ),
+    );
+    expect(ped.rows[0].tipo_entrega).toBe("entrega");
+    expect(ped.rows[0].troco_para).toBeNull();
   });
 
   // ──────────────────────── defesa em profundidade: loja inativa
