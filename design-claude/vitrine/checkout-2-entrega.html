@@ -1,0 +1,505 @@
+<!-- Mundo: Vitrine pública — tema da loja via --cor-primaria / --cor-fundo / --cor-destaque -->
+<!-- Wizard de checkout — Etapa 2 de 3: Tipo de entrega + endereço / retirada -->
+<!-- Mostra dois estados no mesmo arquivo: "Estado A — Retirada" e "Estado B — Entrega" -->
+<!-- Mobile-first ≤480px. Sem login. Cliente final. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empório iRango · Finalizar pedido — Entrega</title>
+<style>
+  :root {
+    /* Tema da loja — injetado via SSR */
+    --cor-primaria: #332616;
+    --cor-fundo:    #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Sistema */
+    --marrom-cafe:  #2e2610;
+    --texto:        #3e2723;
+    --texto-muted:  #6b5d4f;
+    --borda-nav:    #dccbb0;
+    --branco:       #ffffff;
+    --cinza-claro:  #f9f9f9;
+    --cinza-medio:  #eeeeee;
+    --erro:         #991b1b;
+    --erro-bg:      #fee2e2;
+    --verde:        #166534;
+    --verde-bg:     #dcfce7;
+    --laranja:      #854d0e;
+    --laranja-bg:   #fef3c7;
+    --sombra-suave: rgba(0,0,0,0.10);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); color: var(--texto); min-height: 100vh; }
+
+  /* Page wrapper */
+  .page { max-width: 480px; margin: 0 auto; background: var(--cor-fundo); min-height: 100vh; padding-bottom: 32px; }
+
+  /* Header */
+  .header {
+    background: var(--cor-primaria); color: var(--branco);
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 50;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .btn-voltar {
+    background: none; border: none; color: var(--branco); cursor: pointer;
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; font-size: 1.2rem; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .btn-voltar:hover { background: rgba(255,255,255,0.12); }
+  .btn-voltar:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 2px; }
+  .header-titulo { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Stepper */
+  .stepper {
+    background: var(--branco); border-bottom: 1px solid var(--cinza-medio);
+    padding: 12px 16px; display: flex; align-items: center; justify-content: center;
+  }
+  .step {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; font-weight: 700; color: var(--texto-muted);
+    flex-shrink: 0;
+  }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--cinza-medio);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 900; background: var(--cinza-medio); color: var(--texto-muted);
+    flex-shrink: 0;
+  }
+  .step.ativo .step-num { background: var(--cor-destaque); border-color: var(--cor-destaque); color: var(--branco); }
+  .step.ativo { color: var(--cor-destaque); }
+  .step.concluido .step-num { background: var(--cor-destaque); border-color: var(--cor-destaque); color: var(--branco); }
+  .step-label { display: none; }
+  .step.ativo .step-label, .step.concluido .step-label { display: inline; }
+  .step-sep { flex: 1; height: 2px; background: var(--cinza-medio); margin: 0 6px; min-width: 16px; max-width: 48px; }
+  .step-sep.concluido { background: var(--cor-destaque); }
+
+  /* Separador de estados (markup de demonstração) */
+  .demo-separador {
+    margin: 24px 16px 0;
+    padding: 10px 14px;
+    background: #1e3a5f; color: #e0f0ff;
+    border-radius: 10px; font-size: 0.8rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+
+  /* Seções */
+  .secao {
+    background: var(--branco); margin: 12px 16px 0;
+    border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave); overflow: hidden;
+  }
+  .secao-titulo {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--texto-muted); padding: 14px 16px;
+    border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro);
+  }
+  .secao-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* Radio cards (opcao) */
+  .opcao-lista { display: flex; flex-direction: column; gap: 8px; }
+  .opcao {
+    display: flex; align-items: flex-start; gap: 12px;
+    border: 1px solid var(--cinza-medio); border-radius: 10px; padding: 14px;
+    cursor: pointer; transition: border-color 0.15s, background 0.15s;
+    min-height: 52px;
+  }
+  .opcao:hover { border-color: var(--cor-destaque); }
+  .opcao input[type="radio"] { width: 20px; height: 20px; accent-color: var(--cor-destaque); flex-shrink: 0; cursor: pointer; margin-top: 2px; }
+  .opcao input[type="radio"]:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 2px; }
+  .opcao.selecionada { border-color: var(--cor-destaque); background: rgba(45,58,39,0.04); }
+  .opcao-info { flex: 1; }
+  .opcao-nome { font-size: 0.88rem; font-weight: 700; color: var(--texto); }
+  .opcao-sub { font-size: 0.78rem; color: var(--texto-muted); margin-top: 2px; }
+  .opcao-badge {
+    font-size: 0.78rem; font-weight: 900; white-space: nowrap; flex-shrink: 0;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .badge-gratis { color: var(--verde); }
+  .badge-frete { color: var(--texto-muted); }
+
+  /* Info de retirada */
+  .retirada-info {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--cinza-claro); border: 1px solid var(--borda-nav); border-radius: 10px; padding: 14px;
+  }
+  .retirada-icon { font-size: 1.4rem; flex-shrink: 0; }
+  .retirada-texto { flex: 1; }
+  .retirada-titulo { font-size: 0.82rem; font-weight: 700; color: var(--texto); }
+  .retirada-end { font-size: 0.82rem; color: var(--texto-muted); margin-top: 2px; }
+  .retirada-horario { font-size: 0.75rem; color: var(--texto-muted); margin-top: 4px; }
+
+  /* Campos */
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo label { font-size: 0.8rem; font-weight: 700; color: var(--texto); }
+  .campo input, .campo select {
+    height: 48px; padding: 0 14px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    font-size: 0.95rem; color: var(--texto); background: var(--cinza-claro);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit;
+  }
+  .campo input[readonly] { color: var(--texto-muted); background: var(--cinza-medio); cursor: default; }
+  .campo input:focus-visible, .campo select:focus-visible {
+    border-color: var(--cor-destaque); box-shadow: 0 0 0 3px rgba(45,58,39,0.15);
+  }
+  .campo input[aria-invalid="true"] { border-color: var(--erro); }
+  .campo .hint { font-size: 0.75rem; color: var(--texto-muted); }
+  .campo .erro-msg { font-size: 0.75rem; color: var(--erro); }
+  .linha-dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* Preview de frete */
+  .frete-preview {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--verde-bg); border: 1px solid #86efac; border-radius: 8px;
+    padding: 10px 14px; font-size: 0.85rem;
+  }
+  .frete-preview .label { color: var(--verde); font-weight: 700; }
+  .frete-preview .valor { color: var(--verde); font-weight: 900; font-size: 1rem; }
+
+  /* Aviso fora de zona */
+  .aviso-fora-zona {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: var(--erro-bg); border: 1px solid #fca5a5; border-radius: 8px;
+    padding: 10px 12px; font-size: 0.82rem; color: var(--erro); font-weight: 600;
+  }
+  .aviso-fora-zona .icon { font-size: 1rem; flex-shrink: 0; }
+
+  /* Resumo financeiro */
+  .resumo-linha { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; }
+  .resumo-label { font-size: 0.85rem; color: var(--texto-muted); }
+  .resumo-valor { font-size: 0.85rem; font-weight: 600; color: var(--texto); }
+  .resumo-valor.desconto { color: var(--verde); font-weight: 700; }
+  .resumo-valor.gratis { color: var(--verde); font-weight: 900; }
+  .resumo-linha.total { border-top: 2px solid var(--borda-nav); margin-top: 8px; padding-top: 12px; }
+  .resumo-linha.total .resumo-label { font-size: 0.92rem; font-weight: 800; color: var(--marrom-cafe); }
+  .resumo-linha.total .resumo-valor { font-size: 1rem; font-weight: 900; color: var(--cor-destaque); }
+  .aviso-estimado {
+    display: flex; align-items: flex-start; gap: 6px;
+    background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
+    padding: 8px 12px; font-size: 0.75rem; color: #854d0e; margin-top: 8px;
+  }
+
+  /* Botões de navegação */
+  .nav-botoes { margin: 16px 16px 0; display: flex; flex-direction: column; gap: 10px; }
+  .btn-continuar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 56px; border: none; border-radius: 12px; cursor: pointer;
+    background: var(--cor-destaque); color: var(--branco);
+    font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    transition: opacity 0.15s, transform 0.1s; font-family: inherit;
+  }
+  .btn-continuar:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-continuar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 3px; }
+  .btn-voltar-etapa {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; height: 48px; border: 1px solid var(--borda-nav); border-radius: 12px;
+    cursor: pointer; background: var(--branco); color: var(--texto-muted);
+    font-size: 0.88rem; font-weight: 700; font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-voltar-etapa:hover { border-color: var(--cor-destaque); color: var(--texto); }
+  .btn-voltar-etapa:focus-visible { outline: 2px solid var(--cor-destaque); outline-offset: 2px; }
+
+  @media (min-width: 769px) {
+    body { background: #c8bfab; }
+    .page { box-shadow: 0 0 32px rgba(0,0,0,0.2); }
+    .step-label { display: inline; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="header">
+        <button type="button" class="btn-voltar" aria-label="Voltar para revisão de itens">&#8592;</button>
+        <span class="header-titulo">Finalizar pedido</span>
+      </div>
+    </header>
+
+    <!-- Stepper -->
+    <nav class="stepper" aria-label="Etapas do pedido">
+      <div class="step concluido" aria-label="Etapa 1: Itens (concluída)">
+        <div class="step-num" aria-hidden="true">&#10003;</div>
+        <span class="step-label">Itens</span>
+      </div>
+      <div class="step-sep concluido" aria-hidden="true"></div>
+      <div class="step ativo" aria-current="step">
+        <div class="step-num" aria-hidden="true">2</div>
+        <span class="step-label">Entrega</span>
+      </div>
+      <div class="step-sep" aria-hidden="true"></div>
+      <div class="step" aria-label="Etapa 3: Pagamento (pendente)">
+        <div class="step-num" aria-hidden="true">3</div>
+        <span class="step-label">Pagamento</span>
+      </div>
+    </nav>
+
+    <main>
+
+      <!-- ============================================================ -->
+      <!-- ESTADO A: RETIRADA NO LOCAL                                   -->
+      <!-- ============================================================ -->
+      <div class="demo-separador" role="note" aria-label="Demonstração de estado">
+        Estado A — Retirada no local selecionada
+      </div>
+
+      <section class="secao" aria-labelledby="titulo-entrega-a">
+        <h2 class="secao-titulo" id="titulo-entrega-a">Tipo de entrega</h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Selecione o tipo de entrega</legend>
+            <div class="opcao-lista">
+              <label class="opcao">
+                <input type="radio" name="tipo-entrega-a" value="entrega" aria-describedby="entrega-a-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Entrega em domicílio</div>
+                  <div class="opcao-sub" id="entrega-a-desc">Informe seu endereço</div>
+                </div>
+                <div class="opcao-badge badge-frete">+ frete</div>
+              </label>
+              <label class="opcao selecionada">
+                <input type="radio" name="tipo-entrega-a" value="retirada" checked aria-describedby="retirada-a-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Retirada no local</div>
+                  <div class="opcao-sub" id="retirada-a-desc">Retire no estabelecimento</div>
+                </div>
+                <div class="opcao-badge badge-gratis">
+                  <span aria-hidden="true">&#10003;</span> Grátis
+                </div>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Endereço da loja para retirada (campos CEP/número OCULTOS) -->
+          <div class="retirada-info" aria-label="Local para retirada do pedido">
+            <div class="retirada-icon" aria-hidden="true">&#128205;</div>
+            <div class="retirada-texto">
+              <div class="retirada-titulo">Empório iRango</div>
+              <div class="retirada-end">Rua das Padarias, 88 — Vila Mariana, São Paulo/SP</div>
+              <div class="retirada-horario">Horário de retirada: Seg–Sex 7h–19h · Sáb 7h–14h</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resumo financeiro (retirada: frete R$ 0,00) -->
+      <section class="secao" aria-labelledby="titulo-resumo-a">
+        <h2 class="secao-titulo" id="titulo-resumo-a">Resumo</h2>
+        <div class="secao-body" style="padding-bottom: 20px;">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (retirada no local)</span>
+            <span class="resumo-valor gratis">Grátis</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 79,50</span>
+          </div>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span>
+              <strong>Valores estimados.</strong> O total final é confirmado pelo lojista no fechamento do pedido.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <div class="nav-botoes">
+        <button type="button" class="btn-continuar" aria-label="Continuar para pagamento">
+          Continuar &#8594;
+        </button>
+        <button type="button" class="btn-voltar-etapa" aria-label="Voltar para revisão de itens">
+          &#8592; Voltar para itens
+        </button>
+      </div>
+
+
+      <!-- ============================================================ -->
+      <!-- ESTADO B: ENTREGA EM DOMICÍLIO                               -->
+      <!-- ============================================================ -->
+      <div class="demo-separador" role="note" aria-label="Demonstração de estado" style="margin-top:40px;">
+        Estado B — Entrega em domicílio selecionada
+      </div>
+
+      <section class="secao" aria-labelledby="titulo-entrega-b">
+        <h2 class="secao-titulo" id="titulo-entrega-b">Tipo de entrega</h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Selecione o tipo de entrega</legend>
+            <div class="opcao-lista">
+              <label class="opcao selecionada">
+                <input type="radio" name="tipo-entrega-b" value="entrega" checked aria-describedby="entrega-b-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Entrega em domicílio</div>
+                  <div class="opcao-sub" id="entrega-b-desc">Informe seu endereço</div>
+                </div>
+                <div class="opcao-badge badge-frete">+ frete</div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="tipo-entrega-b" value="retirada" aria-describedby="retirada-b-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Retirada no local</div>
+                  <div class="opcao-sub" id="retirada-b-desc">Retire no estabelecimento</div>
+                </div>
+                <div class="opcao-badge badge-gratis">Grátis</div>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Campos de endereço de entrega (visíveis apenas quando ENTREGA selecionada) -->
+          <div class="linha-dupla">
+            <div class="campo">
+              <label for="cep-b">CEP</label>
+              <input
+                type="text" id="cep-b" name="cep" value="04101-000"
+                inputmode="numeric" maxlength="9" autocomplete="postal-code"
+                aria-describedby="cep-b-hint"
+              >
+              <span class="hint" id="cep-b-hint">Preenchemos o endereço automaticamente.</span>
+            </div>
+            <div class="campo">
+              <label for="numero-b">Número</label>
+              <input type="text" id="numero-b" name="numero" value="342" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="complemento-b">Complemento <span style="font-weight:400;color:var(--texto-muted)">(opcional)</span></label>
+            <input type="text" id="complemento-b" name="complemento" placeholder="Apto, bloco, referência…" autocomplete="address-line2">
+          </div>
+
+          <!-- Campos autopreenchidos pelo CEP (readonly) -->
+          <div class="campo">
+            <label for="rua-b">Rua</label>
+            <input type="text" id="rua-b" name="rua" value="Rua Silva Bueno" readonly aria-label="Rua preenchida automaticamente pelo CEP">
+          </div>
+
+          <div class="linha-dupla">
+            <div class="campo">
+              <label for="bairro-b">Bairro</label>
+              <input type="text" id="bairro-b" name="bairro" value="Saúde" readonly aria-label="Bairro preenchido automaticamente pelo CEP">
+            </div>
+            <div class="campo">
+              <label for="cidade-b">Cidade / UF</label>
+              <input type="text" id="cidade-b" name="cidade" value="São Paulo / SP" readonly aria-label="Cidade preenchida automaticamente pelo CEP">
+            </div>
+          </div>
+
+          <!-- Preview de frete calculado pelo bairro (Saúde) -->
+          <div class="frete-preview" role="status" aria-live="polite" aria-label="Frete calculado: R$ 7,00 para o bairro Saúde">
+            <span class="label">&#10003; Frete (Saúde)</span>
+            <span class="valor">R$ 7,00</span>
+          </div>
+
+          <!-- Exemplo de bairro fora de área (comentado aqui; mostrado abaixo separado) -->
+        </div>
+      </section>
+
+      <!-- Resumo financeiro (entrega: frete R$ 7,00) -->
+      <section class="secao" aria-labelledby="titulo-resumo-b">
+        <h2 class="secao-titulo" id="titulo-resumo-b">Resumo</h2>
+        <div class="secao-body" style="padding-bottom: 20px;">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span>
+              <strong>Valores estimados.</strong> O frete e total final são confirmados pelo lojista no fechamento do pedido.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <div class="nav-botoes">
+        <button type="button" class="btn-continuar" aria-label="Continuar para pagamento">
+          Continuar &#8594;
+        </button>
+        <button type="button" class="btn-voltar-etapa" aria-label="Voltar para revisão de itens">
+          &#8592; Voltar para itens
+        </button>
+      </div>
+
+
+      <!-- ============================================================ -->
+      <!-- ESTADO B2: BAIRRO FORA DE ÁREA                               -->
+      <!-- ============================================================ -->
+      <div class="demo-separador" role="note" aria-label="Demonstração de estado" style="margin-top:40px;">
+        Estado B2 — CEP de bairro fora da área de entrega
+      </div>
+
+      <section class="secao" aria-labelledby="titulo-entrega-b2">
+        <h2 class="secao-titulo" id="titulo-entrega-b2">Tipo de entrega</h2>
+        <div class="secao-body">
+          <div class="linha-dupla">
+            <div class="campo">
+              <label for="cep-b2">CEP</label>
+              <input
+                type="text" id="cep-b2" name="cep2" value="01310-100"
+                inputmode="numeric" maxlength="9" autocomplete="postal-code"
+                aria-describedby="cep-b2-hint"
+                aria-invalid="true"
+              >
+              <span class="hint" id="cep-b2-hint">Preenchemos o endereço automaticamente.</span>
+            </div>
+            <div class="campo">
+              <label for="numero-b2">Número</label>
+              <input type="text" id="numero-b2" name="numero2" value="100" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="bairro-b2">Bairro</label>
+            <input type="text" id="bairro-b2" name="bairro2" value="Bela Vista" readonly>
+          </div>
+
+          <!-- Aviso bairro fora da zona de entrega -->
+          <div class="aviso-fora-zona" role="alert" aria-live="assertive">
+            <span class="icon" aria-hidden="true">&#9888;</span>
+            <span>
+              <strong>Entrega indisponível para Bela Vista.</strong>
+              Escolha retirada no local ou tente um CEP diferente.
+            </span>
+          </div>
+
+          <!-- Botão desabilitado quando bairro fora da área -->
+        </div>
+      </section>
+
+      <div class="nav-botoes">
+        <button type="button" class="btn-continuar" disabled aria-disabled="true" style="background:#9a9a9a;cursor:not-allowed;box-shadow:none;" aria-label="Selecione um endereço válido para continuar">
+          Continuar &#8594;
+        </button>
+        <button type="button" class="btn-voltar-etapa" aria-label="Voltar para revisão de itens">
+          &#8592; Voltar para itens
+        </button>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

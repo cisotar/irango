@@ -1,0 +1,374 @@
+<!-- Mundo: Vitrine pública — tema da loja via --cor-primaria / --cor-fundo / --cor-destaque -->
+<!-- Wizard de checkout — Etapa 1 de 3: Revisão de itens + cupom -->
+<!-- Mobile-first ≤480px. Sem login. Cliente final. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empório iRango · Finalizar pedido — Itens</title>
+<style>
+  :root {
+    /* Tema da loja — injetado via SSR, customizável pelo lojista */
+    --cor-primaria: #332616;
+    --cor-fundo:    #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Sistema (fixo) */
+    --marrom-cafe:  #2e2610;
+    --texto:        #3e2723;
+    --texto-muted:  #6b5d4f;
+    --borda-nav:    #dccbb0;
+    --branco:       #ffffff;
+    --cinza-claro:  #f9f9f9;
+    --cinza-medio:  #eeeeee;
+    --erro:         #991b1b;
+    --erro-bg:      #fee2e2;
+    --verde:        #166534;
+    --verde-bg:     #dcfce7;
+    --sombra-suave: rgba(0,0,0,0.10);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); color: var(--texto); min-height: 100vh; }
+
+  /* Page wrapper — mobile-first */
+  .page { max-width: 480px; margin: 0 auto; background: var(--cor-fundo); min-height: 100vh; padding-bottom: 32px; }
+
+  /* Header */
+  .header {
+    background: var(--cor-primaria); color: var(--branco);
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 50;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .btn-voltar {
+    background: none; border: none; color: var(--branco); cursor: pointer;
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; font-size: 1.2rem; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .btn-voltar:hover { background: rgba(255,255,255,0.12); }
+  .btn-voltar:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 2px; }
+  .header-titulo { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Stepper */
+  .stepper {
+    background: var(--branco); border-bottom: 1px solid var(--cinza-medio);
+    padding: 12px 16px; display: flex; align-items: center; justify-content: center; gap: 0;
+  }
+  .step {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; font-weight: 700; color: var(--texto-muted);
+    flex-shrink: 0;
+  }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--cinza-medio);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 900; background: var(--cinza-medio); color: var(--texto-muted);
+    flex-shrink: 0;
+  }
+  .step.ativo .step-num {
+    background: var(--cor-destaque); border-color: var(--cor-destaque); color: var(--branco);
+  }
+  .step.ativo { color: var(--cor-destaque); }
+  .step.concluido .step-num {
+    background: var(--cor-destaque); border-color: var(--cor-destaque); color: var(--branco);
+  }
+  .step-label { display: none; }
+  .step.ativo .step-label { display: inline; }
+  .step-sep {
+    flex: 1; height: 2px; background: var(--cinza-medio); margin: 0 6px; min-width: 16px; max-width: 48px;
+  }
+  .step-sep.concluido { background: var(--cor-destaque); }
+
+  /* Seções */
+  .secao {
+    background: var(--branco); margin: 12px 16px 0;
+    border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave);
+    overflow: hidden;
+  }
+  .secao-titulo {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--texto-muted); padding: 14px 16px;
+    border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro);
+  }
+  .secao-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* Item com controle +/- */
+  .item-linha {
+    display: flex; align-items: center; gap: 12px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--cinza-medio);
+  }
+  .item-linha:last-child { border-bottom: none; padding-bottom: 0; }
+  .item-img {
+    width: 52px; height: 52px; border-radius: 10px;
+    background: linear-gradient(135deg,#e8dcc4,#d8c4a0);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; flex-shrink: 0;
+  }
+  .item-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .item-nome { font-size: 0.88rem; font-weight: 700; color: var(--texto); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-unit-price { font-size: 0.75rem; color: var(--texto-muted); }
+  .item-dir { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+  .item-preco-total { font-weight: 900; font-size: 0.92rem; color: var(--cor-destaque); white-space: nowrap; }
+
+  /* Controle +/- */
+  .ctrl-qtd { display: flex; align-items: center; gap: 0; }
+  .ctrl-btn {
+    width: 32px; height: 32px; border: 1px solid var(--borda-nav); background: var(--cinza-claro);
+    color: var(--texto); font-size: 1.1rem; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .ctrl-btn:first-child { border-radius: 8px 0 0 8px; }
+  .ctrl-btn:last-child { border-radius: 0 8px 8px 0; }
+  .ctrl-btn:hover { background: var(--cinza-medio); border-color: var(--cor-destaque); }
+  .ctrl-btn:focus-visible { outline: 2px solid var(--cor-destaque); outline-offset: 1px; z-index: 1; position: relative; }
+  .ctrl-btn.remover { color: var(--erro); }
+  .ctrl-qtd-val {
+    width: 36px; height: 32px; border-top: 1px solid var(--borda-nav); border-bottom: 1px solid var(--borda-nav);
+    border-left: none; border-right: none; text-align: center;
+    font-size: 0.9rem; font-weight: 700; color: var(--texto); background: var(--branco);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Cupom */
+  .cupom-wrap { display: flex; gap: 8px; }
+  .cupom-input {
+    flex: 1; height: 48px; padding: 0 14px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    font-size: 0.95rem; color: var(--texto); background: var(--cinza-claro); outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .cupom-input:focus-visible { border-color: var(--cor-destaque); box-shadow: 0 0 0 3px rgba(45,58,39,0.15); }
+  .btn-cupom {
+    height: 48px; padding: 0 16px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    background: var(--branco); color: var(--texto); font-size: 0.88rem; font-weight: 700; cursor: pointer;
+    white-space: nowrap; transition: border-color 0.15s, color 0.15s; font-family: inherit;
+  }
+  .btn-cupom:hover { border-color: var(--cor-destaque); color: var(--cor-destaque); }
+  .btn-cupom:focus-visible { outline: 2px solid var(--cor-destaque); outline-offset: 2px; }
+
+  /* Veredito do cupom */
+  .cupom-veredito {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--verde-bg); border: 1px solid #86efac; border-radius: 8px;
+    padding: 10px 12px; font-size: 0.82rem; color: var(--verde); font-weight: 600;
+  }
+  .cupom-veredito .icon { font-size: 1rem; flex-shrink: 0; }
+  .cupom-remover {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    color: var(--verde); font-size: 0.78rem; font-weight: 700; padding: 4px 8px;
+    border-radius: 6px; text-decoration: underline;
+    min-height: 32px;
+  }
+  .cupom-remover:hover { background: rgba(22,101,52,0.08); }
+  .cupom-remover:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
+
+  /* Resumo financeiro */
+  .resumo-linha { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; }
+  .resumo-label { font-size: 0.85rem; color: var(--texto-muted); }
+  .resumo-valor { font-size: 0.85rem; font-weight: 600; color: var(--texto); }
+  .resumo-valor.desconto { color: var(--verde); font-weight: 700; }
+  .resumo-linha.subtotal-final { border-top: 1px solid var(--borda-nav); margin-top: 8px; padding-top: 10px; }
+  .resumo-linha.subtotal-final .resumo-label { font-size: 0.92rem; font-weight: 800; color: var(--marrom-cafe); }
+  .resumo-linha.subtotal-final .resumo-valor { font-size: 1rem; font-weight: 900; color: var(--cor-destaque); }
+  .aviso-estimado {
+    display: flex; align-items: flex-start; gap: 6px;
+    background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
+    padding: 8px 12px; font-size: 0.75rem; color: #854d0e; margin-top: 8px;
+  }
+
+  /* Botão principal */
+  .btn-continuar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: calc(100% - 32px); margin: 16px 16px 0;
+    height: 56px; border: none; border-radius: 12px; cursor: pointer;
+    background: var(--cor-destaque); color: var(--branco);
+    font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    transition: opacity 0.15s, transform 0.1s;
+    font-family: inherit;
+  }
+  .btn-continuar:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-continuar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 3px; }
+
+  /* Carrinho vazio (empty state) */
+  .empty-state {
+    text-align: center; padding: 48px 24px; display: flex; flex-direction: column;
+    align-items: center; gap: 16px;
+  }
+  .empty-icon { font-size: 3rem; }
+  .empty-titulo { font-size: 1.1rem; font-weight: 800; color: var(--marrom-cafe); margin: 0; }
+  .empty-sub { font-size: 0.88rem; color: var(--texto-muted); margin: 0; }
+  .btn-voltar-loja {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 48px; padding: 0 24px; border: 2px solid var(--cor-destaque); border-radius: 12px;
+    background: none; color: var(--cor-destaque); font-size: 0.9rem; font-weight: 800;
+    cursor: pointer; text-decoration: none; font-family: inherit;
+    transition: background 0.15s;
+  }
+  .btn-voltar-loja:hover { background: rgba(45,58,39,0.06); }
+  .btn-voltar-loja:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 3px; }
+
+  @media (min-width: 769px) {
+    body { background: #c8bfab; }
+    .page { box-shadow: 0 0 32px rgba(0,0,0,0.2); }
+    .step-label { display: inline; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="header">
+        <button type="button" class="btn-voltar" aria-label="Voltar à loja">&#8592;</button>
+        <span class="header-titulo">Finalizar pedido</span>
+      </div>
+    </header>
+
+    <!-- Stepper -->
+    <nav class="stepper" aria-label="Etapas do pedido">
+      <div class="step ativo" aria-current="step">
+        <div class="step-num" aria-hidden="true">1</div>
+        <span class="step-label">Itens</span>
+      </div>
+      <div class="step-sep" aria-hidden="true"></div>
+      <div class="step" aria-label="Etapa 2: Entrega (pendente)">
+        <div class="step-num" aria-hidden="true">2</div>
+        <span class="step-label">Entrega</span>
+      </div>
+      <div class="step-sep" aria-hidden="true"></div>
+      <div class="step" aria-label="Etapa 3: Pagamento (pendente)">
+        <div class="step-num" aria-hidden="true">3</div>
+        <span class="step-label">Pagamento</span>
+      </div>
+    </nav>
+
+    <main>
+      <!-- Itens do pedido com controle +/- -->
+      <section class="secao" aria-labelledby="titulo-itens">
+        <h2 class="secao-titulo" id="titulo-itens">Itens do pedido</h2>
+        <div class="secao-body">
+
+          <!-- Item 1 -->
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">🍞</div>
+            <div class="item-corpo">
+              <div class="item-nome">Pão de queijo artesanal (12 un)</div>
+              <div class="item-unit-price">R$ 18,00 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 36,00">R$ 36,00</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Pão de queijo artesanal">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Pão de queijo artesanal (clique duas vezes para remover do carrinho)">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">2</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Pão de queijo artesanal">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Item 2 -->
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">☕</div>
+            <div class="item-corpo">
+              <div class="item-nome">Café moído Espresso 250g</div>
+              <div class="item-unit-price">R$ 34,50 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 34,50">R$ 34,50</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Café moído Espresso">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Café moído Espresso (clique duas vezes para remover do carrinho)">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">1</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Café moído Espresso">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Item 3 -->
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">🧀</div>
+            <div class="item-corpo">
+              <div class="item-nome">Queijo minas frescal 400g</div>
+              <div class="item-unit-price">R$ 16,00 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 16,00">R$ 16,00</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Queijo minas frescal">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Queijo minas frescal (clique duas vezes para remover do carrinho)">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">1</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Queijo minas frescal">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Cupom de desconto -->
+      <section class="secao" aria-labelledby="titulo-cupom">
+        <h2 class="secao-titulo" id="titulo-cupom">Cupom de desconto</h2>
+        <div class="secao-body">
+          <div class="cupom-wrap">
+            <input
+              type="text"
+              class="cupom-input"
+              id="cupom"
+              name="cupom"
+              placeholder="Ex.: PROMO10"
+              aria-label="Código do cupom de desconto"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="20"
+            >
+            <button type="button" class="btn-cupom">Aplicar</button>
+          </div>
+
+          <!-- Estado: cupom aplicado com sucesso -->
+          <div class="cupom-veredito" role="status" aria-live="polite">
+            <span class="icon" aria-hidden="true">&#10003;</span>
+            <span>
+              <strong>PROMO10 aplicado</strong> · desconto de R$&nbsp;7,00 no subtotal
+            </span>
+            <button type="button" class="cupom-remover" aria-label="Remover cupom PROMO10">Remover</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resumo financeiro parcial (etapa 1: sem frete ainda) -->
+      <section class="secao" aria-labelledby="titulo-resumo">
+        <h2 class="secao-titulo" id="titulo-resumo">Resumo</h2>
+        <div class="secao-body" style="padding-bottom: 20px;">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha subtotal-final">
+            <span class="resumo-label">Subtotal com desconto</span>
+            <span class="resumo-valor">R$ 79,50</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--texto-muted);margin:4px 0 0;">
+            Frete calculado na próxima etapa.
+          </p>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span>
+              <strong>Valores estimados.</strong> O desconto e o total final são confirmados pelo lojista no fechamento do pedido.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA -->
+      <button type="button" class="btn-continuar" aria-label="Continuar para etapa de entrega">
+        Continuar &#8594;
+      </button>
+    </main>
+  </div>
+</body>
+</html>
