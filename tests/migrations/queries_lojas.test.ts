@@ -108,7 +108,9 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
   });
 
   it("[2] buscarLojaPorSlug: resultado da view NÃO contém colunas sensíveis", async () => {
-    // LojaPublica = Row da VIEW: dono_id/assinatura_*/hotmart_*/consentimento_* ausentes.
+    // LojaPublica = Row da VIEW: dono_id/hotmart_*/consentimento_* e datas
+    // internas de assinatura ausentes. EXCEÇÃO (issue 058): assinatura_status e
+    // assinatura_fim_periodo SÃO expostos (estado operante, não PII/pagamento).
     const r = await t.asAnon((db) =>
       db.query<Record<string, unknown>>(`select * from public.vitrine_lojas where slug = $1`, [
         SLUG_A,
@@ -117,9 +119,7 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
     const chaves = Object.keys(r.rows[0]);
     for (const proibida of [
       "dono_id",
-      "assinatura_status",
       "assinatura_inicio",
-      "assinatura_fim_periodo",
       "assinatura_atualizada_em",
       "hotmart_subscriber_code",
       "hotmart_plano",
@@ -132,6 +132,9 @@ describe("023 queries de lojas — contrato SQL/RLS (camada 1)", () => {
     expect(chaves).toContain("id");
     expect(chaves).toContain("slug");
     expect(chaves).toContain("nome");
+    // issue 058 — estado de assinatura exposto para checagem de disponibilidade.
+    expect(chaves).toContain("assinatura_status");
+    expect(chaves).toContain("assinatura_fim_periodo");
   });
 
   it("[3] buscarLojaPorSlug: anon NÃO vê loja INATIVA pela view → 0 linhas (null)", async () => {

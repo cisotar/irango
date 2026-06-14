@@ -130,8 +130,11 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
   });
 
   it("[1b] vitrine_lojas NÃO expõe colunas sensíveis ao anon", async () => {
-    // A view projeta só colunas públicas: dono_id/hotmart_subscriber_code/
-    // assinatura_status NÃO podem sequer existir no resultado.
+    // A view projeta só colunas públicas. PII/Hotmart/consentimento e as datas
+    // internas de assinatura NÃO podem sequer existir no resultado.
+    // EXCEÇÃO (issue 058): assinatura_status e assinatura_fim_periodo SÃO
+    // expostos — não são PII nem dado de pagamento, só sinalizam se a loja está
+    // operante (o mesmo que a vitrine já comunica via "indisponível").
     const r = await t.asAnon((db) =>
       db.query<Record<string, unknown>>(`select * from public.vitrine_lojas where slug = $1`, [
         SLUG_A,
@@ -142,16 +145,17 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
     expect(chaves).not.toContain("dono_id");
     expect(chaves).not.toContain("hotmart_subscriber_code");
     expect(chaves).not.toContain("hotmart_plano");
-    expect(chaves).not.toContain("assinatura_status");
     expect(chaves).not.toContain("assinatura_inicio");
-    expect(chaves).not.toContain("assinatura_fim_periodo");
     expect(chaves).not.toContain("assinatura_atualizada_em");
     expect(chaves).not.toContain("consentimento_em");
     expect(chaves).not.toContain("consentimento_versao");
-    // E confirma que as colunas públicas esperadas ESTÃO presentes.
+    // Colunas públicas esperadas ESTÃO presentes.
     expect(chaves).toContain("id");
     expect(chaves).toContain("slug");
     expect(chaves).toContain("nome");
+    // issue 058 — estado de assinatura exposto para a checagem de disponibilidade.
+    expect(chaves).toContain("assinatura_status");
+    expect(chaves).toContain("assinatura_fim_periodo");
   });
 
   it("[1c] anon NÃO lê linhas de loja ATIVA direto da tabela base (0 linhas)", async () => {

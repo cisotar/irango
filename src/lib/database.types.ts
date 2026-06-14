@@ -554,6 +554,8 @@ export type Database = {
     Views: {
       vitrine_lojas: {
         Row: {
+          assinatura_fim_periodo: string | null
+          assinatura_status: string | null
           ativo: boolean | null
           endereco_bairro: string | null
           endereco_cep: string | null
@@ -571,6 +573,8 @@ export type Database = {
           whatsapp: string | null
         }
         Insert: {
+          assinatura_fim_periodo?: string | null
+          assinatura_status?: string | null
           ativo?: boolean | null
           endereco_bairro?: string | null
           endereco_cep?: string | null
@@ -588,6 +592,8 @@ export type Database = {
           whatsapp?: string | null
         }
         Update: {
+          assinatura_fim_periodo?: string | null
+          assinatura_status?: string | null
           ativo?: boolean | null
           endereco_bairro?: string | null
           endereco_cep?: string | null

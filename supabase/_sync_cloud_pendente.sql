@@ -192,3 +192,38 @@ create trigger lojas_protege_billing_trg
   for each row
   execute function public.lojas_protege_billing();
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Origem: supabase/migrations/20260614005000_vitrine_lojas_assinatura.sql
+-- Issue 058 — expor estado de assinatura na vitrine pública.
+-- Recria a view `vitrine_lojas` adicionando assinatura_status +
+-- assinatura_fim_periodo (estado operante; não PII/pagamento). `create or
+-- replace view` não permite mudar a lista de colunas → drop + create.
+-- ─────────────────────────────────────────────────────────────────────────────
+drop view if exists public.vitrine_lojas;
+
+create view public.vitrine_lojas
+  with (security_invoker = false)
+as
+  select
+    id,
+    slug,
+    nome,
+    telefone,
+    whatsapp,
+    ativo,
+    endereco_rua,
+    endereco_numero,
+    endereco_bairro,
+    endereco_cidade,
+    endereco_estado,
+    endereco_cep,
+    tema,
+    horarios,
+    timezone,
+    assinatura_status,
+    assinatura_fim_periodo
+  from public.lojas
+  where ativo = true;
+
+grant select on public.vitrine_lojas to anon, authenticated;
+
