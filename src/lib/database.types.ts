@@ -40,6 +40,56 @@ export type Database = {
           },
         ]
       }
+      categoria_produto_opcionais: {
+        Row: {
+          categoria_id: string
+          categoria_opcional_id: string
+          id: string
+          loja_id: string
+        }
+        Insert: {
+          categoria_id: string
+          categoria_opcional_id: string
+          id?: string
+          loja_id: string
+        }
+        Update: {
+          categoria_id?: string
+          categoria_opcional_id?: string
+          id?: string
+          loja_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categoria_produto_opcionais_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "categoria_produto_opcionais_categoria_opcional_id_fkey"
+            columns: ["categoria_opcional_id"]
+            isOneToOne: false
+            referencedRelation: "opcionais_categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "categoria_produto_opcionais_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "categoria_produto_opcionais_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categorias: {
         Row: {
           criado_em: string
@@ -214,6 +264,48 @@ export type Database = {
           },
         ]
       }
+      itens_pedido_opcionais: {
+        Row: {
+          id: string
+          item_pedido_id: string
+          nome_snapshot: string
+          opcional_id: string | null
+          preco_snapshot: number
+          quantidade: number
+        }
+        Insert: {
+          id?: string
+          item_pedido_id: string
+          nome_snapshot: string
+          opcional_id?: string | null
+          preco_snapshot: number
+          quantidade: number
+        }
+        Update: {
+          id?: string
+          item_pedido_id?: string
+          nome_snapshot?: string
+          opcional_id?: string | null
+          preco_snapshot?: number
+          quantidade?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "itens_pedido_opcionais_item_pedido_id_fkey"
+            columns: ["item_pedido_id"]
+            isOneToOne: false
+            referencedRelation: "itens_pedido"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "itens_pedido_opcionais_opcional_id_fkey"
+            columns: ["opcional_id"]
+            isOneToOne: false
+            referencedRelation: "opcionais"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lojas: {
         Row: {
           assinatura_atualizada_em: string | null
@@ -303,6 +395,103 @@ export type Database = {
           whatsapp?: string | null
         }
         Relationships: []
+      }
+      opcionais: {
+        Row: {
+          ativo: boolean
+          atualizado_em: string
+          categoria_opcional_id: string
+          criado_em: string
+          id: string
+          loja_id: string
+          nome: string
+          ordem: number
+          preco: number
+        }
+        Insert: {
+          ativo?: boolean
+          atualizado_em?: string
+          categoria_opcional_id: string
+          criado_em?: string
+          id?: string
+          loja_id: string
+          nome: string
+          ordem?: number
+          preco: number
+        }
+        Update: {
+          ativo?: boolean
+          atualizado_em?: string
+          categoria_opcional_id?: string
+          criado_em?: string
+          id?: string
+          loja_id?: string
+          nome?: string
+          ordem?: number
+          preco?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opcionais_categoria_opcional_id_fkey"
+            columns: ["categoria_opcional_id"]
+            isOneToOne: false
+            referencedRelation: "opcionais_categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opcionais_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opcionais_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opcionais_categorias: {
+        Row: {
+          criado_em: string
+          id: string
+          loja_id: string
+          nome: string
+          ordem: number
+        }
+        Insert: {
+          criado_em?: string
+          id?: string
+          loja_id: string
+          nome: string
+          ordem?: number
+        }
+        Update: {
+          criado_em?: string
+          id?: string
+          loja_id?: string
+          nome?: string
+          ordem?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opcionais_categorias_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opcionais_categorias_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pedidos: {
         Row: {
@@ -626,6 +815,10 @@ export type Database = {
       }
     }
     Functions: {
+      item_pedido_aceita_opcionais: {
+        Args: { p_item_pedido_id: string }
+        Returns: boolean
+      }
       loja_esta_ativa: { Args: { p_loja_id: string }; Returns: boolean }
       pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
       loja_por_email_dono: {

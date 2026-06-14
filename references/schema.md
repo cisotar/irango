@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.4 | **Atualizado:** 2026-06-14
+**Versão:** 0.1.5 | **Atualizado:** 2026-06-14
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -32,8 +32,13 @@ auth.users (Supabase)
             │       └── taxas_entrega
             │           └── bairros_zona
             ├── formas_pagamento
+            ├── opcionais_categorias
+            │       └── opcionais
+            │               └── itens_pedido_opcionais
+            ├── categoria_produto_opcionais (categorias ⋈ opcionais_categorias)
             └── pedidos
                     └── itens_pedido
+                            └── itens_pedido_opcionais
 ```
 
 ---
@@ -239,6 +244,65 @@ CREATE TABLE itens_pedido (
 );
 ```
 
+### `opcionais_categorias`
+
+```sql
+-- Agrupador da biblioteca de opcionais por loja (ex: Laticínios, Doces)
+CREATE TABLE opcionais_categorias (
+  id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id   uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  nome      text NOT NULL,
+  ordem     int NOT NULL DEFAULT 0,
+  criado_em timestamptz NOT NULL DEFAULT now()
+);
+```
+
+### `opcionais`
+
+```sql
+-- Item da biblioteca de opcionais; preço autoritativo do servidor
+CREATE TABLE opcionais (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id               uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  categoria_opcional_id uuid NOT NULL REFERENCES opcionais_categorias(id) ON DELETE CASCADE,
+  nome                  text NOT NULL,
+  preco                 numeric(10,2) NOT NULL CHECK (preco >= 0),
+  ativo                 boolean NOT NULL DEFAULT true,
+  ordem                 int NOT NULL DEFAULT 0,
+  criado_em             timestamptz NOT NULL DEFAULT now(),
+  atualizado_em         timestamptz NOT NULL DEFAULT now()
+);
+```
+
+### `categoria_produto_opcionais`
+
+```sql
+-- Associação: categoria de produto ⋈ categoria de opcional (M:N)
+-- loja_id redundante para RLS direta por loja (convenção do schema)
+CREATE TABLE categoria_produto_opcionais (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id               uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  categoria_id          uuid NOT NULL REFERENCES categorias(id) ON DELETE CASCADE,
+  categoria_opcional_id uuid NOT NULL REFERENCES opcionais_categorias(id) ON DELETE CASCADE,
+  UNIQUE (categoria_id, categoria_opcional_id)
+);
+```
+
+### `itens_pedido_opcionais`
+
+```sql
+-- Snapshot dos opcionais escolhidos por item do pedido
+-- nome_snapshot/preco_snapshot: histórico imutável mesmo se opcional for editado/removido
+CREATE TABLE itens_pedido_opcionais (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_pedido_id uuid NOT NULL REFERENCES itens_pedido(id) ON DELETE CASCADE,
+  opcional_id    uuid REFERENCES opcionais(id) ON DELETE SET NULL,  -- NULL preserva histórico
+  nome_snapshot  text NOT NULL,
+  preco_snapshot numeric(10,2) NOT NULL CHECK (preco_snapshot >= 0),
+  quantidade     int NOT NULL CHECK (quantidade > 0)
+);
+```
+
 ### `webhook_eventos_hotmart`
 
 ```sql
@@ -284,6 +348,12 @@ CREATE INDEX ON zonas_entrega(loja_id);
 
 -- Bairros por zona
 CREATE INDEX ON bairros_zona(zona_id);
+
+-- Opcionais por loja/categoria (vitrine e painel)
+CREATE INDEX ON opcionais_categorias(loja_id, ordem);
+CREATE INDEX ON opcionais(loja_id, categoria_opcional_id, ativo, ordem);
+CREATE INDEX ON categoria_produto_opcionais(loja_id, categoria_id);
+CREATE INDEX ON itens_pedido_opcionais(item_pedido_id);
 ```
 
 ---

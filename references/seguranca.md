@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.6 | **Atualizado:** 2026-06-14
+**Versão:** 0.2.7 | **Atualizado:** 2026-06-14
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -51,7 +51,11 @@ ALTER TABLE itens_pedido   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE zonas_entrega  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE taxas_entrega  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bairros_zona   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE formas_pagamento ENABLE ROW LEVEL SECURITY;
+ALTER TABLE formas_pagamento           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE opcionais_categorias       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE opcionais                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categoria_produto_opcionais ENABLE ROW LEVEL SECURITY;
+ALTER TABLE itens_pedido_opcionais     ENABLE ROW LEVEL SECURITY;
 ```
 
 ### Políticas por tabela
@@ -160,6 +164,39 @@ GRANT EXECUTE ON FUNCTION public.pedido_aceita_itens(uuid) TO anon, authenticate
 A tabela `pedidos` não tem SELECT público para anon (anti-enumeração de pedidos alheios). Um `EXISTS` contra `pedidos` rodando sob RLS do anon retorna sempre zero linhas, bloqueando todo INSERT de item. A função `security definer` contorna isso respondendo só o booleano — mesmo padrão de `loja_esta_ativa`.
 
 **Regra para devs e agentes:** toda policy de INSERT público em `itens_pedido` deve usar `public.pedido_aceita_itens(pedido_id)`. Nunca `WITH CHECK (true)` — permite anexar item a pedido alheio ou pedido já confirmado/cancelado. Nunca `EXISTS` direto em `pedidos` — quebra silenciosamente para anon.
+
+---
+
+#### Helper `public.item_pedido_aceita_opcionais(uuid) → boolean`
+
+Migration: `20260614007500_opcionais.sql`
+
+Função `security definer` usada pela policy `ipo_insert_publico` em `itens_pedido_opcionais` para verificar se um item de pedido aceita opcionais sem expor `pedidos`/`itens_pedido` ao anon. Mesmo padrão de `pedido_aceita_itens` — reusa `loja_esta_ativa` internamente.
+
+```sql
+CREATE FUNCTION public.item_pedido_aceita_opcionais(p_item_pedido_id uuid)
+  RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.itens_pedido ip
+    JOIN public.pedidos p ON p.id = ip.pedido_id
+    WHERE ip.id = p_item_pedido_id
+      AND p.status = 'pendente'
+      AND public.loja_esta_ativa(p.loja_id)
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.item_pedido_aceita_opcionais(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.item_pedido_aceita_opcionais(uuid) TO anon, authenticated, service_role;
+```
+
+**Por que não usar `EXISTS` direto nas policies:**
+
+As tabelas `pedidos` e `itens_pedido` não têm SELECT público para anon (anti-enumeração). Um `EXISTS` rodando sob RLS do anon retorna sempre zero linhas, bloqueando todo INSERT de opcional. A função `security definer` contorna isso respondendo só o booleano — não expõe dados do pedido.
+
+**Regra para devs e agentes:** toda policy de INSERT público em `itens_pedido_opcionais` deve usar `public.item_pedido_aceita_opcionais(item_pedido_id)`. Nunca `WITH CHECK (true)` — permite anexar opcional a item alheio. Nunca `EXISTS` direto em `itens_pedido`/`pedidos` — quebra silenciosamente para anon.
 
 ---
 
