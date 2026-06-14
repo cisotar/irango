@@ -149,6 +149,8 @@
   .campo .hint { font-size: 0.75rem; color: var(--texto-muted); }
   .campo .erro-msg { font-size: 0.75rem; color: var(--erro); }
   .linha-dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .linha-dupla > .campo { min-width: 0; }
+  .campo input, .campo select { width: 100%; min-width: 0; }
 
   /* Preview de frete */
   .frete-preview {
