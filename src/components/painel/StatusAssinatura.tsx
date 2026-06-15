@@ -147,6 +147,7 @@ export function BotaoGerenciarHotmart(): ReactElement {
   return (
     <Button
       className="w-full"
+      nativeButton={false}
       render={
         <a href={URL_PORTAL_HOTMART} target="_blank" rel="noopener noreferrer">
           Gerenciar pagamento na Hotmart

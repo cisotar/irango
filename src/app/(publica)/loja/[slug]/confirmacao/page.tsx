@@ -260,6 +260,7 @@ export default async function ConfirmacaoPage({
 
       <Button
         className="w-full"
+        nativeButton={false}
         render={<Link href={`/loja/${slug}`}>Voltar à loja</Link>}
       />
     </main>

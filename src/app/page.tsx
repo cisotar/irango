@@ -17,7 +17,7 @@ export default function Home() {
         <span className="text-lg font-black uppercase tracking-wide text-marrom-cafe">
           🥖 iRango
         </span>
-        <Button variant="ghost" render={<Link href="/login">Entrar</Link>} />
+        <Button variant="ghost" nativeButton={false} render={<Link href="/login">Entrar</Link>} />
       </header>
 
       <HeroLanding />
@@ -33,6 +33,7 @@ function CtaCriarLoja() {
   return (
     <Button
       className="min-h-11 bg-[var(--cor-primaria)] text-base text-white hover:bg-[var(--cor-primaria)]/90"
+      nativeButton={false}
       render={<Link href="/cadastro">Crie sua loja grátis</Link>}
     />
   );
