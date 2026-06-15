@@ -31,6 +31,15 @@ const DONO_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const DONO_RACE = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 
+// Issue 068 — TOCTOU de slug. Donos da colisão de slug entre tenants distintos.
+// Mesma parte local de email ('joao.silva') em domínios diferentes → mesmo
+// slug-base 'joao-silva'. Sufixo de re-derivação da fn = primeiros 8 hex do
+// dono_id sem hífens. Para TOCTOU_B = cccc...  → sufixo 'cccccccc' →
+// slug sufixado esperado 'joao-silva-cccccccc'.
+const TOCTOU_A = "1aaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // ocupa o slug-base 'joao-silva'
+const TOCTOU_B = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // dono SEM loja, slug colide
+const TOCTOU_C = "2ccccccc-cccc-cccc-cccc-cccccccccccc"; // pré-ocupa o slug sufixado de B
+
 const VERSAO_TERMOS = "2026-06-13"; // constante do servidor (injetada pelo app na cura)
 
 async function garantirDonos(t: TestDb): Promise<void> {
@@ -160,5 +169,90 @@ describe("065 — garantir_loja_do_dono (reconciliação de user órfão, fase R
 
     const c = await contarLojas(t, DONO_RACE);
     expect(c.rows[0].n).toBe(1); // exatamente 1 loja apesar da corrida
+  });
+
+  it("[068 TOCTOU] colisão de slug entre donos distintos → fn ainda retorna loja válida de B (não NULL)", async () => {
+    // DB isolado: não interferir no estado compartilhado dos casos da 065.
+    const u = await createTestDb();
+    try {
+      await u.db.query(
+        `insert into auth.users (id, email) values
+           ($1, 'joao.silva@a.local'),
+           ($2, 'joao.silva@b.local'),
+           ($3, 'ocupante@c.local')
+         on conflict (id) do nothing`,
+        [TOCTOU_A, TOCTOU_B, TOCTOU_C],
+      );
+
+      // Dono A cria sua loja → ocupa o slug-base 'joao-silva'.
+      const ra = await chamarRpc(u, TOCTOU_A, "joao.silva@a.local");
+      const slugA = await u.asService((db) =>
+        db.query<{ slug: string }>(
+          `select slug from public.lojas where dono_id = $1`,
+          [TOCTOU_A],
+        ),
+      );
+      expect(slugA.rows[0].slug).toBe("joao-silva");
+
+      // Pré-ocupa o slug SUFIXADO que B vai derivar ('joao-silva-cccccccc'),
+      // forçando o INSERT de B a violar o índice único de slug DEPOIS do EXISTS
+      // ter sufixado — exatamente a janela TOCTOU. Inserção direta via service.
+      await u.asService((db) =>
+        db.query(
+          `insert into public.lojas (
+             dono_id, nome, slug, ativo,
+             consentimento_em, consentimento_versao,
+             assinatura_status, assinatura_fim_periodo
+           ) values ($1, '', 'joao-silva-cccccccc', false, now(), $2, 'trial', now() + interval '14 days')`,
+          [TOCTOU_C, VERSAO_TERMOS],
+        ),
+      );
+
+      // Ação: cura de B. Slug-base 'joao-silva' já existe → fn sufixa para
+      // 'joao-silva-cccccccc', que TAMBÉM já existe → INSERT viola UNIQUE(slug)
+      // → cai no EXCEPTION WHEN unique_violation → re-SELECT por dono_id de B
+      // (que não tem loja) → v_id NULL. RED: contrato "nunca NULL" quebrado.
+      const rb = await chamarRpc(u, TOCTOU_B, "joao.silva@b.local");
+      const lojaIdB = rb.rows[0].loja_id;
+
+      // (1) Contrato central: B recebe uma loja válida, não NULL.
+      expect(lojaIdB).toBeTruthy();
+
+      // (2) Estado real: exatamente 1 loja para B, com id == retorno, slug
+      // válido pela regex do CHECK e DISTINTO do slug de A.
+      const lojaB = await u.asService((db) =>
+        db.query<{
+          id: string;
+          slug: string;
+          ativo: boolean;
+          assinatura_status: string;
+          consentimento_em: string | null;
+        }>(
+          `select id, slug, ativo, assinatura_status, consentimento_em
+             from public.lojas where dono_id = $1`,
+          [TOCTOU_B],
+        ),
+      );
+      expect(lojaB.rows).toHaveLength(1);
+      const lb = lojaB.rows[0];
+      expect(lb.id).toBe(lojaIdB);
+      expect(lb.slug).toMatch(/^[a-z0-9-]+$/);
+      expect(lb.slug).not.toBe("joao-silva"); // distinto do slug de A
+      // Contrato server-side intacto na loja curada de B.
+      expect(lb.ativo).toBe(false);
+      expect(lb.assinatura_status).toBe("trial");
+      expect(lb.consentimento_em).not.toBeNull();
+
+      // (3) Idempotência por dono_id preservada: 2ª chamada de B → mesmo id, ainda 1 loja.
+      const rb2 = await chamarRpc(u, TOCTOU_B, "joao.silva@b.local");
+      expect(rb2.rows[0].loja_id).toBe(lojaIdB);
+      const cb = await contarLojas(u, TOCTOU_B);
+      expect(cb.rows[0].n).toBe(1);
+
+      // Sanidade: a loja de A não foi afetada.
+      expect(ra.rows[0].loja_id).toBeTruthy();
+    } finally {
+      await u.close();
+    }
   });
 });
