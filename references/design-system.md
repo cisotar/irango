@@ -245,7 +245,7 @@ Raio único e consistente, alinhado ao default do shadcn (`--radius`). Vitrine e
 
 ### Tipografia (**proposta**)
 
-Escala tipográfica do Tailwind. Hierarquia clara: na vitrine, nome do produto e preço têm peso/tamanho que dominam a descrição; CTA legível em mobile.
+Escala tipográfica do Tailwind. Base rem = **19.2 px** (`html { font-size: 120% }` em `globals.css` — escala todos os tamanhos Tailwind uniformemente). Hierarquia clara: na vitrine, nome do produto e preço têm peso/tamanho que dominam a descrição; CTA legível em mobile.
 
 ### Responsividade (**proposta**)
 

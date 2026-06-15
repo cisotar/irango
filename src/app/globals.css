@@ -204,5 +204,6 @@ body {
   }
   html {
     @apply font-sans;
+    font-size: 120%; /* base rem = 19.2px (default 16px × 1.2) */
   }
 }
