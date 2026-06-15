@@ -2,33 +2,44 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
 
 /**
- * Fase RED (TDD) da issue 018 — Server Action `uploadFotoProduto`.
- * A action AINDA NÃO EXISTE (`src/lib/actions/upload.ts`), logo TODO o módulo
- * falha ao importar (MODULE NOT FOUND) ou, com stub, nas asserções. Esse é o RED.
- * A implementação (validar magic bytes, gerar uuid, escopar pasta) é da fase GREEN.
+ * Fase RED (TDD) da issue 075 — Server Action `enviarFotoProduto(formData)`.
  *
- * 4 cenários CRÍTICOS (critério de aceite + seguranca.md §13/§14):
- *  1. Upload de gif → REJEITADO no servidor por magic bytes (não basta a extensão
- *     /Content-Type do client: gif NÃO está nas ASSINATURAS reconhecidas).
- *  2. Arquivo > 2MB (TAMANHO_MAXIMO_BYTES) → REJEITADO por tamanho, SEM upload.
- *  3. Nome de saída é um UUID — NUNCA o nome original enviado pelo client
- *     (evita path traversal / colisão / vazamento de nome).
- *  4. Lojista NÃO escreve na pasta de outra loja: o `loja_id` do path é DERIVADO
- *     de buscarLojaDoDono (auth.uid()), nunca do payload do client. Payload com
- *     loja_id alheio é IGNORADO — o upload cai em produtos/{loja_do_dono}/...
+ * A action AINDA NÃO EXISTE com este nome/contrato em `src/lib/actions/upload.ts`
+ * (hoje há `uploadFotoProduto`, produtoId-based, que será REMOVIDA na fase GREEN).
+ * Logo o `import { enviarFotoProduto }` resolve para `undefined` e toda chamada
+ * `enviarFotoProduto(...)` lança `TypeError: ... is not a function`. Esse é o RED.
  *
- * Padrão de mocks: espelha produto.test.ts. O client raiz resolvido por
- * `await createClient()` NÃO é thenável; aqui o que importa é `.storage.from(
- * 'produtos').upload(path, file, opts)` — capturamos `path` e o conteúdo.
+ * Novo contrato (plano da issue 075):
+ *   export const CAMPO_ARQUIVO = "file";
+ *   export async function enviarFotoProduto(formData: FormData): Promise<ResultadoUpload>
+ *
+ * Invariantes de segurança provadas aqui (seguranca.md §13/§14/§18):
+ *  - loja_id é DERIVADO de buscarLojaDoDono (auth.uid()), NUNCA do payload —
+ *    um loja_id alheio no FormData é IGNORADO.
+ *  - dupla validação server-side: metadado (validarImagem 2MB/tipo) E conteúdo
+ *    real (validarMagicBytes) — Content-Type mentido / não-imagem é barrado, nada
+ *    é gravado.
+ *  - ext + contentType vêm do CONTEÚDO real (tipoRealPorConteudo), nunca do
+ *    declarado nem de file.name (Blob nem tem nome).
+ *  - path = `{loja_id}/{uuid}.{ext}`, SEM prefixo `produtos/` (1º segmento ===
+ *    loja.id — exigência da policy RLS `produtos_insert_propria`).
+ *  - erro de Storage → genérico, sem vazar e.message; console.error no servidor.
+ *  - exceção de infra (buscarLojaDoDono lança) PROPAGA — não vira ok:false mudo.
  */
 
 const LOJA_DONO = "11111111-1111-1111-1111-111111111111"; // loja do auth.uid()
 const LOJA_OUTRA = "22222222-2222-2222-2222-222222222222"; // loja de outro dono
-const PRODUTO_ID = "99999999-9999-9999-9999-999999999999";
 
 // Magic bytes reais (espelham ASSINATURAS de validarImagem.ts).
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+// WEBP (container RIFF): "RIFF" no offset 0 + "WEBP" no offset 8.
+const WEBP = new Uint8Array([
+  0x52, 0x49, 0x46, 0x46, // "RIFF"
+  0x00, 0x00, 0x00, 0x00, // tamanho (irrelevante)
+  0x57, 0x45, 0x42, 0x50, // "WEBP"
+  0x00, 0x00, 0x00, 0x00,
+]);
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x00, 0x00]); // "GIF89a" — NÃO reconhecido
 
 // Captura de cada upload ao Storage.
@@ -91,27 +102,36 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { uploadFotoProduto } from "./upload";
+import { enviarFotoProduto } from "./upload";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
   return { id: LOJA_DONO, dono_id: "dono-1", slug: "minha-loja", ativo: true };
 }
 
-/** Monta um File-like (a action lê arrayBuffer + size + type do File do form). */
-function arquivo(
+/** Cria um Blob com magic bytes e type, forçando size quando necessário. */
+function blob(
   bytes: Uint8Array,
-  over: { type?: string; name?: string; size?: number } = {},
-): File {
-  const f = new File([bytes as BlobPart], over.name ?? "foto-original.png", {
-    type: over.type ?? "image/png",
-  });
+  over: { type?: string; size?: number } = {},
+): Blob {
+  const b = new Blob([bytes as BlobPart], { type: over.type ?? "image/png" });
   if (over.size !== undefined) {
-    Object.defineProperty(f, "size", { value: over.size });
+    Object.defineProperty(b, "size", { value: over.size });
   }
+  return b;
+}
+
+/** FormData com o arquivo no campo `file` (CAMPO_ARQUIVO). */
+function fd(
+  arquivo: Blob,
+  extras: Record<string, string> = {},
+): FormData {
+  const f = new FormData();
+  f.append("file", arquivo);
+  for (const [k, v] of Object.entries(extras)) f.append(k, v);
   return f;
 }
 
-/** Op de upload na pasta de uma loja específica (prefixo produtos/{loja}/). */
+/** A primeira (e única) op de upload capturada, se houve. */
 function opEscrita(): UploadCall | undefined {
   return uploads[0];
 }
@@ -124,112 +144,102 @@ beforeEach(() => {
   buscarLojaDoDono.mockResolvedValue(lojaDoDono());
 });
 
-describe("uploadFotoProduto (Server Action — issue 018)", () => {
-  it("caminho feliz: PNG válido sobe e retorna foto_url pública", async () => {
-    const r = await uploadFotoProduto(PRODUTO_ID, arquivo(PNG));
+describe("enviarFotoProduto (Server Action — issue 075, FormData)", () => {
+  it("caso 1 — caminho feliz: WEBP válido sobe e retorna foto_url; service_role nunca usado", async () => {
+    const r = await enviarFotoProduto(fd(blob(WEBP, { type: "image/webp" })));
     expect(r.ok).toBe(true);
+    if (r.ok) expect(r.foto_url).toContain(LOJA_DONO);
     expect(opEscrita()).toBeDefined();
     expect(createClient).toHaveBeenCalledTimes(1);
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
-  it("CENÁRIO 1 — ATAQUE: gif é REJEITADO por magic bytes, SEM upload", async () => {
-    // Mesmo declarando image/png (Content-Type mentido), o conteúdo é GIF.
-    const r = await uploadFotoProduto(
-      PRODUTO_ID,
-      arquivo(GIF, { type: "image/png", name: "malicioso.png" }),
+  it("caso 2 — ATAQUE: GIF disfarçado de image/png é barrado por magic bytes, SEM upload", async () => {
+    const r = await enviarFotoProduto(
+      fd(blob(GIF, { type: "image/png" })),
     );
     expect(r.ok).toBe(false);
     expect(opEscrita()).toBeUndefined();
   });
 
-  it("CENÁRIO 2 — arquivo > 2MB é REJEITADO por tamanho, SEM upload", async () => {
-    const r = await uploadFotoProduto(
-      PRODUTO_ID,
-      arquivo(PNG, { size: 2 * 1024 * 1024 + 1 }),
+  it("caso 3 — arquivo > 2MB é REJEITADO por tamanho, SEM upload", async () => {
+    const r = await enviarFotoProduto(
+      fd(blob(PNG, { size: 2 * 1024 * 1024 + 1 })),
     );
     expect(r.ok).toBe(false);
     expect(opEscrita()).toBeUndefined();
   });
 
-  it("CENÁRIO 3 — nome de saída é UUID, NUNCA o nome original do client", async () => {
-    await uploadFotoProduto(
-      PRODUTO_ID,
-      arquivo(PNG, { name: "../../etc/passwd.png" }),
-    );
+  it("caso 4 — loja_id é DERIVADO do auth: path 1º segmento === loja.id, sem prefixo produtos/", async () => {
+    await enviarFotoProduto(fd(blob(PNG)));
+    expect(buscarLojaDoDono).toHaveBeenCalledWith(authClient);
     const path = opEscrita()?.path ?? "";
-    const nomeArquivo = path.split("/").pop() ?? "";
-    // Não contém o nome original nem fragmentos de path traversal.
-    expect(path).not.toContain("passwd");
+    expect(path.split("/")[0]).toBe(LOJA_DONO);
+    expect(path.startsWith("produtos/")).toBe(false);
+  });
+
+  it("caso 5 — ATAQUE: loja_id de OUTRA loja no FormData é IGNORADO", async () => {
+    await enviarFotoProduto(fd(blob(PNG), { loja_id: LOJA_OUTRA }));
+    const path = opEscrita()?.path ?? "";
+    expect(path).toContain(LOJA_DONO);
+    expect(path).not.toContain(LOJA_OUTRA);
+  });
+
+  it("caso 6 — dono sem loja (buscarLojaDoDono → null) → ok:false, SEM upload", async () => {
+    buscarLojaDoDono.mockResolvedValue(null);
+    const r = await enviarFotoProduto(fd(blob(PNG)));
+    expect(r.ok).toBe(false);
+    expect(opEscrita()).toBeUndefined();
+  });
+
+  it("caso 7 — FormData sem campo file → ok:false ('Imagem inválida.'), SEM upload", async () => {
+    const r = await enviarFotoProduto(new FormData());
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.erro).toBe("Imagem inválida.");
+    expect(opEscrita()).toBeUndefined();
+    // Nem chega a derivar loja / criar client de upload válido.
+    expect(opEscrita()).toBeUndefined();
+  });
+
+  it("caso 8 — campo file é string (não Blob) → ok:false, SEM upload", async () => {
+    const f = new FormData();
+    f.append("file", "texto-nao-e-arquivo");
+    const r = await enviarFotoProduto(f);
+    expect(r.ok).toBe(false);
+    expect(opEscrita()).toBeUndefined();
+  });
+
+  it("caso 9 — Blob vazio (size 0) → ok:false, SEM upload", async () => {
+    const r = await enviarFotoProduto(fd(blob(new Uint8Array(), { size: 0 })));
+    expect(r.ok).toBe(false);
+    expect(opEscrita()).toBeUndefined();
+  });
+
+  it("caso 10 — nome de saída é UUID, path tem 2 segmentos {loja_id}/{uuid}.{ext}, sem path traversal", async () => {
+    await enviarFotoProduto(fd(blob(PNG)));
+    const path = opEscrita()?.path ?? "";
     expect(path).not.toContain("..");
-    // O nome (sem extensão) bate com o formato UUID v4.
+    const partes = path.split("/");
+    expect(partes).toHaveLength(2);
+    expect(partes[0]).toBe(LOJA_DONO);
+    const nomeArquivo = partes[1] ?? "";
     const semExt = nomeArquivo.replace(/\.[a-z0-9]+$/i, "");
     expect(semExt).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
   });
 
-  it("CENÁRIO 4 — path é escopado na pasta da PRÓPRIA loja (derivada do auth)", async () => {
-    await uploadFotoProduto(PRODUTO_ID, arquivo(PNG));
-    expect(buscarLojaDoDono).toHaveBeenCalledWith(authClient);
-    // O 1º segmento do NOME do objeto (relativo ao bucket) é a loja_id — é o que
-    // a policy RLS `produtos_insert_propria` (foldername(name)[1]) exige. NÃO deve
-    // ser prefixado com "produtos/" (isso faria foldername[1] = "produtos" e a RLS
-    // recusaria todo upload).
-    expect((opEscrita()?.path ?? "").split("/")[0]).toBe(LOJA_DONO);
-  });
-
-  it("CENÁRIO 4 — ATAQUE: loja_id de OUTRA loja no payload é IGNORADO", async () => {
-    // Cliente tenta forçar a pasta de outra loja passando loja_id alheio.
-    await uploadFotoProduto(PRODUTO_ID, arquivo(PNG), { loja_id: LOJA_OUTRA });
-    const path = opEscrita()?.path ?? "";
-    expect(path).toContain(LOJA_DONO);
-    expect(path).not.toContain(LOJA_OUTRA);
-  });
-
-  it("ATAQUE: dono sem loja (buscarLojaDoDono → null) → erro, SEM upload", async () => {
-    buscarLojaDoDono.mockResolvedValue(null);
-    const r = await uploadFotoProduto(PRODUTO_ID, arquivo(PNG));
-    expect(r.ok).toBe(false);
-    expect(opEscrita()).toBeUndefined();
-  });
-
-  it("erro de Storage → genérico, sem vazar e.message", async () => {
-    uploadResposta = {
-      data: null,
-      error: { message: "bucket secret key XYZ", statusCode: "500" },
-    };
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const r = await uploadFotoProduto(PRODUTO_ID, arquivo(PNG));
-    expect(r.ok).toBe(false);
-    expect(JSON.stringify(r)).not.toContain("secret");
-    spy.mockRestore();
-  });
-
-  // ── Novos casos de cobertura ────────────────────────────────────────────────
-
-  it("MIME mentido (image/jpeg) + magic bytes de PNG → tipo real (PNG) prevalece no path e contentType", async () => {
-    // Cliente declara MIME jpeg mas o conteúdo tem magic bytes de PNG.
-    // O tipo REAL (derivado do conteúdo) deve prevalecer: extensão .png, contentType image/png.
-    const r = await uploadFotoProduto(
-      PRODUTO_ID,
-      arquivo(PNG, { type: "image/jpeg" }), // MIME declarado mentido
-    );
+  it("caso 11 — MIME mentido (image/jpeg) + bytes PNG → tipo real (PNG) prevalece: .png + contentType image/png", async () => {
+    const r = await enviarFotoProduto(fd(blob(PNG, { type: "image/jpeg" })));
     expect(r.ok).toBe(true);
     const op = opEscrita();
     expect(op).toBeDefined();
-    // Extensão do path deve refletir o tipo REAL (png), não o declarado (jpg).
     expect(op?.path).toMatch(/\.png$/);
-    // contentType enviado ao Storage deve ser o tipo REAL.
     expect(op?.opts?.contentType).toBe("image/png");
   });
 
-  it("MIME mentido (image/png) + magic bytes de JPEG → tipo real (JPEG) prevalece no path e contentType", async () => {
-    // Simétrico ao anterior: conteúdo é JPEG mas MIME declara PNG.
-    const r = await uploadFotoProduto(
-      PRODUTO_ID,
-      arquivo(JPEG, { type: "image/png" }),
-    );
+  it("caso 12 — simétrico: MIME mentido (image/png) + bytes JPEG → .jpg + contentType image/jpeg", async () => {
+    const r = await enviarFotoProduto(fd(blob(JPEG, { type: "image/png" })));
     expect(r.ok).toBe(true);
     const op = opEscrita();
     expect(op).toBeDefined();
@@ -237,40 +247,62 @@ describe("uploadFotoProduto (Server Action — issue 018)", () => {
     expect(op?.opts?.contentType).toBe("image/jpeg");
   });
 
-  it("buscarLojaDoDono lança exceção → action propaga o erro (não swallowa silenciosamente)", async () => {
-    // O código não tem try/catch em torno de buscarLojaDoDono.
-    // A promise deve rejeitar — não retornar ok:false silenciosamente, o que
-    // ocultaria falhas de infra como perda de conexão.
+  it("caso 13 — erro de Storage → ok:false genérico (não vaza e.message), console.error chamado", async () => {
+    uploadResposta = {
+      data: null,
+      error: { message: "bucket secret key XYZ", statusCode: "500" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await enviarFotoProduto(fd(blob(PNG)));
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toContain("secret");
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("caso 14 — buscarLojaDoDono lança → a promise PROPAGA o erro (não vira ok:false mudo), SEM upload", async () => {
     buscarLojaDoDono.mockRejectedValue(new Error("conexão perdida"));
-    await expect(uploadFotoProduto(PRODUTO_ID, arquivo(PNG))).rejects.toThrow(
+    await expect(enviarFotoProduto(fd(blob(PNG)))).rejects.toThrow(
       "conexão perdida",
     );
-    // O upload não deve ter ocorrido.
     expect(opEscrita()).toBeUndefined();
   });
 
-  it("getPublicUrl retorna publicUrl vazio → foto_url retornada é string vazia (comportamento atual documentado)", async () => {
-    // A implementação não valida se publicUrl está vazio antes de retornar ok:true.
-    // Este teste documenta o comportamento atual. Se o time corrigir para retornar
-    // ok:false quando publicUrl é vazio, altere o expect abaixo para ok:false.
-    publicUrlResposta = "";
-    const r = await uploadFotoProduto(PRODUTO_ID, arquivo(PNG));
-    // Comportamento atual: retorna ok:true com foto_url vazia (bug silencioso).
+  // Borda: limite exato de tamanho (2MB === TAMANHO_MAXIMO_BYTES).
+  // validarImagem usa `>` (não `>=`), então exatamente 2MB deve PASSAR.
+  // Pega regressão se o operador mudar de `>` para `>=`.
+  it("caso 15 — arquivo com size exatamente 2MB (no limite) é ACEITO, sobe normalmente", async () => {
+    const DOIS_MB = 2 * 1024 * 1024;
+    const r = await enviarFotoProduto(fd(blob(PNG, { size: DOIS_MB })));
     expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.foto_url).toBe("");
-    }
+    expect(opEscrita()).toBeDefined();
   });
 
-  it("produtoId NUNCA entra no path do Storage", async () => {
-    const produtoIdUnico = "produto-especial-nao-deve-aparecer-no-path";
-    await uploadFotoProduto(produtoIdUnico, arquivo(PNG));
-    const path = opEscrita()?.path ?? "";
-    expect(path).not.toContain(produtoIdUnico);
-    // Path relativo ao bucket deve ter 2 segmentos: loja_id / uuid.ext
-    // (o bucket é passado via storage.from(bucket), nunca no path)
-    const partes = path.split("/");
-    expect(partes).toHaveLength(2);
-    expect(partes[0]).toBe(LOJA_DONO);
+  // Caminho feliz para os outros dois MIME reais (além do WEBP do caso 1).
+  // Garante que ext + contentType corretos são produzidos para JPEG e PNG nativos
+  // (sem MIME mentido) — casos 11/12 cobrem cruzamento, não o caso direto.
+  it("caso 16 — caminho feliz JPEG nativo: .jpg + contentType image/jpeg na escrita", async () => {
+    const r = await enviarFotoProduto(fd(blob(JPEG, { type: "image/jpeg" })));
+    expect(r.ok).toBe(true);
+    const op = opEscrita();
+    expect(op?.path).toMatch(/\.jpg$/);
+    expect(op?.opts?.contentType).toBe("image/jpeg");
+  });
+
+  it("caso 17 — caminho feliz PNG nativo: .png + contentType image/png na escrita", async () => {
+    const r = await enviarFotoProduto(fd(blob(PNG, { type: "image/png" })));
+    expect(r.ok).toBe(true);
+    const op = opEscrita();
+    expect(op?.path).toMatch(/\.png$/);
+    expect(op?.opts?.contentType).toBe("image/png");
+  });
+
+  // getPublicUrl: a action retorna EXATAMENTE a URL produzida pelo Storage,
+  // sem transformar. Pega bug se a action processar ou ignorar o retorno.
+  it("caso 18 — foto_url retorna a URL exata de getPublicUrl, sem transformação", async () => {
+    publicUrlResposta = "https://cdn.supabase.io/storage/v1/object/public/produtos/loja/uuid.png";
+    const r = await enviarFotoProduto(fd(blob(PNG)));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.foto_url).toBe(publicUrlResposta);
   });
 });

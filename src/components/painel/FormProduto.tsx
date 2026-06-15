@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { schemaProduto } from "@/lib/validacoes/produto";
 import { criarProduto, atualizarProduto } from "@/lib/actions/produto";
+import { UploadFotoProduto } from "@/components/painel/UploadFotoProduto";
 
 export type Categoria = { id: string; nome: string };
 
@@ -21,6 +22,7 @@ export type ProdutoInicial = {
   preco?: number;
   categoria_id?: string | null;
   disponivel?: boolean;
+  foto_url?: string | null;
   /** Preservada no submit; não é campo editável pelo usuário neste form. */
   ordem?: number;
 };
@@ -31,6 +33,8 @@ export type FormProdutoProps = {
   inicial?: ProdutoInicial;
   /** Usado para o redirect de fallback quando não há `onSucesso`. */
   lojaSlug: string;
+  /** Contexto de UI; a propriedade da loja continua derivada no servidor. */
+  lojaId: string;
   onSucesso?: () => void;
 };
 
@@ -48,6 +52,7 @@ export function FormProduto({
   categorias,
   inicial,
   lojaSlug,
+  lojaId,
   onSucesso,
 }: FormProdutoProps) {
   const router = useRouter();
@@ -60,6 +65,9 @@ export function FormProduto({
   );
   const [categoriaId, setCategoriaId] = useState(inicial?.categoria_id ?? "");
   const [disponivel, setDisponivel] = useState(inicial?.disponivel ?? true);
+  const [fotoUrl, setFotoUrl] = useState<string | null>(
+    inicial?.foto_url ?? null,
+  );
 
   const [enviando, startEnvio] = useTransition();
 
@@ -73,6 +81,7 @@ export function FormProduto({
       preco: precoNumero,
       categoria_id: categoriaId ? categoriaId : null,
       disponivel,
+      foto_url: fotoUrl,
       ordem: inicial?.ordem ?? 0,
     };
   }
@@ -107,6 +116,8 @@ export function FormProduto({
       }
       // `lojaSlug` mantido na assinatura para futura navegação à vitrine.
       void lojaSlug;
+      // `lojaId` é contexto de UI; o upload deriva a loja do auth no servidor.
+      void lojaId;
     });
   }
 
@@ -129,6 +140,12 @@ export function FormProduto({
           minLength={2}
         />
       </div>
+
+      <UploadFotoProduto
+        urlAtual={fotoUrl}
+        onUploadConcluido={(url) => setFotoUrl(url || null)}
+        disabled={enviando}
+      />
 
       <div className="space-y-1">
         <Label htmlFor="produto-descricao">Descrição (opcional)</Label>

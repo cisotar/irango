@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
+// Issue 072: garante base de URL válida ANTES da avaliação de storage.ts (deriva
+// STORAGE_URL_PREFIX de NEXT_PUBLIC_SUPABASE_URL, indefinida no runner). vi.hoisted
+// roda antes dos imports ESM, então a constante é avaliada com a base correta.
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://projeto-teste.supabase.co";
+});
+import { STORAGE_URL_PREFIX } from "@/lib/validacoes/storage";
 
 /**
  * Fase RED (TDD) da issue 031 — CRUD de produtos e categorias do LOJISTA.
@@ -214,6 +221,29 @@ describe("criarProduto (Server Action — gestão do lojista)", () => {
     expect(opEscrita("produtos")).toBeUndefined();
   });
 
+  // foto_url (issue 072): flui via `...parsed.data` no insert. URL do Storage
+  // persiste; URL externa é barrada no schema ANTES de tocar o banco.
+  it("foto_url do Storage persiste no insert via parsed.data", async () => {
+    const fotoUrl = `${STORAGE_URL_PREFIX}produtos/${LOJA_DONO}/foto.png`;
+    const r = await criarProduto(payloadProduto({ foto_url: fotoUrl }));
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.insert?.foto_url).toBe(fotoUrl);
+  });
+
+  it('foto_url "" (form sem foto) persiste como null no insert', async () => {
+    const r = await criarProduto(payloadProduto({ foto_url: "" }));
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.insert?.foto_url).toBeNull();
+  });
+
+  it("ATAQUE: foto_url externa rejeitada SEM tocar no banco", async () => {
+    const r = await criarProduto(
+      payloadProduto({ foto_url: "https://evil.com/x.png" }),
+    );
+    expect(r.ok).toBe(false);
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
   it("erro de banco → genérico, sem vazar e.message", async () => {
     respostaPorTabela.produtos = {
       data: null,
@@ -249,6 +279,13 @@ describe("atualizarProduto (Server Action — gestão do lojista)", () => {
     const r = await atualizarProduto("produto-1", payloadProduto({ preco: -1 }));
     expect(r.ok).toBe(false);
     expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  // foto_url removida no form chega como "" → persiste null no update (072).
+  it('foto_url "" (remoção da foto) persiste como null no update', async () => {
+    const r = await atualizarProduto("produto-1", payloadProduto({ foto_url: "" }));
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update?.foto_url).toBeNull();
   });
 
   it("ATAQUE: trocar para categoria_id de OUTRA loja é rejeitado no update", async () => {

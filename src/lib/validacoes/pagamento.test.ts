@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 // RED: schemaFormaPagamento ainda NÃO existe na forma final — a fase GREEN
 // (executar) implementa src/lib/validacoes/pagamento.ts. Há apenas STUB TDD
 // (z.never()) para o type-check compilar e a falha cair por ASSERÇÃO.
@@ -18,7 +18,15 @@ import { describe, it, expect } from "vitest";
 // persistir. Uma chave pix malformada faria o comprador pagar pra ninguém.
 //
 // FORA DA RESPONSABILIDADE: unicidade/RLS no banco, geração de QR code.
-import { schemaFormaPagamento } from "./pagamento";
+//
+// Issue 072 (regressão): pagamento.ts foi refatorado para importar
+// STORAGE_URL_PREFIX e schemaStorageUrl de ./storage e re-exportar
+// STORAGE_URL_PREFIX. schemaPixQrUrl = schemaStorageUrl.optional().
+// Os testes abaixo garantem que o comportamento externo não mudou.
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://projeto-teste.supabase.co";
+});
+import { schemaFormaPagamento, schemaPixQrUrl, STORAGE_URL_PREFIX } from "./pagamento";
 
 // ---------------------------------------------------------------------------
 // pix — caminho feliz por tipo de chave
@@ -172,5 +180,72 @@ describe("schemaFormaPagamento — tipo (enum)", () => {
   it("rejeita tipo fora do enum ('boleto')", () => {
     const r = schemaFormaPagamento.safeParse({ tipo: "boleto", config: {} });
     expect(r.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// schemaPixQrUrl — regressão da refatoração 072
+//
+// pagamento.ts foi refatorado para importar schemaStorageUrl de ./storage e
+// definir: schemaPixQrUrl = schemaStorageUrl.optional(). Este bloco prova que
+// o contrato externo é idêntico ao anterior (aceita undefined, aceita URL do
+// Storage do iRango, rejeita URL externa / javascript:).
+//
+// O STORAGE_URL_PREFIX re-exportado por pagamento.ts é o mesmo que o de
+// storage.ts — testamos via importação de pagamento.ts (não de storage.ts)
+// para cobrir a re-exportação.
+// ---------------------------------------------------------------------------
+describe("schemaPixQrUrl — regressão refatoração 072", () => {
+  const urlQrValida = `${STORAGE_URL_PREFIX}pix-qr/loja-abc/qr.png`;
+
+  it("aceita undefined (campo opcional — pix sem QR code é permitido)", () => {
+    const r = schemaPixQrUrl.safeParse(undefined);
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita URL do Storage do iRango (caminho feliz com QR)", () => {
+    const r = schemaPixQrUrl.safeParse(urlQrValida);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data).toBe(urlQrValida);
+  });
+
+  it("ATAQUE: rejeita URL externa (comprador pagaria para servidor do atacante)", () => {
+    const r = schemaPixQrUrl.safeParse("https://evil.com/qr-falso.png");
+    expect(r.success).toBe(false);
+  });
+
+  it("ATAQUE: rejeita URL de outro projeto Supabase (host diferente)", () => {
+    const outroProjeto = `https://outro-projeto.supabase.co/storage/v1/object/public/pix-qr/qr.png`;
+    const r = schemaPixQrUrl.safeParse(outroProjeto);
+    expect(r.success).toBe(false);
+  });
+
+  it("ATAQUE: rejeita downgrade http:// (STORAGE_URL_PREFIX é https://)", () => {
+    const httpUrl = urlQrValida.replace("https://", "http://");
+    const r = schemaPixQrUrl.safeParse(httpUrl);
+    expect(r.success).toBe(false);
+  });
+
+  it("ATAQUE: rejeita javascript: (XSS — renderizado como <img src> no QR)", () => {
+    const r = schemaPixQrUrl.safeParse("javascript:alert(1)");
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita null (schemaPixQrUrl é .optional(), não .nullish())", () => {
+    // .optional() aceita undefined mas NÃO null. Se null chegar do form,
+    // deve ser normalizado antes (responsabilidade da borda). Esse teste
+    // documenta o contrato para evitar surpresa ao comparar com foto_url
+    // (que usa .nullish() e aceita null).
+    const r = schemaPixQrUrl.safeParse(null);
+    expect(r.success).toBe(false);
+  });
+
+  it("STORAGE_URL_PREFIX re-exportado por pagamento.ts é o mesmo que o de storage.ts", () => {
+    // Re-exportação mecânica em pagamento.ts. Se alguém quebrar o export
+    // (ex.: mover para constante local), esse teste detecta.
+    expect(STORAGE_URL_PREFIX).toBe(
+      process.env.NEXT_PUBLIC_SUPABASE_URL + "/storage/v1/object/public/",
+    );
+    expect(STORAGE_URL_PREFIX).toMatch(/^https:\/\/.+\/storage\/v1\/object\/public\/$/);
   });
 });

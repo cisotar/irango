@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { schemaStorageUrl } from "./storage";
 
 // Validação isomórfica (form + Server Action). Espelha as constraints do banco
 // (references/schema.md). Contrato documentado em produto.test.ts.
@@ -24,6 +25,15 @@ export const schemaProduto = z.object({
   categoria_id: z.guid().nullable().optional(),
   disponivel: z.boolean(),
   ordem: z.number().int().min(0),
+  // foto_url (issue 072): camada autoritativa anti-injeção de URL — renderizada
+  // como <Image src> na vitrine pública. `preprocess` normaliza "" (form sem
+  // foto) → null ANTES do parse (`.url()` rejeitaria ""); `.nullish()` aceita
+  // ausência/null. URL externa, `javascript:` e bucket alheio são barrados pelo
+  // refine de schemaStorageUrl. Tipo: `foto_url?: string | null | undefined`.
+  foto_url: z.preprocess(
+    (v) => (v === "" ? null : v),
+    schemaStorageUrl.nullish(),
+  ),
 });
 
 export const schemaCategoria = z.object({

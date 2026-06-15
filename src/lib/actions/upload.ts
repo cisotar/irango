@@ -17,10 +17,8 @@ import {
 } from "@/lib/utils/validarImagem";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
-
-export type ResultadoUpload =
-  | { ok: true; foto_url: string }
-  | { ok: false; erro: string };
+import { CAMPO_ARQUIVO } from "./upload-contrato";
+import type { ResultadoUpload } from "./upload-contrato";
 
 const BUCKET = "produtos";
 
@@ -71,16 +69,27 @@ function tipoRealPorConteudo(buffer: Uint8Array): string | null {
   return null;
 }
 
+// Nome do campo do arquivo no FormData — contrato compartilhado com o
+// componente que chama esta action (issue 076). Evita string mágica divergente
+// entre as duas pontas.
+
 /**
- * Sobe a foto de um produto para o Storage e devolve a URL pública.
- * `_extra` (ex.: loja_id) é ACEITO mas IGNORADO — a pasta vem sempre da loja do
- * dono autenticado, nunca do payload do client.
+ * Sobe a foto de um produto (já cropada/reduzida no client) para o Storage e
+ * devolve a URL pública. Recebe o arquivo via `FormData` no campo
+ * `CAMPO_ARQUIVO`. Qualquer `loja_id` que venha no FormData é IGNORADO — a pasta
+ * vem sempre da loja do dono autenticado, nunca do payload do client.
  */
-export async function uploadFotoProduto(
-  produtoId: string,
-  file: File,
-  _extra?: { loja_id?: string },
+export async function enviarFotoProduto(
+  formData: FormData,
 ): Promise<ResultadoUpload> {
+  // Extrai e valida o arquivo presente. File herda de Blob: aceitar `instanceof
+  // Blob` cobre tanto o Blob do cropper quanto o File de <input type=file>.
+  const value = formData.get(CAMPO_ARQUIVO);
+  if (!(value instanceof Blob) || value.size <= 0) {
+    return { ok: false, erro: "Imagem inválida." };
+  }
+  const file = value;
+
   const supabase = await createClient();
 
   // loja DERIVADA do auth (RLS) — payload do client é ignorado.
@@ -127,7 +136,7 @@ export async function uploadFotoProduto(
     .upload(path, buffer, { contentType: tipoReal });
 
   if (error) {
-    console.error("[uploadFotoProduto] falha no upload:", error);
+    console.error("[enviarFotoProduto] falha no upload:", error);
     return { ok: false, erro: "Não foi possível enviar a imagem." };
   }
 
