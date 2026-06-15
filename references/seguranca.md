@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.12 | **Atualizado:** 2026-06-15
+**Versão:** 0.2.13 | **Atualizado:** 2026-06-15
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -930,6 +930,19 @@ CREATE POLICY "storage_leitura_publica"
 UPDATE/DELETE seguem o mesmo padrão da pasta `{loja_id}/`.
 
 > **Armadilha:** o path passado ao `.upload(path, buffer)` deve ser **relativo ao bucket** — nunca incluir o nome do bucket como prefixo (ex.: `"produtos/loja_id/..."` quebraria a policy). Com prefixo incorreto, `(storage.foldername(name))[1]` retorna `"produtos"` em vez do `loja_id`, e a policy `storage_escrita_propria` falha silenciosamente — qualquer loja poderia gravar no bucket. Padrão correto: `"${loja.id}/${crypto.randomUUID()}.${ext}"` (loja_id derivado do auth no servidor, nunca do client).
+
+### Limites de bucket (defesa-em-profundidade)
+
+O bucket `produtos` tem `file_size_limit` e `allowed_mime_types` configurados diretamente em `storage.buckets` (migration 073):
+
+```sql
+UPDATE storage.buckets
+SET file_size_limit    = 2097152,                               -- 2 MB
+    allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp']
+WHERE id = 'produtos';
+```
+
+Isso é a **segunda camada** de defesa — o Storage rejeita antes mesmo de a Server Action rodar. A defesa primária (magic bytes + validação autoritativa) continua obrigatória na Server Action (ver §13), pois `allowed_mime_types` checa apenas o `Content-Type` declarado pelo cliente (spoofável). As duas camadas devem permanecer alinhadas: se o limite mudar, atualizar tanto a migration quanto `src/lib/utils/validarImagem.ts`.
 
 ---
 

@@ -28,6 +28,7 @@ import type { Produto } from "@/lib/supabase/queries/produtos";
 
 export type ProdutosClientProps = {
   lojaSlug: string;
+  lojaId: string;
   produtos: Produto[];
   categorias: Categoria[];
 };
@@ -68,6 +69,7 @@ function agruparPorCategoria(
 
 export function ProdutosClient({
   lojaSlug,
+  lojaId,
   produtos,
   categorias,
 }: ProdutosClientProps) {
@@ -241,6 +243,7 @@ export function ProdutosClient({
               key={emEdicao?.id ?? "novo"}
               categorias={categorias}
               lojaSlug={lojaSlug}
+              lojaId={lojaId}
               onSucesso={aoSalvar}
               inicial={
                 emEdicao
@@ -251,6 +254,7 @@ export function ProdutosClient({
                       preco: emEdicao.preco,
                       categoria_id: emEdicao.categoria_id,
                       disponivel: emEdicao.disponivel,
+                      foto_url: emEdicao.foto_url,
                       ordem: emEdicao.ordem,
                     }
                   : undefined

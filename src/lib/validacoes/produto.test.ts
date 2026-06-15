@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+// Issue 072 (RED): garante uma base de URL válida ANTES da avaliação do módulo
+// `storage.ts`, que deriva STORAGE_URL_PREFIX de NEXT_PUBLIC_SUPABASE_URL. No
+// runner vitest essa env não está definida; sem isto, o prefixo seria
+// "undefined/..." e o caso de URL válida do Storage falharia em z.url() por
+// motivo errado (env), mascarando o contrato real. vi.hoisted roda antes dos
+// imports ESM, então a constante do módulo é avaliada com a base correta.
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://projeto-teste.supabase.co";
+});
 import { schemaCategoria, schemaProduto } from "./produto";
+import { STORAGE_URL_PREFIX } from "./storage";
 
 // Contrato: validação isomórfica (form + Server Action). Espelha as constraints
 // do banco (references/schema.md):
@@ -109,6 +119,73 @@ describe("schemaProduto", () => {
   it("rejeita ordem não inteira", () => {
     const r = schemaProduto.safeParse({ ...produtoValido, ordem: 1.5 });
     expect(r.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// foto_url (issue 072) — camada autoritativa anti-injeção de URL.
+//
+// Contrato:
+//   - ausente/undefined  → válido (produto sem foto).
+//   - null               → válido.
+//   - "" (form sem foto) → válido E normalizado para null (preprocess "" → null);
+//                          a coluna nunca recebe "".
+//   - URL externa        → rejeitada (renderizada como <Image src> na vitrine).
+//   - "javascript:..."   → rejeitada.
+//   - URL do Storage do iRango (startsWith STORAGE_URL_PREFIX) → válida e preservada.
+//
+// STORAGE_URL_PREFIX é importado de ./storage (módulo neutro, decisão do plano):
+// o teste NÃO hardcoda o prefixo, monta a URL válida A PARTIR da constante real.
+// ---------------------------------------------------------------------------
+describe("schemaProduto — foto_url (anti-injeção de URL)", () => {
+  const urlStorageValida = `${STORAGE_URL_PREFIX}produtos/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.png`;
+
+  it("aceita produto sem foto_url (campo ausente)", () => {
+    const r = schemaProduto.safeParse(produtoValido);
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita foto_url undefined explícito e mantém undefined (não vira null)", () => {
+    // undefined → preprocess não transforma (só "" → null) → .nullish() aceita.
+    // data.foto_url permanece undefined: o spread no insert omite o campo,
+    // sem sobrescrever foto existente com null inadvertidamente.
+    const r = schemaProduto.safeParse({ ...produtoValido, foto_url: undefined });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.foto_url).toBeUndefined();
+  });
+
+  it("aceita foto_url null", () => {
+    const r = schemaProduto.safeParse({ ...produtoValido, foto_url: null });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.foto_url).toBeNull();
+  });
+
+  it('normaliza foto_url "" (form sem foto) para null', () => {
+    const r = schemaProduto.safeParse({ ...produtoValido, foto_url: "" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.foto_url).toBeNull();
+  });
+
+  it("rejeita foto_url externa (https://evil.com)", () => {
+    const r = schemaProduto.safeParse({
+      ...produtoValido,
+      foto_url: "https://evil.com/x.png",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita foto_url javascript: (XSS)", () => {
+    const r = schemaProduto.safeParse({
+      ...produtoValido,
+      foto_url: "javascript:alert(1)",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("aceita foto_url do Storage do iRango e preserva o valor", () => {
+    const r = schemaProduto.safeParse({ ...produtoValido, foto_url: urlStorageValida });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.foto_url).toBe(urlStorageValida);
   });
 });
 

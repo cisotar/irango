@@ -4,20 +4,14 @@
 // pagar pra ninguém. Validação server-side antes de persistir.
 // FORA daqui: unicidade/RLS no banco, geração de QR code.
 import { z } from "zod";
+import { STORAGE_URL_PREFIX, schemaStorageUrl } from "./storage";
 
-/** URL pública do Storage do iRango (bucket pix-qr). Aceita undefined/null (campo opcional). */
-export const STORAGE_URL_PREFIX =
-  process.env.NEXT_PUBLIC_SUPABASE_URL + "/storage/v1/object/public/";
+// STORAGE_URL_PREFIX vive em ./storage (módulo neutro, plano 072). Re-exportado
+// aqui para não quebrar quem o importa de pagamento.ts.
+export { STORAGE_URL_PREFIX };
 
-/** Valida que a URL pertence ao Storage do iRango (evita injeção de URL externa). */
-export const schemaPixQrUrl = z
-  .string()
-  .url()
-  .refine(
-    (url) => url.startsWith(STORAGE_URL_PREFIX),
-    "URL do QR deve pertencer ao Storage do iRango.",
-  )
-  .optional();
+/** Valida o QR do Pix como URL do Storage do iRango (campo opcional). */
+export const schemaPixQrUrl = schemaStorageUrl.optional();
 
 // Chave pix validada conforme o tipo_chave (discriminada dentro do config pix).
 const schemaChavePix = z.discriminatedUnion("tipo_chave", [
