@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Rate limit (issue 052): `entrar` chama verificarRateLimit no topo via
+// `await headers()`. rateLimit.ts é server-only (quebra no vitest) → mockamos
+// para fail-open (permitido:true), e next/headers para não exigir request scope.
+// O comportamento da trava é coberto em src/lib/utils/rateLimit.test.ts.
+vi.mock("next/headers", () => ({ headers: () => new Headers() }));
+vi.mock("@/lib/utils/rateLimit", () => ({
+  extrairIp: () => "203.0.113.7",
+  verificarRateLimit: vi.fn(async () => ({ permitido: true })),
+}));
+
 /**
  * Fase RED (TDD) da issue 015 — Server Actions `cadastrar` / `entrar`
  * (orquestração, sem rede). Mock de TODO I/O externo: Supabase Auth
@@ -56,6 +66,7 @@ vi.mock("@/lib/assinatura/reconciliar", () => ({
   reconciliarAssinatura: (...a: unknown[]) => reconciliarAssinatura(...a),
 }));
 
+import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { cadastrar, entrar } from "./auth";
 
 const PAYLOAD_OK = { email: "joao@teste.com", senha: "senha1234", aceiteTermos: true as const };
@@ -218,6 +229,24 @@ describe("cadastrar — reconciliação de assinatura (059/066)", () => {
     const r = await cadastrar(PAYLOAD_OK);
     expect(r).toEqual({ ok: true });
     expect(reconciliarAssinatura).not.toHaveBeenCalled();
+  });
+});
+
+// ── Borda 3 (issue 052): mensagem genérica quando rate limit bloqueia ──────────
+// Prova que quando o guard dispara (permitido:false) a action retorna a mensagem
+// correta e genérica — sem revelar estado interno, sem chamar signIn/signUp.
+describe("entrar — rate limit bloqueado (issue 052)", () => {
+  it("IP bloqueado → { ok:false, erro:'Muitas tentativas...' } SEM chamar signInWithPassword", async () => {
+    vi.mocked(rateLimitMod.verificarRateLimit).mockResolvedValueOnce({ permitido: false });
+
+    const r = await entrar({ email: "joao@teste.com", senha: "senha1234" });
+
+    expect(r).toEqual({
+      ok: false,
+      erro: "Muitas tentativas. Tente novamente em alguns instantes.",
+    });
+    // O guard deve parar ANTES do signIn — nenhuma credencial foi conferida no Supabase.
+    expect(signInWithPassword).not.toHaveBeenCalled();
   });
 });
 

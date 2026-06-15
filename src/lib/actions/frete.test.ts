@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 
+// Rate limit (issue 052): a action chama verificarRateLimit no topo via
+// `await headers()`. rateLimit.ts é server-only (quebra no vitest) → mockamos
+// para fail-open (permitido:true), e next/headers para não exigir request scope.
+// O comportamento da trava é coberto em src/lib/utils/rateLimit.test.ts.
+vi.mock("next/headers", () => ({ headers: () => new Headers() }));
+vi.mock("@/lib/utils/rateLimit", () => ({
+  extrairIp: () => "203.0.113.7",
+  verificarRateLimit: vi.fn(async () => ({ permitido: true })),
+}));
+
 /**
  * Fase RED (TDD) da issue 072 — Server Action PÚBLICA `calcularFreteAction`
  * (PREVIEW de frete na Etapa 2 do checkout). A action ainda NÃO existe
@@ -62,6 +72,7 @@ vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
   reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
 }));
 
+import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { calcularFreteAction } from "./frete";
 
 // Zona tipo 'bairro' que cobre "Centro" com taxa 7.50.
@@ -91,6 +102,22 @@ beforeEach(() => {
   reconciliarBairroCep.mockResolvedValue({
     bairroCanonico: "Centro",
     reconciliado: true,
+  });
+});
+
+// ── Borda (issue 052): mensagem quando rate limit bloqueia ───────────────────
+// calcularFreteAction retorna { ok:false } genérico quando bloqueado — sem
+// revelar que o motivo foi rate limit (seguranca.md §14). Banco não é tocado.
+describe("calcularFreteAction — rate limit bloqueado (issue 052)", () => {
+  it("IP bloqueado → { ok:false } SEM consultar zonas ou loja", async () => {
+    vi.mocked(rateLimitMod.verificarRateLimit).mockResolvedValueOnce({ permitido: false });
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
+
+    expect(r.ok).toBe(false);
+    // Nenhuma query de banco foi disparada — o guard parou antes de qualquer I/O.
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(buscarLojaPublicaPorId).not.toHaveBeenCalled();
   });
 });
 

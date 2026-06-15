@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
 
+// Rate limit (issue 052): a action chama verificarRateLimit no topo via
+// `await headers()`. rateLimit.ts é server-only (quebra no vitest) → mockamos
+// para fail-open (permitido:true), e next/headers para não exigir request scope.
+// O comportamento da trava é coberto em src/lib/utils/rateLimit.test.ts.
+vi.mock("next/headers", () => ({ headers: () => new Headers() }));
+vi.mock("@/lib/utils/rateLimit", () => ({
+  extrairIp: () => "203.0.113.7",
+  verificarRateLimit: vi.fn(async () => ({ permitido: true })),
+}));
+
 /**
  * Fase RED (TDD) da issue 014 — Server Action `criarPedido` (camada 2:
  * unidade/orquestração com mocks de I/O). A action ainda é um STUB
@@ -72,6 +82,7 @@ vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
   reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
 }));
 
+import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { criarPedido } from "./pedido";
 
 // ─────────────────────────── fixtures
@@ -838,6 +849,32 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     cenarioFeliz();
     const r = await criarPedido(payloadBase({ idempotency_key: "nao-e-uuid" }));
     expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+});
+
+// ── Borda (issue 052): mensagem genérica quando rate limit bloqueia criarPedido ─
+// criarPedido é a action mais crítica financeiramente. Prova que quando o guard
+// dispara (permitido:false) o erro retornado é genérico e nenhum I/O de banco
+// ocorre — o atacante não ganha informação nem consome recursos.
+describe("criarPedido — rate limit bloqueado (issue 052)", () => {
+  it("IP bloqueado → { erro:'Muitas tentativas...' } SEM consultar loja, produto ou RPC", async () => {
+    vi.mocked(rateLimitMod.verificarRateLimit).mockResolvedValueOnce({ permitido: false });
+
+    const r = await criarPedido({
+      loja_id: LOJA_A,
+      itens: [{ produto_id: PROD_1, quantidade: 1 }],
+      nome_cliente: "Atacante",
+      forma_pagamento: "pix",
+      tipo_entrega: "retirada",
+    });
+
+    expect(r).toEqual({
+      erro: "Muitas tentativas. Tente novamente em alguns instantes.",
+    });
+    // Nenhum I/O deve ocorrer quando o guard bloqueia.
+    expect(buscarLojaParaPedido).not.toHaveBeenCalled();
+    expect(buscarProdutosPorIds).not.toHaveBeenCalled();
     expect(fakeClient.rpc).not.toHaveBeenCalled();
   });
 });

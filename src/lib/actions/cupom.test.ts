@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
 
+// Rate limit (issue 052): validarCupom chama verificarRateLimit no topo via
+// `await headers()`. rateLimit.ts é server-only (quebra no vitest) → mockamos
+// para fail-open (permitido:true), e next/headers para não exigir request scope.
+// O comportamento da trava é coberto em src/lib/utils/rateLimit.test.ts.
+vi.mock("next/headers", () => ({ headers: () => new Headers() }));
+vi.mock("@/lib/utils/rateLimit", () => ({
+  extrairIp: () => "203.0.113.7",
+  verificarRateLimit: vi.fn(async () => ({ permitido: true })),
+}));
+
 // --- Mocks de I/O externo (não testamos o banco aqui, e sim a ORQUESTRAÇÃO) ---
 // service.ts é `server-only`: importá-lo num teste Vitest quebra. Mockamos.
 const fakeClient = { __fake: "service-client" };
@@ -15,6 +25,7 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
 }));
 
 // 'use server' é só uma diretiva; importável em teste node.
+import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { validarCupom } from "./cupom";
 
 // Cupom percentual 10%, ativo, ilimitado, sem mínimo, sem expiração.
@@ -40,6 +51,22 @@ const LOJA_B = "22222222-2222-2222-2222-222222222222";
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+// ── Borda (issue 052): mensagem quando rate limit bloqueia ───────────────────
+// validarCupom usa motivo "invalido" quando bloqueado (anti-enumeração: §14 —
+// não expõe um shape novo que permita ao cliente distinguir "bloqueado" de
+// "cupom errado"). Prova também que o banco não é tocado quando bloqueado.
+describe("validarCupom — rate limit bloqueado (issue 052)", () => {
+  it("IP bloqueado → { valido:false, motivo:'invalido' } SEM tocar no banco", async () => {
+    vi.mocked(rateLimitMod.verificarRateLimit).mockResolvedValueOnce({ permitido: false });
+
+    const r = await validarCupom({ lojaId: LOJA_A, codigo: "PROMO10", subtotal: 5000 });
+
+    expect(r).toEqual({ valido: false, motivo: "invalido" });
+    // O banco não foi consultado — o guard parou antes de qualquer I/O.
+    expect(buscarCupomPorCodigo).not.toHaveBeenCalled();
+  });
 });
 
 describe("validarCupom (Server Action — orquestração)", () => {

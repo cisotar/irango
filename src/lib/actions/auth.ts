@@ -11,9 +11,13 @@
 // D9: confirmação de email é config do painel Supabase (seguranca.md §17); a
 //     loja nasce com `ativo` no default. Gate de email confirmado, se houver,
 //     é no painel/middleware — não aqui.
-// D6: rate limit (login ~5/min por IP) é da issue 052 — não vive nesta action.
+// D6: rate limit de login (~5/min por IP) — issue 052. Guard no topo de `entrar`,
+//     IP lido de headers() server-side (não forjável pelo payload). Escopo: só
+//     login (não `cadastrar`), conforme a issue.
 
+import { headers } from "next/headers";
 import { schemaCadastro, schemaLogin } from "@/lib/validacoes/auth";
+import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { sanitizarSlug } from "@/lib/validacoes/loja";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -125,6 +129,13 @@ export async function cadastrar(payload: unknown): Promise<ResultadoCadastro> {
 }
 
 export async function entrar(payload: unknown): Promise<ResultadoLogin> {
+  // Rate limit por IP ANTES do safeParse: payload malformado em loop (brute force)
+  // também conta na trava. Excedeu → mesma mensagem genérica do login (§14).
+  const ip = extrairIp(await headers());
+  if (!(await verificarRateLimit("login", ip)).permitido) {
+    return { ok: false, erro: "Muitas tentativas. Tente novamente em alguns instantes." };
+  }
+
   const parsed = schemaLogin.safeParse(payload);
   if (!parsed.success) {
     // D5: erro genérico — não revela se o email existe nem a política de senha.

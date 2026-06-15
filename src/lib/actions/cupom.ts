@@ -8,8 +8,11 @@
 //
 // D4: loja inativa NÃO é barrada aqui (preview) — é barrada na RLS de INSERT de
 //     pedido (014, public.loja_esta_ativa).
-// D6: rate limit ~20/min por IP — issue 052 (seguranca.md §12). Não nesta action.
+// D6: rate limit ~20/min por IP — issue 052 (seguranca.md §12). Guard no topo de
+//     `validarCupom`, IP de headers() server-side.
 
+import { headers } from "next/headers";
+import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { validarCupomInput } from "@/lib/validacoes/cupomUso";
 import type { EntradaValidarCupom } from "@/lib/validacoes/cupomUso";
 import {
@@ -133,6 +136,13 @@ export async function removerCupom(
 export async function validarCupom(
   entrada: EntradaValidarCupom,
 ): Promise<ResultadoValidacaoCupom> {
+  // 0) Rate limit ~20/min por IP (issue 052). Excedeu → mesmo "invalido" das
+  //    demais falhas (anti-enumeração, sem shape novo; §14).
+  const ip = extrairIp(await headers());
+  if (!(await verificarRateLimit("validarCupom", ip)).permitido) {
+    return { valido: false, motivo: "invalido" };
+  }
+
   // 1) Valida e normaliza o input ANTES de tocar no banco. Input lixo
   //    (UUID malformado, subtotal NaN/negativo) sai como "invalido" sem I/O.
   const parsed = validarCupomInput.safeParse(entrada);
