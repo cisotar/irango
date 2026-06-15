@@ -919,8 +919,9 @@ O iRango coleta dado pessoal de cliente final (nome, telefone, endereço de entr
 | **Base legal** | execução de pedido (legítimo interesse / execução de contrato) |
 | **Minimização** | coletar só o necessário pra entregar — sem CPF, sem data de nascimento na v1 |
 | **Retenção** | definir prazo de expurgo de pedidos antigos (ex.: anonimizar dados de cliente após N meses) |
-| **Exclusão** | lojista pode excluir pedido; cliente pode solicitar remoção (canal a definir) |
-| **Política de privacidade** | página pública obrigatória antes do primeiro cliente real |
+| **Exclusão / portabilidade** | cliente solicita via `privacidade@irango.com.br` (atendimento manual v1); automação é follow-up |
+| **Política de privacidade** | `/privacidade` — SSG, issue 062, conteúdo placeholder — revisar com jurídico antes de operar |
+| **Termos de uso** | `/termos` — SSG, issue 062, conteúdo placeholder — revisar com jurídico antes de operar |
 | **Dados do lojista** | email/telefone do lojista também são pessoais — mesmas regras |
 
-Pendência: redigir política de privacidade e termo de uso antes de operar comercialmente.
+Páginas `/privacidade` e `/termos` implementadas (issue 062) como conteúdo estático. Conteúdo é placeholder — revisão jurídica obrigatória antes de operar comercialmente.
