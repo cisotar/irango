@@ -89,7 +89,6 @@ import { criarPedido } from "./pedido";
 const LOJA_A = "11111111-1111-1111-1111-111111111111";
 const LOJA_B = "22222222-2222-2222-2222-222222222222";
 const PROD_1 = "aaaaaaaa-0000-0000-0000-000000000001"; // R$ 25,00 na loja A
-const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000002"; // R$ 10,00 na loja A
 const PROD_B = "bbbbbbbb-0000-0000-0000-000000000001"; // produto da loja B
 const CUPOM_ID = "cccccccc-0000-0000-0000-000000000001";
 // [085] opcionais — fixtures

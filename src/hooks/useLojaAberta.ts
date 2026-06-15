@@ -36,6 +36,6 @@ export function useLojaAberta(horarios: Horarios, timezone: string): UseLojaAber
     return () => clearInterval(id);
   }, []);
 
-  // Recalcula em mudança de props OU a cada tick (avaliar lê new Date()).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- tick força recálculo a cada segundo (avaliar lê new Date())
   return useMemo(() => avaliar(horarios, timezone), [horarios, timezone, tick]);
 }

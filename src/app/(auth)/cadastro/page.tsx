@@ -46,6 +46,7 @@ export default function CadastroPage() {
     defaultValues: { email: "", senha: "", aceiteTermos: false },
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- react-hook-form watch() é necessário para re-render condicional do checkbox
   const aceiteTermos = watch("aceiteTermos");
 
   async function onSubmit(valores: FormCadastro) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { Minus, Plus, X } from "lucide-react";
 
@@ -67,14 +67,6 @@ export function ProdutoModal({
   const [quantidade, setQuantidade] = useState(1);
   // Quantidade escolhida por opcional: opcionalId → qtd (0 = não escolhido).
   const [qtdOpcionais, setQtdOpcionais] = useState<Record<string, number>>({});
-
-  // Reseta para 1 e zera opcionais sempre que o modal abre (ou troca de produto).
-  useEffect(() => {
-    if (open) {
-      setQuantidade(1);
-      setQtdOpcionais({});
-    }
-  }, [open, produto?.id]);
 
   if (!produto) return null;
 

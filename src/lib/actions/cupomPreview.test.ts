@@ -191,7 +191,7 @@ describe("validarCupomAction (073 — preview wizard)", () => {
     // buscarCupomPorCodigo escopado por LOJA_A não encontra cupom da loja B → null.
     // Código sem underscore para passar no regex [A-Z0-9]+ do schema.
     buscarCupomPorCodigo.mockResolvedValue(null);
-    const r = await validarCupomAction(LOJA_A, "CUPOMLOJAБ", 9999);
+    await validarCupomAction(LOJA_A, "CUPOMLOJAБ", 9999);
     // Código com "Б" (cirílico) → Zod rejeita → banco não é chamado.
     // Usar código alfanumérico ASCII válido:
     buscarCupomPorCodigo.mockResolvedValue(null);
