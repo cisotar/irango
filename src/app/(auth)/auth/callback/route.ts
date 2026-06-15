@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { reconciliarPosConfirmacao } from "@/lib/auth/reconciliarPosConfirmacao";
 
 /**
  * Callback OAuth / confirmação de email (padrão `@supabase/ssr`).
@@ -16,11 +17,17 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     console.error("[authCallback]", error);
     return NextResponse.redirect(`${origin}/login?erro=auth`);
+  }
+
+  // Issue 066: posse do email comprovada agora → reconcilia assinatura órfã (059).
+  // BEST-EFFORT: o helper já engole toda falha; não derruba o redirect.
+  if (data.user) {
+    await reconciliarPosConfirmacao(data.user);
   }
 
   return NextResponse.redirect(`${origin}${next ?? "/painel"}`);
