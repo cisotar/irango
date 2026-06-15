@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 // §11 references/seguranca.md — defesa contra clickjacking, MIME sniffing, injeção.
 const securityHeaders = [
@@ -42,4 +43,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Upload de source maps só quando há SENTRY_AUTH_TOKEN (build de produção/CI).
+// Sem token (dev local) o plugin fica silencioso e o build não quebra (issue 061).
+const temAuthToken = !!process.env.SENTRY_AUTH_TOKEN;
+
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  // Sem token: não tenta subir source maps (evita falha de build em dev).
+  sourcemaps: { disable: !temAuthToken },
+  silent: !temAuthToken,
+  // Não falhar o build por erro de telemetria/upload do Sentry.
+  telemetry: false,
+  widenClientFileUpload: true,
+});
