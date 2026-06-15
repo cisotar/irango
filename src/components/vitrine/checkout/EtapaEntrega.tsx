@@ -60,8 +60,10 @@ export function EtapaEntrega({
 }: EtapaEntregaProps) {
   const [frete, setFrete] = useState<EstadoFrete>({ status: "ocioso" });
   const [calculando, startCalculo] = useTransition();
-  // Evita recalcular para o mesmo bairro repetidamente.
-  const ultimoBairro = useRef<string | null>(null);
+  // (067) Dedupe por chave composta `cep|bairro`: o CEP reconcilia o bairro
+  // canônico e casa zonas tipo='faixa_cep', então recalcular quando SÓ o CEP
+  // muda (mesmo bairro autocompletado) é necessário p/ paridade com a cobrança.
+  const ultimaChave = useRef<string | null>(null);
 
   const ehEntrega = tipoEntrega === "entrega";
 
@@ -72,24 +74,32 @@ export function EtapaEntrega({
   useEffect(() => {
     if (!ehEntrega) {
       // Retirada: frete preview = 0, sempre.
-      ultimoBairro.current = null;
+      ultimaChave.current = null;
       setFrete({ status: "ocioso" });
       onFreteChange(0);
       return;
     }
     const bairro = endereco?.bairro?.trim();
+    const cep = endereco?.cep?.trim();
     if (!bairro) {
-      ultimoBairro.current = null;
+      ultimaChave.current = null;
       setFrete({ status: "ocioso" });
       onFreteChange(0);
       return;
     }
-    if (bairro === ultimoBairro.current) return;
-    ultimoBairro.current = bairro;
+    const chave = `${cep ?? ""}|${bairro}`;
+    if (chave === ultimaChave.current) return;
+    ultimaChave.current = chave;
 
     startCalculo(async () => {
       setFrete({ status: "calculando" });
-      const r = await calcularFreteAction({ loja_id: lojaId, bairro });
+      // Passa o CEP p/ reconciliação CEP↔bairro (paridade 064/067). Server
+      // recalcula do banco — nenhum valor monetário vem do cliente.
+      const r = await calcularFreteAction({
+        loja_id: lojaId,
+        bairro,
+        ...(cep ? { cep } : {}),
+      });
       if (!r.ok) {
         setFrete({ status: "erro", mensagem: r.erro });
         onFreteChange(0);
@@ -105,7 +115,7 @@ export function EtapaEntrega({
       setFrete({ status: "ok", taxa: r.taxa_preview, zonaNome: rotulo });
       onFreteChange(r.taxa_preview);
     });
-  }, [ehEntrega, endereco?.bairro, lojaId, onFreteChange]);
+  }, [ehEntrega, endereco?.bairro, endereco?.cep, lojaId, onFreteChange]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const fretePreview = frete.status === "ok" ? frete.taxa : 0;

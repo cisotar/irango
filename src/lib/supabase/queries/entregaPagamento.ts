@@ -37,7 +37,7 @@ export async function listarZonasComTaxas(
   const { data, error } = await client
     .from("zonas_entrega")
     .select(
-      "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km), bairros:bairros_zona(nome)",
+      "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km, cep_inicio, cep_fim), bairros:bairros_zona(nome)",
     )
     .eq("loja_id", lojaId);
   if (error) throw error;

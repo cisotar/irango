@@ -3,11 +3,14 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import {
   buscarLojaDoDono,
+  garantirLojaDoDono,
   type LojaCompleta,
 } from "@/lib/supabase/queries/lojas";
 import { decidirAcessoPainel } from "@/lib/utils/acessoPainel";
+import { VERSAO_TERMOS } from "@/lib/constants/termos";
 import { SidebarPainel, TopbarPainel } from "@/components/painel/NavPainel";
 
 /**
@@ -44,8 +47,27 @@ export default async function PainelLayout({
       redirect("/login");
     case "confirmar-email":
       redirect("/confirmar-email");
-    case "onboarding":
-      redirect("/painel/onboarding");
+    case "onboarding": {
+      // User órfão (sessão + email OK, sem loja): em vez de mandar para uma tela
+      // de onboarding inexistente, AUTO-CURA — cria a loja via service_role e
+      // recarrega o painel. `decidirAcessoPainel` só devolve "onboarding" quando
+      // `user` é não-nulo e tem email confirmado, então o `!` é seguro aqui.
+      // `user.id`/`user.email` são AUTORITATIVOS (getUser server-side), nunca do
+      // browser; a versão dos termos é a constante do servidor. Fail-closed: se a
+      // cura falhar, cai no catch → login (nunca renderiza painel sem loja).
+      try {
+        await garantirLojaDoDono(
+          createServiceClient(),
+          user!.id,
+          user!.email ?? "",
+          VERSAO_TERMOS,
+        );
+      } catch (e) {
+        console.error("[guardPainel] auto-cura loja órfã falhou", e);
+        redirect("/login?erro=sessao");
+      }
+      redirect("/painel");
+    }
     case "assinatura-bloqueada":
       redirect("/painel/assinatura-bloqueada");
     case "ok":

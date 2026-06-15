@@ -145,6 +145,28 @@ export async function contarLojasDoDono(client: Client, donoId: string): Promise
 }
 
 /**
+ * Loja de um dono por `dono_id` (issue 066). Vínculo canônico dono↔loja — usado
+ * na reconciliação pós-confirmação de email, resolvendo a loja pelo `user.id`
+ * AUTENTICADO, NUNCA por email (que seria input não-canônico).
+ *
+ * Exige client **service_role**: roda no callback de confirmação, onde a RLS
+ * (`auth.uid() = dono_id`) pode não enxergar a sessão de forma síncrona. Dono sem
+ * loja → `null`. Propaga o `error` do PostgREST (seguranca.md §14).
+ */
+export async function buscarLojaPorDono(
+  client: Client,
+  donoId: string,
+): Promise<{ id: string } | null> {
+  const { data, error } = await client
+    .from("lojas")
+    .select("id")
+    .eq("dono_id", donoId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
  * INSERT autoritativo de loja no cadastro (issue 015). Encapsula a escrita
  * (NUNCA `.from('lojas').insert` inline — DRY de queries, architecture.md §8).
  *
@@ -162,6 +184,33 @@ export async function criarLoja(
   dados: TablesInsert<"lojas">,
 ): Promise<LojaCompleta> {
   const { data, error } = await client.from("lojas").insert(dados).select("*").single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Auto-cura de user órfão (issue 065): garante que o dono autenticado tenha loja,
+ * via a função SQL `garantir_loja_do_dono` (SECURITY DEFINER, fonte ÚNICA de "como
+ * nasce uma loja" — trial + consentimento + ativo=false decididos server-side).
+ *
+ * IDEMPOTENTE (RN-01): se a loja já existe, devolve o id existente sem criar nada;
+ * em corrida, o índice único lojas(dono_id) garante exatamente 1 loja.
+ *
+ * Exige client **service_role**: a função é REVOKE de anon/authenticated e só
+ * GRANT a service_role. `donoId` é o `user.id` AUTENTICADO (getUser server-side),
+ * nunca input do browser; `versaoTermos` é a constante do servidor.
+ */
+export async function garantirLojaDoDono(
+  client: Client,
+  donoId: string,
+  email: string,
+  versaoTermos: string,
+): Promise<string> {
+  const { data, error } = await client.rpc("garantir_loja_do_dono", {
+    p_dono_id: donoId,
+    p_email: email,
+    p_versao_termos: versaoTermos,
+  });
   if (error) throw error;
   return data;
 }

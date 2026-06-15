@@ -18,7 +18,6 @@ import { sanitizarSlug } from "@/lib/validacoes/loja";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { contarLojasDoDono, slugExiste, criarLoja } from "@/lib/supabase/queries/lojas";
-import { reconciliarAssinatura } from "@/lib/assinatura/reconciliar";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
 
 export type ResultadoCadastro = { ok: true } | { ok: false; erro: string };
@@ -84,7 +83,7 @@ export async function cadastrar(payload: unknown): Promise<ResultadoCadastro> {
     const agora = new Date().toISOString();
     const fimTrial = new Date(Date.now() + TRIAL_DIAS * 24 * 60 * 60 * 1000).toISOString();
 
-    const loja = await criarLoja(svc, {
+    await criarLoja(svc, {
       dono_id: userId, // do retorno do signUp
       nome: "", // nasce vazio
       slug,
@@ -98,23 +97,11 @@ export async function cadastrar(payload: unknown): Promise<ResultadoCadastro> {
       assinatura_fim_periodo: fimTrial, // now + 14d
     });
 
-    // Issue 059: comprou na Hotmart ANTES de ter conta → o webhook gravou eventos
-    // órfãos (loja_id NULL) com este email. Vincula-os à loja e aplica o estado
-    // real. BEST-EFFORT: falha aqui NÃO derruba o cadastro (loja já existe, em
-    // trial vigente). `email` é o autenticado (RN-A1) — vínculo não-forjável.
-    //
-    // GATE (auditoria 059, FIX 2 ALTA): só reconcilia com POSSE do email
-    // comprovada (`email_confirmed_at` setado). Sem isso, um atacante cadastra com
-    // o email EXATO da vítima e rouba a assinatura órfã dela antes de provar posse.
-    // Com "Confirm email" ON no Supabase, `email_confirmed_at` é null aqui → a
-    // reconciliação migra para o callback de confirmação (task 066).
-    if (data.user.email_confirmed_at) {
-      try {
-        await reconciliarAssinatura(svc, email, loja.id);
-      } catch (e) {
-        console.error("[cadastrar] reconciliacao falhou (best-effort)", e);
-      }
-    }
+    // Issue 066: a reconciliação de assinatura órfã (059) NÃO roda mais aqui. Com
+    // "Confirm email" ON no Supabase, `email_confirmed_at` é sempre null no signUp,
+    // então a posse do email só vira verdade na confirmação. O gatilho migrou para
+    // o callback de confirmação (`reconciliarPosConfirmacao`), onde o email da
+    // sessão é autenticado (RN-A1) e a posse está comprovada.
 
     return { ok: true };
   } catch (e: unknown) {

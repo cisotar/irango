@@ -16,23 +16,38 @@
 //     retorno genérico.
 //   - Reusa EXATAMENTE a mesma lib do recálculo autoritativo (calcularFrete +
 //     normalizarBairro de lib/utils/calcularFrete.ts) — RN-C4, paridade preview↔real.
+//   - (067) Reconcilia CEP↔bairro com a MESMA política fail-closed do autoritativo
+//     (064, seguranca.md §10-A): bairro declarado nunca seleciona zona quando há
+//     CEP — vence o canônico do ViaCEP; falha do ViaCEP descarta o declarado. O
+//     preview espelha a cobrança, mas SEGUE não-vinculante (a autoridade é criarPedido).
 
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { listarZonasComTaxas } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarLojaPublicaPorId } from "@/lib/supabase/queries/lojas";
-import { calcularFrete } from "@/lib/utils/calcularFrete";
+import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
+import { reconciliarBairroCep } from "@/lib/utils/reconciliarBairroCep";
 
-// Schema zod .strict(): rejeita qualquer campo que não seja loja_id + bairro —
-// impede injeção de taxa_preview, subtotal, etc. pelo cliente.
+// Schema zod .strict(): rejeita qualquer campo que não seja loja_id + bairro +
+// cep — impede injeção de taxa_preview, subtotal, etc. pelo cliente.
 // z.guid() (não z.uuid()): valida formato uuid sem exigir nibbles de versão/variante
 // RFC-4122 — alinhado com schemaCheckout e schemaPayloadPedido do projeto.
+// (067) cep é OPCIONAL (espelha o autoritativo, onde endereco.cep pode faltar):
+// usado para reconciliar o bairro CANÔNICO (ViaCEP) e para casar zonas
+// tipo='faixa_cep'. reconciliarBairroCep já normaliza dígitos internamente, então
+// a máscara do CEP é tolerada aqui — sem reimplementar limpeza.
 const schemaFretePreview = z
   .object({
     loja_id: z.guid(),
-    bairro: z.string().trim().min(1),
+    bairro: z.string().trim().min(1).optional(),
+    cep: z.string().trim().optional(),
   })
-  .strict();
+  .strict()
+  // Pelo menos um critério de endereço (bairro p/ zona tipo='bairro' OU cep p/
+  // tipo='faixa_cep'); payload só com loja_id não tem o que calcular.
+  .refine((d) => d.bairro != null || d.cep != null, {
+    message: "Informe bairro ou CEP.",
+  });
 
 export type ResultadoFretePreview =
   | { ok: true; taxa_preview: number; zona_nome: string }
@@ -58,7 +73,7 @@ export async function calcularFreteAction(
   if (!parsed.success) {
     return { ok: false, erro: "Dados de frete inválidos." };
   }
-  const { loja_id, bairro } = parsed.data;
+  const { loja_id, bairro, cep } = parsed.data;
 
   try {
     // 2) Client ANON — zonas e vitrine_lojas têm RLS pública. Nunca service_role.
@@ -70,11 +85,29 @@ export async function calcularFreteAction(
       buscarLojaPublicaPorId(supabase, loja_id),
     ]);
 
+    // 3b) (067) Reconciliação CEP↔bairro — MESMA política fail-closed do
+    //     autoritativo `criarPedido` (064, pedido.ts ~194-217). O bairro declarado
+    //     seleciona a zona tipo='bairro', logo é vetor de subpagamento; o preview
+    //     PRECISA espelhar o autoritativo p/ não mostrar taxa barata divergente da
+    //     cobrança. Com CEP+bairro → ViaCEP no servidor → usa o bairro CANÔNICO.
+    //     ViaCEP indisponível / CEP inexistente / sem CEP → DESCARTA o declarado
+    //     (bairro:null), caindo no fallback fora-de-zona. O CEP numérico permanece
+    //     no endereço para zonas tipo='faixa_cep' (faixa numérica, não forjável).
+    //     Continua NÃO-VINCULANTE: a autoridade de cobrança é `criarPedido`.
+    const endereco: EnderecoEntrega = { cep };
+    if (bairro) {
+      const rec = cep ? await reconciliarBairroCep(cep, bairro) : null;
+      endereco.bairro =
+        rec?.reconciliado && rec.bairroCanonico != null
+          ? rec.bairroCanonico
+          : null;
+    }
+
     // 4) Reusa a MESMA lib do recálculo autoritativo (RN-C4 + paridade preview↔real).
     //    subtotal = 0: preview não tem itens confirmados ainda; nunca grátis por subtotal.
     const resultado = calcularFrete(
       zonas,
-      { bairro },
+      endereco,
       0,
       loja?.taxa_entrega_fora_zona,
     );

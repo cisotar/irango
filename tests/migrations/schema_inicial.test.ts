@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
@@ -551,6 +553,46 @@ describe("001 migration schema inicial (RED)", () => {
         ),
       );
       expect(r.rows.length).toBe(1);
+    });
+  });
+
+  // ─────────────────────────────────────────── Indexes de performance (002)
+  describe("002 indexes de performance existem após migration", () => {
+    // Consulta pg_indexes para cada index criado por 20260614010000_indexes.sql.
+    // Se o CREATE INDEX IF NOT EXISTS não rodou (ou o nome mudou), a row não existe
+    // e o teste falha — é exatamente o que queremos provar.
+    const INDEXES_ESPERADOS: Array<{ tabela: string; indexname: string }> = [
+      { tabela: "produtos",       indexname: "produtos_loja_disponivel_ordem" },
+      { tabela: "categorias",     indexname: "categorias_loja_ordem" },
+      { tabela: "pedidos",        indexname: "pedidos_loja_criado_em" },
+      { tabela: "zonas_entrega",  indexname: "zonas_entrega_loja" },
+      { tabela: "bairros_zona",   indexname: "bairros_zona_zona" },
+    ];
+
+    for (const { tabela, indexname } of INDEXES_ESPERADOS) {
+      it(`index ${indexname} existe em public.${tabela}`, async () => {
+        const r = await t.asService((db) =>
+          db.query<{ indexname: string }>(
+            `select indexname from pg_indexes
+             where schemaname = 'public' and tablename = $1 and indexname = $2`,
+            [tabela, indexname],
+          ),
+        );
+        expect(
+          r.rows.length,
+          `index '${indexname}' não encontrado em pg_indexes para tabela '${tabela}'`,
+        ).toBe(1);
+      });
+    }
+
+    it("migration é idempotente — CREATE INDEX IF NOT EXISTS não lança em reaplicação", async () => {
+      // Reaplicar a migration com IF NOT EXISTS não deve lançar erro.
+      // Simula deploy repetido ou rollback parcial.
+      const sql = readFileSync(
+        join(process.cwd(), "supabase/migrations/20260614010000_indexes.sql"),
+        "utf8",
+      );
+      await expect(t.db.exec(sql)).resolves.not.toThrow();
     });
   });
 

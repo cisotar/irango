@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.6 | **Atualizado:** 2026-06-14
+**Versão:** 0.1.7 | **Atualizado:** 2026-06-15
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -174,8 +174,20 @@ CREATE TABLE taxas_entrega (
   zona_id               uuid NOT NULL REFERENCES zonas_entrega(id) ON DELETE CASCADE,
   taxa                  numeric(10,2) NOT NULL CHECK (taxa >= 0),
   pedido_minimo_gratis  numeric(10,2),      -- NULL = sem frete grátis
-  raio_max_km           numeric(5,2)        -- só pra tipo 'raio_km'
+  raio_max_km           numeric(5,2),       -- só pra tipo 'raio_km'
+  cep_inicio            integer,            -- só pra tipo 'faixa_cep' (8 dígitos como inteiro)
+  cep_fim               integer,            -- idem; NULL ↔ NULL (par tudo-ou-nada)
+  CONSTRAINT taxas_faixa_cep_coerente CHECK (
+    (cep_inicio IS NULL AND cep_fim IS NULL)
+    OR (
+      cep_inicio IS NOT NULL AND cep_fim IS NOT NULL
+      AND cep_inicio BETWEEN 0 AND 99999999
+      AND cep_fim    BETWEEN 0 AND 99999999
+      AND cep_inicio <= cep_fim
+    )
+  )
 );
+-- Migration: 20260615011000_taxas_faixa_cep.sql
 ```
 
 ### `bairros_zona`

@@ -659,6 +659,8 @@ export type Database = {
       }
       taxas_entrega: {
         Row: {
+          cep_fim: number | null
+          cep_inicio: number | null
           id: string
           pedido_minimo_gratis: number | null
           raio_max_km: number | null
@@ -666,6 +668,8 @@ export type Database = {
           zona_id: string
         }
         Insert: {
+          cep_fim?: number | null
+          cep_inicio?: number | null
           id?: string
           pedido_minimo_gratis?: number | null
           raio_max_km?: number | null
@@ -673,6 +677,8 @@ export type Database = {
           zona_id: string
         }
         Update: {
+          cep_fim?: number | null
+          cep_inicio?: number | null
           id?: string
           pedido_minimo_gratis?: number | null
           raio_max_km?: number | null
@@ -862,6 +868,14 @@ export type Database = {
           pedido_id: string
           token_acesso: string
         }[]
+      }
+      garantir_loja_do_dono: {
+        Args: {
+          p_dono_id: string
+          p_email: string
+          p_versao_termos?: string
+        }
+        Returns: string
       }
       item_pedido_aceita_opcionais: {
         Args: { p_item_pedido_id: string }

@@ -27,7 +27,8 @@ import {
   buscarCupomPorCodigo,
 } from "@/lib/supabase/queries/entregaPagamento";
 import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
-import { calcularFrete } from "@/lib/utils/calcularFrete";
+import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
+import { reconciliarBairroCep } from "@/lib/utils/reconciliarBairroCep";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
@@ -188,11 +189,38 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     } else {
       const zonas = await listarZonasComTaxas(svc, dados.loja_id);
       // endereco_entrega é garantido pelo refine do schema quando tipo_entrega='entrega'.
+      const endereco: EnderecoEntrega = dados.endereco_entrega ?? {};
+
+      // (064) Reconciliação CEP↔bairro: o bairro declarado pelo cliente seleciona
+      // a zona de frete (tipo='bairro'), logo é vetor de subpagamento. Quando há
+      // CEP e bairro, consultamos o ViaCEP NO SERVIDOR e usamos o bairro CANÔNICO
+      // (do CEP) na busca de zona — nunca o declarado.
+      //
+      // FAIL-CLOSED (064 RN/D4, seguranca.md §14): ViaCEP indisponível / CEP
+      // inexistente → reconciliado:false → DESCARTAMOS o bairro declarado. Manter
+      // o declarado reabriria o vetor (cliente força timeout do ViaCEP e casa a
+      // zona barata). Sem bairro reconciliado, calcularFrete não casa nenhuma zona
+      // tipo='bairro' e cai no fallback fora-de-zona (mais caro) ou indisponível.
+      // O CEP numérico permanece para zonas tipo='faixa_cep' (já reconciliadas por
+      // natureza — faixa numérica, sem string livre forjável).
+      let enderecoAutoritativo = endereco;
+      if (endereco.bairro) {
+        const rec = endereco.cep
+          ? await reconciliarBairroCep(endereco.cep, endereco.bairro)
+          : null;
+        enderecoAutoritativo =
+          rec?.reconciliado && rec.bairroCanonico != null
+            ? { ...endereco, bairro: rec.bairroCanonico }
+            : // não reconciliável (sem CEP, ViaCEP down ou CEP inexistente):
+              // bairro declarado não é confiável para seleção de zona → descarta.
+              { ...endereco, bairro: null };
+      }
+
       // 4º arg (RN-C4 passo 4): taxa_entrega_fora_zona habilita fallback fora-de-zona —
       // null/undefined ⇒ entrega indisponível para o bairro (frete.atendido=false).
       frete = calcularFrete(
         zonas,
-        dados.endereco_entrega ?? {},
+        enderecoAutoritativo,
         subtotal,
         loja.taxa_entrega_fora_zona,
       );
