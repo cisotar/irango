@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.7 | **Atualizado:** 2026-06-14
+**Versão:** 0.2.8 | **Atualizado:** 2026-06-15
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -865,6 +865,8 @@ CREATE POLICY "storage_leitura_publica"
 ```
 
 UPDATE/DELETE seguem o mesmo padrão da pasta `{loja_id}/`.
+
+> **Armadilha:** o path passado ao `.upload(path, buffer)` deve ser **relativo ao bucket** — nunca incluir o nome do bucket como prefixo (ex.: `"produtos/loja_id/..."` quebraria a policy). Com prefixo incorreto, `(storage.foldername(name))[1]` retorna `"produtos"` em vez do `loja_id`, e a policy `storage_escrita_propria` falha silenciosamente — qualquer loja poderia gravar no bucket. Padrão correto: `"${loja.id}/${crypto.randomUUID()}.${ext}"` (loja_id derivado do auth no servidor, nunca do client).
 
 ---
 
