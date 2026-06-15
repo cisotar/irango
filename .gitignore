@@ -45,3 +45,6 @@ next-env.d.ts
 # Lixo do preflight acidental do pnpm — o projeto usa npm (package-lock.json)
 pnpm-lock.yaml
 pnpm-workspace.yaml
+
+# Claude Code — dados pessoais de sessão (não compartilhar)
+.claude/memory/
