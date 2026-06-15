@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
@@ -586,8 +588,8 @@ describe("001 migration schema inicial (RED)", () => {
     it("migration é idempotente — CREATE INDEX IF NOT EXISTS não lança em reaplicação", async () => {
       // Reaplicar a migration com IF NOT EXISTS não deve lançar erro.
       // Simula deploy repetido ou rollback parcial.
-      const sql = require("node:fs").readFileSync(
-        require("node:path").join(process.cwd(), "supabase/migrations/20260614010000_indexes.sql"),
+      const sql = readFileSync(
+        join(process.cwd(), "supabase/migrations/20260614010000_indexes.sql"),
         "utf8",
       );
       await expect(t.db.exec(sql)).resolves.not.toThrow();

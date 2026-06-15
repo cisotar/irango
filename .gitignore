@@ -41,3 +41,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Lixo do preflight acidental do pnpm — o projeto usa npm (package-lock.json)
+pnpm-lock.yaml
+pnpm-workspace.yaml

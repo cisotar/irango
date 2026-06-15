@@ -1,0 +1,53 @@
+name: CI
+
+# Gate de qualidade: roda em todo PR e push nas branches de trabalho.
+# Sem Docker — os testes de migration usam pglite (Postgres em memória), então
+# não há serviço de banco. Build e testes não dependem do Supabase cloud.
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+# Cancela execuções antigas do mesmo ref quando um novo push chega.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Tipos, testes e build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Lockfile commitado é package-lock.json → npm ci (instalação determinística).
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Checagem de tipos
+        run: npx tsc --noEmit
+
+      # Lint reporta mas NÃO bloqueia: há débito pré-existente (issue 070).
+      # Vira gate duro quando o lint zerar. Gates duros: tipos, testes, build.
+      - name: Lint (informativo)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Testes (vitest + pglite)
+        run: npm test
+
+      # next build não executa páginas dinâmicas, mas precisa das envs públicas
+      # resolverem para um valor. Valores fictícios bastam — nenhuma chamada real.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://exemplo.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key-placeholder
