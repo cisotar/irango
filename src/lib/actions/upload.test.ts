@@ -52,7 +52,7 @@ function makeClient() {
           file: ArrayBuffer | Uint8Array | Blob,
           opts?: Record<string, unknown>,
         ) => {
-          let fileBytes = new Uint8Array();
+          let fileBytes: Uint8Array = new Uint8Array();
           if (file instanceof Uint8Array) fileBytes = file;
           else if (file instanceof ArrayBuffer) fileBytes = new Uint8Array(file);
           uploads.push({ bucket, path, fileBytes, opts });
@@ -102,7 +102,7 @@ function arquivo(
   bytes: Uint8Array,
   over: { type?: string; name?: string; size?: number } = {},
 ): File {
-  const f = new File([bytes], over.name ?? "foto-original.png", {
+  const f = new File([bytes as BlobPart], over.name ?? "foto-original.png", {
     type: over.type ?? "image/png",
   });
   if (over.size !== undefined) {

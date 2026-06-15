@@ -86,7 +86,7 @@ function builder(tabela: string) {
   }
 
   const api = {
-    select() {
+    select(_colunas?: string) {
       return api;
     },
     eq(coluna: string, valor: unknown) {
