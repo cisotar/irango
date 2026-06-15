@@ -84,13 +84,13 @@ describe("extrairIp — fonte do identificador (server-side, não forjável)", (
 });
 
 // ---------------------------------------------------------------------------
-// LIMITES — config central por chave (plano §Arquivos). Garante que as 4 chaves
+// LIMITES — config central por chave (plano §Arquivos). Garante que as chaves
 // que as actions vão usar existem; um typo aqui quebraria silenciosamente o guard.
 // ---------------------------------------------------------------------------
 describe("LIMITES — chaves de rate limit por action", () => {
-  it("expõe as 4 chaves usadas pelas actions", () => {
+  it("expõe as chaves usadas pelas actions", () => {
     expect(Object.keys(LIMITES).sort()).toEqual(
-      ["criarPedido", "fretePreview", "login", "validarCupom"].sort(),
+      ["criarPedido", "fretePreview", "login", "salvarPerfil", "validarCupom"].sort(),
     );
   });
 });

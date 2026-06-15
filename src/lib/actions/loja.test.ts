@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// next/headers não disponível fora de request scope em testes — mockar.
+vi.mock("next/headers", () => ({
+  headers: () => Promise.resolve(new Headers({ "x-real-ip": "127.0.0.1" })),
+}));
+
+// Rate limit: fail-open (permitido: true) em todos os testes unitários.
+vi.mock("@/lib/utils/rateLimit", () => ({
+  extrairIp: (_headers: Headers) => "127.0.0.1",
+  verificarRateLimit: () => Promise.resolve({ permitido: true }),
+}));
+
 /**
  * Fase RED (TDD) da issue 030 — Server Actions de configuração da loja
  * (`salvarPerfil` / `salvarHorarios` / `salvarTema`). Mock de TODO I/O externo:
