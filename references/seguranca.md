@@ -925,3 +925,23 @@ O iRango coleta dado pessoal de cliente final (nome, telefone, endereço de entr
 | **Dados do lojista** | email/telefone do lojista também são pessoais — mesmas regras |
 
 Páginas `/privacidade` e `/termos` implementadas (issue 062) como conteúdo estático. Conteúdo é placeholder — revisão jurídica obrigatória antes de operar comercialmente.
+
+---
+
+## 21. Observabilidade — scrubbing de PII no Sentry
+
+O Sentry é instrumentado com `beforeSend` obrigatório em **todos os três runtimes** (client, server, edge): `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`.
+
+A função canônica é `sentryBeforeSend` em `src/lib/utils/sentryBeforeSend.ts`. Ela roda antes de qualquer evento sair do processo e aplica duas camadas de sanitização:
+
+1. **Por chave (campo):** qualquer chave cujo nome bata em `CAMPOS_PII` (email, telefone, nome_cliente, chave_pix, cpf, cep, buyer, etc.) ou contenha substring de credencial (key, secret, token, password, authorization, cookie) é substituída por `[Filtered]`.
+2. **Por valor (string):** a função `redigirString` aplica regex sobre o conteúdo de *toda* string do payload — cobre PII embutida em mensagens de erro, URLs com querystring, breadcrumbs, etc. Padrões: e-mail RFC 5321, telefone BR (+55/DDD), `Bearer <token>`, JWT (`eyJ…`).
+
+Configuração adicional:
+- `sendDefaultPii: false` — impede coleta automática de IP, cookies e headers.
+- `enabled: !!process.env.NEXT_PUBLIC_SENTRY_DSN` — app nunca quebra se DSN ausente (dev local).
+- `tracesSampleRate: 0.1` — 10 % das transações enviadas.
+
+Em caso de erro na sanitização o evento é descartado (`return null`) — fail-closed para não vazar PII.
+
+**Regra para devs e agentes:** nunca incluir dados pessoais do comprador (nome, telefone, email, endereço) em `exception.value`, `message` ou `extra` intencionalmente. O scrubber é última linha de defesa, não substituto de boas práticas de logging.
