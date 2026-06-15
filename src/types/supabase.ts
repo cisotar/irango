@@ -526,6 +526,7 @@ export type Database = {
           endereco_entrega: Json | null
           forma_pagamento: string | null
           id: string
+          idempotency_key: string | null
           loja_id: string
           nome_cliente: string
           observacoes: string | null
@@ -545,6 +546,7 @@ export type Database = {
           endereco_entrega?: Json | null
           forma_pagamento?: string | null
           id?: string
+          idempotency_key?: string | null
           loja_id: string
           nome_cliente: string
           observacoes?: string | null
@@ -564,6 +566,7 @@ export type Database = {
           endereco_entrega?: Json | null
           forma_pagamento?: string | null
           id?: string
+          idempotency_key?: string | null
           loja_id?: string
           nome_cliente?: string
           observacoes?: string | null
@@ -847,6 +850,7 @@ export type Database = {
           p_desconto: number
           p_endereco_entrega: Json
           p_forma_pagamento: string
+          p_idempotency_key?: string
           p_itens: Json
           p_loja_id: string
           p_nome_cliente: string
