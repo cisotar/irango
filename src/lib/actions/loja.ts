@@ -14,11 +14,13 @@
 //  - Erro interno não vaza (seguranca.md §14): detalhe vai pro console.error do
 //    servidor; o cliente recebe mensagem genérica.
 
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaDoDono, slugExiste } from "@/lib/supabase/queries/lojas";
 import { schemaPerfil, schemaHorarios, schemaTema } from "@/lib/validacoes/loja";
+import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 
 export type ResultadoSalvar = { ok: true } | { ok: false; erro: string };
 
@@ -46,6 +48,10 @@ const ERRO_SEM_LOJA = "Loja não encontrada.";
  * unicidade via service_role excluindo a própria loja antes de qualquer UPDATE.
  */
 export async function salvarPerfil(payload: unknown): Promise<ResultadoSalvar> {
+  const ip = extrairIp(await headers());
+  const rl = await verificarRateLimit("salvarPerfil", ip);
+  if (!rl.permitido) return { ok: false, erro: "Muitas tentativas. Aguarde um instante." };
+
   const parsed = schemaPerfil.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: ERRO_VALIDACAO };
   const dados = parsed.data;

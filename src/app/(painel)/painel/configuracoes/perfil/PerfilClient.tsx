@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { schemaPerfil } from "@/lib/validacoes/loja";
+import { schemaPerfil, sanitizarSlug } from "@/lib/validacoes/loja";
 import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
 
 export type PerfilInicial = {
@@ -61,7 +61,8 @@ export function PerfilClient({
   const router = useRouter();
 
   const [nome, setNome] = useState(inicial.nome);
-  const [slug] = useState(inicial.slug);
+  const [slug, setSlug] = useState(inicial.slug);
+  const [slugEditadoManualmente, setSlugEditadoManualmente] = useState(false);
   const [telefone, setTelefone] = useState(
     whatsappArmazenadoParaExibicao(inicial.telefone),
   );
@@ -87,13 +88,29 @@ export function PerfilClient({
   }
 
   const urlVitrine = `${BASE_VITRINE}/${slug}`;
+  const slugValido = schemaPerfil.shape.slug.safeParse(slug).success;
+  const slugMudou = slug !== inicial.slug;
+
+  // Auto-sugestão: enquanto o lojista não editar o slug manualmente, mudar o nome
+  // recalcula o slug via sanitizarSlug (cuja saída sempre passa no reSlug do schema).
+  function alterarNome(novoNome: string) {
+    setNome(novoNome);
+    if (!slugEditadoManualmente) {
+      setSlug(sanitizarSlug(novoNome));
+    }
+  }
+
+  function alterarSlug(valor: string) {
+    setSlugEditadoManualmente(true);
+    setSlug(valor);
+  }
 
   function montarPayload() {
     const whatsappDigitos = apenasDigitos(whatsapp);
     const telefoneDigitos = apenasDigitos(telefone);
     return {
       nome: nome.trim(),
-      slug,
+      slug: slug.trim(),
       ...(telefoneDigitos ? { telefone: telefoneDigitos } : {}),
       ...(whatsappDigitos ? { whatsapp: `55${whatsappDigitos}` } : {}),
     };
@@ -181,7 +198,7 @@ export function PerfilClient({
               <Input
                 id="perfil-nome"
                 value={nome}
-                onChange={(e) => setNome(e.target.value)}
+                onChange={(e) => alterarNome(e.target.value)}
                 placeholder="Ex.: Burguer do Zé"
                 required
               />
@@ -214,14 +231,21 @@ export function PerfilClient({
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="perfil-link">Link da sua vitrine</Label>
+              <Label htmlFor="perfil-slug">Link da sua vitrine</Label>
               <div className="flex items-center gap-2">
-                <Input
-                  id="perfil-link"
-                  value={urlVitrine}
-                  readOnly
-                  className="text-muted-foreground"
-                />
+                <div className="flex h-8 w-full items-center rounded-lg border border-input bg-background pl-2.5 text-sm focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                  <span className="shrink-0 text-muted-foreground">
+                    irango.com.br/loja/
+                  </span>
+                  <input
+                    id="perfil-slug"
+                    value={slug}
+                    onChange={(e) => alterarSlug(e.target.value)}
+                    placeholder="minha-loja"
+                    aria-invalid={!slugValido}
+                    className="h-full w-full bg-transparent pr-2.5 text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -232,14 +256,26 @@ export function PerfilClient({
                   <Copy className="size-4" />
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                O endereço da vitrine não pode ser alterado aqui.
-              </p>
+              {!slugValido && (
+                <p className="text-xs text-destructive">
+                  O link deve ter de 3 a 60 caracteres, apenas letras minúsculas,
+                  números e hífens.
+                </p>
+              )}
+              {slugValido && slugMudou && (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  Atenção: o link anterior da vitrine deixará de funcionar.
+                </p>
+              )}
             </div>
 
             <Separator />
 
-            <Button type="submit" className="w-full" disabled={enviando}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={enviando || !slugValido}
+            >
               {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
               Salvar
             </Button>

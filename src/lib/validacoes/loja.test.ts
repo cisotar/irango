@@ -191,4 +191,44 @@ describe("sanitizarSlug — sugestão UX a partir do nome", () => {
     const slug = sanitizarSlug("Lanchonete da Esquina!!!");
     expect(schemaPerfil.safeParse({ nome: "Lanchonete", slug }).success).toBe(true);
   });
+
+  // issue 071: slug descongelado — bordas que podem aparecer com nomes reais
+  it("nome com acentos variados → slug ASCII válido", () => {
+    expect(sanitizarSlug("Çafé & Ñoño")).toBe("cafe-nono");
+  });
+
+  it("nome com múltiplos separadores consecutivos → hífens colapsados", () => {
+    expect(sanitizarSlug("Loja   ---  Top")).toBe("loja-top");
+  });
+
+  it("nome que começa e termina com caracteres especiais → sem hífen nas bordas", () => {
+    const resultado = sanitizarSlug("!!! Minha Loja !!!");
+    expect(resultado.startsWith("-")).toBe(false);
+    expect(resultado.endsWith("-")).toBe(false);
+  });
+
+  it("nome só de especiais '!!!' → slug vazio (UI deve bloquear submit — schema rejeita)", () => {
+    const slug = sanitizarSlug("!!!");
+    // A saída é string vazia — schema rejeita (< 3 chars). O campo fica inválido,
+    // botão Salvar fica desabilitado. Esse é o comportamento correto.
+    expect(slug).toBe("");
+    expect(schemaPerfil.safeParse({ nome: "x", slug }).success).toBe(false);
+  });
+
+  it("nome vazio '' → slug vazio (campo inválido, submit bloqueado)", () => {
+    const slug = sanitizarSlug("");
+    expect(slug).toBe("");
+    expect(schemaPerfil.safeParse({ nome: "x", slug }).success).toBe(false);
+  });
+
+  it("nome muito curto que gera < 3 chars → schema rejeita (submit bloqueado)", () => {
+    // Ex.: nome "AB" → slug "ab" (2 chars) — abaixo do mínimo de 3
+    const slug = sanitizarSlug("AB");
+    expect(slug).toBe("ab");
+    expect(schemaPerfil.safeParse({ nome: "AB", slug }).success).toBe(false);
+  });
+
+  it("nome com dígitos → dígitos preservados no slug", () => {
+    expect(sanitizarSlug("Loja 123 Top")).toBe("loja-123-top");
+  });
 });
