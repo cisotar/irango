@@ -40,6 +40,25 @@ const SUBSTRINGS_SEGREDO = ["key", "secret", "token", "password", "senha", "auth
 
 const MASCARA = "[Filtered]";
 
+// Padrões de PII/segredo embutidos em VALORES string (não só em chaves). Cobre
+// o caso de mensagens de erro tipo "falha para joao@example.com" ou URLs com PII
+// na querystring, que passariam intactas pela checagem por chave.
+const PADROES_VALOR: RegExp[] = [
+  /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
+  /\b(?:\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b/g,
+  /\bBearer\s+[A-Za-z0-9._-]+/gi,
+  /\beyJ[A-Za-z0-9._-]{10,}/g,
+];
+
+/** Redige PII/segredo embutido em uma string, substituindo por MASCARA. */
+function redigirString(s: string): string {
+  let resultado = s;
+  for (const padrao of PADROES_VALOR) {
+    resultado = resultado.replace(padrao, MASCARA);
+  }
+  return resultado;
+}
+
 function ehChaveSensivel(chave: string): boolean {
   const k = chave.toLowerCase();
   if (CAMPOS_PII.includes(k)) return true;
@@ -51,6 +70,7 @@ function ehChaveSensivel(chave: string): boolean {
  * `seen` evita loop em referências circulares.
  */
 function sanitizar(valor: unknown, seen: WeakSet<object>): unknown {
+  if (typeof valor === "string") return redigirString(valor);
   if (valor === null || typeof valor !== "object") return valor;
 
   if (seen.has(valor as object)) return MASCARA;

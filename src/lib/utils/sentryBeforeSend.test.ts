@@ -138,6 +138,55 @@ describe("sentryBeforeSend — scrubber de PII e segredos", () => {
     expect(out).not.toBeNull();
   });
 
+  it("redige PII embutida em VALORES string, não só em chaves", () => {
+    const event = {
+      exception: {
+        values: [
+          { type: "Error", value: "falha ao notificar joao@example.com no checkout" },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    const out = sentryBeforeSend(event);
+
+    expect(contemValor(out, "joao@example.com")).toBe(false);
+    expect(contemValor(out, "falha ao notificar")).toBe(true);
+  });
+
+  it("redige email embutido na querystring de request.url", () => {
+    const event = {
+      request: {
+        url: "https://irango.app/checkout?email=joao@example.com&loja=1",
+      },
+    } as unknown as ErrorEvent;
+
+    const out = sentryBeforeSend(event);
+
+    expect(contemValor(out, "joao@example.com")).toBe(false);
+    expect(contemValor(out, "irango.app/checkout")).toBe(true);
+  });
+
+  it("redige telefone BR embutido em string", () => {
+    const event = {
+      message: "cliente +55 11 99999-8888 não respondeu",
+    } as unknown as ErrorEvent;
+
+    const out = sentryBeforeSend(event);
+
+    expect(contemValor(out, "99999-8888")).toBe(false);
+  });
+
+  it("redige Bearer token embutido em string", () => {
+    const event = {
+      message: "request rejeitado com Authorization: Bearer abc123.def-456_ghi",
+    } as unknown as ErrorEvent;
+
+    const out = sentryBeforeSend(event);
+
+    expect(contemValor(out, "Bearer abc123.def-456_ghi")).toBe(false);
+    expect(contemValor(out, "request rejeitado")).toBe(true);
+  });
+
   it("retorna null (fail-closed) se a sanitização lançar", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     // Object.entries lança em Proxy malicioso → cai no catch.
