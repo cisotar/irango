@@ -138,6 +138,7 @@ export function SecaoCatalogo({
       ))}
 
       <ProdutoModal
+        key={produtoSelecionado?.id ?? "vazio"}
         produto={produtoSelecionado}
         open={modalAberto}
         onOpenChange={setModalAberto}

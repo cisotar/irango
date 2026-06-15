@@ -692,13 +692,3 @@ describe("001 migration schema inicial (RED)", () => {
   });
 });
 
-/**
- * Helper de conveniência: garante o auth.users do dono e devolve o DONO_ID.
- * Os testes de loja-only (sem `criarLoja`) precisam do FK satisfeito.
- */
-function DONO_ID_OU(t: TestDb): string {
-  // o auth.users é criado preguiçosamente por criarLoja; para os INSERTs de loja
-  // direta, garantimos o dono num beforeAll-equivalente inline na primeira chamada.
-  void t;
-  return DONO_ID;
-}

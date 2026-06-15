@@ -175,6 +175,15 @@ vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => clientePglite,
 }));
 
+// Rate limit (issue 052): a action chama verificarRateLimit no topo via
+// `await headers()`. rateLimit.ts é server-only e next/headers exige request
+// scope — mockamos para fail-open, mantendo o foco do E2E no recálculo/RPC.
+vi.mock("next/headers", () => ({ headers: () => new Headers() }));
+vi.mock("@/lib/utils/rateLimit", () => ({
+  extrairIp: () => "203.0.113.7",
+  verificarRateLimit: vi.fn(async () => ({ permitido: true })),
+}));
+
 // A action lê via @/lib/supabase/queries/*; estas reusam o builder do shim acima
 // (mesmo banco). Reimplementamos as 5 queries que a action chama, em cima do shim.
 vi.mock("@/lib/supabase/queries/lojas", () => ({

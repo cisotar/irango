@@ -22,7 +22,9 @@
 //     preview espelha a cobrança, mas SEGUE não-vinculante (a autoridade é criarPedido).
 
 import { z } from "zod";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { listarZonasComTaxas } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarLojaPublicaPorId } from "@/lib/supabase/queries/lojas";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
@@ -67,6 +69,14 @@ export type ResultadoFretePreview =
 export async function calcularFreteAction(
   payload: unknown,
 ): Promise<ResultadoFretePreview> {
+  // 0) Rate limit ~20/min por IP (issue 052, finding BAIXA auditoria 067 —
+  //    enumeração de bairro/CEP + abuso do ViaCEP server-side). Antes de qualquer
+  //    I/O. Excedeu → erro genérico no shape da action (§14).
+  const ip = extrairIp(await headers());
+  if (!(await verificarRateLimit("fretePreview", ip)).permitido) {
+    return { ok: false, erro: "Muitas tentativas. Tente novamente em alguns instantes." };
+  }
+
   // 1) Valida e normaliza o input ANTES de tocar no banco. Campo extra (injeção
   //    de taxa_preview pelo cliente) é rejeitado aqui via .strict().
   const parsed = schemaFretePreview.safeParse(payload);

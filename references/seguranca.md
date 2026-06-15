@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.10 | **Atualizado:** 2026-06-15
+**Versão:** 0.2.11 | **Atualizado:** 2026-06-15
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -771,13 +771,20 @@ CSP exige ajuste cuidadoso (Next.js usa inline scripts) — iniciar em `Content-
 
 Endpoints sensíveis precisam de trava por IP — sem isso, brute force em login e spam de pedidos.
 
-| Endpoint | Limite sugerido | Por quê |
-|----------|----------------|---------|
-| `/login` (Server Action de auth) | ~5/min por IP | anti brute force de senha |
-| Criar pedido | ~10/min por IP | anti spam de pedido |
-| Validar cupom | ~20/min por IP | anti enumeração de códigos |
+| Endpoint (Server Action) | Limite | Por quê |
+|--------------------------|--------|---------|
+| `entrar` (auth) | 5/min por IP | anti brute force de senha |
+| `criarPedido` | 10/min por IP | anti spam de pedido |
+| `validarCupom` | 20/min por IP | anti enumeração de códigos |
+| `calcularFreteAction` | 20/min por IP | anti abuso de lookup externo (ViaCEP + cálculo) |
 
-Lib recomendada: **`@upstash/ratelimit`** + Upstash Redis (free tier) no Vercel Edge / Middleware. Supabase Auth já tem rate limit interno de login, mas a camada própria cobre as Server Actions.
+Implementado em `src/lib/utils/rateLimit.ts` via **`@upstash/ratelimit`** + **`@upstash/redis`** (issue 052). Sliding window por IP/minuto. Supabase Auth tem rate limit interno de login, mas a camada própria cobre todas as Server Actions sensíveis.
+
+**Extração de IP (anti-bypass):** ordem de preferência: `x-real-ip` (Vercel injeta, não forjável pelo cliente) → **último** elemento de `x-forwarded-for` (appendado pelo proxy de borda). Nunca usar o **primeiro** elemento de `x-forwarded-for` — o cliente controla esse valor e pode criar baldes Upstash arbitrários, contornando o limite.
+
+**Fail-open:** se `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` ausentes (dev local) ou o Redis cai, `verificarRateLimit` engole a exceção, loga no servidor e **libera** a requisição. Derrubar login/checkout por indisponibilidade do Redis é pior que perder a trava temporariamente — rate limit é contenção de abuso/custo, não gate de autorização.
+
+**`import "server-only"`** no módulo garante que as credenciais Upstash nunca vazem para o bundle do cliente (build quebra se importado de Client Component).
 
 ---
 

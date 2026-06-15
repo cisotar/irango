@@ -35,11 +35,8 @@ jobs:
       - name: Checagem de tipos
         run: npx tsc --noEmit
 
-      # Lint reporta mas NÃO bloqueia: há débito pré-existente (issue 070).
-      # Vira gate duro quando o lint zerar. Gates duros: tipos, testes, build.
-      - name: Lint (informativo)
+      - name: Lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Testes (vitest + pglite)
         run: npm test

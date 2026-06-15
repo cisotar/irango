@@ -10,10 +10,12 @@
 // `public.criar_pedido` (migration 20260614003000); aqui só recalculamos e
 // delegamos. Ver tasks/014 §Decisões de Design (D1/D2/D3/D5).
 //
-// TODO(052): rate limit ~10/min por IP (seguranca.md §12) — depende de
-// @upstash/ratelimit (issue 052), fora do escopo desta issue.
+// Rate limit ~10/min por IP (issue 052, seguranca.md §12): guard no topo, antes
+// de qualquer I/O. IP de headers() server-side, nunca do payload.
 
+import { headers } from "next/headers";
 import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
+import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
 import {
@@ -44,6 +46,13 @@ export type ResultadoCriarPedido =
 const ERRO_GENERICO = "Não foi possível criar o pedido. Tente novamente.";
 
 export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedido> {
+  // (0) Rate limit por IP antes de qualquer I/O (incl. safeParse): payload
+  //     malformado em loop também conta na trava. Excedeu → erro genérico (§14).
+  const ip = extrairIp(await headers());
+  if (!(await verificarRateLimit("criarPedido", ip)).permitido) {
+    return { erro: "Muitas tentativas. Tente novamente em alguns instantes." };
+  }
+
   // (1) Validação Zod ANTES de qualquer I/O. `.strict()` rejeita qualquer campo
   //     monetário do cliente (total/subtotal/preco mentidos nem chegam ao banco).
   const parsed = schemaPayloadPedido.safeParse(payload);
