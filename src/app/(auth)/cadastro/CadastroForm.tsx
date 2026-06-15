@@ -18,7 +18,7 @@ import { schemaCadastro } from "@/lib/validacoes/auth";
 // O schemaCadastro (z.literal(true)) é a autoridade — valida no submit e no
 // servidor. Mantê-los separados evita forçar `true` no estado do checkbox.
 type FormCadastro = { email: string; senha: string; aceiteTermos: boolean };
-import { entrarComGoogle } from "@/lib/auth/googleOAuth";
+import { BotaoGoogle } from "@/app/(auth)/BotaoGoogle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -137,7 +137,25 @@ export function CadastroForm({ erroOAuth = false }: { erroOAuth?: boolean }) {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-start gap-2">
+            <div className="space-y-1 text-sm">
+              <Link
+                href="/termos"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-primaria underline"
+              >
+                Termos de uso
+              </Link>
+              <Link
+                href="/privacidade"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-primaria underline"
+              >
+                Política de privacidade
+              </Link>
+            </div>
+            <div className="flex items-center gap-2">
               <Checkbox
                 id="aceiteTermos"
                 checked={aceiteTermos === true}
@@ -148,26 +166,8 @@ export function CadastroForm({ erroOAuth = false }: { erroOAuth?: boolean }) {
                 }
                 aria-invalid={!!errors.aceiteTermos}
               />
-              <Label htmlFor="aceiteTermos" className="text-sm leading-snug font-normal">
-                Li e aceito os{" "}
-                <Link
-                  href="/termos"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primaria underline"
-                >
-                  Termos de Uso
-                </Link>{" "}
-                e a{" "}
-                <Link
-                  href="/privacidade"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primaria underline"
-                >
-                  Política de Privacidade
-                </Link>
-                .
+              <Label htmlFor="aceiteTermos" className="text-sm font-normal leading-snug">
+                Li e aceito os termos
               </Label>
             </div>
             {errors.aceiteTermos && (
@@ -196,14 +196,7 @@ export function CadastroForm({ erroOAuth = false }: { erroOAuth?: boolean }) {
           <Separator className="flex-1" />
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11 w-full"
-          onClick={entrarComGoogle}
-        >
-          Entrar com Google
-        </Button>
+        <BotaoGoogle />
 
         <p className="mt-6 text-center text-sm text-texto-muted">
           Já tem conta?{" "}
