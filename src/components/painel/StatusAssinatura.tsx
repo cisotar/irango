@@ -150,7 +150,8 @@ export function BotaoGerenciarHotmart(): ReactElement {
       render={
         <a href={URL_PORTAL_HOTMART} target="_blank" rel="noopener noreferrer">
           Gerenciar pagamento na Hotmart
-          <ExternalLink className="size-4" />
+          <ExternalLink className="size-4" aria-hidden="true" />
+          <span className="sr-only"> (abre em nova aba)</span>
         </a>
       }
     />
