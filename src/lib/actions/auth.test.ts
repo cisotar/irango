@@ -192,43 +192,32 @@ describe("cadastrar — slug e compensação", () => {
   });
 });
 
-describe("cadastrar — gate de reconciliação por posse do email (059 FIX 2 ALTA)", () => {
-  it("ATAQUE: email_confirmed_at NULL → NÃO reconcilia (posse do email não comprovada)", async () => {
-    // Com "Confirm email" ON, o signUp devolve user sem email_confirmed_at. Um
-    // atacante poderia cadastrar com o email exato da vítima; reconciliar aqui
-    // roubaria a assinatura órfã dela ANTES de provar posse. O gate bloqueia.
+describe("cadastrar — reconciliação de assinatura (059/066)", () => {
+  // Issue 066: reconciliação movida para o callback de confirmação de email
+  // (src/lib/auth/reconciliarPosConfirmacao.ts). auth.ts NUNCA chama
+  // reconciliarAssinatura — independente de email_confirmed_at — para fechar
+  // o vetor de roubo pela raiz (posse do email comprovada só no callback).
+  it("email_confirmed_at NULL → NÃO reconcilia aqui (movido para callback)", async () => {
     signUp.mockResolvedValue({
       data: { user: { id: USER_ID, email_confirmed_at: null } },
       error: null,
     });
     const r = await cadastrar(PAYLOAD_OK);
-    expect(r).toEqual({ ok: true }); // cadastro segue (loja em trial)
+    expect(r).toEqual({ ok: true });
     expect(reconciliarAssinatura).not.toHaveBeenCalled();
   });
 
-  it("email_confirmed_at setado → reconcilia (posse comprovada)", async () => {
+  it("email_confirmed_at setado → NÃO reconcilia aqui (movido para callback, 066)", async () => {
+    // O callback de confirmação (auth/callback/route.ts) chama
+    // reconciliarPosConfirmacao após exchangeCodeForSession, com email
+    // autenticado da sessão — nunca de input do client.
     signUp.mockResolvedValue({
       data: { user: { id: USER_ID, email_confirmed_at: "2026-06-14T10:00:00Z" } },
       error: null,
     });
     const r = await cadastrar(PAYLOAD_OK);
     expect(r).toEqual({ ok: true });
-    expect(reconciliarAssinatura).toHaveBeenCalledTimes(1);
-    // reconcilia pela loja criada e pelo email AUTENTICADO (RN-A1), via service_role
-    expect(reconciliarAssinatura).toHaveBeenCalledWith(fakeService, PAYLOAD_OK.email, "loja-1");
-  });
-
-  it("reconciliação falha → cadastro NÃO derruba (best-effort), retorna ok", async () => {
-    signUp.mockResolvedValue({
-      data: { user: { id: USER_ID, email_confirmed_at: "2026-06-14T10:00:00Z" } },
-      error: null,
-    });
-    reconciliarAssinatura.mockRejectedValue(new Error("falha reconciliacao"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const r = await cadastrar(PAYLOAD_OK);
-    expect(r).toEqual({ ok: true });
-    expect(deleteUser).not.toHaveBeenCalled(); // loja já existe — sem compensação
-    spy.mockRestore();
+    expect(reconciliarAssinatura).not.toHaveBeenCalled();
   });
 });
 
