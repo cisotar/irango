@@ -64,6 +64,14 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
   buscarCupomPorCodigo: (...a: unknown[]) => buscarCupomPorCodigo(...a),
 }));
 
+// [064] reconciliarBairroCep é I/O (chama ViaCEP). Mockada — NÃO bater na rede
+// nos testes de orquestração. Default (cenarioFeliz): reconcilia para o bairro
+// declarado, isolando o teste do frete da política de fail-closed (testada à parte).
+const reconciliarBairroCep = vi.fn();
+vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
+  reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
+}));
+
 import { criarPedido } from "./pedido";
 
 // ─────────────────────────── fixtures
@@ -231,6 +239,9 @@ function cenarioFeliz() {
   buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
   listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
   buscarCupomPorCodigo.mockResolvedValue(null);
+  // [064] por padrão a reconciliação SUCEDE devolvendo o bairro declarado
+  // (CEP↔bairro coerentes) — assim o frete dos testes felizes é determinístico.
+  reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Centro", reconciliado: true });
   // [085] sem opcionais por padrão: nenhuma leitura de opcional retorna nada.
   buscarOpcionaisPorIds.mockResolvedValue([]);
   buscarOpcionaisPorCategoria.mockResolvedValue({});
@@ -475,6 +486,80 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     const r = await criarPedido(payloadBase());
     expect(r).toEqual({ erro: expect.any(String) });
     expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────── [064] FAIL-CLOSED da reconciliação CEP↔bairro
+  it("[064] ATAQUE subpagamento: ViaCEP indisponível (reconciliado:false) → bairro declarado DESCARTADO, NÃO casa zona barata → fallback fora-de-zona", async () => {
+    // Loja tem zona 'Centro' (R$5) E fallback fora-de-zona (R$8). O cliente
+    // declara bairro 'Centro' (barato). ViaCEP cai → não reconcilia. O bairro
+    // declarado NÃO pode selecionar a zona barata: cai no fallback (mais caro).
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    listarZonasComTaxas.mockResolvedValue(zonasComFrete5()); // zona 'Centro' R$5 existe
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    buscarOpcionaisPorIds.mockResolvedValue([]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+    // ViaCEP down → fail-closed.
+    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: null, reconciliado: false });
+    fakeClient.rpc.mockResolvedValue({
+      data: [{ pedido_id: "ped-1", token_acesso: "tok-1" }],
+      error: null,
+    });
+
+    await criarPedido(payloadBase()); // declara bairro 'Centro'
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number };
+    // NÃO pode ser 5 (zona barata declarada): tem que ser 8 (fallback mais caro).
+    expect(args.p_taxa_entrega).toBe(8.0);
+  });
+
+  it("[064] FAIL-CLOSED sem fallback: ViaCEP indisponível + sem taxa_entrega_fora_zona → entrega indisponível (não cobra zona barata declarada)", async () => {
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: null }));
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    buscarOpcionaisPorIds.mockResolvedValue([]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: null, reconciliado: false });
+
+    const r = await criarPedido(payloadBase());
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("[064] divergência: bairro declarado barato MAS CEP é de zona cara → cobra a zona do CEP (canônico vence)", async () => {
+    // Zonas: 'Centro' R$5 e 'Jardins' R$12. Cliente declara 'Centro' mas o CEP
+    // resolve para 'Jardins' → cobra R$12.
+    buscarLojaParaPedido.mockResolvedValue(lojaRow());
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    listarZonasComTaxas.mockResolvedValue([
+      ...zonasComFrete5(),
+      {
+        id: "z2",
+        loja_id: LOJA_A,
+        nome: "Jardins",
+        tipo: "bairro",
+        ativo: true,
+        taxa: { taxa: 12.0, pedido_minimo_gratis: null, raio_max_km: null },
+        bairros: [{ nome: "Jardins" }],
+      },
+    ]);
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    buscarOpcionaisPorIds.mockResolvedValue([]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Jardins", reconciliado: true });
+    fakeClient.rpc.mockResolvedValue({
+      data: [{ pedido_id: "ped-1", token_acesso: "tok-1" }],
+      error: null,
+    });
+
+    await criarPedido(payloadBase({
+      endereco_entrega: { cep: "01400-000", rua: "R", numero: "1", bairro: "Centro" },
+    }));
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number };
+    expect(args.p_taxa_entrega).toBe(12.0); // zona do CEP, não a declarada
   });
 
   it("[071] RN-C3 troco_para persiste APENAS quando forma_pagamento='dinheiro'", async () => {

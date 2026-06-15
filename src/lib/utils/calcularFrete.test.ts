@@ -22,6 +22,8 @@ function zonaBairro(over: Partial<ZonaComTaxa> = {}): ZonaComTaxa {
       taxa: 7,
       pedido_minimo_gratis: null,
       raio_max_km: null,
+      cep_inicio: null,
+      cep_fim: null,
     },
     bairros: [{ nome: "Centro" }],
     ...over,
@@ -37,6 +39,8 @@ function zonaRaio(over: Partial<ZonaComTaxa> = {}): ZonaComTaxa {
       taxa: 9,
       pedido_minimo_gratis: null,
       raio_max_km: 5,
+      cep_inicio: null,
+      cep_fim: null,
     },
     bairros: [],
     ...over,
@@ -68,7 +72,7 @@ describe("calcularFrete", () => {
   // 3a. Frete grátis: subtotal >= pedido_minimo_gratis
   it("dá frete grátis quando subtotal atinge o mínimo (>=), preservando zonaId", () => {
     const zona = zonaBairro({
-      taxa: { taxa: 7, pedido_minimo_gratis: 50, raio_max_km: null },
+      taxa: { taxa: 7, pedido_minimo_gratis: 50, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], enderecoCentro, 50);
     expect(r).toEqual({
@@ -82,7 +86,7 @@ describe("calcularFrete", () => {
   // 3b. Borda: subtotal um centavo abaixo do mínimo → taxa cheia
   it("cobra taxa cheia quando subtotal está logo abaixo do mínimo", () => {
     const zona = zonaBairro({
-      taxa: { taxa: 7, pedido_minimo_gratis: 50, raio_max_km: null },
+      taxa: { taxa: 7, pedido_minimo_gratis: 50, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], enderecoCentro, 49.99);
     expect(r.gratis).toBe(false);
@@ -157,7 +161,7 @@ describe("calcularFrete", () => {
   // 10. Arredondamento — saída 2 casas, tipo number, sem float drift
   it("arredonda a taxa para 2 casas sem drift e retorna number", () => {
     const zona = zonaBairro({
-      taxa: { taxa: 5.1, pedido_minimo_gratis: null, raio_max_km: null },
+      taxa: { taxa: 5.1, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], enderecoCentro, 30);
     expect(r.taxa).toBe(5.1);
@@ -166,7 +170,7 @@ describe("calcularFrete", () => {
 
   it("normaliza taxa com mais de 2 casas para exatamente 2 casas", () => {
     const zona = zonaBairro({
-      taxa: { taxa: 10.999, pedido_minimo_gratis: null, raio_max_km: null },
+      taxa: { taxa: 10.999, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], enderecoCentro, 30);
     expect(r.taxa).toBe(11);
@@ -174,16 +178,16 @@ describe("calcularFrete", () => {
 
   // 11. Múltiplas zonas casando → menor taxa; empate → primeira
   it("escolhe a zona de menor taxa quando várias casam", () => {
-    const cara = zonaBairro({ id: "zona-cara", taxa: { taxa: 7, pedido_minimo_gratis: null, raio_max_km: null } });
-    const barata = zonaBairro({ id: "zona-barata", taxa: { taxa: 5, pedido_minimo_gratis: null, raio_max_km: null } });
+    const cara = zonaBairro({ id: "zona-cara", taxa: { taxa: 7, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null } });
+    const barata = zonaBairro({ id: "zona-barata", taxa: { taxa: 5, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null } });
     const r = calcularFrete([cara, barata], enderecoCentro, 30);
     expect(r.taxa).toBe(5);
     expect(r.zonaId).toBe("zona-barata");
   });
 
   it("em empate de taxa escolhe a primeira zona da lista (determinístico)", () => {
-    const a = zonaBairro({ id: "zona-a", taxa: { taxa: 6, pedido_minimo_gratis: null, raio_max_km: null } });
-    const b = zonaBairro({ id: "zona-b", taxa: { taxa: 6, pedido_minimo_gratis: null, raio_max_km: null } });
+    const a = zonaBairro({ id: "zona-a", taxa: { taxa: 6, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null } });
+    const b = zonaBairro({ id: "zona-b", taxa: { taxa: 6, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null } });
     const r = calcularFrete([a, b], enderecoCentro, 30);
     expect(r.taxa).toBe(6);
     expect(r.zonaId).toBe("zona-a");
@@ -217,7 +221,7 @@ describe("calcularFrete", () => {
   // qualquer mudança futura seja uma decisão consciente, não regressão silenciosa.
   it("pedido_minimo_gratis=0 concede frete grátis para qualquer subtotal >= 0", () => {
     const zona = zonaBairro({
-      taxa: { taxa: 7, pedido_minimo_gratis: 0, raio_max_km: null },
+      taxa: { taxa: 7, pedido_minimo_gratis: 0, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], enderecoCentro, 0);
     expect(r.gratis).toBe(true);
@@ -230,7 +234,7 @@ describe("calcularFrete", () => {
   // Garante que o caller não confunde taxa:0 com sentinela de fora-de-área.
   it("zona com taxa=0 e pedido_minimo_gratis=null retorna atendido:true taxa:0 gratis:false", () => {
     const zona = zonaBairro({
-      taxa: { taxa: 0, pedido_minimo_gratis: null, raio_max_km: null },
+      taxa: { taxa: 0, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], enderecoCentro, 30);
     expect(r).toEqual({
@@ -249,7 +253,7 @@ describe("calcularFrete", () => {
   // sem entregar para nenhum endereço — bug operacional sem mensagem de erro.
   it("zona raio_km sem raio_max_km (null) não atende nenhuma distância", () => {
     const zona = zonaRaio({
-      taxa: { taxa: 9, pedido_minimo_gratis: null, raio_max_km: null },
+      taxa: { taxa: 9, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], { distanciaKm: 1 }, 30);
     expect(r.atendido).toBe(false);
@@ -260,7 +264,7 @@ describe("calcularFrete", () => {
   // Piso 0 — o cliente nunca paga frete negativo.
   it("zona com taxa negativa retorna taxa:0 (piso), atendido:true", () => {
     const zona = zonaBairro({
-      taxa: { taxa: -5, pedido_minimo_gratis: null, raio_max_km: null },
+      taxa: { taxa: -5, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], enderecoCentro, 30);
     expect(r.taxa).toBe(0);
@@ -274,6 +278,80 @@ describe("calcularFrete", () => {
 // A fase GREEN exporta normalizarBairro de calcularFrete.ts.
 // normalizarBairro já importada no topo junto com calcularFrete.
 // ===========================================================================
+
+// ===========================================================================
+// [064] faixa_cep habilitado — schema ganha cep_inicio/cep_fim em taxas_entrega
+// TDD RED — escritos ANTES da migration + da extensão de zonaAtende('faixa_cep').
+// Hoje calcularFrete retorna atendido:false para faixa_cep (TODO no código) e o
+// tipo Taxa NÃO tem cep_inicio/cep_fim. A fase GREEN: migration das colunas +
+// zonaAtende casando CEP numérico vs [cep_inicio, cep_fim] (plano D2/D5).
+//
+// Estes testes EXIGEM cep_inicio/cep_fim no objeto taxa — referenciar campos
+// inexistentes no tipo Taxa quebra o type-check ⇒ RED por contrato de tipo, e
+// quando o tipo existir mas a lógica não, RED por asserção (atendido:false).
+// ===========================================================================
+
+function zonaFaixaCep(over: Partial<ZonaComTaxa> = {}): ZonaComTaxa {
+  return {
+    id: "zona-faixa",
+    tipo: "faixa_cep",
+    ativo: true,
+    taxa: {
+      taxa: 8,
+      pedido_minimo_gratis: null,
+      raio_max_km: null,
+      // colunas novas (issue 064) — só dígitos, sem hífen.
+      cep_inicio: 1000000,
+      cep_fim: 1099999,
+    },
+    bairros: [],
+    ...over,
+  };
+}
+
+describe("calcularFrete — [064] faixa_cep", () => {
+  // CASO 4 — CEP dentro da faixa → atendido com a taxa da zona.
+  it("atende quando o CEP (numérico) está dentro de [cep_inicio, cep_fim]", () => {
+    const r = calcularFrete([zonaFaixaCep()], { cep: "01001-000" }, 30);
+    expect(r.atendido).toBe(true);
+    expect(r.taxa).toBe(8);
+    expect(r.zonaId).toBe("zona-faixa");
+  });
+
+  it("aceita CEP com ou sem hífen — normaliza para dígitos antes de comparar", () => {
+    const semHifen = calcularFrete([zonaFaixaCep()], { cep: "01001000" }, 30);
+    const comHifen = calcularFrete([zonaFaixaCep()], { cep: "01001-000" }, 30);
+    expect(semHifen).toEqual(comHifen);
+    expect(semHifen.atendido).toBe(true);
+  });
+
+  // Borda inferior e superior inclusivas.
+  it("inclui as bordas da faixa (cep_inicio e cep_fim inclusivos)", () => {
+    const inicio = calcularFrete([zonaFaixaCep()], { cep: "01000000" }, 30);
+    const fim = calcularFrete([zonaFaixaCep()], { cep: "01099999" }, 30);
+    expect(inicio.atendido).toBe(true);
+    expect(fim.atendido).toBe(true);
+  });
+
+  it("NÃO atende CEP fora da faixa (acima do cep_fim)", () => {
+    const r = calcularFrete([zonaFaixaCep()], { cep: "02000-000" }, 30);
+    expect(r.atendido).toBe(false);
+    expect(r.zonaId).toBeNull();
+  });
+
+  it("NÃO atende quando o endereço não traz CEP", () => {
+    const r = calcularFrete([zonaFaixaCep()], { bairro: "Centro" }, 30);
+    expect(r.atendido).toBe(false);
+  });
+
+  it("zona faixa_cep mal configurada (cep_inicio/cep_fim null) não atende", () => {
+    const zona = zonaFaixaCep({
+      taxa: { taxa: 8, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
+    });
+    const r = calcularFrete([zona], { cep: "01001-000" }, 30);
+    expect(r.atendido).toBe(false);
+  });
+});
 
 describe("normalizarBairro — [070]", () => {
   it("converte para minúsculas", () => {
@@ -353,7 +431,7 @@ describe("calcularFrete — [070] fallback taxaForaZona", () => {
     const zona = zonaBairro({
       id: "zona-aguas-claras",
       bairros: [{ nome: "aguas claras" }],
-      taxa: { taxa: 6, pedido_minimo_gratis: null, raio_max_km: null },
+      taxa: { taxa: 6, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], { bairro: "Águas Claras" }, 30, null);
     expect(r.atendido).toBe(true);
@@ -365,7 +443,7 @@ describe("calcularFrete — [070] fallback taxaForaZona", () => {
     const zona = zonaBairro({
       id: "zona-jardim",
       bairros: [{ nome: "Jardim América" }], // nome com acento no banco
-      taxa: { taxa: 5, pedido_minimo_gratis: null, raio_max_km: null },
+      taxa: { taxa: 5, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
     });
     const r = calcularFrete([zona], { bairro: "jardim america" }, 30, null);
     expect(r.atendido).toBe(true);

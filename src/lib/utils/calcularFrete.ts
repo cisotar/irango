@@ -4,7 +4,7 @@ import type { Tables } from "@/lib/database.types";
 type Zona = Pick<Tables<"zonas_entrega">, "id" | "tipo" | "ativo">;
 type Taxa = Pick<
   Tables<"taxas_entrega">,
-  "taxa" | "pedido_minimo_gratis" | "raio_max_km"
+  "taxa" | "pedido_minimo_gratis" | "raio_max_km" | "cep_inicio" | "cep_fim"
 >;
 type Bairro = Pick<Tables<"bairros_zona">, "nome">;
 
@@ -70,7 +70,7 @@ function arredondar(valor: number): number {
 
 /** Verdadeiro se a zona ativa+com-taxa atende o endereço informado. */
 function zonaAtende(zona: ZonaComTaxa, endereco: EnderecoEntrega): boolean {
-  const { raio_max_km } = zona.taxa!;
+  const { raio_max_km, cep_inicio, cep_fim } = zona.taxa!;
   switch (zona.tipo) {
     case "bairro": {
       const bairro = endereco.bairro;
@@ -82,9 +82,17 @@ function zonaAtende(zona: ZonaComTaxa, endereco: EnderecoEntrega): boolean {
       const dist = endereco.distanciaKm;
       return dist != null && raio_max_km != null && dist <= raio_max_km;
     }
-    case "faixa_cep":
-      // TODO: schema de faixa (cep_inicio/cep_fim) pendente — habilitar exige migration.
-      return false;
+    case "faixa_cep": {
+      // CEP do cliente normalizado para inteiro (só dígitos, descarta hífen).
+      // Faixa mal configurada (cep_inicio/cep_fim null) ou sem CEP → não atende.
+      if (cep_inicio == null || cep_fim == null) return false;
+      const cep = endereco.cep;
+      if (!cep) return false;
+      const digitos = cep.replace(/\D/g, "");
+      if (digitos === "") return false;
+      const cepNum = Number(digitos);
+      return cepNum >= cep_inicio && cepNum <= cep_fim;
+    }
     default:
       return false;
   }

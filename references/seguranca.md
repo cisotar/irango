@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.8 | **Atualizado:** 2026-06-15
+**Versão:** 0.2.9 | **Atualizado:** 2026-06-15
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -694,11 +694,21 @@ async function criarPedido(body) {
 | `produto_id` | ✅ | valida que existe, está disponível e é da loja |
 | `quantidade` | ✅ | valida `> 0` |
 | `loja_id` | ✅ | valida que existe e está ativa |
-| `endereco_entrega` | ✅ | usa pra recalcular frete |
+| `endereco_entrega` | ✅ | usa pra recalcular frete — bairro declarado é reconciliado contra CEP via ViaCEP server-side antes do cálculo (§10-A) |
 | `codigo_cupom` | ✅ | revalida no servidor |
 | `preco` / `subtotal` / `desconto` / `taxa_entrega` / `total` | ❌ ignorado | **recalculado do zero** |
 
 `itens_pedido.preco` e `itens_pedido.nome` guardam o **snapshot do valor do banco** no momento do pedido — nunca o valor que veio do client.
+
+### §10-A — Reconciliação CEP↔bairro (issue 064)
+
+O bairro declarado pelo cliente no checkout seleciona a zona de frete — é um vetor de subpagamento ("declaro o bairro barato"). A Server Action `criarPedido` reconcilia o bairro contra o CEP via ViaCEP **no servidor** antes do cálculo autoritativo de frete.
+
+**Política fail-closed:** qualquer falha (rede, timeout, CEP inexistente, ViaCEP fora do ar) → `reconciliado: false`, bairro declarado descartado. O caller cai no fallback mais caro ou marca a entrega como indisponível — **nunca aceita o bairro declarado como substituto do canônico.** Isso garante que uma indisponibilidade de ViaCEP não reabre o vetor de subpagamento.
+
+Implementação: `src/lib/utils/reconciliarBairroCep.ts` — I/O isolada, sem estado, fail-closed total (try/catch engole toda exceção). Separada de `calcularFrete` (que permanece pura/sem I/O).
+
+> **Nota sobre ViaCEP:** a tabela de APIs (§12) documenta ViaCEP como chamável do client (sem credencial). Isso continua válido para o autocomplete de endereço no checkout. A reconciliação de frete é um uso distinto e obrigatoriamente server-side — o mesmo endpoint externo, propósitos e contextos de segurança diferentes.
 
 ### Payload zod `.strict()` — sem campos monetários
 
@@ -830,12 +840,40 @@ Supabase permite signup sem confirmar email — qualquer um cria loja com email 
 Sequência executada inteiramente no servidor (nunca no cliente):
 
 1. `supabase.auth.signUp(email, senha)` via cliente anon — retorna `user.id`.
-2. `criarLoja({ dono_id: user.id, ... })` executado com **service_role** — `dono_id` vem do `user` retornado pelo Auth, nunca do payload enviado pelo cliente.
-3. Loja nasce com `ativo = false` (sobrescreve o DEFAULT do schema). Só vai à vitrine após confirmar email + completar perfil (guard na issue 016).
-4. `consentimento_em` e `consentimento_versao` são gravados no mesmo INSERT da loja — nunca enviados pelo cliente como campo livre.
-5. `assinatura_status = 'trial'` e `assinatura_fim_periodo = now() + interval '14 days'` gravados SERVER-SIDE no mesmo INSERT.
+2. Criação de loja **delegada** à função `public.garantir_loja_do_dono` (ver abaixo) — `cadastrar` não cria mais loja diretamente.
+3. Loja nasce com `ativo = false`. Só vai à vitrine após confirmar email + completar perfil (guard na issue 016).
+4. `consentimento_em` e `consentimento_versao` são gravados dentro da função SQL — nunca enviados pelo cliente como campo livre.
+5. `assinatura_status = 'trial'` e `assinatura_fim_periodo = now() + interval '14 days'` gravados SERVER-SIDE pela função SQL.
 
-**RN-01 — 1 conta = 1 loja:** a action chama `contarLojasDoDono(user.id)` antes do INSERT; se retornar ≥ 1, abort com erro. O banco garante a mesma regra via índice único `lojas_dono_unico` (ver `schema.md §3`).
+**RN-01 — 1 conta = 1 loja:** garantido via índice único `lojas(dono_id)` + `ON CONFLICT (dono_id) DO NOTHING` na função SQL. A action não precisa de verificação prévia — a função é idempotente.
+
+### `public.garantir_loja_do_dono` — função de auto-cura (issue 065)
+
+Fonte única de criação de loja por auto-cura. Migration: `20260615011500_garantir_loja_do_dono.sql`.
+
+```sql
+CREATE OR REPLACE FUNCTION public.garantir_loja_do_dono(
+  p_dono_id uuid, p_email text, p_versao_termos text DEFAULT '1.0'
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public ...
+```
+
+**Garantias:**
+- `SECURITY DEFINER` + `SET search_path = public` — sem elevação acidental; proteção contra search_path hijack (mesmo padrão da `loja_por_email_dono` do webhook Hotmart).
+- `REVOKE ALL … FROM PUBLIC, anon, authenticated` + `GRANT EXECUTE … TO service_role` — só o servidor executa.
+- Idempotente: `SELECT` antes do INSERT + `ON CONFLICT (dono_id) DO NOTHING` + handler de `unique_violation` — N chamadas simultâneas produzem exatamente 1 loja.
+- Loja nasce `ativo = false`, `assinatura_status = 'trial'`, `consentimento_em = now()` — todos decididos server-side, nunca pelo cliente.
+- Slug derivado da parte local do email, sanitizado para `^[a-z0-9-]+$`; colisão resolvida com sufixo hash do `dono_id`.
+
+Usada em dois lugares: Server Action `cadastrar` (no signup) e guard do painel (auto-cura para usuários órfãos pré-existentes).
+
+### Reconciliação pós-confirmação de email (issue 066)
+
+A reconciliação de assinatura Hotmart com o lojista (vincular compra ao `loja_id`) ocorre em `auth/callback/route.ts`, **não** em `cadastrar`. Motivo: só no callback a posse do email está comprovada pela sessão (`data.user` vindo de `exchangeCodeForSession`) — no signup o email ainda não foi confirmado.
+
+- Helper `reconciliarPosConfirmacao(user)` em `src/lib/auth/` — best-effort, engole toda falha, não derruba o redirect.
+- Query `buscarLojaPorDono(svc, userId)` — leitura via service_role para resolver `user.id → loja_id`.
+- **Regra para devs e agentes:** nunca mover reconciliação de assinatura para o signup (`cadastrar`) — o email não está autenticado naquele ponto, abrindo vetor de sequestro de assinatura por cadastro com email alheio.
 
 ### Anti-enumeração no login
 
