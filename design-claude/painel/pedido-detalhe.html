@@ -1,0 +1,280 @@
+<!-- Mundo: Produto iRango — tokens FIXOS, SEM tema de loja -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iRango Painel · Pedido #1042</title>
+<style>
+  :root {
+    --irango-brand:   #332616;
+    --irango-sidebar: #2e2610;
+    --irango-cta:     #2d3a27;
+    --marrom-cafe:    #2e2610;
+    --texto:          #3e2723;
+    --texto-muted:    #6b5d4f;
+    --borda-nav:      #dccbb0;
+    --branco:         #ffffff;
+    --cinza-claro:    #f9f9f9;
+    --cinza-medio:    #eeeeee;
+    --sombra-suave:   rgba(0,0,0,0.10);
+    --sidebar-w:      240px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); display: flex; min-height: 100vh; }
+
+  /* Sidebar mínima */
+  .sidebar { width:var(--sidebar-w);flex-shrink:0;background:var(--irango-sidebar);color:var(--branco);display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:200;overflow-y:auto; }
+  .sidebar-logo { display:flex;align-items:center;gap:10px;padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,0.08); }
+  .sidebar-logo-mark { width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:900;flex-shrink:0; }
+  .sidebar-logo-nome { font-size:1rem;font-weight:900;text-transform:uppercase;letter-spacing:1.5px; }
+  .nav-item { display:flex;align-items:center;gap:10px;padding:10px 20px;min-height:44px;color:rgba(255,255,255,0.75);text-decoration:none;font-size:0.88rem;border-left:3px solid transparent;transition:background 0.12s; }
+  .nav-item:hover { background:rgba(255,255,255,0.06);color:var(--branco); }
+  .nav-item:focus-visible { outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px; }
+  .nav-item.ativo { background:rgba(255,255,255,0.1);color:var(--branco);border-left-color:var(--borda-nav);font-weight:700; }
+  .ico { font-size:1rem;width:20px;text-align:center;flex-shrink:0; }
+  .nav-group-label { font-size:0.65rem;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.35);padding:16px 20px 6px;font-weight:700; }
+  .sidebar-footer { margin-top:auto;padding:16px 0;border-top:1px solid rgba(255,255,255,0.08); }
+
+  /* Main */
+  .main-wrapper { margin-left: var(--sidebar-w); flex: 1; }
+  .page-content { padding: 32px; max-width: 900px; }
+
+  /* Breadcrumb */
+  .breadcrumb { display:flex;align-items:center;gap:8px;font-size:0.82rem;color:var(--texto-muted);margin-bottom:20px; }
+  .breadcrumb a { color:var(--irango-brand);text-decoration:none;font-weight:600; }
+  .breadcrumb a:hover { text-decoration:underline; }
+  .breadcrumb a:focus-visible { outline:2px solid var(--irango-brand);outline-offset:2px;border-radius:3px; }
+
+  /* Page header */
+  .page-header { display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:24px; }
+  .page-header-info h1 { margin:0;font-size:1.4rem;font-weight:900;color:var(--marrom-cafe); }
+  .page-header-info p { margin:4px 0 0;color:var(--texto-muted);font-size:0.85rem; }
+
+  /* Badge */
+  .badge { display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:999px;font-size:0.82rem;font-weight:700;line-height:1;border:1px solid transparent; }
+  .b-pendente { background:#fef3c7;color:#854d0e;border-color:#fcd34d; }
+
+  /* Cards */
+  .card {
+    background: var(--branco); border: 1px solid var(--borda-nav);
+    border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave);
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid var(--cinza-medio); }
+  .card-header h2 { margin: 0; font-size: 0.88rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--texto-muted); }
+  .card-body { padding: 20px; }
+
+  /* Info grid */
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .info-item label { display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--texto-muted);margin-bottom:4px; }
+  .info-item span { font-size:0.92rem;color:var(--texto);font-weight:500; }
+
+  /* Itens do pedido */
+  .item-pedido { display:flex;align-items:center;gap:16px;padding:12px 0;border-bottom:1px solid var(--cinza-medio); }
+  .item-pedido:last-child { border-bottom:none; }
+  .item-img { width:52px;height:52px;border-radius:8px;background:linear-gradient(135deg,#e8dcc4,#d8c4a0);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0; }
+  .item-info { flex:1; }
+  .item-nome { font-weight:700;color:var(--texto);margin:0 0 2px; }
+  .item-qtd { font-size:0.82rem;color:var(--texto-muted); }
+  .item-preco { font-weight:700;color:var(--marrom-cafe);font-size:0.95rem;white-space:nowrap; }
+
+  /* Resumo financeiro */
+  .resumo-linha { display:flex;justify-content:space-between;align-items:center;padding:8px 0; }
+  .resumo-linha.sep { border-top:1px solid var(--cinza-medio);margin-top:4px;padding-top:12px; }
+  .resumo-label { font-size:0.88rem;color:var(--texto-muted); }
+  .resumo-valor { font-size:0.88rem;font-weight:600;color:var(--texto); }
+  .resumo-linha.total .resumo-label { font-size:1rem;font-weight:900;color:var(--marrom-cafe); }
+  .resumo-linha.total .resumo-valor { font-size:1.1rem;font-weight:900;color:var(--irango-cta); }
+
+  /* Transição de status */
+  .status-section { }
+  .status-titulo { font-size:0.82rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--texto-muted);margin:0 0 12px; }
+  .status-btns { display:flex;flex-wrap:wrap;gap:8px; }
+  .btn-status {
+    height:44px;padding:0 20px;border-radius:10px;border:none;cursor:pointer;
+    font-size:0.88rem;font-weight:700;transition:opacity 0.15s,transform 0.1s;
+    display:inline-flex;align-items:center;gap:8px;
+  }
+  .btn-status:hover { opacity:0.85;transform:translateY(-1px); }
+  .btn-status:focus-visible { outline:3px solid var(--irango-brand);outline-offset:3px; }
+  .btn-confirmar { background:var(--irango-cta);color:var(--branco); }
+  .btn-preparar { background:#4338ca;color:var(--branco); }
+  .btn-entregar { background:#0e7490;color:var(--branco); }
+  .btn-cancelar { background:var(--branco);color:#991b1b;border:2px solid #fca5a5; }
+  .btn-cancelar:hover { background:#fee2e2;border-color:#991b1b; }
+
+  /* Alerta cancelar */
+  .alerta-cancelar { background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:12px 16px;font-size:0.82rem;color:#991b1b;margin-top:12px;display:flex;gap:8px;align-items:flex-start; }
+
+  @media (max-width: 768px) {
+    .sidebar { display:none; }
+    .main-wrapper { margin-left:0; }
+    .page-content { padding:16px; }
+    .info-grid { grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width: 400px) {
+    .info-grid { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+  <nav class="sidebar" aria-label="Menu do painel">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark" aria-hidden="true">iR</div>
+      <div><div class="sidebar-logo-nome">iRango</div></div>
+    </div>
+    <div class="nav-group-label">Principal</div>
+    <a href="dashboard.html" class="nav-item"><span class="ico" aria-hidden="true">▣</span> Dashboard</a>
+    <a href="tabela-pedidos.html" class="nav-item ativo" aria-current="page"><span class="ico" aria-hidden="true">📋</span> Pedidos</a>
+    <a href="form-produto.html" class="nav-item"><span class="ico" aria-hidden="true">🛒</span> Produtos</a>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">🏷</span> Cupons</a>
+    <div class="nav-group-label">Configurações</div>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">⚙</span> Configurações</a>
+    <div class="sidebar-footer">
+      <a href="#" class="nav-item" style="color:rgba(255,255,255,0.5)"><span class="ico" aria-hidden="true">↩</span> Sair</a>
+    </div>
+  </nav>
+
+  <div class="main-wrapper">
+    <main class="page-content">
+      <nav class="breadcrumb" aria-label="Localização">
+        <a href="tabela-pedidos.html">Pedidos</a>
+        <span aria-hidden="true">›</span>
+        <span aria-current="page">Pedido #1042</span>
+      </nav>
+
+      <div class="page-header">
+        <div class="page-header-info">
+          <h1>Pedido #1042</h1>
+          <p>Recebido em 14/06/2026 às 14:32</p>
+        </div>
+        <span class="badge b-pendente" role="status"><span aria-hidden="true">●</span>Pendente</span>
+      </div>
+
+      <!-- Dados do cliente -->
+      <div class="card">
+        <div class="card-header"><h2>Cliente</h2></div>
+        <div class="card-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <label>Nome</label>
+              <span>Maria Silva</span>
+            </div>
+            <div class="info-item">
+              <label>Telefone</label>
+              <span>(11) 99234-5678</span>
+            </div>
+            <div class="info-item">
+              <label>Forma de pagamento</label>
+              <span>Pix</span>
+            </div>
+            <div class="info-item">
+              <label>Tipo de entrega</label>
+              <span>Entrega em domicílio</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Endereço -->
+      <div class="card">
+        <div class="card-header"><h2>Endereço de entrega</h2></div>
+        <div class="card-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <label>Rua</label>
+              <span>Rua das Acácias, 342</span>
+            </div>
+            <div class="info-item">
+              <label>Complemento</label>
+              <span>Apto 12</span>
+            </div>
+            <div class="info-item">
+              <label>Bairro / Zona</label>
+              <span>Vila Mariana — R$ 8,00 frete</span>
+            </div>
+            <div class="info-item">
+              <label>CEP</label>
+              <span>04105-001</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Itens do pedido -->
+      <div class="card">
+        <div class="card-header"><h2>Itens</h2></div>
+        <div class="card-body" style="padding-top:8px;padding-bottom:8px;">
+          <div class="item-pedido">
+            <div class="item-img" aria-hidden="true">🍞</div>
+            <div class="item-info">
+              <div class="item-nome">Pão de queijo artesanal (12 un)</div>
+              <div class="item-qtd">2 × R$ 18,00</div>
+            </div>
+            <div class="item-preco">R$ 36,00</div>
+          </div>
+          <div class="item-pedido">
+            <div class="item-img" aria-hidden="true">☕</div>
+            <div class="item-info">
+              <div class="item-nome">Café moído Espresso 250g</div>
+              <div class="item-qtd">1 × R$ 34,50</div>
+            </div>
+            <div class="item-preco">R$ 34,50</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumo financeiro -->
+      <div class="card">
+        <div class="card-header"><h2>Resumo financeiro</h2></div>
+        <div class="card-body">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal</span>
+            <span class="resumo-valor">R$ 70,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Vila Mariana)</span>
+            <span class="resumo-valor">R$ 8,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (cupom PROMO10)</span>
+            <span class="resumo-valor" style="color:#166534">− R$ 7,05</span>
+          </div>
+          <div class="resumo-linha sep total">
+            <span class="resumo-label">Total cobrado</span>
+            <span class="resumo-valor">R$ 71,45</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transição de status -->
+      <div class="card">
+        <div class="card-header"><h2>Atualizar status</h2></div>
+        <div class="card-body">
+          <p class="status-titulo">Status atual: Pendente — escolha a próxima ação</p>
+          <div class="status-btns">
+            <button type="button" class="btn-status btn-confirmar">
+              <span aria-hidden="true">✓</span> Confirmar pedido
+            </button>
+            <button type="button" class="btn-status btn-preparar">
+              <span aria-hidden="true">⏱</span> Iniciar preparo
+            </button>
+            <button type="button" class="btn-status btn-entregar">
+              <span aria-hidden="true">🛵</span> Saiu pra entrega
+            </button>
+            <button type="button" class="btn-status btn-cancelar">
+              <span aria-hidden="true">✕</span> Cancelar pedido
+            </button>
+          </div>
+          <div class="alerta-cancelar" role="note" aria-label="Aviso sobre cancelamento">
+            <span aria-hidden="true">⚠</span>
+            <span>Cancelar é irreversível. O cliente será notificado e o pedido não poderá ser reaberto.</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

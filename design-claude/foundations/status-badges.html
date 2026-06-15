@@ -1,0 +1,79 @@
+<!-- @dsCard group="Foundations" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foundations · BadgeStatus</title>
+<style>
+  :root {
+    --marrom-cafe: #2e2610;
+    --texto: #3e2723;
+    --preto: #111111;
+    --branco: #ffffff;
+    --cinza-medio: #eeeeee;
+    --cinza-claro: #f9f9f9;
+    --sombra-suave: rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); padding: 24px 16px; }
+  h1 { font-size: 1.5rem; font-weight: 900; margin: 0 0 4px; color: var(--marrom-cafe); }
+  p.sub { margin: 0 0 8px; color: #6b5d4f; font-size: 0.9rem; }
+  .nota { font-size:0.78rem; color:#6b5d4f; margin:0 0 24px; }
+  .tag-proposta {
+    display:inline-block; background:#fde68a; color:#713f12; font-size:0.65rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:0.5px; padding:2px 8px; border-radius:6px; margin-left:8px;
+  }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: var(--marrom-cafe); font-weight: 700; margin: 28px 0 12px; }
+  table { width:100%; border-collapse: collapse; background:var(--branco); border-radius:12px; overflow:hidden; box-shadow:0 4px 12px var(--sombra-suave); }
+  th, td { text-align:left; padding:12px 14px; border-bottom:1px solid var(--cinza-medio); font-size:0.85rem; }
+  th { background:var(--cinza-claro); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; color:#6b5d4f; }
+  tr:last-child td { border-bottom:none; }
+  code { font-family: ui-monospace, monospace; font-size:0.78rem; color:#6b5d4f; }
+  /* Badge base: cor + texto + ícone. Tint claro com texto escuro = contraste AA confortável. */
+  .badge {
+    display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px;
+    font-size:0.78rem; font-weight:700; line-height:1; min-height:28px; border:1px solid transparent;
+  }
+  .badge .ico { font-size:0.85rem; }
+  /* Status de pedido (sistema, fixo — NÃO usa tema da loja) */
+  .b-pendente   { background:#fef3c7; color:#854d0e; border-color:#fcd34d; } /* âmbar */
+  .b-confirmado { background:#dbeafe; color:#1e40af; border-color:#93c5fd; } /* azul */
+  .b-preparo    { background:#e0e7ff; color:#3730a3; border-color:#a5b4fc; } /* índigo */
+  .b-saiu       { background:#cffafe; color:#155e75; border-color:#67e8f9; } /* ciano */
+  .b-entregue   { background:#dcfce7; color:#166534; border-color:#86efac; } /* verde */
+  .b-cancelado  { background:#fee2e2; color:#991b1b; border-color:#fca5a5; } /* vermelho */
+  /* Status da loja (vitrine) */
+  .b-aberto  { background:#dcfce7; color:#166534; border-color:#86efac; }
+  .b-fechado { background:#e5e7eb; color:#374151; border-color:#d1d5db; }
+</style>
+</head>
+<body>
+  <h1>BadgeStatus</h1>
+  <p class="sub">Estado do sistema — cor + texto + ícone, nunca cor sozinha (WCAG).</p>
+  <p class="nota">Cores <strong>fixas, independentes de <code>lojas.tema</code></strong>: status significa o mesmo em qualquer loja. Mapa reusado de design-system.md §8.<span class="tag-proposta">proposta</span></p>
+
+  <h2>Status de pedido (painel) — §8.2</h2>
+  <table>
+    <thead><tr><th>status</th><th>Badge renderizado</th><th>Tint / texto</th></tr></thead>
+    <tbody>
+      <tr><td><code>pendente</code></td><td><span class="badge b-pendente"><span class="ico">●</span>Pendente</span></td><td><code>#fef3c7 / #854d0e</code> âmbar</td></tr>
+      <tr><td><code>confirmado</code></td><td><span class="badge b-confirmado"><span class="ico">✓</span>Confirmado</span></td><td><code>#dbeafe / #1e40af</code> azul</td></tr>
+      <tr><td><code>em_preparo</code></td><td><span class="badge b-preparo"><span class="ico">⏱</span>Em preparo</span></td><td><code>#e0e7ff / #3730a3</code> índigo</td></tr>
+      <tr><td><code>saiu_entrega</code></td><td><span class="badge b-saiu"><span class="ico">🛵</span>Saiu pra entrega</span></td><td><code>#cffafe / #155e75</code> ciano</td></tr>
+      <tr><td><code>entregue</code></td><td><span class="badge b-entregue"><span class="ico">✓</span>Entregue</span></td><td><code>#dcfce7 / #166534</code> verde</td></tr>
+      <tr><td><code>cancelado</code></td><td><span class="badge b-cancelado"><span class="ico">✕</span>Cancelado</span></td><td><code>#fee2e2 / #991b1b</code> vermelho</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Status de funcionamento da loja (vitrine) — §8.1</h2>
+  <table>
+    <thead><tr><th>estado</th><th>Badge renderizado</th><th>Tint / texto</th></tr></thead>
+    <tbody>
+      <tr><td><code>aberta</code></td><td><span class="badge b-aberto"><span class="ico">●</span>Aberto agora</span></td><td><code>#dcfce7 / #166534</code> verde</td></tr>
+      <tr><td><code>fechada</code></td><td><span class="badge b-fechado"><span class="ico">●</span>Fechado · abre 8h</span></td><td><code>#e5e7eb / #374151</code> neutro</td></tr>
+    </tbody>
+  </table>
+</body>
+</html>

@@ -1,0 +1,1017 @@
+<!-- @dsCard group="Vitrine" -->
+<!--
+  produto-modal.html
+  Modal/bottom-sheet de detalhe de produto — abre ao tocar num CardProduto na vitrine.
+  Mundo: Vitrine (tema da loja — cor-primaria / cor-fundo / cor-destaque injetadas via SSR).
+
+  LAYOUT: segue o padrão .page de todos os irmãos (vitrine-completa, checkout-1/2/3).
+  O modal é renderizado como conteúdo em fluxo normal dentro de .page — NÃO usa
+  position:absolute com vh, NÃO tem frame de altura fixa em px. Funciona em zoom 100%
+  tanto em mobile (390px) quanto em desktop (1280px) sem deformação.
+
+  DOIS ESTADOS empilhados verticalmente (como outros mockups multi-estado):
+    1. Normal (produto disponível)
+    2. Esgotado (produto indisponível)
+
+  NOTA DE ESCOPO:
+  A seção de Opcionais/Add-ons é ASPIRACIONAL — o modelo de dados atual
+  (produtos: nome, descricao, preco, foto_url, categoria_id, disponivel) NÃO tem
+  opcionais. A feature exigiria schema + spec separados. O restante
+  (quantidade, observação, subtotal, adicionar ao carrinho) está 100% disponível.
+
+  Sem CDN externo. Fonte: system font stack. Ícones: emoji/SVG inline.
+-->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Modal de Produto</title>
+<style>
+  /* ── Tokens — Mundo Vitrine (tema da loja) ─────────────────────────── */
+  :root {
+    --cor-primaria:  #332616; /* header/hero do modal                   */
+    --cor-fundo:     #f5f0e6; /* fundo da vitrine                       */
+    --cor-destaque:  #2d3a27; /* preço, CTA, stepper ativo              */
+    --marrom-cafe:   #2e2610; /* título de seção                        */
+    --texto:         #3e2723; /* texto padrão                           */
+    --texto-muted:   #6b5d4f; /* secundário, legenda                    */
+    --borda-nav:     #dccbb0; /* divisores, bordas                      */
+    --branco:        #ffffff;
+    --cinza-medio:   #eeeeee;
+    --cinza-claro:   #f9f9f9;
+    --sombra-suave:  rgba(0,0,0,0.10);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                 Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ── Shell: padrão idêntico aos irmãos ─────────────────────────────── */
+  /*
+    body: fundo escuro/bege, página como coluna "celular" no centro.
+    .page: max-width 480px, centralizada, fluxo natural — nunca min-height px fixo,
+    nunca position:absolute com vh para conteúdo interno.
+  */
+  body { margin: 0; background: #c8bfab; color: var(--texto); min-height: 100vh; }
+
+  .page {
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--cor-fundo);
+    min-height: 100vh;
+  }
+
+  @media (min-width: 769px) {
+    body { background: #c8bfab; }
+    .page { box-shadow: 0 0 32px rgba(0,0,0,0.2); }
+  }
+
+  /* ── Rótulo de demo (entre os estados) ─────────────────────────────── */
+  .demo-sep {
+    background: var(--cor-primaria);
+    color: rgba(255,255,255,0.80);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 10px 16px;
+  }
+
+  /* ── Fundo simulado da vitrine (decorativo, aria-hidden) ───────────── */
+  /*
+    Simula o overlay escurecido da vitrine atrás do modal.
+    É conteúdo em FLUXO (não position:absolute), puramente decorativo.
+  */
+  .vitrine-sim {
+    background: var(--cor-fundo);
+    padding: 0 0 8px;
+    position: relative;
+  }
+  .vitrine-sim-overlay {
+    /* Overlay decorativo sobre a vitrine simulada — em fluxo, não absolute */
+    background: rgba(0,0,0,0.42);
+    padding: 16px 16px 12px;
+  }
+  .vsim-header {
+    background: var(--cor-primaria);
+    color: var(--branco);
+    font-weight: 900;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 16px;
+    margin: 0 -16px 12px;
+    opacity: 0.5;
+  }
+  .vsim-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    opacity: 0.35;
+    pointer-events: none;
+    user-select: none;
+  }
+  .vsim-card {
+    background: var(--branco);
+    border: 1px solid var(--cinza-medio);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .vsim-img {
+    height: 80px;
+    background: linear-gradient(135deg, #e8dcc4, #d8c4a0);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.6rem;
+  }
+  .vsim-body { padding: 8px; font-size: 0.75rem; font-weight: 700; color: var(--texto); }
+  .vsim-preco { color: var(--cor-destaque); font-weight: 900; font-size: 0.85rem; margin-top: 4px; }
+
+  /* ── Modal bottom-sheet em fluxo ───────────────────────────────────── */
+  /*
+    Estética bottom-sheet (cantos arredondados no topo, drag handle decorativo,
+    hero na cor-primária), mas posicionado em fluxo normal dentro da .page.
+    Altura definida pelo conteúdo — sem max-height vh, sem position:absolute.
+  */
+  .modal {
+    background: var(--branco);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.18);
+    overflow: hidden; /* cantos arredondados no conteúdo interno */
+  }
+
+  /* ── Drag handle (decorativo, mobile) ─────────────────────────────── */
+  .drag-handle-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 4px;
+    background: var(--branco);
+    cursor: grab;
+  }
+  .drag-handle {
+    width: 40px; height: 4px;
+    background: var(--borda-nav);
+    border-radius: 2px;
+  }
+
+  /* ── Hero (cor primária da loja, texto branco) ─────────────────────── */
+  .hero {
+    background: var(--cor-primaria);
+    padding: 16px 20px 20px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    position: relative;
+  }
+  .hero-img-wrap {
+    flex-shrink: 0;
+    position: relative;
+  }
+  .hero-img {
+    width: 110px; height: 110px;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.30);
+    background: linear-gradient(135deg, #4a3a22, #6b5131);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.8rem;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  /* Badge de categoria — sobre a imagem, canto superior esquerdo */
+  .badge-categoria {
+    position: absolute;
+    top: -6px; left: -6px;
+    background: #c8a54a; /* tom âmbar/dourado discreto */
+    color: #1a1000;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    white-space: nowrap;
+  }
+  .hero-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .hero-nome {
+    font-size: 1.05rem;
+    font-weight: 900;
+    color: var(--branco);
+    line-height: 1.25;
+    /* contraste: #fff sobre #332616 ~ 10:1 — WCAG AAA */
+  }
+  .hero-desc {
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.82);
+    line-height: 1.4;
+  }
+  .hero-preco {
+    font-size: 1.4rem;
+    font-weight: 900;
+    color: #f5d78c; /* dourado claro sobre primária — contraste ≥4.5:1 */
+    margin-top: 4px;
+  }
+  /* Botão fechar no canto superior direito do hero */
+  .btn-fechar {
+    position: absolute;
+    top: 10px; right: 12px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.30);
+    color: var(--branco);
+    border-radius: 50%;
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; font-weight: 900;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.15s;
+  }
+  .btn-fechar:hover { background: rgba(255,255,255,0.25); }
+  .btn-fechar:focus-visible {
+    outline: 3px solid var(--branco);
+    outline-offset: 2px;
+  }
+
+  /* ── Corpo (conteúdo em fluxo) ─────────────────────────────────────── */
+  .corpo { background: var(--branco); }
+
+  /* ── Seção genérica ───────────────────────────────────────────────── */
+  .secao {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--cinza-medio);
+  }
+  .secao:last-child { border-bottom: none; }
+  .secao-titulo {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--marrom-cafe);
+    margin-bottom: 12px;
+  }
+
+  /* ── Stepper de quantidade ─────────────────────────────────────────── */
+  .qtd-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .qtd-label {
+    font-size: 0.9rem;
+    color: var(--texto);
+    line-height: 1.3;
+  }
+  .qtd-unitario {
+    font-size: 0.78rem;
+    color: var(--texto-muted);
+    margin-top: 2px;
+  }
+  .stepper {
+    display: flex;
+    align-items: center;
+    background: var(--cinza-claro);
+    border: 1.5px solid var(--borda-nav);
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .stepper-btn {
+    background: transparent;
+    border: none;
+    color: var(--cor-destaque);
+    font-size: 1.3rem;
+    font-weight: 900;
+    width: 44px; height: 44px; /* toque ≥44×44px — WCAG 2.5.5 */
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.12s;
+    flex-shrink: 0;
+  }
+  .stepper-btn:hover { background: var(--cinza-medio); }
+  .stepper-btn:active { background: var(--borda-nav); }
+  .stepper-btn:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: -2px;
+  }
+  .stepper-btn:disabled {
+    color: var(--borda-nav);
+    cursor: not-allowed;
+  }
+  .stepper-valor {
+    min-width: 36px;
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--texto);
+    padding: 0 4px;
+    border-left: 1px solid var(--borda-nav);
+    border-right: 1px solid var(--borda-nav);
+  }
+
+  /* ── Opcionais (ASPIRACIONAL) ──────────────────────────────────────── */
+  /*
+    ASPIRACIONAL — Seção Opcionais/Add-ons
+    Esta seção é referência visual para feature futura.
+    O modelo atual (tabela produtos) não tem opcionais.
+    Implementar exigirá: tabela produto_opcionais, grupos,
+    itens com preço adicional, vinculação ao pedido_item.
+  */
+  .opcional-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--cinza-medio);
+  }
+  .opcional-item:last-child { border-bottom: none; }
+  .opcional-info { flex: 1; min-width: 0; }
+  .opcional-nome {
+    font-size: 0.88rem;
+    color: var(--texto);
+    font-weight: 500;
+  }
+  .opcional-preco {
+    font-size: 0.78rem;
+    color: var(--cor-destaque);
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  /* Mini-stepper para opcional (compacto) */
+  .mini-stepper {
+    display: flex;
+    align-items: center;
+    border: 1.5px solid var(--borda-nav);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--cinza-claro);
+    flex-shrink: 0;
+  }
+  .mini-btn {
+    background: transparent;
+    border: none;
+    color: var(--cor-destaque);
+    font-size: 1.1rem;
+    font-weight: 900;
+    width: 36px; height: 36px; /* conjunto mini-stepper total > 44px */
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .mini-btn:hover { background: var(--cinza-medio); }
+  .mini-btn:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: -2px;
+  }
+  .mini-btn:disabled { color: var(--borda-nav); cursor: not-allowed; }
+  .mini-valor {
+    min-width: 28px;
+    text-align: center;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--texto);
+    border-left: 1px solid var(--borda-nav);
+    border-right: 1px solid var(--borda-nav);
+    padding: 0 2px;
+  }
+  .grupo-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--texto-muted);
+    padding: 12px 0 4px;
+    border-top: 1px solid var(--cinza-medio);
+    margin-top: 4px;
+  }
+  .grupo-label:first-child { border-top: none; padding-top: 0; }
+
+  /* ── Observação ─────────────────────────────────────────────────────── */
+  .campo-obs label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--marrom-cafe);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .campo-obs textarea {
+    width: 100%;
+    min-height: 76px;
+    padding: 10px 12px;
+    border: 1.5px solid var(--borda-nav);
+    border-radius: 10px;
+    background: var(--cinza-claro);
+    color: var(--texto);
+    font-family: inherit;
+    font-size: 0.88rem;
+    resize: vertical;
+    line-height: 1.45;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .campo-obs textarea::placeholder { color: var(--texto-muted); }
+  .campo-obs textarea:focus {
+    outline: none;
+    border-color: var(--cor-destaque);
+    box-shadow: 0 0 0 3px rgba(45,58,39,0.15);
+  }
+  .campo-obs textarea:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: -1px;
+  }
+
+  /* ── Subtotal ao vivo ──────────────────────────────────────────────── */
+  .subtotal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    background: var(--cinza-claro);
+    border-top: 1px solid var(--cinza-medio);
+  }
+  .subtotal-label {
+    font-size: 0.8rem;
+    color: var(--texto-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .subtotal-valor {
+    font-size: 1.2rem;
+    font-weight: 900;
+    color: var(--cor-destaque);
+  }
+
+  /* ── Footer do modal ────────────────────────────────────────────────── */
+  .modal-footer {
+    padding: 12px 16px 20px; /* 20px extra cobre safe-area iOS */
+    background: var(--branco);
+    border-top: 1px solid var(--cinza-medio);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .btn-adicionar {
+    width: 100%;
+    background: var(--cor-destaque);
+    color: var(--branco);
+    border: none;
+    border-radius: 12px;
+    min-height: 52px; /* toque generoso */
+    font-size: 1rem;
+    font-weight: 900;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    gap: 8px;
+    transition: background 0.15s, transform 0.1s;
+    letter-spacing: 0.2px;
+  }
+  .btn-adicionar:hover { background: #1e2a1a; }
+  .btn-adicionar:active { transform: scale(0.99); }
+  .btn-adicionar:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: 3px;
+  }
+  .btn-adicionar:disabled {
+    background: #9a9a9a;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn-label { font-size: 1rem; font-weight: 900; }
+  .btn-preco {
+    font-size: 1.05rem;
+    font-weight: 900;
+    background: rgba(255,255,255,0.15);
+    padding: 4px 10px;
+    border-radius: 8px;
+  }
+  .link-carrinho {
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--cor-destaque);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    min-height: 44px; /* toque ≥44px — WCAG 2.5.5 */
+    display: flex; align-items: center; justify-content: center;
+  }
+  .link-carrinho:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* ── Estado ESGOTADO ───────────────────────────────────────────────── */
+  .modal.esgotado .hero-img { filter: grayscale(0.7) brightness(0.75); }
+  .modal.esgotado .hero-preco { text-decoration: line-through; opacity: 0.6; }
+  .badge-esgotado {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #8B4513;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.4);
+    margin-top: 4px;
+    width: fit-content;
+  }
+
+  /* ── Desktop: sem drag handle ───────────────────────────────────────── */
+  @media (min-width: 769px) {
+    .drag-handle-wrap { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     .page — padrão idêntico aos irmãos (vitrine-completa, checkout-1/2/3)
+     max-width 480px, centralizado via margin: 0 auto, min-height 100vh.
+     Os DOIS estados ficam dentro da mesma .page, empilhados verticalmente.
+     Conteúdo do modal flui naturalmente — sem position:absolute, sem vh.
+════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <!-- Rótulo de demonstração — Estado 1 -->
+  <div class="demo-sep" aria-hidden="true">Estado Normal — Bottom-sheet (produto disponível)</div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ESTADO 1: Produto disponível
+  ══════════════════════════════════════════════════════════════════ -->
+
+  <!-- Vitrine simulada ao fundo (aria-hidden — decorativo) -->
+  <div class="vitrine-sim" aria-hidden="true">
+    <div class="vitrine-sim-overlay">
+      <div class="vsim-header">Empório iRango</div>
+      <div class="vsim-grid">
+        <div class="vsim-card">
+          <div class="vsim-img">🧀</div>
+          <div class="vsim-body">Pão de queijo artesanal<div class="vsim-preco">R$ 18,90</div></div>
+        </div>
+        <div class="vsim-card">
+          <div class="vsim-img">🥪</div>
+          <div class="vsim-body">Sanduíche natural<div class="vsim-preco">R$ 15,00</div></div>
+        </div>
+        <div class="vsim-card">
+          <div class="vsim-img">🍰</div>
+          <div class="vsim-body">Bolo de cenoura<div class="vsim-preco">R$ 9,50</div></div>
+        </div>
+        <div class="vsim-card">
+          <div class="vsim-img">☕</div>
+          <div class="vsim-body">Café coado 300ml<div class="vsim-preco">R$ 7,90</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal do produto — em fluxo, não absolute -->
+  <div
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-nome-1"
+    id="modal-1"
+  >
+    <!-- Drag handle decorativo (mobile only) -->
+    <div class="drag-handle-wrap" aria-hidden="true">
+      <div class="drag-handle"></div>
+    </div>
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-img-wrap">
+        <div class="hero-img" role="img" aria-label="Foto do produto: pão de queijo">🧀</div>
+        <span class="badge-categoria">Salgados</span>
+      </div>
+      <div class="hero-info">
+        <h2 class="hero-nome" id="modal-nome-1">Pão de queijo artesanal — 12 un</h2>
+        <p class="hero-desc">
+          Feito com polvilho azedo e queijo minas, assado na hora. Crocante por fora, macio por dentro.
+        </p>
+        <p class="hero-preco" aria-label="Preço: R$ 18,90">R$ 18,90</p>
+      </div>
+      <button
+        class="btn-fechar"
+        aria-label="Fechar detalhes do produto"
+      >✕</button>
+    </div>
+
+    <!-- Corpo -->
+    <div class="corpo" id="corpo-1">
+
+      <!-- Seção: Quantidade -->
+      <div class="secao">
+        <p class="secao-titulo">Quantidade</p>
+        <div class="qtd-row">
+          <div>
+            <p class="qtd-label">Unidades</p>
+            <p class="qtd-unitario">Cada unidade · R$ 18,90</p>
+          </div>
+          <div
+            class="stepper"
+            role="group"
+            aria-label="Selecionar quantidade"
+          >
+            <button
+              class="stepper-btn"
+              aria-label="Diminuir quantidade"
+              id="btn-menos-1"
+              disabled
+              onclick="alterarQtd('qtd-1', -1, 'subtotal-1', 18.90)"
+            >−</button>
+            <span
+              class="stepper-valor"
+              id="qtd-1"
+              role="status"
+              aria-live="polite"
+              aria-label="Quantidade: 0"
+            >0</span>
+            <button
+              class="stepper-btn"
+              aria-label="Aumentar quantidade"
+              onclick="alterarQtd('qtd-1', +1, 'subtotal-1', 18.90)"
+            >+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ASPIRACIONAL: opcionais ainda não existem no modelo de dados; feature futura -->
+      <!--
+        ════════════════════════════════════════════════════════════════
+        ASPIRACIONAL — Seção Opcionais/Add-ons
+        Esta seção é referência visual para feature futura.
+        O modelo atual (tabela produtos) não tem opcionais.
+        Implementar exigirá: tabela produto_opcionais, grupos,
+        itens com preço adicional, vinculação ao pedido_item.
+        ════════════════════════════════════════════════════════════════
+      -->
+      <!-- hidden inicial: só aparece quando qtd ≥ 1 -->
+      <div class="secao" id="secao-opcionais-1" aria-label="Opcionais (seção aspiracional — não implementado)" hidden aria-hidden="true">
+        <p class="secao-titulo">
+          Opcionais
+          <span style="font-size:0.65rem;color:var(--texto-muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px;">em breve</span>
+        </p>
+
+        <!-- Grupo 1: Acompanhamentos -->
+        <p class="grupo-label">Acompanhamentos</p>
+
+        <div class="opcional-item">
+          <div class="opcional-info">
+            <p class="opcional-nome">Geleia artesanal de goiaba</p>
+            <p class="opcional-preco">+ R$ 6,00</p>
+          </div>
+          <div class="mini-stepper" role="group" aria-label="Quantidade de Geleia artesanal">
+            <button class="mini-btn" aria-label="Remover Geleia artesanal" disabled>−</button>
+            <span class="mini-valor" role="status" aria-live="polite">0</span>
+            <button class="mini-btn" aria-label="Adicionar Geleia artesanal">+</button>
+          </div>
+        </div>
+
+        <div class="opcional-item">
+          <div class="opcional-info">
+            <p class="opcional-nome">Manteiga de garrafa</p>
+            <p class="opcional-preco">+ R$ 4,00</p>
+          </div>
+          <div class="mini-stepper" role="group" aria-label="Quantidade de Manteiga de garrafa">
+            <button class="mini-btn" aria-label="Remover Manteiga de garrafa" disabled>−</button>
+            <span class="mini-valor" role="status" aria-live="polite">0</span>
+            <button class="mini-btn" aria-label="Adicionar Manteiga de garrafa">+</button>
+          </div>
+        </div>
+
+        <!-- Grupo 2: Recheio extra -->
+        <p class="grupo-label">Recheio extra</p>
+
+        <div class="opcional-item">
+          <div class="opcional-info">
+            <p class="opcional-nome">Queijo coalho extra</p>
+            <p class="opcional-preco">+ R$ 5,00</p>
+          </div>
+          <div class="mini-stepper" role="group" aria-label="Quantidade de Queijo coalho extra">
+            <button class="mini-btn" aria-label="Remover Queijo coalho extra" disabled>−</button>
+            <span class="mini-valor" role="status" aria-live="polite">0</span>
+            <button class="mini-btn" aria-label="Adicionar Queijo coalho extra">+</button>
+          </div>
+        </div>
+      </div>
+      <!-- /ASPIRACIONAL -->
+
+      <!-- Seção: Observação -->
+      <div class="secao campo-obs">
+        <label for="obs-1">Observação</label>
+        <textarea
+          id="obs-1"
+          name="observacao"
+          placeholder="Ex.: sem cebola, bem passado, embalar separado…"
+          maxlength="280"
+          aria-describedby="obs-hint-1"
+        ></textarea>
+        <p id="obs-hint-1" style="font-size:0.72rem;color:var(--texto-muted);margin-top:6px;">
+          Opcional · até 280 caracteres
+        </p>
+      </div>
+
+    </div>
+    <!-- /corpo -->
+
+    <!-- Subtotal ao vivo — oculto quando qtd = 0 -->
+    <div class="subtotal-row" id="subtotal-row-1" aria-live="polite" aria-atomic="true" hidden aria-hidden="true">
+      <span class="subtotal-label">Subtotal do item</span>
+      <span class="subtotal-valor" id="subtotal-1">R$ 0,00</span>
+    </div>
+
+    <!-- Footer -->
+    <div class="modal-footer">
+      <button
+        class="btn-adicionar"
+        aria-label="Selecione a quantidade para adicionar ao carrinho"
+        id="btn-add-1"
+        disabled
+        aria-disabled="true"
+      >
+        <span class="btn-label">Adicionar ao carrinho</span>
+        <span class="btn-preco" id="btn-preco-1">R$ 0,00</span>
+      </button>
+      <a class="link-carrinho" href="#" tabindex="0" aria-label="Ver itens no carrinho">
+        Ver carrinho (3 itens · R$ 54,30)
+      </a>
+    </div>
+  </div>
+  <!-- /modal estado 1 -->
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ESTADO 2: Produto esgotado
+  ══════════════════════════════════════════════════════════════════ -->
+
+  <!-- Rótulo de demonstração — Estado 2 -->
+  <div class="demo-sep" aria-hidden="true">Estado Esgotado</div>
+
+  <!-- Vitrine simulada ao fundo (decorativo) -->
+  <div class="vitrine-sim" aria-hidden="true">
+    <div class="vitrine-sim-overlay">
+      <div class="vsim-header">Empório iRango</div>
+      <div class="vsim-grid">
+        <div class="vsim-card">
+          <div class="vsim-img">🥐</div>
+          <div class="vsim-body">Croissant de manteiga<div class="vsim-preco">R$ 12,50</div></div>
+        </div>
+        <div class="vsim-card">
+          <div class="vsim-img">🥪</div>
+          <div class="vsim-body">Sanduíche natural<div class="vsim-preco">R$ 15,00</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal esgotado — em fluxo -->
+  <div
+    class="modal esgotado"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-nome-2"
+    id="modal-2"
+  >
+    <div class="drag-handle-wrap" aria-hidden="true">
+      <div class="drag-handle"></div>
+    </div>
+
+    <div class="hero">
+      <div class="hero-img-wrap">
+        <div class="hero-img" role="img" aria-label="Foto do produto: croissant de manteiga — esgotado">🥐</div>
+        <span class="badge-categoria">Padaria</span>
+      </div>
+      <div class="hero-info">
+        <h2 class="hero-nome" id="modal-nome-2">Croissant de manteiga francês</h2>
+        <p class="hero-desc">
+          Croissant laminado artesanal, feito com manteiga francesa AOP. Assado diariamente às 6h.
+        </p>
+        <p class="hero-preco" aria-label="Preço: R$ 12,50 — produto esgotado">R$ 12,50</p>
+        <!-- Badge esgotado: cor + texto (não só cor) — WCAG 1.4.1 -->
+        <span class="badge-esgotado" role="status" aria-live="polite">
+          <span aria-hidden="true">✕</span> Esgotado
+        </span>
+      </div>
+      <button class="btn-fechar" aria-label="Fechar detalhes do produto">✕</button>
+    </div>
+
+    <div class="corpo">
+      <!-- Quantidade desabilitada -->
+      <div class="secao">
+        <p class="secao-titulo">Quantidade</p>
+        <div class="qtd-row">
+          <div>
+            <p class="qtd-label" style="opacity:0.5;">Unidades</p>
+            <p class="qtd-unitario">Produto indisponível no momento</p>
+          </div>
+          <div
+            class="stepper"
+            role="group"
+            aria-label="Quantidade indisponível"
+            aria-disabled="true"
+            style="opacity:0.45;pointer-events:none;"
+          >
+            <button class="stepper-btn" aria-label="Diminuir quantidade" disabled>−</button>
+            <span class="stepper-valor">1</span>
+            <button class="stepper-btn" aria-label="Aumentar quantidade" disabled>+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Observação desabilitada -->
+      <div class="secao campo-obs">
+        <label for="obs-2" style="opacity:0.5;">Observação</label>
+        <textarea
+          id="obs-2"
+          disabled
+          placeholder="Produto esgotado — não é possível adicionar ao carrinho"
+          style="opacity:0.45;cursor:not-allowed;"
+          aria-disabled="true"
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- Subtotal -->
+    <div class="subtotal-row" style="opacity:0.45;">
+      <span class="subtotal-label">Subtotal do item</span>
+      <span class="subtotal-valor">R$ 12,50</span>
+    </div>
+
+    <!-- Footer -->
+    <div class="modal-footer">
+      <button
+        class="btn-adicionar"
+        disabled
+        aria-label="Produto esgotado — não é possível adicionar ao carrinho"
+        aria-disabled="true"
+      >
+        <span class="btn-label">Produto esgotado</span>
+        <span class="btn-preco" style="opacity:0.6;">R$ 12,50</span>
+      </button>
+      <a class="link-carrinho" href="#" tabindex="0" aria-label="Ver itens no carrinho">
+        Ver carrinho (3 itens · R$ 54,30)
+      </a>
+    </div>
+  </div>
+  <!-- /modal estado 2 -->
+
+</div>
+<!-- /page -->
+
+<!-- ════════════════════════════════════════════════════════════════════
+     JavaScript — interatividade ilustrativa (stepper + subtotal ao vivo)
+     Em produção: estado gerenciado via React/Zustand/carrinho.
+════════════════════════════════════════════════════════════════════ -->
+<script>
+  /* ── Utilitário de formatação ─────────────────────────────────────── */
+  function fmt(val) {
+    return 'R$ ' + val.toFixed(2).replace('.', ',');
+  }
+
+  /* ── Auto-scroll: leva o topo da seção opcionais ao topo do corpo
+        rolável do modal. Usa offsetTop relativo ao container para não
+        depender do scroll da janela (modal em fluxo dentro da .page). ── */
+  function scrollParaOpcionais(elSecao) {
+    /* Sobe na árvore até achar o primeiro ancestral rolável */
+    function acharScrollavel(el) {
+      let pai = el.parentElement;
+      while (pai && pai !== document.body) {
+        const style = window.getComputedStyle(pai);
+        const overflow = style.overflowY;
+        if ((overflow === 'auto' || overflow === 'scroll') && pai.scrollHeight > pai.clientHeight) {
+          return pai;
+        }
+        pai = pai.parentElement;
+      }
+      return null; /* sem container rolável interno → rola a janela */
+    }
+
+    /* Calcula offset acumulado do elemento até o container */
+    function offsetRelativo(el, container) {
+      let top = 0;
+      let cur = el;
+      while (cur && cur !== container) {
+        top += cur.offsetTop;
+        cur = cur.offsetParent;
+      }
+      return top;
+    }
+
+    const container = acharScrollavel(elSecao);
+
+    if (container) {
+      /* Rola o container interno para que o topo da seção fique no topo visível */
+      container.scrollTo({
+        top: offsetRelativo(elSecao, container),
+        behavior: 'smooth'
+      });
+    } else {
+      /* Fallback: sem container rolável — usa scrollIntoView na janela */
+      elSecao.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  /* ── alterarQtd: stepper principal do modal normal ─────────────────
+     Parâmetros:
+       idQtd       — id do <span> com o valor numérico
+       delta       — +1 ou -1
+       idSubtotal  — id do <span> do subtotal ao vivo
+       precoUnit   — preço unitário do produto (number)
+  ──────────────────────────────────────────────────────────────────── */
+  function alterarQtd(idQtd, delta, idSubtotal, precoUnit) {
+    const elQtd         = document.getElementById(idQtd);
+    const elSub         = document.getElementById(idSubtotal);
+    const elSubRow      = document.getElementById('subtotal-row-1');
+    const elBtnPreco    = document.getElementById('btn-preco-1');
+    const elBtnAdd      = document.getElementById('btn-add-1');
+    const elBtnMenos    = document.getElementById('btn-menos-1');
+    const elOpcionais   = document.getElementById('secao-opcionais-1');
+
+    const qtdAnterior = parseInt(elQtd.textContent, 10);
+    let qtd = qtdAnterior + delta;
+    if (qtd < 0) qtd = 0; /* piso em 0, não em 1 */
+
+    /* Atualiza display e aria do valor de quantidade */
+    elQtd.textContent = qtd;
+    elQtd.setAttribute('aria-label', 'Quantidade: ' + qtd);
+
+    /* Subtotal = qtd × preço (opcionais não somados: aspiracional) */
+    const total = qtd * precoUnit;
+
+    /* ── Visibilidade condicional (qtd = 0 → oculto, qtd ≥ 1 → visível) */
+    const visivel = qtd >= 1;
+    const revelouAgora = visivel && qtdAnterior === 0; /* transição 0 → 1 */
+
+    /* Seção opcionais */
+    if (elOpcionais) {
+      if (visivel) {
+        elOpcionais.removeAttribute('hidden');
+        elOpcionais.removeAttribute('aria-hidden');
+      } else {
+        elOpcionais.setAttribute('hidden', '');
+        elOpcionais.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    /* Subtotal-row */
+    if (elSubRow) {
+      if (visivel) {
+        elSubRow.removeAttribute('hidden');
+        elSubRow.removeAttribute('aria-hidden');
+      } else {
+        elSubRow.setAttribute('hidden', '');
+        elSubRow.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    /* Texto e aria do subtotal */
+    if (elSub) elSub.textContent = fmt(total);
+
+    /* Botão "Adicionar" */
+    if (elBtnAdd) {
+      elBtnAdd.disabled = !visivel;
+      elBtnAdd.setAttribute('aria-disabled', visivel ? 'false' : 'true');
+      elBtnAdd.setAttribute(
+        'aria-label',
+        visivel
+          ? 'Adicionar ' + qtd + ' Pão de queijo artesanal ao carrinho por ' + fmt(total)
+          : 'Selecione a quantidade para adicionar ao carrinho'
+      );
+    }
+
+    /* Preço no badge do botão */
+    if (elBtnPreco) elBtnPreco.textContent = visivel ? fmt(total) : 'R$ 0,00';
+
+    /* Botão "−": desabilita em 0 */
+    if (elBtnMenos) elBtnMenos.disabled = qtd <= 0;
+
+    /* ── Auto-scroll ao revelar opcionais (0 → 1) ───────────────────
+       Aguarda ~50 ms para o layout assentar (hidden removido → reflow)
+       antes de calcular o offset e iniciar o scroll suave.
+    ──────────────────────────────────────────────────────────────────*/
+    if (revelouAgora && elOpcionais) {
+      setTimeout(function () {
+        scrollParaOpcionais(elOpcionais);
+      }, 50);
+    }
+  }
+</script>
+</body>
+</html>

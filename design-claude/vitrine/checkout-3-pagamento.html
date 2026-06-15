@@ -1,0 +1,666 @@
+<!-- Mundo: Vitrine pública — tema da loja via --cor-primaria / --cor-fundo / --cor-destaque -->
+<!-- Wizard de checkout — Etapa 3 de 3: Dados do cliente + forma de pagamento + confirmação -->
+<!-- Mostra os 3 estados de pagamento (PIX / Cartão / Dinheiro) rotulados -->
+<!-- Mobile-first ≤480px. Sem login. Cliente final. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empório iRango · Finalizar pedido — Pagamento</title>
+<style>
+  :root {
+    /* Tema da loja — injetado via SSR */
+    --cor-primaria: #332616;
+    --cor-fundo:    #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Sistema */
+    --marrom-cafe:  #2e2610;
+    --texto:        #3e2723;
+    --texto-muted:  #6b5d4f;
+    --borda-nav:    #dccbb0;
+    --branco:       #ffffff;
+    --cinza-claro:  #f9f9f9;
+    --cinza-medio:  #eeeeee;
+    --erro:         #991b1b;
+    --erro-bg:      #fee2e2;
+    --verde:        #166534;
+    --verde-bg:     #dcfce7;
+    --azul:         #1e40af;
+    --azul-bg:      #dbeafe;
+    --sombra-suave: rgba(0,0,0,0.10);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); color: var(--texto); min-height: 100vh; }
+
+  /* Page wrapper */
+  .page { max-width: 480px; margin: 0 auto; background: var(--cor-fundo); min-height: 100vh; padding-bottom: 32px; }
+
+  /* Header */
+  .header {
+    background: var(--cor-primaria); color: var(--branco);
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 50;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .btn-voltar {
+    background: none; border: none; color: var(--branco); cursor: pointer;
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; font-size: 1.2rem; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .btn-voltar:hover { background: rgba(255,255,255,0.12); }
+  .btn-voltar:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 2px; }
+  .header-titulo { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Stepper */
+  .stepper {
+    background: var(--branco); border-bottom: 1px solid var(--cinza-medio);
+    padding: 12px 16px; display: flex; align-items: center; justify-content: center;
+  }
+  .step {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; font-weight: 700; color: var(--texto-muted);
+    flex-shrink: 0;
+  }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--cinza-medio);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 900; background: var(--cinza-medio); color: var(--texto-muted);
+    flex-shrink: 0;
+  }
+  .step.ativo .step-num { background: var(--cor-destaque); border-color: var(--cor-destaque); color: var(--branco); }
+  .step.ativo { color: var(--cor-destaque); }
+  .step.concluido .step-num { background: var(--cor-destaque); border-color: var(--cor-destaque); color: var(--branco); }
+  .step-label { display: none; }
+  .step.ativo .step-label, .step.concluido .step-label { display: inline; }
+  .step-sep { flex: 1; height: 2px; background: var(--cinza-medio); margin: 0 6px; min-width: 16px; max-width: 48px; }
+  .step-sep.concluido { background: var(--cor-destaque); }
+
+  /* Separador de estados (markup de demonstração) */
+  .demo-separador {
+    margin: 24px 16px 0;
+    padding: 10px 14px;
+    background: #1e3a5f; color: #e0f0ff;
+    border-radius: 10px; font-size: 0.8rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+
+  /* Seções */
+  .secao {
+    background: var(--branco); margin: 12px 16px 0;
+    border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave); overflow: hidden;
+  }
+  .secao-titulo {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--texto-muted); padding: 14px 16px;
+    border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro);
+  }
+  .secao-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* Campos */
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo label { font-size: 0.8rem; font-weight: 700; color: var(--texto); }
+  .campo input, .campo select {
+    height: 48px; padding: 0 14px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    font-size: 0.95rem; color: var(--texto); background: var(--cinza-claro);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit;
+  }
+  .campo input:focus-visible, .campo select:focus-visible {
+    border-color: var(--cor-destaque); box-shadow: 0 0 0 3px rgba(45,58,39,0.15);
+  }
+  .campo input[aria-invalid="true"] { border-color: var(--erro); }
+  .campo .erro-msg { font-size: 0.75rem; color: var(--erro); }
+  .campo .hint { font-size: 0.75rem; color: var(--texto-muted); }
+
+  /* Radio cards (opcao) */
+  .opcao-lista { display: flex; flex-direction: column; gap: 8px; }
+  .opcao {
+    display: flex; align-items: flex-start; gap: 12px;
+    border: 1px solid var(--cinza-medio); border-radius: 10px; padding: 14px;
+    cursor: pointer; transition: border-color 0.15s, background 0.15s;
+    min-height: 52px;
+  }
+  .opcao:hover { border-color: var(--cor-destaque); }
+  .opcao input[type="radio"] { width: 20px; height: 20px; accent-color: var(--cor-destaque); flex-shrink: 0; cursor: pointer; margin-top: 2px; }
+  .opcao input[type="radio"]:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 2px; }
+  .opcao.selecionada { border-color: var(--cor-destaque); background: rgba(45,58,39,0.04); }
+  .opcao-info { flex: 1; }
+  .opcao-nome { font-size: 0.88rem; font-weight: 700; color: var(--texto); }
+  .opcao-sub { font-size: 0.78rem; color: var(--texto-muted); margin-top: 2px; }
+  .badge-recomendado {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: var(--verde-bg); color: var(--verde);
+    font-size: 0.7rem; font-weight: 800; border-radius: 6px; padding: 2px 8px;
+    margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.3px;
+    border: 1px solid #86efac;
+  }
+
+  /* Bloco PIX */
+  .pix-bloco { display: flex; flex-direction: column; gap: 12px; }
+  .pix-qr-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 20px; background: var(--cinza-claro); border-radius: 12px;
+    border: 1px solid var(--borda-nav);
+  }
+  .pix-qr {
+    width: 180px; height: 180px;
+    border: 2px solid var(--borda-nav); border-radius: 10px;
+    background: var(--branco);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--texto-muted); font-size: 0.78rem; text-align: center;
+    flex-shrink: 0;
+    /* QR real seria <img>, aqui é placeholder */
+    background-image: repeating-linear-gradient(
+      0deg, rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 8px, transparent 8px, transparent 16px
+    ),
+    repeating-linear-gradient(
+      90deg, rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 8px, transparent 8px, transparent 16px
+    );
+    position: relative;
+  }
+  .pix-qr-label {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px;
+    background: rgba(255,255,255,0.85);
+    font-size: 0.75rem; color: var(--texto-muted); font-weight: 700;
+    border-radius: 8px;
+  }
+  .pix-qr-label .qr-icon { font-size: 2.4rem; }
+  .pix-inst {
+    font-size: 0.8rem; color: var(--texto-muted); text-align: center;
+    line-height: 1.4; max-width: 260px;
+  }
+
+  /* Chave PIX cópia */
+  .pix-chave-wrap {
+    display: flex; align-items: stretch; gap: 0;
+    border: 1px solid var(--borda-nav); border-radius: 10px; overflow: hidden;
+  }
+  .pix-chave {
+    flex: 1; padding: 12px 14px;
+    font-family: 'Courier New', Courier, monospace; font-size: 0.8rem;
+    color: var(--texto); background: var(--cinza-claro); word-break: break-all;
+    border: none; outline: none; cursor: text; resize: none;
+    line-height: 1.5;
+  }
+  .btn-copiar {
+    min-width: 80px; padding: 0 14px; border: none; border-left: 1px solid var(--borda-nav);
+    background: var(--cor-destaque); color: var(--branco);
+    font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+    font-family: inherit; transition: opacity 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .btn-copiar:hover { opacity: 0.88; }
+  .btn-copiar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 2px; }
+  .pix-aviso-validade {
+    font-size: 0.75rem; color: var(--texto-muted); text-align: center;
+  }
+
+  /* Toast (tooltip de confirmação de cópia) */
+  .toast-copiado {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--marrom-cafe); color: var(--branco);
+    font-size: 0.78rem; font-weight: 700; padding: 8px 14px; border-radius: 8px;
+    margin: 0 auto; width: fit-content;
+  }
+
+  /* Bloco Cartão */
+  .cartao-bloco {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: var(--azul-bg); border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px;
+  }
+  .cartao-icon { font-size: 1.4rem; flex-shrink: 0; }
+  .cartao-texto { flex: 1; }
+  .cartao-titulo { font-size: 0.85rem; font-weight: 700; color: var(--azul); }
+  .cartao-sub { font-size: 0.8rem; color: #1e40af; margin-top: 4px; line-height: 1.4; opacity: 0.85; }
+
+  /* Bloco Dinheiro */
+  .dinheiro-bloco { display: flex; flex-direction: column; gap: 12px; }
+  .dinheiro-info {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--cinza-claro); border: 1px solid var(--borda-nav); border-radius: 10px; padding: 12px;
+  }
+  .dinheiro-icon { font-size: 1.3rem; flex-shrink: 0; }
+  .dinheiro-texto { font-size: 0.82rem; color: var(--texto); line-height: 1.4; }
+
+  /* Resumo financeiro */
+  .resumo-linha { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; }
+  .resumo-label { font-size: 0.85rem; color: var(--texto-muted); }
+  .resumo-valor { font-size: 0.85rem; font-weight: 600; color: var(--texto); }
+  .resumo-valor.desconto { color: var(--verde); font-weight: 700; }
+  .resumo-valor.gratis { color: var(--verde); font-weight: 900; }
+  .resumo-linha.total { border-top: 2px solid var(--borda-nav); margin-top: 8px; padding-top: 12px; }
+  .resumo-linha.total .resumo-label { font-size: 1rem; font-weight: 900; color: var(--marrom-cafe); }
+  .resumo-linha.total .resumo-valor { font-size: 1.15rem; font-weight: 900; color: var(--cor-destaque); }
+  .aviso-estimado {
+    display: flex; align-items: flex-start; gap: 6px;
+    background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
+    padding: 8px 12px; font-size: 0.75rem; color: #854d0e; margin-top: 8px;
+  }
+
+  /* Botões de navegação */
+  .nav-botoes { margin: 16px 16px 0; display: flex; flex-direction: column; gap: 10px; }
+  .btn-confirmar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 56px; border: none; border-radius: 12px; cursor: pointer;
+    background: var(--cor-destaque); color: var(--branco);
+    font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    transition: opacity 0.15s, transform 0.1s; font-family: inherit;
+  }
+  .btn-confirmar:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-confirmar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 3px; }
+  .btn-voltar-etapa {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; height: 48px; border: 1px solid var(--borda-nav); border-radius: 12px;
+    cursor: pointer; background: var(--branco); color: var(--texto-muted);
+    font-size: 0.88rem; font-weight: 700; font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-voltar-etapa:hover { border-color: var(--cor-destaque); color: var(--texto); }
+  .btn-voltar-etapa:focus-visible { outline: 2px solid var(--cor-destaque); outline-offset: 2px; }
+
+  /* Dados do cliente — reutilizado nas 3 variantes */
+  .cliente-secao {
+    background: var(--branco); margin: 12px 16px 0;
+    border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave); overflow: hidden;
+  }
+
+  @media (min-width: 769px) {
+    body { background: #c8bfab; }
+    .page { box-shadow: 0 0 32px rgba(0,0,0,0.2); }
+    .step-label { display: inline; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="header">
+        <button type="button" class="btn-voltar" aria-label="Voltar para entrega">&#8592;</button>
+        <span class="header-titulo">Finalizar pedido</span>
+      </div>
+    </header>
+
+    <!-- Stepper -->
+    <nav class="stepper" aria-label="Etapas do pedido">
+      <div class="step concluido" aria-label="Etapa 1: Itens (concluída)">
+        <div class="step-num" aria-hidden="true">&#10003;</div>
+        <span class="step-label">Itens</span>
+      </div>
+      <div class="step-sep concluido" aria-hidden="true"></div>
+      <div class="step concluido" aria-label="Etapa 2: Entrega (concluída)">
+        <div class="step-num" aria-hidden="true">&#10003;</div>
+        <span class="step-label">Entrega</span>
+      </div>
+      <div class="step-sep concluido" aria-hidden="true"></div>
+      <div class="step ativo" aria-current="step">
+        <div class="step-num" aria-hidden="true">3</div>
+        <span class="step-label">Pagamento</span>
+      </div>
+    </nav>
+
+    <main>
+
+      <!-- Dados do cliente (comum a todos os estados) -->
+      <section class="cliente-secao" aria-labelledby="titulo-cliente">
+        <h2 class="secao-titulo" id="titulo-cliente">Seus dados</h2>
+        <div class="secao-body">
+          <div class="campo">
+            <label for="nome">Nome completo</label>
+            <input
+              type="text" id="nome" name="nome"
+              placeholder="Maria Silva"
+              autocomplete="name" required
+              aria-required="true"
+            >
+          </div>
+          <div class="campo">
+            <label for="telefone">WhatsApp / Telefone</label>
+            <input
+              type="tel" id="telefone" name="telefone"
+              placeholder="(11) 99999-9999"
+              autocomplete="tel" inputmode="tel" required
+              aria-required="true"
+              aria-describedby="telefone-hint"
+            >
+            <span class="hint" id="telefone-hint">Usamos para enviar a confirmação do pedido.</span>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ============================================================ -->
+      <!-- ESTADO 1: PIX (selecionado)                                   -->
+      <!-- ============================================================ -->
+      <div class="demo-separador" role="note">
+        Estado 1 — PIX selecionado (recomendado)
+      </div>
+
+      <section class="secao" aria-labelledby="titulo-pgto-pix">
+        <h2 class="secao-titulo" id="titulo-pgto-pix">Forma de pagamento</h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Selecione a forma de pagamento</legend>
+            <div class="opcao-lista">
+              <label class="opcao selecionada">
+                <input type="radio" name="pgto-pix" value="pix" checked aria-describedby="pix-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">
+                    PIX
+                    <span class="badge-recomendado" aria-label="Opção recomendada">
+                      <span aria-hidden="true">&#10003;</span> Recomendado
+                    </span>
+                  </div>
+                  <div class="opcao-sub" id="pix-desc">Pague agora com QR Code ou chave</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pgto-pix" value="cartao" aria-describedby="cartao-pix-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Cartão de crédito / débito</div>
+                  <div class="opcao-sub" id="cartao-pix-desc">Link enviado pelo WhatsApp</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pgto-pix" value="dinheiro" aria-describedby="dinheiro-pix-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Dinheiro na entrega</div>
+                  <div class="opcao-sub" id="dinheiro-pix-desc">Pague ao receber</div>
+                </div>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Bloco PIX (visível quando PIX selecionado) -->
+          <div class="pix-bloco" aria-label="Instruções para pagamento PIX">
+            <div class="pix-qr-wrap">
+              <div
+                class="pix-qr"
+                role="img"
+                aria-label="QR Code PIX para pagamento de R$ 86,50 ao Empório iRango"
+              >
+                <div class="pix-qr-label">
+                  <span class="qr-icon" aria-hidden="true">&#9638;</span>
+                  <span>QR Code PIX</span>
+                </div>
+              </div>
+              <p class="pix-inst">
+                Abra o app do seu banco, escolha <strong>PIX</strong> e escaneie o código acima.
+              </p>
+            </div>
+
+            <!-- Chave PIX para copiar -->
+            <div>
+              <p style="font-size:0.78rem;font-weight:700;color:var(--texto-muted);margin:0 0 6px;">Ou copie a chave PIX:</p>
+              <div class="pix-chave-wrap">
+                <textarea
+                  class="pix-chave"
+                  rows="2"
+                  readonly
+                  aria-label="Chave PIX do Empório iRango para copiar"
+                  id="chave-pix"
+                >00020126580014BR.GOV.BCB.PIX0136emporioirango@gmail.com5204000053039865405086.505802BR5915Empoio iRango6009SAO PAULO62090505IRANGO</textarea>
+                <button
+                  type="button"
+                  class="btn-copiar"
+                  aria-label="Copiar chave PIX"
+                  aria-describedby="chave-pix"
+                >
+                  &#9781; Copiar
+                </button>
+              </div>
+            </div>
+
+            <!-- Toast de confirmação (aparece após clicar Copiar) -->
+            <div class="toast-copiado" role="status" aria-live="polite" aria-label="Chave copiada com sucesso">
+              <span aria-hidden="true">&#10003;</span> Chave copiada!
+            </div>
+
+            <p class="pix-aviso-validade">
+              Código válido por <strong>30 minutos</strong>. Após confirmar, enviaremos o comprovante por WhatsApp.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resumo financeiro -->
+      <section class="secao" aria-labelledby="titulo-resumo-pix">
+        <h2 class="secao-titulo" id="titulo-resumo-pix">Resumo do pedido</h2>
+        <div class="secao-body" style="padding-bottom: 20px;">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span>
+              <strong>Valores estimados.</strong> O total cobrado é confirmado pelo lojista. Em caso de ajuste, entraremos em contato pelo WhatsApp antes da cobrança.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <div class="nav-botoes">
+        <button type="button" class="btn-confirmar" aria-label="Confirmar pedido com pagamento via PIX">
+          Confirmar pedido
+        </button>
+        <button type="button" class="btn-voltar-etapa" aria-label="Voltar para entrega">
+          &#8592; Voltar para entrega
+        </button>
+      </div>
+
+
+      <!-- ============================================================ -->
+      <!-- ESTADO 2: CARTÃO DE CRÉDITO/DÉBITO                           -->
+      <!-- ============================================================ -->
+      <div class="demo-separador" role="note" style="margin-top:40px;">
+        Estado 2 — Cartão de crédito/débito selecionado
+      </div>
+
+      <section class="secao" aria-labelledby="titulo-pgto-cartao">
+        <h2 class="secao-titulo" id="titulo-pgto-cartao">Forma de pagamento</h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Selecione a forma de pagamento</legend>
+            <div class="opcao-lista">
+              <label class="opcao">
+                <input type="radio" name="pgto-cartao" value="pix">
+                <div class="opcao-info">
+                  <div class="opcao-nome">PIX <span class="badge-recomendado">&#10003; Recomendado</span></div>
+                  <div class="opcao-sub">Pague agora com QR Code ou chave</div>
+                </div>
+              </label>
+              <label class="opcao selecionada">
+                <input type="radio" name="pgto-cartao" value="cartao" checked aria-describedby="cartao-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Cartão de crédito / débito</div>
+                  <div class="opcao-sub" id="cartao-desc">Link enviado pelo WhatsApp</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pgto-cartao" value="dinheiro">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Dinheiro na entrega</div>
+                  <div class="opcao-sub">Pague ao receber</div>
+                </div>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Bloco Cartão (visível quando Cartão selecionado) -->
+          <div class="cartao-bloco" role="note" aria-label="Instruções para pagamento por cartão">
+            <span class="cartao-icon" aria-hidden="true">&#128241;</span>
+            <div class="cartao-texto">
+              <div class="cartao-titulo">Link de pagamento seguro</div>
+              <p class="cartao-sub">
+                Após confirmar o pedido, você receberá um link de pagamento pelo <strong>WhatsApp</strong>.
+                Clique no link e insira os dados do cartão no ambiente seguro.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resumo financeiro (cartão — igual ao PIX) -->
+      <section class="secao" aria-labelledby="titulo-resumo-cartao">
+        <h2 class="secao-titulo" id="titulo-resumo-cartao">Resumo do pedido</h2>
+        <div class="secao-body" style="padding-bottom: 20px;">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span>
+              <strong>Valores estimados.</strong> O total cobrado é confirmado pelo lojista antes do link ser enviado.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <div class="nav-botoes">
+        <button type="button" class="btn-confirmar" aria-label="Confirmar pedido com pagamento por cartão">
+          Confirmar pedido
+        </button>
+        <button type="button" class="btn-voltar-etapa" aria-label="Voltar para entrega">
+          &#8592; Voltar para entrega
+        </button>
+      </div>
+
+
+      <!-- ============================================================ -->
+      <!-- ESTADO 3: DINHEIRO NA ENTREGA                                 -->
+      <!-- ============================================================ -->
+      <div class="demo-separador" role="note" style="margin-top:40px;">
+        Estado 3 — Dinheiro na entrega selecionado
+      </div>
+
+      <section class="secao" aria-labelledby="titulo-pgto-dinheiro">
+        <h2 class="secao-titulo" id="titulo-pgto-dinheiro">Forma de pagamento</h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Selecione a forma de pagamento</legend>
+            <div class="opcao-lista">
+              <label class="opcao">
+                <input type="radio" name="pgto-din" value="pix">
+                <div class="opcao-info">
+                  <div class="opcao-nome">PIX <span class="badge-recomendado">&#10003; Recomendado</span></div>
+                  <div class="opcao-sub">Pague agora com QR Code ou chave</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pgto-din" value="cartao">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Cartão de crédito / débito</div>
+                  <div class="opcao-sub">Link enviado pelo WhatsApp</div>
+                </div>
+              </label>
+              <label class="opcao selecionada">
+                <input type="radio" name="pgto-din" value="dinheiro" checked aria-describedby="dinheiro-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Dinheiro na entrega</div>
+                  <div class="opcao-sub" id="dinheiro-desc">Pague ao receber</div>
+                </div>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Bloco Dinheiro (visível quando Dinheiro selecionado) -->
+          <div class="dinheiro-bloco">
+            <div class="dinheiro-info" role="note" aria-label="Instruções para pagamento em dinheiro">
+              <span class="dinheiro-icon" aria-hidden="true">&#128181;</span>
+              <p class="dinheiro-texto">
+                Você paga ao receber ou ao retirar. Se precisar de troco, informe o valor abaixo para que o entregador já leve o troco certo.
+              </p>
+            </div>
+
+            <!-- Campo troco (opcional) -->
+            <div class="campo">
+              <label for="troco">Troco para (opcional)</label>
+              <input
+                type="text"
+                id="troco"
+                name="troco_para"
+                placeholder="Ex.: R$ 100,00"
+                inputmode="decimal"
+                aria-describedby="troco-hint"
+              >
+              <span class="hint" id="troco-hint">
+                Total estimado: R$&nbsp;86,50. Deixe vazio se tiver o valor exato.
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Resumo financeiro (dinheiro) -->
+      <section class="secao" aria-labelledby="titulo-resumo-din">
+        <h2 class="secao-titulo" id="titulo-resumo-din">Resumo do pedido</h2>
+        <div class="secao-body" style="padding-bottom: 20px;">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span>
+              <strong>Valores estimados.</strong> O total cobrado é confirmado pelo lojista. Se o valor mudar, você será informado pelo WhatsApp antes da entrega.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <div class="nav-botoes">
+        <button type="button" class="btn-confirmar" aria-label="Confirmar pedido com pagamento em dinheiro">
+          Confirmar pedido
+        </button>
+        <button type="button" class="btn-voltar-etapa" aria-label="Voltar para entrega">
+          &#8592; Voltar para entrega
+        </button>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!-- @dsCard group="Foundations" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foundations · Tipografia</title>
+<style>
+  :root {
+    --cor-primaria: #332616;
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;
+    --marrom-cafe: #2e2610;
+    --texto: #3e2723;
+    --preto: #111111;
+    --branco: #ffffff;
+    --borda-nav: #dccbb0;
+    --cinza-medio: #eeeeee;
+    --cinza-claro: #f9f9f9;
+    --sombra-suave: rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); padding: 24px 16px; }
+  h1 { font-size: 1.5rem; font-weight: 900; margin: 0 0 4px; color: var(--marrom-cafe); }
+  p.sub { margin: 0 0 24px; color: #6b5d4f; font-size: 0.9rem; }
+  .row {
+    background: var(--branco); border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave); padding: 16px 18px; margin-bottom: 14px;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .spec { font-size: 0.72rem; color: #6b5d4f; font-family: ui-monospace, monospace; text-align: right; white-space: nowrap; }
+  .nome-loja { font-size: 1.4rem; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; color: var(--preto); }
+  .titulo-secao { font-size: 1rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--marrom-cafe); }
+  .nome-produto { font-size: 0.95rem; font-weight: 700; color: var(--preto); }
+  .preco { font-size: 1.3rem; font-weight: 900; color: var(--cor-destaque); }
+  .corpo { font-size: 0.9rem; font-weight: 400; color: var(--texto); }
+  .legenda { font-size: 0.75rem; font-weight: 400; color: #6b5d4f; text-transform: uppercase; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+  <h1>Tipografia</h1>
+  <p class="sub">Escala da vitrine. Fonte do sistema (-apple-system / Segoe UI / Roboto).</p>
+
+  <div class="row">
+    <span class="nome-loja">Empório iRango</span>
+    <span class="spec">Nome da loja<br>1.4rem · 900 · uppercase · ls 0.5px</span>
+  </div>
+  <div class="row">
+    <span class="titulo-secao">Mais Pedidos</span>
+    <span class="spec">Título de seção<br>1rem · 700 · uppercase · ls 1px</span>
+  </div>
+  <div class="row">
+    <span class="nome-produto">Pão de queijo artesanal</span>
+    <span class="spec">Nome de produto<br>0.95rem · 700 · line-clamp 2</span>
+  </div>
+  <div class="row">
+    <span class="preco">R$ 18,90</span>
+    <span class="spec">Preço<br>1.3rem · 900 · --cor-destaque</span>
+  </div>
+  <div class="row">
+    <span class="corpo">Feito na hora com ingredientes selecionados.</span>
+    <span class="spec">Corpo<br>0.9rem · 400</span>
+  </div>
+  <div class="row">
+    <span class="legenda">3 itens no carrinho</span>
+    <span class="spec">Legenda<br>0.75rem · 400 · uppercase</span>
+  </div>
+</body>
+</html>

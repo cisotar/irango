@@ -1,0 +1,267 @@
+<!-- Mundo: Produto iRango — tokens FIXOS, SEM tema de loja -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iRango Painel · Assinatura</title>
+<style>
+  :root {
+    --irango-brand:   #332616;
+    --irango-sidebar: #2e2610;
+    --irango-cta:     #2d3a27;
+    --marrom-cafe:    #2e2610;
+    --texto:          #3e2723;
+    --texto-muted:    #6b5d4f;
+    --borda-nav:      #dccbb0;
+    --branco:         #ffffff;
+    --cinza-claro:    #f9f9f9;
+    --cinza-medio:    #eeeeee;
+    --sombra-suave:   rgba(0,0,0,0.10);
+    --sidebar-w:      240px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); display: flex; min-height: 100vh; }
+
+  /* Sidebar mínima */
+  .sidebar { width:var(--sidebar-w);flex-shrink:0;background:var(--irango-sidebar);color:var(--branco);display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:200;overflow-y:auto; }
+  .sidebar-logo { display:flex;align-items:center;gap:10px;padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,0.08); }
+  .sidebar-logo-mark { width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:900;flex-shrink:0; }
+  .sidebar-logo-nome { font-size:1rem;font-weight:900;text-transform:uppercase;letter-spacing:1.5px; }
+  .nav-item { display:flex;align-items:center;gap:10px;padding:10px 20px;min-height:44px;color:rgba(255,255,255,0.75);text-decoration:none;font-size:0.88rem;border-left:3px solid transparent;transition:background 0.12s; }
+  .nav-item:hover { background:rgba(255,255,255,0.06);color:var(--branco); }
+  .nav-item:focus-visible { outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px; }
+  .nav-item.ativo { background:rgba(255,255,255,0.1);color:var(--branco);border-left-color:var(--borda-nav);font-weight:700; }
+  .ico { font-size:1rem;width:20px;text-align:center;flex-shrink:0; }
+  .nav-subitem { display:flex;align-items:center;gap:10px;padding:8px 20px 8px 50px;min-height:40px;color:rgba(255,255,255,0.6);text-decoration:none;font-size:0.82rem;border-left:3px solid transparent; }
+  .nav-subitem:hover { background:rgba(255,255,255,0.05);color:var(--branco); }
+  .nav-subitem:focus-visible { outline:2px solid rgba(255,255,255,0.4);outline-offset:-2px; }
+  .nav-subitem.ativo { color:var(--branco);border-left-color:var(--borda-nav); }
+  .nav-group-label { font-size:0.65rem;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.35);padding:16px 20px 6px;font-weight:700; }
+  .sidebar-footer { margin-top:auto;padding:16px 0;border-top:1px solid rgba(255,255,255,0.08); }
+
+  /* Main */
+  .main-wrapper { margin-left: var(--sidebar-w); flex: 1; }
+  .page-content { padding: 32px; max-width: 680px; }
+  .page-header { margin-bottom: 24px; }
+  .page-header h1 { margin: 0; font-size: 1.4rem; font-weight: 900; color: var(--marrom-cafe); }
+  .page-header p { margin: 4px 0 0; color: var(--texto-muted); font-size: 0.85rem; }
+
+  .card {
+    background: var(--branco); border: 1px solid var(--borda-nav);
+    border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave);
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid var(--cinza-medio); display:flex;align-items:center;justify-content:space-between;gap:12px; }
+  .card-header h2 { margin: 0; font-size: 0.88rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--texto-muted); }
+  .card-body { padding: 24px 20px; }
+
+  /* Badges */
+  .badge { display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;font-size:0.8rem;font-weight:700;line-height:1;border:1px solid transparent; }
+  .b-trial    { background:#fef3c7;color:#854d0e;border-color:#fcd34d; }
+  .b-ativa    { background:#dcfce7;color:#166534;border-color:#86efac; }
+  .b-vencida  { background:#fee2e2;color:#991b1b;border-color:#fca5a5; }
+  .b-cancelada{ background:#e5e7eb;color:#374151;border-color:#d1d5db; }
+
+  /* Informações da assinatura */
+  .info-grid { display:grid;grid-template-columns:1fr 1fr;gap:16px; }
+  .info-item label { display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--texto-muted);margin-bottom:4px; }
+  .info-item span { font-size:0.92rem;color:var(--texto);font-weight:500; }
+  .info-item.destaque span { font-size:1rem;font-weight:900;color:var(--marrom-cafe); }
+
+  /* Barra de trial */
+  .trial-bar-wrap { margin: 20px 0 0; }
+  .trial-bar-label { display:flex;justify-content:space-between;font-size:0.78rem;color:var(--texto-muted);margin-bottom:6px; }
+  .trial-bar-track { height:8px;background:var(--cinza-medio);border-radius:999px;overflow:hidden; }
+  .trial-bar-fill { height:100%;background:#fcd34d;border-radius:999px;transition:width 0.5s; }
+
+  /* Separador */
+  .sep { height:1px;background:var(--cinza-medio);margin:20px 0; }
+
+  /* Bloco read-only — só leitura, sem botões de editar os dados */
+  .readonly-aviso {
+    display:flex;align-items:flex-start;gap:8px;padding:10px 14px;
+    background:var(--cinza-claro);border:1px solid var(--cinza-medio);border-radius:8px;
+    font-size:0.78rem;color:var(--texto-muted);
+  }
+
+  /* CTA Hotmart */
+  .btn-hotmart {
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    height:52px;padding:0 28px;border:none;border-radius:12px;cursor:pointer;
+    background:#e74c3c;color:var(--branco);
+    font-size:0.95rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;
+    text-decoration:none;transition:opacity 0.15s,transform 0.1s;
+    box-shadow:0 4px 12px rgba(231,76,60,0.3);
+  }
+  .btn-hotmart:hover { opacity:0.9;transform:translateY(-1px); }
+  .btn-hotmart:focus-visible { outline:3px solid #e74c3c;outline-offset:3px; }
+
+  /* Histórico */
+  table { width:100%;border-collapse:collapse; }
+  th { text-align:left;padding:8px 12px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--texto-muted);background:var(--cinza-claro);border-bottom:1px solid var(--cinza-medio); }
+  td { padding:12px;border-bottom:1px solid var(--cinza-medio);font-size:0.85rem; }
+  tr:last-child td { border-bottom:none; }
+
+  @media (max-width: 768px) {
+    .sidebar { display:none; }
+    .main-wrapper { margin-left:0; }
+    .page-content { padding:16px; }
+    .info-grid { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+  <nav class="sidebar" aria-label="Menu do painel">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark" aria-hidden="true">iR</div>
+      <div><div class="sidebar-logo-nome">iRango</div></div>
+    </div>
+    <div class="nav-group-label">Principal</div>
+    <a href="dashboard.html" class="nav-item"><span class="ico" aria-hidden="true">▣</span> Dashboard</a>
+    <a href="tabela-pedidos.html" class="nav-item"><span class="ico" aria-hidden="true">📋</span> Pedidos</a>
+    <a href="form-produto.html" class="nav-item"><span class="ico" aria-hidden="true">🛒</span> Produtos</a>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">🏷</span> Cupons</a>
+    <div class="nav-group-label">Configurações</div>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">⚙</span> Configurações</a>
+    <a href="#" class="nav-subitem">Perfil da loja</a>
+    <a href="#" class="nav-subitem">Horários</a>
+    <a href="#" class="nav-subitem">Zonas de entrega</a>
+    <a href="#" class="nav-subitem">Formas de pagamento</a>
+    <a href="config-tema.html" class="nav-subitem">Tema</a>
+    <a href="#" class="nav-subitem ativo" aria-current="page">Assinatura</a>
+    <div class="sidebar-footer">
+      <a href="#" class="nav-item" style="color:rgba(255,255,255,0.5)"><span class="ico" aria-hidden="true">↩</span> Sair</a>
+    </div>
+  </nav>
+
+  <div class="main-wrapper">
+    <main class="page-content">
+      <div class="page-header">
+        <h1>Assinatura</h1>
+        <p>Informações sobre seu plano iRango. Para alterar, acesse o portal de pagamentos.</p>
+      </div>
+
+      <!-- Status principal -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Status atual</h2>
+          <span class="badge b-trial" role="status">
+            <span aria-hidden="true">⏱</span> Período de teste
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <label>Plano</label>
+              <span>iRango Básico</span>
+            </div>
+            <div class="info-item">
+              <label>Status</label>
+              <span>Trial gratuito</span>
+            </div>
+            <div class="info-item">
+              <label>Início do trial</label>
+              <span>01/06/2026</span>
+            </div>
+            <div class="info-item destaque">
+              <label>Fim do trial</label>
+              <span>30/06/2026</span>
+            </div>
+          </div>
+
+          <div class="trial-bar-wrap" role="group" aria-labelledby="trial-label">
+            <div class="trial-bar-label">
+              <span id="trial-label">Dias utilizados</span>
+              <span aria-live="polite"><strong>13 dias restantes</strong> de 30</span>
+            </div>
+            <div class="trial-bar-track" role="progressbar" aria-valuenow="57" aria-valuemin="0" aria-valuemax="100" aria-label="57% do trial utilizado">
+              <div class="trial-bar-fill" style="width:57%"></div>
+            </div>
+          </div>
+
+          <div class="sep"></div>
+
+          <div class="readonly-aviso" role="note">
+            <span aria-hidden="true">ℹ</span>
+            <span>
+              Esses dados são gerenciados pela plataforma de pagamentos (Hotmart).
+              Aqui você vê o status — para assinar, cancelar ou alterar o plano, use o botão abaixo.
+            </span>
+          </div>
+
+          <div style="margin-top:20px;">
+            <a href="#" class="btn-hotmart" rel="noopener noreferrer" target="_blank">
+              <span aria-hidden="true">★</span>
+              Assinar agora — R$ 49,90/mês
+            </a>
+            <p style="font-size:0.75rem;color:var(--texto-muted);margin:10px 0 0;">
+              Você será redirecionado para o Hotmart para concluir o pagamento.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- O que está incluso -->
+      <div class="card">
+        <div class="card-header"><h2>Plano atual: Básico</h2></div>
+        <div class="card-body" style="padding-bottom:8px;">
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;">
+            <li style="display:flex;gap:10px;align-items:center;font-size:0.88rem;">
+              <span style="color:#166534;font-weight:900;font-size:1rem;flex-shrink:0" aria-hidden="true">✓</span>
+              Vitrine pública com tema personalizado
+            </li>
+            <li style="display:flex;gap:10px;align-items:center;font-size:0.88rem;">
+              <span style="color:#166534;font-weight:900;font-size:1rem;flex-shrink:0" aria-hidden="true">✓</span>
+              Até 100 produtos ativos
+            </li>
+            <li style="display:flex;gap:10px;align-items:center;font-size:0.88rem;">
+              <span style="color:#166534;font-weight:900;font-size:1rem;flex-shrink:0" aria-hidden="true">✓</span>
+              Zonas de entrega ilimitadas
+            </li>
+            <li style="display:flex;gap:10px;align-items:center;font-size:0.88rem;">
+              <span style="color:#166534;font-weight:900;font-size:1rem;flex-shrink:0" aria-hidden="true">✓</span>
+              Cupons de desconto
+            </li>
+            <li style="display:flex;gap:10px;align-items:center;font-size:0.88rem;">
+              <span style="color:#166534;font-weight:900;font-size:1rem;flex-shrink:0" aria-hidden="true">✓</span>
+              Painel de pedidos em tempo real
+            </li>
+            <li style="display:flex;gap:10px;align-items:center;font-size:0.88rem;color:var(--texto-muted);">
+              <span style="color:var(--cinza-medio);font-size:1rem;flex-shrink:0" aria-hidden="true">○</span>
+              Domínio próprio (em breve)
+            </li>
+          </ul>
+          <div style="height:20px"></div>
+        </div>
+      </div>
+
+      <!-- Histórico simplificado -->
+      <div class="card">
+        <div class="card-header"><h2>Histórico de cobrança</h2></div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Data</th>
+                <th scope="col">Descrição</th>
+                <th scope="col">Valor</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>01/06/2026</td>
+                <td>Trial gratuito — iRango Básico</td>
+                <td>R$ 0,00</td>
+                <td><span class="badge b-trial">Trial</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

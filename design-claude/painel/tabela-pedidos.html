@@ -1,0 +1,240 @@
+<!-- Mundo: Produto iRango — tokens FIXOS, SEM tema de loja -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iRango Painel · Pedidos</title>
+<style>
+  :root {
+    --irango-brand:   #332616;
+    --irango-sidebar: #2e2610;
+    --irango-cta:     #2d3a27;
+    --marrom-cafe:    #2e2610;
+    --texto:          #3e2723;
+    --texto-muted:    #6b5d4f;
+    --borda-nav:      #dccbb0;
+    --branco:         #ffffff;
+    --cinza-claro:    #f9f9f9;
+    --cinza-medio:    #eeeeee;
+    --sombra-suave:   rgba(0,0,0,0.10);
+    --sidebar-w:      240px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); display: flex; min-height: 100vh; }
+
+  /* Sidebar mínima */
+  .sidebar {
+    width: var(--sidebar-w); flex-shrink: 0; background: var(--irango-sidebar); color: var(--branco);
+    display: flex; flex-direction: column; position: fixed; left: 0; top: 0; bottom: 0; z-index: 200; overflow-y: auto;
+  }
+  .sidebar-logo { display:flex;align-items:center;gap:10px;padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,0.08); }
+  .sidebar-logo-mark { width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:900;flex-shrink:0; }
+  .sidebar-logo-nome { font-size:1rem;font-weight:900;text-transform:uppercase;letter-spacing:1.5px; }
+  .nav-item { display:flex;align-items:center;gap:10px;padding:10px 20px;min-height:44px;color:rgba(255,255,255,0.75);text-decoration:none;font-size:0.88rem;border-left:3px solid transparent;transition:background 0.12s; }
+  .nav-item:hover { background:rgba(255,255,255,0.06);color:var(--branco); }
+  .nav-item:focus-visible { outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px; }
+  .nav-item.ativo { background:rgba(255,255,255,0.1);color:var(--branco);border-left-color:var(--borda-nav);font-weight:700; }
+  .ico { font-size:1rem;width:20px;text-align:center;flex-shrink:0; }
+  .nav-group-label { font-size:0.65rem;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.35);padding:16px 20px 6px;font-weight:700; }
+  .sidebar-footer { margin-top:auto;padding:16px 0;border-top:1px solid rgba(255,255,255,0.08); }
+
+  /* Main */
+  .main-wrapper { margin-left: var(--sidebar-w); flex: 1; }
+  .page-content { padding: 32px; }
+  .page-header { margin-bottom: 24px; display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  .page-header h1 { margin: 0; font-size: 1.4rem; font-weight: 900; color: var(--marrom-cafe); }
+
+  /* Filtros */
+  .filtros { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .filtro-btn {
+    height: 36px; padding: 0 14px; border: 1px solid var(--borda-nav); border-radius: 999px;
+    background: var(--branco); color: var(--texto-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .filtro-btn:hover { border-color: var(--irango-brand); color: var(--irango-brand); }
+  .filtro-btn.ativo { background: var(--irango-brand); color: var(--branco); border-color: var(--irango-brand); }
+  .filtro-btn:focus-visible { outline: 2px solid var(--irango-brand); outline-offset: 2px; }
+
+  /* Card tabela */
+  .card-tabela {
+    background: var(--branco); border: 1px solid var(--borda-nav);
+    border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave); overflow: hidden;
+  }
+
+  /* Tabela desktop */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align:left;padding:10px 16px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--texto-muted);background:var(--cinza-claro);border-bottom:1px solid var(--cinza-medio); }
+  td { padding:14px 16px;border-bottom:1px solid var(--cinza-medio);font-size:0.88rem;vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:#fafaf8; }
+  .cliente-info { display:flex;flex-direction:column;gap:2px; }
+  .cliente-nome { font-weight:700;color:var(--texto); }
+  .cliente-tel { font-size:0.78rem;color:var(--texto-muted); }
+
+  /* Badges */
+  .badge { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;font-size:0.75rem;font-weight:700;line-height:1;border:1px solid transparent;white-space:nowrap; }
+  .b-pendente   { background:#fef3c7;color:#854d0e;border-color:#fcd34d; }
+  .b-confirmado { background:#dbeafe;color:#1e40af;border-color:#93c5fd; }
+  .b-preparo    { background:#e0e7ff;color:#3730a3;border-color:#a5b4fc; }
+  .b-saiu       { background:#cffafe;color:#155e75;border-color:#67e8f9; }
+  .b-entregue   { background:#dcfce7;color:#166534;border-color:#86efac; }
+  .b-cancelado  { background:#fee2e2;color:#991b1b;border-color:#fca5a5; }
+
+  .btn-ver { background:none;border:1px solid var(--borda-nav);border-radius:8px;padding:6px 12px;font-size:0.78rem;color:var(--texto-muted);cursor:pointer;white-space:nowrap;text-decoration:none;display:inline-flex;align-items:center; }
+  .btn-ver:hover { border-color:var(--irango-brand);color:var(--irango-brand); }
+  .btn-ver:focus-visible { outline:2px solid var(--irango-brand);outline-offset:2px; }
+
+  /* Paginação */
+  .paginacao { display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-top:1px solid var(--cinza-medio);font-size:0.82rem;color:var(--texto-muted); }
+  .pag-btns { display:flex;gap:4px; }
+  .pag-btn { height:36px;min-width:36px;padding:0 8px;border:1px solid var(--cinza-medio);border-radius:8px;background:var(--branco);font-size:0.82rem;cursor:pointer;color:var(--texto-muted);transition:background 0.12s; }
+  .pag-btn:hover { background:var(--cinza-claro); }
+  .pag-btn:focus-visible { outline:2px solid var(--irango-brand);outline-offset:2px; }
+  .pag-btn.ativo { background:var(--irango-brand);color:var(--branco);border-color:var(--irango-brand); }
+  .pag-btn:disabled { opacity:0.4;cursor:not-allowed; }
+
+  /* Mobile: tabela → cards */
+  @media (max-width: 768px) {
+    .sidebar { display:none; }
+    .main-wrapper { margin-left:0; }
+    .page-content { padding:16px; }
+    table thead { display:none; }
+    table, tbody { display:block; }
+    tr {
+      display:block; border:1px solid var(--cinza-medio); border-radius:10px; margin-bottom:12px;
+      padding:12px 16px; background:var(--branco); box-shadow:0 2px 6px rgba(0,0,0,0.06);
+    }
+    tr:hover td { background:transparent; }
+    td { display:flex;justify-content:space-between;align-items:center;border-bottom:none;padding:6px 0; }
+    td:first-child { border-bottom:1px solid var(--cinza-medio);padding-bottom:10px;margin-bottom:4px; }
+    td::before { content:attr(data-label);font-size:0.72rem;font-weight:700;text-transform:uppercase;color:var(--texto-muted);letter-spacing:0.5px; }
+    td:first-child::before { content:""; }
+    .cliente-info { align-items:flex-end; }
+  }
+</style>
+</head>
+<body>
+  <nav class="sidebar" aria-label="Menu do painel">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark" aria-hidden="true">iR</div>
+      <div><div class="sidebar-logo-nome">iRango</div></div>
+    </div>
+    <div class="nav-group-label">Principal</div>
+    <a href="dashboard.html" class="nav-item"><span class="ico" aria-hidden="true">▣</span> Dashboard</a>
+    <a href="#" class="nav-item ativo" aria-current="page"><span class="ico" aria-hidden="true">📋</span> Pedidos</a>
+    <a href="form-produto.html" class="nav-item"><span class="ico" aria-hidden="true">🛒</span> Produtos</a>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">🏷</span> Cupons</a>
+    <div class="nav-group-label">Configurações</div>
+    <a href="#" class="nav-item"><span class="ico" aria-hidden="true">⚙</span> Configurações</a>
+    <div class="sidebar-footer">
+      <a href="#" class="nav-item" style="color:rgba(255,255,255,0.5)"><span class="ico" aria-hidden="true">↩</span> Sair</a>
+    </div>
+  </nav>
+
+  <div class="main-wrapper">
+    <main class="page-content">
+      <div class="page-header">
+        <div>
+          <h1>Pedidos</h1>
+        </div>
+      </div>
+
+      <!-- Filtros por status -->
+      <div class="filtros" role="group" aria-label="Filtrar por status">
+        <button class="filtro-btn ativo" aria-pressed="true">Todos (17)</button>
+        <button class="filtro-btn" aria-pressed="false">Pendente (3)</button>
+        <button class="filtro-btn" aria-pressed="false">Em preparo (4)</button>
+        <button class="filtro-btn" aria-pressed="false">Saiu pra entrega (2)</button>
+        <button class="filtro-btn" aria-pressed="false">Entregue (7)</button>
+        <button class="filtro-btn" aria-pressed="false">Cancelado (1)</button>
+      </div>
+
+      <div class="card-tabela">
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Pedido</th>
+                <th scope="col">Cliente</th>
+                <th scope="col">Horário</th>
+                <th scope="col">Total</th>
+                <th scope="col">Pagamento</th>
+                <th scope="col">Status</th>
+                <th scope="col"><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Ações</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td data-label="Pedido">#1042</td>
+                <td data-label="Cliente"><div class="cliente-info"><span class="cliente-nome">Maria Silva</span><span class="cliente-tel">(11) 99234-5678</span></div></td>
+                <td data-label="Horário">14:32</td>
+                <td data-label="Total">R$ 78,50</td>
+                <td data-label="Pagamento">Pix</td>
+                <td data-label="Status"><span class="badge b-pendente"><span aria-hidden="true">●</span>Pendente</span></td>
+                <td data-label="Ver"><a href="pedido-detalhe.html" class="btn-ver">Ver pedido</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1041</td>
+                <td data-label="Cliente"><div class="cliente-info"><span class="cliente-nome">João Ferreira</span><span class="cliente-tel">(11) 97654-3210</span></div></td>
+                <td data-label="Horário">14:18</td>
+                <td data-label="Total">R$ 124,00</td>
+                <td data-label="Pagamento">Cartão crédito</td>
+                <td data-label="Status"><span class="badge b-preparo"><span aria-hidden="true">⏱</span>Em preparo</span></td>
+                <td data-label="Ver"><a href="pedido-detalhe.html" class="btn-ver">Ver pedido</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1040</td>
+                <td data-label="Cliente"><div class="cliente-info"><span class="cliente-nome">Ana Rodrigues</span><span class="cliente-tel">(11) 95555-4444</span></div></td>
+                <td data-label="Horário">13:55</td>
+                <td data-label="Total">R$ 55,90</td>
+                <td data-label="Pagamento">Dinheiro</td>
+                <td data-label="Status"><span class="badge b-saiu"><span aria-hidden="true">🛵</span>Saiu pra entrega</span></td>
+                <td data-label="Ver"><a href="pedido-detalhe.html" class="btn-ver">Ver pedido</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1039</td>
+                <td data-label="Cliente"><div class="cliente-info"><span class="cliente-nome">Carlos Mendes</span><span class="cliente-tel">(11) 98888-7777</span></div></td>
+                <td data-label="Horário">13:20</td>
+                <td data-label="Total">R$ 43,00</td>
+                <td data-label="Pagamento">Pix</td>
+                <td data-label="Status"><span class="badge b-entregue"><span aria-hidden="true">✓</span>Entregue</span></td>
+                <td data-label="Ver"><a href="pedido-detalhe.html" class="btn-ver">Ver pedido</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1038</td>
+                <td data-label="Cliente"><div class="cliente-info"><span class="cliente-nome">Fernanda Lima</span><span class="cliente-tel">(11) 91122-3344</span></div></td>
+                <td data-label="Horário">12:47</td>
+                <td data-label="Total">R$ 92,00</td>
+                <td data-label="Pagamento">Cartão débito</td>
+                <td data-label="Status"><span class="badge b-cancelado"><span aria-hidden="true">✕</span>Cancelado</span></td>
+                <td data-label="Ver"><a href="pedido-detalhe.html" class="btn-ver">Ver pedido</a></td>
+              </tr>
+              <tr>
+                <td data-label="Pedido">#1037</td>
+                <td data-label="Cliente"><div class="cliente-info"><span class="cliente-nome">Roberto Costa</span><span class="cliente-tel">(11) 93344-5566</span></div></td>
+                <td data-label="Horário">12:10</td>
+                <td data-label="Total">R$ 67,50</td>
+                <td data-label="Pagamento">Pix</td>
+                <td data-label="Status"><span class="badge b-confirmado"><span aria-hidden="true">✓</span>Confirmado</span></td>
+                <td data-label="Ver"><a href="pedido-detalhe.html" class="btn-ver">Ver pedido</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <nav class="paginacao" aria-label="Paginação de pedidos">
+          <span>Mostrando 1–6 de 17 pedidos</span>
+          <div class="pag-btns">
+            <button class="pag-btn" disabled aria-label="Página anterior">‹</button>
+            <button class="pag-btn ativo" aria-current="page" aria-label="Página 1">1</button>
+            <button class="pag-btn" aria-label="Página 2">2</button>
+            <button class="pag-btn" aria-label="Página 3">3</button>
+            <button class="pag-btn" aria-label="Próxima página">›</button>
+          </div>
+        </nav>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

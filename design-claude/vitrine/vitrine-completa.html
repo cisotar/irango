@@ -1,0 +1,178 @@
+<!-- @dsCard group="Vitrine" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empório iRango · Vitrine</title>
+<style>
+  :root {
+    /* Tema da loja (customizável) */
+    --cor-primaria: #332616;
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Sistema */
+    --marrom-cafe: #2e2610;
+    --texto: #3e2723;
+    --preto: #111111;
+    --branco: #ffffff;
+    --borda-nav: #dccbb0;
+    --cinza-medio: #eeeeee;
+    --sombra-suave: rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #cdbfa6; }
+  .page {
+    max-width: 430px; margin: 0 auto; background: var(--cor-fundo); min-height: 100vh;
+    padding-bottom: 88px; /* espaço da barra fixa */
+  }
+
+  /* Header */
+  .header { background: var(--cor-primaria); color: var(--branco); padding: 20px 16px; display: flex; align-items: center; justify-content: center; gap: 16px; }
+  .logo { width: 70px; height: 70px; border-radius: 50%; flex-shrink: 0; border: 3px solid rgba(255,255,255,0.35);
+    background: #4a3a22; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; }
+  .h-info { min-width: 0; }
+  .h-nome { font-size: 1.3rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 6px; }
+  .badge-loja { display:inline-flex; align-items:center; gap:6px; background:#dcfce7; color:#166534; border:1px solid #86efac;
+    padding:3px 10px; border-radius:999px; font-size:0.72rem; font-weight:700; margin-bottom:8px; }
+  .contatos { display: flex; flex-direction: column; gap: 3px; }
+  .contato { display: inline-flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.9); font-size: 0.82rem; text-decoration: none; min-height: 22px; }
+  .contato:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 4px; }
+
+  /* Banner */
+  .banner { background: var(--branco); border: 1px solid var(--borda-nav); border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave);
+    padding: 14px 18px; text-align: center; margin: 16px; }
+  .banner .titulo { font-size: 0.95rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 3px; color: var(--texto); }
+  .banner .sub { font-size: 0.85rem; font-weight: 700; margin: 0; color: var(--texto); }
+
+  /* Título de seção */
+  .titulo-secao { display: flex; align-items: center; gap: 14px; margin: 24px 16px 16px; }
+  .titulo-secao::before, .titulo-secao::after { content: ""; flex: 1; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--marrom-cafe), transparent); }
+  .titulo-secao h2 { margin: 0; font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--marrom-cafe); white-space: nowrap; }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 16px; }
+  .card { background: var(--branco); border: 1px solid var(--cinza-medio); border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave);
+    overflow: hidden; display: flex; flex-direction: column; position: relative; }
+  .card .img { height: 140px; width: 100%; background: linear-gradient(135deg,#e8dcc4,#d8c4a0); display: flex; align-items: center; justify-content: center; font-size: 2.4rem; }
+  .card .body { padding: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .card .nome { font-size: 0.9rem; font-weight: 700; color: var(--preto); margin: 0; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card .preco { font-size: 1.1rem; font-weight: 900; color: var(--cor-destaque); }
+  .btn-add { background: var(--cor-destaque); color: var(--branco); border: none; border-radius: 10px;
+    min-width: 44px; min-height: 44px; font-size: 1.4rem; font-weight: 900; cursor: pointer; line-height: 1; }
+  .btn-add:focus-visible { outline: 3px solid #fff; outline-offset: -3px; }
+  .btn-add[disabled] { background: #9a9a9a; cursor: not-allowed; }
+  .card.esgotado .body { opacity: 0.6; }
+  .card.esgotado .img { position: relative; }
+  .card.esgotado .img::after { content: ""; position: absolute; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: grayscale(1); -webkit-backdrop-filter: grayscale(1); }
+  .ribbon { position: absolute; top: 56px; left: -10px; right: -10px; z-index: 2; background: #8B4513; color: #fff; border: 2px solid #fff;
+    transform: rotate(-25deg); text-align: center; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; font-size: 0.78rem; padding: 5px 0; }
+
+  /* Barra carrinho */
+  .barra-carrinho { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; z-index: 50;
+    background: var(--cor-destaque); color: #f5f0e6; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 18px; min-height: 64px; box-shadow: 0 -4px 16px rgba(0,0,0,0.2); }
+  .bc-esq { display: flex; flex-direction: column; gap: 2px; line-height: 1.1; }
+  .bc-qtd { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; }
+  .bc-total { font-size: 1.3rem; font-weight: 900; }
+  .bc-ver { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.4); color: #fff; border-radius: 10px;
+    padding: 0 16px; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; font-size: 0.84rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
+  .bc-ver:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+  /* Desktop */
+  @media (min-width: 769px) {
+    .page { max-width: 920px; padding-bottom: 96px; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; padding: 0 24px; }
+    .card .img { height: 180px; }
+    .banner, .titulo-secao { margin-left: 24px; margin-right: 24px; }
+    .barra-carrinho { max-width: 920px; }
+  }
+  @media (max-width: 360px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo" aria-hidden="true">🛒</div>
+      <div class="h-info">
+        <h1 class="h-nome">Empório iRango</h1>
+        <span class="badge-loja"><span aria-hidden="true">●</span>Aberto agora</span>
+        <div class="contatos">
+          <a class="contato" href="#" aria-label="Instagram"><span aria-hidden="true">📷</span>@emporio.irango</a>
+          <a class="contato" href="#" aria-label="WhatsApp"><span aria-hidden="true">💬</span>(11) 99999-0000</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Banner -->
+    <div class="banner">
+      <p class="titulo">🚚 Próxima entrega</p>
+      <p class="sub">Pedidos até 18h saem hoje · grátis acima de R$ 60</p>
+    </div>
+
+    <!-- Seção 1 -->
+    <div class="titulo-secao"><h2>Mais Pedidos</h2></div>
+    <section class="grid" aria-label="Mais pedidos">
+      <article class="card">
+        <div class="img" aria-hidden="true">🧀</div>
+        <div class="body"><h3 class="nome">Pão de queijo artesanal — 6un</h3>
+          <div class="footer"><span class="preco">R$ 18,90</span><button class="btn-add" aria-label="Adicionar Pão de queijo">+</button></div></div>
+      </article>
+      <article class="card">
+        <div class="img" aria-hidden="true">🥪</div>
+        <div class="body"><h3 class="nome">Sanduíche natural de frango</h3>
+          <div class="footer"><span class="preco">R$ 15,00</span><button class="btn-add" aria-label="Adicionar Sanduíche natural">+</button></div></div>
+      </article>
+      <article class="card">
+        <div class="img" aria-hidden="true">🍰</div>
+        <div class="body"><h3 class="nome">Bolo de cenoura com chocolate (fatia)</h3>
+          <div class="footer"><span class="preco">R$ 9,50</span><button class="btn-add" aria-label="Adicionar Bolo de cenoura">+</button></div></div>
+      </article>
+      <article class="card esgotado">
+        <div class="img" aria-hidden="true">🥐<span class="ribbon">Esgotado</span></div>
+        <div class="body"><h3 class="nome">Croissant de manteiga francês</h3>
+          <div class="footer"><span class="preco">R$ 12,50</span><button class="btn-add" disabled aria-label="Croissant esgotado">+</button></div></div>
+      </article>
+    </section>
+
+    <!-- Seção 2 -->
+    <div class="titulo-secao"><h2>Bebidas</h2></div>
+    <section class="grid" aria-label="Bebidas">
+      <article class="card">
+        <div class="img" aria-hidden="true">🧃</div>
+        <div class="body"><h3 class="nome">Suco natural de laranja 500ml</h3>
+          <div class="footer"><span class="preco">R$ 11,00</span><button class="btn-add" aria-label="Adicionar Suco de laranja">+</button></div></div>
+      </article>
+      <article class="card">
+        <div class="img" aria-hidden="true">☕</div>
+        <div class="body"><h3 class="nome">Café coado artesanal 300ml</h3>
+          <div class="footer"><span class="preco">R$ 7,90</span><button class="btn-add" aria-label="Adicionar Café coado">+</button></div></div>
+      </article>
+      <article class="card">
+        <div class="img" aria-hidden="true">🥤</div>
+        <div class="body"><h3 class="nome">Refrigerante lata 350ml</h3>
+          <div class="footer"><span class="preco">R$ 6,00</span><button class="btn-add" aria-label="Adicionar Refrigerante">+</button></div></div>
+      </article>
+      <article class="card">
+        <div class="img" aria-hidden="true">🫗</div>
+        <div class="body"><h3 class="nome">Água com gás 500ml</h3>
+          <div class="footer"><span class="preco">R$ 4,50</span><button class="btn-add" aria-label="Adicionar Água com gás">+</button></div></div>
+      </article>
+    </section>
+
+    <!-- Barra carrinho -->
+    <nav class="barra-carrinho" aria-label="Resumo do carrinho">
+      <div class="bc-esq"><span class="bc-qtd">3 itens</span><span class="bc-total">R$ 54,30</span></div>
+      <button class="bc-ver">Ver carrinho <span aria-hidden="true">🛒</span></button>
+    </nav>
+  </div>
+</body>
+</html>

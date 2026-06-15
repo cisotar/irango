@@ -1,0 +1,34 @@
+<!-- @dsCard group="Vitrine" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Banner Informativo</title>
+<style>
+  :root {
+    --cor-fundo: #f5f0e6;
+    --texto: #3e2723;
+    --branco: #ffffff;
+    --borda-nav: #dccbb0;
+    --sombra-suave: rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); padding: 24px 16px; }
+  .banner {
+    background: var(--branco); border: 1px solid var(--borda-nav); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave); padding: 18px 20px; text-align: center;
+    max-width: 430px; margin: 0 auto;
+  }
+  .banner .titulo { font-size: 1rem; font-weight: 900; color: var(--texto); margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .banner .sub { font-size: 0.9rem; font-weight: 700; color: var(--texto); margin: 0; }
+</style>
+</head>
+<body>
+  <div class="banner">
+    <p class="titulo">🚚 Próxima entrega</p>
+    <p class="sub">Pedidos até 18h saem hoje · entrega grátis acima de R$ 60</p>
+  </div>
+</body>
+</html>
