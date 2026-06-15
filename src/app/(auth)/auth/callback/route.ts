@@ -12,6 +12,16 @@ export async function GET(request: NextRequest): Promise<Response> {
   const code = searchParams.get("code");
   const next = sanitizarNext(searchParams.get("next"));
 
+  // Erro de OAuth (consent negado, provider caído etc.): Supabase manda
+  // `?error=...&error_description=...`. Detecta ANTES de qualquer troca de
+  // código. Loga só o `error` (sem `error_description`, que pode ter PII —
+  // §14/§21) e redireciona genérico, sem expor JSON bruto ao usuário.
+  const erroOAuth = searchParams.get("error");
+  if (erroOAuth) {
+    console.error("[authCallback] oauth", erroOAuth);
+    return NextResponse.redirect(`${origin}/login?erro=google`);
+  }
+
   if (!code) {
     return NextResponse.redirect(`${origin}/login?erro=auth`);
   }

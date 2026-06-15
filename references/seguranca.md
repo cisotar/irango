@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.11 | **Atualizado:** 2026-06-15
+**Versão:** 0.2.12 | **Atualizado:** 2026-06-15
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -883,6 +883,22 @@ A reconciliação de assinatura Hotmart com o lojista (vincular compra ao `loja_
 - Helper `reconciliarPosConfirmacao(user)` em `src/lib/auth/` — best-effort, engole toda falha, não derruba o redirect.
 - Query `buscarLojaPorDono(svc, userId)` — leitura via service_role para resolver `user.id → loja_id`.
 - **Regra para devs e agentes:** nunca mover reconciliação de assinatura para o signup (`cadastrar`) — o email não está autenticado naquele ponto, abrindo vetor de sequestro de assinatura por cadastro com email alheio.
+
+### Erro de OAuth no callback — sem vazar `error_description`
+
+Quando o provider OAuth (Google) nega o consent ou falha, ele redireciona para `auth/callback/route.ts` com `?error=...&error_description=...`. O `error_description` pode conter PII (email do usuário, razão de bloqueio).
+
+**Regra:** detectar `?error=` **antes** de qualquer troca de código; logar só o campo `error` (sem `error_description`) no servidor; redirecionar para `/login?erro=google` — mensagem genérica, sem expor JSON bruto ao usuário.
+
+```ts
+const erroOAuth = searchParams.get("error");
+if (erroOAuth) {
+  console.error("[authCallback] oauth", erroOAuth); // só código, não error_description
+  return NextResponse.redirect(`${origin}/login?erro=google`);
+}
+```
+
+Mesmo padrão vale para qualquer provider OAuth adicionado no futuro.
 
 ### Anti-enumeração no login
 
