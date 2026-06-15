@@ -10,8 +10,8 @@ Aplicar rate limit por IP nas ações de login, criar pedido e validar cupom par
 
 ## Escopo
 - [ ] Criar `src/lib/utils/rateLimit.ts` (wrapper sobre `@upstash/ratelimit` + Upstash Redis)
-- [ ] login ~5/min; criar pedido ~10/min; validar cupom ~20/min — por IP
-- [ ] Aplicar nas actions 015 (login), 014 (criar pedido), 013 (validar cupom)
+- [ ] login ~5/min; criar pedido ~10/min; validar cupom ~20/min; preview de frete ~20/min — por IP
+- [ ] Aplicar nas actions 015 (login), 014 (criar pedido), 013 (validar cupom), `calcularFreteAction` (preview frete — enumeração de bairro/CEP + abuso do ViaCEP, finding BAIXA auditoria 067)
 - [ ] Mensagem genérica ao exceder (seguranca.md §14)
 
 ## Fora de escopo

@@ -55,6 +55,13 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarLojaPublicaPorId: (...a: unknown[]) => buscarLojaPublicaPorId(...a),
 }));
 
+// [067] reconciliarBairroCep é I/O (chama ViaCEP). Mockada — NÃO bater na rede.
+// Mesmo padrão de pedido.test.ts (linhas 70-72). Por padrão, reconcilia "Centro".
+const reconciliarBairroCep = vi.fn();
+vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
+  reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
+}));
+
 import { calcularFreteAction } from "./frete";
 
 // Zona tipo 'bairro' que cobre "Centro" com taxa 7.50.
@@ -69,6 +76,8 @@ function zonaCentro(): ZonaVitrine {
   } as ZonaVitrine;
 }
 
+const CEP_CENTRO = "01001-000";
+
 beforeEach(() => {
   vi.clearAllMocks();
   listarZonasComTaxas.mockResolvedValue([zonaCentro()]);
@@ -77,31 +86,65 @@ beforeEach(() => {
     id: LOJA_ID,
     taxa_entrega_fora_zona: 15,
   });
+  // [067] Por padrão o ViaCEP reconcilia o CEP para o bairro canônico "Centro".
+  // Espelha o autoritativo (064): com CEP+bairro, o canônico do CEP vence.
+  reconciliarBairroCep.mockResolvedValue({
+    bairroCanonico: "Centro",
+    reconciliado: true,
+  });
 });
 
 describe("calcularFreteAction (Server Action — preview de frete, issue 072)", () => {
-  it("bairro casa zona → taxa_preview da zona + zona_nome da zona", async () => {
-    const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
+  it("bairro (reconciliado via CEP) casa zona → taxa_preview da zona + zona_nome", async () => {
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro",
+    });
     expect(r).toEqual({ ok: true, taxa_preview: 7.5, zona_nome: "Zona Central" });
   });
 
-  it("bairro FORA das zonas + taxa_entrega_fora_zona fixa → zona_nome 'fora_zona' + taxa fixa", async () => {
-    const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Subúrbio Distante" });
+  it("bairro canônico FORA das zonas + taxa_entrega_fora_zona fixa → 'fora_zona' + taxa fixa", async () => {
+    reconciliarBairroCep.mockResolvedValue({
+      bairroCanonico: "Subúrbio Distante",
+      reconciliado: true,
+    });
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: "99999-999",
+      bairro: "Subúrbio Distante",
+    });
     expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
   });
 
-  it("bairro FORA + taxa_entrega_fora_zona null → zona_nome 'indisponivel' + taxa 0", async () => {
+  it("bairro canônico FORA + taxa_entrega_fora_zona null → 'indisponivel' + taxa 0", async () => {
+    reconciliarBairroCep.mockResolvedValue({
+      bairroCanonico: "Subúrbio Distante",
+      reconciliado: true,
+    });
     buscarLojaPublicaPorId.mockResolvedValue({
       id: LOJA_ID,
       taxa_entrega_fora_zona: null,
     });
-    const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Subúrbio Distante" });
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: "99999-999",
+      bairro: "Subúrbio Distante",
+    });
     expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel" });
   });
 
-  it("acento e CAIXA no bairro não impedem o match (normalizarBairro em ação)", async () => {
-    // "CÉNTRO " (caixa alta + acento + espaço) deve casar com a zona de "Centro".
-    const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "  CÉNTRO " });
+  it("acento e CAIXA no bairro canônico não impedem o match (normalizarBairro)", async () => {
+    // O ViaCEP devolve "CÉNTRO " — normalizarBairro casa com a zona de "Centro".
+    reconciliarBairroCep.mockResolvedValue({
+      bairroCanonico: "  CÉNTRO ",
+      reconciliado: true,
+    });
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro",
+    });
     expect(r).toEqual({ ok: true, taxa_preview: 7.5, zona_nome: "Zona Central" });
   });
 
@@ -119,8 +162,95 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
         bairros: [{ nome: "Centro" }],
       } as ZonaVitrine,
     ]);
-    const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro",
+    });
     expect(r).toEqual({ ok: true, taxa_preview: 7.5, zona_nome: "Zona Central" });
+  });
+
+  // ── [067] Paridade preview ↔ autoritativo (064): reconciliação CEP↔bairro
+  //    fail-closed. O bairro DECLARADO nunca seleciona zona quando há CEP — o
+  //    canônico do ViaCEP vence; falha do ViaCEP descarta o declarado.
+
+  it("PARIDADE: ViaCEP down → bairro DESCARTADO → fallback fora-de-zona (mesma taxa do autoritativo)", async () => {
+    // Cliente declara o bairro BARATO "Centro" mas o ViaCEP está fora do ar.
+    // Fail-closed: descarta o declarado → nenhuma zona casa → fallback R$ 15
+    // (idêntico ao que criarPedido cobraria).
+    reconciliarBairroCep.mockResolvedValue({
+      bairroCanonico: null,
+      reconciliado: false,
+    });
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro",
+    });
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  it("PARIDADE: bairro BARATO declarado + CEP de zona CARA → preview mostra a taxa do CEP", async () => {
+    // Zona barata "Centro" 7.50 e zona cara "Jardins" 20. Cliente declara
+    // "Centro" (barato), mas o CEP reconcilia para "Jardins" (caro). O preview
+    // tem que mostrar 20 — sem ilusão de barato.
+    listarZonasComTaxas.mockResolvedValue([
+      zonaCentro(),
+      {
+        id: "zona-jardins",
+        nome: "Zona Jardins",
+        tipo: "bairro",
+        ativo: true,
+        taxa: { taxa: 20, pedido_minimo_gratis: null, raio_max_km: null },
+        bairros: [{ nome: "Jardins" }],
+      } as ZonaVitrine,
+    ]);
+    reconciliarBairroCep.mockResolvedValue({
+      bairroCanonico: "Jardins",
+      reconciliado: true,
+    });
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: "01400-000",
+      bairro: "Centro",
+    });
+    expect(r).toEqual({ ok: true, taxa_preview: 20, zona_nome: "Zona Jardins" });
+  });
+
+  it("PARIDADE: zona tipo='faixa_cep' casa pelo CEP repassado (igual ao autoritativo)", async () => {
+    // Zona por faixa de CEP. O preview tem que REPASSAR o cep numérico a
+    // calcularFrete (não só usá-lo para reconciliar o bairro), senão nunca casa.
+    listarZonasComTaxas.mockResolvedValue([
+      {
+        id: "zona-faixa",
+        nome: "Zona Faixa CEP",
+        tipo: "faixa_cep",
+        ativo: true,
+        taxa: {
+          taxa: 9.9,
+          pedido_minimo_gratis: null,
+          raio_max_km: null,
+          cep_inicio: 1000000,
+          cep_fim: 1999999,
+        },
+        bairros: [],
+      } as unknown as ZonaVitrine,
+    ]);
+    // Sem bairro: faixa_cep casa só pelo CEP. reconciliarBairroCep não é chamada.
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: "01001-000",
+    });
+    expect(r).toEqual({ ok: true, taxa_preview: 9.9, zona_nome: "Zona Faixa CEP" });
+    expect(reconciliarBairroCep).not.toHaveBeenCalled();
+  });
+
+  it("PARIDADE: sem CEP (só bairro declarado) → bairro DESCARTADO, reconciliação não roda", async () => {
+    // Espelha o autoritativo: endereco.cep ausente → não chama ViaCEP → descarta
+    // o bairro declarado → nenhuma zona tipo='bairro' casa → fallback R$ 15.
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+    expect(reconciliarBairroCep).not.toHaveBeenCalled();
   });
 
   it("payload inválido (sem bairro) → { ok:false } SEM tocar no banco", async () => {

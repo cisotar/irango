@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.9 | **Atualizado:** 2026-06-15
+**Versão:** 0.2.10 | **Atualizado:** 2026-06-15
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -707,6 +707,8 @@ O bairro declarado pelo cliente no checkout seleciona a zona de frete — é um 
 **Política fail-closed:** qualquer falha (rede, timeout, CEP inexistente, ViaCEP fora do ar) → `reconciliado: false`, bairro declarado descartado. O caller cai no fallback mais caro ou marca a entrega como indisponível — **nunca aceita o bairro declarado como substituto do canônico.** Isso garante que uma indisponibilidade de ViaCEP não reabre o vetor de subpagamento.
 
 Implementação: `src/lib/utils/reconciliarBairroCep.ts` — I/O isolada, sem estado, fail-closed total (try/catch engole toda exceção). Separada de `calcularFrete` (que permanece pura/sem I/O).
+
+**Escopo da política (issue 067):** o preview de frete (`calcularFreteAction` em `src/lib/actions/frete.ts`) aplica a mesma reconciliação fail-closed. CEP é opcional no schema do preview — quando ausente, não reconcilia e usa o bairro declarado; quando presente, segue a mesma política do autoritativo. Isso fecha o vetor de oráculo parcial: o preview não revela zonas baratas que o autoritativo rejeitaria.
 
 > **Nota sobre ViaCEP:** a tabela de APIs (§12) documenta ViaCEP como chamável do client (sem credencial). Isso continua válido para o autocomplete de endereço no checkout. A reconciliação de frete é um uso distinto e obrigatoriamente server-side — o mesmo endpoint externo, propósitos e contextos de segurança diferentes.
 
