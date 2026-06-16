@@ -87,6 +87,58 @@ describe("calcularDimensoesAlvo — resultado 4:3", () => {
 });
 
 // ---------------------------------------------------------------------------
+// calcularDimensoesAlvo — parâmetro `aspect` (logo 1:1 e generalização)
+//
+// Contrato estendido:
+//   - aspect default ASPECT_FOTO (4/3) → casos 4:3 acima permanecem válidos
+//   - altura = round(largura / aspect)
+//   - aspect = 1 → quadrado (altura = largura)
+// ---------------------------------------------------------------------------
+
+describe("calcularDimensoesAlvo — parâmetro aspect", () => {
+  it("aspect = 1, largura 320 → { largura: 320, altura: 320 } (logo quadrada)", () => {
+    expect(calcularDimensoesAlvo(320, 1)).toEqual({ largura: 320, altura: 320 });
+  });
+
+  it("aspect = 1, largura 256 → { largura: 256, altura: 256 } (extremo inferior da faixa de logo)", () => {
+    expect(calcularDimensoesAlvo(256, 1)).toEqual({ largura: 256, altura: 256 });
+  });
+
+  it("aspect omitido (chamada posicional só com largura) → continua 4:3 (640 → 640×480)", () => {
+    expect(calcularDimensoesAlvo(640)).toEqual({ largura: 640, altura: 480 });
+  });
+
+  it("default explícito (LARGURA_ALVO_PADRAO, ASPECT_FOTO) === sem argumento", () => {
+    expect(calcularDimensoesAlvo(LARGURA_ALVO_PADRAO, ASPECT_FOTO)).toEqual(
+      calcularDimensoesAlvo(),
+    );
+  });
+
+  it("aspect = 16/9, largura 1600 → { largura: 1600, altura: 900 } (generaliza além de 1 e 4/3)", () => {
+    expect(calcularDimensoesAlvo(1600, 16 / 9)).toEqual({
+      largura: 1600,
+      altura: 900,
+    });
+  });
+
+  it("aspect = 1 com largura decimal → arredonda ambas (101.6 → 102×102)", () => {
+    expect(calcularDimensoesAlvo(101.6, 1)).toEqual({
+      largura: 102,
+      altura: 102,
+    });
+  });
+
+  it("aspect = 1 retorna sempre inteiros (largura = altura) para várias larguras", () => {
+    for (const l of [1, 17, 256, 320, 333, 1024, 3001]) {
+      const d = calcularDimensoesAlvo(l, 1);
+      expect(Number.isInteger(d.largura)).toBe(true);
+      expect(Number.isInteger(d.altura)).toBe(true);
+      expect(d.altura).toBe(d.largura);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // exportarCrop — validação de croppedAreaPixels degenerado
 //
 // A guarda `if (width <= 0 || height <= 0)` está na primeira linha do corpo

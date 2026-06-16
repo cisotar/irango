@@ -90,7 +90,14 @@ describe("extrairIp — fonte do identificador (server-side, não forjável)", (
 describe("LIMITES — chaves de rate limit por action", () => {
   it("expõe as chaves usadas pelas actions", () => {
     expect(Object.keys(LIMITES).sort()).toEqual(
-      ["criarPedido", "fretePreview", "login", "salvarPerfil", "validarCupom"].sort(),
+      [
+        "criarPedido",
+        "fretePreview",
+        "login",
+        "salvarLogoLoja",
+        "salvarPerfil",
+        "validarCupom",
+      ].sort(),
     );
   });
 });

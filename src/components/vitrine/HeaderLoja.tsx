@@ -15,7 +15,7 @@ type HeaderLojaProps = {
 };
 
 /** Só `https:` é renderizado como imagem remota — anti-XSS (seguranca.md §15). */
-function logoSeguro(url?: string): string | null {
+export function logoSeguro(url?: string): string | null {
   return url && url.startsWith("https://") ? url : null;
 }
 

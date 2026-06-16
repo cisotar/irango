@@ -1,6 +1,8 @@
 /**
  * exportarCrop — util de browser (canvas) que recupera a região cropada de uma
- * imagem-fonte e a exporta como Blob webp no tamanho-alvo 4:3 (~1280×960).
+ * imagem-fonte e a exporta como Blob webp no tamanho-alvo parametrizável.
+ * Default: 4:3 (~1280×960) para a foto de produto; aceita `aspect`/`larguraAlvo`
+ * para outros consumidores (ex. logo 1:1 320×320).
  *
  * Browser-only: usa `Image` e `<canvas>` — não roda em ambiente node (o harness
  * de teste é `environment: "node"`, sem DOM/canvas). Por isso, só a parte PURA
@@ -25,18 +27,21 @@ export const TIPO_SAIDA = "image/webp" as const;
 export type ExportarCropParams = {
   imageSrc: string; // objectURL ou URL da imagem-fonte (criado/gerido pelo chamador)
   croppedAreaPixels: Area; // { x, y, width, height } em pixels da imagem-fonte (react-easy-crop)
-  larguraAlvo?: number; // default LARGURA_ALVO_PADRAO (1280); altura derivada por ASPECT_FOTO
+  larguraAlvo?: number; // default LARGURA_ALVO_PADRAO (1280); altura derivada por aspect
+  aspect?: number; // default ASPECT_FOTO (4/3); 1 = quadrado (logo)
 };
 
 /**
- * Pura e testável: deriva as dimensões-alvo 4:3 a partir da largura.
- * altura = round(largura / ASPECT_FOTO) → 1280 ⇒ { largura: 1280, altura: 960 }.
+ * Pura e testável: deriva as dimensões-alvo a partir da largura e do aspect.
+ * altura = round(largura / aspect). Defaults preservam o contrato 4:3:
+ * calcularDimensoesAlvo() ⇒ { largura: 1280, altura: 960 }.
  */
 export function calcularDimensoesAlvo(
   larguraAlvo = LARGURA_ALVO_PADRAO,
+  aspect = ASPECT_FOTO,
 ): { largura: number; altura: number } {
   const largura = Math.round(larguraAlvo);
-  const altura = Math.round(largura / ASPECT_FOTO);
+  const altura = Math.round(largura / aspect);
   return { largura, altura };
 }
 
@@ -53,7 +58,8 @@ function carregarImagem(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Exporta a região cropada como Blob webp ~1280×960 (4:3). Browser-only.
+ * Exporta a região cropada como Blob webp no tamanho-alvo (default ~1280×960, 4:3).
+ * Browser-only.
  *
  * @throws Error("Não foi possível carregar a imagem.") se a fonte falhar (src inválido/CORS).
  * @throws Error("Recorte inválido.") se `croppedAreaPixels` for degenerado (width/height ≤ 0).
@@ -63,6 +69,7 @@ export async function exportarCrop({
   imageSrc,
   croppedAreaPixels,
   larguraAlvo = LARGURA_ALVO_PADRAO,
+  aspect = ASPECT_FOTO,
 }: ExportarCropParams): Promise<Blob> {
   const { x, y, width, height } = croppedAreaPixels;
   if (width <= 0 || height <= 0) {
@@ -71,7 +78,7 @@ export async function exportarCrop({
 
   const img = await carregarImagem(imageSrc);
 
-  const { largura, altura } = calcularDimensoesAlvo(larguraAlvo);
+  const { largura, altura } = calcularDimensoesAlvo(larguraAlvo, aspect);
 
   const canvas = document.createElement("canvas");
   canvas.width = largura;

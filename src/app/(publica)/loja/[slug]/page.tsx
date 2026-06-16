@@ -93,6 +93,7 @@ export default async function VitrinePage({ params }: PageProps) {
       <div className="min-h-screen bg-[var(--cor-fundo)]">
         <HeaderLoja
           nome={loja.nome}
+          logoUrl={loja.logo_url ?? undefined}
           horarios={resolverHorarios(loja.horarios)}
           timezone={loja.timezone ?? "America/Sao_Paulo"}
           whatsapp={loja.whatsapp}
@@ -175,6 +176,7 @@ export default async function VitrinePage({ params }: PageProps) {
       <div className="min-h-screen bg-[var(--cor-fundo)]">
         <HeaderLoja
           nome={loja.nome}
+          logoUrl={loja.logo_url ?? undefined}
           horarios={resolverHorarios(loja.horarios)}
           timezone={loja.timezone ?? "America/Sao_Paulo"}
           whatsapp={loja.whatsapp}

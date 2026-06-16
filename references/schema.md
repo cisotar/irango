@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.7 | **Atualizado:** 2026-06-15
+**Versão:** 0.1.8 | **Atualizado:** 2026-06-15
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -96,6 +96,11 @@ CREATE TABLE lojas (
   assinatura_inicio          timestamptz,
   assinatura_fim_periodo     timestamptz,
   assinatura_atualizada_em   timestamptz,
+
+  -- Logo da loja (exibida na vitrine pública — dado público, não PII)
+  -- NULL = loja sem logo. CHECK de defesa-em-profundidade; autoridade real é a Server Action.
+  -- Migration: 20260615013000_logo_url_lojas.sql
+  logo_url         text CHECK (logo_url IS NULL OR logo_url LIKE 'https://%'),
 
   -- Slug: apenas letras minúsculas, dígitos e hífens (defesa em profundidade)
   CONSTRAINT lojas_slug_formato CHECK (slug ~ '^[a-z0-9-]+$'),
@@ -383,7 +388,7 @@ CREATE INDEX ON itens_pedido_opcionais(item_pedido_id);
 Ver detalhes completos em `references/seguranca.md`.
 
 Regra geral:
-- **Vitrine pública** (produtos, categorias) → SELECT público onde `ativo = true`; loja: leitura anon via `public.vitrine_lojas` (view — nunca `public.lojas` diretamente)
+- **Vitrine pública** (produtos, categorias) → SELECT público onde `ativo = true`; loja: leitura anon via `public.vitrine_lojas` (view — nunca `public.lojas` diretamente); projeta `logo_url` entre as colunas públicas
 - **Dados do lojista** (cupons, pedidos, formas_pagamento, zonas) → somente `auth.uid() = lojas.dono_id`
 - **INSERT de pedido** → público (cliente não precisa de login)
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`

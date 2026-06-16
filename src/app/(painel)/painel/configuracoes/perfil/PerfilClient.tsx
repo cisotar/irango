@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaPerfil, sanitizarSlug } from "@/lib/validacoes/loja";
 import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
+import { UploadLogoLoja } from "@/components/painel/UploadLogoLoja";
 
 export type PerfilInicial = {
   nome: string;
@@ -53,10 +54,12 @@ export function PerfilClient({
   inicial,
   publicado,
   podePublicar,
+  logoUrlInicial,
 }: {
   inicial: PerfilInicial;
   publicado: boolean;
   podePublicar: boolean;
+  logoUrlInicial: string | null;
 }) {
   const router = useRouter();
 
@@ -193,6 +196,10 @@ export function PerfilClient({
               salvar();
             }}
           >
+            <div className="space-y-1">
+              <UploadLogoLoja logoUrlInicial={logoUrlInicial} />
+            </div>
+
             <div className="space-y-1">
               <Label htmlFor="perfil-nome">Nome da loja</Label>
               <Input

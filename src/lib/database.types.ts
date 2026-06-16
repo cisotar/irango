@@ -353,6 +353,7 @@ export type Database = {
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
           id: string
+          logo_url: string | null
           nome: string
           slug: string
           taxa_entrega_fora_zona: number | null
@@ -382,6 +383,7 @@ export type Database = {
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
           id?: string
+          logo_url?: string | null
           nome: string
           slug: string
           taxa_entrega_fora_zona?: number | null
@@ -411,6 +413,7 @@ export type Database = {
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
           id?: string
+          logo_url?: string | null
           nome?: string
           slug?: string
           taxa_entrega_fora_zona?: number | null
@@ -794,6 +797,7 @@ export type Database = {
           endereco_rua: string | null
           horarios: Json | null
           id: string | null
+          logo_url: string | null
           nome: string | null
           slug: string | null
           taxa_entrega_fora_zona: number | null
@@ -814,6 +818,7 @@ export type Database = {
           endereco_rua?: string | null
           horarios?: Json | null
           id?: string | null
+          logo_url?: string | null
           nome?: string | null
           slug?: string | null
           taxa_entrega_fora_zona?: number | null
@@ -834,6 +839,7 @@ export type Database = {
           endereco_rua?: string | null
           horarios?: Json | null
           id?: string | null
+          logo_url?: string | null
           nome?: string | null
           slug?: string | null
           taxa_entrega_fora_zona?: number | null
@@ -905,6 +911,7 @@ export type Database = {
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
           id: string
+          logo_url: string | null
           nome: string
           slug: string
           taxa_entrega_fora_zona: number | null
