@@ -52,6 +52,7 @@ type EstadoCheckout = {
     quantidade: number;
     opcionais?: { opcionalId: string; quantidade: number }[];
   }[];
+  tipoEntrega: "entrega" | "retirada";
   zonaId: string | null;
   formaPagamentoId: string | null;
   endereco: EnderecoEntrega | null;
@@ -71,8 +72,13 @@ export function Carrinho({
   const router = useRouter();
   const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho();
 
+  const aceitaEntrega = zonas.length > 0;
+
   const [codigoCupom, setCodigoCupom] = useState("");
   const [cupom, setCupom] = useState<EstadoCupom>({ status: "idle" });
+  const [tipoEntrega, setTipoEntrega] = useState<"entrega" | "retirada">(
+    aceitaEntrega ? "entrega" : "retirada",
+  );
   const [zonaId, setZonaId] = useState<string | null>(zonas[0]?.id ?? null);
   const [formaPagamentoId, setFormaPagamentoId] = useState<string | null>(
     formasPagamento[0]?.id ?? null,
@@ -85,8 +91,9 @@ export function Carrinho({
     [zonas, zonaId],
   );
 
-  // Frete preview = taxa da zona escolhida (issue 029 §4). 0 se nenhuma escolhida.
-  const taxaEntrega = zonaSelecionada?.taxa_entrega ?? 0;
+  // Frete preview = 0 em retirada; taxa da zona escolhida em entrega.
+  const taxaEntrega =
+    tipoEntrega === "retirada" ? 0 : (zonaSelecionada?.taxa_entrega ?? 0);
   const descontoCupom = cupom.status === "valido" ? cupom.desconto : 0;
 
   // Total PREVIEW — recalculado no servidor no checkout (calcularTotal é pura).
@@ -130,7 +137,8 @@ export function Carrinho({
             }
           : {}),
       })),
-      zonaId,
+      tipoEntrega,
+      zonaId: tipoEntrega === "retirada" ? null : zonaId,
       formaPagamentoId,
       endereco,
       codigoCupom: cupom.status === "valido" ? cupom.codigo : null,
@@ -143,7 +151,7 @@ export function Carrinho({
     startEnvio(() => {
       router.push(`/loja/${lojaSlug}/pedido`);
     });
-  }, [itens, zonaId, formaPagamentoId, endereco, cupom, lojaSlug, router]);
+  }, [itens, tipoEntrega, zonaId, formaPagamentoId, endereco, cupom, lojaSlug, router]);
 
   const vazio = itens.length === 0;
 
@@ -312,27 +320,56 @@ export function Carrinho({
 
               <Separator />
 
-              {/* Zona de entrega */}
+              {/* Tipo de entrega */}
               <fieldset className="flex flex-col gap-2">
-                <legend className="text-sm font-medium">Entregar em</legend>
-                {zonas.map((zona) => (
-                  <label
-                    key={zona.id}
-                    className="flex items-center gap-2 text-sm"
-                  >
+                <legend className="text-sm font-medium">Como receber?</legend>
+                {aceitaEntrega && (
+                  <label className="flex items-center gap-2 text-sm">
                     <input
                       type="radio"
-                      name="carrinho-zona"
-                      value={zona.id}
-                      checked={zonaId === zona.id}
-                      onChange={() => setZonaId(zona.id)}
+                      name="carrinho-tipo"
+                      value="entrega"
+                      checked={tipoEntrega === "entrega"}
+                      onChange={() => setTipoEntrega("entrega")}
                     />
-                    <span>
-                      {zona.nome} — {formatarMoeda(zona.taxa_entrega)}
-                    </span>
+                    <span>Entrega</span>
                   </label>
-                ))}
+                )}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="carrinho-tipo"
+                    value="retirada"
+                    checked={tipoEntrega === "retirada"}
+                    onChange={() => setTipoEntrega("retirada")}
+                  />
+                  <span>Retirada no local — sem custo</span>
+                </label>
               </fieldset>
+
+              {/* Zona de entrega — só visível quando entrega selecionada */}
+              {tipoEntrega === "entrega" && zonas.length > 0 && (
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="text-sm font-medium">Entregar em</legend>
+                  {zonas.map((zona) => (
+                    <label
+                      key={zona.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <input
+                        type="radio"
+                        name="carrinho-zona"
+                        value={zona.id}
+                        checked={zonaId === zona.id}
+                        onChange={() => setZonaId(zona.id)}
+                      />
+                      <span>
+                        {zona.nome} — {formatarMoeda(zona.taxa_entrega)}
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              )}
 
               <Separator />
 
