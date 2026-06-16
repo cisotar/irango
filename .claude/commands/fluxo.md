@@ -125,17 +125,37 @@ Se sim, o escopo da issue **deve** incluir enforcement server-side. Nunca feche 
 
 Pattern: `auditar` reporta com severidade → se MÉDIA+, aplicar fix (Edit) imediatamente → rodar `pnpm build` → reauditar o fix antes de fechar.
 
+### 🛑 REALIDADE DE AMBIENTE — o dev local roda contra o Supabase CLOUD
+
+`npm run dev` usa o `.env.local`, que aponta para o **Supabase cloud de produção**
+(`NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co`). **Não há Postgres local
+no caminho de runtime** — só os testes usam pglite.
+
+Consequência inescapável: **uma migration que existe só em `supabase/migrations/`
+(local) mas não foi aplicada no cloud NÃO existe para o app rodando.** O sintoma é
+sempre o mesmo e foi recorrente em debug:
+
+```
+PGRST204 Could not find the '<coluna>' column of '<tabela>' in the schema cache
+```
+
+Build verde + 1219 testes verdes em pglite **não provam nada** sobre o cloud. Por
+isso `verificar` (subir o app) é **impossível de passar** enquanto a migration não
+estiver no cloud. O deploy de migration deixou de ser "passo final manual" — virou
+**gate obrigatório no meio do ciclo da issue de schema** (Etapa 3, passo 6b½).
+
 ### Gates antes de qualquer deploy
 
-1. **Build verde** — `pnpm build` (zero erros, zero warnings novos)
+1. **Build verde** — `npm run build` (zero erros, zero warnings novos)
 2. **Testes verdes** — `npx vitest run` (suite inteira, não só afetada)
-3. **RLS validada** — quando houver mudança de política/tabela: rodar testes de RLS no Supabase local (`supabase start`), com clientes em papéis distintos (anon, lojista A, lojista B) confirmando isolamento
+3. **RLS validada** — quando houver mudança de política/tabela: teste negativo em pglite (anon, lojista A, lojista B) confirmando isolamento
 4. **Zero regressão** — contagem de testes passando ≥ baseline pré-issue
-5. **Tipos sincronizados** — após mudança de schema: `pnpm supabase gen types typescript --local > src/types/supabase.ts`
+5. **Migration no cloud** — `npx supabase migration list` mostra a nova migration com coluna **Remote preenchida** (zero migrations só-local). Ver passo 6b½.
+6. **Tipos sincronizados** — após mudança de schema, regenerar `src/lib/database.types.ts` (NÃO `src/types/supabase.ts`, que está morto). Com cloud aplicado: `npx supabase gen types typescript > src/lib/database.types.ts`. Sem cloud/disco apertado: patch manual determinístico da coluna em Row/Insert/Update + qualquer RPC `setof <tabela>`.
 
 ### Mudanças que exigem cuidado dedicado
 
-- Nova migration em `supabase/migrations/` → validar com `supabase db reset` local antes de aplicar em prod (`supabase db push`)
+- Nova migration em `supabase/migrations/` → **aplicar no cloud (`npx supabase db push`) ANTES de `verificar`** — o app roda contra o cloud (ver acima). Sempre `npx supabase`, nunca `pnpm`.
 - Política RLS nova/alterada → teste negativo obrigatório (loja A tenta acessar dado da loja B → deny) antes do deploy
 - Server Action que lida com valor/permissão → teste de adulteração (payload com `total: 0.01` → servidor recalcula) antes do deploy
 
@@ -188,8 +208,14 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
    - Causa lógica simples → reexecute `planejar`
 6. **Validação pós-`executar` (ordem obrigatória):**
    - 6a. `testar` — confirma RED→GREEN, cobre bordas e recálculo no servidor.
-   - 6b. `auditar` — recebe todos os arquivos modificados. Findings MÉDIA+ viram Edit imediato + `pnpm build`. NUNCA fechar com brecha "para follow-up".
-   - 6c. `verificar` — sobe o app e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel).
+   - 6b. `auditar` — recebe todos os arquivos modificados. Findings MÉDIA+ viram Edit imediato + `npm run build`. NUNCA fechar com brecha "para follow-up".
+   - **6b½. 🛑 DEPLOY DE MIGRATION (obrigatório se a issue criou/alterou `supabase/migrations/`).** O app roda contra o cloud — sem este passo, `verificar` falha com `PGRST204` e a issue parece quebrada. NÃO é opcional nem "para o fim":
+     1. `npx supabase migration list` — a nova migration aparece como **só-local** (coluna Remote vazia)?
+     2. Se o histórico estiver dessincronizado, `npx supabase migration repair --status applied <ids>` antes do push.
+     3. **Pedir autorização ao usuário** para `npx supabase db push` (única ação outward — toca o banco de produção). Apresentar a migration e que é aditiva/segura. Aguardar o "sim".
+     4. Após o push: `npx supabase migration list` reconfirma Remote preenchido; regenerar `src/lib/database.types.ts` (gate 6 acima).
+     5. Só então avançar para `verificar`. Se o usuário recusar o push, **parar a issue** e registrar que `verificar` fica pendente até o deploy — não marcar a issue como verificada.
+   - 6c. `verificar` — sobe o app (`npm run dev`, contra o cloud) e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel). Pré-condição: 6b½ concluído quando houver migration.
    - 6d. `documentar` — sempre. Se "nenhuma atualização necessária", seguir adiante.
 7. **Verificar critérios `[x]`:** se algum ficar `[ ]`, NÃO feche a issue — complete, ou registre débito explícito como nova issue.
 8. **Fechar a issue:** sem bloqueios pendentes:
@@ -210,10 +236,11 @@ Quando todas as issues tiverem critérios `[x]`:
 2. **Build verde:** `pnpm build` (zero erros, zero warnings novos).
 3. **Suite completa verde:** `npx vitest run` (todos os testes). Se houve mudança de RLS/schema, rodar os testes de RLS no Supabase local.
 4. **Zero regressão:** contagem de testes passando ≥ baseline.
-5. **Tipos sincronizados:** confirmar `src/types/supabase.ts` regenerado se o schema mudou.
-6. **Deploy — MANUAL, não automático.** Não rode comando de deploy. Liste o que seria necessário e aguarde autorização:
-   - Migration nova → `supabase db push` (após `supabase db reset` local OK)
-   - Frontend → push para a branch (Vercel faz CI/CD automático ao mergear em `main`)
+5. **Tipos sincronizados:** confirmar `src/lib/database.types.ts` regenerado se o schema mudou (NÃO `src/types/supabase.ts`).
+6. **🛑 GATE DE MIGRATION NO CLOUD (bloqueante).** Rodar `npx supabase migration list` e confirmar **zero migrations só-local** (toda linha com Remote preenchido). Se alguma migration do fluxo ficou só-local:
+   - Normalmente já foi aplicada no passo 6b½ da Etapa 3. Se chegou aqui só-local, é porque o `verificar` da issue de schema foi pulado — **não feche o fluxo**. Pedir autorização e rodar `npx supabase db push` (com `migration repair` se desync) agora, depois regenerar os tipos.
+   - Frontend não precisa de push manual aqui → Vercel faz CI/CD ao mergear em `main`.
+   - **O fluxo não pode reportar "concluído" com migration só-local** — esse é exatamente o estado que gera `PGRST204` em runtime.
 7. Listar todos os commits criados durante o fluxo.
 8. Gerar relatório: total de issues; agentes usados por tipo; arquivos criados/modificados; **findings de auditoria por severidade e status (corrigida no mesmo ciclo / issue aberta)**; desvios registrados.
 9. **Aviso de merge:** informe que o fluxo terminou na branch `$(git branch --show-current)` e que o próximo passo é abrir PR para `main`. Não abra o PR automaticamente — mostre o comando sugerido com título e descrição preenchidos:

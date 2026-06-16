@@ -99,6 +99,14 @@ Zero regressões novas. Os testes usam Vitest + pglite (sem Docker, sem Supabase
 
 Se a mudança toca lógica sem cobertura de teste — use o agente `testar` para decidir se vale escrever um. Para JSX puro de renderização, testes são opcionais.
 
+> **🛑 Realidade de ambiente — build/teste verde ≠ funciona em runtime.** `npm run dev`
+> roda contra o **Supabase cloud** (`.env.local`), não um banco local. Os testes (pglite)
+> e o `build` não tocam o cloud. Se o fix depende de schema/coluna/RLS que só existe numa
+> migration ainda **não aplicada no cloud**, ele falha em runtime com
+> `PGRST204 Could not find the '<coluna>' ... in the schema cache` mesmo com tudo verde.
+> Isso NÃO é um `/fix`: migration é gate de `/fluxo`. Se o sintoma aparecer, **pare e
+> escale** — não tente contornar no código.
+
 ### 5. Revisar + auditar (condicional)
 
 **Auditar — obrigatório** se o diff toca qualquer destes:
