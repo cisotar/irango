@@ -191,7 +191,13 @@ export function FormZona({ inicial, onSucesso }: FormZonaProps) {
             onChange={(e) => setRaioMaxKm(e.target.value)}
             placeholder="Ex.: 5"
             inputMode="decimal"
+            aria-describedby="zona-raio-ajuda"
           />
+          <p id="zona-raio-ajuda" className="text-xs text-muted-foreground">
+            Configure com margem: CEPs brasileiros podem cair no centro do
+            bairro ou da cidade, não no endereço exato. Para atender 5 km reais,
+            configure 7-8 km.
+          </p>
         </div>
       )}
 

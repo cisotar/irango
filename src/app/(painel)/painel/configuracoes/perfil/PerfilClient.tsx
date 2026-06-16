@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { IMaskInput } from "react-imask";
-import { Copy, Loader2 } from "lucide-react";
+import { Copy, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaPerfil, sanitizarSlug } from "@/lib/validacoes/loja";
 import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
+import { buscarCep } from "@/lib/utils/buscarCep";
 import { UploadLogoLoja } from "@/components/painel/UploadLogoLoja";
 
 export type PerfilInicial = {
@@ -21,6 +22,12 @@ export type PerfilInicial = {
   slug: string;
   telefone: string | null;
   whatsapp: string | null;
+  endereco_cep: string | null;
+  endereco_rua: string | null;
+  endereco_numero: string | null;
+  endereco_bairro: string | null;
+  endereco_cidade: string | null;
+  endereco_estado: string | null;
 };
 
 const BASE_VITRINE = "https://irango.com.br/loja";
@@ -73,6 +80,26 @@ export function PerfilClient({
     whatsappArmazenadoParaExibicao(inicial.whatsapp),
   );
 
+  // Endereço da loja (issue 009). Coords NÃO entram no form (derivadas no
+  // servidor, issue 008). Pré-preenchido a partir do `inicial`.
+  const [enderecoCep, setEnderecoCep] = useState(inicial.endereco_cep ?? "");
+  const [enderecoRua, setEnderecoRua] = useState(inicial.endereco_rua ?? "");
+  const [enderecoNumero, setEnderecoNumero] = useState(
+    inicial.endereco_numero ?? "",
+  );
+  const [enderecoBairro, setEnderecoBairro] = useState(
+    inicial.endereco_bairro ?? "",
+  );
+  const [enderecoCidade, setEnderecoCidade] = useState(
+    inicial.endereco_cidade ?? "",
+  );
+  const [enderecoEstado, setEnderecoEstado] = useState(
+    inicial.endereco_estado ?? "",
+  );
+  const [erroCep, setErroCep] = useState<string | null>(null);
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const numeroRef = useRef<HTMLInputElement>(null);
+
   const [enviando, startEnvio] = useTransition();
   const [publicando, startPublicacao] = useTransition();
 
@@ -108,6 +135,24 @@ export function PerfilClient({
     setSlug(valor);
   }
 
+  // Autocomplete ViaCEP (mesmo padrão de FormEndereco). Preview de UX — o
+  // servidor revalida e deriva coords (issue 008). Edição manual permitida.
+  async function buscarEnderecoPorCep() {
+    setBuscandoCep(true);
+    setErroCep(null);
+    const dados = await buscarCep(enderecoCep);
+    setBuscandoCep(false);
+    if (dados == null) {
+      setErroCep("CEP não encontrado");
+      return;
+    }
+    setEnderecoRua(dados.rua);
+    setEnderecoBairro(dados.bairro);
+    setEnderecoCidade(dados.cidade);
+    setEnderecoEstado(dados.uf);
+    numeroRef.current?.focus();
+  }
+
   function montarPayload() {
     const whatsappDigitos = apenasDigitos(whatsapp);
     const telefoneDigitos = apenasDigitos(telefone);
@@ -116,6 +161,12 @@ export function PerfilClient({
       slug: slug.trim(),
       ...(telefoneDigitos ? { telefone: telefoneDigitos } : {}),
       ...(whatsappDigitos ? { whatsapp: `55${whatsappDigitos}` } : {}),
+      ...(enderecoCep.trim() ? { endereco_cep: enderecoCep.trim() } : {}),
+      ...(enderecoRua.trim() ? { endereco_rua: enderecoRua.trim() } : {}),
+      ...(enderecoNumero.trim() ? { endereco_numero: enderecoNumero.trim() } : {}),
+      ...(enderecoBairro.trim() ? { endereco_bairro: enderecoBairro.trim() } : {}),
+      ...(enderecoCidade.trim() ? { endereco_cidade: enderecoCidade.trim() } : {}),
+      ...(enderecoEstado.trim() ? { endereco_estado: enderecoEstado.trim() } : {}),
     };
   }
 
@@ -135,6 +186,11 @@ export function PerfilClient({
         return;
       }
       toast.success("Perfil salvo!");
+      if (!resultado.geocodificado) {
+        toast.warning(
+          "Não localizamos seu endereço no mapa — zonas por raio ficam inativas até corrigir.",
+        );
+      }
       router.refresh();
     });
   }
@@ -274,6 +330,113 @@ export function PerfilClient({
                   Atenção: o link anterior da vitrine deixará de funcionar.
                 </p>
               )}
+            </div>
+
+            <Separator />
+
+            {/* Endereço da loja (issue 009). Coords NÃO entram aqui — derivadas
+                no servidor (issue 008). Autocomplete ViaCEP é preview de UX. */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Endereço da loja</p>
+                <p className="text-xs text-muted-foreground">
+                  Usado para calcular zonas de entrega por raio.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="perfil-endereco-cep">CEP</Label>
+                <div className="flex items-center gap-2">
+                  <IMaskInput
+                    id="perfil-endereco-cep"
+                    mask="00000-000"
+                    value={enderecoCep}
+                    onAccept={(value) => setEnderecoCep(value as string)}
+                    placeholder="00000-000"
+                    inputMode="numeric"
+                    aria-invalid={erroCep != null}
+                    aria-describedby={
+                      erroCep != null ? "perfil-endereco-cep-erro" : undefined
+                    }
+                    className={className}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={buscarEnderecoPorCep}
+                    disabled={buscandoCep}
+                  >
+                    {buscandoCep ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Search className="size-4" aria-hidden />
+                    )}
+                    {buscandoCep ? "Buscando…" : "Buscar"}
+                  </Button>
+                </div>
+                {erroCep != null && (
+                  <p
+                    id="perfil-endereco-cep-erro"
+                    className="text-xs text-destructive"
+                  >
+                    {erroCep} Confira e tente de novo, ou preencha manualmente.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="perfil-endereco-rua">Logradouro</Label>
+                <Input
+                  id="perfil-endereco-rua"
+                  value={enderecoRua}
+                  onChange={(e) => setEnderecoRua(e.target.value)}
+                  placeholder="Rua, avenida…"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[6rem_1fr]">
+                <div className="space-y-1">
+                  <Label htmlFor="perfil-endereco-numero">Número</Label>
+                  <Input
+                    id="perfil-endereco-numero"
+                    ref={numeroRef}
+                    value={enderecoNumero}
+                    inputMode="numeric"
+                    onChange={(e) => setEnderecoNumero(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="perfil-endereco-bairro">Bairro</Label>
+                  <Input
+                    id="perfil-endereco-bairro"
+                    value={enderecoBairro}
+                    onChange={(e) => setEnderecoBairro(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_5rem]">
+                <div className="space-y-1">
+                  <Label htmlFor="perfil-endereco-cidade">Cidade</Label>
+                  <Input
+                    id="perfil-endereco-cidade"
+                    value={enderecoCidade}
+                    onChange={(e) => setEnderecoCidade(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="perfil-endereco-estado">UF</Label>
+                  <Input
+                    id="perfil-endereco-estado"
+                    value={enderecoEstado}
+                    maxLength={2}
+                    onChange={(e) =>
+                      setEnderecoEstado(e.target.value.toUpperCase())
+                    }
+                  />
+                </div>
+              </div>
             </div>
 
             <Separator />

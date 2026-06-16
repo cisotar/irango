@@ -6,6 +6,7 @@ import { Loader2, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { buscarCep as consultarViaCep, limparCep } from "@/lib/utils/buscarCep";
 
 /** Endereço de entrega montado no client (preview de UX; servidor revalida). */
 export type EnderecoEntrega = {
@@ -22,20 +23,6 @@ export type FormEnderecoProps = {
   /** Recebe o endereço completo, ou `null` enquanto algum obrigatório falta. */
   onEnderecoChange: (endereco: EnderecoEntrega | null) => void;
 };
-
-/** Resposta relevante do ViaCEP (API pública, sem key — seguranca.md §9). */
-type RespostaViaCep = {
-  erro?: boolean;
-  logradouro?: string;
-  bairro?: string;
-  localidade?: string;
-  uf?: string;
-};
-
-/** Só dígitos do CEP (a máquina é apresentação). */
-function limparCep(cep: string): string {
-  return cep.replace(/\D/g, "");
-}
 
 export function FormEndereco({ onEnderecoChange }: FormEnderecoProps) {
   const [cep, setCep] = useState("");
@@ -71,37 +58,24 @@ export function FormEndereco({ onEnderecoChange }: FormEnderecoProps) {
   }, [cep, rua, numero, complemento, bairro, cidade, uf, onEnderecoChange]);
 
   const buscarCep = useCallback(async () => {
-    const limpo = limparCep(cep);
-    if (limpo.length !== 8) {
+    if (limparCep(cep).length !== 8) {
       setErro("CEP não encontrado");
       return;
     }
     setBuscando(true);
     setErro(null);
-    try {
-      const resp = await fetch(`https://viacep.com.br/ws/${limpo}/json/`);
-      if (!resp.ok) {
-        setErro("CEP não encontrado");
-        return;
-      }
-      const dados = (await resp.json()) as RespostaViaCep;
-      if (dados.erro) {
-        setErro("CEP não encontrado");
-        return;
-      }
-      setRua(dados.logradouro ?? "");
-      setBairro(dados.bairro ?? "");
-      setCidade(dados.localidade ?? "");
-      setUf(dados.uf ?? "");
-      // Foco vai para "Número" — próximo dado que só o usuário tem (mockup).
-      numeroRef.current?.focus();
-    } catch (e) {
-      // Erro interno nunca vaza ao cliente (seguranca.md §14).
-      console.error("[FormEndereco] buscarCep", e);
+    const dados = await consultarViaCep(cep);
+    setBuscando(false);
+    if (dados == null) {
       setErro("CEP não encontrado");
-    } finally {
-      setBuscando(false);
+      return;
     }
+    setRua(dados.rua);
+    setBairro(dados.bairro);
+    setCidade(dados.cidade);
+    setUf(dados.uf);
+    // Foco vai para "Número" — próximo dado que só o usuário tem (mockup).
+    numeroRef.current?.focus();
   }, [cep]);
 
   return (

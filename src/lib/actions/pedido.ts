@@ -31,6 +31,7 @@ import {
 import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
 import { reconciliarBairroCep } from "@/lib/utils/reconciliarBairroCep";
+import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
@@ -192,6 +193,11 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     // (5) Frete autoritativo (RN-C2): retirada → frete 0, servidor ignora endereço.
     //     Entrega → calcularFrete com zonas do banco. Fora de área → recusa.
     let frete: { atendido: boolean; taxa: number; zonaId: string | null; gratis: boolean };
+    // (006) Distância loja→CEP (linha reta) para zonas tipo='raio_km'. Derivada
+    // server-side; só é number no ramo entrega quando há coords+geocoding. Usada
+    // tanto em calcularFrete quanto na persistência do snapshot (RN-9). Em retirada
+    // permanece undefined → p_endereco_entrega=null não a lê.
+    let distanciaKm: number | undefined;
     if (dados.tipo_entrega === "retirada") {
       // RN-C2: servidor força frete zero e ignora qualquer endereço enviado.
       frete = { atendido: true, taxa: 0, zonaId: null, gratis: false };
@@ -223,6 +229,18 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
             : // não reconciliável (sem CEP, ViaCEP down ou CEP inexistente):
               // bairro declarado não é confiável para seleção de zona → descarta.
               { ...endereco, bairro: null };
+      }
+
+      // (006/RN-7) Distância loja→CEP para zonas tipo='raio_km'. MESMA sequência do
+      // preview (calcularFreteAction, 007) via helper neutro distanciaDaLojaAoCep.
+      // Fail-closed (RN-5): qualquer falha → undefined → zonaAtende('raio_km') não
+      // casa → fallback. Só injetamos quando há número; nunca confiamos em
+      // distanciaKm vindo do cliente (RN-4). endereco.cep = CEP cru do cliente
+      // (a reconciliação só mexe em bairro). Roda sempre que há CEP, independente
+      // de existir zona raio_km (paridade com o preview; custo protegido §12-A).
+      distanciaKm = await distanciaDaLojaAoCep(svc, dados.loja_id, endereco.cep);
+      if (typeof distanciaKm === "number") {
+        enderecoAutoritativo = { ...enderecoAutoritativo, distanciaKm };
       }
 
       // 4º arg (RN-C4 passo 4): taxa_entrega_fora_zona habilita fallback fora-de-zona —
@@ -282,8 +300,17 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       p_telefone_cliente: dados.telefone_cliente ?? null,
       // Minimização de PII (LGPD §20): retirada não tem entrega → não persistir
       // endereço, mesmo que o cliente o tenha enviado no payload.
+      // (006) Snapshot = endereço DECLARADO pelo cliente (LGPD: endereço real de
+      // entrega) + distanciaKm DERIVADO server-side, persistido só quando number
+      // (campo aditivo no JSONB, ausente caso contrário — RN-9, auditoria de
+      // cobrança). Não persistimos coords (cliente nem loja).
       p_endereco_entrega:
-        dados.tipo_entrega === "retirada" ? null : dados.endereco_entrega,
+        dados.tipo_entrega === "retirada"
+          ? null
+          : {
+              ...dados.endereco_entrega,
+              ...(typeof distanciaKm === "number" ? { distanciaKm } : {}),
+            },
       p_forma_pagamento: dados.forma_pagamento,
       p_observacoes: dados.observacoes ?? null,
       p_subtotal: subtotal,

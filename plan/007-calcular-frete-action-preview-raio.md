@@ -1,39 +1,3 @@
-# [007] `calcularFreteAction`: preview de frete por raio (coords via service_role)
-
-**crítica:** SIM (TDD red-first)
-**Mundo:** vitrine pública (Server Action de preview)
-**Depende de:** 002, 003, 005, 006
-**Spec:** specs/zonas-entrega-raio-km.md
-
-## Objetivo
-Estender `calcularFreteAction` (`lib/actions/frete.ts`) para espelhar o autoritativo: quando a loja tem coords e o cliente informou CEP, buscar coords via service_role, geocodificar o CEP, calcular `distanciaKm` por haversine e injetar no `EnderecoEntrega` antes do `calcularFrete`. Sem UI nova; preview continua não-vinculante.
-
-## Escopo
-- [ ] Buscar coords da loja via `buscarCoordsLoja` (service_role) — exceção à regra "anon-only" desta action, justificada no spec (§Como o preview obtém as coords): coords não estão na `vitrine_lojas`. Zonas/loja seguem via anon.
-- [ ] Se há coords + CEP → `geocodificarEndereco(cep)` → `haversine` → `endereco.distanciaKm`.
-- [ ] Passar a `calcularFrete` (intacto). Fail-closed: geocoding `null` → `distanciaKm` indefinido → zona `raio_km` não casa.
-- [ ] Garantir paridade EXATA com `criarPedido` (issue 006): mesmos utils, mesma ordem (reconciliar bairro + geocode CEP). Se issue 006 extraiu helper neutro, reusar aqui.
-
-## Fora de escopo
-- Mudança em `Carrinho.tsx`/wizard (consomem o resultado existente; sem alteração).
-- Mudar `calcularFrete`.
-- Persistência (preview não persiste).
-
-## Reuso esperado
-- `haversine.ts` (002), `geocodificarEndereco.ts` (003), `buscarCoordsLoja` (005), e o eventual helper neutro extraído na issue 006 — RN-7. NÃO reimplementar a sequência geocode→haversine.
-
-## Segurança
-- RN-4: cliente nunca envia `distanciaKm` nem `taxa`; preview recalculado no servidor.
-- RN-7: paridade preview↔autoritativo — preview não pode mostrar frete divergente do que `criarPedido` cobra.
-- service_role usado SÓ para as duas colunas de coords; zonas/loja seguem anon (não regredir privacidade).
-
-## Critério de aceite
-- [ ] (teste vermelho primeiro) Testes com utils mockados:
-  - Loja com coords + CEP + zona `raio_km` cobrindo → `taxa_preview` igual à taxa da zona raio; `zona_nome` = nome da zona.
-  - Geocoding falha → cai no fallback/indisponível (mesmo resultado do autoritativo).
-  - Loja sem coords → comportamento atual inalterado.
-  - Paridade: para o mesmo input, preview e `criarPedido` produzem a mesma `taxa`.
-- [ ] `next build` sem erro; `pnpm test` verde.
 ## Plano Técnico
 
 ### Análise do Codebase
@@ -120,29 +84,3 @@ Mockar `@/lib/actions/distanciaFrete` (`distanciaDaLojaAoCep`) e `@/lib/supabase
 Issue **crítica** (dinheiro: a distância altera a zona e a taxa). Começar pela fase RED:
 1. **RED (`/tdd`):** atualizar `frete.test.ts` — adicionar casos 1–5 + converter o teste "NÃO usa service_role". Confirmar falha real (action ainda não injeta `distanciaKm`).
 2. **GREEN (`/execute`):** patch mínimo em `frete.ts` (import + 3 linhas + comentário de cabeçalho). Rodar `pnpm test` (`npx`, nunca `pnpm` para supabase) e `next build` (MEMORY: const exportada em `'use server'` só quebra no build).
-
-### RED comprovado (fase TDD — `src/lib/actions/frete.test.ts`)
-
-`npx vitest run src/lib/actions/frete.test.ts --reporter=verbose` → **3 failed | 18 passed (21)**. As 3 falhas são por ASSERÇÃO (não compilação) e correspondem exatamente ao comportamento de raio que ainda não existe na action:
-
-```
-× [007] usa service_role SÓ para coords (helper) — zonas/loja seguem ANON
-  → expected "vi.fn()" to be called 1 times, but got 0 times
-  (createServiceClient ainda não é chamado — frete.test.ts:357)
-
-× [007-1] coords + CEP + zona raio_km cobre → taxa_preview = taxa da zona raio
-  → expected { ok: true, taxa_preview: 15, zona_nome: "fora_zona" }
-    to deeply equal { ok: true, taxa_preview: 3, zona_nome: "Zona Raio 5km" }
-
-× [007-4] PARIDADE: mesmo input → preview e criarPedido produzem a MESMA taxa
-  → expected { ok: true, taxa_preview: 15, zona_nome: "fora_zona" }
-    to deeply equal { ok: true, taxa_preview: 3, zona_nome: "Zona Raio 5km" }
-```
-
-Os 18 verdes incluem toda a regressão (bairro/faixa_cep/strict/rate-limit) + os casos fail-closed `[007-2]` (geocoding null → fallback) e `[007-3]` (loja sem coords → inalterado), que a action ATUAL já satisfaz por construção.
-
-**Contrato para GREEN** (não tocar `distanciaFrete.ts` nem `calcularFrete.ts`):
-- Em `frete.ts`, entre a reconciliação (~linha 114) e `calcularFrete` (~linha 118): `const svc = createServiceClient()` (import de `@/lib/supabase/service`); `const distanciaKm = await distanciaDaLojaAoCep(svc, loja_id, cep)` (import de `@/lib/actions/distanciaFrete`); `if (typeof distanciaKm === "number") endereco.distanciaKm = distanciaKm;`
-- Assinatura de chamada do helper IDÊNTICA ao autoritativo `pedido.ts`: `distanciaDaLojaAoCep(svc, loja_id, cep)`.
-- `listarZonasComTaxas`/`buscarLojaPublicaPorId` permanecem com o client ANON (não regredir privacidade).
-- Atualizar o comentário de cabeçalho de `frete.ts` (hoje "NUNCA service_role nesta action") para a nova invariante: service_role usado SÓ para coords; zonas/loja seguem anon.

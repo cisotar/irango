@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.9 | **Atualizado:** 2026-06-16
+**Versão:** 0.1.10 | **Atualizado:** 2026-06-16
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -243,7 +243,8 @@ CREATE TABLE pedidos (
   token_acesso      uuid NOT NULL DEFAULT gen_random_uuid(),
   nome_cliente      text NOT NULL,
   telefone_cliente  text,
-  -- { "rua":"...", "numero":"...", "bairro":"...", "cidade":"...", "cep":"..." }
+  -- { "rua":"...", "numero":"...", "bairro":"...", "cidade":"...", "cep":"...", "distanciaKm"?: number }
+  -- distanciaKm: calculado server-side (haversine loja↔CEP cliente, issue 006); ausente quando geocoding falha ou tipo_entrega=retirada. Nunca vem do client (.strict() rejeita extras).
   endereco_entrega  jsonb,
   subtotal          numeric(10,2) NOT NULL,
   desconto          numeric(10,2) NOT NULL DEFAULT 0,

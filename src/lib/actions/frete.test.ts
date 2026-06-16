@@ -45,8 +45,12 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClient(),
 }));
 
-// service_role NUNCA deve ser tocado nesta action pública (leitura RLS pública).
-const createServiceClient = vi.fn(() => ({ __role: "service" }));
+// [007] service_role é usado SÓ para as 2 colunas de coords (buscarCoordsLoja,
+// via helper neutro distanciaDaLojaAoCep) — coords não têm SELECT anon (§19).
+// Zonas/loja seguem ANON (não regredir privacidade). Sentinela ESTÁVEL para
+// asserir, por identidade, que o helper recebeu o client service_role e não o anon.
+const serviceClient = { __role: "service" };
+const createServiceClient = vi.fn(() => serviceClient);
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => createServiceClient(),
 }));
@@ -72,6 +76,21 @@ vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
   reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
 }));
 
+// [007] Helper NEUTRO distanciaDaLojaAoCep (lib/actions/distanciaFrete.ts):
+// FONTE ÚNICA da sequência buscarCoordsLoja → geocodificarEndereco(CEP) →
+// haversine — reusada pelo autoritativo (criarPedido, 006) E pelo preview
+// (calcularFreteAction, 007): paridade RN-7. Mockado aqui (como em
+// pedido.test.ts:91) — os testes da ACTION provam a ORQUESTRAÇÃO (instanciar
+// service_role, chamar o helper com (svc, loja_id, cep), injetar distanciaKm no
+// EnderecoEntrega só quando number), não a matemática do helper. Por padrão
+// resolve `undefined` (fail-closed: loja sem coords / CEP sem geocode) — assim
+// nenhum teste pré-existente (sem zona raio_km) regride; só os casos de raio
+// sobrescrevem com número.
+const distanciaDaLojaAoCep = vi.fn();
+vi.mock("@/lib/actions/distanciaFrete", () => ({
+  distanciaDaLojaAoCep: (...a: unknown[]) => distanciaDaLojaAoCep(...a),
+}));
+
 import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { calcularFreteAction } from "./frete";
 
@@ -89,9 +108,26 @@ function zonaCentro(): ZonaVitrine {
 
 const CEP_CENTRO = "01001-000";
 
+// [007] Zona tipo='raio_km' — casa quando endereco.distanciaKm <= raio_max_km.
+// Espelha o helper de pedido.test.ts (zonasComRaio) para a paridade RN-7.
+function zonaRaio(raioMaxKm = 5, taxa = 3.0): ZonaVitrine {
+  return {
+    id: "zona-raio",
+    nome: "Zona Raio 5km",
+    tipo: "raio_km",
+    ativo: true,
+    taxa: { taxa, pedido_minimo_gratis: null, raio_max_km: raioMaxKm },
+    bairros: [],
+  } as ZonaVitrine;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   listarZonasComTaxas.mockResolvedValue([zonaCentro()]);
+  // [007] Default fail-closed: sem coords / sem geocode → undefined → zona
+  // raio_km não casa. Mantém todos os testes pré-existentes (bairro/faixa_cep)
+  // intactos; só os casos de raio sobrescrevem com número.
+  distanciaDaLojaAoCep.mockResolvedValue(undefined);
   // Loja com fallback fora-de-zona configurado (R$ 15,00) por padrão.
   buscarLojaPublicaPorId.mockResolvedValue({
     id: LOJA_ID,
@@ -311,9 +347,18 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
     expect(buscarLojaPublicaPorId).not.toHaveBeenCalled();
   });
 
-  it("NÃO usa service_role (leitura pública via RLS anon)", async () => {
-    await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
-    expect(createServiceClient).not.toHaveBeenCalled();
+  // [007] CONVERTIDO de "NÃO usa service_role". A invariante mudou: o preview por
+  // raio precisa das coords da loja, que NÃO têm SELECT anon (§19). Agora o
+  // service_role É usado — mas SÓ para as coords, via o helper neutro. Zonas/loja
+  // continuam ANON (não regredir privacidade). O teste seguinte trava esse escopo.
+  it("[007] usa service_role SÓ para coords (helper) — zonas/loja seguem ANON", async () => {
+    await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_CENTRO, bairro: "Centro" });
+    // service_role instanciado e repassado ao helper de coords:
+    expect(createServiceClient).toHaveBeenCalledTimes(1);
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(serviceClient, LOJA_ID, CEP_CENTRO);
+    // ...mas as queries de zonas/loja recebem o client ANON, não o service_role:
+    expect(listarZonasComTaxas).toHaveBeenCalledWith(anonClient, LOJA_ID);
+    expect(buscarLojaPublicaPorId).toHaveBeenCalledWith(anonClient, LOJA_ID);
   });
 
   it("usa o client ANON (createClient do servidor) e o repassa às queries", async () => {
@@ -329,5 +374,81 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).not.toContain("senha");
     spy.mockRestore();
+  });
+});
+
+// ── [007] PREVIEW DE FRETE POR RAIO (raio_km) — distanciaKm derivado server-side
+//    via helper neutro distanciaDaLojaAoCep(svc, loja_id, cep), espelhando o
+//    autoritativo (criarPedido, 006). A action ATUAL não instancia service_role
+//    nem chama o helper nem injeta endereco.distanciaKm → zona raio_km nunca casa.
+//    Logo TODOS os casos abaixo são RED até a fase GREEN aplicar o patch.
+describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", () => {
+  // 1) Loja com coords + CEP + zona raio_km cobrindo a distância → taxa da zona raio.
+  it("[007-1] coords + CEP + zona raio_km cobre → taxa_preview = taxa da zona raio; zona_nome = nome da zona", async () => {
+    // Só existe zona raio_km (raio_max_km=5, taxa 3,00). Helper resolve 4,7 km
+    // (<= 5) → distanciaKm injetado → a zona raio casa em calcularFrete.
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(4.7);
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+    });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 3.0, zona_nome: "Zona Raio 5km" });
+    // O helper recebeu o client service_role + loja + cep (RN-7, escopo §19).
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(serviceClient, LOJA_ID, CEP_CENTRO);
+  });
+
+  // 2) Geocoding null (helper undefined) → zona raio não casa → fallback fora-de-zona,
+  //    idêntico ao autoritativo (RN-5 fail-closed).
+  it("[007-2] geocoding null (helper undefined) → zona raio NÃO casa → fallback (mesmo do autoritativo)", async () => {
+    // Só zona raio_km; loja tem taxa_entrega_fora_zona=15. Helper undefined →
+    // distanciaKm ausente → raio não casa → fallback R$ 15 (igual ao criarPedido).
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+    });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  // 3) Loja SEM coords → helper undefined → comportamento atual inalterado
+  //    (zonas tipo='bairro' seguem funcionando normalmente).
+  it("[007-3] loja sem coords (helper undefined) → comportamento de bairro inalterado", async () => {
+    // Mantém a zona de bairro padrão (Centro 7.50) + helper undefined (sem coords).
+    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro",
+    });
+
+    // Resultado IDÊNTICO ao teste de bairro existente: a presença do passo de
+    // coords não pode alterar o caminho bairro/faixa_cep.
+    expect(r).toEqual({ ok: true, taxa_preview: 7.5, zona_nome: "Zona Central" });
+  });
+
+  // 4) PARIDADE preview ↔ criarPedido: mesmo input → mesma taxa, pelos MESMOS args
+  //    ao MESMO helper. Espelho EXATO de pedido.test.ts [006-A1]
+  //    (distanciaDaLojaAoCep(client, loja_id, cep) → 4.7; zona raio_max_km=5 taxa 3,00).
+  it("[007-4] PARIDADE: mesmo input → preview e criarPedido produzem a MESMA taxa (mesmos args ao helper)", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(4.7);
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+    });
+
+    // Mesma taxa que [006-A1] persiste em p_taxa_entrega (3,00).
+    expect(r).toEqual({ ok: true, taxa_preview: 3.0, zona_nome: "Zona Raio 5km" });
+    // Mesma assinatura de chamada do autoritativo: (clientServiceRole, lojaId, cep).
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(serviceClient, LOJA_ID, CEP_CENTRO);
   });
 });
