@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Info, Loader2, Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
 
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useCarrinho, linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { validarCupom } from "@/lib/actions/cupom";
+import { calcularFreteAction } from "@/lib/actions/frete";
 import { calcularTotal, calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
@@ -44,6 +45,13 @@ type EstadoCupom =
   | { status: "valido"; codigo: string; desconto: number }
   | { status: "invalido" };
 
+type EstadoFrete =
+  | { status: "ocioso" }
+  | { status: "calculando" }
+  | { status: "ok"; taxa: number; zonaNome: string }
+  | { status: "indisponivel" }
+  | { status: "erro"; mensagem: string };
+
 /** Estado persistido para o checkout — SEM valores monetários (seguranca.md §10). */
 type EstadoCheckout = {
   // Só id + quantidade por item e por opcional — nenhum preço (seguranca.md §10).
@@ -52,7 +60,7 @@ type EstadoCheckout = {
     quantidade: number;
     opcionais?: { opcionalId: string; quantidade: number }[];
   }[];
-  zonaId: string | null;
+  tipoEntrega: "entrega" | "retirada";
   formaPagamentoId: string | null;
   endereco: EnderecoEntrega | null;
   codigoCupom: string | null;
@@ -71,22 +79,67 @@ export function Carrinho({
   const router = useRouter();
   const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho();
 
+  const aceitaEntrega = zonas.length > 0;
+
   const [codigoCupom, setCodigoCupom] = useState("");
   const [cupom, setCupom] = useState<EstadoCupom>({ status: "idle" });
-  const [zonaId, setZonaId] = useState<string | null>(zonas[0]?.id ?? null);
+  const [tipoEntrega, setTipoEntrega] = useState<"entrega" | "retirada">(
+    aceitaEntrega ? "entrega" : "retirada",
+  );
+  const [frete, setFrete] = useState<EstadoFrete>({ status: "ocioso" });
   const [formaPagamentoId, setFormaPagamentoId] = useState<string | null>(
     formasPagamento[0]?.id ?? null,
   );
   const [endereco, setEndereco] = useState<EnderecoEntrega | null>(null);
   const [enviando, startEnvio] = useTransition();
+  const [calculando, startCalculo] = useTransition();
+  // Dedupe: só recalcula quando bairro ou CEP mudam de fato.
+  const ultimaChave = useRef<string | null>(null);
 
-  const zonaSelecionada = useMemo(
-    () => zonas.find((z) => z.id === zonaId) ?? null,
-    [zonas, zonaId],
-  );
+  const ehEntrega = tipoEntrega === "entrega";
 
-  // Frete preview = taxa da zona escolhida (issue 029 §4). 0 se nenhuma escolhida.
-  const taxaEntrega = zonaSelecionada?.taxa_entrega ?? 0;
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!ehEntrega) {
+      ultimaChave.current = null;
+      setFrete({ status: "ocioso" });
+      return;
+    }
+    const bairro = endereco?.bairro?.trim();
+    const cep = endereco?.cep?.trim();
+    if (!bairro) {
+      ultimaChave.current = null;
+      setFrete({ status: "ocioso" });
+      return;
+    }
+    const chave = `${cep ?? ""}|${bairro}`;
+    if (chave === ultimaChave.current) return;
+    ultimaChave.current = chave;
+
+    startCalculo(async () => {
+      setFrete({ status: "calculando" });
+      const r = await calcularFreteAction({
+        loja_id: lojaId,
+        bairro,
+        ...(cep ? { cep } : {}),
+      });
+      if (!r.ok) {
+        setFrete({ status: "erro", mensagem: r.erro });
+        return;
+      }
+      if (r.zona_nome === "indisponivel") {
+        setFrete({ status: "indisponivel" });
+        return;
+      }
+      const rotulo =
+        r.zona_nome === "fora_zona" ? "fora da área de zonas" : r.zona_nome;
+      setFrete({ status: "ok", taxa: r.taxa_preview, zonaNome: rotulo });
+    });
+  }, [ehEntrega, endereco?.bairro, endereco?.cep, lojaId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Frete preview = 0 em retirada; calculado do banco em entrega.
+  const taxaEntrega = ehEntrega && frete.status === "ok" ? frete.taxa : 0;
   const descontoCupom = cupom.status === "valido" ? cupom.desconto : 0;
 
   // Total PREVIEW — recalculado no servidor no checkout (calcularTotal é pura).
@@ -130,7 +183,7 @@ export function Carrinho({
             }
           : {}),
       })),
-      zonaId,
+      tipoEntrega,
       formaPagamentoId,
       endereco,
       codigoCupom: cupom.status === "valido" ? cupom.codigo : null,
@@ -143,7 +196,7 @@ export function Carrinho({
     startEnvio(() => {
       router.push(`/loja/${lojaSlug}/pedido`);
     });
-  }, [itens, zonaId, formaPagamentoId, endereco, cupom, lojaSlug, router]);
+  }, [itens, tipoEntrega, formaPagamentoId, endereco, cupom, lojaSlug, router]);
 
   const vazio = itens.length === 0;
 
@@ -312,27 +365,59 @@ export function Carrinho({
 
               <Separator />
 
-              {/* Zona de entrega */}
+              {/* Tipo de entrega */}
               <fieldset className="flex flex-col gap-2">
-                <legend className="text-sm font-medium">Entregar em</legend>
-                {zonas.map((zona) => (
-                  <label
-                    key={zona.id}
-                    className="flex items-center gap-2 text-sm"
-                  >
+                <legend className="text-sm font-medium">Como receber?</legend>
+                {aceitaEntrega && (
+                  <label className="flex items-center gap-2 text-sm">
                     <input
                       type="radio"
-                      name="carrinho-zona"
-                      value={zona.id}
-                      checked={zonaId === zona.id}
-                      onChange={() => setZonaId(zona.id)}
+                      name="carrinho-tipo"
+                      value="entrega"
+                      checked={tipoEntrega === "entrega"}
+                      onChange={() => setTipoEntrega("entrega")}
                     />
-                    <span>
-                      {zona.nome} — {formatarMoeda(zona.taxa_entrega)}
-                    </span>
+                    <span>Entrega</span>
                   </label>
-                ))}
+                )}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="carrinho-tipo"
+                    value="retirada"
+                    checked={tipoEntrega === "retirada"}
+                    onChange={() => setTipoEntrega("retirada")}
+                  />
+                  <span>Retirada no local — sem custo</span>
+                </label>
               </fieldset>
+
+              {/* Endereço + frete — só visível quando entrega selecionada */}
+              {ehEntrega && (
+                <div className="flex flex-col gap-2">
+                  <FormEndereco onEnderecoChange={setEndereco} />
+                  {frete.status === "calculando" && (
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      Calculando frete…
+                    </p>
+                  )}
+                  {frete.status === "ok" && (
+                    <p className="text-xs text-muted-foreground">
+                      Frete para <strong>{frete.zonaNome}</strong>:{" "}
+                      {formatarMoeda(frete.taxa)}
+                    </p>
+                  )}
+                  {frete.status === "indisponivel" && (
+                    <p className="text-xs text-destructive">
+                      Entrega indisponível para este bairro.
+                    </p>
+                  )}
+                  {frete.status === "erro" && (
+                    <p className="text-xs text-destructive">{frete.mensagem}</p>
+                  )}
+                </div>
+              )}
 
               <Separator />
 
@@ -358,9 +443,6 @@ export function Carrinho({
                 ))}
               </fieldset>
 
-              <Separator />
-
-              <FormEndereco onEnderecoChange={setEndereco} />
             </div>
 
             <SheetFooter>
@@ -375,8 +457,17 @@ export function Carrinho({
                   <dd>{formatarMoeda(subtotal)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt>Frete{zonaSelecionada ? ` (${zonaSelecionada.nome})` : ""}</dt>
-                  <dd>{formatarMoeda(taxaEntrega)}</dd>
+                  <dt>
+                    Frete
+                    {frete.status === "ok" ? ` (${frete.zonaNome})` : ""}
+                  </dt>
+                  <dd>
+                    {frete.status === "calculando" ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                    ) : (
+                      formatarMoeda(taxaEntrega)
+                    )}
+                  </dd>
                 </div>
                 {descontoCupom > 0 && cupom.status === "valido" && (
                   <div className="flex justify-between text-[var(--cor-destaque)]">
@@ -393,7 +484,7 @@ export function Carrinho({
 
               <Button
                 className="min-h-11 bg-[var(--cor-primaria)] text-white hover:bg-[var(--cor-primaria)]/90"
-                disabled={enviando}
+                disabled={enviando || calculando}
                 onClick={finalizar}
               >
                 {enviando ? (

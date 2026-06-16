@@ -642,8 +642,9 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
   //  - RN-O4: opcional cuja categoria_opcional_id NÃO está nos grupos permitidos
   //    da categoria do produto (buscarOpcionaisPorCategoria) → recusa;
   //  - RN-O5: opcional ausente do retorno do banco (inexistente) ou ativo=false → recusa;
-  //  - RN-O1: subtotal_item = (produto.preco + Σ op.preco × op.qtd) × qtd_item,
-  //    preços do banco; p_total = subtotal + frete − desconto;
+  //  - RN-O1 (090): subtotal_item = (produto.preco × qtd_item) + Σ op.preco × op.qtd,
+  //    opcional por linha (não multiplica pela qtd do produto); preços do banco;
+  //    p_total = subtotal + frete − desconto;
   //  - RN-O6: cada item passado à RPC carrega seus opcionais com snapshot do banco
   //    (nome_snapshot / preco_snapshot / quantidade).
   //  Shape esperado de p_itens com opcionais (a verificar no contrato GREEN):
@@ -663,9 +664,10 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
   }
 
   // 1) RN-O1 — recálculo COM opcionais usando preço do banco
-  it("[085] RN-O1: item com 2 opcionais → p_total = (produto + Σ op×qtd) × qtd_item + frete − desconto (preços do BANCO)", async () => {
+  it("[085] RN-O1: item com 2 opcionais → p_total = (produto × qtd_item) + Σ op×qtd + frete − desconto (preços do BANCO)", async () => {
     cenarioOpcionaisValidos();
-    // produto 25 + (brie 8×1 + geleia 6×2 = 20) = 45; × 2 itens = 90 subtotal; + 5 frete = 95
+    // 090: opcional por linha. produto 25 × 2 = 50; + (brie 8×1 + geleia 6×2 = 20)
+    // uma vez = 70 subtotal; + 5 frete = 75
     await criarPedido(
       payloadBase({
         itens: [
@@ -685,8 +687,8 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
       p_subtotal: number;
       p_total: number;
     };
-    expect(args.p_subtotal).toBe(90.0);
-    expect(args.p_total).toBe(95.0);
+    expect(args.p_subtotal).toBe(70.0);
+    expect(args.p_total).toBe(75.0);
   });
 
   // 2) RN-O3 — opcional de OUTRA loja → recusa o pedido inteiro

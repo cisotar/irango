@@ -11,8 +11,9 @@ export interface OpcionalCalculo {
 
 /** Subconjunto de itens_pedido que entra no cálculo: preço (snapshot do banco,
  *  autoritativo) × quantidade (int > 0). Nada vindo do cliente é confiável.
- *  Opcionais (adicionais) somam ao preço do produto ANTES de multiplicar pela
- *  quantidade do item: (preco + Σ opcional.preco×opcional.qtd) × qtd_item. */
+ *  Opcionais (adicionais) são POR LINHA do item (090): somam UMA vez, sem
+ *  multiplicar pela quantidade do produto. Só o preço do produto é multiplicado
+ *  pela qtd: (preco × qtd_item) + Σ(opcional.preco × opcional.qtd). */
 export type ItemCalculo = Pick<Tables<"itens_pedido">, "preco" | "quantidade"> & {
   opcionais?: OpcionalCalculo[];
 };
@@ -45,8 +46,10 @@ export function calcularSubtotal(itens: ItemCalculo[]): number {
           0,
         )
       : 0;
-    const precoItem = arredondar(preco + somaOpcionais);
-    return acc + arredondar(precoItem * quantidade);
+    // Opcional é por linha (090): qtd do produto multiplica só o preço do
+    // produto; os opcionais somam UMA vez, fora dessa multiplicação.
+    const totalProduto = arredondar(preco * quantidade);
+    return acc + arredondar(totalProduto + somaOpcionais);
   }, 0);
   return arredondar(subtotal);
 }

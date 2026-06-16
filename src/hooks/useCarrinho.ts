@@ -35,7 +35,7 @@ export type UseCarrinhoReturn = {
   decrementar: (id: string) => void; // remove ao chegar em 0
   remover: (id: string) => void;
   limpar: () => void;
-  subtotal: number; // preview — soma de (preco + Σ opcionais) * quantidade (UX, nunca enviado ao servidor)
+  subtotal: number; // preview — soma de (preco × quantidade) + Σ opcionais (opcional por linha, UX, nunca enviado ao servidor)
   totalItens: number; // soma de quantidades
 };
 
@@ -173,7 +173,8 @@ export function useCarrinho(): UseCarrinhoReturn {
   const limpar = useCallback(() => limparItens(), []);
 
   // Preview de UX — recalculado no render, nunca enviado ao servidor como valor.
-  // Reusa calcularSubtotal (082): (preco + Σ opcional.preco×qtd) × quantidade.
+  // Reusa calcularSubtotal (082/090): (preco × quantidade) + Σ opcional.preco×qtd
+  // (opcional por linha, não multiplica pela qtd do produto).
   const subtotal = useMemo(
     () =>
       calcularSubtotal(
