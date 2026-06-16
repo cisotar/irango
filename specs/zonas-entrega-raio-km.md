@@ -57,11 +57,11 @@ O geocoding usa **Nominatim (OpenStreetMap)** — gratuito, sem key, mas com pol
 - `salvarPerfil` (existente, `lib/actions/loja.ts`) — estender allowlist com `endereco_*`; após validar, geocodificar e escrever `latitude`/`longitude` via patch separado
 
 **Behaviors:**
-- [ ] Digitar CEP e autocompletar logradouro/bairro/cidade/UF — ação do lojista. Garantido em: cliente (UX, ViaCEP)
-- [ ] Editar manualmente qualquer campo de endereço — ação do lojista. Garantido em: cliente (UX) + Server Action (revalida `schemaPerfil.strict()`)
-- [ ] Salvar perfil com endereço — dispara geocoding server-side e persiste `latitude`/`longitude`. Garantido em: **Server Action `salvarPerfil`** + RLS (`lojas_update_proprio`, `auth.uid()=dono_id`); coords nunca vêm do cliente
-- [ ] Ver aviso quando o geocoding falha — endereço salvo sem coords. Garantido em: Server Action retorna `{ geocodificado: false }` → toast no cliente ("Não localizamos seu endereço no mapa — zonas por raio ficam inativas até corrigir")
-- [ ] (Pré-existente) Configurar zona `raio_km` em `/painel/configuracoes/entregas` — sem mudança nesta feature; só passa a ter efeito quando a loja tem coords
+- [x] Digitar CEP e autocompletar logradouro/bairro/cidade/UF — ação do lojista. Garantido em: cliente (UX, ViaCEP)
+- [x] Editar manualmente qualquer campo de endereço — ação do lojista. Garantido em: cliente (UX) + Server Action (revalida `schemaPerfil.strict()`)
+- [x] Salvar perfil com endereço — dispara geocoding server-side e persiste `latitude`/`longitude`. Garantido em: **Server Action `salvarPerfil`** + RLS (`lojas_update_proprio`, `auth.uid()=dono_id`); coords nunca vêm do cliente
+- [x] Ver aviso quando o geocoding falha — endereço salvo sem coords. Garantido em: Server Action retorna `{ geocodificado: false }` → toast no cliente ("Não localizamos seu endereço no mapa — zonas por raio ficam inativas até corrigir")
+- [x] (Pré-existente) Configurar zona `raio_km` em `/painel/configuracoes/entregas` — sem mudança nesta feature; só passa a ter efeito quando a loja tem coords
 
 ---
 
@@ -83,9 +83,9 @@ O geocoding usa **Nominatim (OpenStreetMap)** — gratuito, sem key, mas com pol
 - `geocodificarEndereco.ts` (novo, `lib/utils/geocodificarEndereco.ts`) — util server-only; encapsula chamada Nominatim com `AbortSignal.timeout`, User-Agent, rate limit e fail-closed. Mesmo molde de `reconciliarBairroCep.ts`
 
 **Behaviors:**
-- [ ] Informar CEP no checkout — ação do cliente. Garantido em: cliente (UX, ViaCEP)
-- [ ] Ver preview de frete por raio — estimativa de UX. Garantido em: **Server Action `calcularFreteAction`** (geocoding + haversine no servidor via service_role); cliente nunca envia `distanciaKm` nem `taxa`
-- [ ] Finalizar pedido com frete por raio — valor cobrado. Garantido em: **Server Action `criarPedido` + RPC `criar_pedido` + RLS** — frete recalculado do zero; `distanciaKm` persistido no snapshot do pedido
+- [x] Informar CEP no checkout — ação do cliente. Garantido em: cliente (UX, ViaCEP)
+- [x] Ver preview de frete por raio — estimativa de UX. Garantido em: **Server Action `calcularFreteAction`** (geocoding + haversine no servidor via service_role); cliente nunca envia `distanciaKm` nem `taxa`
+- [x] Finalizar pedido com frete por raio — valor cobrado. Garantido em: **Server Action `criarPedido` + RPC `criar_pedido` + RLS** — frete recalculado do zero; `distanciaKm` persistido no snapshot do pedido
 
 ---
 
