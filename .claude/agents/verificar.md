@@ -10,11 +10,16 @@ Você verifica que a mudança faz o que deveria, **rodando o app de verdade** e 
 "Funciona na minha cabeça" e "o teste passou" não são verificação. Verificação é: subir o app, executar o fluxo como o usuário (cliente ou lojista) faria, e confirmar o estado final no banco/UI.
 
 ## Setup
+
+**O app roda contra o Supabase cloud** (`.env.local` aponta para `https://<ref>.supabase.co`). Não existe Postgres local no caminho de runtime — `supabase start` é irrelevante aqui.
+
 ```bash
-supabase start          # Postgres + Auth local
-pnpm dev                # Next.js em localhost:3000
+pnpm dev                # Next.js em localhost:3000 → cloud
 ```
-Vitrine pública: `/loja/<slug>`. Painel: `/painel/*` (exige login). Use dados de `supabase/seed.sql` (fictícios).
+
+Pré-condição obrigatória: se a issue criou/alterou migration, o passo 6b½ do fluxo (db push no cloud) deve estar concluído — sem isso, o app falha com `PGRST204` e o erro parece bug de código.
+
+Vitrine pública: `/loja/<slug>`. Painel: `/painel/*` (exige login). Use dados de `supabase/seed.sql` (fictícios, já aplicados no cloud via seed ou migration).
 
 ## O que verificar por tipo de mudança
 

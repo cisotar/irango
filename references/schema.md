@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.8 | **Atualizado:** 2026-06-15
+**Versão:** 0.1.9 | **Atualizado:** 2026-06-16
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -101,6 +101,16 @@ CREATE TABLE lojas (
   -- NULL = loja sem logo. CHECK de defesa-em-profundidade; autoridade real é a Server Action.
   -- Migration: 20260615013000_logo_url_lojas.sql
   logo_url         text CHECK (logo_url IS NULL OR logo_url LIKE 'https://%'),
+
+  -- Coordenadas geográficas da loja (geocoding do endereço — issue 008 salvarPerfil)
+  -- float8 por design (coord não é dinheiro). Nullable: loja sem coords → zonas raio_km ignoradas (RN-3).
+  -- CHECKs de defesa-em-profundidade; autoridade real é a Server Action. A view vitrine_lojas NÃO expõe coords.
+  -- Migration: 20260616194631_lojas_coordenadas.sql
+  latitude         float8,
+  longitude        float8,
+  CONSTRAINT lojas_coords_par_check      CHECK ((latitude IS NULL) = (longitude IS NULL)),
+  CONSTRAINT lojas_latitude_range_check  CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
+  CONSTRAINT lojas_longitude_range_check CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
 
   -- Slug: apenas letras minúsculas, dígitos e hífens (defesa em profundidade)
   CONSTRAINT lojas_slug_formato CHECK (slug ~ '^[a-z0-9-]+$'),
