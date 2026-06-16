@@ -92,7 +92,8 @@ export function ProdutoModal({
     }))
     .filter((o) => o.quantidade > 0);
 
-  // Subtotal PREVIEW: reusa calcularSubtotal (082) — (preco + Σ opc×qtd) × qtd.
+  // Subtotal PREVIEW: reusa calcularSubtotal (082/090) — (preco × qtd) + Σ opc×qtd
+  // (opcional por linha, não multiplica pela qtd do produto).
   // Estético; o servidor recalcula do banco no checkout (seguranca.md §10).
   const subtotal = calcularSubtotal([
     {

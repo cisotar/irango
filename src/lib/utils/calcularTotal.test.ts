@@ -135,17 +135,31 @@ describe("calcularTotal — paridade preview (cliente) ↔ recálculo (servidor)
 });
 
 // ---------------------------------------------------------------------------
-// Opcionais de produto (issue 082)
+// Opcionais de produto (issue 082, revisado em 090)
 // Um item pode ter opcionais (adicionais, extras) com preco e quantidade
 // próprios. O subtotal do item é:
-//   (preco_produto + Σ(preco_opcional × qtd_opcional)) × quantidade_item
-// Isso garante que adicionais entram no cálculo ANTES de multiplicar a
-// quantidade do item (ex.: X hambúrgueres com Y extras cada).
+//   (preco_produto × quantidade_item) + Σ(preco_opcional × qtd_opcional)
+// REGRA (090): o opcional é POR LINHA do item — soma UMA vez, NÃO multiplica
+// pela quantidade do produto. A qtd do produto multiplica só o preço do produto;
+// a qtd do opcional (escolhida pelo cliente) multiplica só o preço do opcional.
+// Ex.: 2 pães de 40 + 1 opcional de 20 → (40×2) + (20×1) = 100 (não 120).
 // ---------------------------------------------------------------------------
 
 describe("calcularSubtotal — opcionais (adicionais)", () => {
-  it("item com 2 opcionais: soma (preco_produto + Σ opcionais) × qtd_item", () => {
-    // item: preco=20, qtd=1; opcionais: [3×1, 2×1] → (20+3+2)×1 = 25
+  it("exemplo de negócio (090): 2 pães de 40 + 1 opcional de 20 = 100 (não 120)", () => {
+    // opcional é por linha: (40×2) + (20×1) = 80 + 20 = 100
+    const subtotal = calcularSubtotal([
+      {
+        preco: 40,
+        quantidade: 2,
+        opcionais: [{ preco: 20, quantidade: 1 }],
+      },
+    ]);
+    expect(subtotal).toBe(100);
+  });
+
+  it("item com 2 opcionais: (preco × qtd) + Σ(opcional × qtd_opcional)", () => {
+    // item: preco=20, qtd=1; opcionais: [3×1, 2×1] → (20×1)+(3+2) = 25
     const subtotal = calcularSubtotal([
       {
         preco: 20,
@@ -167,7 +181,7 @@ describe("calcularSubtotal — opcionais (adicionais)", () => {
 
   it("arredondamento 2 casas sem float drift com opcionais (0.1+0.2 = 0.30)", () => {
     // preco=0, qtd=1; opcional preco=0.1 qtd=1 + opcional preco=0.2 qtd=1
-    // → (0 + 0.1 + 0.2) × 1 = 0.30 (não 0.30000000000000004)
+    // → (0×1) + 0.1 + 0.2 = 0.30 (não 0.30000000000000004)
     const subtotal = calcularSubtotal([
       {
         preco: 0,
@@ -181,9 +195,9 @@ describe("calcularSubtotal — opcionais (adicionais)", () => {
     expect(subtotal).toBe(0.3);
   });
 
-  it("quantidade do item multiplica produto+opcionais juntos (2 hambúrgueres com extras)", () => {
+  it("qtd do item NÃO multiplica os opcionais — só o preço do produto (090)", () => {
     // item: preco=15, qtd=2; opcionais: [preco=5, qtd=1]
-    // → (15 + 5×1) × 2 = 40
+    // → (15×2) + (5×1) = 35  (antes era (15+5)×2 = 40)
     const subtotal = calcularSubtotal([
       {
         preco: 15,
@@ -191,11 +205,11 @@ describe("calcularSubtotal — opcionais (adicionais)", () => {
         opcionais: [{ preco: 5, quantidade: 1 }],
       },
     ]);
-    expect(subtotal).toBe(40);
+    expect(subtotal).toBe(35);
   });
 
   it("opcional com quantidade > 1: preco_opcional × qtd_opcional (2 queijos extras)", () => {
-    // item: preco=10, qtd=1; opcional preco=2 qtd=3 → (10 + 2×3) × 1 = 16
+    // item: preco=10, qtd=1; opcional preco=2 qtd=3 → (10×1) + (2×3) = 16
     const subtotal = calcularSubtotal([
       {
         preco: 10,
@@ -208,8 +222,8 @@ describe("calcularSubtotal — opcionais (adicionais)", () => {
 
   it("múltiplos itens, alguns com e alguns sem opcionais", () => {
     // item1: preco=10, qtd=1, sem opcionais → 10
-    // item2: preco=5, qtd=2, opcional [preco=1, qtd=2] → (5 + 1×2)×2 = 14
-    // total = 24
+    // item2: preco=5, qtd=2, opcional [preco=1, qtd=2] → (5×2) + (1×2) = 12
+    // total = 22
     const subtotal = calcularSubtotal([
       { preco: 10, quantidade: 1 },
       {
@@ -218,6 +232,6 @@ describe("calcularSubtotal — opcionais (adicionais)", () => {
         opcionais: [{ preco: 1, quantidade: 2 }],
       },
     ]);
-    expect(subtotal).toBe(24);
+    expect(subtotal).toBe(22);
   });
 });

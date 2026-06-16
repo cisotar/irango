@@ -72,7 +72,7 @@ O "tipo de produto" descrito pelo usuário (pães, tortas) é semanticamente id�
 - [ ] Exibir opcionais disponíveis do produto — derivados da `categoria_id` do produto via `categoria_produto_opcionais` → `opcionais_categorias` → `opcionais` (apenas `ativo = true`), agrupados por categoria de opcional ordenada por `ordem`. Garantido em: Server Component (leitura SSR) + RLS pública de catálogo.
 - [ ] Produto sem opcionais — se a categoria do produto não tem associação (ou produto sem `categoria_id`), a seção Opcionais não é renderizada. Garantido em: cliente (UX) com base nos dados do servidor.
 - [ ] Selecionar quantidade de opcional — mini-stepper incrementa/decrementa por opcional. Garantido em: cliente (UX).
-- [ ] Exibir subtotal do item preview — `(preco_produto + Σ preco_opcional × qtd_opcional) × quantidade_item`. **PREVIEW — não autoritativo.** Garantido em: cliente (UX), via `calcularTotal` estendido.
+- [ ] Exibir subtotal do item preview — `(preco_produto × quantidade_item) + Σ preco_opcional × qtd_opcional` (opcional por linha, 090). **PREVIEW — não autoritativo.** Garantido em: cliente (UX), via `calcularTotal` estendido.
 - [ ] Adicionar ao carrinho com opcionais — grava no `useCarrinho` o item com `{ produto_id, quantidade, opcionais: [{ opcional_id, quantidade }] }`. **Apenas ids e quantidades — nunca preço.** Garantido em: cliente (UX); valor real recalculado no checkout (Server Action).
 - [ ] Item esgotado — produto indisponível mantém comportamento existente (botão desabilitado); opcionais não são exibidos. Garantido em: cliente (UX) + RLS `produtos_leitura_publica`.
 
@@ -201,7 +201,7 @@ Sem nova coluna em `pedidos`/`itens_pedido`. A RPC `public.criar_pedido` e a act
 ## Regras de Negócio
 
 ### RN-O1 — Recálculo autoritativo do subtotal do item com opcionais
-- **Regra:** o subtotal de cada item = `(preco_produto_banco + Σ (preco_opcional_banco × qtd_opcional)) × quantidade_item`. Todos os preços vêm do **banco**, no servidor.
+- **Regra (revisada em 090):** o subtotal de cada item = `(preco_produto_banco × quantidade_item) + Σ (preco_opcional_banco × qtd_opcional)`. O opcional é **por linha do item**: soma uma vez, NÃO multiplica pela quantidade do produto. Ex.: 2 pães de 40 + 1 opcional de 20 = `(40×2) + (20×1)` = 100. Todos os preços vêm do **banco**, no servidor.
 - **Camada cliente (PREVIEW):** `calcularTotal` estendido exibe estimativa no modal e no carrinho — estético.
 - **Camada servidor (AUTORITATIVO):** Server Action `criarPedido` + RPC `public.criar_pedido` recalculam do zero, ignorando qualquer valor do cliente. Garantido em: **Server Action + RPC** (`seguranca.md` §10).
 
@@ -257,7 +257,7 @@ para cada item:
     op = buscar opcional por id  -- valida: loja_id == pedido.loja_id, ativo, id ∈ permitidos
     se inválido -> recusa o pedido
     snapshot { nome_snapshot=op.nome, preco_snapshot=op.preco, quantidade }
-  subtotal_item = (produto.preco + Σ op.preco × op.quantidade) × item.quantidade
+  subtotal_item = (produto.preco × item.quantidade) + Σ op.preco × op.quantidade  -- opcional por linha (090)
 subtotal = Σ subtotal_item
 ```
 
