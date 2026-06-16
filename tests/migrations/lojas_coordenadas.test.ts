@@ -124,3 +124,41 @@ describe("001 lojas.latitude/longitude — schema de coordenadas", () => {
     await expect(inserirLojaComCoords(null, -46.633308)).rejects.toThrow();
   });
 });
+
+/**
+ * Fase RED (TDD) da issue 005 — invariante de privacidade: a view PÚBLICA
+ * `vitrine_lojas` NÃO expõe coords (spec §Modelos de Dados, seguranca.md §19).
+ *
+ * As coords são server-only (lidas só via service_role na tabela base `lojas`).
+ * Se a view tivesse `latitude`/`longitude`, um caller "esperto" leria coords via
+ * anon/view — exatamente o vetor que a issue 005 fecha. Este teste roda o SQL
+ * REAL das migrations no pglite e prova, na fonte, que a coluna não existe.
+ *
+ * RED hoje: a issue 001 adicionou as colunas à TABELA `lojas`; se a view tiver
+ * sido (ou vier a ser) redefinida com `select *` ou incluindo coords, este SELECT
+ * teria sucesso e o teste falharia — protegendo a invariante contra regressão.
+ */
+describe("005 vitrine_lojas — invariante de privacidade (sem coords)", () => {
+  it("vitrine_lojas NÃO contém a coluna latitude (SELECT deve falhar)", async () => {
+    await expect(
+      t.asAnon((db) => db.query(`select latitude from public.vitrine_lojas limit 1`)),
+    ).rejects.toThrow();
+  });
+
+  it("vitrine_lojas NÃO contém a coluna longitude (SELECT deve falhar)", async () => {
+    await expect(
+      t.asAnon((db) => db.query(`select longitude from public.vitrine_lojas limit 1`)),
+    ).rejects.toThrow();
+  });
+
+  it("information_schema confirma: vitrine_lojas tem 0 colunas de coords", async () => {
+    const r = await t.asService((db) =>
+      db.query<{ column_name: string }>(
+        `select column_name from information_schema.columns
+           where table_schema = 'public' and table_name = 'vitrine_lojas'
+             and column_name in ('latitude', 'longitude')`,
+      ),
+    );
+    expect(r.rows).toHaveLength(0);
+  });
+});

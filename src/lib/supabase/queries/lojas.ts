@@ -214,3 +214,31 @@ export async function garantirLojaDoDono(
   if (error) throw error;
   return data;
 }
+
+/**
+ * Coords (latitude/longitude) da loja para cálculo de frete por raio (issues 006/007).
+ * Fonte: TABELA base `lojas` — a view `vitrine_lojas` NÃO expõe coords por design
+ * (spec §Modelos de Dados, seguranca.md §19). Projeta SÓ as duas colunas (minimização).
+ *
+ * EXIGE client **service_role** (BYPASSRLS) injetado pelo caller: `lojas` não tem
+ * SELECT anon (§2/§19) — via anon/view retornaria zero linhas. Consumida pelo preview
+ * (`calcularFreteAction`) e pelo autoritativo (`criarPedido`), ambos server-only.
+ *
+ * Retorna `null` quando a loja não existe OU não tem coords (RN-3: par NULL → zonas
+ * raio_km ignoradas silenciosamente). Propaga o `error` do PostgREST (seguranca.md §14).
+ */
+export async function buscarCoordsLoja(
+  client: Client,
+  lojaId: string,
+): Promise<{ latitude: number; longitude: number } | null> {
+  const { data, error } = await client
+    .from("lojas")
+    .select("latitude, longitude")
+    .eq("id", lojaId)
+    .maybeSingle();
+  if (error) throw error;
+  if (data == null || data.latitude == null || data.longitude == null) {
+    return null;
+  }
+  return { latitude: data.latitude, longitude: data.longitude };
+}

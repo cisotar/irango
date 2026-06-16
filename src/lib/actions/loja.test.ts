@@ -11,6 +11,15 @@ vi.mock("@/lib/utils/rateLimit", () => ({
   verificarRateLimit: () => Promise.resolve({ permitido: true }),
 }));
 
+// Geocoding (issue 008): I/O externo (Nominatim) — MOCKADO. Controlável por
+// teste: resolve { latitude, longitude } (sucesso) ou null (falha/incompleto).
+// A coordenada é dado DERIVADO AUTORITATIVO do servidor (RN-1): o cliente nunca
+// influencia o valor; a única fonte legítima é este util chamado server-side.
+const geocodificarEndereco = vi.fn();
+vi.mock("@/lib/utils/geocodificarEndereco", () => ({
+  geocodificarEndereco: (...a: unknown[]) => geocodificarEndereco(...a),
+}));
+
 /**
  * Fase RED (TDD) da issue 030 — Server Actions de configuração da loja
  * (`salvarPerfil` / `salvarHorarios` / `salvarTema`). Mock de TODO I/O externo:
@@ -43,8 +52,15 @@ const COLUNAS_PERMITIDAS = new Set([
   "endereco_numero",
   "endereco_bairro",
   "endereco_cidade",
-  "endereco_uf",
+  // BUG corrigido na fase RED (issue 008, D4): a coluna real é `endereco_estado`,
+  // não `endereco_uf` (confirmado em schema_inicial.sql / database.types.ts /
+  // schemaPerfil). O set anterior dava falso-verde/falso-vermelho na allowlist.
+  "endereco_estado",
   "endereco_cep",
+  // Coords DERIVADAS no servidor (issue 008): a action as escreve no 2º UPDATE
+  // (par tudo-ou-nada). NÃO vêm do payload — são geradas por geocodificarEndereco.
+  "latitude",
+  "longitude",
   // específicas de cada action:
   "horarios",
   "tema",
@@ -65,9 +81,13 @@ const COLUNAS_PROIBIDAS = [
 
 // ── client AUTENTICADO (server) — UPDATE roda aqui (RLS lojas_update_proprio) ──
 // Captura a tabela e o patch passados ao .from(...).update(...).
+// `_eqErros`: fila de erros a injetar — cada `.eq()` consome um item (null = sem erro).
+// Após a fila esgotada, volta a retornar null. Resetado pelo beforeEach via
+// `_eqErros.length = 0`.
 const fromTabela = vi.fn();
 const updatePatch = vi.fn();
 const updateEq = vi.fn();
+const _eqErros: Array<unknown> = [];
 const authedClient = {
   from: (tabela: string) => {
     fromTabela(tabela);
@@ -78,7 +98,8 @@ const authedClient = {
         return {
           eq: (coluna: string, valor: unknown) => {
             updateEq(coluna, valor);
-            return Promise.resolve({ error: null });
+            const err = _eqErros.length > 0 ? _eqErros.shift() : null;
+            return Promise.resolve({ error: err ?? null });
           },
         };
       },
@@ -138,6 +159,19 @@ const PERFIL_OK = {
   whatsapp: "5511999998888",
 };
 
+// Perfil com endereço COMPLETO o bastante para geocodificar (cidade + UF, RN-2).
+const PERFIL_COM_ENDERECO = {
+  ...PERFIL_OK,
+  endereco_cep: "01310-100",
+  endereco_rua: "Av. Paulista",
+  endereco_numero: "1000",
+  endereco_bairro: "Bela Vista",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
+};
+
+const COORDS_SP = { latitude: -23.56, longitude: -46.65 };
+
 const HORARIOS_OK = {
   seg: { abre: "08:00", fecha: "18:00", ativo: true },
   ter: { abre: "08:00", fecha: "18:00", ativo: true },
@@ -152,18 +186,22 @@ const TEMA_OK = { primaria: "#ff0000", fundo: "#ffffff", destaque: "#00ff00" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Reseta a fila de erros injetados no eq do authedClient.
+  _eqErros.length = 0;
   // Caminho feliz: já existe loja do dono, slug livre.
   buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, dono_id: USER_ID, slug: "slug-antigo" });
   slugExiste.mockResolvedValue(false);
+  // Default: geocoding bem-sucedido. Casos de borda sobrescrevem por teste.
+  geocodificarEndereco.mockResolvedValue(COORDS_SP);
 });
 
 // ───────────────────────────── salvarPerfil ──────────────────────────────────
 describe("salvarPerfil — caminho feliz", () => {
-  it("sucesso: valida e faz UPDATE em lojas → { ok: true }", async () => {
+  it("sucesso sem endereço: valida e faz UPDATE em lojas → { ok: true, geocodificado: false }", async () => {
+    // Sem cidade+UF não há o que geocodificar: o 2º UPDATE zera o par (NULL).
     const r = await salvarPerfil(PERFIL_OK);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, geocodificado: false });
     expect(fromTabela).toHaveBeenCalledWith("lojas");
-    expect(updatePatch).toHaveBeenCalledTimes(1);
     // PostgREST recusa UPDATE sem WHERE (21000): a action DEVE escopar por id.
     expect(updateEq).toHaveBeenCalledWith("id", LOJA_ID);
   });
@@ -174,6 +212,111 @@ describe("salvarPerfil — caminho feliz", () => {
     // O patch chegou ao authedClient (fromTabela registrou a chamada).
     expect(fromTabela).toHaveBeenCalledWith("lojas");
     expect(updatePatch).toHaveBeenCalled();
+  });
+});
+
+// ────────────── salvarPerfil — endereço + geocoding (issue 008) ───────────────
+describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
+  it("endereço completo + geocoding ok → 2 UPDATEs; par de coords persistido; geocodificado:true", async () => {
+    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    // 1º UPDATE = perfil+endereço; 2º UPDATE = par de coords.
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+
+    // O endereço entra no 1º patch (allowlist coluna-a-coluna).
+    const patchEndereco = updatePatch.mock.calls[0][0] as Record<string, unknown>;
+    expect(patchEndereco).toMatchObject({
+      endereco_cidade: "São Paulo",
+      endereco_estado: "SP",
+    });
+
+    // O 2º patch carrega SÓ o par derivado (par tudo-ou-nada).
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: -23.56, longitude: -46.65 });
+
+    // Geocoding chamado com uma consulta que contém cidade e UF.
+    expect(geocodificarEndereco).toHaveBeenCalledTimes(1);
+    const consulta = geocodificarEndereco.mock.calls[0][0] as string;
+    expect(consulta).toContain("São Paulo");
+    expect(consulta).toContain("SP");
+
+    // Ambos os UPDATEs escopados por id (RLS lojas_update_proprio).
+    expect(updateEq).toHaveBeenCalledTimes(2);
+    expect(updateEq).toHaveBeenNthCalledWith(1, "id", LOJA_ID);
+    expect(updateEq).toHaveBeenNthCalledWith(2, "id", LOJA_ID);
+  });
+
+  it("geocoding null → endereço salvo, par de coords NULL (par), geocodificado:false (não bloqueia)", async () => {
+    geocodificarEndereco.mockResolvedValue(null);
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+
+    // 1º UPDATE: endereço persistido normalmente, apesar do geocoding falho.
+    const patchEndereco = updatePatch.mock.calls[0][0] as Record<string, unknown>;
+    expect(patchEndereco).toMatchObject({ endereco_cidade: "São Paulo", endereco_estado: "SP" });
+
+    // 2º UPDATE: par tudo-ou-nada → AMBOS NULL.
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("endereço incompleto (sem cidade/UF) → NÃO chama Nominatim; par NULL; geocodificado:false", async () => {
+    // Só nome/slug: sem âncora geográfica mínima → não geocodifica (economiza a trava global).
+    const r = await salvarPerfil(PERFIL_OK);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("ATAQUE RN-1: payload com latitude/longitude → rejeitado por .strict() ANTES de qualquer I/O", async () => {
+    const r = await salvarPerfil({
+      ...PERFIL_COM_ENDERECO,
+      latitude: 0,
+      longitude: 0,
+    });
+
+    expect(r).toMatchObject({ ok: false });
+    // Barreira 1 (.strict()): nenhum UPDATE, nenhum geocoding.
+    expect(updatePatch).not.toHaveBeenCalled();
+    expect(geocodificarEndereco).not.toHaveBeenCalled();
+  });
+
+  it("Barreira 2 (allowlist): nenhum dos 2 patches contém chave fora de COLUNAS_PERMITIDAS nem chave proibida", async () => {
+    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    for (const call of updatePatch.mock.calls) {
+      const patch = call[0] as Record<string, unknown>;
+      for (const proibida of COLUNAS_PROIBIDAS) {
+        expect(patch).not.toHaveProperty(proibida);
+      }
+      for (const chave of Object.keys(patch)) {
+        expect(COLUNAS_PERMITIDAS.has(chave)).toBe(true);
+      }
+    }
+  });
+
+  it("RLS dono A ≠ loja dono B: ambos os UPDATEs escopam por .eq('id', id da loja resolvida sob RLS)", async () => {
+    // O escopo da escrita vem da loja resolvida por buscarLojaDoDono (RLS), nunca do payload.
+    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    const idsEscritos = updateEq.mock.calls
+      .filter(([col]) => col === "id")
+      .map(([, valor]) => valor);
+    expect(idsEscritos).toHaveLength(2);
+    for (const id of idsEscritos) {
+      expect(id).toBe(LOJA_ID); // jamais um id de terceiro
+    }
   });
 });
 
@@ -198,7 +341,7 @@ describe("salvarPerfil — slug e unicidade", () => {
   it("slug NÃO mudou (igual ao atual) → não precisa checar unicidade", async () => {
     buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, dono_id: USER_ID, slug: PERFIL_OK.slug });
     const r = await salvarPerfil(PERFIL_OK);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, geocodificado: false });
     expect(slugExiste).not.toHaveBeenCalled();
   });
 });
@@ -356,5 +499,127 @@ describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () =
     const r = await definirPublicacao(true);
     expect(r.ok).toBe(false);
     expect(svcUpdatePatch).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────── montarConsultaGeocoding — bordas via salvarPerfil ───────────────
+// montarConsultaGeocoding não é exportada ('use server' proíbe const exportada).
+// Testada indiretamente: se retornar null, geocodificarEndereco NÃO é chamado.
+describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)", () => {
+  it("só cidade, sem UF → gate retorna null → Nominatim não chamado; par NULL gravado", async () => {
+    // Sem endereco_estado não há âncora geográfica mínima (RN-2).
+    const r = await salvarPerfil({
+      ...PERFIL_OK,
+      endereco_cidade: "São Paulo",
+      // endereco_estado ausente — schemaPerfil aceita (optional)
+    });
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    // 2º UPDATE: par NULL (coords zeradas, nunca ímpares)
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("só UF, sem cidade → gate retorna null → Nominatim não chamado; par NULL gravado", async () => {
+    // Sem endereco_cidade a consulta não teria referência municipal válida.
+    const r = await salvarPerfil({
+      ...PERFIL_OK,
+      endereco_estado: "SP",
+      // endereco_cidade ausente
+    });
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("cidade + UF presentes → Nominatim chamado; consulta contém ambos", async () => {
+    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+
+    await salvarPerfil({
+      ...PERFIL_OK,
+      endereco_cidade: "Curitiba",
+      endereco_estado: "PR",
+    });
+
+    expect(geocodificarEndereco).toHaveBeenCalledTimes(1);
+    const consulta = geocodificarEndereco.mock.calls[0][0] as string;
+    expect(consulta).toContain("Curitiba");
+    expect(consulta).toContain("PR");
+  });
+});
+
+// ──────── falha no 2º UPDATE (coords) após geocoding bem-sucedido ─────────────
+describe("salvarPerfil — falha no 2º UPDATE de coords", () => {
+  it("geocoding ok mas UPDATE de coords falha → { ok: false }; erro não vaza detalhe interno", async () => {
+    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+
+    // 1º eq (perfil) → sem erro; 2º eq (coords) → erro de banco
+    _eqErros.push(null); // 1º UPDATE (patch perfil+endereço): ok
+    _eqErros.push({ message: "column latitude does not exist" }); // 2º UPDATE: erro
+
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+    spy.mockRestore();
+
+    expect(r).toMatchObject({ ok: false });
+    // O detalhe do banco não pode vazar ao cliente (seguranca.md §14).
+    expect(JSON.stringify(r)).not.toContain("column");
+    expect(JSON.stringify(r)).not.toContain("latitude does not exist");
+  });
+
+  it("geocoding ok mas UPDATE de coords falha → 1º UPDATE (endereço) JÁ foi persistido antes da falha", async () => {
+    // Comprova que o fluxo é sequencial: perfil gravado, coords falham.
+    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    _eqErros.push(null); // 1º ok
+    _eqErros.push({ message: "banco indisponivel" }); // 2º falha
+
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await salvarPerfil(PERFIL_COM_ENDERECO);
+    spy.mockRestore();
+
+    // O 1º patch (endereço) deve ter sido enviado ao banco antes da falha.
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    const patchEndereco = updatePatch.mock.calls[0][0] as Record<string, unknown>;
+    expect(patchEndereco).toMatchObject({ endereco_cidade: "São Paulo" });
+    // O 2º patch (coords) também foi tentado.
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: -23.56, longitude: -46.65 });
+  });
+});
+
+// ────── coords antigas zeradas quando endereço volta a ser incompleto ─────────
+describe("salvarPerfil — zeragem de coords ao salvar endereço incompleto", () => {
+  it("endereço previamente completo agora salvo sem cidade → coords zeradas (par NULL), não fica lixo antigo", async () => {
+    // Cenário: loja tinha coords; dono salva perfil sem cidade (sem âncora).
+    // A action DEVE gravar { latitude: null, longitude: null } — não pular o 2º UPDATE.
+    const r = await salvarPerfil({
+      ...PERFIL_OK,
+      endereco_rua: "Rua X",
+      endereco_numero: "100",
+      // sem cidade e sem estado: gate retorna null
+    });
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    // 2º UPDATE existe e zera o par (não pula).
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+    // Confirmação: geocoding não foi chamado.
+    expect(geocodificarEndereco).not.toHaveBeenCalled();
+  });
+
+  it("endereço sem nenhum campo → coords zeradas (par NULL); 2º UPDATE acontece", async () => {
+    // Perfil mínimo (nome + slug) sem nenhum campo de endereço.
+    const r = await salvarPerfil(PERFIL_OK);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: null, longitude: null });
   });
 });
