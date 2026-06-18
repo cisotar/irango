@@ -79,7 +79,9 @@ export function FormEndereco({ onEnderecoChange }: FormEnderecoProps) {
   }, [cep]);
 
   return (
-    <div className="flex flex-col gap-3">
+    // Formulário isolado para quebrar o escopo de autofill do browser:
+    // impede que autocomplete do campo "nome" (fora deste form) sobrescreva endereço.
+    <form className="flex flex-col gap-3" onSubmit={(e) => e.preventDefault()}>
       <p className="text-sm font-medium text-foreground">Endereço de entrega</p>
 
       <div className="flex flex-col gap-1">
@@ -191,6 +193,6 @@ export function FormEndereco({ onEnderecoChange }: FormEnderecoProps) {
           />
         </div>
       </div>
-    </div>
+    </form>
   );
 }
