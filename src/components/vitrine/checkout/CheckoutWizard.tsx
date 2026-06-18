@@ -9,7 +9,7 @@
 // preview (subtotal/desconto/frete/total) é só UX; criarPedido (071) recalcula
 // tudo do banco. Carrinho vazio → redireciona para a loja.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -92,9 +92,20 @@ export function CheckoutWizard({
   );
 
   // Patch parcial do estado do wizard.
-  function patch(p: Partial<EstadoWizard>) {
+  const patch = useCallback((p: Partial<EstadoWizard>) => {
     setEstado((atual) => ({ ...atual, ...p }));
-  }
+  }, []);
+
+  // Handlers estáveis: FormEndereco/EtapaEntrega têm essas props no dep array de
+  // um useEffect — ref nova a cada render dispararia loop de render infinito.
+  const handleTipoEntregaChange = useCallback(
+    (tipo: TipoEntrega) => patch({ tipoEntrega: tipo }),
+    [patch],
+  );
+  const handleEnderecoChange = useCallback(
+    (endereco: EnderecoEntrega | null) => patch({ endereco }),
+    [patch],
+  );
 
   // Carrinho vazio → manda de volta para a loja (UX).
   if (montado && itens.length === 0) {
@@ -148,10 +159,8 @@ export function CheckoutWizard({
           aceitaEntrega={aceitaEntrega}
           tipoEntrega={estado.tipoEntrega}
           endereco={estado.endereco}
-          onTipoEntregaChange={(tipo: TipoEntrega) => patch({ tipoEntrega: tipo })}
-          onEnderecoChange={(endereco: EnderecoEntrega | null) =>
-            patch({ endereco })
-          }
+          onTipoEntregaChange={handleTipoEntregaChange}
+          onEnderecoChange={handleEnderecoChange}
           onFreteChange={setFretePreview}
           onVoltar={() => setEtapa(1)}
           onContinuar={() => setEtapa(3)}

@@ -27,6 +27,12 @@ export default async function PerfilPage(): Promise<ReactElement> {
         slug: loja.slug,
         telefone: loja.telefone,
         whatsapp: loja.whatsapp,
+        endereco_cep: loja.endereco_cep,
+        endereco_rua: loja.endereco_rua,
+        endereco_numero: loja.endereco_numero,
+        endereco_bairro: loja.endereco_bairro,
+        endereco_cidade: loja.endereco_cidade,
+        endereco_estado: loja.endereco_estado,
       }}
       publicado={loja.ativo}
       // Perfil mínimo para publicar (mesma regra do servidor em definirPublicacao).

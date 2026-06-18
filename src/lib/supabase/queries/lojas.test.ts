@@ -6,6 +6,7 @@ import {
   buscarLojaDoDono,
   slugExiste,
   contarLojasDoDono,
+  buscarCoordsLoja,
 } from "./lojas";
 
 /**
@@ -188,5 +189,83 @@ describe("023 queries de lojas — contrato TS (camada 2, mock)", () => {
   it("contarLojasDoDono PROPAGA o error do PostgREST", async () => {
     const { client } = makeClient({ data: null, error: { message: "boom" }, count: null });
     await expect(contarLojasDoDono(client, "dono-1")).rejects.toBeTruthy();
+  });
+});
+
+/**
+ * Fase RED (TDD) da issue 005 — `buscarCoordsLoja(svc, lojaId)` (camada 2: contrato TS).
+ *
+ * A função AINDA NÃO EXISTE. Para que o RED caia na ASSERÇÃO e não num erro de
+ * type-check (que mascararia tudo), a fase RED criou um STUB MÍNIMO de assinatura
+ * em `./lojas.ts` (`throw new Error('TODO: GREEN')`). A implementação real é GREEN.
+ *
+ * Contrato que a GREEN precisa satisfazer (plano da issue 005, D1–D4):
+ *  - lê da TABELA base `lojas` (NÃO da view `vitrine_lojas` — coords são server-only);
+ *  - projeta SÓ "latitude, longitude" (minimização, seguranca.md §7);
+ *  - filtra eq('id', lojaId) e usa maybeSingle;
+ *  - retorna { latitude, longitude } quando ambos não-null;
+ *  - retorna null quando coords NULL, loja inexistente, ou só uma coord não-null;
+ *  - PROPAGA o error do PostgREST — NÃO mascara como null.
+ *
+ * Reusa o `makeClient` deste arquivo (mock encadeável from().select().eq().maybeSingle()).
+ */
+describe("005 buscarCoordsLoja — contrato TS (camada 2, mock)", () => {
+  it("consulta a TABELA lojas (não a view), projeta SÓ latitude/longitude, filtra eq('id') e usa maybeSingle", async () => {
+    const row = { latitude: -23.55052, longitude: -46.633308 };
+    const { client, calls } = makeClient({ data: row, error: null });
+
+    await buscarCoordsLoja(client, "loja-1");
+
+    expect(calls.from).toHaveBeenCalledWith("lojas");
+    expect(calls.from).not.toHaveBeenCalledWith("vitrine_lojas");
+    expect(calls.select).toHaveBeenCalledWith("latitude, longitude");
+    expect(calls.eq).toHaveBeenCalledWith("id", "loja-1");
+    expect(calls.maybeSingle).toHaveBeenCalled();
+  });
+
+  it("retorna { latitude, longitude } quando a loja tem coords (ambos não-null)", async () => {
+    const { client } = makeClient({
+      data: { latitude: -23.55052, longitude: -46.633308 },
+      error: null,
+    });
+
+    const out = await buscarCoordsLoja(client, "loja-1");
+
+    expect(out).toEqual({ latitude: -23.55052, longitude: -46.633308 });
+  });
+
+  it("retorna null quando as coords são NULL (loja nunca geocodificada — RN-3)", async () => {
+    const { client } = makeClient({
+      data: { latitude: null, longitude: null },
+      error: null,
+    });
+
+    const out = await buscarCoordsLoja(client, "loja-sem-coords");
+
+    expect(out).toBeNull();
+  });
+
+  it("retorna null quando a loja não existe (maybeSingle → data: null)", async () => {
+    const { client } = makeClient({ data: null, error: null });
+
+    const out = await buscarCoordsLoja(client, "loja-inexistente");
+
+    expect(out).toBeNull();
+  });
+
+  it("retorna null (defensivo) quando só uma coord é não-null", async () => {
+    const { client } = makeClient({
+      data: { latitude: -23.55052, longitude: null },
+      error: null,
+    });
+
+    const out = await buscarCoordsLoja(client, "loja-meia-coord");
+
+    expect(out).toBeNull();
+  });
+
+  it("PROPAGA o error do PostgREST (não mascara como null)", async () => {
+    const { client } = makeClient({ data: null, error: { message: "db down" } });
+    await expect(buscarCoordsLoja(client, "x")).rejects.toBeTruthy();
   });
 });

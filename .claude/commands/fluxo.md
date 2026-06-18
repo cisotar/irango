@@ -6,6 +6,8 @@ argument-hint: [descrição da feature ou caminho de um spec/issue]
 
 Você é o tech lead orquestrando o fluxo completo de desenvolvimento do iRango. Execute todas as etapas abaixo **sem parar para pedir confirmação**. Tome decisões autonomamente e avance.
 
+**Única exceção:** `npx supabase db push` (passo 6b½) toca o banco de produção e é irreversível — apresente a migration, confirme que é aditiva/segura, e aguarde autorização explícita do usuário antes de executar. Retome sem interrupção após o "sim".
+
 **Stack:** Next.js 15 (App Router) + TypeScript + Supabase (Postgres + Auth + RLS) + Tailwind + shadcn/ui. Referências em `references/`: `architecture.md`, `schema.md`, `seguranca.md`, `modelo-negocio.md`.
 
 **Branch:** todos os commits vão para a branch ativa no momento da execução. Nunca troque de branch durante o fluxo. Se não tiver certeza da branch atual, rode `git branch --show-current` antes de começar.
@@ -69,9 +71,12 @@ Cada agente tem seção "Não reinventar a roda" própria — **vinculante**. O 
 | `desenhar` | opus | UI/UX | Issue que cria componente/tela nova, muda fluxo crítico (carrinho, checkout, cadastro de produto), ou mockup. Consultado ANTES de `executar` em issues de UI |
 | `tdd` | opus | RED | **Toda issue `crítica: SIM`** — escreve e roda o teste falho antes do código |
 | `executar` | opus | Implementação | Sempre — implementa após o planejamento (e após o RED, em issue crítica) |
-| `testar` | sonnet | Qualidade | **Sempre** após `executar`. Cobre código já implementado; confirma que o RED virou GREEN |
-| `auditar` | opus | Segurança | **Sempre** após `executar`. Opus pega vetores sutis. Recebe TODOS os arquivos modificados na issue |
-| `verificar` | sonnet | Validação | **Sempre** após testar/auditar. Roda o app e confirma o comportamento real |
+| `revisar` | sonnet | Qualidade | **Sempre** após `executar` (paralelo com `testar`/`auditar`). Code review: TypeScript, padrões do projeto, DRY, dead code. Não é segurança. |
+| `testar` | sonnet | Qualidade | **Sempre** após `executar` (paralelo com `revisar`/`auditar`). Cobre código já implementado; confirma que o RED virou GREEN |
+| `auditar` | opus | Segurança | **Sempre** após `executar` (paralelo com `revisar`/`testar`). Opus pega vetores sutis. Recebe TODOS os arquivos modificados na issue |
+| `depurar` | opus | Bloqueio | Quando `executar` ou `verificar` trava — erro de runtime, PGRST204, build quebrado. Isola causa raiz, propõe fix mínimo. Alternativa a re-planejar. |
+| `popular` | sonnet | Schema | Após `migrar` + `executar` em issue de schema. Atualiza `supabase/seed.sql` com dados fictícios compatíveis. Pré-condição de `verificar` quando seed está desatualizado. |
+| `verificar` | sonnet | Validação | **Sempre** após revisar/testar/auditar. Roda o app (contra cloud) e confirma comportamento real. Pré-condição: migration no cloud (passo 6b½). |
 | `documentar` | sonnet | Documentação | **Sempre** após validação. Mantém `references/` sincronizado. Conservador — decide sozinho se há mudança real; reporta "nenhuma atualização necessária" quando aplicável |
 
 ### Regra de roteamento — planejamento
@@ -91,12 +96,14 @@ Issue que cria/altera UI (tela, componente, fluxo do cliente): consulte `desenha
 
 Após `executar` cada issue, ordem obrigatória:
 
-1. **`testar`** — qualidade funcional. Confirma que o teste RED (issue crítica) está GREEN agora. Cobre bordas e recálculo no servidor.
-2. **`auditar`** — segurança. Recebe todos os arquivos modificados + relacionados. Findings MÉDIA+ corrigidos no mesmo ciclo.
-3. **`verificar`** — sobe o app (`supabase start` + `pnpm dev`) e confirma o comportamento real do fluxo afetado.
-4. **`documentar`** — sempre. Agente decide se atualiza `references/`. Se reportar "nenhuma atualização necessária", seguir adiante.
+1. **`revisar` + `testar` + `auditar` em paralelo** — rodam simultaneamente sobre o código implementado:
+   - `revisar` — qualidade: TypeScript, padrões do projeto, DRY, dead code. Findings CONTRATO corrigidos no mesmo ciclo.
+   - `testar` — qualidade funcional. Confirma que o teste RED (issue crítica) está GREEN. Cobre bordas e recálculo no servidor.
+   - `auditar` — segurança. Recebe todos os arquivos modificados + relacionados. Findings MÉDIA+ corrigidos no mesmo ciclo.
+2. **`verificar`** — roda o app (contra cloud, não local) e confirma o comportamento real do fluxo afetado. Pré-condição: passo 6b½ concluído se houver migration.
+3. **`documentar`** — sempre. Agente decide se atualiza `references/`. Se reportar "nenhuma atualização necessária", seguir adiante.
 
-`testar`, `auditar`, `verificar` e `documentar` nunca são pulados. Se o agente concluir que não há nada a fazer, ele reporta explicitamente — a decisão é dele, não sua.
+`revisar`, `testar`, `auditar`, `verificar` e `documentar` nunca são pulados. Se o agente concluir que não há nada a fazer, ele reporta explicitamente — a decisão é dele, não sua.
 
 ---
 
@@ -146,7 +153,7 @@ estiver no cloud. O deploy de migration deixou de ser "passo final manual" — v
 
 ### Gates antes de qualquer deploy
 
-1. **Build verde** — `npm run build` (zero erros, zero warnings novos)
+1. **Build verde** — `pnpm build` (zero erros, zero warnings novos)
 2. **Testes verdes** — `npx vitest run` (suite inteira, não só afetada)
 3. **RLS validada** — quando houver mudança de política/tabela: teste negativo em pglite (anon, lojista A, lojista B) confirmando isolamento
 4. **Zero regressão** — contagem de testes passando ≥ baseline pré-issue
@@ -203,19 +210,23 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
    - Issue `crítica: NÃO` (CSS/copy/config): pular o RED, mas `testar` ainda roda depois.
 4. Use o agente `executar` passando o mesmo caminho. Em issue crítica, ele escreve o mínimo para o teste virar GREEN, depois refatora.
 5. Se houver bloqueio:
-   - Causa arquitetural → reexecute `arquitetar`
-   - Causa de schema/dados em tabela populada → reexecute `migrar`
-   - Causa lógica simples → reexecute `planejar`
+   - Erro de runtime, `PGRST204`, build quebrado, comportamento inesperado → invocar `depurar` primeiro (isola causa antes de re-planejar)
+   - `depurar` reporta "bloqueio arquitetural" → reexecute `arquitetar`
+   - `depurar` reporta "bloqueio de schema" → reexecute `migrar`
+   - `depurar` reporta causa lógica simples → reexecute `planejar`
 6. **Validação pós-`executar` (ordem obrigatória):**
-   - 6a. `testar` — confirma RED→GREEN, cobre bordas e recálculo no servidor.
-   - 6b. `auditar` — recebe todos os arquivos modificados. Findings MÉDIA+ viram Edit imediato + `npm run build`. NUNCA fechar com brecha "para follow-up".
+   - 6a. **`revisar` + `testar` + `auditar` em paralelo:**
+     - `revisar` — qualidade do código. Findings CONTRATO viram Edit imediato + `pnpm build`.
+     - `testar` — confirma RED→GREEN, cobre bordas e recálculo no servidor.
+     - `auditar` — recebe todos os arquivos modificados. Findings MÉDIA+ viram Edit imediato + `pnpm build`. NUNCA fechar com brecha "para follow-up".
+   - 6a½. **`popular` (se a issue criou/alterou migration)** — atualiza `supabase/seed.sql` com dados fictícios compatíveis com o schema novo. Pré-condição de `verificar` quando o seed está desatualizado.
    - **6b½. 🛑 DEPLOY DE MIGRATION (obrigatório se a issue criou/alterou `supabase/migrations/`).** O app roda contra o cloud — sem este passo, `verificar` falha com `PGRST204` e a issue parece quebrada. NÃO é opcional nem "para o fim":
      1. `npx supabase migration list` — a nova migration aparece como **só-local** (coluna Remote vazia)?
      2. Se o histórico estiver dessincronizado, `npx supabase migration repair --status applied <ids>` antes do push.
      3. **Pedir autorização ao usuário** para `npx supabase db push` (única ação outward — toca o banco de produção). Apresentar a migration e que é aditiva/segura. Aguardar o "sim".
      4. Após o push: `npx supabase migration list` reconfirma Remote preenchido; regenerar `src/lib/database.types.ts` (gate 6 acima).
      5. Só então avançar para `verificar`. Se o usuário recusar o push, **parar a issue** e registrar que `verificar` fica pendente até o deploy — não marcar a issue como verificada.
-   - 6c. `verificar` — sobe o app (`npm run dev`, contra o cloud) e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel). Pré-condição: 6b½ concluído quando houver migration.
+   - 6c. `verificar` — sobe o app (`pnpm dev`, contra o cloud — não é Supabase local) e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel). Pré-condições: 6b½ concluído quando houver migration; 6a½ concluído para seed atualizado.
    - 6d. `documentar` — sempre. Se "nenhuma atualização necessária", seguir adiante.
 7. **Verificar critérios `[x]`:** se algum ficar `[ ]`, NÃO feche a issue — complete, ou registre débito explícito como nova issue.
 8. **Fechar a issue:** sem bloqueios pendentes:
@@ -233,7 +244,7 @@ Repita até a última issue ter todos os critérios `[x]`.
 Quando todas as issues tiverem critérios `[x]`:
 
 1. Confirmar que nenhuma issue do grafo ficou pendente e que todos os critérios estão `[x]`.
-2. **Build verde:** `pnpm build` (zero erros, zero warnings novos).
+2. **Build verde:** `pnpm build` (zero erros, zero warnings novos). **Obrigatório mesmo para issues de UI — `const` exportada em Server Action quebra só no build (não no tsc/vitest).**
 3. **Suite completa verde:** `npx vitest run` (todos os testes). Se houve mudança de RLS/schema, rodar os testes de RLS no Supabase local.
 4. **Zero regressão:** contagem de testes passando ≥ baseline.
 5. **Tipos sincronizados:** confirmar `src/lib/database.types.ts` regenerado se o schema mudou (NÃO `src/types/supabase.ts`).

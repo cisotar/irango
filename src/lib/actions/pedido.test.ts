@@ -82,6 +82,17 @@ vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
   reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
 }));
 
+// [006] Helper neutro distanciaDaLojaAoCep (lib/actions/distanciaFrete.ts):
+// FONTE ÚNICA da sequência buscarCoords→geocode(cep)→haversine (RN-7). Mockado
+// aqui — testes da ACTION provam a ORQUESTRAÇÃO (injeção de distanciaKm em
+// calcularFrete + persistência no snapshot), não o I/O do helper (isso é
+// distanciaFrete.test.ts). Default undefined no beforeEach → nenhum teste
+// pré-existente (sem zona raio_km) regride; só A1 sobrescreve com número.
+const distanciaDaLojaAoCep = vi.fn();
+vi.mock("@/lib/actions/distanciaFrete", () => ({
+  distanciaDaLojaAoCep: (...a: unknown[]) => distanciaDaLojaAoCep(...a),
+}));
+
 import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { criarPedido } from "./pedido";
 
@@ -264,7 +275,25 @@ function cenarioFeliz() {
 beforeEach(() => {
   vi.clearAllMocks();
   fakeClient.rpc.mockReset();
+  // [006] Default fail-closed: sem distância calculada. Mantém todos os testes
+  // pré-existentes (bairro/faixa_cep) sem regressão; só A1 sobrescreve.
+  distanciaDaLojaAoCep.mockResolvedValue(undefined);
 });
+
+/** Zona tipo='raio_km' com raio_max_km e taxa configuráveis (alimenta A1). */
+function zonasComRaio(raioMaxKm = 5, taxa = 3.0) {
+  return [
+    {
+      id: "zr1",
+      loja_id: LOJA_A,
+      nome: "Raio 5km",
+      tipo: "raio_km",
+      ativo: true,
+      taxa: { taxa, pedido_minimo_gratis: null, raio_max_km: raioMaxKm },
+      bairros: [],
+    },
+  ];
+}
 
 describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
   // ─────────────────────── caminho feliz / contrato de retorno
@@ -851,6 +880,136 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     const r = await criarPedido(payloadBase({ idempotency_key: "nao-e-uuid" }));
     expect(r).toEqual({ erro: expect.any(String) });
     expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [006] FRETE POR RAIO (raio_km) — distanciaKm autoritativo + snapshot JSONB
+//
+// Contrato esperado da action (fase GREEN — ver D3/D4 do plano):
+//  - ramo entrega, após reconciliar bairro e ANTES de calcularFrete: chamar
+//    distanciaDaLojaAoCep(svc, loja_id, endereco.cep) [helper neutro, RN-7];
+//  - quando o helper resolve number → injetar em enderecoAutoritativo.distanciaKm
+//    (faz a zona raio_km casar em calcularFrete, que NÃO muda) E persistir esse
+//    distanciaKm no objeto p_endereco_entrega (JSONB) enviado à RPC criar_pedido;
+//  - quando o helper resolve undefined (fail-closed RN-5) → distanciaKm NÃO é
+//    injetado → zona raio_km não casa → fallback; snapshot SEM distanciaKm;
+//  - retirada → helper NÃO chamado (zero custo Nominatim), p_endereco_entrega=null.
+//
+// Os 4 casos abaixo FALHAM hoje: a action implementada não chama o helper, não
+// injeta distanciaKm e nunca o persiste no snapshot. Esse é o RED.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("criarPedido — frete por raio (distanciaKm autoritativo + snapshot) [006]", () => {
+  // A1 — raio cobre a distância → frete da zona raio + distanciaKm persistido
+  it("[006-A1] loja com coords + CEP + zona raio_km cobre a distância → p_taxa_entrega = taxa da zona raio E p_endereco_entrega.distanciaKm persistido", async () => {
+    cenarioFeliz();
+    // Helper resolve 4,7 km (loja com coords + geocoding ok). Zona raio_km com
+    // raio_max_km=5 cobre 4,7 e taxa 3,00 (mais barata) → calcularFrete casa raio.
+    distanciaDaLojaAoCep.mockResolvedValue(4.7);
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+
+    await criarPedido(payloadBase());
+
+    // O helper foi consultado com o service client, a loja e o CEP cru do cliente.
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(fakeClient, LOJA_A, "01000-000");
+
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_total: number;
+      p_endereco_entrega: { distanciaKm?: number };
+    };
+    expect(args.p_taxa_entrega).toBe(3.0); // taxa da zona raio_km
+    expect(args.p_total).toBe(53.0); // 50 subtotal + 3 frete raio
+    // RN-9: distanciaKm derivado server-side persiste no snapshot p/ auditoria.
+    expect(args.p_endereco_entrega.distanciaKm).toBe(4.7);
+  });
+
+  // A2 — geocoding null → zona raio não casa → fallback; snapshot SEM distanciaKm
+  it("[006-A2] geocoding null (helper undefined) → zona raio_km NÃO casa → fallback; p_endereco_entrega SEM distanciaKm (fail-closed RN-5)", async () => {
+    cenarioFeliz();
+    // Loja tem fallback fora-de-zona (8,00); só existe zona raio_km. Helper
+    // undefined → distanciaKm ausente → raio não casa → cai no fallback.
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
+    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+
+    await criarPedido(payloadBase());
+
+    // A action DEVE consultar o helper no ramo entrega (mesmo que ele falhe):
+    // é o caminho que liga a sequência geocode→haversine. Hoje não chama → RED.
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_endereco_entrega: Record<string, unknown>;
+    };
+    expect(args.p_taxa_entrega).toBe(8.0); // fallback, não a taxa do raio
+    // campo aditivo AUSENTE (não null) quando não calculado — RN-9 / spec §snapshot.
+    expect(args.p_endereco_entrega).not.toHaveProperty("distanciaKm");
+  });
+
+  // A3 — loja sem coords → comportamento atual (bairro) 100% inalterado
+  it("[006-A3] loja sem coords (helper undefined) → fluxo bairro inalterado; frete da zona bairro, sem distanciaKm no snapshot", async () => {
+    cenarioFeliz(); // zona 'Centro' (bairro) taxa 5,00; helper default undefined
+    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+
+    await criarPedido(payloadBase());
+
+    // RN-7: o helper é consultado sempre que há CEP no ramo entrega (D3) —
+    // independe de existir zona raio_km. Hoje a action não o chama → RED.
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_total: number;
+      p_endereco_entrega: Record<string, unknown>;
+    };
+    expect(args.p_taxa_entrega).toBe(5.0); // zona bairro, inalterado
+    expect(args.p_total).toBe(55.0);
+    expect(args.p_endereco_entrega).not.toHaveProperty("distanciaKm");
+  });
+
+  // A3b — distanciaKm calculado (number) mas NENHUMA zona raio_km existe → frete
+  //       da zona bairro; distanciaKm DEVE persistir no snapshot p/ auditoria (RN-9).
+  it("[006-A3b] distanciaKm calculado mas NENHUMA zona raio_km → frete bairro; distanciaKm persiste no snapshot (auditoria)", async () => {
+    cenarioFeliz(); // zonas só bairro (Centro R$5)
+    // Helper resolve number mesmo sem zona raio_km (pode acontecer quando a loja
+    // tem coords mas só configurou zonas bairro). O número é dado server-side e deve
+    // aparecer no snapshot para auditoria, independente de casar zona raio.
+    distanciaDaLojaAoCep.mockResolvedValue(2.1);
+
+    await criarPedido(payloadBase());
+
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_total: number;
+      p_endereco_entrega: Record<string, unknown>;
+    };
+    // Frete continua sendo o da zona bairro (5,00) — raio_km não existe.
+    expect(args.p_taxa_entrega).toBe(5.0);
+    expect(args.p_total).toBe(55.0);
+    // distanciaKm calculado server-side deve estar no snapshot para auditoria.
+    expect(args.p_endereco_entrega.distanciaKm).toBe(2.1);
+  });
+
+  // A4 — retirada → helper NÃO é chamado, frete 0, snapshot null
+  it("[006-A4] retirada → distanciaDaLojaAoCep NÃO é chamado, p_taxa_entrega=0, p_endereco_entrega=null (sem distanciaKm)", async () => {
+    cenarioFeliz();
+    await criarPedido(
+      payloadBase({ tipo_entrega: "retirada", endereco_entrega: undefined }),
+    );
+
+    // Zero custo Nominatim na retirada (D5): helper nunca consultado.
+    expect(distanciaDaLojaAoCep).not.toHaveBeenCalled();
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_endereco_entrega: unknown;
+    };
+    expect(args.p_taxa_entrega).toBe(0);
+    expect(args.p_endereco_entrega).toBeNull();
   });
 });
 

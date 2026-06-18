@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.13 | **Atualizado:** 2026-06-15
+**Versão:** 0.2.14 | **Atualizado:** 2026-06-16
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -785,6 +785,25 @@ Implementado em `src/lib/utils/rateLimit.ts` via **`@upstash/ratelimit`** + **`@
 **Fail-open:** se `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` ausentes (dev local) ou o Redis cai, `verificarRateLimit` engole a exceção, loga no servidor e **libera** a requisição. Derrubar login/checkout por indisponibilidade do Redis é pior que perder a trava temporariamente — rate limit é contenção de abuso/custo, não gate de autorização.
 
 **`import "server-only"`** no módulo garante que as credenciais Upstash nunca vazem para o bundle do cliente (build quebra se importado de Client Component).
+
+### §12-A — Fail-closed para APIs externas sujeitas a ban (padrão oposto ao §12)
+
+Quando o iRango chama uma API externa que pode banir o IP da conta por excesso de requisições (ex.: Nominatim/OpenStreetMap), a política é **fail-closed** — o inverso do §12.
+
+**Racional:** o risco primário não é derrubar o checkout; é o IP do iRango ser banido, causando indisponibilidade global da funcionalidade para todos os lojistas. N lambdas Vercel concorrentes sem trava compartilhada martelam a API em paralelo e somam ao mesmo IP de saída. Uma indisponibilidade do Redis não pode ser tratada como "liberar" — sem trava verificada, a chamada não sai.
+
+**Invariante:** toda chamada a API externa sujeita a ban só é feita se a trava global foi efetivamente verificada e concedida. Qualquer estado em que a trava não pode ser verificada (sem credenciais, Redis down, exceção) → não chama → retorna `null`.
+
+**Implementação (issue 003):** `src/lib/utils/geocodificarEndereco.ts`
+
+- Trava Upstash `fixedWindow(1, "1 s")`, prefixo `irango:rl:nominatim` (não colide com `irango:rl:<ip>`)
+- `NOMINATIM_USER_AGENT` obrigatório via env (sem prefixo público — não vaza ao bundle)
+- Portão 0: sem `NOMINATIM_USER_AGENT` → `null` (Nominatim bane IPs sem UA identificado)
+- Portão 1: sem credenciais Upstash → `null` (não existe trava → não chama)
+- Portão 2–3: limite excedido → `null` sem fetch
+- `import "server-only"` no topo — build quebra se importado de Client Component
+
+**Quando aplicar este padrão:** qualquer nova integração com API externa que tenha política de ban por volume (geocoding, enriquecimento de dados, SMS, etc.) deve seguir este molde, não o de `rateLimit.ts`.
 
 ---
 

@@ -11,9 +11,12 @@ Agentes especializados (subagents) para implementar o iRango. Cada um tem um pap
 ## Fluxo
 
 ```
-especificar → quebrar → planejar (ou arquitetar) → [tdd RED] → executar GREEN → testar → auditar → verificar → documentar
-                                                       └── só em issue crítica ──┘
+especificar → quebrar → planejar (ou arquitetar/migrar) → [tdd RED] → executar GREEN
+                                                              └── só em issue crítica ──┘
+    → [revisar ‖ testar ‖ auditar] → [popular se schema] → verificar → documentar
 ```
+
+Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
 
 | Agente | Papel | Modelo |
 |--------|-------|--------|
@@ -21,14 +24,17 @@ especificar → quebrar → planejar (ou arquitetar) → [tdd RED] → executar 
 | `quebrar` | Spec → issues ordenadas em `tasks/` (marca criticidade) | opus |
 | `planejar` | Issue → plano técnico preciso | opus |
 | `arquitetar` | Plano profundo para issue complexa (causa raiz, anti-remendo) | opus |
+| `migrar` | Migrations de schema Postgres/Supabase (expand→contract) | opus |
+| `desenhar` | UI/UX, mockups, acessibilidade, design da vitrine/painel | opus |
 | `tdd` | Fase RED — teste vermelho antes do código (issue crítica) | opus |
 | `executar` | Fase GREEN — implementa a issue | opus |
-| `testar` | Testes de código já implementado | sonnet |
-| `desenhar` | UI/UX, mockups, acessibilidade, design da vitrine/painel | opus |
-| `auditar` | Segurança — caça vulnerabilidade real no código escrito | opus |
-| `migrar` | Migrations de schema Postgres/Supabase (expand→contract) | opus |
+| `revisar` | Code review: TypeScript, padrões, DRY, dead code (paralelo com testar/auditar) | sonnet |
+| `testar` | Testes de código já implementado (paralelo com revisar/auditar) | sonnet |
+| `auditar` | Segurança — caça vulnerabilidade real (paralelo com revisar/testar) | opus |
+| `depurar` | Debug de bloqueio: runtime error, PGRST204, comportamento errado | opus |
+| `popular` | Atualiza `seed.sql` após issue de schema — pré-condição de verificar | sonnet |
+| `verificar` | Roda o app (contra cloud) e confirma comportamento real | sonnet |
 | `documentar` | Mantém `references/` sincronizado (conservador) | sonnet |
-| `verificar` | Roda o app e confirma o comportamento real | sonnet |
 
 ## Como invocar
 Pelo orquestrador (Task/Agent) passando o `subagent_type` (ex.: `auditar`) e o caminho do alvo (issue, arquivo, ou descrição). Issues críticas: `tdd` antes de `executar`.

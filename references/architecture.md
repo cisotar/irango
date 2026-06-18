@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.5 | **Atualizado:** 2026-06-15
+**Versão:** 0.2.6 | **Atualizado:** 2026-06-16
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -121,8 +121,12 @@ irango/
 │   │   │   ├── loja.ts
 │   │   │   └── pedido.ts
 │   │   ├── actions/                      # helpers neutros sem 'use server' compartilhados por Server Actions
-│   │   │   └── upload-imagem.ts          # validarBlobImagem + tipoRealPorConteudo + EXTENSAO_POR_TIPO
-│   │   │                                 # reutilizado por upload.ts e logo.ts — ver §13 seguranca.md
+│   │   │   ├── upload-imagem.ts          # validarBlobImagem + tipoRealPorConteudo + EXTENSAO_POR_TIPO
+│   │   │   │                             # reutilizado por upload.ts e logo.ts — ver §13 seguranca.md
+│   │   │   └── distanciaFrete.ts         # distanciaDaLojaAoCep(svc, lojaId, cep) → km | undefined
+│   │   │                                 # buscarCoordsLoja(svc) → geocodificarEndereco → haversine
+│   │   │                                 # fail-closed: undefined em qualquer falha — ver §12-A seguranca.md
+│   │   │                                 # reutilizado por criarPedido (006) e calcularFreteAction (007)
 │   │   └── utils/
 │   │       ├── formatarMoeda.ts
 │   │       ├── calcularFrete.ts

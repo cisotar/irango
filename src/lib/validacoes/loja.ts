@@ -8,6 +8,8 @@ const reSlug = /^[a-z0-9-]{3,60}$/;
 const reWhatsapp = /^55\d{10,11}$/;
 const reHex = /^#[0-9a-fA-F]{6}$/;
 const reHora = /^([01]\d|2[0-3]):[0-5]\d$/;
+const reCep = /^\d{5}-?\d{3}$/; // mesmo padrão de pedido.ts:39
+const reUf = /^[A-Za-z]{2}$/; // 2 letras (UF); paridade com length(2) de pedido.ts:45
 
 // `.strict()` (defesa em profundidade, RN-A5 / seguranca.md §2/§10): chaves
 // extras no payload (ex.: assinatura_status, hotmart_*, dono_id, ativo) fazem
@@ -19,6 +21,19 @@ export const schemaPerfil = z
     slug: z.string().regex(reSlug),
     telefone: z.string().optional(),
     whatsapp: z.string().regex(reWhatsapp).optional(),
+    // Endereço da loja (issue 004): opcionais; latitude/longitude NÃO entram —
+    // derivados no servidor (issue 008). .strict() rejeita coords do cliente (RN-1).
+    endereco_cep: z.string().trim().regex(reCep).optional(),
+    endereco_rua: z.string().trim().min(1).optional(),
+    endereco_numero: z.string().trim().min(1).optional(),
+    endereco_bairro: z.string().trim().min(1).optional(),
+    endereco_cidade: z.string().trim().min(1).optional(),
+    endereco_estado: z
+      .string()
+      .trim()
+      .regex(reUf)
+      .transform((v) => v.toUpperCase())
+      .optional(),
   })
   .strict();
 

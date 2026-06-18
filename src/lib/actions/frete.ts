@@ -11,7 +11,10 @@
 //   - Schema zod .strict() valida ANTES de qualquer I/O. Campo extra (ex.: taxa_preview
 //     injetado pelo cliente) → rejeitado imediatamente.
 //   - Leitura PÚBLICA via client anon (createClient do servidor). Zonas e view
-//     vitrine_lojas têm RLS pública — NUNCA service_role nesta action.
+//     vitrine_lojas têm RLS pública e seguem ANON. EXCEÇÃO documentada (007, §19):
+//     as coords da loja NÃO têm SELECT anon, então a distância por raio é obtida
+//     via service_role — mas SÓ para as 2 colunas de coords, através do helper
+//     neutro distanciaDaLojaAoCep. Zonas/loja jamais regridem para service_role.
 //   - Erro interno nunca vaza ao cliente (seguranca.md §14): log no servidor,
 //     retorno genérico.
 //   - Reusa EXATAMENTE a mesma lib do recálculo autoritativo (calcularFrete +
@@ -24,6 +27,8 @@
 import { z } from "zod";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { listarZonasComTaxas } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarLojaPublicaPorId } from "@/lib/supabase/queries/lojas";
@@ -112,6 +117,15 @@ export async function calcularFreteAction(
           ? rec.bairroCanonico
           : null;
     }
+
+    // 3c) (007) Distância por raio — paridade EXATA com o autoritativo (criarPedido,
+    //     pedido.ts). Mesmo helper neutro, mesma assinatura: (svc, loja_id, cep). O
+    //     service_role é usado SÓ para as 2 colunas de coords (sem SELECT anon, §19);
+    //     o helper é fail-closed (undefined em qualquer falha/pré-condição ausente).
+    //     distanciaKm jamais vem do cliente — derivado 100% no servidor (RN-4).
+    const svc = createServiceClient();
+    const distanciaKm = await distanciaDaLojaAoCep(svc, loja_id, cep);
+    if (typeof distanciaKm === "number") endereco.distanciaKm = distanciaKm;
 
     // 4) Reusa a MESMA lib do recálculo autoritativo (RN-C4 + paridade preview↔real).
     //    subtotal = 0: preview não tem itens confirmados ainda; nunca grátis por subtotal.

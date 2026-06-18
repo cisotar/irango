@@ -353,7 +353,9 @@ export type Database = {
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
           id: string
+          latitude: number | null
           logo_url: string | null
+          longitude: number | null
           nome: string
           slug: string
           taxa_entrega_fora_zona: number | null
@@ -383,7 +385,9 @@ export type Database = {
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
           id?: string
+          latitude?: number | null
           logo_url?: string | null
+          longitude?: number | null
           nome: string
           slug: string
           taxa_entrega_fora_zona?: number | null
@@ -413,7 +417,9 @@ export type Database = {
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
           id?: string
+          latitude?: number | null
           logo_url?: string | null
+          longitude?: number | null
           nome?: string
           slug?: string
           taxa_entrega_fora_zona?: number | null
@@ -529,6 +535,7 @@ export type Database = {
           endereco_entrega: Json | null
           forma_pagamento: string | null
           id: string
+          idempotency_key: string | null
           loja_id: string
           nome_cliente: string
           observacoes: string | null
@@ -548,6 +555,7 @@ export type Database = {
           endereco_entrega?: Json | null
           forma_pagamento?: string | null
           id?: string
+          idempotency_key?: string | null
           loja_id: string
           nome_cliente: string
           observacoes?: string | null
@@ -567,6 +575,7 @@ export type Database = {
           endereco_entrega?: Json | null
           forma_pagamento?: string | null
           id?: string
+          idempotency_key?: string | null
           loja_id?: string
           nome_cliente?: string
           observacoes?: string | null
@@ -859,6 +868,7 @@ export type Database = {
           p_desconto: number
           p_endereco_entrega: Json
           p_forma_pagamento: string
+          p_idempotency_key?: string
           p_itens: Json
           p_loja_id: string
           p_nome_cliente: string
@@ -876,11 +886,7 @@ export type Database = {
         }[]
       }
       garantir_loja_do_dono: {
-        Args: {
-          p_dono_id: string
-          p_email: string
-          p_versao_termos?: string
-        }
+        Args: { p_dono_id: string; p_email: string; p_versao_termos?: string }
         Returns: string
       }
       item_pedido_aceita_opcionais: {
@@ -911,7 +917,9 @@ export type Database = {
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
           id: string
+          latitude: number | null
           logo_url: string | null
+          longitude: number | null
           nome: string
           slug: string
           taxa_entrega_fora_zona: number | null
