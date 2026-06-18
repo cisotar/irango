@@ -46,7 +46,7 @@ export function HeaderLoja({
 
   return (
     <header className="bg-[var(--cor-primaria)] px-4 py-2.5 text-white">
-      <div className="mx-auto flex max-w-3xl items-center justify-center gap-4">
+      <div className="mx-auto flex max-w-3xl items-center justify-center gap-4 md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
         {logo ? (
           <Image
             src={logo}
