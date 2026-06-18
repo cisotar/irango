@@ -45,21 +45,21 @@ export function HeaderLoja({
   const logo = logoSeguro(logoUrl);
 
   return (
-    <header className="bg-[var(--cor-primaria)] px-4 py-5 text-white">
+    <header className="bg-[var(--cor-primaria)] px-4 py-3 text-white">
       <div className="mx-auto flex max-w-3xl items-center justify-center gap-4">
         {logo ? (
           <Image
             src={logo}
             alt={nome}
-            width={70}
-            height={70}
+            width={80}
+            height={80}
             unoptimized
-            className="size-[70px] shrink-0 rounded-full border-[3px] border-white/35 object-cover"
+            className="size-[80px] shrink-0 rounded-full border-[3px] border-white/35 object-cover"
           />
         ) : (
           <div
             aria-hidden
-            className="flex size-[70px] shrink-0 items-center justify-center rounded-full border-[3px] border-white/35 bg-[#4a3a22] text-3xl font-black"
+            className="flex size-[80px] shrink-0 items-center justify-center rounded-full border-[3px] border-white/35 bg-[#4a3a22] text-3xl font-black"
           >
             {nome.charAt(0).toUpperCase()}
           </div>
