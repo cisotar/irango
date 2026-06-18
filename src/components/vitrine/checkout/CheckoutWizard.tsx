@@ -362,43 +362,21 @@ export function CheckoutWizard({
         </div>
       </header>
 
-      {ehDesktop ? (
-        /* Navegação por âncoras (desktop) — tudo visível, atalho p/ seção. */
-        <nav
-          className="sticky top-[72px] z-40 border-b border-cinza-medio bg-white"
-          aria-label="Seções do checkout"
-        >
-          <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-4 py-2.5">
-            <span className="mr-1 text-[0.72rem] font-bold uppercase tracking-[0.5px] text-texto-muted">
-              Ir para:
-            </span>
-            {[
-              { href: "#secao-itens", n: 1, rotulo: "Itens" },
-              { href: "#secao-entrega", n: 2, rotulo: "Entrega" },
-              { href: "#secao-pagamento", n: 3, rotulo: "Pagamento" },
-            ].map((a) => (
-              <a
-                key={a.href}
-                href={a.href}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-cinza-medio px-3 py-1.5 text-[0.8rem] font-bold text-texto-muted transition-colors hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
-              >
-                <span className="flex size-5 items-center justify-center rounded-full bg-[var(--cor-destaque)] text-[0.68rem] font-black text-white">
-                  {a.n}
-                </span>
-                {a.rotulo}
-              </a>
-            ))}
-          </div>
-        </nav>
-      ) : (
-        /* Stepper sequencial — fundo branco (canônico .stepper) */
-        <nav
-          className="border-b border-cinza-medio bg-white px-4 py-3"
-          aria-label="Etapas do pedido"
-        >
-          <IndicadorEtapas etapaAtual={etapa} />
-        </nav>
-      )}
+      {/* Navegação do checkout — âncoras (desktop, atalho p/ seção empilhada)
+          ou stepper sequencial (mobile). Mesmo componente, dois modos (007). */}
+      <nav
+        className={
+          ehDesktop
+            ? "sticky top-[72px] z-40 border-b border-cinza-medio bg-white"
+            : "border-b border-cinza-medio bg-white px-4 py-3"
+        }
+        aria-label={ehDesktop ? "Seções do checkout" : "Etapas do pedido"}
+      >
+        <IndicadorEtapas
+          modo={ehDesktop ? "ancoras" : "stepper"}
+          etapaAtual={etapa}
+        />
+      </nav>
 
       {ehDesktop ? layoutDesktop : wizardMobile}
     </div>
