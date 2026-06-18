@@ -7,15 +7,7 @@ import {
   type CategoriaComProdutos,
 } from "@/components/vitrine/SecaoCatalogo";
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
-import type {
-  FormaPagamento,
-  ZonaEntrega,
-} from "@/components/vitrine/Carrinho";
 import { createClient } from "@/lib/supabase/server";
-import {
-  listarFormasPagamento,
-  listarZonasComTaxas,
-} from "@/lib/supabase/queries/entregaPagamento";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
 import {
@@ -117,12 +109,7 @@ export default async function VitrinePage({ params }: PageProps) {
 
   const lojaId = loja.id;
 
-  // Catálogo, zonas e formas em paralelo (todas com RLS pública).
-  const [categorias, zonasComTaxa, formas] = await Promise.all([
-    buscarCategorias(db, lojaId),
-    listarZonasComTaxas(db, lojaId),
-    listarFormasPagamento(db, lojaId),
-  ]);
+  const categorias = await buscarCategorias(db, lojaId);
   const grupos = await buscarCatalogoPublico(db, lojaId, categorias);
 
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
@@ -149,20 +136,6 @@ export default async function VitrinePage({ params }: PageProps) {
       foto_url: p.foto_url,
       categoria_id: p.categoria_id,
     })),
-  }));
-
-  // Zonas ativas com taxa configurada → shape do Carrinho (preview de frete).
-  const zonas: ZonaEntrega[] = zonasComTaxa
-    .filter((z) => z.ativo && z.taxa !== null)
-    .map((z) => ({
-      id: z.id,
-      nome: z.nome,
-      taxa_entrega: z.taxa?.taxa ?? 0,
-    }));
-
-  const formasPagamento: FormaPagamento[] = formas.map((f) => ({
-    id: f.id,
-    tipo: f.tipo,
   }));
 
   const temVazio = categoriasComProdutos.every((c) => c.produtos.length === 0);
@@ -203,12 +176,7 @@ export default async function VitrinePage({ params }: PageProps) {
           )}
         </main>
 
-        <VitrineClient
-          lojaId={lojaId}
-          lojaSlug={slug}
-          zonas={zonas}
-          formasPagamento={formasPagamento}
-        />
+        <VitrineClient lojaSlug={slug} />
       </div>
     </>
   );

@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Info, Loader2, Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
 
 import {
   Sheet,
@@ -12,191 +11,21 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useCarrinho, linhaCarrinhoId } from "@/hooks/useCarrinho";
-import { validarCupom } from "@/lib/actions/cupom";
-import { calcularFreteAction } from "@/lib/actions/frete";
-import { calcularTotal, calcularSubtotal } from "@/lib/utils/calcularTotal";
+import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
-import { FormEndereco, type EnderecoEntrega } from "./FormEndereco";
-
-export type ZonaEntrega = { id: string; nome: string; taxa_entrega: number };
-export type FormaPagamento = {
-  id: string;
-  tipo: string;
-  instrucoes?: string | null;
-};
 
 export type CarrinhoProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  lojaId: string;
   lojaSlug: string;
-  zonas: ZonaEntrega[];
-  formasPagamento: FormaPagamento[];
 };
 
-/** Veredito do cupom — sempre PREVIEW (servidor reconfirma no checkout). */
-type EstadoCupom =
-  | { status: "idle" }
-  | { status: "validando" }
-  | { status: "valido"; codigo: string; desconto: number }
-  | { status: "invalido" };
-
-type EstadoFrete =
-  | { status: "ocioso" }
-  | { status: "calculando" }
-  | { status: "ok"; taxa: number; zonaNome: string }
-  | { status: "indisponivel" }
-  | { status: "erro"; mensagem: string };
-
-/** Estado persistido para o checkout — SEM valores monetários (seguranca.md §10). */
-type EstadoCheckout = {
-  // Só id + quantidade por item e por opcional — nenhum preço (seguranca.md §10).
-  itens: {
-    produtoId: string;
-    quantidade: number;
-    opcionais?: { opcionalId: string; quantidade: number }[];
-  }[];
-  tipoEntrega: "entrega" | "retirada";
-  formaPagamentoId: string | null;
-  endereco: EnderecoEntrega | null;
-  codigoCupom: string | null;
-};
-
-const CHAVE_CHECKOUT = "irango:checkout";
-
-export function Carrinho({
-  open,
-  onOpenChange,
-  lojaId,
-  lojaSlug,
-  zonas,
-  formasPagamento,
-}: CarrinhoProps) {
+export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
   const router = useRouter();
   const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho();
-
-  const aceitaEntrega = zonas.length > 0;
-
-  const [codigoCupom, setCodigoCupom] = useState("");
-  const [cupom, setCupom] = useState<EstadoCupom>({ status: "idle" });
-  const [tipoEntrega, setTipoEntrega] = useState<"entrega" | "retirada">(
-    aceitaEntrega ? "entrega" : "retirada",
-  );
-  const [frete, setFrete] = useState<EstadoFrete>({ status: "ocioso" });
-  const [formaPagamentoId, setFormaPagamentoId] = useState<string | null>(
-    formasPagamento[0]?.id ?? null,
-  );
-  const [endereco, setEndereco] = useState<EnderecoEntrega | null>(null);
-  const [enviando, startEnvio] = useTransition();
-  const [calculando, startCalculo] = useTransition();
-  // Dedupe: só recalcula quando bairro ou CEP mudam de fato.
-  const ultimaChave = useRef<string | null>(null);
-
-  const ehEntrega = tipoEntrega === "entrega";
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!ehEntrega) {
-      ultimaChave.current = null;
-      setFrete({ status: "ocioso" });
-      return;
-    }
-    const bairro = endereco?.bairro?.trim();
-    const cep = endereco?.cep?.trim();
-    if (!bairro) {
-      ultimaChave.current = null;
-      setFrete({ status: "ocioso" });
-      return;
-    }
-    const chave = `${cep ?? ""}|${bairro}`;
-    if (chave === ultimaChave.current) return;
-    ultimaChave.current = chave;
-
-    startCalculo(async () => {
-      setFrete({ status: "calculando" });
-      const r = await calcularFreteAction({
-        loja_id: lojaId,
-        bairro,
-        ...(cep ? { cep } : {}),
-      });
-      if (!r.ok) {
-        setFrete({ status: "erro", mensagem: r.erro });
-        return;
-      }
-      if (r.zona_nome === "indisponivel") {
-        setFrete({ status: "indisponivel" });
-        return;
-      }
-      const rotulo =
-        r.zona_nome === "fora_zona" ? "fora da área de zonas" : r.zona_nome;
-      setFrete({ status: "ok", taxa: r.taxa_preview, zonaNome: rotulo });
-    });
-  }, [ehEntrega, endereco?.bairro, endereco?.cep, lojaId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Frete preview = 0 em retirada; calculado do banco em entrega.
-  const taxaEntrega = ehEntrega && frete.status === "ok" ? frete.taxa : 0;
-  const descontoCupom = cupom.status === "valido" ? cupom.desconto : 0;
-
-  // Total PREVIEW — recalculado no servidor no checkout (calcularTotal é pura).
-  const { total } = useMemo(
-    () =>
-      calcularTotal({
-        subtotal,
-        desconto: descontoCupom,
-        taxaEntrega,
-      }),
-    [subtotal, descontoCupom, taxaEntrega],
-  );
-
-  const aplicarCupom = useCallback(() => {
-    const codigo = codigoCupom.trim();
-    if (codigo.length === 0) return;
-    setCupom({ status: "validando" });
-    startEnvio(async () => {
-      const resultado = await validarCupom({ lojaId, codigo, subtotal });
-      if (resultado.valido) {
-        setCupom({ status: "valido", codigo, desconto: resultado.desconto });
-      } else {
-        setCupom({ status: "invalido" });
-      }
-    });
-  }, [codigoCupom, lojaId, subtotal]);
-
-  const finalizar = useCallback(() => {
-    const estado: EstadoCheckout = {
-      // Só ids + quantidades — nenhum valor monetário (seguranca.md §10). Os
-      // opcionais escolhidos seguem para o checkout (preço recalculado lá).
-      itens: itens.map((i) => ({
-        produtoId: i.produtoId,
-        quantidade: i.quantidade,
-        ...(i.opcionais && i.opcionais.length > 0
-          ? {
-              opcionais: i.opcionais.map((o) => ({
-                opcionalId: o.opcionalId,
-                quantidade: o.quantidade,
-              })),
-            }
-          : {}),
-      })),
-      tipoEntrega,
-      formaPagamentoId,
-      endereco,
-      codigoCupom: cupom.status === "valido" ? cupom.codigo : null,
-    };
-    try {
-      window.sessionStorage.setItem(CHAVE_CHECKOUT, JSON.stringify(estado));
-    } catch {
-      // Storage indisponível — o checkout relê o carrinho; não trava o fluxo.
-    }
-    startEnvio(() => {
-      router.push(`/loja/${lojaSlug}/pedido`);
-    });
-  }, [itens, tipoEntrega, formaPagamentoId, endereco, cupom, lojaSlug, router]);
 
   const vazio = itens.length === 0;
 
@@ -233,7 +62,6 @@ export function Carrinho({
                   const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
                   const opcionais =
                     item.opcionais?.filter((o) => o.quantidade > 0) ?? [];
-                  // PREVIEW (§10): preço da linha COM opcionais via calcularSubtotal (082).
                   const subtotalItem = calcularSubtotal([
                     {
                       preco: item.preco,
@@ -245,256 +73,82 @@ export function Carrinho({
                     },
                   ]);
                   return (
-                  <li key={linhaId} className="flex gap-3 py-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.fotoUrl ?? "/placeholder-produto.png"}
-                      alt=""
-                      className="size-12 shrink-0 rounded-md object-cover"
-                    />
-                    <div className="flex flex-1 flex-col gap-1">
-                      <span className="text-sm font-medium">{item.nome}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {formatarMoeda(subtotalItem)}
-                      </span>
-                      <ListaOpcionaisItem
-                        opcionais={opcionais.map((o) => ({
-                          id: o.opcionalId,
-                          nome: o.nome,
-                          preco: o.preco,
-                          quantidade: o.quantidade,
-                        }))}
+                    <li key={linhaId} className="flex gap-3 py-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.fotoUrl ?? "/placeholder-produto.png"}
+                        alt=""
+                        className="size-12 shrink-0 rounded-md object-cover"
                       />
-                      <div className="mt-1 flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="size-11"
-                          aria-label={`Diminuir ${item.nome}`}
-                          onClick={() => decrementar(linhaId)}
-                        >
-                          <Minus aria-hidden />
-                        </Button>
-                        <span
-                          className="w-8 text-center text-sm tabular-nums"
-                          aria-label={`Quantidade de ${item.nome}`}
-                        >
-                          {item.quantidade}
+                      <div className="flex flex-1 flex-col gap-1">
+                        <span className="text-sm font-medium">{item.nome}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {formatarMoeda(subtotalItem)}
                         </span>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="size-11"
-                          aria-label={`Aumentar ${item.nome}`}
-                          onClick={() => incrementar(linhaId)}
-                        >
-                          <Plus aria-hidden />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="ml-auto size-11"
-                          aria-label={`Remover ${item.nome}`}
-                          onClick={() => remover(linhaId)}
-                        >
-                          <Trash2 aria-hidden />
-                        </Button>
+                        <ListaOpcionaisItem
+                          opcionais={opcionais.map((o) => ({
+                            id: o.opcionalId,
+                            nome: o.nome,
+                            preco: o.preco,
+                            quantidade: o.quantidade,
+                          }))}
+                        />
+                        <div className="mt-1 flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="size-11"
+                            aria-label={`Diminuir ${item.nome}`}
+                            onClick={() => decrementar(linhaId)}
+                          >
+                            <Minus aria-hidden />
+                          </Button>
+                          <span
+                            className="w-8 text-center text-sm tabular-nums"
+                            aria-label={`Quantidade de ${item.nome}`}
+                          >
+                            {item.quantidade}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="size-11"
+                            aria-label={`Aumentar ${item.nome}`}
+                            onClick={() => incrementar(linhaId)}
+                          >
+                            <Plus aria-hidden />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="ml-auto size-11"
+                            aria-label={`Remover ${item.nome}`}
+                            onClick={() => remover(linhaId)}
+                          >
+                            <Trash2 aria-hidden />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  </li>
+                    </li>
                   );
                 })}
               </ul>
-
-              <Separator />
-
-              {/* Cupom */}
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="carrinho-cupom"
-                  className="text-sm font-medium"
-                >
-                  Cupom de desconto
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    id="carrinho-cupom"
-                    value={codigoCupom}
-                    onChange={(e) => setCodigoCupom(e.target.value)}
-                    placeholder="PAOCISO10"
-                    aria-invalid={cupom.status === "invalido"}
-                    aria-describedby={
-                      cupom.status === "invalido"
-                        ? "carrinho-cupom-erro"
-                        : cupom.status === "valido"
-                          ? "carrinho-cupom-ok"
-                          : undefined
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-11 shrink-0"
-                    disabled={cupom.status === "validando"}
-                    onClick={aplicarCupom}
-                  >
-                    {cupom.status === "validando" ? (
-                      <Loader2 className="animate-spin" aria-hidden />
-                    ) : null}
-                    Aplicar
-                  </Button>
-                </div>
-                {cupom.status === "valido" && (
-                  <p
-                    id="carrinho-cupom-ok"
-                    className="text-xs text-[var(--cor-destaque)]"
-                  >
-                    ✓ Cupom {cupom.codigo} aplicado (
-                    {formatarMoeda(cupom.desconto)} de desconto)
-                  </p>
-                )}
-                {cupom.status === "invalido" && (
-                  <p
-                    id="carrinho-cupom-erro"
-                    className="text-xs text-destructive"
-                  >
-                    ⚠ Cupom inválido ou expirado.
-                  </p>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Tipo de entrega */}
-              <fieldset className="flex flex-col gap-2">
-                <legend className="text-sm font-medium">Como receber?</legend>
-                {aceitaEntrega && (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="carrinho-tipo"
-                      value="entrega"
-                      checked={tipoEntrega === "entrega"}
-                      onChange={() => setTipoEntrega("entrega")}
-                    />
-                    <span>Entrega</span>
-                  </label>
-                )}
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="carrinho-tipo"
-                    value="retirada"
-                    checked={tipoEntrega === "retirada"}
-                    onChange={() => setTipoEntrega("retirada")}
-                  />
-                  <span>Retirada no local — sem custo</span>
-                </label>
-              </fieldset>
-
-              {/* Endereço + frete — só visível quando entrega selecionada */}
-              {ehEntrega && (
-                <div className="flex flex-col gap-2">
-                  <FormEndereco onEnderecoChange={setEndereco} />
-                  {frete.status === "calculando" && (
-                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                      Calculando frete…
-                    </p>
-                  )}
-                  {frete.status === "ok" && (
-                    <p className="text-xs text-muted-foreground">
-                      Frete para <strong>{frete.zonaNome}</strong>:{" "}
-                      {formatarMoeda(frete.taxa)}
-                    </p>
-                  )}
-                  {frete.status === "indisponivel" && (
-                    <p className="text-xs text-destructive">
-                      Entrega indisponível para este bairro.
-                    </p>
-                  )}
-                  {frete.status === "erro" && (
-                    <p className="text-xs text-destructive">{frete.mensagem}</p>
-                  )}
-                </div>
-              )}
-
-              <Separator />
-
-              {/* Forma de pagamento */}
-              <fieldset className="flex flex-col gap-2">
-                <legend className="text-sm font-medium">
-                  Forma de pagamento
-                </legend>
-                {formasPagamento.map((forma) => (
-                  <label
-                    key={forma.id}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <input
-                      type="radio"
-                      name="carrinho-pagamento"
-                      value={forma.id}
-                      checked={formaPagamentoId === forma.id}
-                      onChange={() => setFormaPagamentoId(forma.id)}
-                    />
-                    <span>{forma.tipo}</span>
-                  </label>
-                ))}
-              </fieldset>
-
             </div>
 
             <SheetFooter>
-              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                Valores estimados — total final confirmado no servidor.
-              </p>
-
-              <dl className="flex flex-col gap-1 text-sm">
-                <div className="flex justify-between">
-                  <dt>Subtotal</dt>
-                  <dd>{formatarMoeda(subtotal)}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt>
-                    Frete
-                    {frete.status === "ok" ? ` (${frete.zonaNome})` : ""}
-                  </dt>
-                  <dd>
-                    {frete.status === "calculando" ? (
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                    ) : (
-                      formatarMoeda(taxaEntrega)
-                    )}
-                  </dd>
-                </div>
-                {descontoCupom > 0 && cupom.status === "valido" && (
-                  <div className="flex justify-between text-[var(--cor-destaque)]">
-                    <dt>Desconto ({cupom.codigo})</dt>
-                    <dd>− {formatarMoeda(descontoCupom)}</dd>
-                  </div>
-                )}
-                <Separator className="my-1" />
-                <div className="flex justify-between text-lg font-bold">
-                  <dt>Total estimado</dt>
-                  <dd>{formatarMoeda(total)}</dd>
-                </div>
-              </dl>
-
+              <Separator />
+              <div className="flex justify-between text-sm font-semibold">
+                <span>Subtotal</span>
+                <span>{formatarMoeda(subtotal)}</span>
+              </div>
               <Button
                 className="min-h-11 bg-[var(--cor-primaria)] text-white hover:bg-[var(--cor-primaria)]/90"
-                disabled={enviando || calculando}
-                onClick={finalizar}
+                onClick={() => {
+                  onOpenChange(false);
+                  router.push(`/loja/${lojaSlug}/pedido`);
+                }}
               >
-                {enviando ? (
-                  <>
-                    <Loader2 className="animate-spin" aria-hidden />
-                    Finalizando…
-                  </>
-                ) : (
-                  "Finalizar pedido"
-                )}
+                Finalizar pedido
               </Button>
             </SheetFooter>
           </>

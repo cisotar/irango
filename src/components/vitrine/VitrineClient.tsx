@@ -3,19 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
-import {
-  Carrinho,
-  type FormaPagamento,
-  type ZonaEntrega,
-} from "@/components/vitrine/Carrinho";
+import { Carrinho } from "@/components/vitrine/Carrinho";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 
 type VitrineClientProps = {
-  lojaId: string;
   lojaSlug: string;
-  zonas: ZonaEntrega[];
-  formasPagamento: FormaPagamento[];
 };
 
 /**
@@ -23,12 +16,7 @@ type VitrineClientProps = {
  * fixo. O contador/total do FAB vêm de `useCarrinho` — preview de UX (o servidor
  * recalcula no checkout, seguranca.md §10).
  */
-export function VitrineClient({
-  lojaId,
-  lojaSlug,
-  zonas,
-  formasPagamento,
-}: VitrineClientProps) {
+export function VitrineClient({ lojaSlug }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
 
@@ -70,14 +58,7 @@ export function VitrineClient({
         </nav>
       )}
 
-      <Carrinho
-        open={open}
-        onOpenChange={setOpen}
-        lojaId={lojaId}
-        lojaSlug={lojaSlug}
-        zonas={zonas}
-        formasPagamento={formasPagamento}
-      />
+      <Carrinho open={open} onOpenChange={setOpen} lojaSlug={lojaSlug} />
     </>
   );
 }
