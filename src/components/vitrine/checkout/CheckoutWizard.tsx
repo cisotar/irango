@@ -11,22 +11,27 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useCarrinho } from "@/hooks/useCarrinho";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
 import { IndicadorEtapas } from "./IndicadorEtapas";
 import { EtapaItens } from "./EtapaItens";
 import { EtapaEntrega } from "./EtapaEntrega";
 import { EtapaPagamento } from "./EtapaPagamento";
+import { ResumoValores } from "./ResumoValores";
+import { useEnviarPedido } from "./useEnviarPedido";
 import {
   ESTADO_INICIAL,
   lerEstadoWizard,
+  podeConfirmar,
   salvarEstadoWizard,
   type EstadoWizard,
   type FormaPagamentoWizard,
+  type ItemPayload,
   type TipoEntrega,
 } from "./estado";
 
@@ -50,11 +55,17 @@ export function CheckoutWizard({
 }: CheckoutWizardProps) {
   const router = useRouter();
   const { itens, incrementar, decrementar, remover } = useCarrinho();
+  // Tailwind md = 768px. Escolhe UMA árvore (wizard mobile vs 2 colunas desktop)
+  // — mesmo estado compartilhado, sem montar EtapaEntrega/frete duas vezes (006).
+  const ehDesktop = useMediaQuery("(min-width: 768px)");
 
   const [etapa, setEtapa] = useState<1 | 2 | 3>(1);
   const [montado, setMontado] = useState(false);
   const [descontoPreview, setDescontoPreview] = useState(0);
   const [fretePreview, setFretePreview] = useState(0);
+  // Status do cálculo de frete (ocioso/calculando/ok/indisponivel/erro) — gate
+  // podeConfirmar no desktop empilhado (006). No mobile o gate vive em cada etapa.
+  const [freteStatusPreview, setFreteStatusPreview] = useState("ocioso");
 
   // Estado do wizard hidratado do sessionStorage (pós-mount, SSR-safe).
   // Se a loja só aceita retirada, força tipoEntrega='retirada'.
@@ -92,10 +103,38 @@ export function CheckoutWizard({
     [itens],
   );
 
+  // Itens no shape do payload (produtoId+quantidade+opcionais) — reusado pela
+  // EtapaPagamento e pelo CTA da coluna sticky desktop. NUNCA carrega preço.
+  const itensPayload = useMemo<ItemPayload[]>(
+    () =>
+      itens.map((i) => ({
+        produtoId: i.produtoId,
+        quantidade: i.quantidade,
+        ...(i.opcionais && i.opcionais.length > 0
+          ? {
+              opcionais: i.opcionais.map((o) => ({
+                opcionalId: o.opcionalId,
+                quantidade: o.quantidade,
+              })),
+            }
+          : {}),
+      })),
+    [itens],
+  );
+
   // Patch parcial do estado do wizard.
   const patch = useCallback((p: Partial<EstadoWizard>) => {
     setEstado((atual) => ({ ...atual, ...p }));
   }, []);
+
+  // Submit do CTA da coluna sticky desktop — mesma fonte única do mobile (006).
+  const { enviar, enviando } = useEnviarPedido({
+    lojaId,
+    lojaSlug,
+    itens: itensPayload,
+    estado,
+    onEstadoChange: patch,
+  });
 
   // Handlers estáveis: FormEndereco/EtapaEntrega têm essas props no dep array de
   // um useEffect — ref nova a cada render dispararia loop de render infinito.
@@ -117,6 +156,25 @@ export function CheckoutWizard({
     }
   }, [etapa, lojaSlug, router]);
 
+  // Frete preview efetivo: retirada força 0 (servidor também — RN-C2).
+  const fretePreviewEfetivo =
+    estado.tipoEntrega === "retirada" ? 0 : fretePreview;
+  const totalPreview =
+    Math.max(0, subtotalPreview - descontoPreview) + fretePreviewEfetivo;
+
+  // Handlers de cupom (compartilhados entre as duas árvores).
+  const aplicarCupom = useCallback(
+    (codigo: string, desconto: number) => {
+      patch({ codigoCupom: codigo });
+      setDescontoPreview(desconto);
+    },
+    [patch],
+  );
+  const removerCupom = useCallback(() => {
+    patch({ codigoCupom: null });
+    setDescontoPreview(0);
+  }, [patch]);
+
   // Carrinho vazio → manda de volta para a loja (UX).
   if (montado && itens.length === 0) {
     return (
@@ -130,32 +188,9 @@ export function CheckoutWizard({
     );
   }
 
-  return (
-    <div className="mx-auto w-full max-w-[480px] bg-[var(--cor-fundo)] pb-8">
-      {/* Banda do header — cor da loja, sticky (canônico .header) */}
-      <header className="sticky top-0 z-50 flex items-center gap-3 bg-[var(--cor-primaria)] px-4 py-3.5 text-white shadow-[0_2px_8px_rgba(0,0,0,0.15)]">
-        <button
-          type="button"
-          onClick={voltarHeader}
-          aria-label={etapa === 1 ? "Voltar à loja" : "Voltar à etapa anterior"}
-          className="flex size-11 shrink-0 items-center justify-center rounded-[10px] transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-        >
-          <ArrowLeft className="size-5" aria-hidden />
-        </button>
-        <span className="text-base font-black uppercase tracking-wide">
-          Finalizar pedido
-        </span>
-      </header>
-
-      {/* Stepper — fundo branco (canônico .stepper) */}
-      <nav
-        className="border-b border-cinza-medio bg-white px-4 py-3"
-        aria-label="Etapas do pedido"
-      >
-        <IndicadorEtapas etapaAtual={etapa} />
-      </nav>
-
-      <div className="px-4 py-4">
+  // Wizard mobile (< md): sequencial, uma etapa por vez. Inalterado.
+  const wizardMobile = (
+    <div className="px-4 py-4">
       {etapa === 1 && (
         <EtapaItens
           lojaId={lojaId}
@@ -166,14 +201,8 @@ export function CheckoutWizard({
           onIncrementar={incrementar}
           onDecrementar={decrementar}
           onRemover={remover}
-          onAplicarCupom={(codigo, desconto) => {
-            patch({ codigoCupom: codigo });
-            setDescontoPreview(desconto);
-          }}
-          onRemoverCupom={() => {
-            patch({ codigoCupom: null });
-            setDescontoPreview(0);
-          }}
+          onAplicarCupom={aplicarCupom}
+          onRemoverCupom={removerCupom}
           onContinuar={() => setEtapa(2)}
         />
       )}
@@ -189,6 +218,7 @@ export function CheckoutWizard({
           onTipoEntregaChange={handleTipoEntregaChange}
           onEnderecoChange={handleEnderecoChange}
           onFreteChange={setFretePreview}
+          onFreteStatusChange={setFreteStatusPreview}
           onVoltar={() => setEtapa(1)}
           onContinuar={() => setEtapa(3)}
         />
@@ -200,27 +230,177 @@ export function CheckoutWizard({
           lojaSlug={lojaSlug}
           lojaAberta={lojaAberta}
           formasPagamento={formasPagamento}
-          itens={itens.map((i) => ({
-            produtoId: i.produtoId,
-            quantidade: i.quantidade,
-            ...(i.opcionais && i.opcionais.length > 0
-              ? {
-                  opcionais: i.opcionais.map((o) => ({
-                    opcionalId: o.opcionalId,
-                    quantidade: o.quantidade,
-                  })),
-                }
-              : {}),
-          }))}
+          itens={itensPayload}
           estado={estado}
           subtotal={subtotalPreview}
           desconto={descontoPreview}
-          frete={estado.tipoEntrega === "retirada" ? 0 : fretePreview}
+          frete={fretePreviewEfetivo}
           onEstadoChange={patch}
           onVoltar={() => setEtapa(2)}
         />
       )}
+    </div>
+  );
+
+  // Layout desktop (≥ md): 3 seções empilhadas à esquerda + resumo sticky à
+  // direita. UM estado compartilhado; CTA gated por podeConfirmar (006).
+  const confirmarHabilitado =
+    lojaAberta &&
+    !enviando &&
+    estado.nome.trim().length > 0 &&
+    itens.length > 0 &&
+    podeConfirmar(estado, estado.tipoEntrega, freteStatusPreview);
+
+  const layoutDesktop = (
+    <div className="mx-auto w-full max-w-6xl px-4 py-5">
+      <div className="grid gap-6 md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_400px] md:items-start">
+        {/* Coluna esquerda — 3 seções empilhadas, todas visíveis. */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <EtapaItens
+            variante="desktop"
+            lojaId={lojaId}
+            itens={itens}
+            subtotal={subtotalPreview}
+            desconto={descontoPreview}
+            codigoCupom={estado.codigoCupom}
+            onIncrementar={incrementar}
+            onDecrementar={decrementar}
+            onRemover={remover}
+            onAplicarCupom={aplicarCupom}
+            onRemoverCupom={removerCupom}
+            onContinuar={() => {}}
+          />
+          <EtapaEntrega
+            variante="desktop"
+            lojaId={lojaId}
+            subtotal={subtotalPreview}
+            desconto={descontoPreview}
+            aceitaEntrega={aceitaEntrega}
+            tipoEntrega={estado.tipoEntrega}
+            endereco={estado.endereco}
+            onTipoEntregaChange={handleTipoEntregaChange}
+            onEnderecoChange={handleEnderecoChange}
+            onFreteChange={setFretePreview}
+            onFreteStatusChange={setFreteStatusPreview}
+            onVoltar={() => {}}
+            onContinuar={() => {}}
+          />
+          <EtapaPagamento
+            variante="desktop"
+            lojaId={lojaId}
+            lojaSlug={lojaSlug}
+            lojaAberta={lojaAberta}
+            formasPagamento={formasPagamento}
+            itens={itensPayload}
+            estado={estado}
+            subtotal={subtotalPreview}
+            desconto={descontoPreview}
+            frete={fretePreviewEfetivo}
+            onEstadoChange={patch}
+            onVoltar={() => {}}
+          />
+        </div>
+
+        {/* Coluna direita — resumo sticky + CTA (72px header + ~58px nav). */}
+        <aside
+          className="md:sticky md:top-[130px]"
+          aria-label="Resumo do pedido"
+        >
+          <div className="overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]">
+            <h2 className="border-b border-cinza-medio bg-cinza-claro px-4 py-3.5 text-[0.78rem] font-bold uppercase tracking-[1px] text-texto-muted">
+              Resumo do pedido
+            </h2>
+            <div className="p-4">
+              <ResumoValores
+                subtotal={subtotalPreview}
+                desconto={descontoPreview}
+                frete={fretePreviewEfetivo}
+                total={totalPreview}
+                mostrarFrete={estado.tipoEntrega === "entrega"}
+              />
+              <Button
+                type="button"
+                size="lg"
+                className="mt-4 h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+                disabled={!confirmarHabilitado}
+                onClick={enviar}
+              >
+                {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
+              </Button>
+            </div>
+          </div>
+        </aside>
       </div>
+    </div>
+  );
+
+  return (
+    <div
+      className={
+        ehDesktop
+          ? "w-full bg-[var(--cor-fundo)] pb-8"
+          : "mx-auto w-full max-w-[480px] bg-[var(--cor-fundo)] pb-8"
+      }
+    >
+      {/* Banda do header — cor da loja, sticky (canônico .header) */}
+      <header className="sticky top-0 z-50 bg-[var(--cor-primaria)] text-white shadow-[0_2px_8px_rgba(0,0,0,0.15)]">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3.5">
+          <button
+            type="button"
+            onClick={voltarHeader}
+            aria-label={
+              etapa === 1 ? "Voltar à loja" : "Voltar à etapa anterior"
+            }
+            className="flex size-11 shrink-0 items-center justify-center rounded-[10px] transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+          >
+            <ArrowLeft className="size-5" aria-hidden />
+          </button>
+          <span className="text-base font-black uppercase tracking-wide">
+            Finalizar pedido
+          </span>
+        </div>
+      </header>
+
+      {ehDesktop ? (
+        /* Navegação por âncoras (desktop) — tudo visível, atalho p/ seção. */
+        <nav
+          className="sticky top-[72px] z-40 border-b border-cinza-medio bg-white"
+          aria-label="Seções do checkout"
+        >
+          <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-4 py-2.5">
+            <span className="mr-1 text-[0.72rem] font-bold uppercase tracking-[0.5px] text-texto-muted">
+              Ir para:
+            </span>
+            {[
+              { href: "#secao-itens", n: 1, rotulo: "Itens" },
+              { href: "#secao-entrega", n: 2, rotulo: "Entrega" },
+              { href: "#secao-pagamento", n: 3, rotulo: "Pagamento" },
+            ].map((a) => (
+              <a
+                key={a.href}
+                href={a.href}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-cinza-medio px-3 py-1.5 text-[0.8rem] font-bold text-texto-muted transition-colors hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+              >
+                <span className="flex size-5 items-center justify-center rounded-full bg-[var(--cor-destaque)] text-[0.68rem] font-black text-white">
+                  {a.n}
+                </span>
+                {a.rotulo}
+              </a>
+            ))}
+          </div>
+        </nav>
+      ) : (
+        /* Stepper sequencial — fundo branco (canônico .stepper) */
+        <nav
+          className="border-b border-cinza-medio bg-white px-4 py-3"
+          aria-label="Etapas do pedido"
+        >
+          <IndicadorEtapas etapaAtual={etapa} />
+        </nav>
+      )}
+
+      {ehDesktop ? layoutDesktop : wizardMobile}
     </div>
   );
 }

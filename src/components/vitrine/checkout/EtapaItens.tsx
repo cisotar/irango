@@ -40,6 +40,11 @@ export type EtapaItensProps = {
   onAplicarCupom: (codigo: string, descontoPreview: number) => void;
   onRemoverCupom: () => void;
   onContinuar: () => void;
+  /**
+   * "wizard" (mobile, padrão): mostra resumo + botão "Continuar".
+   * "desktop": 3 seções empilhadas — resumo e CTA vivem na coluna sticky (006).
+   */
+  variante?: "wizard" | "desktop";
 };
 
 export function EtapaItens({
@@ -54,6 +59,7 @@ export function EtapaItens({
   onAplicarCupom,
   onRemoverCupom,
   onContinuar,
+  variante = "wizard",
 }: EtapaItensProps) {
   const [codigo, setCodigo] = useState(codigoCupom ?? "");
   const [mensagemCupom, setMensagemCupom] = useState<string | null>(null);
@@ -88,8 +94,14 @@ export function EtapaItens({
     onRemoverCupom();
   }
 
+  const desktop = variante === "desktop";
+
   return (
-    <div className="space-y-3">
+    <section
+      id="secao-itens"
+      className="scroll-mt-[130px] space-y-3"
+      aria-label="Itens do pedido"
+    >
       {/* Seção: Itens */}
       <div className={SECAO}>
         <h2 className={SECAO_TITULO}>Itens do pedido</h2>
@@ -243,29 +255,34 @@ export function EtapaItens({
         </div>
       </div>
 
-      {/* Seção: Resumo */}
-      <div className={SECAO}>
-        <h2 className={SECAO_TITULO}>Resumo</h2>
-        <div className="p-4">
-          <ResumoValores
-            subtotal={subtotal}
-            desconto={desconto}
-            frete={0}
-            total={totalPreview}
-            mostrarFrete={false}
-          />
-        </div>
-      </div>
+      {/* Resumo + CTA só no wizard mobile — no desktop vivem na coluna sticky. */}
+      {!desktop && (
+        <>
+          {/* Seção: Resumo */}
+          <div className={SECAO}>
+            <h2 className={SECAO_TITULO}>Resumo</h2>
+            <div className="p-4">
+              <ResumoValores
+                subtotal={subtotal}
+                desconto={desconto}
+                frete={0}
+                total={totalPreview}
+                mostrarFrete={false}
+              />
+            </div>
+          </div>
 
-      <Button
-        type="button"
-        size="lg"
-        className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
-        disabled={itens.length === 0}
-        onClick={onContinuar}
-      >
-        Continuar
-      </Button>
-    </div>
+          <Button
+            type="button"
+            size="lg"
+            className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+            disabled={itens.length === 0}
+            onClick={onContinuar}
+          >
+            Continuar
+          </Button>
+        </>
+      )}
+    </section>
   );
 }

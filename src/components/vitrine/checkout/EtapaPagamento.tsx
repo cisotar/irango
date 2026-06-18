@@ -8,8 +8,6 @@
 // O servidor recalcula subtotal/desconto/frete/total do banco. O payload é
 // validado por schemaPayloadPedido (.strict()) ANTES do envio.
 
-import { useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,14 +17,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { IMaskInput } from "react-imask";
-import { criarPedido } from "@/lib/actions/pedido";
-import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
-import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
 import { ResumoValores } from "./ResumoValores";
-import type {
-  EstadoWizard,
-  FormaPagamentoWizard,
-  TipoPagamento,
+import { useEnviarPedido } from "./useEnviarPedido";
+import {
+  type EstadoWizard,
+  type FormaPagamentoWizard,
+  type TipoPagamento,
 } from "./estado";
 
 const SECAO =
@@ -65,6 +61,11 @@ export type EtapaPagamentoProps = {
   frete: number;
   onEstadoChange: (patch: Partial<EstadoWizard>) => void;
   onVoltar: () => void;
+  /**
+   * "wizard" (mobile, padrão): mostra resumo + botões "Confirmar/Voltar".
+   * "desktop": 3 seções empilhadas — resumo e CTA vivem na coluna sticky (006).
+   */
+  variante?: "wizard" | "desktop";
 };
 
 export function EtapaPagamento({
@@ -79,14 +80,22 @@ export function EtapaPagamento({
   frete,
   onEstadoChange,
   onVoltar,
+  variante = "wizard",
 }: EtapaPagamentoProps) {
-  const [enviando, startEnvio] = useTransition();
+  const desktop = variante === "desktop";
   const formaSelecionada = formasPagamento.find(
     (f) => f.tipo === estado.formaPagamento,
   );
   const totalPreview = Math.max(0, subtotal - desconto) + frete;
 
-  const router = useRouter();
+  // Submit compartilhado (mobile + desktop) — fonte única do payload (006).
+  const { enviar, enviando } = useEnviarPedido({
+    lojaId,
+    lojaSlug,
+    itens,
+    estado,
+    onEstadoChange,
+  });
 
   async function copiarChave(chave: string) {
     try {
@@ -97,81 +106,6 @@ export function EtapaPagamento({
     }
   }
 
-  function enviar() {
-    if (estado.formaPagamento == null) {
-      toast.error("Escolha uma forma de pagamento.");
-      return;
-    }
-
-    // [063] Chave de idempotência: reusa a existente (retry/duplo-clique) ou
-    // gera uma nova via CSPRNG (crypto.randomUUID — nunca derivada de dado
-    // previsível, p/ não virar oráculo do token_acesso). Persiste antes do
-    // envio p/ que uma 2ª tentativa carregue a MESMA chave → dedupe server-side.
-    const idempotencyKey = estado.idempotencyKey ?? crypto.randomUUID();
-    if (estado.idempotencyKey == null) {
-      onEstadoChange({ idempotencyKey });
-    }
-
-    // Monta o payload do CLIENTE — só intenção, NUNCA valores monetários.
-    const payload = {
-      loja_id: lojaId,
-      tipo_entrega: estado.tipoEntrega,
-      idempotency_key: idempotencyKey,
-      itens: itens.map((i) => ({
-        produto_id: i.produtoId,
-        quantidade: i.quantidade,
-        // Opcionais: só opcional_id + quantidade (RN-O2). O servidor valida loja,
-        // ativo e categoria e recalcula o preço do banco (085, seguranca.md §10).
-        ...(i.opcionais && i.opcionais.length > 0
-          ? {
-              opcionais: i.opcionais.map((o) => ({
-                opcional_id: o.opcionalId,
-                quantidade: o.quantidade,
-              })),
-            }
-          : {}),
-      })),
-      forma_pagamento: estado.formaPagamento,
-      nome_cliente: estado.nome.trim(),
-      ...(estado.telefone.trim()
-        ? { telefone_cliente: estado.telefone.trim() }
-        : {}),
-      ...(estado.observacoes.trim()
-        ? { observacoes: estado.observacoes.trim() }
-        : {}),
-      ...(estado.codigoCupom ? { codigo_cupom: estado.codigoCupom } : {}),
-      ...(estado.tipoEntrega === "entrega" && estado.endereco
-        ? { endereco_entrega: montarEndereco(estado.endereco) }
-        : {}),
-      ...(estado.formaPagamento === "dinheiro" && estado.trocoPara != null
-        ? { troco_para: estado.trocoPara }
-        : {}),
-    };
-
-    // Gate de validação no cliente ANTES da Server Action (o servidor revalida).
-    const parsed = schemaPayloadPedido.safeParse(payload);
-    if (!parsed.success) {
-      toast.error("Confira os dados do pedido (nome, endereço e itens).");
-      return;
-    }
-
-    startEnvio(async () => {
-      const resultado = await criarPedido(parsed.data);
-      if ("erro" in resultado) {
-        toast.error(resultado.erro);
-        return;
-      }
-      // [063] Pedido criado: descarta a chave p/ que um próximo carrinho
-      // (reorder na mesma sessão) gere uma chave nova e NÃO deduplique com este.
-      onEstadoChange({ idempotencyKey: null });
-      router.push(
-        `/loja/${lojaSlug}/confirmacao?pedido=${resultado.pedidoId}&token=${encodeURIComponent(
-          resultado.token_acesso,
-        )}`,
-      );
-    });
-  }
-
   const podeEnviar =
     lojaAberta &&
     !enviando &&
@@ -180,7 +114,11 @@ export function EtapaPagamento({
     itens.length > 0;
 
   return (
-    <div className="space-y-3">
+    <section
+      id="secao-pagamento"
+      className="scroll-mt-[130px] space-y-3"
+      aria-label="Pagamento"
+    >
       {/* Seção: Dados do cliente */}
       <div className={SECAO}>
         <h2 className={SECAO_TITULO}>Seus dados</h2>
@@ -325,55 +263,47 @@ export function EtapaPagamento({
         </div>
       </div>
 
-      {/* Seção: Resumo do pedido */}
-      <div className={SECAO}>
-        <h2 className={SECAO_TITULO}>Resumo do pedido</h2>
-        <div className="p-4">
-          <ResumoValores
-            subtotal={subtotal}
-            desconto={desconto}
-            frete={frete}
-            total={totalPreview}
-            mostrarFrete={estado.tipoEntrega === "entrega"}
-          />
-        </div>
-      </div>
+      {/* Resumo + CTA só no wizard mobile — no desktop vivem na coluna sticky. */}
+      {!desktop && (
+        <>
+          {/* Seção: Resumo do pedido */}
+          <div className={SECAO}>
+            <h2 className={SECAO_TITULO}>Resumo do pedido</h2>
+            <div className="p-4">
+              <ResumoValores
+                subtotal={subtotal}
+                desconto={desconto}
+                frete={frete}
+                total={totalPreview}
+                mostrarFrete={estado.tipoEntrega === "entrega"}
+              />
+            </div>
+          </div>
 
-      <div className="flex flex-col gap-2.5">
-        <Button
-          type="button"
-          size="lg"
-          className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
-          disabled={!podeEnviar}
-          onClick={enviar}
-        >
-          {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
-          {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
-          onClick={onVoltar}
-          disabled={enviando}
-        >
-          Voltar para entrega
-        </Button>
-      </div>
-    </div>
+          <div className="flex flex-col gap-2.5">
+            <Button
+              type="button"
+              size="lg"
+              className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+              disabled={!podeEnviar}
+              onClick={enviar}
+            >
+              {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+              onClick={onVoltar}
+              disabled={enviando}
+            >
+              Voltar para entrega
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
   );
-}
-
-/** Endereço do FormEndereco → shape do payload (campos do schema do servidor). */
-function montarEndereco(endereco: EnderecoEntrega) {
-  return {
-    cep: endereco.cep.replace(/\D/g, ""),
-    rua: endereco.rua,
-    numero: endereco.numero,
-    bairro: endereco.bairro,
-    cidade: endereco.cidade,
-    uf: endereco.uf,
-    ...(endereco.complemento ? { complemento: endereco.complemento } : {}),
-  };
 }

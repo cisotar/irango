@@ -38,8 +38,15 @@ export type EtapaEntregaProps = {
   onEnderecoChange: (endereco: EnderecoEntrega | null) => void;
   /** comunica o frete preview ao pai (para o resumo da Etapa 3). */
   onFreteChange: (frete: number) => void;
+  /** comunica o status do cálculo de frete ao pai (gate podeConfirmar — 006). */
+  onFreteStatusChange?: (status: string) => void;
   onVoltar: () => void;
   onContinuar: () => void;
+  /**
+   * "wizard" (mobile, padrão): mostra resumo + botões "Continuar/Voltar".
+   * "desktop": 3 seções empilhadas — resumo e CTA vivem na coluna sticky (006).
+   */
+  variante?: "wizard" | "desktop";
 };
 
 type EstadoFrete =
@@ -59,8 +66,10 @@ export function EtapaEntrega({
   onTipoEntregaChange,
   onEnderecoChange,
   onFreteChange,
+  onFreteStatusChange,
   onVoltar,
   onContinuar,
+  variante = "wizard",
 }: EtapaEntregaProps) {
   const [frete, setFrete] = useState<EstadoFrete>({ status: "ocioso" });
   const [calculando, startCalculo] = useTransition();
@@ -81,6 +90,7 @@ export function EtapaEntrega({
       ultimaChave.current = null;
       setFrete({ status: "ocioso" });
       onFreteChange(0);
+      onFreteStatusChange?.("ocioso");
       return;
     }
     const bairro = endereco?.bairro?.trim();
@@ -89,6 +99,7 @@ export function EtapaEntrega({
       ultimaChave.current = null;
       setFrete({ status: "ocioso" });
       onFreteChange(0);
+      onFreteStatusChange?.("ocioso");
       return;
     }
     const chave = `${cep ?? ""}|${bairro}`;
@@ -97,6 +108,7 @@ export function EtapaEntrega({
 
     startCalculo(async () => {
       setFrete({ status: "calculando" });
+      onFreteStatusChange?.("calculando");
       // Passa o CEP p/ reconciliação CEP↔bairro (paridade 064/067). Server
       // recalcula do banco — nenhum valor monetário vem do cliente.
       const r = await calcularFreteAction({
@@ -107,19 +119,29 @@ export function EtapaEntrega({
       if (!r.ok) {
         setFrete({ status: "erro", mensagem: r.erro });
         onFreteChange(0);
+        onFreteStatusChange?.("erro");
         return;
       }
       if (r.zona_nome === "indisponivel") {
         setFrete({ status: "indisponivel" });
         onFreteChange(0);
+        onFreteStatusChange?.("indisponivel");
         return;
       }
       const rotulo =
         r.zona_nome === "fora_zona" ? "fora da área de zonas" : r.zona_nome;
       setFrete({ status: "ok", taxa: r.taxa_preview, zonaNome: rotulo });
       onFreteChange(r.taxa_preview);
+      onFreteStatusChange?.("ok");
     });
-  }, [ehEntrega, endereco?.bairro, endereco?.cep, lojaId, onFreteChange]);
+  }, [
+    ehEntrega,
+    endereco?.bairro,
+    endereco?.cep,
+    lojaId,
+    onFreteChange,
+    onFreteStatusChange,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const fretePreview = frete.status === "ok" ? frete.taxa : 0;
@@ -130,8 +152,14 @@ export function EtapaEntrega({
     ? endereco !== null && frete.status === "ok" && !calculando
     : true;
 
+  const desktop = variante === "desktop";
+
   return (
-    <div className="space-y-3">
+    <section
+      id="secao-entrega"
+      className="scroll-mt-[130px] space-y-3"
+      aria-label="Entrega"
+    >
       {/* Seção: Tipo de entrega */}
       <div className={SECAO}>
         <h2 className={SECAO_TITULO}>Tipo de entrega</h2>
@@ -213,39 +241,44 @@ export function EtapaEntrega({
         </div>
       )}
 
-      {/* Seção: Resumo */}
-      <div className={SECAO}>
-        <h2 className={SECAO_TITULO}>Resumo</h2>
-        <div className="p-4">
-          <ResumoValores
-            subtotal={subtotal}
-            desconto={desconto}
-            frete={fretePreview}
-            total={totalPreview}
-          />
-        </div>
-      </div>
+      {/* Resumo + CTA só no wizard mobile — no desktop vivem na coluna sticky. */}
+      {!desktop && (
+        <>
+          {/* Seção: Resumo */}
+          <div className={SECAO}>
+            <h2 className={SECAO_TITULO}>Resumo</h2>
+            <div className="p-4">
+              <ResumoValores
+                subtotal={subtotal}
+                desconto={desconto}
+                frete={fretePreview}
+                total={totalPreview}
+              />
+            </div>
+          </div>
 
-      <div className="flex flex-col gap-2.5">
-        <Button
-          type="button"
-          size="lg"
-          className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
-          disabled={!podeAvancar}
-          onClick={onContinuar}
-        >
-          Continuar
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
-          onClick={onVoltar}
-        >
-          Voltar para itens
-        </Button>
-      </div>
-    </div>
+          <div className="flex flex-col gap-2.5">
+            <Button
+              type="button"
+              size="lg"
+              className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+              disabled={!podeAvancar}
+              onClick={onContinuar}
+            >
+              Continuar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+              onClick={onVoltar}
+            >
+              Voltar para itens
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
