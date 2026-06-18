@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.1.0 | **Atualizado:** 2026-06-13
+**Versão:** 0.2.0 | **Atualizado:** 2026-06-18
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -36,7 +36,7 @@
 
 | Mundo | Rota | Público | Auth | Diretriz de design |
 |-------|------|---------|------|--------------------|
-| Vitrine pública | `/loja/[slug]` | cliente final | sem login | mobile-first, decisão rápida, tema da loja, carrinho sempre acessível |
+| Vitrine pública | `/loja/[slug]` | cliente final | sem login | mobile-first (360 px+), aprimoramento progressivo até desktop; tema da loja, carrinho sempre acessível |
 | Painel do lojista | `/painel/*` | dono da loja | obrigatório | desktop-friendly mas responsivo, gestão, tabela densa OK, ação visível |
 
 **Vitrine.** Hierarquia simples: ver produto, adicionar, finalizar. CTA primário ("Adicionar", "Finalizar pedido") dominante. Total e frete óbvios antes de finalizar. O tema visual vem da loja — ver §4.
@@ -247,10 +247,56 @@ Raio único e consistente, alinhado ao default do shadcn (`--radius`). Vitrine e
 
 Escala tipográfica do Tailwind. Base rem = **19.2 px** (`html { font-size: 120% }` em `globals.css` — escala todos os tamanhos Tailwind uniformemente). Hierarquia clara: na vitrine, nome do produto e preço têm peso/tamanho que dominam a descrição; CTA legível em mobile.
 
-### Responsividade (**proposta**)
+### Responsividade
 
-- Vitrine funciona a partir de 360px de largura.
-- No painel mobile, **tabela vira lista de cards** — sem scroll horizontal. `TabelaProdutos`, `TabelaPedidos` e `TabelaCupons` precisam de variante card-list no mobile.
+#### Vitrine — escada de largura canônica
+
+Container das páginas da vitrine (`/loja/[slug]` e checkout) usa a escada abaixo, aplicada em todas as telas que precisam de container centralizado:
+
+```
+max-w-3xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl
+```
+
+Aplicada em: `main` da vitrine (`page.tsx`), barra do carrinho (`VitrineClient.tsx`). O `HeaderLoja` replica a mesma escada no container interno.
+
+#### Vitrine — grade do catálogo
+
+```
+grid-cols-2 md:grid-cols-3 xl:grid-cols-4
+```
+
+Fonte: `SecaoCatalogo.tsx`. Padrão fixo — não ajustar por conta (afeta densidade percebida pelo lojista).
+
+#### Checkout desktop — layout 2 colunas
+
+A partir de `md`, o `CheckoutWizard` usa grade de 2 colunas:
+
+```
+md:grid-cols-[1fr_360px] lg:grid-cols-[1fr_400px]
+```
+
+Coluna direita é o resumo do pedido (largura fixa em px). Fonte: `CheckoutWizard.tsx`.
+
+#### Gate `podeConfirmar`
+
+Função pura em `components/vitrine/checkout/estado.ts`. Retorna `true` só quando todas as condições forem satisfeitas:
+
+- Modo **retirada:** `pagamentoValido` (sem exigência de endereço).
+- Modo **entrega:** `enderecoValido && pagamentoValido && statusFrete === "ok"`.
+
+Toda UI que controla o submit do checkout deve consultar `podeConfirmar` — nunca reimplementar a lógica no componente.
+
+#### ProdutoModal — largura desktop
+
+`ProdutoModal` usa `md:max-w-3xl` (não `md:max-w-2xl`). Fonte: `ProdutoModal.tsx`.
+
+#### Página de confirmação
+
+`/loja/[slug]/confirmacao` usa `max-w-lg` (mobile) e `md:max-w-2xl` (desktop). Fonte: `confirmacao/page.tsx`.
+
+#### Painel mobile
+
+**Proposta** — tabela vira lista de cards, sem scroll horizontal. `TabelaProdutos`, `TabelaPedidos` e `TabelaCupons` precisam de variante card-list no mobile.
 
 ---
 
