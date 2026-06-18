@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
 import {
@@ -31,6 +31,14 @@ export function VitrineClient({
 }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
+
+  const prevTotalItens = useRef(totalItens);
+  useEffect(() => {
+    if (totalItens > prevTotalItens.current) {
+      setOpen(true);
+    }
+    prevTotalItens.current = totalItens;
+  }, [totalItens]);
 
   return (
     <>
