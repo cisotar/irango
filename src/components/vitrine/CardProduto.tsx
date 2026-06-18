@@ -39,8 +39,9 @@ export function CardProduto({
 
   return (
     <article
+      onClick={disponivel ? onAdicionar : undefined}
       className={`relative flex flex-col overflow-hidden rounded-xl border border-[#eeeeee] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.1)] ${
-        disponivel ? "" : "[&_.card-body]:opacity-60"
+        disponivel ? "cursor-pointer" : "[&_.card-body]:opacity-60"
       }`}
     >
       <div className="relative aspect-[4/3] w-full">
@@ -83,7 +84,7 @@ export function CardProduto({
           </span>
           <button
             type="button"
-            onClick={onAdicionar}
+            onClick={(e) => { e.stopPropagation(); onAdicionar(); }}
             disabled={!disponivel}
             aria-label={
               disponivel ? `Adicionar ${nome} ao carrinho` : `${nome} esgotado`
