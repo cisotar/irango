@@ -32,14 +32,14 @@ export function ResumoValores({
   return (
     <div className="space-y-1 text-sm">
       <div className="flex justify-between">
-        <span className="text-muted-foreground">Subtotal</span>
-        <span className="text-foreground">{formatarMoeda(subtotal)}</span>
+        <span className="text-texto-muted">Subtotal</span>
+        <span className="text-texto">{formatarMoeda(subtotal)}</span>
       </div>
 
       {desconto > 0 && (
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Desconto (cupom)</span>
-          <span className="font-medium text-green-700">
+          <span className="text-texto-muted">Desconto (cupom)</span>
+          <span className="font-bold text-[#166534]">
             − {formatarMoeda(desconto)}
           </span>
         </div>
@@ -47,16 +47,20 @@ export function ResumoValores({
 
       {mostrarFrete && (
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Entrega</span>
-          <span className="text-foreground">{formatarMoeda(frete)}</span>
+          <span className="text-texto-muted">Entrega</span>
+          <span className="text-texto">{formatarMoeda(frete)}</span>
         </div>
       )}
 
-      <Separator className="my-2" />
+      <Separator className="my-2 bg-borda-nav" />
 
-      <div className="flex justify-between font-semibold">
-        <span className="text-foreground">Total estimado</span>
-        <span className="text-primary">{formatarMoeda(total)}</span>
+      <div className="flex items-baseline justify-between">
+        <span className="text-base font-extrabold text-marrom-cafe">
+          Total estimado
+        </span>
+        <span className="text-base font-black text-[var(--cor-destaque)]">
+          {formatarMoeda(total)}
+        </span>
       </div>
 
       <div

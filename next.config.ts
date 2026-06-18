@@ -30,6 +30,15 @@ const cspReportOnly = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "gdlegxatwylhkjcrusyk.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
+    ],
+  },
   // Teto bruto de body de Server Actions (rede/defesa-em-profundidade).
   // Alinha com o limite de 2MB da Server Action de upload (issue 075);
   // a validação autoritativa (tamanho + magic bytes) continua na action/bucket.

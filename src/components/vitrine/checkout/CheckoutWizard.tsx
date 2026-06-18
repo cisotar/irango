@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useCarrinho } from "@/hooks/useCarrinho";
@@ -107,6 +108,15 @@ export function CheckoutWizard({
     [patch],
   );
 
+  // Voltar do header: etapa 1 → loja; etapas 2/3 → etapa anterior.
+  const voltarHeader = useCallback(() => {
+    if (etapa === 1) {
+      router.push(`/loja/${lojaSlug}`);
+    } else {
+      setEtapa((e) => (e === 3 ? 2 : 1));
+    }
+  }, [etapa, lojaSlug, router]);
+
   // Carrinho vazio → manda de volta para a loja (UX).
   if (montado && itens.length === 0) {
     return (
@@ -121,14 +131,31 @@ export function CheckoutWizard({
   }
 
   return (
-    <main className="mx-auto w-full max-w-md px-4 py-6">
-      <div className="mb-5">
-        <h1 className="mb-4 text-center text-lg font-semibold text-foreground">
+    <div className="mx-auto w-full max-w-[480px] bg-[var(--cor-fundo)] pb-8">
+      {/* Banda do header — cor da loja, sticky (canônico .header) */}
+      <header className="sticky top-0 z-50 flex items-center gap-3 bg-[var(--cor-primaria)] px-4 py-3.5 text-white shadow-[0_2px_8px_rgba(0,0,0,0.15)]">
+        <button
+          type="button"
+          onClick={voltarHeader}
+          aria-label={etapa === 1 ? "Voltar à loja" : "Voltar à etapa anterior"}
+          className="flex size-11 shrink-0 items-center justify-center rounded-[10px] transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+        >
+          <ArrowLeft className="size-5" aria-hidden />
+        </button>
+        <span className="text-base font-black uppercase tracking-wide">
           Finalizar pedido
-        </h1>
-        <IndicadorEtapas etapaAtual={etapa} />
-      </div>
+        </span>
+      </header>
 
+      {/* Stepper — fundo branco (canônico .stepper) */}
+      <nav
+        className="border-b border-cinza-medio bg-white px-4 py-3"
+        aria-label="Etapas do pedido"
+      >
+        <IndicadorEtapas etapaAtual={etapa} />
+      </nav>
+
+      <div className="px-4 py-4">
       {etapa === 1 && (
         <EtapaItens
           lojaId={lojaId}
@@ -193,6 +220,7 @@ export function CheckoutWizard({
           onVoltar={() => setEtapa(2)}
         />
       )}
-    </main>
+      </div>
+    </div>
   );
 }

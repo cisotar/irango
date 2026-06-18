@@ -8,11 +8,11 @@
 // nunca decide o desconto. Preview é UX; o servidor recalcula tudo (071).
 
 import { useState, useTransition } from "react";
-import { Loader2, Minus, Plus, Trash2 } from "lucide-react";
+import Image from "next/image";
+import { Check, Loader2, Minus, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { validarCupomAction } from "@/lib/actions/cupomPreview";
@@ -20,6 +20,11 @@ import type { ItemCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { ResumoValores } from "./ResumoValores";
+
+const SECAO =
+  "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
+const SECAO_TITULO =
+  "border-b border-cinza-medio bg-cinza-claro px-4 py-3.5 text-[0.78rem] font-bold uppercase tracking-[1px] text-texto-muted";
 
 export type EtapaItensProps = {
   lojaId: string;
@@ -84,12 +89,11 @@ export function EtapaItens({
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="space-y-3 pt-6">
-          <h2 className="text-sm font-semibold text-foreground">
-            Itens do pedido
-          </h2>
+    <div className="space-y-3">
+      {/* Seção: Itens */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Itens do pedido</h2>
+        <div className="divide-y divide-cinza-medio">
           {itens.map((item) => {
             const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
             const opcionais =
@@ -107,75 +111,87 @@ export function EtapaItens({
               },
             ]);
             return (
-            <div key={linhaId} className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {item.nome}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatarMoeda(item.preco)} cada
-                </p>
-                <ListaOpcionaisItem
-                  opcionais={opcionais.map((o) => ({
-                    id: o.opcionalId,
-                    nome: o.nome,
-                    preco: o.preco,
-                    quantidade: o.quantidade,
-                  }))}
-                />
+              <div key={linhaId} className="flex items-center gap-3 px-4 py-3.5">
+                <div className="size-[52px] shrink-0 overflow-hidden rounded-[10px] bg-gradient-to-br from-[#e8dcc4] to-[#d8c4a0]">
+                  {item.fotoUrl ? (
+                    <Image
+                      src={item.fotoUrl}
+                      alt=""
+                      width={52}
+                      height={52}
+                      className="size-full object-cover"
+                    />
+                  ) : null}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[0.88rem] font-bold text-texto">
+                    {item.nome}
+                  </p>
+                  <p className="text-[0.75rem] text-texto-muted">
+                    {formatarMoeda(item.preco)} / unidade
+                  </p>
+                  <ListaOpcionaisItem
+                    opcionais={opcionais.map((o) => ({
+                      id: o.opcionalId,
+                      nome: o.nome,
+                      preco: o.preco,
+                      quantidade: o.quantidade,
+                    }))}
+                  />
+                </div>
+
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <span
+                    className="text-[0.92rem] font-black text-[var(--cor-destaque)]"
+                    aria-label={`Preço total deste item: ${formatarMoeda(subtotalItem)}`}
+                  >
+                    {formatarMoeda(subtotalItem)}
+                  </span>
+                  <div
+                    className="flex items-center"
+                    role="group"
+                    aria-label={`Quantidade de ${item.nome}`}
+                  >
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-8 rounded-r-none border-borda-nav bg-cinza-claro text-destructive hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                      aria-label={`Diminuir ${item.nome}`}
+                      onClick={() => onDecrementar(linhaId)}
+                    >
+                      <Minus className="size-3.5" aria-hidden />
+                    </Button>
+                    <div
+                      className="flex size-8 items-center justify-center border-y border-borda-nav bg-white text-sm font-bold tabular-nums"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      {item.quantidade}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-8 rounded-l-none border-borda-nav bg-cinza-claro hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                      aria-label={`Aumentar ${item.nome}`}
+                      onClick={() => onIncrementar(linhaId)}
+                    >
+                      <Plus className="size-3.5" aria-hidden />
+                    </Button>
+                  </div>
+                </div>
               </div>
-
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="size-8"
-                  aria-label={`Diminuir ${item.nome}`}
-                  onClick={() => onDecrementar(linhaId)}
-                >
-                  <Minus className="size-3.5" aria-hidden />
-                </Button>
-                <span className="w-6 text-center text-sm font-medium tabular-nums">
-                  {item.quantidade}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="size-8"
-                  aria-label={`Aumentar ${item.nome}`}
-                  onClick={() => onIncrementar(linhaId)}
-                >
-                  <Plus className="size-3.5" aria-hidden />
-                </Button>
-              </div>
-
-              <span className="w-20 text-right text-sm font-semibold text-primary">
-                {formatarMoeda(subtotalItem)}
-              </span>
-
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-8 text-muted-foreground"
-                aria-label={`Remover ${item.nome}`}
-                onClick={() => onRemover(linhaId)}
-              >
-                <Trash2 className="size-4" aria-hidden />
-              </Button>
-            </div>
             );
           })}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardContent className="space-y-2 pt-6">
-          <h2 className="text-sm font-semibold text-foreground">
-            Cupom de desconto
-          </h2>
+      {/* Seção: Cupom */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Cupom de desconto</h2>
+        <div className="space-y-2 p-4">
           <div className="flex gap-2">
             <Input
               value={codigo}
@@ -209,21 +225,28 @@ export function EtapaItens({
               </Button>
             )}
           </div>
-          {mensagemCupom != null && (
-            <p
-              className={[
-                "text-xs",
-                cupomValido ? "text-green-700" : "text-destructive",
-              ].join(" ")}
-            >
-              {mensagemCupom}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          {mensagemCupom != null &&
+            (cupomValido ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex items-center gap-2 rounded-lg border border-green-300 bg-[#dcfce7] px-3 py-2.5 text-xs font-semibold text-[#166534]"
+              >
+                <Check className="size-4 shrink-0" aria-hidden />
+                <span>{mensagemCupom}</span>
+              </div>
+            ) : (
+              <p className="text-xs text-destructive" role="alert">
+                {mensagemCupom}
+              </p>
+            ))}
+        </div>
+      </div>
 
-      <Card>
-        <CardContent className="pt-6">
+      {/* Seção: Resumo */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Resumo</h2>
+        <div className="p-4">
           <ResumoValores
             subtotal={subtotal}
             desconto={desconto}
@@ -231,13 +254,13 @@ export function EtapaItens({
             total={totalPreview}
             mostrarFrete={false}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <Button
         type="button"
         size="lg"
-        className="w-full"
+        className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
         disabled={itens.length === 0}
         onClick={onContinuar}
       >

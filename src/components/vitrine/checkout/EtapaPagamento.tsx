@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { IMaskInput } from "react-imask";
 import { criarPedido } from "@/lib/actions/pedido";
@@ -29,6 +28,11 @@ import type {
   FormaPagamentoWizard,
   TipoPagamento,
 } from "./estado";
+
+const SECAO =
+  "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
+const SECAO_TITULO =
+  "border-b border-cinza-medio bg-cinza-claro px-4 py-3.5 text-[0.78rem] font-bold uppercase tracking-[1px] text-texto-muted";
 
 const ROTULO_PAGAMENTO: Record<TipoPagamento, string> = {
   pix: "Pix",
@@ -176,10 +180,11 @@ export function EtapaPagamento({
     itens.length > 0;
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="space-y-3 pt-6">
-          <h2 className="text-sm font-semibold text-foreground">Seus dados</h2>
+    <div className="space-y-3">
+      {/* Seção: Dados do cliente */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Seus dados</h2>
+        <div className="space-y-3 p-4">
           <div className="space-y-1">
             <Label htmlFor="nome-cliente">Nome</Label>
             <Input
@@ -213,16 +218,15 @@ export function EtapaPagamento({
               onChange={(e) => onEstadoChange({ observacoes: e.target.value })}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardContent className="space-y-3 pt-6">
-          <h2 className="text-sm font-semibold text-foreground">
-            Forma de pagamento
-          </h2>
+      {/* Seção: Forma de pagamento */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Forma de pagamento</h2>
+        <div className="space-y-3 p-4">
           {formasPagamento.length === 0 && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-texto-muted">
               Esta loja ainda não configurou formas de pagamento.
             </p>
           )}
@@ -237,14 +241,14 @@ export function EtapaPagamento({
               <Label
                 key={f.id}
                 htmlFor={`pagamento-${f.id}`}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
               >
                 <RadioGroupItem value={f.tipo} id={`pagamento-${f.id}`} />
                 <span className="flex-1">
-                  <span className="block text-sm font-medium text-foreground">
+                  <span className="block text-sm font-medium text-texto">
                     {ROTULO_PAGAMENTO[f.tipo]}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span className="block text-xs text-texto-muted">
                     {SUBTITULO_PAGAMENTO[f.tipo]}
                   </span>
                 </span>
@@ -254,7 +258,7 @@ export function EtapaPagamento({
 
           {/* Instrução específica da forma selecionada */}
           {formaSelecionada?.tipo === "pix" && (
-            <div className="space-y-3 rounded-lg border bg-muted/40 p-3">
+            <div className="space-y-3 rounded-lg border border-cinza-medio bg-cinza-claro p-3">
               {formaSelecionada.pixQrUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -267,9 +271,9 @@ export function EtapaPagamento({
               )}
               {formaSelecionada.chavePix && (
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Chave Pix</p>
+                  <p className="text-xs text-texto-muted">Chave Pix</p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 truncate rounded bg-background px-2 py-1.5 text-sm">
+                    <code className="flex-1 truncate rounded bg-white px-2 py-1.5 text-sm">
                       {formaSelecionada.chavePix}
                     </code>
                     <Button
@@ -289,14 +293,14 @@ export function EtapaPagamento({
 
           {(formaSelecionada?.tipo === "cartao" ||
             formaSelecionada?.tipo === "link") && (
-            <p className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+            <p className="rounded-lg border border-cinza-medio bg-cinza-claro p-3 text-xs text-texto-muted">
               Você receberá um link de pagamento por WhatsApp após a confirmação
               do pedido.
             </p>
           )}
 
           {formaSelecionada?.tipo === "dinheiro" && (
-            <div className="space-y-1 rounded-lg border bg-muted/40 p-3">
+            <div className="space-y-1 rounded-lg border border-cinza-medio bg-cinza-claro p-3">
               <Label htmlFor="troco-para" className="text-xs">
                 Troco para (opcional)
               </Label>
@@ -313,16 +317,18 @@ export function EtapaPagamento({
                   });
                 }}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-texto-muted">
                 Informe se precisa de troco. Valor apenas informativo ao lojista.
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardContent className="pt-6">
+      {/* Seção: Resumo do pedido */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Resumo do pedido</h2>
+        <div className="p-4">
           <ResumoValores
             subtotal={subtotal}
             desconto={desconto}
@@ -330,29 +336,29 @@ export function EtapaPagamento({
             total={totalPreview}
             mostrarFrete={estado.tipoEntrega === "entrega"}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="flex-1"
-          onClick={onVoltar}
-          disabled={enviando}
-        >
-          Voltar
-        </Button>
+      <div className="flex flex-col gap-2.5">
         <Button
           type="button"
           size="lg"
-          className="flex-1"
+          className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
           disabled={!podeEnviar}
           onClick={enviar}
         >
           {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
           {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+          onClick={onVoltar}
+          disabled={enviando}
+        >
+          Voltar para entrega
         </Button>
       </div>
     </div>

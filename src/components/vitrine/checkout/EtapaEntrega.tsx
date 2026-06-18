@@ -13,7 +13,6 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { FormEndereco, type EnderecoEntrega } from "@/components/vitrine/FormEndereco";
@@ -21,6 +20,11 @@ import { calcularFreteAction } from "@/lib/actions/frete";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ResumoValores } from "./ResumoValores";
 import type { TipoEntrega } from "./estado";
+
+const SECAO =
+  "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
+const SECAO_TITULO =
+  "border-b border-cinza-medio bg-cinza-claro px-4 py-3.5 text-[0.78rem] font-bold uppercase tracking-[1px] text-texto-muted";
 
 export type EtapaEntregaProps = {
   lojaId: string;
@@ -127,15 +131,13 @@ export function EtapaEntrega({
     : true;
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="space-y-3 pt-6">
-          <h2 className="text-sm font-semibold text-foreground">
-            Como você quer receber?
-          </h2>
-
+    <div className="space-y-3">
+      {/* Seção: Tipo de entrega */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Tipo de entrega</h2>
+        <div className="space-y-3 p-4">
           {!aceitaEntrega && (
-            <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            <p className="rounded-lg bg-cinza-claro px-3 py-2 text-xs text-texto-muted">
               Esta loja oferece apenas <strong>retirada no local</strong>.
             </p>
           )}
@@ -148,14 +150,14 @@ export function EtapaEntrega({
             {aceitaEntrega && (
               <Label
                 htmlFor="tipo-entrega"
-                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
               >
                 <RadioGroupItem value="entrega" id="tipo-entrega" />
                 <span className="flex-1">
-                  <span className="block text-sm font-medium text-foreground">
+                  <span className="block text-sm font-medium text-texto">
                     Entrega
                   </span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span className="block text-xs text-texto-muted">
                     Receba no seu endereço
                   </span>
                 </span>
@@ -163,35 +165,37 @@ export function EtapaEntrega({
             )}
             <Label
               htmlFor="tipo-retirada"
-              className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
+              className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
             >
               <RadioGroupItem value="retirada" id="tipo-retirada" />
               <span className="flex-1">
-                <span className="block text-sm font-medium text-foreground">
+                <span className="block text-sm font-medium text-texto">
                   Retirada no local
                 </span>
-                <span className="block text-xs text-muted-foreground">
+                <span className="block text-xs text-texto-muted">
                   Sem custo de entrega
                 </span>
               </span>
             </Label>
           </RadioGroup>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
+      {/* Seção: Endereço (só quando entrega) */}
       {ehEntrega && (
-        <Card>
-          <CardContent className="space-y-3 pt-6">
+        <div className={SECAO}>
+          <h2 className={SECAO_TITULO}>Endereço de entrega</h2>
+          <div className="space-y-3 p-4">
             <FormEndereco onEnderecoChange={onEnderecoChange} />
 
             {frete.status === "calculando" && (
-              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <p className="flex items-center gap-2 text-xs text-texto-muted">
                 <Loader2 className="size-3.5 animate-spin" aria-hidden />
                 Calculando frete…
               </p>
             )}
             {frete.status === "ok" && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-texto-muted">
                 Frete estimado para <strong>{frete.zonaNome}</strong>:{" "}
                 {formatarMoeda(frete.taxa)}
               </p>
@@ -205,39 +209,41 @@ export function EtapaEntrega({
             {frete.status === "erro" && (
               <p className="text-xs text-destructive">{frete.mensagem}</p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
-      <Card>
-        <CardContent className="pt-6">
+      {/* Seção: Resumo */}
+      <div className={SECAO}>
+        <h2 className={SECAO_TITULO}>Resumo</h2>
+        <div className="p-4">
           <ResumoValores
             subtotal={subtotal}
             desconto={desconto}
             frete={fretePreview}
             total={totalPreview}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="flex-1"
-          onClick={onVoltar}
-        >
-          Voltar
-        </Button>
+      <div className="flex flex-col gap-2.5">
         <Button
           type="button"
           size="lg"
-          className="flex-1"
+          className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
           disabled={!podeAvancar}
           onClick={onContinuar}
         >
           Continuar
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+          onClick={onVoltar}
+        >
+          Voltar para itens
         </Button>
       </div>
     </div>
