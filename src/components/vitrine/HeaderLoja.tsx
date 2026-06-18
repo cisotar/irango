@@ -45,7 +45,7 @@ export function HeaderLoja({
   const logo = logoSeguro(logoUrl);
 
   return (
-    <header className="bg-[var(--cor-primaria)] px-4 py-3 text-white">
+    <header className="bg-[var(--cor-primaria)] px-4 py-2.5 text-white">
       <div className="mx-auto flex max-w-3xl items-center justify-center gap-4">
         {logo ? (
           <Image
