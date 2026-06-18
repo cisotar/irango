@@ -120,7 +120,7 @@ export function SecaoCatalogo({
               className="h-0.5 flex-1 bg-[linear-gradient(90deg,transparent,var(--marrom-cafe),transparent)]"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4">
             {categoria.produtos.map((produto) => (
               <CardProduto
                 key={produto.id}

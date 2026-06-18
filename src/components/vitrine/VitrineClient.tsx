@@ -48,7 +48,7 @@ export function VitrineClient({
       {totalItens > 0 && (
         <nav
           aria-label="Resumo do carrinho"
-          className="fixed inset-x-0 bottom-0 z-40 mx-auto flex min-h-16 max-w-3xl items-center justify-between gap-3 bg-[var(--cor-destaque)] px-[18px] py-3 text-[#f5f0e6] shadow-[0_-4px_16px_rgba(0,0,0,0.2)]"
+          className="fixed inset-x-0 bottom-0 z-40 mx-auto flex min-h-16 max-w-3xl items-center justify-between gap-3 bg-[var(--cor-destaque)] px-[18px] py-3 text-[#f5f0e6] shadow-[0_-4px_16px_rgba(0,0,0,0.2)] md:max-w-5xl lg:max-w-6xl xl:max-w-7xl"
         >
           <div className="flex flex-col gap-0.5 leading-tight">
             <span className="text-xs font-medium tracking-wide uppercase opacity-85">
