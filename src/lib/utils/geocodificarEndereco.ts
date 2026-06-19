@@ -22,6 +22,8 @@ import "server-only";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
+import { limparCep } from "./buscarCep";
+
 export type Coordenadas = { latitude: number; longitude: number };
 
 // Singleton lazy: Redis.fromEnv() lança se as env vars faltam — só instanciamos
@@ -55,6 +57,58 @@ function obterLimitador(): Ratelimit {
   return limitadorNominatim;
 }
 
+// ── Cache CEP→coords (issue 001, RN-F1..F10) ─────────────────────────────────
+// Insumo GEOGRÁFICO apenas (coords do CEP), nunca valor monetário. Usa o MESMO
+// redisSingleton da trava (não instancia outro Redis). Política fail-OPEN no
+// cache (oposto da trava fail-CLOSED): se o cache cai, ignoramos e seguimos para
+// trava+fetch — o cache é otimização, não pré-condição anti-ban.
+
+// Cacheabilidade: a consulta é um CEP sse seus dígitos somam EXATAMENTE 8 e nada
+// mais (RN-F6/F7). `distanciaDaLojaAoCep` passa o CEP isolado; `salvarPerfil`
+// passa endereço completo (≠ 8 dígitos) → o critério separa os dois caminhos.
+function cepCacheavel(consulta: string): string | null {
+  const digitos = limparCep(consulta);
+  return /^\d{8}$/.test(digitos) ? digitos : null;
+}
+
+function chaveCache(cep: string): string {
+  return `irango:geocode:${cep}`;
+}
+
+// Aceita o valor do Redis como objeto OU JSON-string (@upstash/redis pode
+// devolver qualquer um). Valida Number.isFinite nos dois campos. Qualquer
+// falha/lixo (Redis down, JSON inválido, NaN, shape errado) = miss (null).
+async function lerCacheCoordenadas(cep: string): Promise<Coordenadas | null> {
+  try {
+    redisSingleton ??= Redis.fromEnv();
+    const bruto = await redisSingleton.get(chaveCache(cep));
+    if (bruto == null) return null;
+    const obj: unknown = typeof bruto === "string" ? JSON.parse(bruto) : bruto;
+    if (typeof obj !== "object" || obj == null) return null;
+    const { latitude, longitude } = obj as Record<string, unknown>;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return { latitude: latitude as number, longitude: longitude as number };
+  } catch {
+    // fail-open: cache indisponível/corrompido → miss; segue trava+fetch.
+    return null;
+  }
+}
+
+// SET simples SEM TTL (cache permanente, RN-F2). Só no caminho de sucesso
+// (RN-F10 — sem cache negativo). Falha de gravação é engolida: o par já foi
+// computado e é retornado normalmente (fail-open de escrita).
+async function gravarCacheCoordenadas(
+  cep: string,
+  coords: Coordenadas,
+): Promise<void> {
+  try {
+    redisSingleton ??= Redis.fromEnv();
+    await redisSingleton.set(chaveCache(cep), coords);
+  } catch {
+    // Engole: gravação é best-effort, não afeta o retorno.
+  }
+}
+
 /**
  * Geocodifica uma `consulta` livre (CEP, ou "rua, número, cidade, UF") via
  * Nominatim. O caller monta a query; este módulo só geocodifica e aplica a
@@ -75,6 +129,15 @@ export async function geocodificarEndereco(
   // Portão 1: sem credenciais Upstash não há trava global → fail-closed.
   // NÃO toca o Redis (oposto de rateLimit.ts, que retornaria permitido:true).
   if (!credenciaisNominatim()) return null;
+
+  // Portão de cache (leitura): só para consultas-CEP. Hit válido retorna SEM
+  // disputar a trava de 1 req/s nem bater no Nominatim (RN-F3). Miss/lixo/Redis
+  // down → fail-open, segue para a trava (RN-F4/F5 preservados).
+  const cep = cepCacheavel(consulta);
+  if (cep) {
+    const cacheado = await lerCacheCoordenadas(cep);
+    if (cacheado) return cacheado;
+  }
 
   try {
     // Portão 2: a trava global. fixedWindow(1,"1 s") com identificador fixo
@@ -98,7 +161,10 @@ export async function geocodificarEndereco(
     const longitude = Number(primeiro.lon);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
 
-    return { latitude, longitude };
+    const coords: Coordenadas = { latitude, longitude };
+    // Grava SÓ no caminho de sucesso e SÓ se a consulta era um CEP (RN-F2/F10).
+    if (cep) await gravarCacheCoordenadas(cep, coords);
+    return coords;
   } catch (e) {
     // Genérico no servidor; NUNCA logar o par (lat,lng) do cliente (§Segurança).
     console.error("[geocodificarEndereco]", e);

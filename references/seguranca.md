@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.14 | **Atualizado:** 2026-06-16
+**Versão:** 0.2.15 | **Atualizado:** 2026-06-19
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -794,7 +794,7 @@ Quando o iRango chama uma API externa que pode banir o IP da conta por excesso d
 
 **Invariante:** toda chamada a API externa sujeita a ban só é feita se a trava global foi efetivamente verificada e concedida. Qualquer estado em que a trava não pode ser verificada (sem credenciais, Redis down, exceção) → não chama → retorna `null`.
 
-**Implementação (issue 003):** `src/lib/utils/geocodificarEndereco.ts`
+**Implementação (issue 003 + issue 001):** `src/lib/utils/geocodificarEndereco.ts`
 
 - Trava Upstash `fixedWindow(1, "1 s")`, prefixo `irango:rl:nominatim` (não colide com `irango:rl:<ip>`)
 - `NOMINATIM_USER_AGENT` obrigatório via env (sem prefixo público — não vaza ao bundle)
@@ -802,6 +802,15 @@ Quando o iRango chama uma API externa que pode banir o IP da conta por excesso d
 - Portão 1: sem credenciais Upstash → `null` (não existe trava → não chama)
 - Portão 2–3: limite excedido → `null` sem fetch
 - `import "server-only"` no topo — build quebra se importado de Client Component
+
+**Cache CEP→coords (issue 001):** camada acima dos portões, executada antes da trava.
+
+- Chave `irango:geocode:<digitos_cep>` (8 dígitos, sem hífen), valor `{latitude, longitude}`, sem TTL. Namespace distinto de `irango:rl:nominatim` e `irango:rl:<ip>` — sem colisão.
+- **Cache hit pula trava E Nominatim** — elimina a canibalização da trava de 1 req/s quando o mesmo CEP é geocodificado múltiplas vezes (re-renders do checkout, preview→autoritativo).
+- **Cache fail-open**: exceção ou JSON inválido no cache → ignora e executa os portões normalmente. O cache nunca impede o caminho de fallback.
+- **A trava fail-closed permanece intacta para cache misses** (RN-F5 do spec): CEP nunca visto passa pelos portões 0–3 sem atalho. O cache reduz misses; não afrouxa a política anti-ban.
+- **Sem cache negativo**: só grava em retorno com par numérico válido. Falha do Nominatim não é persistida — evita envenenar permanentemente um CEP geocodificável (sem TTL para auto-corrigir).
+- **Escopo do cache = CEP do cliente**: a consulta do `salvarPerfil` (endereço completo da loja) não casa a chave de 8 dígitos e não participa do cache.
 
 **Quando aplicar este padrão:** qualquer nova integração com API externa que tenha política de ban por volume (geocoding, enriquecimento de dados, SMS, etc.) deve seguir este molde, não o de `rateLimit.ts`.
 
