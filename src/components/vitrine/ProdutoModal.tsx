@@ -275,7 +275,7 @@ export function ProdutoModal({
                       aria-label="Diminuir quantidade"
                       disabled={!disponivel || quantidade <= 1}
                       onClick={() => setQuantidade((q) => Math.max(1, q - 1))}
-                      className="size-11 rounded-none text-[var(--cor-destaque)]"
+                      className="size-8 rounded-none text-[var(--cor-destaque)]"
                     >
                       <Minus aria-hidden />
                     </Button>
@@ -294,7 +294,7 @@ export function ProdutoModal({
                       aria-label="Aumentar quantidade"
                       disabled={!disponivel}
                       onClick={() => setQuantidade((q) => q + 1)}
-                      className="size-11 rounded-none text-[var(--cor-destaque)]"
+                      className="size-8 rounded-none text-[var(--cor-destaque)]"
                     >
                       <Plus aria-hidden />
                     </Button>
@@ -344,7 +344,7 @@ export function ProdutoModal({
                                 aria-label={`Remover ${opcional.nome}`}
                                 disabled={qtd <= 0}
                                 onClick={() => ajustarOpcional(opcional.id, -1)}
-                                className="size-9 rounded-none text-[var(--cor-destaque)]"
+                                className="size-7 rounded-none text-[var(--cor-destaque)]"
                               >
                                 <Minus aria-hidden className="size-3.5" />
                               </Button>
@@ -352,7 +352,7 @@ export function ProdutoModal({
                                 role="status"
                                 aria-live="polite"
                                 aria-label={`${opcional.nome}: ${qtd}`}
-                                className="min-w-7 border-x border-[#dccbb0] px-0.5 text-center text-sm font-bold tabular-nums text-[var(--texto)]"
+                                className="min-w-6 border-x border-[#dccbb0] px-0.5 text-center text-sm font-bold tabular-nums text-[var(--texto)]"
                               >
                                 {qtd}
                               </span>
@@ -362,7 +362,7 @@ export function ProdutoModal({
                                 size="icon"
                                 aria-label={`Adicionar ${opcional.nome}`}
                                 onClick={() => ajustarOpcional(opcional.id, 1)}
-                                className="size-9 rounded-none text-[var(--cor-destaque)]"
+                                className="size-7 rounded-none text-[var(--cor-destaque)]"
                               >
                                 <Plus aria-hidden className="size-3.5" />
                               </Button>
