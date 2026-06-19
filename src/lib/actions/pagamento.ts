@@ -71,14 +71,21 @@ export async function atualizarFormaPagamento(
   }
   try {
     const supabase = await createClient();
+    // loja_id derivado do dono — defesa em profundidade junto da RLS (mesmo
+    // padrão de `salvarQrPix`).
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
     // MERGE da config: o form só envia chave/tipo_chave (ou url). Um update
     // total apagaria campos gravados em escrita separada — sobretudo
     // `pix_qr_url` (salvo por `salvarQrPix`), sumindo o QR do painel e do
-    // checkout. Lê a config atual e mescla; RLS escopa por dono.
+    // checkout. Lê a config atual e mescla.
     const { data: formaAtual, error: erroBusca } = await supabase
       .from("formas_pagamento")
       .select("config")
       .eq("id", id)
+      .eq("loja_id", loja.id)
       .maybeSingle();
     if (erroBusca) {
       console.error("[atualizarFormaPagamento] busca", erroBusca);
@@ -90,14 +97,15 @@ export async function atualizarFormaPagamento(
       !Array.isArray(formaAtual.config)
         ? (formaAtual.config as Record<string, unknown>)
         : {};
-    const configMesclado: Json = {
+    const configMesclado = {
       ...configAtual,
-      ...(parsed.data.config as Record<string, unknown>),
+      ...parsed.data.config,
     } as Json;
     const { error } = await supabase
       .from("formas_pagamento")
       .update({ tipo: parsed.data.tipo, config: configMesclado })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[atualizarFormaPagamento]", error);
       return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };

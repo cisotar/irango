@@ -103,13 +103,14 @@ describe("atualizarFormaPagamento — merge de config (regressão QR Pix)", () =
     expect(config.chave).toBe("5511988887777"); // chave nova aplicada
   });
 
-  it("escopa o update por id", async () => {
+  it("escopa o update por id + loja_id (defesa em profundidade)", async () => {
     await atualizarFormaPagamento("forma-1", {
       tipo: "pix",
       config: { tipo_chave: "telefone", chave: "5511988887777" },
     });
     expect(captura.tabela).toBe("formas_pagamento");
     expect(captura.filtros).toContainEqual(["id", "forma-1"]);
+    expect(captura.filtros).toContainEqual(["loja_id", LOJA_DONO]);
   });
 
   it("payload inválido é rejeitado SEM tocar no banco", async () => {
