@@ -74,6 +74,7 @@ export function ProdutoModal({
   const [quantidade, setQuantidade] = useState(1);
   // Quantidade escolhida por opcional: opcionalId → qtd (0 = não escolhido).
   const [qtdOpcionais, setQtdOpcionais] = useState<Record<string, number>>({});
+  const [descricaoExpandida, setDescricaoExpandida] = useState(false);
 
   if (!produto) return null;
 
@@ -209,10 +210,23 @@ export function ProdutoModal({
             <div className="p-4 pb-3 md:hidden">{imagem}</div>
 
             {/* Descrição (SÓ mobile — no desktop ela fica na coluna esquerda
-                abaixo da imagem). O preço NÃO se repete aqui: aparece só em
-                "Cada unidade" (Quantidade) e no Subtotal do item. */}
-            {descricao ? (
-              <div className="px-4 pb-4 text-center md:hidden">{descricao}</div>
+                abaixo da imagem). Colapsável: 2 linhas por padrão, toque expande. */}
+            {produto.descricao ? (
+              <div className="px-4 pb-4 text-center md:hidden">
+                <p
+                  onClick={() => setDescricaoExpandida((v) => !v)}
+                  className={`text-sm leading-snug text-[var(--texto-muted)] ${descricaoExpandida ? "" : "line-clamp-2"} cursor-pointer`}
+                >
+                  {produto.descricao}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDescricaoExpandida((v) => !v)}
+                  className="mt-1 text-xs font-semibold text-[var(--cor-destaque)]"
+                >
+                  {descricaoExpandida ? "ver menos" : "ver mais"}
+                </button>
+              </div>
             ) : null}
 
             {/* Selo de esgotado — centralizado, nos dois layouts */}
