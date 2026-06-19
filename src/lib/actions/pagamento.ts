@@ -97,13 +97,20 @@ export async function atualizarFormaPagamento(
       !Array.isArray(formaAtual.config)
         ? (formaAtual.config as Record<string, unknown>)
         : {};
-    const configMesclado = {
-      ...configAtual,
-      ...parsed.data.config,
-    } as Json;
+    // Re-valida o resultado do merge: `configAtual` vem do banco e NÃO passou
+    // por validação aqui. O re-parse barra config inválida e faz strip de
+    // chaves não declaradas (lixo injetado por outra via de escrita).
+    const revalidado = schemaFormaPagamento.safeParse({
+      tipo: parsed.data.tipo,
+      config: { ...configAtual, ...parsed.data.config },
+    });
+    if (!revalidado.success) {
+      console.error("[atualizarFormaPagamento] merge inválido", revalidado.error);
+      return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+    }
     const { error } = await supabase
       .from("formas_pagamento")
-      .update({ tipo: parsed.data.tipo, config: configMesclado })
+      .update({ tipo: revalidado.data.tipo, config: revalidado.data.config as Json })
       .eq("id", id)
       .eq("loja_id", loja.id);
     if (error) {
@@ -174,15 +181,22 @@ export async function salvarQrPix(
     // Remoção (`pixQrUrl` undefined) DELETA a chave explicitamente — não depende
     // do drop implícito de `undefined` na serialização do supabase-js.
     const { pix_qr_url: _antigo, ...configSemQr } = configAtual;
-    const configNovo: Json = (
+    const configNovo =
       parsed.data === undefined
         ? configSemQr
-        : { ...configSemQr, pix_qr_url: parsed.data }
-    ) as Json;
+        : { ...configSemQr, pix_qr_url: parsed.data };
+
+    // Re-valida o merge: `configAtual` vem do banco sem validação aqui. O
+    // re-parse barra config inválida e faz strip de chaves não declaradas.
+    const revalidado = schemaFormaPagamento.safeParse({ tipo: "pix", config: configNovo });
+    if (!revalidado.success) {
+      console.error("[salvarQrPix] merge inválido", revalidado.error);
+      return { ok: false, erro: "Não foi possível salvar o QR Pix." };
+    }
 
     const { error } = await supabase
       .from("formas_pagamento")
-      .update({ config: configNovo })
+      .update({ config: revalidado.data.config as Json })
       .eq("id", formaId)
       .eq("loja_id", loja.id)
       .eq("tipo", "pix");

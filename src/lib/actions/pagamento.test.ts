@@ -121,6 +121,27 @@ describe("atualizarFormaPagamento — merge de config (regressão QR Pix)", () =
     expect(r.ok).toBe(false);
     expect(captura.update).toBeUndefined();
   });
+
+  it("faz strip de chave não declarada vinda do banco (config poluído)", async () => {
+    respostaBanco = {
+      data: {
+        config: {
+          tipo_chave: "telefone",
+          chave: "5511900000000",
+          webhook_url: "http://evil.example/ssrf",
+        },
+      },
+      error: null,
+    };
+    const r = await atualizarFormaPagamento("forma-1", {
+      tipo: "pix",
+      config: { tipo_chave: "telefone", chave: "5511988887777" },
+    });
+    expect(r).toEqual({ ok: true });
+    const config = captura.update?.config as Record<string, unknown>;
+    expect("webhook_url" in config).toBe(false);
+    expect(config.chave).toBe("5511988887777");
+  });
 });
 
 const URL_A = `${STORAGE_URL_PREFIX}pix-qr/${LOJA_DONO}/qr.png?v=111`;
@@ -166,5 +187,20 @@ describe("salvarQrPix — troca e remoção do QR", () => {
     const r = await salvarQrPix("forma-1", "https://evil.com/qr.png");
     expect(r.ok).toBe(false);
     expect(captura.update).toBeUndefined();
+  });
+
+  it("faz strip de chave não declarada vinda do banco ao gravar o QR", async () => {
+    respostaBanco = {
+      data: {
+        config: { tipo_chave: "telefone", chave: "5511900000000", lixo: "x" },
+      },
+      error: null,
+    };
+    const r = await salvarQrPix("forma-1", URL_B);
+    expect(r).toEqual({ ok: true });
+    const config = captura.update?.config as Record<string, unknown>;
+    expect("lixo" in config).toBe(false);
+    expect(config.pix_qr_url).toBe(URL_B);
+    expect(config.chave).toBe("5511900000000");
   });
 });
