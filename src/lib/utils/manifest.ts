@@ -7,10 +7,11 @@
 
 export type WebManifestIcon = { src: string; sizes: string; type: string };
 
-// Defaults = tokens iRango, espelhando TEMA_PADRAO da vitrine (page.tsx):
-// primaria/fundo.
+// Defaults = tokens iRango (primaria, fundo, destaque). Fonte única — consumida
+// pela vitrine (page.tsx) e pelo painel (manifest do painel, layout).
 export const THEME_PADRAO = "#332616";
 export const FUNDO_PADRAO = "#f5f0e6";
+export const DESTAQUE_PADRAO = "#2d3a27";
 
 /**
  * Monta os ícones do manifest. Defesa em profundidade (RN-3 / seguranca.md §15):

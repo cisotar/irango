@@ -15,7 +15,7 @@ import {
   buscarOpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
 import { schemaTema } from "@/lib/validacoes/loja";
-import { THEME_PADRAO } from "@/lib/utils/manifest";
+import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
 import type { Horarios } from "@/lib/utils/lojaAberta";
 import {
   assinaturaPermiteAcesso,
@@ -26,11 +26,10 @@ type PageProps = { params: Promise<{ slug: string }> };
 
 type Tema = { primaria: string; fundo: string; destaque: string };
 
-/** Defaults do tema (= tokens iRango) quando a loja não tem tema válido. */
 const TEMA_PADRAO: Tema = {
-  primaria: "#332616",
-  fundo: "#f5f0e6",
-  destaque: "#2d3a27",
+  primaria: THEME_PADRAO,
+  fundo: FUNDO_PADRAO,
+  destaque: DESTAQUE_PADRAO,
 };
 
 /**
