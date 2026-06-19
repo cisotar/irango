@@ -74,12 +74,6 @@ export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
                   ]);
                   return (
                     <li key={linhaId} className="flex gap-3 py-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={item.fotoUrl ?? "/placeholder-produto.png"}
-                        alt=""
-                        className="size-12 shrink-0 rounded-md object-cover"
-                      />
                       <div className="flex flex-1 flex-col gap-1">
                         <span className="text-sm font-medium">{item.nome}</span>
                         <span className="text-sm text-muted-foreground">
@@ -97,7 +91,7 @@ export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
                           <Button
                             variant="outline"
                             size="icon"
-                            className="size-11"
+                            className="size-8"
                             aria-label={`Diminuir ${item.nome}`}
                             onClick={() => decrementar(linhaId)}
                           >
@@ -112,7 +106,7 @@ export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
                           <Button
                             variant="outline"
                             size="icon"
-                            className="size-11"
+                            className="size-8"
                             aria-label={`Aumentar ${item.nome}`}
                             onClick={() => incrementar(linhaId)}
                           >
