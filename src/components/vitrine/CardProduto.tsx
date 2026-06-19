@@ -89,7 +89,7 @@ export function CardProduto({
             aria-label={
               disponivel ? `Adicionar ${nome} ao carrinho` : `${nome} esgotado`
             }
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-[10px] bg-[var(--cor-destaque)] text-2xl font-black leading-none text-white focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-[#9a9a9a]"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-[10px] bg-[var(--cor-destaque)] text-xl font-black leading-none text-white focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-[#9a9a9a]"
           >
             +
           </button>
