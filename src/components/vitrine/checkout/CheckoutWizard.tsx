@@ -61,6 +61,10 @@ export function CheckoutWizard({
 
   const [etapa, setEtapa] = useState<1 | 2 | 3>(1);
   const [montado, setMontado] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [etapa]);
   const [descontoPreview, setDescontoPreview] = useState(0);
   const [fretePreview, setFretePreview] = useState(0);
   // Status do cálculo de frete (ocioso/calculando/ok/indisponivel/erro) — gate
