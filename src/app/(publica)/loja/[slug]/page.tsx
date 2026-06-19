@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 
 import { HeaderLoja } from "@/components/vitrine/HeaderLoja";
@@ -15,6 +15,7 @@ import {
   buscarOpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
 import { schemaTema } from "@/lib/validacoes/loja";
+import { THEME_PADRAO } from "@/lib/utils/manifest";
 import type { Horarios } from "@/lib/utils/lojaAberta";
 import {
   assinaturaPermiteAcesso,
@@ -51,15 +52,44 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const db = await createClient();
-  const loja = await buscarLojaPorSlug(db, slug);
-  if (!loja || !loja.nome) {
-    return { title: "Loja não encontrada — iRango" };
+  try {
+    const db = await createClient();
+    const loja = await buscarLojaPorSlug(db, slug);
+    // Loja inexistente/inativa: só title, SEM manifest (não há app instalável
+    // de loja que não existe). `apple-touch-icon` é genérico, fica.
+    if (!loja || !loja.nome) {
+      return {
+        title: "Loja não encontrada — iRango",
+        icons: { apple: "/icons/apple-touch-icon.png" },
+      };
+    }
+    return {
+      title: `${loja.nome} — iRango`,
+      description: `Faça seu pedido na ${loja.nome}.`,
+      manifest: `/loja/${slug}/manifest.webmanifest`,
+      icons: { apple: "/icons/apple-touch-icon.png" },
+    };
+  } catch (e) {
+    // Falha de banco/rede: degrada para metadata mínimo, nunca vaza detalhe
+    // ao cliente (seguranca.md §14). Sem manifest fantasma.
+    console.error("[metadataVitrine]", e);
+    return { title: "iRango" };
   }
-  return {
-    title: `${loja.nome} — iRango`,
-    description: `Faça seu pedido na ${loja.nome}.`,
-  };
+}
+
+export async function generateViewport({
+  params,
+}: PageProps): Promise<Viewport> {
+  const { slug } = await params;
+  try {
+    const db = await createClient();
+    const loja = await buscarLojaPorSlug(db, slug);
+    const parsed = schemaTema.safeParse(loja?.tema);
+    return { themeColor: parsed.success ? parsed.data.primaria : THEME_PADRAO };
+  } catch (e) {
+    console.error("[viewportVitrine]", e);
+    return { themeColor: THEME_PADRAO };
+  }
 }
 
 export default async function VitrinePage({ params }: PageProps) {
