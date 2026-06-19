@@ -19,7 +19,8 @@ import { FormEndereco, type EnderecoEntrega } from "@/components/vitrine/FormEnd
 import { calcularFreteAction } from "@/lib/actions/frete";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ResumoValores } from "./ResumoValores";
-import type { TipoEntrega } from "./estado";
+import { VEREDITO_LOJA_SEM_COORDS } from "@/lib/utils/freteDegradado";
+import { chaveFrete, type TipoEntrega } from "./estado";
 
 const SECAO =
   "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
@@ -54,6 +55,9 @@ type EstadoFrete =
   | { status: "calculando" }
   | { status: "ok"; taxa: number; zonaNome: string }
   | { status: "indisponivel" }
+  // (005) Loja mal configurada: tem zona por raio mas está sem coords no banco.
+  // Nenhum endereço do cliente resolveria → mensagem distinta, sem "tente outro".
+  | { status: "indisponivel_loja" }
   | { status: "erro"; mensagem: string };
 
 export function EtapaEntrega({
@@ -85,26 +89,22 @@ export function EtapaEntrega({
   // endereço/tipo, não por render espúrio.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!ehEntrega) {
-      // Retirada: frete preview = 0, sempre.
+    // (002) Gate único: só calcula quando o endereço que o cliente VÊ está
+    // completo (chaveFrete != null). Retirada, sem endereço, ou endereço sem
+    // bairro ⇒ ocioso, zero, e NENHUMA chamada/mensagem — sem bairro fantasma.
+    const chave = chaveFrete(ehEntrega, endereco);
+    if (chave === null) {
       ultimaChave.current = null;
       setFrete({ status: "ocioso" });
       onFreteChange(0);
       onFreteStatusChange?.("ocioso");
       return;
     }
-    const bairro = endereco?.bairro?.trim();
-    const cep = endereco?.cep?.trim();
-    if (!bairro) {
-      ultimaChave.current = null;
-      setFrete({ status: "ocioso" });
-      onFreteChange(0);
-      onFreteStatusChange?.("ocioso");
-      return;
-    }
-    const chave = `${cep ?? ""}|${bairro}`;
     if (chave === ultimaChave.current) return;
     ultimaChave.current = chave;
+    // chave != null garante bairro presente; o CEP é opcional (zonas faixa_cep).
+    const bairro = endereco?.bairro?.trim() ?? "";
+    const cep = endereco?.cep?.trim();
 
     startCalculo(async () => {
       setFrete({ status: "calculando" });
@@ -122,10 +122,17 @@ export function EtapaEntrega({
         onFreteStatusChange?.("erro");
         return;
       }
-      if (r.zona_nome === "indisponivel") {
-        setFrete({ status: "indisponivel" });
+      if (
+        r.zona_nome === "indisponivel" ||
+        r.zona_nome === VEREDITO_LOJA_SEM_COORDS
+      ) {
+        const status =
+          r.zona_nome === VEREDITO_LOJA_SEM_COORDS
+            ? "indisponivel_loja"
+            : "indisponivel";
+        setFrete({ status });
         onFreteChange(0);
-        onFreteStatusChange?.("indisponivel");
+        onFreteStatusChange?.(status);
         return;
       }
       const rotulo =
@@ -134,14 +141,10 @@ export function EtapaEntrega({
       onFreteChange(r.taxa_preview);
       onFreteStatusChange?.("ok");
     });
-  }, [
-    ehEntrega,
-    endereco?.bairro,
-    endereco?.cep,
-    lojaId,
-    onFreteChange,
-    onFreteStatusChange,
-  ]);
+    // `endereco` inteiro nas deps: chaveFrete deriva tudo dele. Re-render com
+    // mesmo cep|bairro é absorvido pelo dedupe (ultimaChave) antes de qualquer
+    // setState — sem recálculo nem loop.
+  }, [ehEntrega, endereco, lojaId, onFreteChange, onFreteStatusChange]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const fretePreview = frete.status === "ok" ? frete.taxa : 0;
@@ -214,7 +217,10 @@ export function EtapaEntrega({
         <div className={SECAO}>
           <h2 className={SECAO_TITULO}>Endereço de entrega</h2>
           <div className="space-y-3 p-4">
-            <FormEndereco onEnderecoChange={onEnderecoChange} />
+            <FormEndereco
+              enderecoInicial={endereco}
+              onEnderecoChange={onEnderecoChange}
+            />
 
             {frete.status === "calculando" && (
               <p className="flex items-center gap-2 text-xs text-texto-muted">
@@ -232,6 +238,12 @@ export function EtapaEntrega({
               <p className="text-xs text-destructive">
                 Entrega indisponível para o seu bairro. Tente outro endereço ou
                 escolha retirada.
+              </p>
+            )}
+            {frete.status === "indisponivel_loja" && (
+              <p className="text-xs text-destructive">
+                Não foi possível calcular a entrega para esta loja no momento.
+                Escolha retirada ou tente mais tarde.
               </p>
             )}
             {frete.status === "erro" && (

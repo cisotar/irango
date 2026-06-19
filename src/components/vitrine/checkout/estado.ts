@@ -73,6 +73,28 @@ export function podeConfirmar(
   return estado.endereco !== null && freteStatus === "ok";
 }
 
+/**
+ * Gate do efeito de frete (issue 002). Retorna a chave de dedupe `cep|bairro`
+ * quando há o que calcular, ou `null` quando NÃO se deve chamar
+ * `calcularFreteAction` — retirada, sem endereço, ou endereço sem bairro.
+ *
+ * É o gate único que mantém o cálculo atrelado ao endereço que o cliente VÊ
+ * (RN-1-B): com `null`, o efeito zera o frete e não exibe mensagem de
+ * indisponível. A chave inclui o CEP (não só o bairro) porque o CEP reconcilia o
+ * bairro canônico e casa zonas `faixa_cep` — recalcular quando só o CEP muda é
+ * necessário para paridade com a cobrança (067).
+ */
+export function chaveFrete(
+  ehEntrega: boolean,
+  endereco: EnderecoEntrega | null,
+): string | null {
+  if (!ehEntrega) return null;
+  const bairro = endereco?.bairro?.trim();
+  if (!bairro) return null;
+  const cep = endereco?.cep?.trim();
+  return `${cep ?? ""}|${bairro}`;
+}
+
 /** Item do carrinho na fronteira do builder — só intenção, NUNCA preço. */
 export type ItemPayload = {
   produtoId: string;

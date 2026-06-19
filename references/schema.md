@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.10 | **Atualizado:** 2026-06-16
+**Versão:** 0.1.11 | **Atualizado:** 2026-06-19
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -101,6 +101,12 @@ CREATE TABLE lojas (
   -- NULL = loja sem logo. CHECK de defesa-em-profundidade; autoridade real é a Server Action.
   -- Migration: 20260615013000_logo_url_lojas.sql
   logo_url         text CHECK (logo_url IS NULL OR logo_url LIKE 'https://%'),
+
+  -- Frete fallback quando o bairro/CEP não casa nenhuma zona configurada.
+  -- NULL = entrega fora de zona indisponível; valor numérico = taxa fixa cobrada.
+  -- Exposto na view vitrine_lojas (dado público — não é PII).
+  -- Migration: 20260614006000_lojas_taxa_fora_zona_view.sql
+  taxa_entrega_fora_zona  numeric(10,2),
 
   -- Coordenadas geográficas da loja (geocoding do endereço — issue 008 salvarPerfil)
   -- float8 por design (coord não é dinheiro). Nullable: loja sem coords → zonas raio_km ignoradas (RN-3).

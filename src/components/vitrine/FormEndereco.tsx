@@ -22,38 +22,72 @@ export type EnderecoEntrega = {
 export type FormEnderecoProps = {
   /** Recebe o endereço completo, ou `null` enquanto algum obrigatório falta. */
   onEnderecoChange: (endereco: EnderecoEntrega | null) => void;
+  /**
+   * (001) Endereço persistido (estado.endereco do wizard) para HIDRATAR os
+   * campos na montagem. Garante o invariante RN-1-A/C: o form reflete o que o
+   * estado guarda — sem fantasma. Lido só na montagem (estado inicial do
+   * useState); mudanças posteriores da prop não resetam o que o cliente digita.
+   */
+  enderecoInicial?: EnderecoEntrega | null;
 };
 
-export function FormEndereco({ onEnderecoChange }: FormEnderecoProps) {
-  const [cep, setCep] = useState("");
-  const [rua, setRua] = useState("");
-  const [numero, setNumero] = useState("");
-  const [complemento, setComplemento] = useState("");
-  const [bairro, setBairro] = useState("");
-  const [cidade, setCidade] = useState("");
-  const [uf, setUf] = useState("");
+/**
+ * (001) Função PURA: monta o endereço completo a partir dos campos, ou `null`
+ * se algum obrigatório falta. Fonte única do "form completo ⇒ endereço; form
+ * incompleto ⇒ null" (RN-1-B). O CEP é preservado CRU (com máscara); os demais
+ * sofrem trim. Extraída p/ ser testável em ambiente node (sem DOM).
+ */
+export function montarEnderecoCompleto(campos: {
+  cep: string;
+  rua: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+}): EnderecoEntrega | null {
+  const { cep, rua, numero, complemento, bairro, cidade, uf } = campos;
+  const obrigatorios = [cep, rua, numero, bairro, cidade, uf];
+  if (!obrigatorios.every((v) => v.trim().length > 0)) return null;
+  return {
+    cep,
+    rua: rua.trim(),
+    numero: numero.trim(),
+    complemento: complemento.trim() || undefined,
+    bairro: bairro.trim(),
+    cidade: cidade.trim(),
+    uf: uf.trim(),
+  };
+}
+
+export function FormEndereco({
+  onEnderecoChange,
+  enderecoInicial,
+}: FormEnderecoProps) {
+  // Hidratação na montagem (RN-1-A): inicia os campos com o endereço persistido,
+  // se houver. Lazy init — só vale no primeiro render; não reseta digitação.
+  const [cep, setCep] = useState(enderecoInicial?.cep ?? "");
+  const [rua, setRua] = useState(enderecoInicial?.rua ?? "");
+  const [numero, setNumero] = useState(enderecoInicial?.numero ?? "");
+  const [complemento, setComplemento] = useState(
+    enderecoInicial?.complemento ?? "",
+  );
+  const [bairro, setBairro] = useState(enderecoInicial?.bairro ?? "");
+  const [cidade, setCidade] = useState(enderecoInicial?.cidade ?? "");
+  const [uf, setUf] = useState(enderecoInicial?.uf ?? "");
 
   const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const numeroRef = useRef<HTMLInputElement>(null);
 
-  // Notifica o pai: endereço completo só quando todos obrigatórios estão preenchidos.
+  // Notifica o pai: endereço completo só quando todos obrigatórios estão
+  // preenchidos. Reusa montarEnderecoCompleto (fonte única, RN-1-B). Roda também
+  // na montagem com os valores hidratados → emite o endereço persistido (paridade
+  // form↔estado, RN-1-A), ou null quando o form está vazio (sem fantasma).
   useEffect(() => {
-    const obrigatorios = [cep, rua, numero, bairro, cidade, uf];
-    const completo = obrigatorios.every((v) => v.trim().length > 0);
     onEnderecoChange(
-      completo
-        ? {
-            cep,
-            rua: rua.trim(),
-            numero: numero.trim(),
-            complemento: complemento.trim() || undefined,
-            bairro: bairro.trim(),
-            cidade: cidade.trim(),
-            uf: uf.trim(),
-          }
-        : null,
+      montarEnderecoCompleto({ cep, rua, numero, complemento, bairro, cidade, uf }),
     );
   }, [cep, rua, numero, complemento, bairro, cidade, uf, onEnderecoChange]);
 

@@ -21,17 +21,31 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaDoDono, slugExiste } from "@/lib/supabase/queries/lojas";
 import { schemaPerfil, schemaHorarios, schemaTema } from "@/lib/validacoes/loja";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
-import { geocodificarEndereco } from "@/lib/utils/geocodificarEndereco";
+import {
+  geocodificarEnderecoComMotivo,
+  type Coordenadas,
+  type MotivoGeocoding,
+} from "@/lib/utils/geocodificarEndereco";
 
 export type ResultadoSalvar = { ok: true } | { ok: false; erro: string };
 
-// Retorno de salvarPerfil (issue 008, D1): além do ok/erro, sinaliza se o
-// geocoding do endereço produziu coordenadas. Obrigatório no ramo de sucesso —
-// o cliente (issue 009) avisa quando geocodificado:false. Tipo dedicado para
-// NÃO afetar o ResultadoSalvar das outras três actions.
+// Retorno de salvarPerfil (issue 008, D1; estendido na 007): além do ok/erro,
+// sinaliza se o geocoding do endereço produziu coordenadas e, quando NÃO produziu,
+// o MOTIVO (nao_encontrado = corrija o dado; transitorio = re-salve em instantes).
+// O cliente (PerfilClient) usa o motivo para um aviso acionável. Tipo dedicado
+// para NÃO afetar o ResultadoSalvar das outras três actions.
 export type ResultadoPerfil =
-  | { ok: true; geocodificado: boolean }
+  | { ok: true; geocodificado: boolean; motivo?: MotivoGeocoding }
   | { ok: false; erro: string };
+
+// Espera best-effort entre a 1ª tentativa e o retry de geocoding. O retry só
+// ajuda se a janela da trava global de 1 req/s (fixedWindow) tiver virado — por
+// isso esperamos ~1s antes de disputar o token de novo (seguranca.md §12-A: a
+// trava NÃO é afrouxada; só damos tempo a ela). Configurável por env só para os
+// testes rodarem sem delay real.
+function esperar(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Monta a consulta livre para o Nominatim a partir do endereço JÁ validado.
@@ -139,11 +153,24 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoPerfil> {
     // geocodificamos no servidor. 2º UPDATE separado e best-effort (D2) — par
     // tudo-ou-nada (RN-2). Endereço incompleto ou geocoding falho → par NULL,
     // nunca rebaixa o salvamento nem deixa coords órfãs (D3).
+    //
+    // (007, RN-2-B) Usa o helper COM MOTIVO para distinguir falha transitória
+    // (re-salvar resolve) de endereço não localizável (dado do lojista). No
+    // transitório, tenta UM retry após a janela da trava virar — assim o lojista
+    // não fica com o raio quebrado por uma rajada momentânea do Nominatim.
     const consulta = montarConsultaGeocoding(dados);
-    const coords =
-      consulta === null
-        ? null
-        : await geocodificarEndereco(consulta);
+    let coords: Coordenadas | null = null;
+    let motivo: MotivoGeocoding | undefined;
+    if (consulta !== null) {
+      let geo = await geocodificarEnderecoComMotivo(consulta);
+      if (geo.coords === null && geo.motivo === "transitorio") {
+        const atrasoMs = Number(process.env.GEOCODE_RETRY_DELAY_MS ?? 1100);
+        await esperar(atrasoMs);
+        geo = await geocodificarEnderecoComMotivo(consulta);
+      }
+      coords = geo.coords;
+      if (geo.coords === null) motivo = geo.motivo;
+    }
     const coordsPatch =
       coords === null
         ? { latitude: null, longitude: null }
@@ -156,7 +183,9 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoPerfil> {
     if (erroCoords) throw erroCoords;
 
     revalidarVitrine(dados.slug, ...(dados.slug !== loja.slug ? [loja.slug] : []));
-    return { ok: true, geocodificado: coords !== null };
+    return motivo
+      ? { ok: true, geocodificado: false, motivo }
+      : { ok: true, geocodificado: coords !== null };
   } catch (e) {
     console.error("salvarPerfil:", e);
     return { ok: false, erro: ERRO_GENERICO };

@@ -65,8 +65,14 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
 // `taxa_entrega_fora_zona`. CONTRATO p/ a fase GREEN: criar
 // `buscarLojaPublicaPorId(client, lojaId)` em queries/lojas.ts.
 const buscarLojaPublicaPorId = vi.fn();
+// [005] buscarCoordsLoja: a action consulta a PRESENÇA de coords da loja (via
+// service_role, §19) só no ramo NÃO-atendido, para distinguir "loja com raio sem
+// coords" de "endereço fora de área". Default: coords presentes (não regride os
+// testes existentes de indisponível por bairro).
+const buscarCoordsLoja = vi.fn();
 vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarLojaPublicaPorId: (...a: unknown[]) => buscarLojaPublicaPorId(...a),
+  buscarCoordsLoja: (...a: unknown[]) => buscarCoordsLoja(...a),
 }));
 
 // [067] reconciliarBairroCep é I/O (chama ViaCEP). Mockada — NÃO bater na rede.
@@ -133,6 +139,9 @@ beforeEach(() => {
     id: LOJA_ID,
     taxa_entrega_fora_zona: 15,
   });
+  // [005] Por padrão a loja TEM coords (par presente) — só os casos de
+  // misconfiguração (coords NULL) sobrescrevem para null.
+  buscarCoordsLoja.mockResolvedValue({ latitude: -22.96, longitude: -46.54 });
   // [067] Por padrão o ViaCEP reconcilia o CEP para o bairro canônico "Centro".
   // Espelha o autoritativo (064): com CEP+bairro, o canônico do CEP vence.
   reconciliarBairroCep.mockResolvedValue({
@@ -450,5 +459,56 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
     // Mesma assinatura de chamada do autoritativo: (clientServiceRole, lojaId, cep).
     expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
     expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(serviceClient, LOJA_ID, CEP_CENTRO);
+  });
+});
+
+// ── [005] DEGRADAÇÃO CLARA quando faltam coords da loja (RN-2-C). A action ATUAL
+//    colapsa "loja com raio sem coords" e "endereço fora de área" no MESMO
+//    zona_nome "indisponivel" → mensagem "tente outro endereço" engana o cliente
+//    (nenhum endereço resolveria). RED: esperamos um veredito distinto
+//    ("indisponivel_loja") só quando a loja tem zona raio ativa E coords NULL.
+describe("calcularFreteAction — degradação coords ausentes (issue 005)", () => {
+  it("[005-1] zona raio + coords NULL + SEM fallback → zona_nome 'indisponivel_loja'", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(undefined); // sem coords → sem distância
+    buscarCoordsLoja.mockResolvedValue(null); // loja sem coords (par NULL)
+    buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: null });
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_CENTRO });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel_loja" });
+  });
+
+  it("[005-2] endereço fora de área (loja COM coords) → 'indisponivel' (mensagem atual inalterada)", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(99); // longe demais (> raio 5)
+    buscarCoordsLoja.mockResolvedValue({ latitude: -22.96, longitude: -46.54 });
+    buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: null });
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_CENTRO });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel" });
+  });
+
+  it("[005-3] zona raio + coords NULL + COM fallback → 'fora_zona' (atendido, não toca degradação)", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+    buscarCoordsLoja.mockResolvedValue(null);
+    buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: 15 });
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_CENTRO });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  it("[005-4] bairro fora (loja COM coords, sem raio) → 'indisponivel' genérico inalterado", async () => {
+    // Só zona bairro; bairro reconciliado fora; sem fallback. Não há raio → nunca
+    // é 'indisponivel_loja' mesmo que coords faltassem.
+    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Longe", reconciliado: true });
+    buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: null });
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: "99999-999", bairro: "Longe" });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel" });
   });
 });

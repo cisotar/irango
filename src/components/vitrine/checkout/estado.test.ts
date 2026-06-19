@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import {
   podeConfirmar,
   montarPayloadPedido,
+  chaveFrete,
   ESTADO_INICIAL,
   type EstadoWizard,
 } from "./estado";
@@ -46,6 +47,43 @@ const OPCIONAL_ID = "22222222-2222-4222-8222-222222222222";
 const ITENS_BASE = [{ produtoId: PRODUTO_ID, quantidade: 2 }];
 
 const LOJA_ID = "33333333-3333-4333-8333-333333333333";
+
+// ────────────────────────────────────────────────────────────────────────────
+//  chaveFrete — gate do efeito de frete (issue 002): só calcula quando o
+//  endereço que o cliente VÊ está completo; nunca contra bairro fantasma.
+//  Retorna a chave de dedupe `cep|bairro` ou null (não calcular).
+// ────────────────────────────────────────────────────────────────────────────
+describe("chaveFrete (issue 002)", () => {
+  it("retirada (ehEntrega=false) → null mesmo com endereço", () => {
+    expect(chaveFrete(false, ENDERECO_VALIDO)).toBeNull();
+  });
+
+  it("entrega + endereço null → null (sem cálculo, sem mensagem)", () => {
+    expect(chaveFrete(true, null)).toBeNull();
+  });
+
+  it("entrega + endereço completo → chave `cep|bairro`", () => {
+    expect(chaveFrete(true, ENDERECO_VALIDO)).toBe("01310-100|Bela Vista");
+  });
+
+  it("entrega + endereço sem bairro (incompleto) → null", () => {
+    expect(
+      chaveFrete(true, { ...ENDERECO_VALIDO, bairro: "   " }),
+    ).toBeNull();
+  });
+
+  it("mesmo endereço → mesma chave (dedupe estável)", () => {
+    expect(chaveFrete(true, ENDERECO_VALIDO)).toBe(
+      chaveFrete(true, { ...ENDERECO_VALIDO }),
+    );
+  });
+
+  it("CEP diferente, mesmo bairro → chaves diferentes (recalcula p/ paridade de cobrança)", () => {
+    const a = chaveFrete(true, ENDERECO_VALIDO);
+    const b = chaveFrete(true, { ...ENDERECO_VALIDO, cep: "01310-200" });
+    expect(a).not.toBe(b);
+  });
+});
 
 // ────────────────────────────────────────────────────────────────────────────
 //  podeConfirmar — tabela-verdade (issue 001: enderecoValido && pagamentoValido)
