@@ -163,7 +163,14 @@ export async function salvarQrPix(
       !Array.isArray(formaAtual.config)
         ? (formaAtual.config as Record<string, unknown>)
         : {};
-    const configNovo: Json = { ...configAtual, pix_qr_url: parsed.data } as Json;
+    // Remoção (`pixQrUrl` undefined) DELETA a chave explicitamente — não depende
+    // do drop implícito de `undefined` na serialização do supabase-js.
+    const { pix_qr_url: _antigo, ...configSemQr } = configAtual;
+    const configNovo: Json = (
+      parsed.data === undefined
+        ? configSemQr
+        : { ...configSemQr, pix_qr_url: parsed.data }
+    ) as Json;
 
     const { error } = await supabase
       .from("formas_pagamento")

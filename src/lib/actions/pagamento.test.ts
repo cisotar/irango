@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
 
+// STORAGE_URL_PREFIX deriva de NEXT_PUBLIC_SUPABASE_URL em import-time; vi.hoisted
+// fixa a env ANTES do import ESM (a action valida pix_qr_url via schemaStorageUrl).
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://projeto-teste.supabase.co";
+});
+
 /**
  * Regressão: `atualizarFormaPagamento` deve MESCLAR a config jsonb, não
  * substituí-la. O QR Pix (`config.pix_qr_url`) é gravado por `salvarQrPix` em
@@ -59,13 +65,14 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { atualizarFormaPagamento } from "./pagamento";
+import { atualizarFormaPagamento, salvarQrPix } from "./pagamento";
+import { STORAGE_URL_PREFIX } from "@/lib/validacoes/pagamento";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
   return { id: LOJA_DONO, dono_id: "dono-1", slug: "minha-loja", ativo: true };
 }
 
-const URL_QR = `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://localhost"}/storage/v1/object/public/pix-qr/${LOJA_DONO}/qr.png`;
+const URL_QR = `${STORAGE_URL_PREFIX}pix-qr/${LOJA_DONO}/qr.png`;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -110,6 +117,52 @@ describe("atualizarFormaPagamento — merge de config (regressão QR Pix)", () =
       tipo: "pix",
       config: { tipo_chave: "cpf", chave: "nao-eh-cpf" },
     });
+    expect(r.ok).toBe(false);
+    expect(captura.update).toBeUndefined();
+  });
+});
+
+const URL_A = `${STORAGE_URL_PREFIX}pix-qr/${LOJA_DONO}/qr.png?v=111`;
+const URL_B = `${STORAGE_URL_PREFIX}pix-qr/${LOJA_DONO}/qr.png?v=222`;
+
+describe("salvarQrPix — troca e remoção do QR", () => {
+  it("troca: grava a URL nova sobre o QR anterior (preserva chave)", async () => {
+    respostaBanco = {
+      data: { config: { tipo_chave: "telefone", chave: "5511900000000", pix_qr_url: URL_A } },
+      error: null,
+    };
+    const r = await salvarQrPix("forma-1", URL_B);
+    expect(r).toEqual({ ok: true });
+    const config = captura.update?.config as Record<string, unknown>;
+    expect(config.pix_qr_url).toBe(URL_B);
+    expect(config.chave).toBe("5511900000000");
+  });
+
+  it("remoção: salvarQrPix(id, undefined) apaga pix_qr_url do config", async () => {
+    respostaBanco = {
+      data: { config: { tipo_chave: "telefone", chave: "5511900000000", pix_qr_url: URL_A } },
+      error: null,
+    };
+    const r = await salvarQrPix("forma-1", undefined);
+    expect(r).toEqual({ ok: true });
+    const config = captura.update?.config as Record<string, unknown>;
+    expect("pix_qr_url" in config).toBe(false);
+    expect(config.chave).toBe("5511900000000");
+  });
+
+  it("escopa a escrita por id + loja_id + tipo='pix'", async () => {
+    respostaBanco = {
+      data: { config: { tipo_chave: "telefone", chave: "5511900000000" } },
+      error: null,
+    };
+    await salvarQrPix("forma-1", URL_B);
+    expect(captura.filtros).toContainEqual(["id", "forma-1"]);
+    expect(captura.filtros).toContainEqual(["loja_id", LOJA_DONO]);
+    expect(captura.filtros).toContainEqual(["tipo", "pix"]);
+  });
+
+  it("URL externa é rejeitada SEM tocar no banco", async () => {
+    const r = await salvarQrPix("forma-1", "https://evil.com/qr.png");
     expect(r.ok).toBe(false);
     expect(captura.update).toBeUndefined();
   });
