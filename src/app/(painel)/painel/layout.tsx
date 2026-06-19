@@ -1,4 +1,5 @@
 import type { ReactNode, ReactElement } from "react";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -11,7 +12,17 @@ import {
 } from "@/lib/supabase/queries/lojas";
 import { decidirAcessoPainel } from "@/lib/utils/acessoPainel";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
+import { THEME_PADRAO } from "@/lib/utils/manifest";
 import { SidebarPainel, TopbarPainel } from "@/components/painel/NavPainel";
+
+export const metadata: Metadata = {
+  manifest: "/painel/manifest.webmanifest",
+  icons: { apple: "/icons/apple-touch-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: THEME_PADRAO,
+};
 
 /**
  * Guard ÚNICO e AUTORITATIVO do painel (issue 016). Server Component.
