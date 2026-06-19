@@ -116,7 +116,7 @@ function zonaRaio(raioMaxKm = 5, taxa = 3.0): ZonaVitrine {
     nome: "Zona Raio 5km",
     tipo: "raio_km",
     ativo: true,
-    taxa: { taxa, pedido_minimo_gratis: null, raio_max_km: raioMaxKm },
+    taxa: { taxa, pedido_minimo_gratis: null, raio_max_km: raioMaxKm, cep_inicio: null, cep_fim: null },
     bairros: [],
   } as ZonaVitrine;
 }
