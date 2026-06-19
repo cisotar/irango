@@ -31,8 +31,12 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { listarZonasComTaxas } from "@/lib/supabase/queries/entregaPagamento";
-import { buscarLojaPublicaPorId } from "@/lib/supabase/queries/lojas";
+import { buscarCoordsLoja, buscarLojaPublicaPorId } from "@/lib/supabase/queries/lojas";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
+import {
+  lojaTemRaioSemCoords,
+  VEREDITO_LOJA_SEM_COORDS,
+} from "@/lib/utils/freteDegradado";
 import { reconciliarBairroCep } from "@/lib/utils/reconciliarBairroCep";
 
 // Schema zod .strict(): rejeita qualquer campo que não seja loja_id + bairro +
@@ -138,7 +142,16 @@ export async function calcularFreteAction(
 
     // 5) Mapeia ResultadoFrete → shape de preview para o cliente.
     if (!resultado.atendido) {
-      return { ok: true, taxa_preview: 0, zona_nome: "indisponivel" };
+      // (005, RN-2-C) Distingue MISCONFIGURAÇÃO (loja com zona raio ativa mas sem
+      // coords → distanciaKm nunca casa, nenhum endereço resolve) de endereço
+      // genuinamente fora de área. Só consulta coords aqui (ramo indisponível),
+      // não no caminho feliz. service_role: coords não têm SELECT anon (§19); só
+      // o BOOLEANO de presença é usado, o par (lat,lng) nunca chega à UX.
+      const coords = await buscarCoordsLoja(svc, loja_id);
+      const zona_nome = lojaTemRaioSemCoords(zonas, coords !== null)
+        ? VEREDITO_LOJA_SEM_COORDS
+        : "indisponivel";
+      return { ok: true, taxa_preview: 0, zona_nome };
     }
 
     if (resultado.zonaId == null) {

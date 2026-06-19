@@ -187,9 +187,18 @@ export function PerfilClient({
       }
       toast.success("Perfil salvo!");
       if (!resultado.geocodificado) {
-        toast.warning(
-          "Não localizamos seu endereço no mapa — zonas por raio ficam inativas até corrigir.",
-        );
+        // (008) Aviso acionável conforme o motivo (issue 007): transitório =
+        // re-salvar resolve; não-encontrado = corrigir o dado. Sem motivo
+        // (compat) mantém o texto antigo.
+        if (resultado.motivo === "transitorio") {
+          toast.warning(
+            "Não conseguimos localizar seu endereço agora. Tente salvar novamente em instantes para ativar as zonas por raio.",
+          );
+        } else {
+          toast.warning(
+            "Não localizamos seu endereço no mapa — confira rua, número e CEP. Zonas por raio ficam inativas até corrigir.",
+          );
+        }
       }
       router.refresh();
     });

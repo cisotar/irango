@@ -15,9 +15,11 @@ vi.mock("@/lib/utils/rateLimit", () => ({
 // teste: resolve { latitude, longitude } (sucesso) ou null (falha/incompleto).
 // A coordenada é dado DERIVADO AUTORITATIVO do servidor (RN-1): o cliente nunca
 // influencia o valor; a única fonte legítima é este util chamado server-side.
-const geocodificarEndereco = vi.fn();
+// (007) salvarPerfil passou a usar `geocodificarEnderecoComMotivo` (resultado
+// discriminado: { coords } | { coords:null, motivo }). Mock controlável por teste.
+const geocodificarComMotivo = vi.fn();
 vi.mock("@/lib/utils/geocodificarEndereco", () => ({
-  geocodificarEndereco: (...a: unknown[]) => geocodificarEndereco(...a),
+  geocodificarEnderecoComMotivo: (...a: unknown[]) => geocodificarComMotivo(...a),
 }));
 
 /**
@@ -192,7 +194,9 @@ beforeEach(() => {
   buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, dono_id: USER_ID, slug: "slug-antigo" });
   slugExiste.mockResolvedValue(false);
   // Default: geocoding bem-sucedido. Casos de borda sobrescrevem por teste.
-  geocodificarEndereco.mockResolvedValue(COORDS_SP);
+  geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
+  // (007) Retry sob a trava: sem delay real nos testes.
+  process.env.GEOCODE_RETRY_DELAY_MS = "0";
 });
 
 // ───────────────────────────── salvarPerfil ──────────────────────────────────
@@ -218,7 +222,7 @@ describe("salvarPerfil — caminho feliz", () => {
 // ────────────── salvarPerfil — endereço + geocoding (issue 008) ───────────────
 describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
   it("endereço completo + geocoding ok → 2 UPDATEs; par de coords persistido; geocodificado:true", async () => {
-    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
 
     const r = await salvarPerfil(PERFIL_COM_ENDERECO);
 
@@ -238,8 +242,8 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     expect(patchCoords).toEqual({ latitude: -23.56, longitude: -46.65 });
 
     // Geocoding chamado com uma consulta que contém cidade e UF.
-    expect(geocodificarEndereco).toHaveBeenCalledTimes(1);
-    const consulta = geocodificarEndereco.mock.calls[0][0] as string;
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(1);
+    const consulta = geocodificarComMotivo.mock.calls[0][0] as string;
     expect(consulta).toContain("São Paulo");
     expect(consulta).toContain("SP");
 
@@ -249,12 +253,14 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     expect(updateEq).toHaveBeenNthCalledWith(2, "id", LOJA_ID);
   });
 
-  it("geocoding null → endereço salvo, par de coords NULL (par), geocodificado:false (não bloqueia)", async () => {
-    geocodificarEndereco.mockResolvedValue(null);
+  it("geocoding não-encontrado → endereço salvo, par de coords NULL, geocodificado:false + motivo (não bloqueia)", async () => {
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "nao_encontrado" });
 
     const r = await salvarPerfil(PERFIL_COM_ENDERECO);
 
-    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(r).toEqual({ ok: true, geocodificado: false, motivo: "nao_encontrado" });
+    // nao_encontrado NÃO dispara retry (re-tentar não acharia o que não existe).
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(1);
     expect(updatePatch).toHaveBeenCalledTimes(2);
 
     // 1º UPDATE: endereço persistido normalmente, apesar do geocoding falho.
@@ -271,7 +277,7 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     const r = await salvarPerfil(PERFIL_OK);
 
     expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
     expect(updatePatch).toHaveBeenCalledTimes(2);
     const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
     expect(patchCoords).toEqual({ latitude: null, longitude: null });
@@ -287,11 +293,11 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     expect(r).toMatchObject({ ok: false });
     // Barreira 1 (.strict()): nenhum UPDATE, nenhum geocoding.
     expect(updatePatch).not.toHaveBeenCalled();
-    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
   });
 
   it("Barreira 2 (allowlist): nenhum dos 2 patches contém chave fora de COLUNAS_PERMITIDAS nem chave proibida", async () => {
-    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
     await salvarPerfil(PERFIL_COM_ENDERECO);
 
     for (const call of updatePatch.mock.calls) {
@@ -307,7 +313,7 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
 
   it("RLS dono A ≠ loja dono B: ambos os UPDATEs escopam por .eq('id', id da loja resolvida sob RLS)", async () => {
     // O escopo da escrita vem da loja resolvida por buscarLojaDoDono (RLS), nunca do payload.
-    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
     await salvarPerfil(PERFIL_COM_ENDERECO);
 
     const idsEscritos = updateEq.mock.calls
@@ -317,6 +323,50 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     for (const id of idsEscritos) {
       expect(id).toBe(LOJA_ID); // jamais um id de terceiro
     }
+  });
+});
+
+// ── (007) Distinção transitório vs. não-encontrado + retry curto ──────────────
+describe("salvarPerfil — robustez do geocoding (issue 007)", () => {
+  it("transitório → retry sob a trava; retry OK → geocodificado:true, coords persistidas", async () => {
+    geocodificarComMotivo
+      .mockResolvedValueOnce({ coords: null, motivo: "transitorio" })
+      .mockResolvedValueOnce({ coords: COORDS_SP });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(2); // 1ª + retry
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: -23.56, longitude: -46.65 });
+  });
+
+  it("transitório nas duas tentativas → geocodificado:false + motivo:'transitorio'; coords NULL", async () => {
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: false, motivo: "transitorio" });
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(2);
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("não-encontrado → SEM retry; geocodificado:false + motivo:'nao_encontrado'", async () => {
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "nao_encontrado" });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: false, motivo: "nao_encontrado" });
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(1); // não re-tenta o inexistente
+  });
+
+  it("falha de coords (2º UPDATE) NUNCA rebaixa o salvamento — erro só do UPDATE vira ok:false", async () => {
+    // O salvamento do endereço (1º UPDATE) teve sucesso; geocoding transitório.
+    // Aqui provamos que um motivo no ramo de sucesso continua ok:true.
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" });
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+    expect(r).toMatchObject({ ok: true });
   });
 });
 
@@ -515,7 +565,7 @@ describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)",
     });
 
     expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
     // 2º UPDATE: par NULL (coords zeradas, nunca ímpares)
     expect(updatePatch).toHaveBeenCalledTimes(2);
     const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
@@ -531,14 +581,14 @@ describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)",
     });
 
     expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
     expect(updatePatch).toHaveBeenCalledTimes(2);
     const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
     expect(patchCoords).toEqual({ latitude: null, longitude: null });
   });
 
   it("cidade + UF presentes → Nominatim chamado; consulta contém ambos", async () => {
-    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
 
     await salvarPerfil({
       ...PERFIL_OK,
@@ -546,8 +596,8 @@ describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)",
       endereco_estado: "PR",
     });
 
-    expect(geocodificarEndereco).toHaveBeenCalledTimes(1);
-    const consulta = geocodificarEndereco.mock.calls[0][0] as string;
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(1);
+    const consulta = geocodificarComMotivo.mock.calls[0][0] as string;
     expect(consulta).toContain("Curitiba");
     expect(consulta).toContain("PR");
   });
@@ -556,7 +606,7 @@ describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)",
 // ──────── falha no 2º UPDATE (coords) após geocoding bem-sucedido ─────────────
 describe("salvarPerfil — falha no 2º UPDATE de coords", () => {
   it("geocoding ok mas UPDATE de coords falha → { ok: false }; erro não vaza detalhe interno", async () => {
-    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
 
     // 1º eq (perfil) → sem erro; 2º eq (coords) → erro de banco
     _eqErros.push(null); // 1º UPDATE (patch perfil+endereço): ok
@@ -574,7 +624,7 @@ describe("salvarPerfil — falha no 2º UPDATE de coords", () => {
 
   it("geocoding ok mas UPDATE de coords falha → 1º UPDATE (endereço) JÁ foi persistido antes da falha", async () => {
     // Comprova que o fluxo é sequencial: perfil gravado, coords falham.
-    geocodificarEndereco.mockResolvedValue(COORDS_SP);
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
     _eqErros.push(null); // 1º ok
     _eqErros.push({ message: "banco indisponivel" }); // 2º falha
 
@@ -610,7 +660,7 @@ describe("salvarPerfil — zeragem de coords ao salvar endereço incompleto", ()
     const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
     expect(patchCoords).toEqual({ latitude: null, longitude: null });
     // Confirmação: geocoding não foi chamado.
-    expect(geocodificarEndereco).not.toHaveBeenCalled();
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
   });
 
   it("endereço sem nenhum campo → coords zeradas (par NULL); 2º UPDATE acontece", async () => {

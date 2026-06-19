@@ -45,7 +45,10 @@ vi.mock("@upstash/redis", () => {
   return { Redis };
 });
 
-import { geocodificarEndereco } from "./geocodificarEndereco";
+import {
+  geocodificarEndereco,
+  geocodificarEnderecoComMotivo,
+} from "./geocodificarEndereco";
 
 const ENV_BACKUP = { ...process.env };
 
@@ -603,6 +606,77 @@ describe("cache CEP — normalização: CEP com e sem hífen → mesma chave", (
     await geocodificarEndereco("01310100");
 
     expect(getMock).toHaveBeenCalledWith("irango:geocode:01310100");
+  });
+});
+
+// =============================================================================
+// geocodificarEnderecoComMotivo (issue 004) — distingue transitório de
+// não-encontrado SEM afrouxar a trava anti-ban. RED até a fase GREEN existir.
+//   - lista vazia / coords não-finitas (Nominatim 200 sem resultado) → nao_encontrado
+//   - trava excedida / timeout / 5xx / sem credenciais/UA → transitorio
+//   - sucesso → { coords }
+// =============================================================================
+describe("geocodificarEnderecoComMotivo (issue 004)", () => {
+  it("sucesso → { coords } com par finito", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      nominatimOk([{ lat: "-23.5", lon: "-46.6" }]),
+    );
+    const r = await geocodificarEnderecoComMotivo("Rua X, 100, São Paulo, SP");
+    expect(r).toEqual({ coords: { latitude: -23.5, longitude: -46.6 } });
+  });
+
+  it("Nominatim 200 lista vazia → { coords:null, motivo:'nao_encontrado' }", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimOk([]));
+    const r = await geocodificarEnderecoComMotivo("endereço inexistente");
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
+  });
+
+  it("lat/lon não-finitos (200) → { coords:null, motivo:'nao_encontrado' }", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      nominatimOk([{ lat: "abc", lon: "xyz" }]),
+    );
+    const r = await geocodificarEnderecoComMotivo("Rua X, São Paulo, SP");
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
+  });
+
+  it("trava excedida (limit success:false) → { coords:null, motivo:'transitorio' }", async () => {
+    limitMock.mockResolvedValue({ success: false });
+    const r = await geocodificarEnderecoComMotivo("Rua X, São Paulo, SP");
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("HTTP 500 → { coords:null, motivo:'transitorio' }", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("erro", { status: 500 }),
+    );
+    const r = await geocodificarEnderecoComMotivo("Rua X, São Paulo, SP");
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("timeout/abort → { coords:null, motivo:'transitorio' }", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+      Object.assign(new Error("aborted"), { name: "AbortError" }),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await geocodificarEnderecoComMotivo("Rua X, São Paulo, SP");
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("sem credenciais Upstash → { coords:null, motivo:'transitorio' } sem fetch", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const r = await geocodificarEnderecoComMotivo("Rua X, São Paulo, SP");
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("sem User-Agent → { coords:null, motivo:'transitorio' } sem fetch", async () => {
+    delete process.env.NOMINATIM_USER_AGENT;
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const r = await geocodificarEnderecoComMotivo("Rua X, São Paulo, SP");
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
