@@ -71,9 +71,32 @@ export async function atualizarFormaPagamento(
   }
   try {
     const supabase = await createClient();
+    // MERGE da config: o form só envia chave/tipo_chave (ou url). Um update
+    // total apagaria campos gravados em escrita separada — sobretudo
+    // `pix_qr_url` (salvo por `salvarQrPix`), sumindo o QR do painel e do
+    // checkout. Lê a config atual e mescla; RLS escopa por dono.
+    const { data: formaAtual, error: erroBusca } = await supabase
+      .from("formas_pagamento")
+      .select("config")
+      .eq("id", id)
+      .maybeSingle();
+    if (erroBusca) {
+      console.error("[atualizarFormaPagamento] busca", erroBusca);
+      return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+    }
+    const configAtual =
+      formaAtual?.config &&
+      typeof formaAtual.config === "object" &&
+      !Array.isArray(formaAtual.config)
+        ? (formaAtual.config as Record<string, unknown>)
+        : {};
+    const configMesclado: Json = {
+      ...configAtual,
+      ...(parsed.data.config as Record<string, unknown>),
+    } as Json;
     const { error } = await supabase
       .from("formas_pagamento")
-      .update({ tipo: parsed.data.tipo, config: parsed.data.config as Json })
+      .update({ tipo: parsed.data.tipo, config: configMesclado })
       .eq("id", id);
     if (error) {
       console.error("[atualizarFormaPagamento]", error);
