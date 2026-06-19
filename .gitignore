@@ -38,6 +38,14 @@ yarn-error.log*
 # vercel
 .vercel
 
+# service worker (issue 006) — artefatos gerados, nunca versionar.
+# @serwist/turbopack compila o SW em memória e serve via route handler;
+# estas entradas cobrem qualquer artefato emitido em disco por outras
+# integrações/versões do Serwist.
+/public/sw.js
+/public/sw.js.map
+.serwist
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
