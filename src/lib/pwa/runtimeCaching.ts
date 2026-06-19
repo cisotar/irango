@@ -16,16 +16,16 @@
 // dado continua sendo RLS + cookies HttpOnly no servidor — o SW é só UX.
 
 /** Nomes de estratégia do Serwist usados nas regras. */
-export type HandlerStrategy =
+export type EstrategiaHandler =
   | "NetworkOnly"
   | "CacheFirst"
   | "NetworkFirst"
   | "StaleWhileRevalidate";
 
-export type RuntimeCachingRule = {
+export type RegraRuntimeCaching = {
   /** Matcher polimórfico: RegExp, prefixo de string ou predicado sobre a URL. */
   urlPattern: RegExp | string | ((url: URL) => boolean);
-  handler: HandlerStrategy;
+  handler: EstrategiaHandler;
   options?: { cacheName?: string };
 };
 
@@ -41,7 +41,7 @@ const ehNavegacao = (url: URL): boolean => {
   return !ultimoSegmento.includes(".");
 };
 
-export const runtimeCachingRules: RuntimeCachingRule[] = [
+export const runtimeCachingRules: RegraRuntimeCaching[] = [
   // [0] NetworkOnly /painel* — PRIMEIRA. Nunca cacheia rota autenticada (RN-6).
   {
     urlPattern: (url) => url.pathname.startsWith("/painel"),
@@ -65,7 +65,7 @@ export const runtimeCachingRules: RuntimeCachingRule[] = [
   // [3] Navegação / HTML dinâmico → rede primeiro; cache só fallback de
   // resiliência. Catálogo/preço nunca são verdade do cache (RN-6 / §10).
   {
-    urlPattern: (url) => ehNavegacao(url),
+    urlPattern: ehNavegacao,
     handler: "NetworkFirst",
     options: { cacheName: "navegacao-html" },
   },

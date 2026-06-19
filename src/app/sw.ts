@@ -18,8 +18,8 @@ import {
 } from "serwist";
 import {
   runtimeCachingRules,
-  type HandlerStrategy,
-  type RuntimeCachingRule,
+  type EstrategiaHandler,
+  type RegraRuntimeCaching,
 } from "@/lib/pwa/runtimeCaching";
 
 declare const self: ServiceWorkerGlobalScope & {
@@ -28,9 +28,9 @@ declare const self: ServiceWorkerGlobalScope & {
 
 // Mapa nome → instância de estratégia do Serwist (preserva o cacheName da regra).
 function criarEstrategia(
-  handler: HandlerStrategy,
+  handler: EstrategiaHandler,
   cacheName: string | undefined,
-) {
+): NetworkOnly | CacheFirst | NetworkFirst | StaleWhileRevalidate {
   switch (handler) {
     // NetworkOnly nunca cacheia → não aceita (nem precisa de) cacheName.
     case "NetworkOnly":
@@ -47,7 +47,7 @@ function criarEstrategia(
 // Adapta o matcher polimórfico das regras puras para o RouteMatchCallback do
 // Serwist (que recebe { url, request, sameOrigin }).
 function criarMatcher(
-  urlPattern: RuntimeCachingRule["urlPattern"],
+  urlPattern: RegraRuntimeCaching["urlPattern"],
 ): RouteMatchCallback {
   if (typeof urlPattern === "function") {
     return ({ url }) => urlPattern(url);
