@@ -78,7 +78,14 @@ export function CheckoutWizard({
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const salvo = lerEstadoWizard();
-    const base: EstadoWizard = { ...ESTADO_INICIAL, ...(salvo ?? {}) };
+    // Restaura nome/telefone/cupom/pagamento da sessão, mas tipo de entrega e
+    // endereço sempre começam em branco — cliente escolhe ativamente a cada pedido.
+    const base: EstadoWizard = {
+      ...ESTADO_INICIAL,
+      ...(salvo ?? {}),
+      tipoEntrega: null,
+      endereco: null,
+    };
     if (!aceitaEntrega) base.tipoEntrega = "retirada";
     setEstado(base);
     setMontado(true);

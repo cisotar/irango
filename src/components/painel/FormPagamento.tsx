@@ -74,7 +74,14 @@ export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagament
 
   function montarPayload() {
     if (tipo === "pix") {
-      return { tipo: "pix" as const, config: { tipo_chave: tipoChave, chave: chave.trim() } };
+      return {
+        tipo: "pix" as const,
+        config: {
+          tipo_chave: tipoChave,
+          chave: chave.trim(),
+          ...(pixQrUrl ? { pix_qr_url: pixQrUrl } : {}),
+        },
+      };
     }
     return { tipo: "link" as const, config: { url: url.trim() } };
   }
