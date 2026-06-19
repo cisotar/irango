@@ -241,73 +241,11 @@ export function ProdutoModal({
               </div>
             ) : null}
 
-            {/* Seção Quantidade — card com label + preço unitário à esq., stepper à dir. */}
-            <div className="px-4 pb-4 md:pt-4">
-              <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-marrom-cafe">
-                  Quantidade
-                </p>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p
-                      className={`text-sm text-[var(--texto)] ${disponivel ? "" : "opacity-50"}`}
-                    >
-                      Unidades
-                    </p>
-                    <p className="mt-0.5 text-xs text-[var(--texto-muted)]">
-                      {disponivel
-                        ? `Cada unidade · ${formatarMoeda(produto.preco)}`
-                        : "Produto indisponível no momento"}
-                    </p>
-                  </div>
-                  <div
-                    role="group"
-                    aria-label="Selecionar quantidade"
-                    aria-disabled={!disponivel}
-                    className={`flex items-center overflow-hidden rounded-[10px] border-[1.5px] border-[#dccbb0] bg-white ${
-                      disponivel ? "" : "pointer-events-none opacity-45"
-                    }`}
-                  >
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Diminuir quantidade"
-                      disabled={!disponivel || quantidade <= 1}
-                      onClick={() => setQuantidade((q) => Math.max(1, q - 1))}
-                      className="size-8 rounded-none text-[var(--cor-destaque)]"
-                    >
-                      <Minus aria-hidden />
-                    </Button>
-                    <span
-                      role="status"
-                      aria-live="polite"
-                      aria-label={`Quantidade: ${quantidade}`}
-                      className="min-w-9 border-x border-[#dccbb0] px-1 text-center text-base font-bold tabular-nums text-[var(--texto)]"
-                    >
-                      {quantidade}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Aumentar quantidade"
-                      disabled={!disponivel}
-                      onClick={() => setQuantidade((q) => q + 1)}
-                      className="size-8 rounded-none text-[var(--cor-destaque)]"
-                    >
-                      <Plus aria-hidden />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Seção Opcionais (issue 087) — só quando o produto disponível tem grupos.
                 Mesma estrutura grupo/opcional/mini-stepper do mockup
                 (design-claude/vitrine/produto-modal.html). Preços são PREVIEW. */}
             {disponivel && grupos.length > 0 ? (
-              <div className="px-4 pb-4">
+              <div className="px-4 pb-4 md:pt-4">
                 <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
                   <p className="mb-1 text-xs font-bold uppercase tracking-wide text-marrom-cafe">
                     Opcionais
@@ -375,6 +313,68 @@ export function ProdutoModal({
                 </div>
               </div>
             ) : null}
+
+            {/* Seção Quantidade — card com label + preço unitário à esq., stepper à dir. */}
+            <div className="px-4 pb-4">
+              <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-marrom-cafe">
+                  Quantidade
+                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p
+                      className={`text-sm text-[var(--texto)] ${disponivel ? "" : "opacity-50"}`}
+                    >
+                      Unidades
+                    </p>
+                    <p className="mt-0.5 text-xs text-[var(--texto-muted)]">
+                      {disponivel
+                        ? `Cada unidade · ${formatarMoeda(produto.preco)}`
+                        : "Produto indisponível no momento"}
+                    </p>
+                  </div>
+                  <div
+                    role="group"
+                    aria-label="Selecionar quantidade"
+                    aria-disabled={!disponivel}
+                    className={`flex items-center overflow-hidden rounded-[10px] border-[1.5px] border-[#dccbb0] bg-white ${
+                      disponivel ? "" : "pointer-events-none opacity-45"
+                    }`}
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Diminuir quantidade"
+                      disabled={!disponivel || quantidade <= 1}
+                      onClick={() => setQuantidade((q) => Math.max(1, q - 1))}
+                      className="size-8 rounded-none text-[var(--cor-destaque)]"
+                    >
+                      <Minus aria-hidden />
+                    </Button>
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      aria-label={`Quantidade: ${quantidade}`}
+                      className="min-w-9 border-x border-[#dccbb0] px-1 text-center text-base font-bold tabular-nums text-[var(--texto)]"
+                    >
+                      {quantidade}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Aumentar quantidade"
+                      disabled={!disponivel}
+                      onClick={() => setQuantidade((q) => q + 1)}
+                      className="size-8 rounded-none text-[var(--cor-destaque)]"
+                    >
+                      <Plus aria-hidden />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Footer fixo (não rola) — subtotal PREVIEW + CTA + "Mais itens" */}
