@@ -1,19 +1,19 @@
 import { describe, it, expect } from "vitest";
 // RED-first (issue 006): este módulo NÃO EXISTE AINDA. O import abaixo deve
 // quebrar a resolução até a fase GREEN criar `./runtimeCaching`.
-import { runtimeCachingRules, type RuntimeCachingRule } from "./runtimeCaching";
+import { runtimeCachingRules, type RegraRuntimeCaching } from "./runtimeCaching";
 
 // ===========================================================================
 // CONTRATO (issue 006 — Plano Técnico, D3/D4/D5)
 //
 // src/lib/pwa/runtimeCaching.ts exporta:
 //
-//   export type RuntimeCachingRule = {
+//   export type RegraRuntimeCaching = {
 //     urlPattern: RegExp | string | ((url: URL) => boolean);
 //     handler: string; // 'NetworkOnly' | 'CacheFirst' | 'NetworkFirst' | 'StaleWhileRevalidate'
 //     options?: object;
 //   };
-//   export const runtimeCachingRules: RuntimeCachingRule[];
+//   export const runtimeCachingRules: RegraRuntimeCaching[];
 //
 // Invariante crítico (RN-6 / §10): o Service Worker NUNCA cacheia /painel/*.
 // O Serwist avalia as regras EM ORDEM e usa a PRIMEIRA que casar (D4). Logo:
@@ -27,7 +27,7 @@ import { runtimeCachingRules, type RuntimeCachingRule } from "./runtimeCaching";
 
 // --- Helper: avalia o urlPattern polimórfico contra uma URL (espelha a
 // --- semântica do Serwist/Workbox, não a lógica das regras). ---
-function casa(rule: RuntimeCachingRule, href: string): boolean {
+function casa(rule: RegraRuntimeCaching, href: string): boolean {
   const url = new URL(href, "https://irango.app");
   const p = rule.urlPattern;
   if (typeof p === "function") return p(url);
