@@ -3,15 +3,32 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
-import { CardStatusAssinatura } from "@/components/painel/StatusAssinatura";
+import {
+  buscarPlanoAtivo,
+  listarPlanosAtivos,
+} from "@/lib/supabase/queries/planos";
+import { listarFaturasDaLoja } from "@/lib/supabase/queries/pagamentosAssinatura";
+import { CartaoStatusAssinatura } from "@/components/painel/CartaoStatusAssinatura";
+import { AvisoEstadoBloqueado } from "@/components/painel/AvisoEstadoBloqueado";
+import { TabelaFaturas } from "@/components/painel/TabelaFaturas";
+import {
+  GerenciarAssinaturaClient,
+  type PlanoView,
+} from "@/components/painel/GerenciarAssinaturaClient";
+import { temAssinaturaAtiva } from "@/components/painel/rotulosAssinatura";
 
 /**
- * Página de status da assinatura (issue 060). Server Component READ-ONLY.
+ * Central de assinatura do lojista (issue 081, modelo de billing próprio).
+ * Server Component — lê TODO valor autoritativo do servidor:
+ *   - `lojas.assinatura_*` + plano atual (RLS escopa por `auth.uid()`).
+ *   - planos ativos (catálogo global) e faturas (`pagamentos_assinatura`, RLS por loja).
  *
- * Lê a loja do dono via client AUTENTICADO (RLS `lojas_leitura_propria`) e
- * exibe os campos `assinatura_*`. NENHUMA mutation — o billing é gravado só pelo
- * webhook Hotmart (057) via service_role. Rota de exceção do guard (016), logo
- * acessível mesmo com assinatura inválida.
+ * A UI NUNCA calcula preço/total: o `preco` vem de `planos.preco` e o `valor` das
+ * faturas vem do webhook (077). O componente client só envia `plano_id` às
+ * Server Actions (078); a autoridade de valor/status fica no servidor.
+ *
+ * Rota de exceção do guard de assinatura (016): acessível mesmo com assinatura
+ * inválida — é onde o lojista regulariza.
  */
 export default async function AssinaturaPage(): Promise<ReactElement> {
   const supabase = await createClient();
@@ -21,19 +38,50 @@ export default async function AssinaturaPage(): Promise<ReactElement> {
     redirect("/painel/onboarding");
   }
 
+  // Plano atual + catálogo + faturas em paralelo (todas escopadas por RLS via
+  // client autenticado). `planos` é catálogo global e legível pelo lojista.
+  const [planoAtual, planos, faturas] = await Promise.all([
+    loja.plano_id ? buscarPlanoAtivo(supabase, loja.plano_id) : Promise.resolve(null),
+    listarPlanosAtivos(supabase),
+    listarFaturasDaLoja(supabase),
+  ]);
+
+  const planosView: PlanoView[] = planos.map((p) => ({
+    id: p.id,
+    nome: p.nome,
+    preco: p.preco,
+    intervalo: p.intervalo,
+  }));
+
+  const temAssinatura = temAssinaturaAtiva(
+    loja.assinatura_status,
+    loja.provider_subscription_id,
+  );
+
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6">
-      <h1 className="mb-6 font-heading text-xl font-semibold text-foreground">
+    <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
+      <h1 className="font-heading text-xl font-semibold text-foreground">
         Assinatura
       </h1>
-      <CardStatusAssinatura
+
+      <AvisoEstadoBloqueado status={loja.assinatura_status} />
+
+      <CartaoStatusAssinatura
         assinatura={{
           status: loja.assinatura_status,
           inicio: loja.assinatura_inicio,
           fimPeriodo: loja.assinatura_fim_periodo,
-          subscriberCode: loja.hotmart_subscriber_code,
         }}
+        plano={planoAtual}
       />
+
+      <GerenciarAssinaturaClient
+        planos={planosView}
+        planoAtualId={loja.plano_id}
+        temAssinatura={temAssinatura}
+      />
+
+      <TabelaFaturas faturas={faturas} />
     </main>
   );
 }

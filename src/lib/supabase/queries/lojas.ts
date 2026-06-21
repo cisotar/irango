@@ -216,6 +216,39 @@ export async function garantirLojaDoDono(
 }
 
 /**
+ * Persiste as colunas billing-intent da loja após a Server Action criar/trocar a
+ * assinatura no provider (issue 078): `billing_provider`, `provider_subscription_id`
+ * e `plano_id`. NUNCA toca `assinatura_status` (RN-2/RN-7 — só o webhook 077 é a
+ * autoridade de status; o objeto `dados` é tipado para impedir isso).
+ *
+ * EXIGE client **service_role**: o trigger `lojas_protege_billing` (migration 074)
+ * BLOQUEIA essas colunas para o role autenticado — UPDATE via PostgREST autenticado
+ * levanta exception. O escopo é manual por `id`, e `lojaId` é DERIVADO da loja do
+ * `auth.uid()` (lida antes pela action via RLS), NUNCA do payload do cliente.
+ *
+ * Propaga o `error` do PostgREST (seguranca.md §14).
+ */
+export async function persistirAssinaturaLoja(
+  client: Client,
+  lojaId: string,
+  dados: {
+    billing_provider: string;
+    provider_subscription_id: string;
+    plano_id: string;
+  },
+): Promise<void> {
+  const { error } = await client
+    .from("lojas")
+    .update({
+      billing_provider: dados.billing_provider,
+      provider_subscription_id: dados.provider_subscription_id,
+      plano_id: dados.plano_id,
+    })
+    .eq("id", lojaId);
+  if (error) throw error;
+}
+
+/**
  * Coords (latitude/longitude) da loja para cálculo de frete por raio (issues 006/007).
  * Fonte: TABELA base `lojas` — a view `vitrine_lojas` NÃO expõe coords por design
  * (spec §Modelos de Dados, seguranca.md §19). Projeta SÓ as duas colunas (minimização).

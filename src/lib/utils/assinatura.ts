@@ -7,7 +7,19 @@ export type StatusAssinatura =
   | "ativa"
   | "inadimplente"
   | "cancelada"
-  | "suspensa";
+  | "suspensa"
+  | "cortesia";
+
+// Evento lógico de billing — PROVIDER-AGNÓSTICO (issue 075). NÃO é o nome cru do
+// payload do provider (isso é traduzido no adapter, issue 076); aqui já chega
+// normalizado, igual EventoHotmart.
+export type EventoBilling =
+  | "cobranca_aprovada"
+  | "recorrencia_aprovada"
+  | "pagamento_falhou"
+  | "assinatura_cancelada"
+  | "reembolso"
+  | "chargeback";
 
 export type EventoHotmart =
   | "compra_aprovada"
@@ -45,6 +57,37 @@ export function eventoParaStatus(
   return { status: resultado.status, renova: resultado.renova };
 }
 
+// Mapa evento lógico de billing → estado resultante (issue 075). Espelha
+// MAPA_EVENTO/eventoParaStatus, mas provider-agnóstico: depende só de `tipo`.
+const MAPA_EVENTO_BILLING: Record<
+  EventoBilling,
+  { status: StatusAssinatura; renova: boolean }
+> = {
+  cobranca_aprovada: { status: "ativa", renova: true },
+  recorrencia_aprovada: { status: "ativa", renova: true },
+  pagamento_falhou: { status: "inadimplente", renova: false },
+  assinatura_cancelada: { status: "cancelada", renova: false },
+  reembolso: { status: "suspensa", renova: false },
+  chargeback: { status: "suspensa", renova: false },
+};
+
+export function eventoBillingParaStatus(
+  _provider: string,
+  tipo: string,
+): ResultadoEvento {
+  // Input não-confiável: `tipo` fora do union (evento desconhecido) deve ser
+  // IGNORADO — nunca muda estado (evita retry infinito). `_provider` é aceito por
+  // contrato (077) mas não ramifica nesta v1 — semântica única provider-agnóstica.
+  const resultado = Object.prototype.hasOwnProperty.call(
+    MAPA_EVENTO_BILLING,
+    tipo,
+  )
+    ? MAPA_EVENTO_BILLING[tipo as EventoBilling]
+    : undefined;
+  if (!resultado) return { ignorar: true };
+  return { status: resultado.status, renova: resultado.renova };
+}
+
 export function assinaturaPermiteAcesso(
   status: StatusAssinatura,
   fimPeriodo: Date,
@@ -53,6 +96,11 @@ export function assinaturaPermiteAcesso(
   // PURA: `agora` é injetado, nunca Date.now()/new Date().
   switch (status) {
     case "ativa":
+    case "cortesia":
+      // cortesia: acesso pleno, ignora fimPeriodo (igual ativa, RN-4). INVARIANTE
+      // de segurança: este status SÓ é gravável por admin via service_role (RN-12)
+      // — o lojista nunca o seta (trigger lojas_protege_billing + allowlist da
+      // Server Action de loja). Logo `true` aqui não é escalável pelo tenant.
       return true;
     case "suspensa":
       return false; // corte imediato, sem carência (invariante)

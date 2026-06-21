@@ -8,6 +8,7 @@ import { describe, it, expect } from "vitest";
 import {
   eventoParaStatus,
   assinaturaPermiteAcesso,
+  eventoBillingParaStatus,
   type StatusAssinatura,
   type EventoHotmart,
 } from "./assinatura";
@@ -200,5 +201,100 @@ describe("tipos — StatusAssinatura cobre os 5 estados do adendo", () => {
     for (const s of estados) {
       expect(typeof assinaturaPermiteAcesso(s, FIM, ANTES)).toBe("boolean");
     }
+  });
+});
+
+// ===========================================================================
+// RED (issue 075): cortesia + eventoBillingParaStatus (cobrança por assinatura
+// própria, provider-agnóstico). Atualmente:
+//   - StatusAssinatura NÃO inclui "cortesia"
+//   - eventoBillingParaStatus NÃO existe
+//
+// CONTRATO (issue 075):
+//   StatusAssinatura ganha "cortesia":
+//     assinaturaPermiteAcesso("cortesia", qualquerData, agora) === true SEMPRE
+//     (ignora fimPeriodo — acesso liberado manualmente, sem cobrança)
+//
+//   eventoBillingParaStatus(provider: string, tipo: string): ResultadoEvento
+//     (PROVIDER-AGNÓSTICO — o mapa depende só de `tipo`, nomes lógicos já
+//      traduzidos do payload do provider na camada de webhook):
+//       "cobranca_aprovada"    → { status: "ativa",        renova: true  }
+//       "recorrencia_aprovada" → { status: "ativa",        renova: true  }
+//       "pagamento_falhou"     → { status: "inadimplente", renova: false }
+//       "assinatura_cancelada" → { status: "cancelada",    renova: false }
+//       "reembolso"            → { status: "suspensa",     renova: false }
+//       "chargeback"           → { status: "suspensa",     renova: false }
+//       desconhecido           → { ignorar: true }
+// ===========================================================================
+
+describe("assinaturaPermiteAcesso — status 'cortesia' (issue 075)", () => {
+  it("cortesia com fimPeriodo no PASSADO → permite (ignora fim)", () => {
+    expect(
+      assinaturaPermiteAcesso(
+        "cortesia" as StatusAssinatura,
+        new Date("2000-01-01T00:00:00Z"),
+        UM_DIA_DEPOIS,
+      ),
+    ).toBe(true);
+  });
+
+  it("cortesia com fimPeriodo no FUTURO → permite", () => {
+    expect(
+      assinaturaPermiteAcesso(
+        "cortesia" as StatusAssinatura,
+        new Date("2099-01-01T00:00:00Z"),
+        ANTES,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("eventoBillingParaStatus — mapa provider-agnóstico (issue 075)", () => {
+  it("asaas/cobranca_aprovada → ativa e renova", () => {
+    expect(eventoBillingParaStatus("asaas", "cobranca_aprovada")).toEqual({
+      status: "ativa",
+      renova: true,
+    });
+  });
+
+  it("asaas/reembolso → suspensa, NÃO renova (corte imediato)", () => {
+    expect(eventoBillingParaStatus("asaas", "reembolso")).toEqual({
+      status: "suspensa",
+      renova: false,
+    });
+  });
+
+  it("asaas/chargeback → suspensa, NÃO renova (corte imediato)", () => {
+    expect(eventoBillingParaStatus("asaas", "chargeback")).toEqual({
+      status: "suspensa",
+      renova: false,
+    });
+  });
+
+  it("asaas/assinatura_cancelada → cancelada, NÃO renova", () => {
+    expect(eventoBillingParaStatus("asaas", "assinatura_cancelada")).toEqual({
+      status: "cancelada",
+      renova: false,
+    });
+  });
+
+  it("asaas/pagamento_falhou → inadimplente, NÃO renova", () => {
+    expect(eventoBillingParaStatus("asaas", "pagamento_falhou")).toEqual({
+      status: "inadimplente",
+      renova: false,
+    });
+  });
+
+  it("asaas/evento desconhecido → ignorar (NÃO muda estado)", () => {
+    expect(eventoBillingParaStatus("asaas", "evento_desconhecido")).toEqual({
+      ignorar: true,
+    });
+  });
+
+  it("PROVIDER-AGNÓSTICO: stripe/cobranca_aprovada → ativa e renova (mesmo mapa)", () => {
+    expect(eventoBillingParaStatus("stripe", "cobranca_aprovada")).toEqual({
+      status: "ativa",
+      renova: true,
+    });
   });
 });
