@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,6 +57,7 @@ function lerCampo(config: Json | undefined, campo: string): string {
  * persiste a URL via `salvarQrPix` (Server Action) separada do submit principal.
  */
 export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagamentoProps) {
+  const router = useRouter();
   const ehEdicao = inicial?.id != null;
 
   const [tipoChave, setTipoChave] = useState<TipoChavePix>(
@@ -74,7 +76,14 @@ export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagament
 
   function montarPayload() {
     if (tipo === "pix") {
-      return { tipo: "pix" as const, config: { tipo_chave: tipoChave, chave: chave.trim() } };
+      return {
+        tipo: "pix" as const,
+        config: {
+          tipo_chave: tipoChave,
+          chave: chave.trim(),
+          ...(pixQrUrl ? { pix_qr_url: pixQrUrl } : {}),
+        },
+      };
     }
     return { tipo: "link" as const, config: { url: url.trim() } };
   }
@@ -125,6 +134,7 @@ export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagament
         return;
       }
       setPixQrUrl(urlPublica);
+      router.refresh();
     });
   }
 

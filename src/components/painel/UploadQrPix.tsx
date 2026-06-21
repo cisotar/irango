@@ -100,7 +100,11 @@ export function UploadQrPix({
         .from(BUCKET)
         .getPublicUrl(caminho);
 
-      const urlPublica = urlData.publicUrl;
+      // Cache-buster: o path é fixo (`qr.{ext}`) e o objeto é servido com
+      // `max-age=3600`. Sem o sufixo, trocar A por B na MESMA URL faria o CDN
+      // servir o QR antigo por até 1h (no painel e no checkout). O `?v` força
+      // o fetch do objeto novo a cada upload.
+      const urlPublica = `${urlData.publicUrl}?v=${Date.now()}`;
 
       // 5. Preview local imediato.
       setPreview(urlPublica);

@@ -71,10 +71,48 @@ export async function atualizarFormaPagamento(
   }
   try {
     const supabase = await createClient();
+    // loja_id derivado do dono — defesa em profundidade junto da RLS (mesmo
+    // padrão de `salvarQrPix`).
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // MERGE da config: o form só envia chave/tipo_chave (ou url). Um update
+    // total apagaria campos gravados em escrita separada — sobretudo
+    // `pix_qr_url` (salvo por `salvarQrPix`), sumindo o QR do painel e do
+    // checkout. Lê a config atual e mescla.
+    const { data: formaAtual, error: erroBusca } = await supabase
+      .from("formas_pagamento")
+      .select("config")
+      .eq("id", id)
+      .eq("loja_id", loja.id)
+      .maybeSingle();
+    if (erroBusca) {
+      console.error("[atualizarFormaPagamento] busca", erroBusca);
+      return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+    }
+    const configAtual =
+      formaAtual?.config &&
+      typeof formaAtual.config === "object" &&
+      !Array.isArray(formaAtual.config)
+        ? (formaAtual.config as Record<string, unknown>)
+        : {};
+    // Re-valida o resultado do merge: `configAtual` vem do banco e NÃO passou
+    // por validação aqui. O re-parse barra config inválida e faz strip de
+    // chaves não declaradas (lixo injetado por outra via de escrita).
+    const revalidado = schemaFormaPagamento.safeParse({
+      tipo: parsed.data.tipo,
+      config: { ...configAtual, ...parsed.data.config },
+    });
+    if (!revalidado.success) {
+      console.error("[atualizarFormaPagamento] merge inválido", revalidado.error);
+      return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
+    }
     const { error } = await supabase
       .from("formas_pagamento")
-      .update({ tipo: parsed.data.tipo, config: parsed.data.config as Json })
-      .eq("id", id);
+      .update({ tipo: revalidado.data.tipo, config: revalidado.data.config as Json })
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[atualizarFormaPagamento]", error);
       return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
@@ -140,11 +178,25 @@ export async function salvarQrPix(
       !Array.isArray(formaAtual.config)
         ? (formaAtual.config as Record<string, unknown>)
         : {};
-    const configNovo: Json = { ...configAtual, pix_qr_url: parsed.data } as Json;
+    // Remoção (`pixQrUrl` undefined) DELETA a chave explicitamente — não depende
+    // do drop implícito de `undefined` na serialização do supabase-js.
+    const { pix_qr_url: _antigo, ...configSemQr } = configAtual;
+    const configNovo =
+      parsed.data === undefined
+        ? configSemQr
+        : { ...configSemQr, pix_qr_url: parsed.data };
+
+    // Re-valida o merge: `configAtual` vem do banco sem validação aqui. O
+    // re-parse barra config inválida e faz strip de chaves não declaradas.
+    const revalidado = schemaFormaPagamento.safeParse({ tipo: "pix", config: configNovo });
+    if (!revalidado.success) {
+      console.error("[salvarQrPix] merge inválido", revalidado.error);
+      return { ok: false, erro: "Não foi possível salvar o QR Pix." };
+    }
 
     const { error } = await supabase
       .from("formas_pagamento")
-      .update({ config: configNovo })
+      .update({ config: revalidado.data.config as Json })
       .eq("id", formaId)
       .eq("loja_id", loja.id)
       .eq("tipo", "pix");

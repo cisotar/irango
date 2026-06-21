@@ -1,0 +1,989 @@
+<!-- Mundo: Vitrine pública — tema da loja via --cor-primaria / --cor-fundo / --cor-destaque -->
+<!-- Checkout DESKTOP (≥768px) — DOCUMENTO DE COMPARAÇÃO: duas variantes empilhadas -->
+<!--   OPÇÃO 1 — Empilhado real (decidida): 3 seções abertas ao mesmo tempo. -->
+<!--   OPÇÃO 2 — Acordeão (alternativa): só 1 seção expandida por vez, outras colapsadas com resumo. -->
+<!-- Ambas: 2 colunas (conteúdo + ResumoValores STICKY/CTA), reflow < 768px pra coluna única. -->
+<!-- Sem login. Cliente final. Mesmos tokens, cards, header band e conteúdo de exemplo. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empório iRango · Finalizar pedido — Desktop</title>
+<style>
+  :root {
+    /* Tema da loja — injetado via SSR, customizável pelo lojista */
+    --cor-primaria: #332616;
+    --cor-fundo:    #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Sistema (fixo) */
+    --marrom-cafe:  #2e2610;
+    --texto:        #3e2723;
+    --texto-muted:  #6b5d4f;
+    --borda-nav:    #dccbb0;
+    --branco:       #ffffff;
+    --cinza-claro:  #f9f9f9;
+    --cinza-medio:  #eeeeee;
+    --erro:         #991b1b;
+    --erro-bg:      #fee2e2;
+    --verde:        #166534;
+    --verde-bg:     #dcfce7;
+    --azul:         #1e40af;
+    --azul-bg:      #dbeafe;
+    --sombra-suave: rgba(0,0,0,0.10);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); color: var(--texto); min-height: 100vh; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  /* ============ HEADER BAND (idêntico aos canônicos) ============ */
+  .header {
+    background: var(--cor-primaria); color: var(--branco);
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 50;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .header-inner {
+    max-width: 1100px; margin: 0 auto; width: 100%;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .btn-voltar {
+    background: none; border: none; color: var(--branco); cursor: pointer;
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; font-size: 1.2rem; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .btn-voltar:hover { background: rgba(255,255,255,0.12); }
+  .btn-voltar:focus-visible { outline: 2px solid rgba(255,255,255,0.7); outline-offset: 2px; }
+  .header-titulo { font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ============ INDICADOR DE SEÇÕES (âncoras, não wizard) ============ */
+  /* No desktop tudo está visível, então o stepper vira navegação por âncoras. */
+  .secoes-nav {
+    background: var(--branco); border-bottom: 1px solid var(--cinza-medio);
+    position: sticky; top: 72px; z-index: 40;
+  }
+  .secoes-nav-inner {
+    max-width: 1100px; margin: 0 auto; padding: 10px 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .secoes-nav .rotulo {
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--texto-muted); margin-right: 4px;
+  }
+  .ancora {
+    display: inline-flex; align-items: center; gap: 6px;
+    text-decoration: none; color: var(--texto-muted);
+    font-size: 0.8rem; font-weight: 700;
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--cinza-medio);
+    min-height: 36px; transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .ancora:hover { border-color: var(--cor-destaque); color: var(--cor-destaque); }
+  .ancora:focus-visible { outline: 2px solid var(--cor-destaque); outline-offset: 2px; }
+  .ancora .num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--cor-destaque); color: var(--branco);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.68rem; font-weight: 900; flex-shrink: 0;
+  }
+  .ancora.ok .num { background: var(--cor-destaque); }
+  .ancora.pendente .num { background: var(--cinza-medio); color: var(--texto-muted); }
+  .ancora.pendente { color: var(--texto-muted); }
+
+  /* ============ GRID PRINCIPAL (2 colunas no desktop) ============ */
+  .container {
+    max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px;
+    display: grid; grid-template-columns: 1fr 380px; gap: 24px;
+    align-items: start;
+  }
+  .coluna-conteudo { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ============ CARD / SEÇÃO (idêntico aos canônicos) ============ */
+  .secao {
+    background: var(--branco);
+    border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave);
+    overflow: hidden; scroll-margin-top: 130px;
+  }
+  .secao-titulo {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--texto-muted); padding: 14px 16px;
+    border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .secao-titulo .num-badge {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--cor-destaque); color: var(--branco);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 900; flex-shrink: 0;
+  }
+  .secao-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ============ ITEM com controle +/- (idêntico ao canônico 1) ============ */
+  .item-linha {
+    display: flex; align-items: center; gap: 12px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--cinza-medio);
+  }
+  .item-linha:last-child { border-bottom: none; padding-bottom: 0; }
+  .item-img {
+    width: 52px; height: 52px; border-radius: 10px;
+    background: linear-gradient(135deg,#e8dcc4,#d8c4a0);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; flex-shrink: 0;
+  }
+  .item-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .item-nome { font-size: 0.88rem; font-weight: 700; color: var(--texto); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-unit-price { font-size: 0.75rem; color: var(--texto-muted); }
+  .item-dir { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+  .item-preco-total { font-weight: 900; font-size: 0.92rem; color: var(--cor-destaque); white-space: nowrap; }
+
+  .ctrl-qtd { display: flex; align-items: center; gap: 0; }
+  .ctrl-btn {
+    width: 32px; height: 32px; border: 1px solid var(--borda-nav); background: var(--cinza-claro);
+    color: var(--texto); font-size: 1.1rem; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .ctrl-btn:first-child { border-radius: 8px 0 0 8px; }
+  .ctrl-btn:last-child { border-radius: 0 8px 8px 0; }
+  .ctrl-btn:hover { background: var(--cinza-medio); border-color: var(--cor-destaque); }
+  .ctrl-btn:focus-visible { outline: 2px solid var(--cor-destaque); outline-offset: 1px; z-index: 1; position: relative; }
+  .ctrl-btn.remover { color: var(--erro); }
+  .ctrl-qtd-val {
+    width: 36px; height: 32px; border-top: 1px solid var(--borda-nav); border-bottom: 1px solid var(--borda-nav);
+    border-left: none; border-right: none; text-align: center;
+    font-size: 0.9rem; font-weight: 700; color: var(--texto); background: var(--branco);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ============ CUPOM (idêntico ao canônico 1) ============ */
+  .cupom-wrap { display: flex; gap: 8px; }
+  .cupom-input {
+    flex: 1; height: 48px; padding: 0 14px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    font-size: 0.95rem; color: var(--texto); background: var(--cinza-claro); outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .cupom-input:focus-visible { border-color: var(--cor-destaque); box-shadow: 0 0 0 3px rgba(45,58,39,0.15); }
+  .btn-cupom {
+    height: 48px; padding: 0 16px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    background: var(--branco); color: var(--texto); font-size: 0.88rem; font-weight: 700; cursor: pointer;
+    white-space: nowrap; transition: border-color 0.15s, color 0.15s; font-family: inherit;
+  }
+  .btn-cupom:hover { border-color: var(--cor-destaque); color: var(--cor-destaque); }
+  .btn-cupom:focus-visible { outline: 2px solid var(--cor-destaque); outline-offset: 2px; }
+  .cupom-veredito {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--verde-bg); border: 1px solid #86efac; border-radius: 8px;
+    padding: 10px 12px; font-size: 0.82rem; color: var(--verde); font-weight: 600;
+  }
+  .cupom-veredito .icon { font-size: 1rem; flex-shrink: 0; }
+  .cupom-remover {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    color: var(--verde); font-size: 0.78rem; font-weight: 700; padding: 4px 8px;
+    border-radius: 6px; text-decoration: underline; min-height: 32px;
+  }
+  .cupom-remover:hover { background: rgba(22,101,52,0.08); }
+  .cupom-remover:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
+
+  /* ============ RADIO CARDS (idêntico aos canônicos 2 e 3) ============ */
+  .opcao-lista { display: flex; flex-direction: column; gap: 8px; }
+  .opcao {
+    display: flex; align-items: flex-start; gap: 12px;
+    border: 1px solid var(--cinza-medio); border-radius: 10px; padding: 14px;
+    cursor: pointer; transition: border-color 0.15s, background 0.15s; min-height: 52px;
+  }
+  .opcao:hover { border-color: var(--cor-destaque); }
+  .opcao input[type="radio"] { width: 20px; height: 20px; accent-color: var(--cor-destaque); flex-shrink: 0; cursor: pointer; margin-top: 2px; }
+  .opcao input[type="radio"]:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 2px; }
+  .opcao.selecionada { border-color: var(--cor-destaque); background: rgba(45,58,39,0.04); }
+  .opcao-info { flex: 1; }
+  .opcao-nome { font-size: 0.88rem; font-weight: 700; color: var(--texto); }
+  .opcao-sub { font-size: 0.78rem; color: var(--texto-muted); margin-top: 2px; }
+  .opcao-badge { font-size: 0.78rem; font-weight: 900; white-space: nowrap; flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
+  .badge-gratis { color: var(--verde); }
+  .badge-frete { color: var(--texto-muted); }
+  .badge-recomendado {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: var(--verde-bg); color: var(--verde);
+    font-size: 0.7rem; font-weight: 800; border-radius: 6px; padding: 2px 8px;
+    margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.3px;
+    border: 1px solid #86efac;
+  }
+
+  /* ============ CAMPOS (idêntico aos canônicos 2 e 3) ============ */
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo label { font-size: 0.8rem; font-weight: 700; color: var(--texto); }
+  .campo input, .campo select {
+    height: 48px; padding: 0 14px; border: 1px solid var(--borda-nav); border-radius: 10px;
+    font-size: 0.95rem; color: var(--texto); background: var(--cinza-claro);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit;
+    width: 100%; min-width: 0;
+  }
+  .campo input[readonly] { color: var(--texto-muted); background: var(--cinza-medio); cursor: default; }
+  .campo input:focus-visible, .campo select:focus-visible {
+    border-color: var(--cor-destaque); box-shadow: 0 0 0 3px rgba(45,58,39,0.15);
+  }
+  .campo input[aria-invalid="true"] { border-color: var(--erro); }
+  .campo .hint { font-size: 0.75rem; color: var(--texto-muted); }
+  .campo .erro-msg { font-size: 0.75rem; color: var(--erro); }
+  .linha-dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .linha-dupla > .campo { min-width: 0; }
+
+  /* Frete preview inline (idêntico ao canônico 2) */
+  .frete-preview {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--verde-bg); border: 1px solid #86efac; border-radius: 8px;
+    padding: 10px 14px; font-size: 0.85rem;
+  }
+  .frete-preview .label { color: var(--verde); font-weight: 700; }
+  .frete-preview .valor { color: var(--verde); font-weight: 900; font-size: 1rem; }
+
+  /* Bloco PIX resumido (chave para copiar — do canônico 3) */
+  .pix-bloco { display: flex; flex-direction: column; gap: 12px; }
+  .pix-chave-wrap {
+    display: flex; align-items: stretch; gap: 0;
+    border: 1px solid var(--borda-nav); border-radius: 10px; overflow: hidden;
+  }
+  .pix-chave {
+    flex: 1; padding: 12px 14px;
+    font-family: 'Courier New', Courier, monospace; font-size: 0.8rem;
+    color: var(--texto); background: var(--cinza-claro); word-break: break-all;
+    border: none; outline: none; cursor: text; resize: none; line-height: 1.5;
+  }
+  .btn-copiar {
+    min-width: 80px; padding: 0 14px; border: none; border-left: 1px solid var(--borda-nav);
+    background: var(--cor-destaque); color: var(--branco);
+    font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+    font-family: inherit; transition: opacity 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .btn-copiar:hover { opacity: 0.88; }
+  .btn-copiar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 2px; }
+  .pix-aviso-validade { font-size: 0.75rem; color: var(--texto-muted); text-align: center; }
+
+  /* ============ COLUNA RESUMO — STICKY ============ */
+  .coluna-resumo { position: sticky; top: 130px; min-width: 0; }
+  .resumo-card {
+    background: var(--branco);
+    border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave); overflow: hidden;
+  }
+  .resumo-card-titulo {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--texto-muted); padding: 14px 16px;
+    border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro);
+  }
+  .resumo-card-body { padding: 16px; }
+  .resumo-linha { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; }
+  .resumo-label { font-size: 0.85rem; color: var(--texto-muted); }
+  .resumo-valor { font-size: 0.85rem; font-weight: 600; color: var(--texto); }
+  .resumo-valor.desconto { color: var(--verde); font-weight: 700; }
+  .resumo-valor.gratis { color: var(--verde); font-weight: 900; }
+  .resumo-linha.total { border-top: 2px solid var(--borda-nav); margin-top: 8px; padding-top: 12px; }
+  .resumo-linha.total .resumo-label { font-size: 1rem; font-weight: 900; color: var(--marrom-cafe); }
+  .resumo-linha.total .resumo-valor { font-size: 1.15rem; font-weight: 900; color: var(--cor-destaque); }
+  .aviso-estimado {
+    display: flex; align-items: flex-start; gap: 6px;
+    background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
+    padding: 8px 12px; font-size: 0.75rem; color: #854d0e; margin-top: 12px;
+  }
+
+  /* CTA Confirmar (do botão dos canônicos, dentro do resumo sticky) */
+  .btn-confirmar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 56px; border: none; border-radius: 12px; cursor: pointer;
+    background: var(--cor-destaque); color: var(--branco);
+    font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    transition: opacity 0.15s, transform 0.1s; font-family: inherit; margin-top: 14px;
+  }
+  .btn-confirmar:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-confirmar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 3px; }
+  .btn-confirmar:disabled {
+    background: #9a9a9a; cursor: not-allowed; box-shadow: none; transform: none; opacity: 1;
+  }
+  .confirmar-hint {
+    font-size: 0.72rem; color: var(--texto-muted); text-align: center; margin: 8px 0 0;
+  }
+
+  /* ============ DIVISÓRIA DE COMPARAÇÃO (só neste doc, não vai pro app) ============ */
+  .doc-divisor {
+    max-width: 1100px; margin: 0 auto; padding: 32px 16px 4px;
+  }
+  .doc-divisor-faixa {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--cor-primaria); color: var(--branco);
+    border-radius: 12px; padding: 14px 18px;
+    box-shadow: 0 4px 12px var(--sombra-suave);
+  }
+  .doc-divisor-faixa .tag {
+    font-size: 0.95rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .doc-divisor-faixa .selo {
+    font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
+    border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  }
+  .selo.decidida { background: var(--verde-bg); color: var(--verde); border: 1px solid #86efac; }
+  .selo.alternativa { background: var(--azul-bg); color: var(--azul); border: 1px solid #93c5fd; }
+  .doc-divisor-faixa .nota { font-size: 0.78rem; opacity: 0.85; margin-left: auto; }
+
+  /* ============ ACORDEÃO (específico da Opção 2) ============ */
+  /* Reusa .secao como casca. A faixa de título vira BOTÃO clicável; o body colapsa. */
+  .secao.acordeao .secao-titulo-btn {
+    /* faixa de título idêntica a .secao-titulo, mas como <button> full-width clicável */
+    width: 100%; text-align: left; cursor: pointer; font-family: inherit;
+    border: none; border-bottom: 1px solid var(--cinza-medio); background: var(--cinza-claro);
+    padding: 14px 16px; display: flex; align-items: center; gap: 8px;
+    transition: background 0.15s;
+  }
+  .secao.acordeao .secao-titulo-btn:hover { background: var(--cinza-medio); }
+  .secao.acordeao .secao-titulo-btn:focus-visible {
+    outline: 2px solid var(--cor-destaque); outline-offset: -2px;
+  }
+  .secao-titulo-btn .titulo-txt {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--texto-muted);
+  }
+  /* Resumo de 1 linha — só aparece quando COLAPSADA */
+  .secao-titulo-btn .resumo-linha-curta {
+    margin-left: 4px; font-size: 0.82rem; font-weight: 600; color: var(--texto);
+    text-transform: none; letter-spacing: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  .secao-titulo-btn .resumo-linha-curta::before {
+    content: "·"; color: var(--borda-nav); margin-right: 8px; font-weight: 400;
+  }
+  .secao-titulo-btn .chevron {
+    margin-left: auto; flex-shrink: 0; color: var(--texto-muted);
+    font-size: 0.9rem; transition: transform 0.2s;
+  }
+  /* num-badge da seção concluída ganha um check sobreposto na lógica real;
+     aqui mantemos o número, mas a seção OK fica com badge verde-destaque */
+  .secao.acordeao.concluida .num-badge { background: var(--verde); }
+
+  /* Estados: aberta mostra o body e esconde o resumo curto; colapsada o inverso */
+  .secao.acordeao[data-estado="colapsada"] .secao-body { display: none; }
+  .secao.acordeao[data-estado="colapsada"] .chevron { transform: rotate(0deg); }
+  .secao.acordeao[data-estado="aberta"] .chevron { transform: rotate(180deg); }
+  .secao.acordeao[data-estado="aberta"] .resumo-linha-curta { display: none; }
+
+  /* ============ REFLOW MOBILE (< 768px) ============ */
+  /* Abaixo de md, as 2 colunas viram coluna única; o resumo desce pro fim. */
+  @media (max-width: 767px) {
+    .container { grid-template-columns: 1fr; gap: 16px; padding: 16px; }
+    .coluna-resumo { position: static; }            /* não fica sticky no mobile */
+    .secoes-nav { display: none; }                  /* mobile usa o wizard sequencial existente */
+    .secao { scroll-margin-top: 80px; }
+  }
+  /* Moldura desktop, como nos canônicos */
+  @media (min-width: 768px) {
+    body { background: #c8bfab; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============ HEADER BAND ============ -->
+  <header class="header">
+    <div class="header-inner">
+      <button type="button" class="btn-voltar" aria-label="Voltar à loja">&#8592;</button>
+      <span class="header-titulo">Finalizar pedido</span>
+    </div>
+  </header>
+
+  <!-- ============ NAVEGAÇÃO POR ÂNCORAS (substitui o stepper no desktop) ============ -->
+  <!-- Tudo está visível ao mesmo tempo: não é passo-a-passo, é atalho para a seção. -->
+  <nav class="secoes-nav" aria-label="Seções do checkout">
+    <div class="secoes-nav-inner">
+      <span class="rotulo" aria-hidden="true">Ir para:</span>
+      <a href="#secao-itens" class="ancora ok">
+        <span class="num" aria-hidden="true">1</span> Itens
+      </a>
+      <a href="#secao-entrega" class="ancora ok">
+        <span class="num" aria-hidden="true">2</span> Entrega
+      </a>
+      <a href="#secao-pagamento" class="ancora ok">
+        <span class="num" aria-hidden="true">3</span> Pagamento
+      </a>
+    </div>
+  </nav>
+
+  <!-- ████████████████████████████████████████████████████████████████████ -->
+  <!-- ███  OPÇÃO 1 — EMPILHADO REAL (decidida)                          ███ -->
+  <!-- ████████████████████████████████████████████████████████████████████ -->
+  <div class="doc-divisor">
+    <div class="doc-divisor-faixa">
+      <span class="tag">Opção 1 — Empilhado real</span>
+      <span class="selo decidida">Decidida</span>
+      <span class="nota">3 seções abertas ao mesmo tempo · scan vertical</span>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- ============================================================ -->
+    <!-- COLUNA ESQUERDA — 3 SEÇÕES EMPILHADAS E ABERTAS              -->
+    <!-- ============================================================ -->
+    <main class="coluna-conteudo">
+
+      <!-- ===== SEÇÃO 1 — ITENS DO PEDIDO ===== -->
+      <section class="secao" id="secao-itens" aria-labelledby="titulo-itens">
+        <h2 class="secao-titulo" id="titulo-itens">
+          <span class="num-badge" aria-hidden="true">1</span> Itens do pedido
+        </h2>
+        <div class="secao-body">
+
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">🍞</div>
+            <div class="item-corpo">
+              <div class="item-nome">Pão de queijo artesanal (12 un)</div>
+              <div class="item-unit-price">R$ 18,00 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 36,00">R$ 36,00</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Pão de queijo artesanal">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Pão de queijo artesanal">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">2</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Pão de queijo artesanal">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">☕</div>
+            <div class="item-corpo">
+              <div class="item-nome">Café moído Espresso 250g</div>
+              <div class="item-unit-price">R$ 34,50 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 34,50">R$ 34,50</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Café moído Espresso">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Café moído Espresso">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">1</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Café moído Espresso">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">🧀</div>
+            <div class="item-corpo">
+              <div class="item-nome">Queijo minas frescal 400g</div>
+              <div class="item-unit-price">R$ 16,00 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 16,00">R$ 16,00</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Queijo minas frescal">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Queijo minas frescal">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">1</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Queijo minas frescal">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cupom embutido na seção de itens -->
+          <div class="cupom-wrap" style="padding-top:4px;">
+            <input
+              type="text" class="cupom-input" id="cupom" name="cupom"
+              placeholder="Ex.: PROMO10" aria-label="Código do cupom de desconto"
+              autocomplete="off" spellcheck="false" maxlength="20" value="PROMO10"
+            >
+            <button type="button" class="btn-cupom">Aplicar</button>
+          </div>
+          <div class="cupom-veredito" role="status" aria-live="polite">
+            <span class="icon" aria-hidden="true">&#10003;</span>
+            <span><strong>PROMO10 aplicado</strong> · desconto de R$&nbsp;7,00 no subtotal</span>
+            <button type="button" class="cupom-remover" aria-label="Remover cupom PROMO10">Remover</button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===== SEÇÃO 2 — ENTREGA ===== -->
+      <section class="secao" id="secao-entrega" aria-labelledby="titulo-entrega">
+        <h2 class="secao-titulo" id="titulo-entrega">
+          <span class="num-badge" aria-hidden="true">2</span> Entrega
+        </h2>
+        <div class="secao-body">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only">Selecione o tipo de entrega</legend>
+            <div class="opcao-lista">
+              <label class="opcao selecionada">
+                <input type="radio" name="tipo-entrega" value="entrega" checked aria-describedby="entrega-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Entrega em domicílio</div>
+                  <div class="opcao-sub" id="entrega-desc">Informe seu endereço</div>
+                </div>
+                <div class="opcao-badge badge-frete">+ frete</div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="tipo-entrega" value="retirada" aria-describedby="retirada-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Retirada no local</div>
+                  <div class="opcao-sub" id="retirada-desc">Retire no estabelecimento</div>
+                </div>
+                <div class="opcao-badge badge-gratis"><span aria-hidden="true">&#10003;</span> Grátis</div>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Campos de endereço (visíveis quando ENTREGA) -->
+          <div class="linha-dupla">
+            <div class="campo">
+              <label for="cep">CEP</label>
+              <input type="text" id="cep" name="cep" value="04101-000" inputmode="numeric" maxlength="9" autocomplete="postal-code" aria-describedby="cep-hint">
+              <span class="hint" id="cep-hint">Preenchemos o endereço automaticamente.</span>
+            </div>
+            <div class="campo">
+              <label for="numero">Número</label>
+              <input type="text" id="numero" name="numero" value="342" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="complemento">Complemento <span style="font-weight:400;color:var(--texto-muted)">(opcional)</span></label>
+            <input type="text" id="complemento" name="complemento" placeholder="Apto, bloco, referência…" autocomplete="address-line2">
+          </div>
+
+          <div class="campo">
+            <label for="rua">Rua</label>
+            <input type="text" id="rua" name="rua" value="Rua Silva Bueno" readonly aria-label="Rua preenchida automaticamente pelo CEP">
+          </div>
+
+          <div class="linha-dupla">
+            <div class="campo">
+              <label for="bairro">Bairro</label>
+              <input type="text" id="bairro" name="bairro" value="Saúde" readonly aria-label="Bairro preenchido automaticamente pelo CEP">
+            </div>
+            <div class="campo">
+              <label for="cidade">Cidade / UF</label>
+              <input type="text" id="cidade" name="cidade" value="São Paulo / SP" readonly aria-label="Cidade preenchida automaticamente pelo CEP">
+            </div>
+          </div>
+
+          <div class="frete-preview" role="status" aria-live="polite" aria-label="Frete calculado: R$ 7,00 para o bairro Saúde">
+            <span class="label">&#10003; Frete (Saúde)</span>
+            <span class="valor">R$ 7,00</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SEÇÃO 3 — PAGAMENTO (dados do cliente + forma) ===== -->
+      <section class="secao" id="secao-pagamento" aria-labelledby="titulo-pagamento">
+        <h2 class="secao-titulo" id="titulo-pagamento">
+          <span class="num-badge" aria-hidden="true">3</span> Pagamento
+        </h2>
+        <div class="secao-body">
+
+          <!-- Dados do cliente -->
+          <div class="campo">
+            <label for="nome">Nome completo</label>
+            <input type="text" id="nome" name="nome" value="Maria Silva" placeholder="Maria Silva" autocomplete="name" required aria-required="true">
+          </div>
+          <div class="campo">
+            <label for="telefone">WhatsApp / Telefone</label>
+            <input type="tel" id="telefone" name="telefone" value="(11) 98888-7766" placeholder="(11) 99999-9999" autocomplete="tel" inputmode="tel" required aria-required="true" aria-describedby="telefone-hint">
+            <span class="hint" id="telefone-hint">Usamos para enviar a confirmação do pedido.</span>
+          </div>
+          <div class="campo">
+            <label for="obs">Observações <span style="font-weight:400;color:var(--texto-muted)">(opcional)</span></label>
+            <input type="text" id="obs" name="obs" placeholder="Ex.: sem cebola, entregar na portaria…">
+          </div>
+
+          <!-- Forma de pagamento -->
+          <fieldset style="border:none;padding:0;margin:6px 0 0;">
+            <legend class="sr-only">Selecione a forma de pagamento</legend>
+            <div class="opcao-lista">
+              <label class="opcao selecionada">
+                <input type="radio" name="pgto" value="pix" checked aria-describedby="pix-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">PIX
+                    <span class="badge-recomendado" aria-label="Opção recomendada"><span aria-hidden="true">&#10003;</span> Recomendado</span>
+                  </div>
+                  <div class="opcao-sub" id="pix-desc">Pague agora com QR Code ou chave</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pgto" value="cartao" aria-describedby="cartao-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Cartão de crédito / débito</div>
+                  <div class="opcao-sub" id="cartao-desc">Link enviado pelo WhatsApp</div>
+                </div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="pgto" value="dinheiro" aria-describedby="dinheiro-desc">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Dinheiro na entrega</div>
+                  <div class="opcao-sub" id="dinheiro-desc">Pague ao receber</div>
+                </div>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Bloco PIX (visível quando PIX selecionado) -->
+          <div class="pix-bloco" aria-label="Instruções para pagamento PIX">
+            <p style="font-size:0.78rem;font-weight:700;color:var(--texto-muted);margin:0;">Copie a chave PIX para pagar:</p>
+            <div class="pix-chave-wrap">
+              <textarea class="pix-chave" rows="2" readonly aria-label="Chave PIX do Empório iRango para copiar" id="chave-pix">00020126580014BR.GOV.BCB.PIX0136emporioirango@gmail.com5204000053039865405086.505802BR5915Emporio iRango6009SAO PAULO62090505IRANGO</textarea>
+              <button type="button" class="btn-copiar" aria-label="Copiar chave PIX" aria-describedby="chave-pix">&#9781; Copiar</button>
+            </div>
+            <p class="pix-aviso-validade">Código válido por <strong>30 minutos</strong>. Após confirmar, enviaremos o comprovante por WhatsApp.</p>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ============================================================ -->
+    <!-- COLUNA DIREITA — RESUMO STICKY + CTA                          -->
+    <!-- ============================================================ -->
+    <aside class="coluna-resumo" aria-labelledby="titulo-resumo">
+      <div class="resumo-card">
+        <h2 class="resumo-card-titulo" id="titulo-resumo">Resumo do pedido</h2>
+        <div class="resumo-card-body">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span><strong>Valores estimados.</strong> O total cobrado é confirmado pelo lojista. Em caso de ajuste, avisamos pelo WhatsApp antes da cobrança.</span>
+          </div>
+
+          <!-- CTA habilitado: endereço + pagamento válidos -->
+          <button type="button" class="btn-confirmar" aria-label="Confirmar pedido — total estimado R$ 86,50">
+            Confirmar pedido
+          </button>
+          <p class="confirmar-hint">Endereço e pagamento preenchidos.</p>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ████████████████████████████████████████████████████████████████████ -->
+  <!-- ███  OPÇÃO 2 — ACORDEÃO (alternativa)                             ███ -->
+  <!-- ████████████████████████████████████████████████████████████████████ -->
+  <div class="doc-divisor">
+    <div class="doc-divisor-faixa">
+      <span class="tag">Opção 2 — Acordeão</span>
+      <span class="selo alternativa">Alternativa</span>
+      <span class="nota">1 seção expandida por vez · validação por seção</span>
+    </div>
+  </div>
+
+  <!-- ESTADO A — seção "Itens" EXPANDIDA; "Entrega" e "Pagamento" COLAPSADAS -->
+  <div class="container">
+
+    <!-- COLUNA ESQUERDA — ACORDEÃO -->
+    <main class="coluna-conteudo">
+
+      <!-- ===== ACORDEÃO 1 — ITENS (ABERTA) ===== -->
+      <section class="secao acordeao concluida" data-estado="aberta" id="acc-itens" aria-labelledby="acc-itens-btn">
+        <button type="button" class="secao-titulo-btn" id="acc-itens-btn" aria-expanded="true" aria-controls="acc-itens-body">
+          <span class="num-badge" aria-hidden="true">1</span>
+          <span class="titulo-txt">Itens do pedido</span>
+          <span class="resumo-linha-curta" aria-hidden="true">3 itens · PROMO10 aplicado</span>
+          <span class="chevron" aria-hidden="true">&#9660;</span>
+        </button>
+        <div class="secao-body" id="acc-itens-body" role="region" aria-labelledby="acc-itens-btn">
+
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">🍞</div>
+            <div class="item-corpo">
+              <div class="item-nome">Pão de queijo artesanal (12 un)</div>
+              <div class="item-unit-price">R$ 18,00 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 36,00">R$ 36,00</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Pão de queijo artesanal">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Pão de queijo artesanal">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">2</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Pão de queijo artesanal">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">☕</div>
+            <div class="item-corpo">
+              <div class="item-nome">Café moído Espresso 250g</div>
+              <div class="item-unit-price">R$ 34,50 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 34,50">R$ 34,50</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Café moído Espresso">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Café moído Espresso">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">1</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Café moído Espresso">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="item-linha">
+            <div class="item-img" aria-hidden="true">🧀</div>
+            <div class="item-corpo">
+              <div class="item-nome">Queijo minas frescal 400g</div>
+              <div class="item-unit-price">R$ 16,00 / unidade</div>
+            </div>
+            <div class="item-dir">
+              <span class="item-preco-total" aria-label="Preço total deste item: R$ 16,00">R$ 16,00</span>
+              <div class="ctrl-qtd" role="group" aria-label="Quantidade de Queijo minas frescal">
+                <button type="button" class="ctrl-btn remover" aria-label="Remover 1 Queijo minas frescal">&#8722;</button>
+                <div class="ctrl-qtd-val" aria-live="polite" aria-atomic="true">1</div>
+                <button type="button" class="ctrl-btn" aria-label="Adicionar mais 1 Queijo minas frescal">&#43;</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="cupom-wrap" style="padding-top:4px;">
+            <input
+              type="text" class="cupom-input" id="cupom-acc" name="cupom"
+              placeholder="Ex.: PROMO10" aria-label="Código do cupom de desconto"
+              autocomplete="off" spellcheck="false" maxlength="20" value="PROMO10"
+            >
+            <button type="button" class="btn-cupom">Aplicar</button>
+          </div>
+          <div class="cupom-veredito" role="status" aria-live="polite">
+            <span class="icon" aria-hidden="true">&#10003;</span>
+            <span><strong>PROMO10 aplicado</strong> · desconto de R$&nbsp;7,00 no subtotal</span>
+            <button type="button" class="cupom-remover" aria-label="Remover cupom PROMO10">Remover</button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===== ACORDEÃO 2 — ENTREGA (COLAPSADA, com resumo de 1 linha) ===== -->
+      <section class="secao acordeao concluida" data-estado="colapsada" id="acc-entrega" aria-labelledby="acc-entrega-btn">
+        <button type="button" class="secao-titulo-btn" id="acc-entrega-btn" aria-expanded="false" aria-controls="acc-entrega-body">
+          <span class="num-badge" aria-hidden="true">2</span>
+          <span class="titulo-txt">Entrega</span>
+          <span class="resumo-linha-curta">Entrega em domicílio · Saúde · frete R$ 7,00</span>
+          <span class="chevron" aria-hidden="true">&#9660;</span>
+        </button>
+        <!-- body presente mas oculto via data-estado; mantém DOM/aria-controls válido -->
+        <div class="secao-body" id="acc-entrega-body" role="region" aria-labelledby="acc-entrega-btn">
+          <p style="font-size:0.8rem;color:var(--texto-muted);margin:0;">(Campos de endereço — iguais à Opção 1 — aparecem aqui quando a seção é expandida.)</p>
+        </div>
+      </section>
+
+      <!-- ===== ACORDEÃO 3 — PAGAMENTO (COLAPSADA, com resumo de 1 linha) ===== -->
+      <section class="secao acordeao" data-estado="colapsada" id="acc-pagamento" aria-labelledby="acc-pagamento-btn">
+        <button type="button" class="secao-titulo-btn" id="acc-pagamento-btn" aria-expanded="false" aria-controls="acc-pagamento-body">
+          <span class="num-badge" aria-hidden="true">3</span>
+          <span class="titulo-txt">Pagamento</span>
+          <span class="resumo-linha-curta">Maria Silva · PIX</span>
+          <span class="chevron" aria-hidden="true">&#9660;</span>
+        </button>
+        <div class="secao-body" id="acc-pagamento-body" role="region" aria-labelledby="acc-pagamento-btn">
+          <p style="font-size:0.8rem;color:var(--texto-muted);margin:0;">(Dados do cliente + forma de pagamento — iguais à Opção 1 — aparecem aqui quando expandida.)</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- COLUNA DIREITA — RESUMO STICKY + CTA (idêntica à Opção 1) -->
+    <aside class="coluna-resumo" aria-labelledby="titulo-resumo-acc">
+      <div class="resumo-card">
+        <h2 class="resumo-card-titulo" id="titulo-resumo-acc">Resumo do pedido</h2>
+        <div class="resumo-card-body">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span><strong>Valores estimados.</strong> O total cobrado é confirmado pelo lojista. Em caso de ajuste, avisamos pelo WhatsApp antes da cobrança.</span>
+          </div>
+
+          <button type="button" class="btn-confirmar" aria-label="Confirmar pedido — total estimado R$ 86,50">
+            Confirmar pedido
+          </button>
+          <p class="confirmar-hint">Endereço e pagamento preenchidos.</p>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ESTADO B — ilustra "Entrega" EXPANDIDA / "Itens" e "Pagamento" COLAPSADAS -->
+  <!-- Mostra que ao clicar numa faixa colapsada ela abre e as outras recolhem. -->
+  <div class="doc-divisor">
+    <div class="doc-divisor-faixa" style="background:var(--cor-destaque);">
+      <span class="tag" style="font-size:0.82rem;">Opção 2 · Estado B</span>
+      <span class="nota" style="opacity:0.9;">Mesmo acordeão após clicar em “Entrega”: ela abre, as outras recolhem</span>
+    </div>
+  </div>
+
+  <div class="container">
+    <main class="coluna-conteudo">
+
+      <!-- ITENS agora COLAPSADA -->
+      <section class="secao acordeao concluida" data-estado="colapsada" id="accB-itens" aria-labelledby="accB-itens-btn">
+        <button type="button" class="secao-titulo-btn" id="accB-itens-btn" aria-expanded="false" aria-controls="accB-itens-body">
+          <span class="num-badge" aria-hidden="true">1</span>
+          <span class="titulo-txt">Itens do pedido</span>
+          <span class="resumo-linha-curta">3 itens · PROMO10 aplicado</span>
+          <span class="chevron" aria-hidden="true">&#9660;</span>
+        </button>
+        <div class="secao-body" id="accB-itens-body" role="region" aria-labelledby="accB-itens-btn">
+          <p style="font-size:0.8rem;color:var(--texto-muted);margin:0;">(Lista de itens + cupom — colapsada.)</p>
+        </div>
+      </section>
+
+      <!-- ENTREGA agora ABERTA, conteúdo completo -->
+      <section class="secao acordeao concluida" data-estado="aberta" id="accB-entrega" aria-labelledby="accB-entrega-btn">
+        <button type="button" class="secao-titulo-btn" id="accB-entrega-btn" aria-expanded="true" aria-controls="accB-entrega-body">
+          <span class="num-badge" aria-hidden="true">2</span>
+          <span class="titulo-txt">Entrega</span>
+          <span class="resumo-linha-curta" aria-hidden="true">Entrega em domicílio · Saúde · frete R$ 7,00</span>
+          <span class="chevron" aria-hidden="true">&#9660;</span>
+        </button>
+        <div class="secao-body" id="accB-entrega-body" role="region" aria-labelledby="accB-entrega-btn">
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only">Selecione o tipo de entrega</legend>
+            <div class="opcao-lista">
+              <label class="opcao selecionada">
+                <input type="radio" name="tipo-entrega-b" value="entrega" checked aria-describedby="entrega-desc-b">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Entrega em domicílio</div>
+                  <div class="opcao-sub" id="entrega-desc-b">Informe seu endereço</div>
+                </div>
+                <div class="opcao-badge badge-frete">+ frete</div>
+              </label>
+              <label class="opcao">
+                <input type="radio" name="tipo-entrega-b" value="retirada" aria-describedby="retirada-desc-b">
+                <div class="opcao-info">
+                  <div class="opcao-nome">Retirada no local</div>
+                  <div class="opcao-sub" id="retirada-desc-b">Retire no estabelecimento</div>
+                </div>
+                <div class="opcao-badge badge-gratis"><span aria-hidden="true">&#10003;</span> Grátis</div>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="linha-dupla">
+            <div class="campo">
+              <label for="cep-b">CEP</label>
+              <input type="text" id="cep-b" name="cep" value="04101-000" inputmode="numeric" maxlength="9" autocomplete="postal-code" aria-describedby="cep-hint-b">
+              <span class="hint" id="cep-hint-b">Preenchemos o endereço automaticamente.</span>
+            </div>
+            <div class="campo">
+              <label for="numero-b">Número</label>
+              <input type="text" id="numero-b" name="numero" value="342" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="rua-b">Rua</label>
+            <input type="text" id="rua-b" name="rua" value="Rua Silva Bueno" readonly aria-label="Rua preenchida automaticamente pelo CEP">
+          </div>
+
+          <div class="frete-preview" role="status" aria-live="polite" aria-label="Frete calculado: R$ 7,00 para o bairro Saúde">
+            <span class="label">&#10003; Frete (Saúde)</span>
+            <span class="valor">R$ 7,00</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- PAGAMENTO COLAPSADA -->
+      <section class="secao acordeao" data-estado="colapsada" id="accB-pagamento" aria-labelledby="accB-pagamento-btn">
+        <button type="button" class="secao-titulo-btn" id="accB-pagamento-btn" aria-expanded="false" aria-controls="accB-pagamento-body">
+          <span class="num-badge" aria-hidden="true">3</span>
+          <span class="titulo-txt">Pagamento</span>
+          <span class="resumo-linha-curta">Maria Silva · PIX</span>
+          <span class="chevron" aria-hidden="true">&#9660;</span>
+        </button>
+        <div class="secao-body" id="accB-pagamento-body" role="region" aria-labelledby="accB-pagamento-btn">
+          <p style="font-size:0.8rem;color:var(--texto-muted);margin:0;">(Dados do cliente + forma de pagamento — colapsada.)</p>
+        </div>
+      </section>
+
+    </main>
+
+    <aside class="coluna-resumo" aria-labelledby="titulo-resumo-accB">
+      <div class="resumo-card">
+        <h2 class="resumo-card-titulo" id="titulo-resumo-accB">Resumo do pedido</h2>
+        <div class="resumo-card-body">
+          <div class="resumo-linha">
+            <span class="resumo-label">Subtotal (3 itens)</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Desconto (PROMO10)</span>
+            <span class="resumo-valor desconto">&#8722; R$ 7,00</span>
+          </div>
+          <div class="resumo-linha">
+            <span class="resumo-label">Frete (Saúde)</span>
+            <span class="resumo-valor">R$ 7,00</span>
+          </div>
+          <div class="resumo-linha total">
+            <span class="resumo-label">Total estimado</span>
+            <span class="resumo-valor">R$ 86,50</span>
+          </div>
+          <div class="aviso-estimado" role="note">
+            <span aria-hidden="true" style="font-size:0.9rem;">&#9432;</span>
+            <span><strong>Valores estimados.</strong> O total cobrado é confirmado pelo lojista.</span>
+          </div>
+          <button type="button" class="btn-confirmar" aria-label="Confirmar pedido — total estimado R$ 86,50">
+            Confirmar pedido
+          </button>
+          <p class="confirmar-hint">Endereço e pagamento preenchidos.</p>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Demonstração de interação real do acordeão (só pra navegar no preview;
+       a versão React usa o store unificado do checkout, não este script). -->
+  <script>
+    document.querySelectorAll('.secao.acordeao .secao-titulo-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var alvo = btn.closest('.secao.acordeao');
+        var grupo = alvo.closest('.coluna-conteudo');
+        grupo.querySelectorAll('.secao.acordeao').forEach(function (s) {
+          var aberta = s === alvo;
+          s.setAttribute('data-estado', aberta ? 'aberta' : 'colapsada');
+          s.querySelector('.secao-titulo-btn').setAttribute('aria-expanded', String(aberta));
+          var resumo = s.querySelector('.resumo-linha-curta');
+          if (resumo) resumo.setAttribute('aria-hidden', String(aberta));
+        });
+      });
+    });
+  </script>
+</body>
+</html>

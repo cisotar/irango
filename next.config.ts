@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { withSerwist } from "@serwist/turbopack";
 
 // §11 references/seguranca.md — defesa contra clickjacking, MIME sniffing, injeção.
 const securityHeaders = [
@@ -64,7 +65,12 @@ const nextConfig: NextConfig = {
 // Sem token (dev local) o plugin fica silencioso e o build não quebra (issue 061).
 const temAuthToken = !!process.env.SENTRY_AUTH_TOKEN;
 
-export default withSentryConfig(nextConfig, {
+// withSerwist DENTRO de withSentryConfig (RN-7 / Decisão D2): o Sentry precisa
+// enxergar a config final (com a integração do SW de @serwist/turbopack já
+// aplicada) para instrumentar e subir source maps do bundle completo. O SW é
+// compilado por esbuild e servido via route handler — não toca em webpack, e
+// portanto não quebra o `next build` (Turbopack) do Next 16.
+export default withSentryConfig(withSerwist(nextConfig), {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,

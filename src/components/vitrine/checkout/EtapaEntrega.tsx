@@ -83,6 +83,7 @@ export function EtapaEntrega({
   const ultimaChave = useRef<string | null>(null);
 
   const ehEntrega = tipoEntrega === "entrega";
+  const tipoSelecionado = tipoEntrega !== null;
 
   // Calcula frete preview quando o bairro está disponível (entrega).
   // sessionStorage/Server Action só rodam no client — disparado por mudança de
@@ -150,10 +151,12 @@ export function EtapaEntrega({
   const fretePreview = frete.status === "ok" ? frete.taxa : 0;
   const totalPreview = Math.max(0, subtotal - desconto) + fretePreview;
 
-  // Pode avançar: retirada sempre; entrega exige endereço completo + frete OK.
-  const podeAvancar = ehEntrega
-    ? endereco !== null && frete.status === "ok" && !calculando
-    : true;
+  // Pode avançar: deve ter selecionado um tipo; retirada = ok; entrega exige endereço + frete.
+  const podeAvancar = tipoSelecionado
+    ? ehEntrega
+      ? endereco !== null && frete.status === "ok" && !calculando
+      : true
+    : false;
 
   const desktop = variante === "desktop";
 
@@ -174,7 +177,7 @@ export function EtapaEntrega({
           )}
 
           <RadioGroup
-            value={tipoEntrega}
+            value={tipoEntrega ?? ""}
             onValueChange={(v) => onTipoEntregaChange(v as TipoEntrega)}
             className="gap-2"
           >

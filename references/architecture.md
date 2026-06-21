@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.6 | **Atualizado:** 2026-06-16
+**Versão:** 0.2.7 | **Atualizado:** 2026-06-19
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -49,6 +49,7 @@ iRango é um **marketplace SaaS multitenant** no modelo iFood — lojistas cadas
 | Color picker | **react-colorful** | 2kb, zero deps |
 | Máscaras input | **react-imask** | CEP, telefone, WhatsApp |
 | CEP | **ViaCEP** (API pública) | autocomplete de endereço, zero custo |
+| PWA / Service Worker | **serwist** + **@serwist/turbopack** | SW compilado pelo Turbopack via esbuild, sem artefato em `public/`; runtimeCaching com exclusão explícita de `/painel/*` |
 | Hosting | **Vercel** | feito pra Next.js, CI/CD automático via GitHub |
 | Tipos DB | **supabase gen types typescript** | nunca escrever tipos manualmente |
 
@@ -68,6 +69,8 @@ irango/
 │   │   │   └── loja/
 │   │   │       └── [slug]/
 │   │   │           ├── page.tsx          # página da loja (SSR)
+│   │   │           ├── manifest.webmanifest/
+│   │   │           │   └── route.ts      # manifest PWA da loja (runtime nodejs; anon key + vitrine_lojas)
 │   │   │           ├── pedido/
 │   │   │           │   └── page.tsx      # checkout
 │   │   │           └── confirmacao/
@@ -77,6 +80,8 @@ irango/
 │   │   │   └── painel/
 │   │   │       ├── layout.tsx            # guard de auth
 │   │   │       ├── page.tsx              # dashboard
+│   │   │       ├── manifest.webmanifest/
+│   │   │       │   └── route.ts          # manifest PWA do painel (auth obrigatório; force-dynamic; Cache-Control: private, no-store)
 │   │   │       ├── produtos/
 │   │   │       ├── cupons/
 │   │   │       ├── pedidos/
@@ -91,6 +96,10 @@ irango/
 │   │   │   ├── login/
 │   │   │   └── cadastro/
 │   │   │
+│   │   ├── serwist/
+│   │   │   └── [path]/
+│   │   │       └── route.ts              # Route Handler do Service Worker (compila src/app/sw.ts via @serwist/turbopack + esbuild; desligado em dev)
+│   │   │
 │   │   ├── layout.tsx                    # root layout
 │   │   └── page.tsx                      # landing do SaaS
 │   │
@@ -101,12 +110,16 @@ irango/
 │   │   │   ├── Carrinho.tsx
 │   │   │   ├── HeaderLoja.tsx
 │   │   │   └── BadgeStatus.tsx           # "Aberto agora" / "Fechado"
-│   │   └── painel/                       # componentes do dashboard
-│   │       ├── TabelaProdutos.tsx
-│   │       ├── FormProduto.tsx
-│   │       └── FormCupom.tsx
+│   │   ├── painel/                       # componentes do dashboard
+│   │   │   ├── TabelaProdutos.tsx
+│   │   │   ├── FormProduto.tsx
+│   │   │   └── FormCupom.tsx
+│   │   └── pwa/                          # componentes de infra PWA (sem visual)
+│   │       └── RegistrarSW.tsx           # Client Component que registra /serwist/sw.js; silencioso em dev e em erros
 │   │
 │   ├── lib/
+│   │   ├── pwa/
+│   │   │   └── runtimeCaching.ts         # regras de cache do SW em ordem; [0] NetworkOnly /painel* (nunca cacheia rota autenticada); módulo puro — testável no vitest sem globals de SW
 │   │   ├── supabase/
 │   │   │   ├── client.ts                 # browser client (@supabase/ssr)
 │   │   │   ├── server.ts                 # server client (Server Components, Actions)
@@ -132,7 +145,9 @@ irango/
 │   │       ├── calcularFrete.ts
 │   │       ├── calcularDesconto.ts       # lógica reaproveitada do lojinhaonline (reescrita em TS)
 │   │       ├── calcularTotal.ts
-│   │       └── lojaAberta.ts             # verifica horário de funcionamento
+│   │       ├── lojaAberta.ts             # verifica horário de funcionamento
+│   │       ├── manifest.ts               # montarIconesManifest + constantes de tema padrão (vitrine e painel)
+│   │       └── manifestPainel.ts         # montarManifestPainel(loja|null) → ManifestPainel; puro (sem I/O)
 │   │
 │   ├── types/
 │   │   ├── supabase.ts                   # gerado: pnpm supabase gen types typescript
@@ -256,6 +271,7 @@ O `lojinhaonline` é **JavaScript vanilla** (sem framework, sem tipos). O iRango
 | Tipos gerados | supabase CLI | https://supabase.com/docs/reference/cli/supabase-gen-types |
 | Toast | sonner | https://sonner.emilkowal.ski |
 | Testes de DB/RLS | @electric-sql/pglite | https://pglite.dev — Postgres in-process, sem Docker; emula `auth.uid()` e roles do Supabase; migrations aplicadas via `tests/helpers/pglite.ts`; testes rodam no vitest |
+| Service Worker | serwist + @serwist/turbopack | https://serwist.pages.dev — SW compilado via esbuild, servido em `/serwist/sw.js` same-origin pelo Route Handler; runtimeCaching ordenada: [0] NetworkOnly `/painel*` (invariante de segurança — testável no vitest porque `lib/pwa/runtimeCaching.ts` é módulo puro sem globals de SW) |
 
 ---
 

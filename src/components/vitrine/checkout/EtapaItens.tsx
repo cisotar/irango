@@ -123,77 +123,84 @@ export function EtapaItens({
               },
             ]);
             return (
-              <div key={linhaId} className="flex items-center gap-3 px-4 py-3.5">
-                <div className="size-[52px] shrink-0 overflow-hidden rounded-[10px] bg-gradient-to-br from-[#e8dcc4] to-[#d8c4a0]">
-                  {item.fotoUrl ? (
-                    <Image
-                      src={item.fotoUrl}
-                      alt=""
-                      width={52}
-                      height={52}
-                      className="size-full object-cover"
-                    />
-                  ) : null}
-                </div>
+              <div key={linhaId} className="px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="size-[52px] shrink-0 overflow-hidden rounded-[10px] bg-gradient-to-br from-[#e8dcc4] to-[#d8c4a0]">
+                    {item.fotoUrl ? (
+                      <Image
+                        src={item.fotoUrl}
+                        alt=""
+                        width={52}
+                        height={52}
+                        className="size-full object-cover"
+                      />
+                    ) : null}
+                  </div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[0.88rem] font-bold text-texto">
-                    {item.nome}
-                  </p>
-                  <p className="text-[0.75rem] text-texto-muted">
-                    {formatarMoeda(item.preco)} / unidade
-                  </p>
-                  <ListaOpcionaisItem
-                    opcionais={opcionais.map((o) => ({
-                      id: o.opcionalId,
-                      nome: o.nome,
-                      preco: o.preco,
-                      quantidade: o.quantidade,
-                    }))}
-                  />
-                </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[0.88rem] font-bold text-texto">
+                      {item.nome}
+                    </p>
+                    <p className="text-[0.75rem] text-texto-muted">
+                      {formatarMoeda(item.preco)} / unidade
+                    </p>
+                  </div>
 
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  <span
-                    className="text-[0.92rem] font-black text-[var(--cor-destaque)]"
-                    aria-label={`Preço total deste item: ${formatarMoeda(subtotalItem)}`}
-                  >
-                    {formatarMoeda(subtotalItem)}
-                  </span>
-                  <div
-                    className="flex items-center"
-                    role="group"
-                    aria-label={`Quantidade de ${item.nome}`}
-                  >
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="size-8 rounded-r-none border-borda-nav bg-cinza-claro text-destructive hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
-                      aria-label={`Diminuir ${item.nome}`}
-                      onClick={() => onDecrementar(linhaId)}
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span
+                      className="text-[0.92rem] font-black text-[var(--cor-destaque)]"
+                      aria-label={`Preço total deste item: ${formatarMoeda(subtotalItem)}`}
                     >
-                      <Minus className="size-3.5" aria-hidden />
-                    </Button>
+                      {formatarMoeda(subtotalItem)}
+                    </span>
                     <div
-                      className="flex size-8 items-center justify-center border-y border-borda-nav bg-white text-sm font-bold tabular-nums"
-                      aria-live="polite"
-                      aria-atomic="true"
+                      className="flex items-center"
+                      role="group"
+                      aria-label={`Quantidade de ${item.nome}`}
                     >
-                      {item.quantidade}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8 rounded-r-none border-borda-nav bg-cinza-claro text-destructive hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                        aria-label={`Diminuir ${item.nome}`}
+                        onClick={() => onDecrementar(linhaId)}
+                      >
+                        <Minus className="size-3.5" aria-hidden />
+                      </Button>
+                      <div
+                        className="flex size-8 items-center justify-center border-y border-borda-nav bg-white text-sm font-bold tabular-nums"
+                        aria-live="polite"
+                        aria-atomic="true"
+                      >
+                        {item.quantidade}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8 rounded-l-none border-borda-nav bg-cinza-claro hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                        aria-label={`Aumentar ${item.nome}`}
+                        onClick={() => onIncrementar(linhaId)}
+                      >
+                        <Plus className="size-3.5" aria-hidden />
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="size-8 rounded-l-none border-borda-nav bg-cinza-claro hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
-                      aria-label={`Aumentar ${item.nome}`}
-                      onClick={() => onIncrementar(linhaId)}
-                    >
-                      <Plus className="size-3.5" aria-hidden />
-                    </Button>
                   </div>
                 </div>
+
+                {opcionais.length > 0 && (
+                  <div className="mt-2.5 rounded-lg bg-cinza-claro px-3 py-2">
+                    <ListaOpcionaisItem
+                      opcionais={opcionais.map((o) => ({
+                        id: o.opcionalId,
+                        nome: o.nome,
+                        preco: o.preco,
+                        quantidade: o.quantidade,
+                      }))}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}

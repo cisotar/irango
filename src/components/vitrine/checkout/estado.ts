@@ -10,7 +10,8 @@ import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
 
 export const CHAVE_WIZARD = "irango:checkout";
 
-export type TipoEntrega = "retirada" | "entrega";
+/** null = ainda não escolhido (estado inicial — nenhuma opção pré-selecionada). */
+export type TipoEntrega = "retirada" | "entrega" | null;
 
 /** Tipos de forma de pagamento suportados (enum do schema do servidor). */
 export type TipoPagamento = "pix" | "dinheiro" | "link" | "cartao";
@@ -43,7 +44,7 @@ export type EstadoWizard = {
 };
 
 export const ESTADO_INICIAL: EstadoWizard = {
-  tipoEntrega: "entrega",
+  tipoEntrega: null,
   endereco: null,
   codigoCupom: null,
   formaPagamento: null,
@@ -69,6 +70,7 @@ export function podeConfirmar(
   freteStatus: string,
 ): boolean {
   if (estado.formaPagamento == null) return false;
+  if (tipoEntrega == null) return false;
   if (tipoEntrega === "retirada") return true;
   return estado.endereco !== null && freteStatus === "ok";
 }
@@ -124,7 +126,7 @@ export function montarPayloadPedido({
 }: MontarPayloadArgs) {
   return {
     loja_id: lojaId,
-    tipo_entrega: estado.tipoEntrega,
+    tipo_entrega: estado.tipoEntrega as "retirada" | "entrega",
     idempotency_key: idempotencyKey,
     itens: itens.map((i) => ({
       produto_id: i.produtoId,
