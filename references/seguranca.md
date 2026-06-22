@@ -83,10 +83,15 @@ CREATE POLICY "lojas_update_proprio"
   USING (auth.uid() = dono_id)
   WITH CHECK (auth.uid() = dono_id);
 
--- Lojista deleta só a própria
-CREATE POLICY "lojas_delete_proprio"
-  ON lojas FOR DELETE
-  USING (auth.uid() = dono_id);
+-- (REMOVIDA em 20260621097000) A policy "lojas_delete_proprio" (FOR DELETE
+-- USING auth.uid() = dono_id) foi removida. Motivo: a FK pedidos.loja_id virou
+-- ON DELETE CASCADE (20260621096000); enquanto a policy existia, o lojista podia
+-- DELETE /rest/v1/lojas?id=eq.<própria> via PostgREST e apagar todo o histórico
+-- de pedidos (perda de dado irreversível + retenção LGPD §20). Exclusão de loja
+-- passou a ser EXCLUSIVA do admin do SaaS, via service_role (Server Action
+-- excluirLoja → verificarAdminSaaS()). A "palavra de confirmação" digitada na UI
+-- é só anti-erro de UX — NÃO trafega ao servidor nem é defesa; a autoridade é o
+-- guard de admin. Nenhum authenticated tem DELETE em lojas.
 ```
 
 > **Nota sobre RLS vs. colunas de billing:** RLS filtra LINHA, não COLUNA. As policies acima permitem que o lojista autenticado faça UPDATE na própria linha — sem proteção adicional, isso incluiria escrever `assinatura_status`, `assinatura_inicio`, `assinatura_fim_periodo`, `assinatura_atualizada_em`, `hotmart_subscriber_code`, `hotmart_plano` e `dono_id` via PostgREST (vetor de auto-promoção). O gate real de coluna é o trigger abaixo.

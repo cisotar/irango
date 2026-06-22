@@ -5,19 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import type { StatusAssinatura as StatusUnion } from "@/lib/utils/assinatura";
+import {
+  apresentarStatus,
+  ehStatusAssinaturaConhecido,
+} from "@/lib/utils/statusAssinaturaUI";
 
 // Portal do assinante Hotmart (gestão de pagamento/cancelamento). Identificador
 // `hotmart_subscriber_code` não é credencial — pode ser exibido ao próprio dono.
 const URL_PORTAL_HOTMART = "https://consumer.hotmart.com/";
-
-const STATUS_CONHECIDOS: readonly StatusUnion[] = [
-  "trial",
-  "ativa",
-  "inadimplente",
-  "cancelada",
-  "suspensa",
-];
 
 type DadosAssinatura = {
   status: string;
@@ -25,28 +20,6 @@ type DadosAssinatura = {
   fimPeriodo: string | null;
   subscriberCode: string | null;
 };
-
-const ROTULO: Record<StatusUnion, string> = {
-  trial: "Período de teste",
-  ativa: "Ativa",
-  inadimplente: "Pagamento pendente",
-  cancelada: "Cancelada",
-  suspensa: "Suspensa",
-};
-
-// Badge "secondary" = ok (verde/neutro do tema); "destructive" = exige ação;
-// "outline" = estado encerrado/desconhecido.
-const VARIANTE: Record<StatusUnion, "secondary" | "destructive" | "outline"> = {
-  trial: "secondary",
-  ativa: "secondary",
-  inadimplente: "destructive",
-  cancelada: "outline",
-  suspensa: "destructive",
-};
-
-function ehStatusConhecido(s: string): s is StatusUnion {
-  return STATUS_CONHECIDOS.includes(s as StatusUnion);
-}
 
 function formatarData(iso: string | null): string {
   if (!iso) return "—";
@@ -80,9 +53,8 @@ export function CardStatusAssinatura({
   agora = new Date(),
 }: StatusAssinaturaProps): ReactElement {
   const { status, inicio, fimPeriodo, subscriberCode } = assinatura;
-  const conhecido = ehStatusConhecido(status);
-  const rotulo = conhecido ? ROTULO[status] : "Desconhecida";
-  const variante = conhecido ? VARIANTE[status] : "outline";
+  const conhecido = ehStatusAssinaturaConhecido(status);
+  const { rotulo, variante } = apresentarStatus(status);
 
   const exigeAcao =
     conhecido && (status === "inadimplente" || status === "suspensa");

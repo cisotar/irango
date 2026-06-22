@@ -22,14 +22,15 @@ export const ROTAS_EXCECAO_ASSINATURA: readonly string[] = [
   "/painel/configuracoes/assinatura",
 ];
 
-// Status conhecidos do union. `ativa`/`suspensa` não dependem de `fim`; os demais
-// exigem `assinatura_fim_periodo` para avaliar a carência (fail-closed se null).
+// Status conhecidos do union. `ativa`/`cortesia`/`suspensa` não dependem de `fim`;
+// os demais exigem `assinatura_fim_periodo` para avaliar a carência (fail-closed se null).
 const STATUS_CONHECIDOS: readonly StatusAssinatura[] = [
   "trial",
   "ativa",
   "inadimplente",
   "cancelada",
   "suspensa",
+  "cortesia",
 ];
 
 /**
@@ -46,9 +47,9 @@ function assinaturaLibera(loja: LojaCompleta, agora: Date): boolean {
   }
   const statusConhecido = status as StatusAssinatura;
 
-  // `ativa` libera sempre — o util ignora `fim` (mesmo null).
+  // `ativa`/`cortesia` liberam sempre — o util ignora `fim` (RN-4, RN-12).
   // `suspensa` bloqueia sempre — corte imediato, sem carência.
-  if (statusConhecido === "ativa") {
+  if (statusConhecido === "ativa" || statusConhecido === "cortesia") {
     return true;
   }
   if (statusConhecido === "suspensa") {

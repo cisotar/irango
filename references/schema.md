@@ -243,7 +243,9 @@ CREATE TABLE formas_pagamento (
 ```sql
 CREATE TABLE pedidos (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  loja_id           uuid NOT NULL REFERENCES lojas(id),
+  loja_id           uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  -- ON DELETE CASCADE (migration 20260621096000): o hard delete administrativo de
+  -- loja (admin /admin/assinantes) cascateia pedidos → itens_pedido → itens_pedido_opcionais.
   -- Token de acesso: funciona como "senha" do pedido. Cliente sem login lê a
   -- confirmação via id + token. Ver references/seguranca.md §pedidos.
   token_acesso      uuid NOT NULL DEFAULT gen_random_uuid(),

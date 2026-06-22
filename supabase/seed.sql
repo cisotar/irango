@@ -119,3 +119,58 @@ values
   ('00000000-0000-4000-8000-000000000080', '00000000-0000-4000-8000-000000000010',
    'TESTE10', 'percentual', 10.00, 0, 100, true)
 on conflict (id) do nothing;
+
+-- ── [2026-06-21] seed: billing — pagamentos_assinatura ───────────────────────
+-- Cobre as tabelas/colunas adicionadas pelas migrations 070–073 (planos,
+-- pagamentos_assinatura, lojas billing expand).
+--
+-- planos: a migration 20260621090000_planos.sql já faz o seed do "Plano Mensal"
+-- inline (WHERE NOT EXISTS) — não duplicamos aqui.
+--
+-- lojas.billing_provider / provider_subscription_id / plano_id: colunas NULLABLE;
+-- o INSERT existente acima continua funcionando sem alteração. Nenhuma coluna
+-- nova é NOT NULL, portanto não há risco de falha silenciosa no reset.
+--
+-- webhook_eventos_billing: deny-all RLS, dados chegam apenas via webhook;
+-- não adicionar seed (instrução da issue 071).
+--
+-- pagamentos_assinatura: 2 registros fictícios para cobrir:
+--   - 1 pagamento "pago" (fluxo feliz / TabelaFaturas)
+--   - 1 pagamento "falhou" (fluxo de inadimplência)
+-- provider_payment_id fixo garante idempotência via UNIQUE (provider, provider_payment_id).
+-- seed de desenvolvimento, não usar em produção
+insert into public.pagamentos_assinatura (
+  id,
+  loja_id,
+  provider,
+  provider_payment_id,
+  valor,
+  status,
+  metodo,
+  fatura_url,
+  competencia
+)
+values
+  (
+    '00000000-0000-4000-8000-000000000090',
+    '00000000-0000-4000-8000-000000000010',   -- loja-teste
+    'asaas',
+    'pay_test_001',                            -- id fictício de pagamento no provider
+    49.00,
+    'pago',
+    'pix',
+    'https://exemplo.com.br/fatura/pay_test_001',  -- URL fictícia
+    now() - interval '30 days'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000091',
+    '00000000-0000-4000-8000-000000000010',   -- loja-teste
+    'asaas',
+    'pay_test_002',                            -- id fictício de pagamento no provider
+    49.00,
+    'falhou',
+    'boleto',
+    'https://exemplo.com.br/fatura/pay_test_002',  -- URL fictícia
+    now() - interval '60 days'
+  )
+on conflict (provider, provider_payment_id) do nothing;

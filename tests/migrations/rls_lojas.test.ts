@@ -272,13 +272,40 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
     expect(await donoAtual(t, ids.lojaA)).toBe(DONO_A);
   });
 
-  // ───────────────────────────── Delete próprio (lojas_delete_proprio)
+  // ───────────────────────────── Delete bloqueado (policy lojas_delete_proprio
+  // REMOVIDA em 20260621097000: após o cascade de pedidos, exclusão de loja é
+  // exclusiva de service_role/admin — nenhum authenticated deleta loja via PostgREST)
   it("[10] dono B NÃO deleta loja de A (0 linhas, loja A ainda existe)", async () => {
     const r = await t.asUser(DONO_B, (db) =>
       db.query(`delete from public.lojas where id = $1`, [ids.lojaA]),
     );
     expect(r.affectedRows).toBe(0);
     expect(await existeSlug(t, SLUG_A)).toBe(true);
+  });
+
+  it("[10b] dono A NÃO deleta a PRÓPRIA loja (deny-all de DELETE p/ authenticated)", async () => {
+    // Regressão de segurança: com a FK pedidos→lojas em ON DELETE CASCADE, um
+    // DELETE self-service apagaria histórico de pedidos. A policy de DELETE foi
+    // removida → 0 linhas afetadas, loja A intacta. Só service_role exclui (issue 084).
+    const r = await t.asUser(DONO_A, (db) =>
+      db.query(`delete from public.lojas where id = $1`, [ids.lojaA]),
+    );
+    expect(r.affectedRows).toBe(0);
+    expect(await existeSlug(t, SLUG_A)).toBe(true);
+  });
+
+  it("[10c] anon NÃO deleta loja (0 linhas afetadas, loja intacta)", async () => {
+    // Policy de DELETE foi removida para todo authenticated; anon nunca teve.
+    // Garante que uma futura policy `for delete using (true)` seria detectada aqui.
+    const r = await t.asAnon((db) =>
+      db.query(`delete from public.lojas where id = $1`, [ids.lojaB]),
+    );
+    expect(r.affectedRows).toBe(0);
+    // Anti-falso-verde: a loja B realmente existe — negação é por policy, não ausência.
+    const existe = await t.asService((db) =>
+      db.query(`select 1 from public.lojas where id = $1`, [ids.lojaB]),
+    );
+    expect(existe.rows.length).toBe(1);
   });
 
   // ───────────────────────────── Insert próprio (lojas_insert_proprio)
@@ -406,6 +433,8 @@ describe("004 RLS de lojas + vitrine_lojas (correção auditoria)", () => {
  *                                 vs. seguranca.md (que só tem USING); impede transferir
  *                                 a loja trocando dono_id no UPDATE (teste [9]).
  *   lojas_delete_proprio   DELETE USING (auth.uid() = dono_id)
+ *                          ← REMOVIDA depois em 20260621097000 (fix de segurança do
+ *                            cascade pedidos→lojas; teste [10b] cobre o deny).
  *
  * Casos que precisam passar após a migration: [1]..[15].
  * O teste [14] DEVE permanecer verde com a RLS PERMITINDO escrever assinatura_status —

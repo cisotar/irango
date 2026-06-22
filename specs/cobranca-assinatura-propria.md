@@ -65,7 +65,7 @@ O problema que resolve: remover a dependência de uma plataforma de terceiros (t
 **Descrição:** Central de assinatura do lojista. Mostra o estado atual da assinatura (status, plano, próximo vencimento, valor), permite assinar/trocar de plano, atualizar forma de pagamento e ver faturas. Todo valor exibido vem do **servidor** (lido do banco, que é alimentado só por webhook) — nada é calculado no cliente.
 
 **Componentes:** (reuso de shadcn/ui)
-- `CartaoStatusAssinatura` — `Card` + `Badge` (shadcn) com status (`trial`/`ativa`/`inadimplente`/`suspensa`/`cancelada`), data de fim de período, plano e valor. **Valor autoritativo (servidor).**
+- `CartaoStatusAssinatura` — `Card` + `Badge` (shadcn) com status (`trial`/`ativa`/`inadimplente`/`suspensa`/`cancelada`/`cortesia`), data de fim de período, plano e valor. **Valor autoritativo (servidor).**
 - `SeletorPlano` — `RadioGroup` + `Card` listando planos da tabela `planos` (lidos server-side). Preço exibido é do banco, não editável.
 - `BotaoAssinar` / `BotaoTrocarPlano` — dispara Server Action que cria/atualiza assinatura no provider.
 - `FormaPagamentoAssinatura` — exibe método atual mascarado (ex: "cartão final 1234" / "Pix"); botão "Atualizar" leva ao fluxo do provider (redirect/checkout hospedado ou tokenização).
@@ -93,6 +93,31 @@ O problema que resolve: remover a dependência de uma plataforma de terceiros (t
 **Behaviors:**
 - [ ] Bloquear painel quando assinatura não permite acesso — reusa `assinaturaPermiteAcesso(status, fimPeriodo, agora)` (já existe, `lib/utils/assinatura.ts:48-65`). Garantido em: servidor (gate de painel) + RLS/trigger no banco.
 - [ ] Liberar painel quando `ativa` — sempre permitido. Garantido em: servidor.
+
+---
+
+### Painel Admin do SaaS — `/admin/assinantes`
+
+**Mundo:** painel server-only (auth obrigatório — **exclusivo ao dono do SaaS**). Sem acesso de lojistas.
+**Descrição:** Lista todos os assinantes (lojas) com status de assinatura, plano e datas. Permite ao administrador do SaaS conceder ou revogar cortesia individualmente via toggle. Ação usa `service_role` (mesmo caminho que o webhook), garantindo que passe pelo trigger de billing.
+
+**Auth do admin:** Server Component/Action verifica `auth.uid() === process.env.SAAS_ADMIN_USER_ID` (env server-only). Qualquer outra identidade → `redirect('/painel')`. Sem tabela de admins — dono único do SaaS identificado por UUID fixo em env.
+
+**Componentes:** (reuso de shadcn/ui)
+- `TabelaAssinantes` — `Table` (shadcn) com colunas: nome da loja, email do dono, status (`Badge`), plano, `fim_periodo`, `billing_provider`, toggle de cortesia, botão de suspensão/reativação.
+- `ToggleCortesia` — `Switch` (shadcn) por linha. ON = conceder `cortesia`; OFF = revogar (volta a `cancelada` + `fim_periodo = now()`). Desabilitado quando loja está `suspensa`.
+- `BotaoSuspender` / `BotaoReativar` — `Button` destrutivo (variante `destructive` shadcn) quando loja não está `suspensa`; `Button` primário "Reativar" quando está `suspensa`. Nunca exibido para loja com `status = 'cortesia'` (toggle basta). Pede confirmação via `AlertDialog` antes de executar.
+- Filtros: por status (`Select`) e busca por nome/email (`Input`).
+
+**Behaviors:**
+- [ ] Listar todas as lojas com dados de assinatura — Server Component lê `lojas` + `planos` via `service_role` (sem RLS de dono). Garantido em: `service_role` server-only + verificação `SAAS_ADMIN_USER_ID`.
+- [ ] Conceder cortesia — Server Action `concederCortesia(loja_id)`: verifica admin, usa `createServiceClient()` (service_role), aplica `assinatura_status = 'cortesia'`, `assinatura_fim_periodo = NULL`, `billing_provider = NULL`. Garantido em: `service_role` passa pelo trigger + verificação de admin server-side.
+- [ ] Revogar cortesia — Server Action `revogarCortesia(loja_id)`: verifica admin, usa `createServiceClient()`, aplica `assinatura_status = 'cancelada'`, `assinatura_fim_periodo = now()` (corte imediato). Garantido em: `service_role` + verificação de admin server-side.
+- [ ] Suspender loja — Server Action `suspenderLoja(loja_id)`: verifica admin, usa `createServiceClient()`, aplica `assinatura_status = 'suspensa'`, `assinatura_fim_periodo = now()` (corte imediato, sem carência). Uso: violação de termos, fraude, contenção de emergência. Garantido em: `service_role` + verificação de admin server-side.
+- [ ] Reativar loja — Server Action `reativarLoja(loja_id)`: verifica admin, usa `createServiceClient()`, aplica `assinatura_status = 'ativa'` (override explícito — admin decide conscientemente restaurar acesso independente de billing). Garantido em: `service_role` + verificação de admin server-side.
+- [ ] Feedback visual imediato — `revalidatePath('/admin/assinantes')` após cada ação + toast de confirmação.
+
+**Nova env necessária:** `SAAS_ADMIN_USER_ID` (UUID do usuário Supabase Auth do dono do SaaS — server-only, sem `NEXT_PUBLIC_`).
 
 ---
 
@@ -140,7 +165,7 @@ ALTER TABLE lojas
 --  Esta migration ALINHA o CHECK do banco ao domínio do código.)
 ALTER TABLE lojas DROP CONSTRAINT lojas_assinatura_status_check;
 ALTER TABLE lojas ADD CONSTRAINT lojas_assinatura_status_check
-  CHECK (assinatura_status IN ('trial','ativa','inadimplente','cancelada','suspensa'));
+  CHECK (assinatura_status IN ('trial','ativa','inadimplente','cancelada','suspensa','cortesia'));
 ```
 
 ```sql
@@ -218,7 +243,7 @@ CREATE TABLE webhook_eventos_billing (
 | RN-1 | **Valor cobrado = preço do plano no banco**, nunca o que o cliente enviar. Cliente só manda `plano_id`. | Server Action (lê `planos.preco`) + `seguranca.md` §10 |
 | RN-2 | **`assinatura_status` só muda por webhook do provider** (próprio ou Hotmart), via `service_role`. Nenhuma Server Action do painel escreve status. | Webhook (server) + trigger `lojas_protege_billing_trg` (banco) |
 | RN-3 | **Trial:** loja nasce `trial`, `assinatura_fim_periodo = now()+14 dias` (DA-4), decidido server-side no cadastro (já existe, `seguranca.md` §17). | Função SQL de cadastro (server) |
-| RN-4 | **Carência:** `trial`/`inadimplente`/`cancelada` mantêm acesso até `now() <= fim_periodo`; `suspensa` corta na hora; `ativa` sempre. Reusa `assinaturaPermiteAcesso` — **não reescrever.** | `lib/utils/assinatura.ts` (server) |
+| RN-4 | **Carência:** `trial`/`inadimplente`/`cancelada` mantêm acesso até `now() <= fim_periodo`; `suspensa` corta na hora; `ativa`/`cortesia` sempre. Reusa `assinaturaPermiteAcesso` — **estender com `cortesia`, não reescrever.** | `lib/utils/assinatura.ts` (server) |
 | RN-5 | **Dunning (DA-5):** pagamento falho → `inadimplente` (carência até fim_periodo). Esgotadas as retentativas do provider sem sucesso → evento de cancelamento/suspensão → corte. As retentativas são executadas **pelo provider**, não reimplementadas no iRango. | Provider + webhook → status (server) |
 | RN-6 | **Upgrade/downgrade:** muda `plano_id` e a assinatura no provider; status/valor efetivos só após webhook confirmar. Proração (se houver) é responsabilidade do provider. | Server Action + webhook |
 | RN-7 | **Cancelamento não é otimista:** Server Action só solicita ao provider; `cancelada` aplicada quando o webhook chegar. | Server Action + webhook |
@@ -226,6 +251,10 @@ CREATE TABLE webhook_eventos_billing (
 | RN-9 | **Coexistência (DA-6):** `lojas.billing_provider` determina qual webhook rege a loja. Webhook Hotmart só toca lojas `billing_provider='hotmart'` (ou NULL legado); webhook próprio só toca as do seu provider. Um webhook nunca altera loja de outro provider. | Lookup por `provider_subscription_id` + filtro de provider (server) |
 | RN-10 | **Loja `cancelada` não reativa** por evento de renovação espúrio (verifica status atual antes de aplicar). | Webhook (server) |
 | RN-11 | **Dados de cartão nunca tocam o iRango** — tokenização/checkout sempre hospedado no provider. | Server Action retorna URL/token do provider; PCI fica no provider |
+| RN-12 | **Cortesia:** acesso pleno sem cobrança, sem `fim_periodo` (NULL), sem `billing_provider`. Concedida/revogada **exclusivamente pelo admin do SaaS** via Server Action com `service_role`. Lojista não vê nem dispara esse status. Revogação → `cancelada` + `fim_periodo = now()` (corte imediato). | Server Action admin (`service_role`) + verificação `SAAS_ADMIN_USER_ID` + trigger |
+| RN-13 | **Admin do SaaS não é lojista:** `/admin/*` verifica `auth.uid() === SAAS_ADMIN_USER_ID` server-side. Qualquer outro usuário (inclusive lojistas autenticados) → redirect. Sem tabela de admins — dono único, UUID fixo em env. | Server Component/Action (verificação server-side) |
+| RN-14 | **Suspensão por admin:** `suspenderLoja` aplica `suspensa` + `fim_periodo=now()` (corte imediato). Uso para violação de termos/fraude. Admin pode reverter com `reativarLoja` → `ativa` (override explícito de billing — admin decide conscientemente). | Server Action admin (`service_role`) |
+| RN-15 | **Precedência de ações admin:** `ToggleCortesia` fica desabilitado enquanto loja está `suspensa`. `BotaoSuspender` não aparece para loja `cortesia` (toggle basta). `reativarLoja` sempre leva a `ativa` — sem restaurar status anterior. | UI (server) |
 
 ---
 
@@ -236,11 +265,12 @@ CREATE TABLE webhook_eventos_billing (
   - **Dados de cartão NUNCA trafegam pelo iRango** (RN-11) — tokenização no provider. Sem PCI scope no servidor do iRango.
   - Método de pagamento exibido sempre **mascarado** ("cartão final 1234").
 - **Valor monetário:** sim, em todo o fluxo. **Recálculo no servidor obrigatório:** o preço cobrado é sempre lido de `planos.preco` no banco (RN-1); o valor das faturas vem do webhook do provider, nunca do cliente (`seguranca.md` §10). O cliente envia no máximo `plano_id`.
-- **Autoridade de billing (mantida de `seguranca.md` §9):** `assinatura_status` e colunas de billing mudam **só** via webhook (Hotmart ou próprio) com `service_role`, passando pelo trigger `lojas_protege_billing_trg`. Nenhuma Server Action autenticada do painel escreve status. **Regra reafirmada:** jamais criar atalho "admin"/Server Action que escreva `assinatura_status` via PostgREST.
+- **Autoridade de billing (mantida de `seguranca.md` §9):** `assinatura_status` e colunas de billing mudam **só** via webhook (Hotmart ou próprio) com `service_role`, passando pelo trigger `lojas_protege_billing_trg`. Nenhuma Server Action de lojista escreve status. **Exceção única e explícita:** Server Actions de admin (`concederCortesia` / `revogarCortesia`) usam `createServiceClient()` (service_role) — **não PostgREST autenticado** — e verificam `SAAS_ADMIN_USER_ID` antes de qualquer efeito. Esse é o único caminho não-webhook que pode escrever `assinatura_status`.
 - **Tabelas novas → políticas RLS necessárias:**
   - `planos` — SELECT `authenticated` onde `ativo=true`; escrita deny-all (só `service_role`).
   - `pagamentos_assinatura` — SELECT só `dono_id`; INSERT/UPDATE deny-all p/ anon+authenticated, só `service_role`.
   - `webhook_eventos_billing` — **deny-all permanente** (idêntico a `webhook_eventos_hotmart`).
+- **Painel admin (`/admin/*`):** rota protegida server-side por `SAAS_ADMIN_USER_ID`. RLS das tabelas continua inalterada — o admin acessa via `service_role` nas Server Actions, nunca via PostgREST autenticado como lojista.
 - **Webhook do provider:** validação de assinatura HMAC/token via `timingSafeEqual` **antes de qualquer efeito** (`401` se inválido); idempotência por `UNIQUE (provider, evento_id)`; runtime `nodejs`.
 - **API externa com key:** chave secreta do gateway é **só servidor** (`seguranca.md` §7 — sem prefixo `NEXT_PUBLIC_`, em `createServiceClient`-style server-only). Nova env: `BILLING_PROVIDER`, `BILLING_API_KEY`, `BILLING_WEBHOOK_SECRET`.
 - **Trigger `lojas_protege_billing_trg` mantido** — `billing_provider`, `provider_subscription_id`, `plano_id` e os `assinatura_*` devem entrar na lista de colunas protegidas do trigger (migration de atualização do trigger), para que o lojista não consiga PATCH direto via PostgREST.
@@ -249,7 +279,7 @@ CREATE TABLE webhook_eventos_billing (
 
 ## Fora do Escopo (v1)
 
-- **Painel super-admin do SaaS** para gerir planos/assinaturas pela UI — segue como débito técnico (`architecture.md` §10). Planos são geridos via migration/admin por enquanto.
+- **Gestão de planos pela UI do admin** — planos são criados/editados via migration/script por enquanto. A tela `/admin/assinantes` mostra planos mas não os edita.
 - **Proração custom** no iRango — delegada ao provider (RN-6).
 - **Cobrança por comissão/uso** — modelo continua mensalidade fixa (`modelo-negocio.md` §3).
 - **Reembolso self-service** pelo lojista (DA-7) — disparado fora do app; webhook só reflete.
@@ -262,7 +292,7 @@ CREATE TABLE webhook_eventos_billing (
 
 ## Notas de Reuso (não reinventar a roda)
 
-- `assinaturaPermiteAcesso`, `eventoParaStatus`, tipos `StatusAssinatura`/`ResultadoEvento` — `src/lib/utils/assinatura.ts` (estender, não recriar; criar `eventoBillingParaStatus` no mesmo padrão).
+- `assinaturaPermiteAcesso`, `eventoParaStatus`, tipos `StatusAssinatura`/`ResultadoEvento` — `src/lib/utils/assinatura.ts` (estender com `'cortesia'`, não recriar; criar `eventoBillingParaStatus` no mesmo padrão).
 - `decidirAcessoPainel` — `src/lib/utils/acessoPainel.ts` (gate de painel — reusar).
 - Padrão de webhook robusto — espelhar `src/app/api/webhooks/hotmart/route.ts`, queries `src/lib/supabase/queries/webhookHotmart.ts`, utils `src/lib/utils/hotmart.ts`, reconciliação `src/lib/assinatura/reconciliar.ts`.
 - `formatarMoeda` — `src/lib/utils/formatarMoeda.ts`.

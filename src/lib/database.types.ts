@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       bairros_zona: {
@@ -339,6 +314,7 @@ export type Database = {
           assinatura_status: string
           ativo: boolean
           atualizado_em: string
+          billing_provider: string | null
           consentimento_em: string | null
           consentimento_versao: string | null
           criado_em: string
@@ -357,6 +333,8 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           nome: string
+          plano_id: string | null
+          provider_subscription_id: string | null
           slug: string
           taxa_entrega_fora_zona: number | null
           telefone: string | null
@@ -371,6 +349,7 @@ export type Database = {
           assinatura_status?: string
           ativo?: boolean
           atualizado_em?: string
+          billing_provider?: string | null
           consentimento_em?: string | null
           consentimento_versao?: string | null
           criado_em?: string
@@ -389,6 +368,8 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           nome: string
+          plano_id?: string | null
+          provider_subscription_id?: string | null
           slug: string
           taxa_entrega_fora_zona?: number | null
           telefone?: string | null
@@ -403,6 +384,7 @@ export type Database = {
           assinatura_status?: string
           ativo?: boolean
           atualizado_em?: string
+          billing_provider?: string | null
           consentimento_em?: string | null
           consentimento_versao?: string | null
           criado_em?: string
@@ -421,6 +403,8 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           nome?: string
+          plano_id?: string | null
+          provider_subscription_id?: string | null
           slug?: string
           taxa_entrega_fora_zona?: number | null
           telefone?: string | null
@@ -428,7 +412,15 @@ export type Database = {
           timezone?: string
           whatsapp?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "lojas_plano_id_fkey"
+            columns: ["plano_id"]
+            isOneToOne: false
+            referencedRelation: "planos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       opcionais: {
         Row: {
@@ -527,6 +519,60 @@ export type Database = {
           },
         ]
       }
+      pagamentos_assinatura: {
+        Row: {
+          competencia: string | null
+          criado_em: string
+          fatura_url: string | null
+          id: string
+          loja_id: string
+          metodo: string | null
+          provider: string
+          provider_payment_id: string | null
+          status: string
+          valor: number
+        }
+        Insert: {
+          competencia?: string | null
+          criado_em?: string
+          fatura_url?: string | null
+          id?: string
+          loja_id: string
+          metodo?: string | null
+          provider: string
+          provider_payment_id?: string | null
+          status: string
+          valor: number
+        }
+        Update: {
+          competencia?: string | null
+          criado_em?: string
+          fatura_url?: string | null
+          id?: string
+          loja_id?: string
+          metodo?: string | null
+          provider?: string
+          provider_payment_id?: string | null
+          status?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pagamentos_assinatura_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pagamentos_assinatura_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pedidos: {
         Row: {
           criado_em: string
@@ -604,6 +650,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      planos: {
+        Row: {
+          ativo: boolean
+          criado_em: string
+          id: string
+          intervalo: string
+          nome: string
+          preco: number
+          provider_price_id: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          criado_em?: string
+          id?: string
+          intervalo?: string
+          nome: string
+          preco: number
+          provider_price_id?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          criado_em?: string
+          id?: string
+          intervalo?: string
+          nome?: string
+          preco?: number
+          provider_price_id?: string | null
+        }
+        Relationships: []
       }
       produtos: {
         Row: {
@@ -706,6 +782,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      webhook_eventos_billing: {
+        Row: {
+          criado_em: string
+          evento_id: string
+          id: string
+          payload: Json
+          processado: boolean
+          provider: string
+          tipo: string
+        }
+        Insert: {
+          criado_em?: string
+          evento_id: string
+          id?: string
+          payload: Json
+          processado?: boolean
+          provider: string
+          tipo: string
+        }
+        Update: {
+          criado_em?: string
+          evento_id?: string
+          id?: string
+          payload?: Json
+          processado?: boolean
+          provider?: string
+          tipo?: string
+        }
+        Relationships: []
       }
       webhook_eventos_hotmart: {
         Row: {
@@ -903,6 +1009,7 @@ export type Database = {
           assinatura_status: string
           ativo: boolean
           atualizado_em: string
+          billing_provider: string | null
           consentimento_em: string | null
           consentimento_versao: string | null
           criado_em: string
@@ -921,6 +1028,52 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           nome: string
+          plano_id: string | null
+          provider_subscription_id: string | null
+          slug: string
+          taxa_entrega_fora_zona: number | null
+          telefone: string | null
+          tema: Json
+          timezone: string
+          whatsapp: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "lojas"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      loja_por_subscription_id: {
+        Args: { p_provider: string; p_subscription_id: string }
+        Returns: {
+          assinatura_atualizada_em: string | null
+          assinatura_fim_periodo: string | null
+          assinatura_inicio: string | null
+          assinatura_status: string
+          ativo: boolean
+          atualizado_em: string
+          billing_provider: string | null
+          consentimento_em: string | null
+          consentimento_versao: string | null
+          criado_em: string
+          dono_id: string
+          endereco_bairro: string | null
+          endereco_cep: string | null
+          endereco_cidade: string | null
+          endereco_estado: string | null
+          endereco_numero: string | null
+          endereco_rua: string | null
+          horarios: Json
+          hotmart_plano: string | null
+          hotmart_subscriber_code: string | null
+          id: string
+          latitude: number | null
+          logo_url: string | null
+          longitude: number | null
+          nome: string
+          plano_id: string | null
+          provider_subscription_id: string | null
           slug: string
           taxa_entrega_fora_zona: number | null
           telefone: string | null
@@ -1064,9 +1217,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
