@@ -100,7 +100,7 @@ export function TabelaAssinantes({
       ) : (
         <>
           {/* Desktop: tabela densa */}
-          <div className="hidden overflow-hidden rounded-lg border lg:block">
+          <div className="hidden overflow-hidden rounded-lg border bg-card lg:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50 text-left text-muted-foreground">
@@ -154,7 +154,7 @@ export function TabelaAssinantes({
               const { rotulo, variante } = apresentarStatus(a.status);
               return (
                 <li key={a.id}>
-                  <Card size="sm" className="gap-3">
+                  <Card size="sm" className="gap-3 px-(--card-spacing)">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-foreground">
