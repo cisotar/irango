@@ -6,7 +6,9 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import type { AssinanteLinha } from "@/lib/supabase/queries/adminAssinatura";
 import {
@@ -14,6 +16,7 @@ import {
   revogarCortesia,
   suspenderLoja,
   reativarLoja,
+  excluirLoja,
 } from "./actions";
 
 type Resultado = { ok: true } | { ok: false; erro: string };
@@ -37,9 +40,16 @@ export function AcoesAssinante({
   const { id, nome, status } = assinante;
   const [pendente, iniciar] = useTransition();
   const [confirmarSuspensao, setConfirmarSuspensao] = useState(false);
+  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  const [textoConfirmacao, setTextoConfirmacao] = useState("");
 
   const ehCortesia = status === "cortesia";
   const ehSuspensa = status === "suspensa";
+
+  // Gate anti-erro no cliente (RN-2): nunca é a barreira de autorização — o
+  // servidor recebe só `lojaId` e valida via verificarAdminSaaS(). trim SIM
+  // (espaço acidental ao colar não trava), case-sensitive (a fricção é o ponto).
+  const exclusaoHabilitada = textoConfirmacao.trim() === nome.trim();
 
   function executar(
     acao: (lojaId: string) => Promise<Resultado>,
@@ -134,6 +144,99 @@ export function AcoesAssinante({
               >
                 {pendente && <Loader2 className="animate-spin" aria-hidden />}
                 Suspender
+              </Button>
+            </div>
+          </AlertDialog.Popup>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      {/* Zona de perigo — terminal, separada das ações reversíveis de billing.
+          Sempre visível (qualquer status); posicionada por último à direita. */}
+      <Separator orientation="vertical" className="h-5 max-sm:hidden" />
+      <Button
+        variant="destructive"
+        size="sm"
+        disabled={pendente}
+        onClick={() => setConfirmarExclusao(true)}
+      >
+        Excluir loja
+      </Button>
+
+      <AlertDialog.Root
+        open={confirmarExclusao}
+        onOpenChange={(aberto) => {
+          if (!aberto) {
+            setConfirmarExclusao(false);
+            setTextoConfirmacao("");
+          }
+        }}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/30 transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0" />
+          <AlertDialog.Popup className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover p-5 text-popover-foreground shadow-lg transition-all data-ending-style:opacity-0 data-starting-style:opacity-0">
+            <AlertDialog.Title className="font-heading text-base font-medium text-foreground">
+              Excluir loja definitivamente
+            </AlertDialog.Title>
+            <AlertDialog.Description className="mt-1 text-sm text-muted-foreground">
+              <span className="font-medium text-destructive">
+                Esta ação é IRREVERSÍVEL.
+              </span>{" "}
+              {`Ao excluir "${nome}", são apagados permanentemente:`}
+              <ul className="mt-2 list-disc space-y-0.5 pl-5">
+                <li>a loja e suas configurações</li>
+                <li>todos os produtos do catálogo</li>
+                <li>todos os pedidos e seu histórico</li>
+                <li>todas as faturas</li>
+                <li>todas as fotos enviadas</li>
+              </ul>
+              <span className="mt-2 block font-medium text-destructive">
+                Não há como desfazer nem recuperar.
+              </span>
+            </AlertDialog.Description>
+
+            <div className="mt-4">
+              <Label
+                htmlFor={`confirma-exclusao-${id}`}
+                className="text-sm font-medium"
+              >
+                Para confirmar, digite o nome da loja:
+              </Label>
+              <Input
+                id={`confirma-exclusao-${id}`}
+                autoFocus
+                disabled={pendente}
+                placeholder={nome}
+                value={textoConfirmacao}
+                onChange={(e) => setTextoConfirmacao(e.target.value)}
+                aria-describedby={`hint-exclusao-${id}`}
+                className="mt-1.5"
+              />
+              <p
+                id={`hint-exclusao-${id}`}
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                O nome deve bater exatamente.
+              </p>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <AlertDialog.Close
+                render={<Button variant="outline" disabled={pendente} />}
+              >
+                Cancelar
+              </AlertDialog.Close>
+              <Button
+                variant="destructive"
+                className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+                disabled={!exclusaoHabilitada || pendente}
+                onClick={() => {
+                  setConfirmarExclusao(false);
+                  setTextoConfirmacao("");
+                  executar(excluirLoja, `Loja "${nome}" excluída permanentemente.`);
+                }}
+              >
+                {pendente && <Loader2 className="animate-spin" aria-hidden />}
+                Excluir definitivamente
               </Button>
             </div>
           </AlertDialog.Popup>

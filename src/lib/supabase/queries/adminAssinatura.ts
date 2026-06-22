@@ -35,6 +35,24 @@ export async function aplicarStatusAdmin(
   return { linhasAfetadas: count ?? 0 };
 }
 
+/**
+ * Hard delete irreversível de uma loja (issue 084), via service_role
+ * (BYPASSRLS — escopo manual obrigatório por `eq("id", lojaId)`). O cascade
+ * (FK ON DELETE CASCADE) apaga pedidos/itens/produtos/categorias/formas_pagamento.
+ * Retorna a quantidade de linhas afetadas (0 = loja inexistente).
+ */
+export async function excluirLojaPermanente(
+  client: Client,
+  lojaId: string,
+): Promise<{ linhasAfetadas: number }> {
+  const { count, error } = await client
+    .from("lojas")
+    .delete({ count: "exact" })
+    .eq("id", lojaId);
+  if (error) throw error;
+  return { linhasAfetadas: count ?? 0 };
+}
+
 /** Linha da tela admin (issue 082) — só leitura, PII restrita ao dono do SaaS. */
 export type AssinanteLinha = {
   id: string;

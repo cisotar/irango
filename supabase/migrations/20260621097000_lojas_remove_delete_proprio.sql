@@ -1,0 +1,26 @@
+-- Issue 083 (fix de segurança ALTA da auditoria) — remover `lojas_delete_proprio`
+--
+-- Contexto: a migration 20260621096000 trocou a FK `pedidos.loja_id` para
+-- ON DELETE CASCADE (habilita o hard delete administrativo da issue 084, via
+-- service_role). Efeito colateral: a policy `lojas_delete_proprio`
+-- (`for delete using auth.uid() = dono_id`, criada na 20260614001000) já permitia
+-- ao lojista deletar a própria loja via PostgREST (`DELETE /rest/v1/lojas?id=eq...`).
+-- ANTES do cascade isso falhava com foreign_key_violation quando havia pedidos —
+-- a FK RESTRICT funcionava como trava acidental. DEPOIS do cascade, o mesmo DELETE
+-- passaria a APAGAR todo o histórico de pedidos (e itens) da loja, disparável pelo
+-- próprio tenant. Perda de dados irreversível + retenção LGPD §20.
+--
+-- Correção (Opção A da auditoria): exclusão de loja deixa de ser auto-serviço via
+-- PostgREST. A ÚNICA via de exclusão passa a ser o hard delete administrativo
+-- (issue 084) via `service_role` (BYPASSRLS), com verificação `SAAS_ADMIN_USER_ID`
+-- e confirmação por cópia de palavra. Nenhum código de app dependia da policy
+-- (verificado: nenhuma Server Action de delete de loja em src/).
+--
+-- Migration ADITIVA/segura: só remove uma policy de DELETE. Não toca dados, não
+-- altera colunas, não afeta SELECT/INSERT/UPDATE do lojista.
+--
+-- Rollback (reabre a brecha — NÃO usar enquanto o cascade de pedidos existir):
+--   create policy "lojas_delete_proprio" on public.lojas for delete
+--     using (auth.uid() = dono_id);
+
+drop policy if exists "lojas_delete_proprio" on public.lojas;
