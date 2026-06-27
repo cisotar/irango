@@ -19,12 +19,27 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { FormZona } from "@/components/painel/FormZona";
-import { alternarZonaAtiva, removerZona } from "@/lib/actions/entrega";
+import {
+  alternarZonaAtiva as alternarZonaAtivaLojista,
+  removerZona as removerZonaLojista,
+  criarZona as criarZonaLojista,
+  atualizarZona as atualizarZonaLojista,
+} from "@/lib/actions/entrega";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 
 export type EntregasClientProps = {
   zonas: ZonaVitrine[];
+  /**
+   * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults). A via
+   * admin passa as variantes escopadas por `lojaId`.
+   */
+  acoes?: {
+    alternarZonaAtiva?: typeof alternarZonaAtivaLojista;
+    removerZona?: typeof removerZonaLojista;
+    criarZona?: typeof criarZonaLojista;
+    atualizarZona?: typeof atualizarZonaLojista;
+  };
 };
 
 const ROTULO_TIPO: Record<string, string> = {
@@ -33,8 +48,11 @@ const ROTULO_TIPO: Record<string, string> = {
   faixa_cep: "Por faixa de CEP",
 };
 
-export function EntregasClient({ zonas }: EntregasClientProps) {
+export function EntregasClient({ zonas, acoes }: EntregasClientProps) {
   const router = useRouter();
+
+  const alternarZonaAtiva = acoes?.alternarZonaAtiva ?? alternarZonaAtivaLojista;
+  const removerZona = acoes?.removerZona ?? removerZonaLojista;
 
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<ZonaVitrine | null>(null);
@@ -176,6 +194,8 @@ export function EntregasClient({ zonas }: EntregasClientProps) {
             <FormZona
               key={emEdicao?.id ?? "novo"}
               onSucesso={aoSalvar}
+              onCriar={acoes?.criarZona}
+              onAtualizar={acoes?.atualizarZona}
               inicial={
                 emEdicao
                   ? {

@@ -11,11 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaFormaPagamento } from "@/lib/validacoes/pagamento";
 import {
-  salvarFormaPagamento,
-  atualizarFormaPagamento,
-  salvarQrPix,
+  salvarFormaPagamento as salvarFormaPagamentoLojista,
+  atualizarFormaPagamento as atualizarFormaPagamentoLojista,
+  salvarQrPix as salvarQrPixLojista,
 } from "@/lib/actions/pagamento";
-import { UploadQrPix } from "@/components/painel/UploadQrPix";
+import {
+  UploadQrPix,
+  type EnviarQrPix,
+} from "@/components/painel/UploadQrPix";
 import type { Json } from "@/lib/database.types";
 
 type TipoChavePix = "cpf" | "cnpj" | "email" | "telefone" | "aleatoria";
@@ -31,6 +34,17 @@ export type FormPagamentoProps = {
    */
   lojaId?: string;
   onSucesso?: () => void;
+  /** Action de criação. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
+  onSalvar?: typeof salvarFormaPagamentoLojista;
+  /** Action de edição. Default: action do lojista. */
+  onAtualizar?: typeof atualizarFormaPagamentoLojista;
+  /** Action que persiste a URL do QR Pix. Default: action do lojista. */
+  onSalvarQr?: typeof salvarQrPixLojista;
+  /**
+   * Função de upload do QR injetada para o `UploadQrPix` (variante admin escopa o
+   * path do bucket por `lojaId`). Default: upload do lojista via client Supabase.
+   */
+  onEnviarQr?: EnviarQrPix;
 };
 
 const selectClassName =
@@ -56,7 +70,16 @@ function lerCampo(config: Json | undefined, campo: string): string {
  * browser (client Supabase autenticado, RLS do bucket 074 garante o escopo) e
  * persiste a URL via `salvarQrPix` (Server Action) separada do submit principal.
  */
-export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagamentoProps) {
+export function FormPagamento({
+  tipo,
+  inicial,
+  lojaId,
+  onSucesso,
+  onSalvar = salvarFormaPagamentoLojista,
+  onAtualizar = atualizarFormaPagamentoLojista,
+  onSalvarQr = salvarQrPixLojista,
+  onEnviarQr,
+}: FormPagamentoProps) {
   const router = useRouter();
   const ehEdicao = inicial?.id != null;
 
@@ -102,8 +125,8 @@ export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagament
     startEnvio(async () => {
       const resultado =
         ehEdicao && inicial?.id
-          ? await atualizarFormaPagamento(inicial.id, parsed.data)
-          : await salvarFormaPagamento(parsed.data);
+          ? await onAtualizar(inicial.id, parsed.data)
+          : await onSalvar(parsed.data);
 
       if (!resultado.ok) {
         toast.error(resultado.erro);
@@ -128,7 +151,7 @@ export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagament
     startSalvarQr(async () => {
       // URL vazia = remoção do QR (upload de novo arquivo ou clique em remover).
       const urlParaSalvar = urlPublica || undefined;
-      const resultado = await salvarQrPix(inicial.id, urlParaSalvar);
+      const resultado = await onSalvarQr(inicial.id, urlParaSalvar);
       if (!resultado.ok) {
         toast.error(resultado.erro);
         return;
@@ -192,6 +215,7 @@ export function FormPagamento({ tipo, inicial, lojaId, onSucesso }: FormPagament
                 urlAtual={pixQrUrl || null}
                 onUploadConcluido={aoUploadQrConcluido}
                 disabled={enviando || salvandoQr}
+                onEnviar={onEnviarQr}
               />
               {salvandoQr && (
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">

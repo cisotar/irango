@@ -20,9 +20,15 @@ import {
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
 import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
 import {
-  removerProduto,
-  alternarDisponibilidade,
+  removerProduto as removerProdutoLojista,
+  alternarDisponibilidade as alternarDisponibilidadeLojista,
+  criarProduto as criarProdutoLojista,
+  atualizarProduto as atualizarProdutoLojista,
+  criarCategoria as criarCategoriaLojista,
+  atualizarCategoria as atualizarCategoriaLojista,
+  removerCategoria as removerCategoriaLojista,
 } from "@/lib/actions/produto";
+import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { Produto } from "@/lib/supabase/queries/produtos";
 
@@ -31,6 +37,20 @@ export type ProdutosClientProps = {
   lojaId: string;
   produtos: Produto[];
   categorias: Categoria[];
+  /**
+   * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults =
+   * comportamento atual). A via admin passa as variantes escopadas por `lojaId`.
+   */
+  acoes?: {
+    removerProduto?: typeof removerProdutoLojista;
+    alternarDisponibilidade?: typeof alternarDisponibilidadeLojista;
+    criarProduto?: typeof criarProdutoLojista;
+    atualizarProduto?: typeof atualizarProdutoLojista;
+    enviarFotoProduto?: EnviarFotoProduto;
+    criarCategoria?: typeof criarCategoriaLojista;
+    atualizarCategoria?: typeof atualizarCategoriaLojista;
+    removerCategoria?: typeof removerCategoriaLojista;
+  };
 };
 
 type GrupoProdutos = {
@@ -72,8 +92,13 @@ export function ProdutosClient({
   lojaId,
   produtos,
   categorias,
+  acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
+
+  const removerProduto = acoes?.removerProduto ?? removerProdutoLojista;
+  const alternarDisponibilidade =
+    acoes?.alternarDisponibilidade ?? alternarDisponibilidadeLojista;
 
   // null => criar; Produto => editar. `formAberto` controla a abertura do Sheet.
   const [formAberto, setFormAberto] = useState(false);
@@ -223,6 +248,9 @@ export function ProdutosClient({
         categorias={categorias}
         open={categoriasAbertas}
         onOpenChange={setCategoriasAbertas}
+        onCriar={acoes?.criarCategoria}
+        onAtualizar={acoes?.atualizarCategoria}
+        onRemover={acoes?.removerCategoria}
       />
 
       {/* Sheet de criar/editar */}
@@ -245,6 +273,9 @@ export function ProdutosClient({
               lojaSlug={lojaSlug}
               lojaId={lojaId}
               onSucesso={aoSalvar}
+              onCriar={acoes?.criarProduto}
+              onAtualizar={acoes?.atualizarProduto}
+              onEnviarFoto={acoes?.enviarFotoProduto}
               inicial={
                 emEdicao
                   ? {

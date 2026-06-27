@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.15 | **Atualizado:** 2026-06-19
+**Versão:** 0.2.16 | **Atualizado:** 2026-06-27
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -470,7 +470,9 @@ const dados = schemaProduto.parse(formData)
 
 **Regra:** só usar em Server Action ou Route Handler. Toda query feita com este cliente **deve escopar manualmente** (por `loja_id`, token, etc.) — RLS não protege.
 
-Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via RPC (issue 014), ler pedido por `id + token_acesso` (issues 026/037), checar unicidade de slug (issue 030), webhook Hotmart (issue 057).
+Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via RPC (issue 014), ler pedido por `id + token_acesso` (issues 026/037), checar unicidade de slug (issue 030), webhook Hotmart (issue 057), Server Actions admin de gestão de loja (`/admin/assinantes` — issues 083–102).
+
+**Padrão admin (issues 083–102):** Server Actions sob `service_role` precedidas de `verificarAdminSaaS()` — auth.uid() validado contra `ADMIN_EMAIL` antes de elevar para service_role; escopo manual obrigatório (`eq("loja_id"/"id", lojaId)` com `lojaId` validado como UUID). Helpers em `src/lib/actions/admin-loja.ts` (`validarLojaIdAdmin`, `prepararContextoAdmin`, `revalidarLojaAdmin`). Nota: RLS não é a defesa aqui (service_role a bypassa) — o gate é `verificarAdminSaaS()` + escopo manual. Contrasta com o painel do lojista, onde a defesa primária é RLS (`auth.uid() = dono_id`). Log de acesso admin: `registrarAcessoAdmin` é no-op (pendente implementação futura).
 
 ### Regra do prefixo Next.js
 

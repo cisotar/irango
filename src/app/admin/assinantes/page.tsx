@@ -1,5 +1,8 @@
 import type { ReactElement } from "react";
+import Link from "next/link";
+import { Plus } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { createServiceClient } from "@/lib/supabase/service";
 import { listarAssinantes } from "@/lib/supabase/queries/adminAssinatura";
 import { TabelaAssinantes } from "./TabelaAssinantes";
@@ -21,14 +24,25 @@ export default async function AssinantesPage(): Promise<ReactElement> {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="font-heading text-2xl font-semibold text-foreground">
-          Assinantes
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {assinantes.length} loja(s). Cortesia, suspensão e reativação aplicam o
-          status no servidor.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="font-heading text-2xl font-semibold text-foreground">
+            Assinantes
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {assinantes.length} loja(s). Cortesia, suspensão e reativação aplicam o
+            status no servidor.
+          </p>
+        </div>
+        <Button
+          nativeButton={false}
+          render={
+            <Link href="/admin/assinantes/nova">
+              <Plus aria-hidden />
+              Nova loja
+            </Link>
+          }
+        />
       </header>
 
       <TabelaAssinantes assinantes={assinantes} />

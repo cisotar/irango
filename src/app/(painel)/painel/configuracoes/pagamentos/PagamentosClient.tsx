@@ -19,15 +19,29 @@ import {
 } from "@/components/ui/sheet";
 import { FormPagamento } from "@/components/painel/FormPagamento";
 import {
-  salvarFormaPagamento,
-  removerFormaPagamento,
+  salvarFormaPagamento as salvarFormaPagamentoLojista,
+  removerFormaPagamento as removerFormaPagamentoLojista,
+  atualizarFormaPagamento as atualizarFormaPagamentoLojista,
+  salvarQrPix as salvarQrPixLojista,
 } from "@/lib/actions/pagamento";
+import type { EnviarQrPix } from "@/components/painel/UploadQrPix";
 import type { FormaPagamento } from "@/lib/supabase/queries/entregaPagamento";
 
 export type PagamentosClientProps = {
   formas: FormaPagamento[];
   /** ID da loja (derivado do servidor) — repassado ao FormPagamento para o upload de QR Pix. */
   lojaId: string;
+  /**
+   * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults). A via
+   * admin passa as variantes escopadas por `lojaId`.
+   */
+  acoes?: {
+    salvarFormaPagamento?: typeof salvarFormaPagamentoLojista;
+    removerFormaPagamento?: typeof removerFormaPagamentoLojista;
+    atualizarFormaPagamento?: typeof atualizarFormaPagamentoLojista;
+    salvarQrPix?: typeof salvarQrPixLojista;
+    enviarQrPix?: EnviarQrPix;
+  };
 };
 
 type TipoPagamento = "pix" | "dinheiro" | "link" | "cartao";
@@ -65,8 +79,17 @@ const TIPOS: {
   },
 ];
 
-export function PagamentosClient({ formas, lojaId }: PagamentosClientProps) {
+export function PagamentosClient({
+  formas,
+  lojaId,
+  acoes,
+}: PagamentosClientProps) {
   const router = useRouter();
+
+  const salvarFormaPagamento =
+    acoes?.salvarFormaPagamento ?? salvarFormaPagamentoLojista;
+  const removerFormaPagamento =
+    acoes?.removerFormaPagamento ?? removerFormaPagamentoLojista;
 
   const [formAberto, setFormAberto] = useState(false);
   // Só tipos com config (pix/link) abrem o Sheet de configuração.
@@ -201,6 +224,10 @@ export function PagamentosClient({ formas, lojaId }: PagamentosClientProps) {
                 tipo={tipoEmEdicao}
                 lojaId={lojaId}
                 onSucesso={aoSalvar}
+                onSalvar={acoes?.salvarFormaPagamento}
+                onAtualizar={acoes?.atualizarFormaPagamento}
+                onSalvarQr={acoes?.salvarQrPix}
+                onEnviarQr={acoes?.enviarQrPix}
                 inicial={
                   formaEmEdicao
                     ? { id: formaEmEdicao.id, config: formaEmEdicao.config }

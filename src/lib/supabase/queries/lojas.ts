@@ -1,3 +1,4 @@
+import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables, TablesInsert } from "@/lib/database.types";
 
@@ -94,6 +95,31 @@ export async function slugExiste(
  * O payload do pedido traz `loja_id` (não slug). Loja inexistente → `null`.
  */
 export async function buscarLojaParaPedido(
+  client: Client,
+  lojaId: string,
+): Promise<LojaCompleta | null> {
+  const { data, error } = await client
+    .from("lojas")
+    .select("*")
+    .eq("id", lojaId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Loja-alvo por id para o PAINEL ADMIN SaaS (onboarding assistido, issue 096).
+ * Fonte: TABELA base `lojas` — NÃO a view `vitrine_lojas`, que filtra `ativo = true`
+ * e esconderia justamente a loja em onboarding (`ativo = false`) que o admin precisa
+ * configurar. Espelha `buscarLojaParaPedido` (também lê a base): projeta a row
+ * completa (perfil, endereço, horários, tema, ativo, slug, ...) que o hub/abas usam.
+ *
+ * EXIGE client **service_role** (BYPASSRLS) injetado pelo caller (loader `carga.ts`):
+ * `lojas` não tem SELECT anon, e a RLS por dono não enxergaria a loja-alvo. Escopado
+ * por `eq("id", lojaId)`. Loja inexistente → `null` (o loader trata como notFound).
+ * Propaga o `error` do PostgREST (seguranca.md §14).
+ */
+export async function buscarLojaAdminPorId(
   client: Client,
   lojaId: string,
 ): Promise<LojaCompleta | null> {
@@ -274,4 +300,45 @@ export async function buscarCoordsLoja(
     return null;
   }
   return { latitude: data.latitude, longitude: data.longitude };
+}
+
+/**
+ * Resolve o `dono_id` (auth.users.id) a partir do e-mail do dono (issue 085).
+ * O vínculo e-mail↔id vive em `auth.users`, que NÃO é tabela PostgREST — logo é
+ * lido via Admin API (`auth.admin.listUsers`), NO MESMO mecanismo paginado de
+ * `mapearEmailsDosDonos` (não há caminho alternativo de acesso ao Admin API).
+ *
+ * EXIGE client **service_role**: `auth.admin.*` só funciona com a service key.
+ * Normaliza trim + lowercase nos DOIS lados do match (caixa/espaços não importam).
+ * E-mail inexistente → `null`. NUNCA loga o e-mail cru (PII, scrubbing §21).
+ *
+ * Ao contrário de `mapearEmailsDosDonos` (fail-soft → mapa vazio), aqui o erro do
+ * Admin API PROPAGA (seguranca.md §14) — quem chama precisa distinguir "não existe"
+ * (null) de "lookup falhou" (throw).
+ */
+export async function resolverDonoPorEmail(
+  client: Client,
+  email: string,
+): Promise<string | null> {
+  const alvo = email.trim().toLowerCase();
+
+  let pagina = 1;
+  // perPage máx. do GoTrue. Loja-base é pequena; 2-3 páginas no pior caso.
+  // Mesma paginação de `mapearEmailsDosDonos` (encerra em users.length < porPagina).
+  const porPagina = 1000;
+  for (;;) {
+    const { data, error } = await client.auth.admin.listUsers({
+      page: pagina,
+      perPage: porPagina,
+    });
+    if (error) throw error;
+    for (const u of data.users) {
+      if (u.email && u.email.trim().toLowerCase() === alvo) {
+        return u.id;
+      }
+    }
+    if (data.users.length < porPagina) break;
+    pagina += 1;
+  }
+  return null;
 }

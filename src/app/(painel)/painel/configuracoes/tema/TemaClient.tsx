@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaTema } from "@/lib/validacoes/loja";
-import { salvarTema } from "@/lib/actions/loja";
+import { salvarTema as salvarTemaLojista } from "@/lib/actions/loja";
 
 export type Tema = {
   primaria: string;
@@ -39,9 +39,12 @@ const CAMPOS: { chave: keyof Tema; rotulo: string }[] = [
 export function TemaClient({
   inicial,
   nomeLoja,
+  onSalvar = salvarTemaLojista,
 }: {
   inicial: Tema;
   nomeLoja: string;
+  /** Action de salvar tema. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
+  onSalvar?: typeof salvarTemaLojista;
 }) {
   const router = useRouter();
   const [tema, setTema] = useState<Tema>(inicial);
@@ -63,7 +66,7 @@ export function TemaClient({
     }
 
     startEnvio(async () => {
-      const resultado = await salvarTema(parsed.data);
+      const resultado = await onSalvar(parsed.data);
       if (!resultado.ok) {
         toast.error(resultado.erro);
         return;

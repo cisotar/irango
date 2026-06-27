@@ -13,7 +13,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaPerfil, sanitizarSlug } from "@/lib/validacoes/loja";
-import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
+import {
+  salvarPerfil as salvarPerfilLojista,
+  definirPublicacao as definirPublicacaoLojista,
+} from "@/lib/actions/loja";
 import { buscarCep } from "@/lib/utils/buscarCep";
 import { UploadLogoLoja } from "@/components/painel/UploadLogoLoja";
 
@@ -62,11 +65,17 @@ export function PerfilClient({
   publicado,
   podePublicar,
   logoUrlInicial,
+  onSalvar = salvarPerfilLojista,
+  onDefinirPublicacao = definirPublicacaoLojista,
 }: {
   inicial: PerfilInicial;
   publicado: boolean;
   podePublicar: boolean;
   logoUrlInicial: string | null;
+  /** Action de salvar perfil. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
+  onSalvar?: typeof salvarPerfilLojista;
+  /** Action de publicar/despublicar. Default: action do lojista. */
+  onDefinirPublicacao?: typeof definirPublicacaoLojista;
 }) {
   const router = useRouter();
 
@@ -107,7 +116,7 @@ export function PerfilClient({
   // mínimo — aqui o botão fica desabilitado como gate de UX (paridade, não fonte).
   function alternarPublicacao() {
     startPublicacao(async () => {
-      const r = await definirPublicacao(!publicado);
+      const r = await onDefinirPublicacao(!publicado);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -180,7 +189,7 @@ export function PerfilClient({
     }
 
     startEnvio(async () => {
-      const resultado = await salvarPerfil(parsed.data);
+      const resultado = await onSalvar(parsed.data);
       if (!resultado.ok) {
         toast.error(resultado.erro);
         return;

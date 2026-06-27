@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition, type ReactElement } from "react";
+import Link from "next/link";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Loader2 } from "lucide-react";
+import { Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,19 @@ export function AcoesAssinante({
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
+      {/* Hub de gestão da loja-alvo (issue 099) — onboarding assistido. */}
+      <Button
+        variant="outline"
+        size="sm"
+        nativeButton={false}
+        render={
+          <Link href={`/admin/assinantes/${id}`}>
+            <Settings2 aria-hidden />
+            Gerenciar
+          </Link>
+        }
+      />
+
       {/* Toggle de cortesia — desabilitado em loja suspensa (RN-15) */}
       <div className="flex items-center gap-2">
         <Switch

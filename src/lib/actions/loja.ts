@@ -26,6 +26,10 @@ import {
   type Coordenadas,
   type MotivoGeocoding,
 } from "@/lib/utils/geocodificarEndereco";
+import {
+  montarPatchPerfil,
+  montarConsultaGeocoding,
+} from "@/lib/actions/patches-loja";
 
 export type ResultadoSalvar = { ok: true } | { ok: false; erro: string };
 
@@ -45,45 +49,6 @@ export type ResultadoPerfil =
 // testes rodarem sem delay real.
 function esperar(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Monta a consulta livre para o Nominatim a partir do endereço JÁ validado.
- * Função interna PURA — não exportada ('use server' só pode exportar funções
- * async; ver MEMORY use-server-export-constraint).
- *
- * Gate de completude (D3): sem `endereco_cidade` E `endereco_estado` não há
- * âncora geográfica mínima → retorna null (caller grava o par NULL, sem chamar
- * o Nominatim). Com o mínimo, monta string rica (mais específico → menos), com
- * "Brasil" fixo no fim para ancorar o país.
- */
-function montarConsultaGeocoding(dados: {
-  endereco_cidade?: string | null;
-  endereco_estado?: string | null;
-  endereco_cep?: string | null;
-  endereco_rua?: string | null;
-  endereco_numero?: string | null;
-  endereco_bairro?: string | null;
-}): string | null {
-  const cidade = dados.endereco_cidade?.trim();
-  const estado = dados.endereco_estado?.trim();
-  if (!cidade || !estado) return null;
-
-  const rua = dados.endereco_rua?.trim();
-  const numero = dados.endereco_numero?.trim();
-  const bairro = dados.endereco_bairro?.trim();
-  const cep = dados.endereco_cep?.trim();
-
-  const ruaNumero = [rua, numero].filter(Boolean).join(", ");
-  const partes = [
-    ruaNumero || null,
-    bairro || null,
-    `${cidade} - ${estado}`,
-    cep || null,
-    "Brasil",
-  ].filter(Boolean);
-
-  return partes.join(", ");
 }
 
 /**
@@ -129,20 +94,9 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoPerfil> {
       if (ocupado) return { ok: false, erro: ERRO_SLUG_OCUPADO };
     }
 
-    // Allowlist explícita (RN-A5): só estas colunas podem ser escritas. As coords
+    // Allowlist explícita (RN-7): só estas colunas podem ser escritas. As coords
     // (latitude/longitude) JAMAIS entram aqui — são derivadas no 2º UPDATE.
-    const patch: Record<string, unknown> = {
-      nome: dados.nome,
-      slug: dados.slug,
-    };
-    if (dados.telefone !== undefined) patch.telefone = dados.telefone;
-    if (dados.whatsapp !== undefined) patch.whatsapp = dados.whatsapp;
-    if (dados.endereco_cep !== undefined) patch.endereco_cep = dados.endereco_cep;
-    if (dados.endereco_rua !== undefined) patch.endereco_rua = dados.endereco_rua;
-    if (dados.endereco_numero !== undefined) patch.endereco_numero = dados.endereco_numero;
-    if (dados.endereco_bairro !== undefined) patch.endereco_bairro = dados.endereco_bairro;
-    if (dados.endereco_cidade !== undefined) patch.endereco_cidade = dados.endereco_cidade;
-    if (dados.endereco_estado !== undefined) patch.endereco_estado = dados.endereco_estado;
+    const patch = montarPatchPerfil(dados);
 
     // .eq("id") obrigatório: PostgREST recusa UPDATE sem WHERE (21000), mesmo com
     // RLS escopando a linha. Escopo por id da própria loja (já resolvida acima).

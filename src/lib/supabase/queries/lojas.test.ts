@@ -7,6 +7,8 @@ import {
   slugExiste,
   contarLojasDoDono,
   buscarCoordsLoja,
+  resolverDonoPorEmail,
+  buscarLojaAdminPorId,
 } from "./lojas";
 
 /**
@@ -190,6 +192,33 @@ describe("023 queries de lojas — contrato TS (camada 2, mock)", () => {
     const { client } = makeClient({ data: null, error: { message: "boom" }, count: null });
     await expect(contarLojasDoDono(client, "dono-1")).rejects.toBeTruthy();
   });
+
+  // ───────────────────────── buscarLojaAdminPorId (096)
+  it("buscarLojaAdminPorId lê a TABELA base lojas (NÃO a view), filtra por id e usa maybeSingle", async () => {
+    // Loja em onboarding: ativo=false. A view vitrine_lojas (WHERE ativo=true) a
+    // esconderia; o painel admin DEVE enxergá-la pela tabela base.
+    const row = { id: "loja-1", slug: "loja-1", ativo: false };
+    const { client, calls } = makeClient({ data: row, error: null });
+
+    const out = await buscarLojaAdminPorId(client, "loja-1");
+
+    expect(calls.from).toHaveBeenCalledWith("lojas");
+    expect(calls.from).not.toHaveBeenCalledWith("vitrine_lojas");
+    expect(calls.eq).toHaveBeenCalledWith("id", "loja-1");
+    expect(calls.maybeSingle).toHaveBeenCalled();
+    expect(out).toEqual(row);
+  });
+
+  it("buscarLojaAdminPorId retorna null quando a loja não existe (sem lançar)", async () => {
+    const { client } = makeClient({ data: null, error: null });
+    const out = await buscarLojaAdminPorId(client, "inexistente");
+    expect(out).toBeNull();
+  });
+
+  it("buscarLojaAdminPorId PROPAGA o error do PostgREST (não mascara como null)", async () => {
+    const { client } = makeClient({ data: null, error: { message: "db down" } });
+    await expect(buscarLojaAdminPorId(client, "x")).rejects.toBeTruthy();
+  });
 });
 
 /**
@@ -267,5 +296,137 @@ describe("005 buscarCoordsLoja — contrato TS (camada 2, mock)", () => {
   it("PROPAGA o error do PostgREST (não mascara como null)", async () => {
     const { client } = makeClient({ data: null, error: { message: "db down" } });
     await expect(buscarCoordsLoja(client, "x")).rejects.toBeTruthy();
+  });
+});
+
+/**
+ * Fase RED (TDD) da issue 085 — `resolverDonoPorEmail(svc, email)`.
+ *
+ * A função AINDA NÃO EXISTE de verdade: `./lojas.ts` tem só um STUB MÍNIMO de
+ * assinatura (`throw new Error('TODO: GREEN')`) para o RED cair na ASSERÇÃO e
+ * não num erro de type-check por símbolo inexistente. A implementação é GREEN.
+ *
+ * Contrato que a GREEN precisa satisfazer (plano da issue 085):
+ *  - resolve o dono_id (auth.users.id) via Admin API, REUSANDO o mecanismo de
+ *    `mapearEmailsDosDonos` em adminAssinatura.ts: `svc.auth.admin.listUsers`
+ *    paginado ({ page, perPage }), casando por e-mail;
+ *  - e-mail existente → retorna o id do usuário com esse e-mail;
+ *  - e-mail inexistente → null;
+ *  - normaliza trim + lowercase antes do match (caixa/espaços não importam);
+ *  - NUNCA loga o e-mail cru (PII, scrubbing §21) — borda assertada.
+ *
+ * Mock: `svc.auth.admin.listUsers` no MESMO estilo do mapearEmailsDosDonos —
+ * resolve `{ data: { users }, error }`. Uma página só (users.length < perPage
+ * encerra a paginação). Captura os argumentos para provar o uso paginado.
+ */
+describe("085 resolverDonoPorEmail — contrato TS (camada 2, mock Admin API)", () => {
+  type AdminUser = { id: string; email: string | null };
+
+  /**
+   * Client mínimo só com `auth.admin.listUsers`. `users` é a página única
+   * devolvida; `chamadas` registra os argumentos de cada chamada (prova de
+   * paginação no mesmo estilo de mapearEmailsDosDonos).
+   */
+  function makeAdminClient(users: AdminUser[]) {
+    const chamadas: Array<{ page?: number; perPage?: number }> = [];
+    const listUsers = vi.fn(async (args?: { page?: number; perPage?: number }) => {
+      chamadas.push(args ?? {});
+      return { data: { users }, error: null };
+    });
+    const client = {
+      auth: { admin: { listUsers } },
+    } as unknown as SupabaseClient<Database>;
+    return { client, listUsers, chamadas };
+  }
+
+  it("e-mail existente → resolve o dono_id (auth.users.id) correto", async () => {
+    const { client, listUsers } = makeAdminClient([
+      { id: "user-aaa", email: "outra@x.com" },
+      { id: "user-bbb", email: "loja@x.com" },
+    ]);
+
+    const out = await resolverDonoPorEmail(client, "loja@x.com");
+
+    expect(out).toBe("user-bbb");
+    expect(listUsers).toHaveBeenCalled(); // reusa o Admin API paginado
+  });
+
+  it("e-mail inexistente → null", async () => {
+    const { client } = makeAdminClient([
+      { id: "user-aaa", email: "outra@x.com" },
+    ]);
+
+    const out = await resolverDonoPorEmail(client, "ninguem@x.com");
+
+    expect(out).toBeNull();
+  });
+
+  it("normaliza trim + lowercase antes do match (caixa/espaços diferentes ainda casa)", async () => {
+    const { client } = makeAdminClient([
+      { id: "user-bbb", email: "loja@x.com" },
+    ]);
+
+    const out = await resolverDonoPorEmail(client, "  LOJA@X.COM ");
+
+    expect(out).toBe("user-bbb");
+  });
+
+  it("NÃO loga o e-mail cru (PII — scrubbing §21)", async () => {
+    const { client } = makeAdminClient([{ id: "user-bbb", email: "loja@x.com" }]);
+    const spies = [
+      vi.spyOn(console, "log").mockImplementation(() => {}),
+      vi.spyOn(console, "error").mockImplementation(() => {}),
+      vi.spyOn(console, "warn").mockImplementation(() => {}),
+      vi.spyOn(console, "info").mockImplementation(() => {}),
+    ];
+
+    await resolverDonoPorEmail(client, "  LOJA@X.COM ");
+
+    for (const spy of spies) {
+      for (const call of spy.mock.calls) {
+        const linha = call.map((a) => String(a)).join(" ").toLowerCase();
+        expect(linha).not.toContain("loja@x.com");
+      }
+      spy.mockRestore();
+    }
+  });
+
+  it("paginação: resolve e-mail presente SOMENTE na 2ª página (primeira retorna 1000 usuários sem o alvo)", async () => {
+    // Simula o cenário real: primeira página tem exatamente 1000 registros (sinal
+    // de que há mais páginas) e não contém o alvo. Segunda página tem < 1000
+    // registros e o alvo está lá. A função SÓ encontra o alvo se iterar além da
+    // primeira página — qualquer bug que pare no break prematuro retorna null.
+    const POR_PAGINA = 1000;
+    const pagina1: AdminUser[] = Array.from({ length: POR_PAGINA }, (_, i) => ({
+      id: `user-p1-${i}`,
+      email: `usuario${i}@pagina1.com`,
+    }));
+    const pagina2: AdminUser[] = [
+      { id: "user-segunda-pagina", email: "alvo@segunda.com" },
+      { id: "user-outro", email: "outro@segunda.com" },
+    ];
+
+    const paginas = [pagina1, pagina2];
+    let indiceChamada = 0;
+    const chamadas: Array<{ page?: number; perPage?: number }> = [];
+    const listUsers = vi.fn(async (args?: { page?: number; perPage?: number }) => {
+      chamadas.push(args ?? {});
+      const usuarios = paginas[indiceChamada] ?? [];
+      indiceChamada += 1;
+      return { data: { users: usuarios }, error: null };
+    });
+
+    const client = {
+      auth: { admin: { listUsers } },
+    } as unknown as SupabaseClient<Database>;
+
+    const out = await resolverDonoPorEmail(client, "alvo@segunda.com");
+
+    // Prova que o alvo foi encontrado na segunda página
+    expect(out).toBe("user-segunda-pagina");
+    // Prova que listUsers foi chamado DUAS vezes (paginação real)
+    expect(listUsers).toHaveBeenCalledTimes(2);
+    // Prova que a segunda chamada pediu a página 2
+    expect(chamadas[1]).toMatchObject({ page: 2 });
   });
 });
