@@ -14,6 +14,7 @@ import { Check, Loader2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { validarCupomAction } from "@/lib/actions/cupomPreview";
 import type { ItemCarrinho } from "@/types/dominio";
@@ -108,6 +109,9 @@ export function EtapaItens({
         <div className="divide-y divide-cinza-medio">
           {itens.map((item) => {
             const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
+            // 2ª barreira anti-XSS (defesa em profundidade, seguranca.md §15):
+            // só `https://` vira <Image src>; qualquer outra coisa → placeholder.
+            const fotoItem = fotoSegura(item.fotoUrl);
             const opcionais =
               item.opcionais?.filter((o) => o.quantidade > 0) ?? [];
             // PREVIEW (seguranca.md §10): subtotal da linha COM opcionais via
@@ -126,9 +130,9 @@ export function EtapaItens({
               <div key={linhaId} className="px-4 py-3.5">
                 <div className="flex items-center gap-3">
                   <div className="size-[52px] shrink-0 overflow-hidden rounded-[10px] bg-gradient-to-br from-[#e8dcc4] to-[#d8c4a0]">
-                    {item.fotoUrl ? (
+                    {fotoItem ? (
                       <Image
-                        src={item.fotoUrl}
+                        src={fotoItem}
                         alt=""
                         width={52}
                         height={52}

@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
+import { ThumbProduto } from "@/components/painel/ThumbProduto";
 import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
 import {
   removerProduto as removerProdutoLojista,
@@ -30,13 +31,21 @@ import {
 } from "@/lib/actions/produto";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
-import type { Produto } from "@/lib/supabase/queries/produtos";
+import type {
+  Produto,
+  OpcionaisPorCategoria,
+} from "@/lib/supabase/queries/produtos";
 
 export type ProdutosClientProps = {
   lojaSlug: string;
   lojaId: string;
   produtos: Produto[];
   categorias: Categoria[];
+  /**
+   * Mapa `categoria_id → grupos de opcionais` carregado no server (issue 105).
+   * Consumido pela UI de thumbnail/opcionais na issue 107.
+   */
+  opcionaisPorCategoria: OpcionaisPorCategoria;
   /**
    * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults =
    * comportamento atual). A via admin passa as variantes escopadas por `lojaId`.
@@ -92,6 +101,8 @@ export function ProdutosClient({
   lojaId,
   produtos,
   categorias,
+  // Encanada no server (issue 105); consumida pela UI na issue 107.
+  opcionaisPorCategoria,
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
@@ -195,6 +206,7 @@ export function ProdutosClient({
                     key={p.id}
                     className="flex items-center gap-3 px-4 py-3"
                   >
+                    <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium text-foreground">
@@ -209,6 +221,28 @@ export function ProdutosClient({
                       <span className="text-sm text-muted-foreground">
                         {formatarMoeda(p.preco)}
                       </span>
+                      {(() => {
+                        const gruposOpcionais =
+                          opcionaisPorCategoria[p.categoria_id ?? ""] ?? [];
+                        if (gruposOpcionais.length === 0) return null;
+                        return (
+                          <ul className="mt-2 flex flex-wrap gap-1.5">
+                            {gruposOpcionais
+                              .slice()
+                              .sort((a, b) => a.ordem - b.ordem)
+                              .map((g) => (
+                                <li key={g.categoriaOpcionalId}>
+                                  <Badge
+                                    variant="secondary"
+                                    className="font-normal"
+                                  >
+                                    {g.categoriaOpcionalNome}
+                                  </Badge>
+                                </li>
+                              ))}
+                          </ul>
+                        );
+                      })()}
                     </div>
 
                     <Button

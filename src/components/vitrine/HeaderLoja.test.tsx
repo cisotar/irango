@@ -10,13 +10,15 @@
  *   3 — logoUrl ausente/null → fallback com a primeira letra do nome
  *   9 — logoUrl http:// ou javascript: → NÃO renderiza <img>, cai no fallback
  *
- * logoSeguro: unitário isolado + render integrado no componente.
+ * fotoSegura: unitário isolado (fonte única do guard, seguranca.md §15) + render
+ * integrado no componente, que consome o util via logo do header.
  */
 
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { HeaderLoja, logoSeguro } from "@/components/vitrine/HeaderLoja";
+import { HeaderLoja } from "@/components/vitrine/HeaderLoja";
+import { fotoSegura } from "@/lib/utils/fotoSegura";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,38 +52,38 @@ function render(overrides: Partial<Parameters<typeof HeaderLoja>[0]> = {}): stri
 }
 
 // ---------------------------------------------------------------------------
-// 1. logoSeguro — unitário (função pura)
+// 1. fotoSegura — unitário (função pura, guard consumido pelo HeaderLoja)
 // ---------------------------------------------------------------------------
 
-describe("logoSeguro — função pura", () => {
+describe("fotoSegura — função pura", () => {
   it("url https válida → retorna a própria url", () => {
     const url = "https://cdn.example.com/logo.jpg";
-    expect(logoSeguro(url)).toBe(url);
+    expect(fotoSegura(url)).toBe(url);
   });
 
   it("url http (plain) → retorna null (não-segura)", () => {
-    expect(logoSeguro("http://cdn.example.com/logo.jpg")).toBeNull();
+    expect(fotoSegura("http://cdn.example.com/logo.jpg")).toBeNull();
   });
 
   it("protocolo javascript: → retorna null (anti-XSS)", () => {
-    expect(logoSeguro("javascript:alert(1)")).toBeNull();
+    expect(fotoSegura("javascript:alert(1)")).toBeNull();
   });
 
   it("protocolo data: → retorna null", () => {
-    expect(logoSeguro("data:image/png;base64,abc")).toBeNull();
+    expect(fotoSegura("data:image/png;base64,abc")).toBeNull();
   });
 
   it("string vazia → retorna null", () => {
-    expect(logoSeguro("")).toBeNull();
+    expect(fotoSegura("")).toBeNull();
   });
 
   it("undefined → retorna null", () => {
-    expect(logoSeguro(undefined)).toBeNull();
+    expect(fotoSegura(undefined)).toBeNull();
   });
 
   it("url https com subdomínio e path → retorna a própria url", () => {
     const url = "https://storage.supabase.co/lojas/42/logo.png";
-    expect(logoSeguro(url)).toBe(url);
+    expect(fotoSegura(url)).toBe(url);
   });
 });
 

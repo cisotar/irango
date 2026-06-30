@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
-import { buscarProdutosDoLojista } from "@/lib/supabase/queries/produtos";
+import {
+  buscarProdutosDoLojista,
+  buscarOpcionaisPorCategoria,
+} from "@/lib/supabase/queries/produtos";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { ProdutosClient } from "./ProdutosClient";
 
@@ -23,9 +26,19 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     redirect("/painel/onboarding");
   }
 
-  const [produtos, categorias] = await Promise.all([
+  // `buscarOpcionaisPorCategoria` precisa dos ids já resolvidos de
+  // `buscarCategorias`, então as duas rodam em sequência dentro do mesmo ramo do
+  // `Promise.all`, preservando o paralelismo com `buscarProdutosDoLojista`.
+  const [produtos, { categorias, opcionaisPorCategoria }] = await Promise.all([
     buscarProdutosDoLojista(supabase, loja.id),
-    buscarCategorias(supabase, loja.id),
+    (async () => {
+      const categorias = await buscarCategorias(supabase, loja.id);
+      const opcionaisPorCategoria = await buscarOpcionaisPorCategoria(
+        supabase,
+        categorias.map((c) => c.id),
+      );
+      return { categorias, opcionaisPorCategoria };
+    })(),
   ]);
 
   return (
@@ -34,6 +47,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       lojaId={loja.id}
       produtos={produtos}
       categorias={categorias.map((c) => ({ id: c.id, nome: c.nome }))}
+      opcionaisPorCategoria={opcionaisPorCategoria}
     />
   );
 }
