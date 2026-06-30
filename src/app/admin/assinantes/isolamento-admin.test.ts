@@ -102,12 +102,14 @@ vi.mock("@/lib/actions/admin-loja", async (orig) => {
 // Unifica num único vi.mock todos os símbolos de @/lib/supabase/queries/lojas
 // usados pelas actions deste módulo. Dois vi.mock() para o mesmo path se
 // sobrescreveriam — fatal para salvarPerfilAdmin (slugExiste) e criarLojaAdmin.
-const resolverDonoPorEmail = vi.fn<() => Promise<string | null>>(
+const resolverDonoPorEmail = vi.fn<(...a: unknown[]) => Promise<string | null>>(
   async () => DONO_ID_RESOLVIDO,
 );
-const slugExiste = vi.fn(async () => false);
-const criarLoja = vi.fn<() => Promise<{ id: string }>>(async () => ({ id: LOJA_A }));
-const buscarLojaAdminPorId = vi.fn(
+const slugExiste = vi.fn<(...a: unknown[]) => Promise<boolean>>(async () => false);
+const criarLoja = vi.fn<(...a: unknown[]) => Promise<{ id: string }>>(
+  async () => ({ id: LOJA_A }),
+);
+const buscarLojaAdminPorId = vi.fn<(...a: unknown[]) => Promise<{ id: string; nome: string; ativo: boolean }>>(
   async () => ({ id: LOJA_A, nome: "Loja A", ativo: false }),
 );
 vi.mock("@/lib/supabase/queries/lojas", () => ({
@@ -118,8 +120,12 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 }));
 
 // ── adminAssinatura (usado pelas billing actions) ────────────────────────────
-const excluirLojaPermanente = vi.fn(async () => ({ linhasAfetadas: 1 }));
-const aplicarStatusAdmin = vi.fn(async () => ({ linhasAfetadas: 1 }));
+const excluirLojaPermanente = vi.fn<(...a: unknown[]) => Promise<{ linhasAfetadas: number }>>(
+  async () => ({ linhasAfetadas: 1 }),
+);
+const aplicarStatusAdmin = vi.fn<(...a: unknown[]) => Promise<{ linhasAfetadas: number }>>(
+  async () => ({ linhasAfetadas: 1 }),
+);
 vi.mock("@/lib/supabase/queries/adminAssinatura", () => ({
   excluirLojaPermanente: (...a: unknown[]) => excluirLojaPermanente(...a),
   aplicarStatusAdmin: (...a: unknown[]) => aplicarStatusAdmin(...a),
