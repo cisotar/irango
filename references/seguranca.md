@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.17 | **Atualizado:** 2026-06-30
+**Versão:** 0.2.18 | **Atualizado:** 2026-06-30
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -860,7 +860,7 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 
 - **Proibido `dangerouslySetInnerHTML`** sem sanitização explícita (DOMPurify). Conteúdo vem do banco preenchido por lojistas — tratar como não confiável.
 - Nunca montar HTML por concatenação de string com dado do banco.
-- URLs de imagem (`foto_url`): validar protocolo `https:` antes de renderizar — bloquear `javascript:`. Implementação canônica: `src/lib/utils/fotoSegura.ts` → `fotoSegura(url?: string | null): string | null`; usar em todo lugar que renderiza `<img src>` ou `<Image src>` com URL vinda do banco.
+- URLs de imagem (`foto_url`): validar protocolo `https:` antes de renderizar — bloquear `javascript:`. Guard central: `src/lib/utils/urlHttpsSegura.ts` → `urlHttpsSegura(url?: string | null): string | null` (retorna `null` se não for `https:`). `fotoSegura` é especialização para imagens (adiciona fallback `/placeholder-produto.png`); `TabelaFaturas` e o render do QR Pix em `EtapaPagamento` usam `urlHttpsSegura` diretamente. Usar em todo lugar que renderiza `<img src>`, `<Image src>` ou `<a href>` com URL vinda do banco.
 
 ---
 

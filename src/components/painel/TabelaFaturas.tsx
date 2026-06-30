@@ -4,6 +4,7 @@ import { ExternalLink, ReceiptText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { urlHttpsSegura } from "@/lib/utils/urlHttpsSegura";
 import type { FaturaAssinatura } from "@/lib/supabase/queries/pagamentosAssinatura";
 
 /**
@@ -57,14 +58,10 @@ function metodoLegivel(metodo: string | null): string {
   return mapa[metodo] ?? metodo;
 }
 
-/** Só `https:` vira link clicável — bloqueia `javascript:`/`data:` (seguranca.md §15).
- *  `fatura_url` vem do payload do provider (webhook externo) = não confiável. */
-function urlSeguraFatura(url: string | null): string | null {
-  return url && url.startsWith("https://") ? url : null;
-}
-
 function LinkSegundaVia({ url }: { url: string | null }): ReactElement {
-  const href = urlSeguraFatura(url);
+  // `fatura_url` vem do payload do provider (webhook externo) = não confiável.
+  // Só `https://` vira link clicável (anti-XSS §15, fonte única `urlHttpsSegura`).
+  const href = urlHttpsSegura(url);
   if (!href) {
     return <span className="text-muted-foreground">—</span>;
   }

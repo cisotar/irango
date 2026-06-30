@@ -10,15 +10,16 @@
  *   3 — logoUrl ausente/null → fallback com a primeira letra do nome
  *   9 — logoUrl http:// ou javascript: → NÃO renderiza <img>, cai no fallback
  *
- * fotoSegura: unitário isolado (fonte única do guard, seguranca.md §15) + render
- * integrado no componente, que consome o util via logo do header.
+ * O guard §15 (`fotoSegura`/`urlHttpsSegura`) tem sua matriz de bordas na fonte
+ * única `urlHttpsSegura.test.ts`. Aqui só provamos o que é específico do
+ * componente: que o HeaderLoja CONSOME o guard no render (https → <img>;
+ * http/javascript/data/relativo/"" → fallback). Nada de matriz duplicada.
  */
 
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { HeaderLoja } from "@/components/vitrine/HeaderLoja";
-import { fotoSegura } from "@/lib/utils/fotoSegura";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,42 +51,6 @@ function render(overrides: Partial<Parameters<typeof HeaderLoja>[0]> = {}): stri
     />,
   );
 }
-
-// ---------------------------------------------------------------------------
-// 1. fotoSegura — unitário (função pura, guard consumido pelo HeaderLoja)
-// ---------------------------------------------------------------------------
-
-describe("fotoSegura — função pura", () => {
-  it("url https válida → retorna a própria url", () => {
-    const url = "https://cdn.example.com/logo.jpg";
-    expect(fotoSegura(url)).toBe(url);
-  });
-
-  it("url http (plain) → retorna null (não-segura)", () => {
-    expect(fotoSegura("http://cdn.example.com/logo.jpg")).toBeNull();
-  });
-
-  it("protocolo javascript: → retorna null (anti-XSS)", () => {
-    expect(fotoSegura("javascript:alert(1)")).toBeNull();
-  });
-
-  it("protocolo data: → retorna null", () => {
-    expect(fotoSegura("data:image/png;base64,abc")).toBeNull();
-  });
-
-  it("string vazia → retorna null", () => {
-    expect(fotoSegura("")).toBeNull();
-  });
-
-  it("undefined → retorna null", () => {
-    expect(fotoSegura(undefined)).toBeNull();
-  });
-
-  it("url https com subdomínio e path → retorna a própria url", () => {
-    const url = "https://storage.supabase.co/lojas/42/logo.png";
-    expect(fotoSegura(url)).toBe(url);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // 2. Render — logo https válida → <img> com src correto (crit. 2)

@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { IMaskInput } from "react-imask";
+import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { ResumoValores } from "./ResumoValores";
 import { useEnviarPedido } from "./useEnviarPedido";
 import {
@@ -197,10 +198,10 @@ export function EtapaPagamento({
           {/* Instrução específica da forma selecionada */}
           {formaSelecionada?.tipo === "pix" && (
             <div className="space-y-3 rounded-lg border border-cinza-medio bg-cinza-claro p-3">
-              {formaSelecionada.pixQrUrl && (
+              {fotoSegura(formaSelecionada.pixQrUrl) && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={formaSelecionada.pixQrUrl}
+                  src={fotoSegura(formaSelecionada.pixQrUrl)!}
                   alt="QR Code do Pix"
                   width={180}
                   height={180}
