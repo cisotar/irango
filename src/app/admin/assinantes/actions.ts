@@ -1,13 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { verificarAdminSaaS } from "@/lib/auth/admin";
 import { createServiceClient } from "@/lib/supabase/service";
+import { lojaIdSchema, registrarAcessoAdmin } from "@/lib/actions/admin-loja";
 import {
   aplicarStatusAdmin,
   excluirLojaPermanente,
 } from "@/lib/supabase/queries/adminAssinatura";
+import {
+  criarLoja,
+  resolverDonoPorEmail,
+  slugExiste,
+} from "@/lib/supabase/queries/lojas";
+import { schemaNovaLojaAdmin } from "@/lib/validacoes/loja";
+import { VERSAO_TERMOS } from "@/lib/constants/termos";
 
 /**
  * ÚNICA via não-webhook autorizada a escrever `assinatura_status` (RN-12/13/14).
@@ -20,9 +27,79 @@ import {
 
 type Resultado = { ok: true } | { ok: false; erro: string };
 
-// z.guid() (não z.uuid()): valida formato uuid sem exigir nibbles de versão/variante
-// RFC-4122 — alinhado com frete.ts/schemaCheckout do projeto.
-const lojaIdSchema = z.guid();
+type ResultadoCriarLoja =
+  | { ok: true; lojaId: string }
+  | { ok: false; erro: string };
+
+/**
+ * Cria uma loja em nome de um lojista (admin SaaS — onboarding assistido, issue
+ * 087). NÃO confia no cliente: recebe só `email`/`nome`/`slug` (`.strict()` barra
+ * `ativo`/`assinatura_status`/`dono_id` hostis); `dono_id` é RESOLVIDO server-side
+ * por e-mail; `ativo=false`, `assinatura_status='trial'` e o consentimento são
+ * constantes do servidor (espelham `auth.ts`/`garantirLojaDoDono`).
+ *
+ * Ordem (fail-closed, D-4): `safeParse` → `verificarAdminSaaS()` ANTES de qualquer
+ * efeito e FORA do try (a exceção PROPAGA, nunca vira `{ ok:false }`) → eleva a
+ * service_role → resolve dono → checa slug → INSERT. Violação do índice único
+ * `lojas(dono_id)` (23505, RN-4) é capturada como `{ ok:false }`, sem retry.
+ */
+export async function criarLojaAdmin(
+  payload: unknown,
+): Promise<ResultadoCriarLoja> {
+  // Allowlist ANTES do parse: só `email`/`nome`/`slug` chegam ao schema. Chaves
+  // autoritativas hostis no payload (`ativo`, `assinatura_status`, `dono_id`) são
+  // descartadas aqui — nunca influenciam o INSERT (Recálculo no Servidor, §10).
+  const bruto = (payload ?? {}) as Record<string, unknown>;
+  const parsed = schemaNovaLojaAdmin.safeParse({
+    email: bruto.email,
+    nome: bruto.nome,
+    slug: bruto.slug,
+  });
+  if (!parsed.success) {
+    return { ok: false, erro: "Dados inválidos." };
+  }
+  const { email, nome, slug } = parsed.data;
+
+  // Prova de admin ANTES de qualquer efeito e FORA do try: falha PROPAGA
+  // (fail-closed, D-4) e o service client nunca é criado.
+  await verificarAdminSaaS();
+  const svc = createServiceClient();
+
+  try {
+    // `dono_id` autoritativo: resolvido por e-mail server-side, nunca do payload.
+    const donoId = await resolverDonoPorEmail(svc, email);
+    if (donoId === null) {
+      return { ok: false, erro: "Nenhuma conta encontrada para este e-mail." };
+    }
+
+    if (await slugExiste(svc, slug)) {
+      return { ok: false, erro: "Este endereço (slug) já está em uso." };
+    }
+
+    // Defaults de cadastro decididos pelo SERVIDOR (espelham auth.ts).
+    const loja = await criarLoja(svc, {
+      dono_id: donoId,
+      nome,
+      slug,
+      ativo: false,
+      assinatura_status: "trial",
+      consentimento_em: new Date().toISOString(),
+      consentimento_versao: VERSAO_TERMOS,
+    });
+
+    registrarAcessoAdmin(svc, { lojaId: loja.id, acao: "criar_loja" });
+    revalidatePath(ROTA_ASSINANTES);
+    return { ok: true, lojaId: loja.id };
+  } catch (e) {
+    // RN-4: índice único lojas(dono_id) → dono já tem loja. Sem retry, sem
+    // revalidate. Mensagem neutra; e-mail nunca logado em cru (§14/§21).
+    console.error("[criarLojaAdmin]", e);
+    return { ok: false, erro: "Não foi possível criar a loja." };
+  }
+}
+
+// `lojaIdSchema` centralizado em `@/lib/actions/admin-loja` (reuso entre as actions
+// de billing e as de onboarding assistido) — z.guid(), alinhado com frete.ts/schemaCheckout.
 
 const ROTA_ASSINANTES = "/admin/assinantes";
 

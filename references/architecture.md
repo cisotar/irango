@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.7 | **Atualizado:** 2026-06-19
+**Versão:** 0.2.8 | **Atualizado:** 2026-06-27
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -305,7 +305,7 @@ const items = order.order_items
 - Componente aparece em 2+ lugares → extrai pra `components/`
 - `components/ui/` → shadcn gerado, não editar manualmente
 - `components/vitrine/` → exclusivos da loja pública
-- `components/painel/` → exclusivos do dashboard do lojista
+- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente
 
 ### Server vs Client
 
@@ -333,7 +333,7 @@ const items = order.order_items
 | Domínio próprio por loja | não implementado — fase 1 usa `/loja/[slug]` | fase 2 |
 | Subdomínio por loja | não implementado | fase 2 |
 | Integração Correios/frete calculado | não implementado — fase 1 só frete fixo | fase 2 |
-| Painel super-admin do SaaS | não implementado | fase 2 |
+| Painel admin do SaaS (`/admin/assinantes`) | implementado (issues 083–102): criação de loja e gestão completa em nome do lojista via service_role + verificarAdminSaaS() | — |
 | Idempotência em `criarPedido` | `idempotency_key uuid` em `pedidos` + índice UNIQUE PARCIAL; client gera via `crypto.randomUUID()` por carrinho/sessão; RPC faz dedupe antes da trava de cupom | implementado (issue 063) |
 | Reconciliação CEP↔bairro no frete | bairro vem do form; não validado contra CEP real — cliente pode forçar zona mais barata | issue 064 |
 | Guard `email_confirmed_at` no painel | loja nasce `ativo=false`; acesso ao painel deve checar confirmação de email antes de liberar operações | issue 016 |

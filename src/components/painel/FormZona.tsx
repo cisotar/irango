@@ -10,7 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { schemaZonaCompleta } from "@/lib/validacoes/entrega";
-import { criarZona, atualizarZona } from "@/lib/actions/entrega";
+import {
+  criarZona as criarZonaLojista,
+  atualizarZona as atualizarZonaLojista,
+} from "@/lib/actions/entrega";
 
 export type ZonaInicial = {
   id: string;
@@ -27,6 +30,10 @@ export type FormZonaProps = {
   /** Se presente (com `id`), o form opera em modo edição. */
   inicial?: ZonaInicial;
   onSucesso?: () => void;
+  /** Action de criação. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
+  onCriar?: typeof criarZonaLojista;
+  /** Action de edição. Default: action do lojista. */
+  onAtualizar?: typeof atualizarZonaLojista;
 };
 
 type TipoZona = "bairro" | "raio_km" | "faixa_cep";
@@ -48,7 +55,12 @@ function paraNumero(valor: string): number | null {
  * Valida no client com `schemaZonaCompleta` (022) — gate de UX. A Server Action
  * (032/046) revalida o MESMO schema, deriva `loja_id` do dono e escopa por id.
  */
-export function FormZona({ inicial, onSucesso }: FormZonaProps) {
+export function FormZona({
+  inicial,
+  onSucesso,
+  onCriar = criarZonaLojista,
+  onAtualizar = atualizarZonaLojista,
+}: FormZonaProps) {
   const ehEdicao = inicial?.id != null;
 
   const [nome, setNome] = useState(inicial?.nome ?? "");
@@ -114,8 +126,8 @@ export function FormZona({ inicial, onSucesso }: FormZonaProps) {
     startEnvio(async () => {
       const resultado =
         ehEdicao && inicial?.id
-          ? await atualizarZona(inicial.id, parsed.data)
-          : await criarZona(parsed.data);
+          ? await onAtualizar(inicial.id, parsed.data)
+          : await onCriar(parsed.data);
 
       if (!resultado.ok) {
         toast.error(resultado.erro);

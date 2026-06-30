@@ -33,6 +33,24 @@ import {
   TAMANHO_MAXIMO_BYTES,
 } from "@/lib/utils/validarImagem";
 
+/**
+ * Resultado de um upload de QR Pix. `urlPublica` na trilha feliz; `erro` para
+ * mensagem genérica ao usuário (o detalhe cru fica no `console.error` da impl).
+ */
+export type ResultadoUploadQr = { urlPublica: string } | { erro: string };
+
+/**
+ * Função de upload do QR injetável. Recebe `lojaId` (path) + arquivo já validado
+ * (metadados + magic bytes) e devolve a URL pública. Default: upload no browser
+ * via client Supabase autenticado (RLS do bucket escopa o dono). A via admin
+ * injeta uma variante que sobe via Server Action + service_role, escopando o
+ * path por `lojaId` validado server-side.
+ */
+export type EnviarQrPix = (
+  lojaId: string,
+  arquivo: File,
+) => Promise<ResultadoUploadQr>;
+
 export type UploadQrPixProps = {
   /** ID da loja (derivado do servidor) — define o path no bucket: `{lojaId}/qr.{ext}`. */
   lojaId: string;
@@ -41,6 +59,8 @@ export type UploadQrPixProps = {
   /** Chamado com a URL pública após upload bem-sucedido. */
   onUploadConcluido: (url: string) => void;
   disabled?: boolean;
+  /** Função de upload. Default: upload do lojista via client Supabase. */
+  onEnviar?: EnviarQrPix;
 };
 
 const BUCKET = "pix-qr";
@@ -52,11 +72,43 @@ function extensaoPorTipo(tipo: string): string {
   return "png";
 }
 
+/**
+ * Upload padrão do lojista: client Supabase autenticado → `{lojaId}/qr.{ext}`.
+ * A RLS do bucket `pix-qr` (issue 074) garante que só o dono escreve na pasta.
+ */
+async function enviarQrPixLojista(
+  lojaId: string,
+  arquivo: File,
+): Promise<ResultadoUploadQr> {
+  const ext = extensaoPorTipo(arquivo.type);
+  // Path: `{lojaId}/qr.{ext}` — lojaId vem da prop (servidor, não do input).
+  const caminho = `${lojaId}/qr.${ext}`;
+
+  const supabase = createClient();
+  const { error: erroUpload } = await supabase.storage
+    .from(BUCKET)
+    .upload(caminho, arquivo, { upsert: true, contentType: arquivo.type });
+
+  if (erroUpload) {
+    console.error("[UploadQrPix] upload", erroUpload);
+    return { erro: "Não foi possível enviar a imagem. Tente novamente." };
+  }
+
+  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(caminho);
+
+  // Cache-buster: o path é fixo (`qr.{ext}`) e o objeto é servido com
+  // `max-age=3600`. Sem o sufixo, trocar A por B na MESMA URL faria o CDN
+  // servir o QR antigo por até 1h (no painel e no checkout). O `?v` força
+  // o fetch do objeto novo a cada upload.
+  return { urlPublica: `${urlData.publicUrl}?v=${Date.now()}` };
+}
+
 export function UploadQrPix({
   lojaId,
   urlAtual,
   onUploadConcluido,
   disabled = false,
+  onEnviar = enviarQrPixLojista,
 }: UploadQrPixProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(urlAtual ?? null);
@@ -78,39 +130,22 @@ export function UploadQrPix({
       return;
     }
 
-    // 3. Upload autenticado — path forçado (nunca usa nome do usuário).
-    const ext = extensaoPorTipo(arquivo.type);
-    // Path: `{lojaId}/qr.{ext}` — lojaId vem da prop (servidor, não do input).
-    const caminho = `${lojaId}/qr.${ext}`;
-
+    // 3. Upload via a função injetada (default: client Supabase do lojista).
+    //    O path `{lojaId}/qr.{ext}` é montado pela impl a partir do `lojaId` da
+    //    prop (servidor), nunca do nome de arquivo do usuário.
     startEnvio(async () => {
-      const supabase = createClient();
-      const { error: erroUpload } = await supabase.storage
-        .from(BUCKET)
-        .upload(caminho, arquivo, { upsert: true, contentType: arquivo.type });
+      const resultado = await onEnviar(lojaId, arquivo);
 
-      if (erroUpload) {
-        console.error("[UploadQrPix] upload", erroUpload);
-        toast.error("Não foi possível enviar a imagem. Tente novamente.");
+      if ("erro" in resultado) {
+        toast.error(resultado.erro);
         return;
       }
 
-      // 4. Obter URL pública.
-      const { data: urlData } = supabase.storage
-        .from(BUCKET)
-        .getPublicUrl(caminho);
+      // 4. Preview local imediato.
+      setPreview(resultado.urlPublica);
 
-      // Cache-buster: o path é fixo (`qr.{ext}`) e o objeto é servido com
-      // `max-age=3600`. Sem o sufixo, trocar A por B na MESMA URL faria o CDN
-      // servir o QR antigo por até 1h (no painel e no checkout). O `?v` força
-      // o fetch do objeto novo a cada upload.
-      const urlPublica = `${urlData.publicUrl}?v=${Date.now()}`;
-
-      // 5. Preview local imediato.
-      setPreview(urlPublica);
-
-      // 6. Notifica o form pai para persistir via Server Action.
-      onUploadConcluido(urlPublica);
+      // 5. Notifica o form pai para persistir via Server Action.
+      onUploadConcluido(resultado.urlPublica);
       toast.success("QR Code enviado.");
     });
   }

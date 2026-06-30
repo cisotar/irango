@@ -553,8 +553,9 @@ describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () =
 });
 
 // ──────────── montarConsultaGeocoding — bordas via salvarPerfil ───────────────
-// montarConsultaGeocoding não é exportada ('use server' proíbe const exportada).
-// Testada indiretamente: se retornar null, geocodificarEndereco NÃO é chamado.
+// montarConsultaGeocoding agora vive em patches-loja.ts (issue 084) e tem teste
+// direto em patches-loja.test.ts. Aqui cobrimos a INTEGRAÇÃO via salvarPerfil:
+// se o gate retorna null, geocodificarEndereco NÃO é chamado.
 describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)", () => {
   it("só cidade, sem UF → gate retorna null → Nominatim não chamado; par NULL gravado", async () => {
     // Sem endereco_estado não há âncora geográfica mínima (RN-2).

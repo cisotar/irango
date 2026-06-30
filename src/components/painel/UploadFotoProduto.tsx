@@ -44,12 +44,21 @@ import { exportarCrop, ASPECT_FOTO } from "@/lib/utils/exportarCrop";
 import { enviarFotoProduto } from "@/lib/actions/upload";
 import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
 
+/**
+ * Assinatura da Server Action de upload de foto. Default: `enviarFotoProduto`
+ * (lojista, loja derivada do auth). A via admin injeta a variante que escopa o
+ * path do bucket por `lojaId` validado server-side.
+ */
+export type EnviarFotoProduto = typeof enviarFotoProduto;
+
 export type UploadFotoProdutoProps = {
   /** URL atual já salva (preview inicial). */
   urlAtual?: string | null;
   /** Chamado com a `foto_url` pública após upload OK; "" ao remover. */
   onUploadConcluido: (url: string) => void;
   disabled?: boolean;
+  /** Server Action de upload. Default: action do lojista. */
+  onEnviar?: EnviarFotoProduto;
 };
 
 const ZOOM_MIN = 1;
@@ -61,6 +70,7 @@ export function UploadFotoProduto({
   urlAtual,
   onUploadConcluido,
   disabled = false,
+  onEnviar = enviarFotoProduto,
 }: UploadFotoProdutoProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(urlAtual ?? null);
@@ -133,7 +143,7 @@ export function UploadFotoProduto({
         });
         const fd = new FormData();
         fd.append(CAMPO_ARQUIVO, blob, "foto.webp");
-        const resultado = await enviarFotoProduto(fd);
+        const resultado = await onEnviar(fd);
         if (resultado.ok) {
           setPreview(resultado.foto_url);
           onUploadConcluido(resultado.foto_url);

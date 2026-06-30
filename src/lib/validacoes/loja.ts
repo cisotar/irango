@@ -37,6 +37,21 @@ export const schemaPerfil = z
   })
   .strict();
 
+// Criação de loja pelo admin (issue 086, spec admin-onboarding-assistido §"Criar
+// Loja para Cliente"). Isomórfico: client (preview) e Server Action (autoridade).
+// Validação de FORMA apenas — unicidade de slug e existência do dono são
+// reprovadas server-side (issue 087). reSlug é o MESMO de schemaPerfil (paridade).
+// `.strict()` é a 2ª barreira (defesa em profundidade): a action `criarLojaAdmin`
+// já faz allowlist-pick de email/nome/slug ANTES do parse (1ª barreira), então o
+// schema raramente vê chave extra — mas o `.strict()` protege qualquer uso direto.
+export const schemaNovaLojaAdmin = z
+  .object({
+    email: z.email(),
+    nome: z.string().trim().min(3).max(60),
+    slug: z.string().regex(reSlug),
+  })
+  .strict();
+
 export const schemaTema = z
   .object({
     primaria: z.string().regex(reHex),

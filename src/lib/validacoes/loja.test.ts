@@ -7,6 +7,7 @@ import {
   schemaPerfil,
   schemaHorarios,
   schemaTema,
+  schemaNovaLojaAdmin,
   sanitizarSlug,
 } from "./loja";
 
@@ -412,5 +413,57 @@ describe("sanitizarSlug — sugestão UX a partir do nome", () => {
 
   it("nome com dígitos → dígitos preservados no slug", () => {
     expect(sanitizarSlug("Loja 123 Top")).toBe("loja-123-top");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// schemaNovaLojaAdmin (issue 086): criação de loja pelo admin. Validação de
+// FORMA isomórfica — e-mail do dono + nome + slug. Unicidade/dono são
+// autoritativos server-side (issue 087), fora do escopo deste schema.
+// ---------------------------------------------------------------------------
+describe("schemaNovaLojaAdmin (issue 086, validação isomórfica)", () => {
+  const valido = {
+    email: "lojista@example.com",
+    nome: "Burger do Zé",
+    slug: "burger-do-ze",
+  };
+
+  it("aprova payload válido", () => {
+    expect(schemaNovaLojaAdmin.safeParse(valido).success).toBe(true);
+  });
+
+  it("reprova e-mail malformado", () => {
+    const r = schemaNovaLojaAdmin.safeParse({ ...valido, email: "lojista@" });
+    expect(r.success).toBe(false);
+  });
+
+  it("reprova slug com maiúscula", () => {
+    const r = schemaNovaLojaAdmin.safeParse({ ...valido, slug: "Burger-Do-Ze" });
+    expect(r.success).toBe(false);
+  });
+
+  it("reprova slug com espaço", () => {
+    const r = schemaNovaLojaAdmin.safeParse({ ...valido, slug: "burger do ze" });
+    expect(r.success).toBe(false);
+  });
+
+  it("reprova slug com caractere inválido", () => {
+    const r = schemaNovaLojaAdmin.safeParse({ ...valido, slug: "burger_do_zé" });
+    expect(r.success).toBe(false);
+  });
+
+  it("reprova nome curto (<3)", () => {
+    const r = schemaNovaLojaAdmin.safeParse({ ...valido, nome: "Zé" });
+    expect(r.success).toBe(false);
+  });
+
+  it("reprova chave extra (.strict)", () => {
+    const r = schemaNovaLojaAdmin.safeParse({ ...valido, dono_id: "123" });
+    expect(r.success).toBe(false);
+  });
+
+  it("slug derivado por sanitizarSlug passa no schema (paridade UX↔validação)", () => {
+    const slug = sanitizarSlug("Burger do Zé");
+    expect(schemaNovaLojaAdmin.safeParse({ ...valido, slug }).success).toBe(true);
   });
 });

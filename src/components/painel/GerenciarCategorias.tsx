@@ -17,9 +17,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import type { Categoria } from "@/components/painel/FormProduto";
 import {
-  criarCategoria,
-  atualizarCategoria,
-  removerCategoria,
+  criarCategoria as criarCategoriaLojista,
+  atualizarCategoria as atualizarCategoriaLojista,
+  removerCategoria as removerCategoriaLojista,
 } from "@/lib/actions/produto";
 
 /**
@@ -35,10 +35,19 @@ export function GerenciarCategorias({
   categorias,
   open,
   onOpenChange,
+  onCriar = criarCategoriaLojista,
+  onAtualizar = atualizarCategoriaLojista,
+  onRemover = removerCategoriaLojista,
 }: {
   categorias: Categoria[];
   open: boolean;
   onOpenChange: (aberto: boolean) => void;
+  /** Action de criação. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
+  onCriar?: typeof criarCategoriaLojista;
+  /** Action de edição. Default: action do lojista. */
+  onAtualizar?: typeof atualizarCategoriaLojista;
+  /** Action de remoção. Default: action do lojista. */
+  onRemover?: typeof removerCategoriaLojista;
 }) {
   const router = useRouter();
   const [nova, setNova] = useState("");
@@ -52,7 +61,7 @@ export function GerenciarCategorias({
     const nome = nova.trim();
     if (!nome) return;
     startSalvar(async () => {
-      const r = await criarCategoria({ nome, ordem: categorias.length });
+      const r = await onCriar({ nome, ordem: categorias.length });
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -67,7 +76,7 @@ export function GerenciarCategorias({
     const nome = nomeEdicao.trim();
     if (!nome) return;
     startSalvar(async () => {
-      const r = await atualizarCategoria(id, { nome, ordem });
+      const r = await onAtualizar(id, { nome, ordem });
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -80,7 +89,7 @@ export function GerenciarCategorias({
 
   function remover(id: string) {
     startSalvar(async () => {
-      const r = await removerCategoria(id);
+      const r = await onRemover(id);
       if (!r.ok) {
         toast.error(r.erro);
         return;

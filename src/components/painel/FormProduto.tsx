@@ -10,8 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { schemaProduto } from "@/lib/validacoes/produto";
-import { criarProduto, atualizarProduto } from "@/lib/actions/produto";
-import { UploadFotoProduto } from "@/components/painel/UploadFotoProduto";
+import {
+  criarProduto as criarProdutoLojista,
+  atualizarProduto as atualizarProdutoLojista,
+} from "@/lib/actions/produto";
+import {
+  UploadFotoProduto,
+  type EnviarFotoProduto,
+} from "@/components/painel/UploadFotoProduto";
 
 export type Categoria = { id: string; nome: string };
 
@@ -36,6 +42,18 @@ export type FormProdutoProps = {
   /** Contexto de UI; a propriedade da loja continua derivada no servidor. */
   lojaId: string;
   onSucesso?: () => void;
+  /**
+   * Action de criação. Default: action do lojista (loja derivada do auth).
+   * A via admin injeta a variante escopada por `lojaId`.
+   */
+  onCriar?: typeof criarProdutoLojista;
+  /** Action de edição. Default: action do lojista. */
+  onAtualizar?: typeof atualizarProdutoLojista;
+  /**
+   * Action de upload de foto injetada para o `UploadFotoProduto` (variante admin
+   * escopa o path por `lojaId`). Default: action do lojista.
+   */
+  onEnviarFoto?: EnviarFotoProduto;
 };
 
 /**
@@ -54,6 +72,9 @@ export function FormProduto({
   lojaSlug,
   lojaId,
   onSucesso,
+  onCriar = criarProdutoLojista,
+  onAtualizar = atualizarProdutoLojista,
+  onEnviarFoto,
 }: FormProdutoProps) {
   const router = useRouter();
   const ehEdicao = inicial?.id != null;
@@ -99,8 +120,8 @@ export function FormProduto({
     startEnvio(async () => {
       const resultado =
         ehEdicao && inicial?.id
-          ? await atualizarProduto(inicial.id, parsed.data)
-          : await criarProduto(parsed.data);
+          ? await onAtualizar(inicial.id, parsed.data)
+          : await onCriar(parsed.data);
 
       if (!resultado.ok) {
         toast.error(resultado.erro);
@@ -145,6 +166,7 @@ export function FormProduto({
         urlAtual={fotoUrl}
         onUploadConcluido={(url) => setFotoUrl(url || null)}
         disabled={enviando}
+        onEnviar={onEnviarFoto}
       />
 
       <div className="space-y-1">
