@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { OpcionalCarrinho } from "@/types/dominio";
@@ -43,11 +44,6 @@ type ProdutoModalProps = {
     opcionais: OpcionalCarrinho[],
   ) => void;
 };
-
-/** Só `https:` vira imagem remota — anti-XSS (seguranca.md §15). */
-function fotoSegura(url: string | null): string | null {
-  return url && url.startsWith("https://") ? url : null;
-}
 
 /**
  * Modal centralizado de detalhe do produto na vitrine

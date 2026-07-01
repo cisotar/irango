@@ -3,6 +3,7 @@
 import Image from "next/image";
 
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { fotoSegura } from "@/lib/utils/fotoSegura";
 
 type CardProdutoProps = {
   id: string;
@@ -15,11 +16,6 @@ type CardProdutoProps = {
   disponivel?: boolean;
   onAdicionar: () => void;
 };
-
-/** Só `https:` é renderizado como imagem remota — anti-XSS (seguranca.md §15). */
-function fotoSegura(url?: string | null): string | null {
-  return url && url.startsWith("https://") ? url : null;
-}
 
 /**
  * Card de produto da vitrine — espelha design-claude/vitrine/card-produto.html:

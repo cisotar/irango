@@ -8,6 +8,7 @@ import {
   type ProdutoModalDados,
 } from "@/components/vitrine/ProdutoModal";
 import { useCarrinho } from "@/hooks/useCarrinho";
+import { fotoSegura } from "@/lib/utils/fotoSegura";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { OpcionalCarrinho } from "@/types/dominio";
 
@@ -41,11 +42,6 @@ type SecaoCatalogoProps = {
 /** Slug-âncora estável por grupo (categorias têm id; "Outros" não). */
 function ancora(id: string | null, indice: number): string {
   return id ? `cat-${id}` : `grupo-${indice}`;
-}
-
-/** Só `https:` vira foto no carrinho/modal — anti-XSS (seguranca.md §15). */
-function fotoSegura(url: string | null): string | undefined {
-  return url && url.startsWith("https://") ? url : undefined;
 }
 
 /**
@@ -90,7 +86,7 @@ export function SecaoCatalogo({
         produtoId: produtoSelecionado.id,
         nome: produtoSelecionado.nome,
         preco: produtoSelecionado.preco,
-        fotoUrl: fotoSegura(produtoSelecionado.fotoUrl),
+        fotoUrl: fotoSegura(produtoSelecionado.fotoUrl) ?? undefined,
         ...(opcionais.length > 0 ? { opcionais } : {}),
       },
       quantidade,

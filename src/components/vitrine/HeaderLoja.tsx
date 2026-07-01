@@ -4,6 +4,7 @@ import Image from "next/image";
 import { MessageCircle } from "lucide-react";
 
 import { BadgeStatus } from "@/components/vitrine/BadgeStatus";
+import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { useLojaAberta } from "@/hooks/useLojaAberta";
 
 type HeaderLojaProps = {
@@ -13,11 +14,6 @@ type HeaderLojaProps = {
   timezone: string;
   whatsapp?: string | null;
 };
-
-/** Só `https:` é renderizado como imagem remota — anti-XSS (seguranca.md §15). */
-export function logoSeguro(url?: string): string | null {
-  return url && url.startsWith("https://") ? url : null;
-}
 
 /** Formata dígitos do WhatsApp em (DD) NNNNN-NNNN (com ou sem DDI 55). */
 function formatarWhatsapp(raw: string): string {
@@ -42,7 +38,7 @@ export function HeaderLoja({
   timezone,
   whatsapp,
 }: HeaderLojaProps) {
-  const logo = logoSeguro(logoUrl);
+  const logo = fotoSegura(logoUrl);
 
   return (
     <header className="bg-[var(--cor-primaria)] px-4 py-2.5 text-white">

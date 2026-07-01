@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.8 | **Atualizado:** 2026-06-27
+**Versão:** 0.2.9 | **Atualizado:** 2026-06-30
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -147,7 +147,8 @@ irango/
 │   │       ├── calcularTotal.ts
 │   │       ├── lojaAberta.ts             # verifica horário de funcionamento
 │   │       ├── manifest.ts               # montarIconesManifest + constantes de tema padrão (vitrine e painel)
-│   │       └── manifestPainel.ts         # montarManifestPainel(loja|null) → ManifestPainel; puro (sem I/O)
+│   │       ├── manifestPainel.ts         # montarManifestPainel(loja|null) → ManifestPainel; puro (sem I/O)
+│   │       └── fotoSegura.ts             # fotoSegura(url?): string|null — fonte única da invariante anti-XSS §15 (só https vira src)
 │   │
 │   ├── types/
 │   │   ├── supabase.ts                   # gerado: pnpm supabase gen types typescript

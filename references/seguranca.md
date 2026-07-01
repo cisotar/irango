@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.16 | **Atualizado:** 2026-06-27
+**Versão:** 0.2.19 | **Atualizado:** 2026-06-30
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -176,7 +176,9 @@ A tabela `pedidos` não tem SELECT público para anon (anti-enumeração de pedi
 
 Migration: `20260614007500_opcionais.sql`
 
-Função `security definer` usada pela policy `ipo_insert_publico` em `itens_pedido_opcionais` para verificar se um item de pedido aceita opcionais sem expor `pedidos`/`itens_pedido` ao anon. Mesmo padrão de `pedido_aceita_itens` — reusa `loja_esta_ativa` internamente.
+Função `security definer` que verifica se um item de pedido aceita opcionais sem expor `pedidos`/`itens_pedido` ao anon. Mesmo padrão de `pedido_aceita_itens` — reusa `loja_esta_ativa` internamente.
+
+> **Modelo de escrita de `itens_pedido_opcionais` (migration `20260621098000`):** a policy `ipo_insert_publico` (INSERT para anon/authenticated) foi removida. INSERT na tabela é agora deny-all para anon e authenticated — a única escrita legítima é a RPC `public.criar_pedido(...)` executada sob `service_role` (BYPASSRLS). O helper permanece como guard reutilizável, mas não há mais policy pública consumindo-o.
 
 ```sql
 CREATE FUNCTION public.item_pedido_aceita_opcionais(p_item_pedido_id uuid)
@@ -201,7 +203,7 @@ GRANT EXECUTE ON FUNCTION public.item_pedido_aceita_opcionais(uuid) TO anon, aut
 
 As tabelas `pedidos` e `itens_pedido` não têm SELECT público para anon (anti-enumeração). Um `EXISTS` rodando sob RLS do anon retorna sempre zero linhas, bloqueando todo INSERT de opcional. A função `security definer` contorna isso respondendo só o booleano — não expõe dados do pedido.
 
-**Regra para devs e agentes:** toda policy de INSERT público em `itens_pedido_opcionais` deve usar `public.item_pedido_aceita_opcionais(item_pedido_id)`. Nunca `WITH CHECK (true)` — permite anexar opcional a item alheio. Nunca `EXISTS` direto em `itens_pedido`/`pedidos` — quebra silenciosamente para anon.
+**Regra para devs e agentes:** INSERT em `itens_pedido_opcionais` é exclusivo da RPC `public.criar_pedido(...)` (service_role). Não reintroduzir policy de INSERT público sem passar pelo helper `public.item_pedido_aceita_opcionais(item_pedido_id)` — nunca `WITH CHECK (true)` nem `EXISTS` direto em `itens_pedido`/`pedidos`.
 
 ---
 
@@ -860,7 +862,7 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 
 - **Proibido `dangerouslySetInnerHTML`** sem sanitização explícita (DOMPurify). Conteúdo vem do banco preenchido por lojistas — tratar como não confiável.
 - Nunca montar HTML por concatenação de string com dado do banco.
-- URLs de imagem (`foto_url`): validar protocolo `https:` antes de renderizar — bloquear `javascript:`.
+- URLs de imagem (`foto_url`): validar protocolo `https:` antes de renderizar — bloquear `javascript:`. Guard central: `src/lib/utils/urlHttpsSegura.ts` → `urlHttpsSegura(url?: string | null): string | null` (retorna `null` se não for `https:`). `fotoSegura` é especialização para imagens (adiciona fallback `/placeholder-produto.png`); `TabelaFaturas` e o render do QR Pix em `EtapaPagamento` usam `urlHttpsSegura` diretamente. Usar em todo lugar que renderiza `<img src>`, `<Image src>` ou `<a href>` com URL vinda do banco.
 
 ---
 
