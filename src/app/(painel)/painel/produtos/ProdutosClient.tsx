@@ -17,6 +17,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
 import { ThumbProduto } from "@/components/painel/ThumbProduto";
 import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
@@ -111,9 +119,12 @@ export function ProdutosClient({
   const alternarDisponibilidade =
     acoes?.alternarDisponibilidade ?? alternarDisponibilidadeLojista;
 
-  // null => criar; Produto => editar. `formAberto` controla a abertura do Sheet.
+  // null => criar; Produto => editar. `formAberto` controla a abertura do
+  // Sheet (mobile) ou Dialog (desktop) — uma árvore por vez, sem duplicar
+  // estado/efeitos do FormProduto (mesmo padrão do CheckoutWizard, issue 006).
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Produto | null>(null);
+  const ehDesktop = useMediaQuery("(min-width: 768px)");
 
   // Produto pendente de remoção (controla o AlertDialog).
   const [aRemover, setARemover] = useState<Produto | null>(null);
@@ -167,6 +178,34 @@ export function ProdutosClient({
       router.refresh();
     });
   }
+
+  const formProduto = (
+    <FormProduto
+      // Recria o form ao alternar entre produtos / criar.
+      key={emEdicao?.id ?? "novo"}
+      categorias={categorias}
+      lojaSlug={lojaSlug}
+      lojaId={lojaId}
+      onSucesso={aoSalvar}
+      onCriar={acoes?.criarProduto}
+      onAtualizar={acoes?.atualizarProduto}
+      onEnviarFoto={acoes?.enviarFotoProduto}
+      inicial={
+        emEdicao
+          ? {
+              id: emEdicao.id,
+              nome: emEdicao.nome,
+              descricao: emEdicao.descricao,
+              preco: emEdicao.preco,
+              categoria_id: emEdicao.categoria_id,
+              disponivel: emEdicao.disponivel,
+              foto_url: emEdicao.foto_url,
+              ordem: emEdicao.ordem,
+            }
+          : undefined
+      }
+    />
+  );
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
@@ -289,47 +328,43 @@ export function ProdutosClient({
         onRemover={acoes?.removerCategoria}
       />
 
-      {/* Sheet de criar/editar */}
-      <Sheet open={formAberto} onOpenChange={setFormAberto}>
-        <SheetContent className="overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>
-              {emEdicao ? "Editar produto" : "Novo produto"}
-            </SheetTitle>
-            <SheetDescription>
-              Preencha os dados do produto exibido na sua vitrine.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="px-4 pb-4">
-            <Separator className="mb-4" />
-            <FormProduto
-              // Recria o form ao alternar entre produtos / criar.
-              key={emEdicao?.id ?? "novo"}
-              categorias={categorias}
-              lojaSlug={lojaSlug}
-              lojaId={lojaId}
-              onSucesso={aoSalvar}
-              onCriar={acoes?.criarProduto}
-              onAtualizar={acoes?.atualizarProduto}
-              onEnviarFoto={acoes?.enviarFotoProduto}
-              inicial={
-                emEdicao
-                  ? {
-                      id: emEdicao.id,
-                      nome: emEdicao.nome,
-                      descricao: emEdicao.descricao,
-                      preco: emEdicao.preco,
-                      categoria_id: emEdicao.categoria_id,
-                      disponivel: emEdicao.disponivel,
-                      foto_url: emEdicao.foto_url,
-                      ordem: emEdicao.ordem,
-                    }
-                  : undefined
-              }
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* Criar/editar: Dialog centralizado no desktop (aproveita a largura da
+          tela), Sheet lateral no mobile. Uma árvore por vez — ver ehDesktop. */}
+      {ehDesktop ? (
+        <Dialog open={formAberto} onOpenChange={setFormAberto}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {emEdicao ? "Editar produto" : "Novo produto"}
+              </DialogTitle>
+              <DialogDescription>
+                Preencha os dados do produto exibido na sua vitrine.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="overflow-y-auto px-4 pb-4">
+              <Separator className="mb-4" />
+              {formProduto}
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <Sheet open={formAberto} onOpenChange={setFormAberto}>
+          <SheetContent className="overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>
+                {emEdicao ? "Editar produto" : "Novo produto"}
+              </SheetTitle>
+              <SheetDescription>
+                Preencha os dados do produto exibido na sua vitrine.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="px-4 pb-4">
+              <Separator className="mb-4" />
+              {formProduto}
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Confirmação de remoção */}
       <AlertDialog.Root
