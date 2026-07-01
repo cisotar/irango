@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.11 | **Atualizado:** 2026-06-19
+**Versão:** 0.1.12 | **Atualizado:** 2026-07-01
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -148,7 +148,8 @@ CREATE TABLE produtos (
   nome         text NOT NULL,
   descricao    text,
   preco        numeric(10,2) NOT NULL CHECK (preco >= 0),
-  disponivel   boolean NOT NULL DEFAULT true,
+  disponivel   boolean NOT NULL DEFAULT true,   -- comprável vs. esgotado (esgotado ainda aparece na vitrine, marcado)
+  oculto       boolean NOT NULL DEFAULT false,  -- oculto = nunca aparece na vitrine, independente de `disponivel`
   ordem        int NOT NULL DEFAULT 0,
   foto_url     text,
   criado_em    timestamptz NOT NULL DEFAULT now(),
@@ -438,5 +439,5 @@ Valores válidos:
 - `ON DELETE CASCADE` em dados filhos da loja — deletar loja limpa tudo
 - `ON DELETE SET NULL` em produto referenciado em pedido — histórico preservado
 - Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado
-- Tipos gerados automaticamente: `pnpm supabase gen types typescript --local > src/types/supabase.ts`
+- Tipos gerados automaticamente: `npx supabase gen types typescript > src/lib/database.types.ts`
 - **Operações multi-tabela atômicas com trava de concorrência** usam função Postgres `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon, authenticated` + `GRANT EXECUTE TO service_role`. Exemplo: `public.criar_pedido(...)` (migration `20260614003000_rpc_criar_pedido.sql`). Nunca INSERT direto da action quando atomicidade ou trava de linha for necessária.

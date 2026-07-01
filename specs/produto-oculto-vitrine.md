@@ -1,6 +1,6 @@
 # Spec: Produto Oculto na Vitrine — separar visibilidade de disponibilidade
 
-**Versão:** 0.1.0 | **Atualizado:** 2026-07-01
+**Versão:** 0.1.1 | **Atualizado:** 2026-07-01 — todos os behaviors implementados (issues 083-089)
 
 ## Visão Geral
 
@@ -39,11 +39,11 @@ Regra combinada da vitrine pública:
 - `SecaoCatalogo` / `VitrineClient` / `ProdutoModal` — reusados; precisam apenas propagar `disponivel` de cada produto ao `CardProduto` e impedir abertura de modal/adição para produto esgotado (se ainda não o fazem — verificar na implementação).
 
 **Behaviors:**
-- [ ] Ver produto disponível — cliente vê o produto normal, pode abrir/adicionar. Garantido em: **Server Component + RLS** (query pública sob `produtos_leitura_publica`).
-- [ ] Ver produto esgotado — produto não-oculto e indisponível aparece marcado como esgotado, não clicável. Garantido em: **Server Component (dado) + cliente (apresentação)**. O dado `disponivel` vem do banco; a UX de "esgotado" é apresentação.
-- [ ] Não ver produto oculto — produto `oculto = true` não aparece de forma alguma. Garantido em: **RLS + Server Action/Query** (defesa em profundidade: `oculto = false` na policy E filtro explícito na query — ver Regras de Negócio RN-3).
-- [ ] Tentar adicionar produto esgotado ao carrinho — bloqueado na UI (botão desabilitado) e, se forçado via DevTools, **recusado no servidor**. Garantido em: **cliente (UX) + Server Action + RLS** ("garantido em: Server Action + RLS").
-- [ ] Tentar comprar produto oculto (forjando o `produto_id` no payload) — **recusado no servidor**. Garantido em: **Server Action + RLS** ("garantido em: Server Action + RLS").
+- [x] Ver produto disponível — cliente vê o produto normal, pode abrir/adicionar. Garantido em: **Server Component + RLS** (query pública sob `produtos_leitura_publica`).
+- [x] Ver produto esgotado — produto não-oculto e indisponível aparece marcado como esgotado, não clicável. Garantido em: **Server Component (dado) + cliente (apresentação)**. O dado `disponivel` vem do banco; a UX de "esgotado" é apresentação.
+- [x] Não ver produto oculto — produto `oculto = true` não aparece de forma alguma. Garantido em: **RLS + Server Action/Query** (defesa em profundidade: `oculto = false` na policy E filtro explícito na query — ver Regras de Negócio RN-3).
+- [x] Tentar adicionar produto esgotado ao carrinho — bloqueado na UI (botão desabilitado) e, se forçado via DevTools, **recusado no servidor**. Garantido em: **cliente (UX) + Server Action + RLS** ("garantido em: Server Action + RLS").
+- [x] Tentar comprar produto oculto (forjando o `produto_id` no payload) — **recusado no servidor**. Garantido em: **Server Action + RLS** ("garantido em: Server Action + RLS").
 
 ---
 
@@ -63,12 +63,12 @@ O badge de status da linha deve refletir os dois eixos (ex.: "Oculto", "Esgotado
 - `ThumbProduto`, `Badge`, `Button`, `Card`, `Sheet`, `Dialog`, `AlertDialog` — inalterados.
 
 **Behaviors:**
-- [ ] Ocultar produto da vitrine — lojista alterna "Ocultar" → `oculto = true`; produto some da vitrine. Garantido em: **Server Action + RLS** (`alternarOculto` → `produtos_escrita_propria`, `dono_id = auth.uid()`).
-- [ ] Exibir produto na vitrine — alterna "Exibir" → `oculto = false`; produto volta à vitrine. Garantido em: **Server Action + RLS**.
-- [ ] Marcar produto como esgotado — alterna "Esgotado" → `disponivel = false`; produto continua na vitrine, marcado. Garantido em: **Server Action + RLS** (`alternarDisponibilidade`, mantida).
-- [ ] Marcar produto como disponível — alterna → `disponivel = true`. Garantido em: **Server Action + RLS**.
-- [ ] Criar/editar produto com `oculto` — form envia `oculto` junto do payload. Garantido em: **Server Action + RLS** (`criarProduto`/`atualizarProduto` revalidam via `schemaProduto`; `loja_id` derivado do dono, nunca do payload).
-- [ ] Ver status combinado de cada produto — badge distingue Disponível / Esgotado / Oculto. Garantido em: **cliente (apresentação)** — deriva de `disponivel`/`oculto` que já vieram do servidor (RLS `produtos_leitura_propria` traz os dois campos).
+- [x] Ocultar produto da vitrine — lojista alterna "Ocultar" → `oculto = true`; produto some da vitrine. Garantido em: **Server Action + RLS** (`alternarOculto` → `produtos_escrita_propria`, `dono_id = auth.uid()`).
+- [x] Exibir produto na vitrine — alterna "Exibir" → `oculto = false`; produto volta à vitrine. Garantido em: **Server Action + RLS**.
+- [x] Marcar produto como esgotado — alterna "Esgotado" → `disponivel = false`; produto continua na vitrine, marcado. Garantido em: **Server Action + RLS** (`alternarDisponibilidade`, mantida).
+- [x] Marcar produto como disponível — alterna → `disponivel = true`. Garantido em: **Server Action + RLS**.
+- [x] Criar/editar produto com `oculto` — form envia `oculto` junto do payload. Garantido em: **Server Action + RLS** (`criarProduto`/`atualizarProduto` revalidam via `schemaProduto`; `loja_id` derivado do dono, nunca do payload).
+- [x] Ver status combinado de cada produto — badge distingue Disponível / Esgotado / Oculto. Garantido em: **cliente (apresentação)** — deriva de `disponivel`/`oculto` que já vieram do servidor (RLS `produtos_leitura_propria` traz os dois campos).
 
 ---
 
