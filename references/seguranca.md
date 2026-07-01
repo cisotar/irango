@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.19 | **Atualizado:** 2026-06-30
+**Versão:** 0.2.20 | **Atualizado:** 2026-07-01
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -210,18 +210,22 @@ As tabelas `pedidos` e `itens_pedido` não têm SELECT público para anon (anti-
 #### `produtos`
 
 ```sql
--- Leitura pública de produtos disponíveis
+-- Leitura pública de produtos NÃO-OCULTOS (issue 083 — migration
+-- 20260621099000_produtos_oculto_rls_publica.sql substituiu `disponivel = true`
+-- por `oculto = false`). `oculto` e `disponivel` são eixos independentes:
+-- produto indisponível (esgotado) continua visível na vitrine, marcado como
+-- esgotado; só `oculto = true` remove o produto da vitrine.
 -- Usa public.loja_esta_ativa() em vez de EXISTS direto em lojas:
 -- a tabela base não tem SELECT público para anon (§19), então um EXISTS
 -- rodando sob RLS retornaria zero linhas e o catálogo ficaria invisível.
 CREATE POLICY "produtos_leitura_publica"
   ON produtos FOR SELECT
   USING (
-    disponivel = true
+    oculto = false
     AND public.loja_esta_ativa(produtos.loja_id)
   );
 
--- Lojista vê todos os próprios (disponível ou não)
+-- Lojista vê todos os próprios (oculto, esgotado ou não)
 CREATE POLICY "produtos_leitura_propria"
   ON produtos FOR SELECT
   USING (
@@ -674,10 +678,10 @@ async function criarPedido(body) {
   const ids = body.itens.map(i => i.produto_id)
   const produtos = await buscarProdutos(ids)  // preço REAL do banco
 
-  // 2. Recusa item indisponível ou de outra loja
+  // 2. Recusa item indisponível, oculto ou de outra loja (oculto: issue 083)
   for (const item of body.itens) {
     const p = produtos.find(p => p.id === item.produto_id)
-    if (!p || !p.disponivel || p.loja_id !== body.loja_id) throw new ErroPedido()
+    if (!p || !p.disponivel || p.oculto || p.loja_id !== body.loja_id) throw new ErroPedido()
   }
 
   // 3. Subtotal a partir do preço do banco × quantidade do cliente

@@ -31,6 +31,11 @@ const produtoValido = {
   preco: 25.9,
   categoria_id: "11111111-1111-1111-1111-111111111111",
   disponivel: true,
+  // Issue 085: `oculto` passa a ser obrigatório no schema, ao lado de
+  // `disponivel`. Incluído na base para que os testes existentes (que não são
+  // sobre `oculto`) continuem enviando um payload válido após o schema ficar
+  // mais estrito.
+  oculto: false,
   ordem: 0,
 };
 
@@ -108,6 +113,26 @@ describe("schemaProduto", () => {
   it("rejeita disponivel não booleano", () => {
     const r = schemaProduto.safeParse({ ...produtoValido, disponivel: "sim" });
     expect(r.success).toBe(false);
+  });
+
+  // --- oculto (issue 085 / migration 083) — visibilidade na vitrine.
+  // Obrigatório e boolean, espelhando `disponivel`. O DEFAULT false vive no
+  // banco (RN-7); o form sempre envia o valor explícito, logo o schema exige.
+  it("rejeita produto sem oculto (campo obrigatório)", () => {
+    const { oculto: _o, ...semOculto } = produtoValido;
+    const r = schemaProduto.safeParse(semOculto);
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita oculto não-booleano", () => {
+    const r = schemaProduto.safeParse({ ...produtoValido, oculto: "sim" });
+    expect(r.success).toBe(false);
+  });
+
+  it("aceita oculto=true e preserva o valor", () => {
+    const r = schemaProduto.safeParse({ ...produtoValido, oculto: true });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.oculto).toBe(true);
   });
 
   // --- ordem (int >= 0) ---

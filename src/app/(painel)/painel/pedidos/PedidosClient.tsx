@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabelaPedidos, type PedidoLinha } from "@/components/painel/TabelaPedidos";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
@@ -44,26 +45,32 @@ export function PedidosClient({ pedidos }: PedidosClientProps) {
         Pedidos
       </h1>
 
-      <div
-        role="tablist"
-        aria-label="Filtrar pedidos por status"
-        className="mb-4 flex flex-wrap gap-2"
-      >
-        {FILTROS.map((f) => (
-          <Button
-            key={f.valor}
-            role="tab"
-            aria-selected={filtro === f.valor}
-            variant={filtro === f.valor ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFiltro(f.valor)}
+      <Card>
+        <CardHeader>
+          <CardTitle className="sr-only">Lista de pedidos</CardTitle>
+          <div
+            role="tablist"
+            aria-label="Filtrar pedidos por status"
+            className="flex flex-wrap gap-2"
           >
-            {f.rotulo}
-          </Button>
-        ))}
-      </div>
-
-      <TabelaPedidos pedidos={visiveis} />
+            {FILTROS.map((f) => (
+              <Button
+                key={f.valor}
+                role="tab"
+                aria-selected={filtro === f.valor}
+                variant={filtro === f.valor ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFiltro(f.valor)}
+              >
+                {f.rotulo}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <TabelaPedidos pedidos={visiveis} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

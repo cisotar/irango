@@ -89,7 +89,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       return { erro: ERRO_GENERICO };
     }
 
-    // (4) Produtos: existem? disponíveis? da loja correta? (subtotal do PREÇO REAL)
+    // (4) Produtos: existem? disponíveis? não-ocultos? da loja correta? (subtotal do PREÇO REAL)
     const ids = dados.itens.map((i) => i.produto_id);
     const produtos = await buscarProdutosPorIds(svc, ids);
     const porId = new Map(produtos.map((p) => [p.id, p]));
@@ -138,6 +138,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       if (
         produto == null ||
         !produto.disponivel ||
+        produto.oculto === true ||
         produto.loja_id !== dados.loja_id
       ) {
         return { erro: ERRO_GENERICO };

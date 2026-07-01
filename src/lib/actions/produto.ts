@@ -179,6 +179,30 @@ export async function alternarDisponibilidade(
   }
 }
 
+export async function alternarOculto(
+  id: string,
+  oculto: boolean,
+): Promise<ResultadoGestaoProduto> {
+  try {
+    const supabase = await createClient();
+    // Toggle de VISIBILIDADE escopado por id; RLS produtos_escrita_propria
+    // isola por dono. NÃO mexe em `disponivel` (RN-6-b).
+    const { error } = await supabase
+      .from("produtos")
+      .update({ oculto })
+      .eq("id", id);
+    if (error) {
+      console.error("[alternarOculto]", error);
+      return { ok: false, erro: "Não foi possível atualizar o produto." };
+    }
+    revalidatePath(CAMINHO_PAINEL);
+    return { ok: true };
+  } catch (e) {
+    console.error("[alternarOculto]", e);
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+}
+
 export async function criarCategoria(
   payload: unknown,
 ): Promise<ResultadoGestaoCategoria> {

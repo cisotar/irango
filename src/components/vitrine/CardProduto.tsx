@@ -21,8 +21,8 @@ type CardProdutoProps = {
  * Card de produto da vitrine — espelha design-claude/vitrine/card-produto.html:
  * foto 4:3, nome em 2 linhas, preço na cor de DESTAQUE da loja e botão "+"
  * quadrado (44×44) também na cor de destaque com texto branco fixo (contraste
- * seguro, design-system §4). Indisponível → ribbon diagonal "Esgotado" + overlay
- * cinza + botão desabilitado. Apresentação pura — o pai decide `onAdicionar`.
+ * seguro, design-system §4). Indisponível → pill "Esgotado" no rodapé da imagem
+ * + overlay cinza + botão desabilitado. Apresentação pura — o pai decide `onAdicionar`.
  */
 export function CardProduto({
   nome,
@@ -60,9 +60,9 @@ export function CardProduto({
           <>
             <span
               aria-hidden
-              className="absolute inset-0 bg-black/40 [backdrop-filter:grayscale(1)]"
+              className="absolute inset-0 bg-black/35 [backdrop-filter:grayscale(1)]"
             />
-            <span className="absolute inset-x-[-10px] top-[40%] z-[2] -rotate-[25deg] border-2 border-white bg-[#8B4513] py-1 text-center text-sm font-black uppercase tracking-widest text-white">
+            <span className="absolute bottom-[10px] left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full bg-[#111111] px-[18px] py-2 text-sm font-extrabold uppercase tracking-wide text-white shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
               Esgotado
             </span>
           </>

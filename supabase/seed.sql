@@ -84,6 +84,22 @@ values
    'Lata 350ml. Produto fictício de seed.', 6.00, true, 0)
 on conflict (id) do nothing;
 
+-- ── [2026-06-21] seed: produtos.oculto (migration 083) ───────────────────────
+-- Produto disponível=true e oculto=true: cobre o caso que a policy
+-- `produtos_leitura_publica` passou a filtrar por `oculto = false` (antes
+-- filtrava só por `disponivel`). Sem esta linha, o `verificar` não teria como
+-- distinguir "sumiu da vitrine por indisponível" de "sumiu por oculto" — os
+-- outros produtos do seed têm oculto=false (default) e não exercitam o novo
+-- predicado. Dono continua vendo este produto no painel via
+-- `produtos_leitura_propria` (dono_id = auth.uid()).
+-- seed de desenvolvimento, não usar em produção
+insert into public.produtos (id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, oculto)
+values
+  ('00000000-0000-4000-8000-000000000033', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000020', 'X-Tudo Oculto Teste',
+   'Disponível mas oculto da vitrine. Produto fictício de seed.', 32.90, true, 2, true)
+on conflict (id) do nothing;
+
 -- ── zona de entrega + bairro + taxa ──────────────────────────────────────────
 -- seed de desenvolvimento, não usar em produção
 insert into public.zonas_entrega (id, loja_id, nome, tipo, ativo)

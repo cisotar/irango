@@ -8,6 +8,7 @@ import {
   buscarOpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
+import { buscarCategoriasOpcional } from "@/lib/supabase/queries/opcionais";
 import { ProdutosClient } from "./ProdutosClient";
 
 /**
@@ -29,17 +30,19 @@ export default async function ProdutosPage(): Promise<ReactElement> {
   // `buscarOpcionaisPorCategoria` precisa dos ids já resolvidos de
   // `buscarCategorias`, então as duas rodam em sequência dentro do mesmo ramo do
   // `Promise.all`, preservando o paralelismo com `buscarProdutosDoLojista`.
-  const [produtos, { categorias, opcionaisPorCategoria }] = await Promise.all([
-    buscarProdutosDoLojista(supabase, loja.id),
-    (async () => {
-      const categorias = await buscarCategorias(supabase, loja.id);
-      const opcionaisPorCategoria = await buscarOpcionaisPorCategoria(
-        supabase,
-        categorias.map((c) => c.id),
-      );
-      return { categorias, opcionaisPorCategoria };
-    })(),
-  ]);
+  const [produtos, { categorias, opcionaisPorCategoria }, categoriasOpcional] =
+    await Promise.all([
+      buscarProdutosDoLojista(supabase, loja.id),
+      (async () => {
+        const categorias = await buscarCategorias(supabase, loja.id);
+        const opcionaisPorCategoria = await buscarOpcionaisPorCategoria(
+          supabase,
+          categorias.map((c) => c.id),
+        );
+        return { categorias, opcionaisPorCategoria };
+      })(),
+      buscarCategoriasOpcional(supabase, loja.id),
+    ]);
 
   return (
     <ProdutosClient
@@ -48,6 +51,10 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       produtos={produtos}
       categorias={categorias.map((c) => ({ id: c.id, nome: c.nome }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
+      categoriasOpcional={categoriasOpcional.map((c) => ({
+        id: c.id,
+        nome: c.nome,
+      }))}
     />
   );
 }

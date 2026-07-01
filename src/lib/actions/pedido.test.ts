@@ -161,6 +161,7 @@ function produtoRow(over: Partial<Tables<"produtos">> = {}): Tables<"produtos"> 
     descricao: null,
     preco: 25.0,
     disponivel: true,
+    oculto: false,
     ordem: 0,
     foto_url: null,
     criado_em: "2026-01-01T00:00:00.000Z",
@@ -372,6 +373,80 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
 
     const r = await criarPedido(payloadBase({ itens: [{ produto_id: PROD_1, quantidade: 1 }] }));
     expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────── [087] produto OCULTO forjado no payload (RN-5)
+  // A vitrine esconde o produto (oculto=true), mas o cliente pode ver "esgotado"
+  // no cache e forjar o produto_id no payload. O servidor lê `oculto` do banco
+  // (buscarProdutosPorIds já faz select("*")) e DEVE recusar antes da RPC.
+  // Hoje a guarda só checa `disponivel`/`loja_id`; um produto oculto=true porém
+  // disponivel=true PASSA e vira pedido — este teste FALHA (RED) até o GREEN
+  // somar `|| produto.oculto === true` à condição de recusa.
+  it("[087] ATAQUE: produto oculto=true (disponível) forjado no payload → recusado (não chama a RPC)", async () => {
+    buscarLojaParaPedido.mockResolvedValue(lojaRow());
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    // oculto da vitrine, mas comprável em tese (disponivel=true) e da loja correta:
+    // só a checagem de `oculto` pode barrá-lo.
+    buscarProdutosPorIds.mockResolvedValue([produtoRow({ oculto: true, disponivel: true })]);
+
+    const r = await criarPedido(payloadBase({ itens: [{ produto_id: PROD_1, quantidade: 1 }] }));
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // Guarda de não-regressão (critério de aceite 3): produto normal
+  // (oculto=false, disponivel=true) continua criando pedido. Passa hoje e deve
+  // continuar passando após o GREEN — a nova cláusula não pode barrar o feliz.
+  it("[087] produto disponivel=true, oculto=false da loja correta → cria pedido normalmente", async () => {
+    cenarioFeliz(); // produtoRow() já é oculto:false, disponivel:true
+    const r = await criarPedido(payloadBase());
+    expect(r).toEqual({ pedidoId: "ped-1", token_acesso: "tok-1" });
+  });
+
+  // Borda: produto oculto E indisponível ao mesmo tempo — a guarda tem cláusulas
+  // `||` independentes (curto-circuito na primeira verdadeira). Precisa recusar
+  // com UM erro genérico só, sem lançar exceção nem tentar combinar motivos.
+  it("[087] produto oculto=true E disponivel=false ao mesmo tempo → recusado com erro único (não chama a RPC)", async () => {
+    buscarLojaParaPedido.mockResolvedValue(lojaRow());
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    buscarProdutosPorIds.mockResolvedValue([produtoRow({ oculto: true, disponivel: false })]);
+
+    const r = await criarPedido(payloadBase({ itens: [{ produto_id: PROD_1, quantidade: 1 }] }));
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(Object.keys(r as object)).toEqual(["erro"]); // um único motivo exposto, não um array/combinação
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // Borda: carrinho com 2 itens, só o segundo está oculto. A guarda deve recusar
+  // o PEDIDO INTEIRO (não filtrar silenciosamente o item oculto e criar o pedido
+  // só com o item 1 — isso venderia menos do que o cliente pediu sem avisar,
+  // e mais grave: normalizaria "vazamento parcial" de item escondido da vitrine).
+  it("[087] carrinho com 2 itens, só 1 oculto → recusa o PEDIDO INTEIRO (não cria parcial)", async () => {
+    const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000002";
+    buscarLojaParaPedido.mockResolvedValue(lojaRow());
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    buscarProdutosPorIds.mockResolvedValue([
+      produtoRow({ id: PROD_1, oculto: false, disponivel: true }), // item normal
+      produtoRow({ id: PROD_2, oculto: true, disponivel: true }), // item oculto forjado
+    ]);
+
+    const r = await criarPedido(
+      payloadBase({
+        itens: [
+          { produto_id: PROD_1, quantidade: 1 },
+          { produto_id: PROD_2, quantidade: 1 },
+        ],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    // nem o item válido deve virar pedido — recusa é do carrinho todo, não parcial
     expect(fakeClient.rpc).not.toHaveBeenCalled();
   });
 

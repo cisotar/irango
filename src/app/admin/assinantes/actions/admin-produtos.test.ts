@@ -125,6 +125,10 @@ function payloadProduto(over: Record<string, unknown> = {}) {
     preco: 25.9,
     categoria_id: null,
     disponivel: true,
+    // Issue 085: schemaProduto (compartilhado com o CRUD do lojista) passa a
+    // exigir `oculto` (boolean). Incluído na base para manter os payloads dos
+    // testes admin válidos sob o schema mais estrito.
+    oculto: false,
     ordem: 0,
     ...over,
   };
