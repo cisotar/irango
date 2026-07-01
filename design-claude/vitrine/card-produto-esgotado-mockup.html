@@ -1,0 +1,235 @@
+<!-- @dsCard group="Vitrine" — MOCKUP de decisão: estado Esgotado redesenhado. NÃO é a fonte oficial. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Card de Produto — Esgotado (mockup de decisão)</title>
+<style>
+  :root {
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;   /* verde da loja */
+    --preto: #111111;
+    --branco: #ffffff;
+    --cinza-medio: #eeeeee;
+    --cinza-desab: #9a9a9a;
+    --sombra-suave: rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cor-fundo); padding: 24px 16px; color: var(--preto); }
+
+  .wrap { max-width: 460px; margin: 0 auto; }
+  h1 { font-size: 1.1rem; margin: 0 0 4px; }
+  .sub { font-size: 0.82rem; color: #6b6b6b; margin: 0 0 20px; }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--cor-destaque);
+       margin: 24px 0 4px; }
+  .nota { font-size: 0.78rem; color: #555; margin: 0 0 12px; line-height: 1.4; }
+  .rec { background: var(--cor-destaque); color: var(--branco); font-size: 0.68rem; font-weight: 800;
+         text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 999px;
+         vertical-align: middle; margin-left: 6px; }
+
+  .demo { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+  /* ---------- Card base (fiel ao card-produto.html) ---------- */
+  .card {
+    background: var(--branco); border: 1px solid var(--cinza-medio); border-radius: 12px;
+    box-shadow: 0 4px 12px var(--sombra-suave); overflow: hidden; display: flex; flex-direction: column;
+    position: relative;
+  }
+  .card .img {
+    height: 140px; width: 100%; object-fit: cover; position: relative;
+    background: linear-gradient(135deg,#e8dcc4,#d8c4a0) center/cover;
+    display: flex; align-items: center; justify-content: center; font-size: 2.4rem;
+  }
+  .card .body { padding: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .card .nome {
+    font-size: 0.92rem; font-weight: 700; color: var(--preto); margin: 0; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .card .footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card .preco { font-size: 1.15rem; font-weight: 900; color: var(--cor-destaque); }
+  .btn-add {
+    background: var(--cor-destaque); color: var(--branco); border: none; border-radius: 10px;
+    min-width: 44px; min-height: 44px; font-size: 1.4rem; font-weight: 900; cursor: pointer; line-height: 1;
+  }
+  .btn-add:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: 2px; }
+  .btn-add[disabled] { background: var(--cinza-desab); cursor: not-allowed; }
+
+  /* Tratamento comum do esgotado: dessatura a imagem + escurece levemente + apaga o corpo.
+     (Mesmo comportamento do atual, sem depender só de cor: o selo tem TEXTO.) */
+  .card.esgotado .body { opacity: 0.6; }
+  .card.esgotado .img { filter: grayscale(1); }
+  .card.esgotado .img::before {
+    content: ""; position: absolute; inset: 0; background: rgba(0,0,0,0.35); z-index: 1;
+  }
+
+  /* ============================================================
+     VARIAÇÃO A — Pill centralizado (badge preto elegante)
+     Centralizado H+V com flex do próprio .img. Nada de rotação.
+     ============================================================ */
+  .selo-pill {
+    position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: var(--preto); color: var(--branco);
+    font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+    padding: 8px 18px; border-radius: 999px; white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  }
+
+  /* ============================================================
+     VARIAÇÃO A2 — Pill preto ANCORADO NO RODAPÉ da imagem (escolhida)
+     Centralizado no eixo X, colado na base com um respiro (bottom:10px).
+     Não cobre o produto no centro da foto.
+     ============================================================ */
+  .selo-pill-base {
+    position: absolute; z-index: 2; bottom: 10px; left: 50%; transform: translateX(-50%);
+    background: var(--preto); color: var(--branco);
+    font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+    padding: 8px 18px; border-radius: 999px; white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  }
+
+  /* ============================================================
+     VARIAÇÃO B — Faixa horizontal full-width na base da imagem
+     Ancorada embaixo, ocupa a largura toda, reta. Usa o verde da loja.
+     ============================================================ */
+  .selo-faixa {
+    position: absolute; z-index: 2; left: 0; right: 0; bottom: 0;
+    background: var(--cor-destaque); color: var(--branco);
+    text-align: center; font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+    padding: 7px 0;
+  }
+
+  /* ============================================================
+     VARIAÇÃO C — Overlay minimalista com texto grande centralizado
+     Sem caixa; o texto É o selo, centralizado no overlay escuro.
+     ============================================================ */
+  .selo-overlay {
+    position: absolute; z-index: 2; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--branco); font-size: 1.05rem; font-weight: 900;
+    text-transform: uppercase; letter-spacing: 2px;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.6);
+  }
+  /* overlay C precisa de um véu um pouco mais forte pra legibilidade do texto grande */
+  .card.esgotado.var-c .img::before { background: rgba(0,0,0,0.5); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Card de Produto — estado "Esgotado" redesenhado</h1>
+  <p class="sub">Mockup de decisão. Card disponível como referência + 3 variações de selo. Escolha uma.</p>
+
+  <!-- REFERÊNCIA -->
+  <h2>Referência (disponível)</h2>
+  <p class="nota">Estado normal, sem alteração. Mostrado só para comparar contraste e alinhamento.</p>
+  <div class="demo">
+    <article class="card">
+      <div class="img" aria-hidden="true">🧀</div>
+      <div class="body">
+        <h3 class="nome">Pão de queijo artesanal — 6 unidades</h3>
+        <div class="footer">
+          <span class="preco">R$ 18,90</span>
+          <button class="btn-add" aria-label="Adicionar Pão de queijo ao carrinho">+</button>
+        </div>
+      </div>
+    </article>
+
+    <!-- placeholder vazio pra manter grade de 2 col alinhada -->
+    <div aria-hidden="true"></div>
+  </div>
+
+  <!-- VARIAÇÃO A2 (ESCOLHIDA) -->
+  <h2>Variação A2 — Pill preto no rodapé da imagem<span class="rec">Escolhida</span></h2>
+  <p class="nota">
+    Mesma pill preta da A (contraste ~15:1 sobre qualquer foto, neutra), mas ancorada na
+    <strong>base da imagem</strong> via <code>bottom:10px; left:50%; translateX(-50%)</code> — centralizada
+    no eixo horizontal, com respiro da borda. Não cobre o produto no centro da foto.
+  </p>
+  <div class="demo">
+    <article class="card esgotado">
+      <div class="img" aria-hidden="true">🥐
+        <span class="selo-pill-base">Esgotado</span>
+      </div>
+      <div class="body">
+        <h3 class="nome">Croissant de manteiga francês</h3>
+        <div class="footer">
+          <span class="preco">R$ 12,50</span>
+          <button class="btn-add" disabled aria-label="Croissant esgotado, indisponível">+</button>
+        </div>
+      </div>
+    </article>
+    <div aria-hidden="true"></div>
+  </div>
+
+  <!-- VARIAÇÃO A -->
+  <h2>Variação A — Pill centralizado (preto)</h2>
+  <p class="nota">
+    Badge/pill centralizado no eixo H e V da imagem via <code>translate(-50%,-50%)</code> — sempre no centro,
+    independente da altura da foto. Preto sólido: contraste AA garantido (~15:1) sobre qualquer foto,
+    e é neutro (não briga com o verde da loja nem some se a foto for verde/clara).
+  </p>
+  <div class="demo">
+    <article class="card esgotado">
+      <div class="img" aria-hidden="true">🥐
+        <span class="selo-pill">Esgotado</span>
+      </div>
+      <div class="body">
+        <h3 class="nome">Croissant de manteiga francês</h3>
+        <div class="footer">
+          <span class="preco">R$ 12,50</span>
+          <button class="btn-add" disabled aria-label="Croissant esgotado, indisponível">+</button>
+        </div>
+      </div>
+    </article>
+    <div aria-hidden="true"></div>
+  </div>
+
+  <!-- VARIAÇÃO B -->
+  <h2>Variação B — Faixa na base (verde da loja)</h2>
+  <p class="nota">
+    Faixa reta full-width ancorada na base da imagem. Usa a cor <code>--cor-destaque</code> (verde da loja),
+    reforçando a identidade. Sempre reta e alinhada. Risco: em loja de tema muito claro a faixa pode
+    ter pouco contraste com a foto — depende do <code>tema</code> do lojista.
+  </p>
+  <div class="demo">
+    <article class="card esgotado">
+      <div class="img" aria-hidden="true">🍰
+        <span class="selo-faixa">Esgotado</span>
+      </div>
+      <div class="body">
+        <h3 class="nome">Bolo de cenoura com cobertura</h3>
+        <div class="footer">
+          <span class="preco">R$ 34,00</span>
+          <button class="btn-add" disabled aria-label="Bolo de cenoura esgotado, indisponível">+</button>
+        </div>
+      </div>
+    </article>
+    <div aria-hidden="true"></div>
+  </div>
+
+  <!-- VARIAÇÃO C -->
+  <h2>Variação C — Overlay minimalista (texto grande)</h2>
+  <p class="nota">
+    Sem caixa: o texto grande centralizado É o selo, sobre véu escuro reforçado. Mais "clean" e moderno.
+    Risco: sem fundo sólido atrás do texto, depende de <code>text-shadow</code> + véu forte para manter
+    legibilidade sobre fotos claras — mais frágil que a pill.
+  </p>
+  <div class="demo">
+    <article class="card esgotado var-c">
+      <div class="img" aria-hidden="true">🥧
+        <span class="selo-overlay">Esgotado</span>
+      </div>
+      <div class="body">
+        <h3 class="nome">Torta de limão fatia</h3>
+        <div class="footer">
+          <span class="preco">R$ 15,00</span>
+          <button class="btn-add" disabled aria-label="Torta de limão esgotada, indisponível">+</button>
+        </div>
+      </div>
+    </article>
+    <div aria-hidden="true"></div>
+  </div>
+</div>
+</body>
+</html>
