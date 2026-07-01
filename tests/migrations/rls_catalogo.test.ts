@@ -241,11 +241,16 @@ describe("005 RLS de catálogo, entrega e pagamento", () => {
     expect(r.rows[0].id).toBe(ids.prodADisp);
   });
 
-  it("[2] anon NÃO lê produto INDISPONÍVEL de loja ativa (0 linhas; existe via service)", async () => {
+  it("[2] anon LÊ produto INDISPONÍVEL não-oculto de loja ativa (1 linha — vitrine mostra 'esgotado')", async () => {
+    // Novo contrato (issue 083 / RN-2): a leitura pública passou a filtrar por
+    // `oculto = false`, não mais por `disponivel = true`. Produto esgotado
+    // (disponivel=false) que NÃO foi ocultado continua no catálogo público — a
+    // vitrine o renderiza como "esgotado". A visibilidade agora é regida por
+    // `oculto`; a compra segue barrada no servidor (recálculo em criarPedido).
     const r = await t.asAnon((db) =>
       db.query(`select id from public.produtos where id = $1`, [ids.prodAIndisp]),
     );
-    expect(r.rows.length).toBe(0);
+    expect(r.rows.length).toBe(1);
     expect(await existeId(t, "produtos", ids.prodAIndisp)).toBe(true);
   });
 
@@ -268,11 +273,16 @@ describe("005 RLS de catálogo, entrega e pagamento", () => {
     expect(r.rows.length).toBe(2);
   });
 
-  it("[5] dono B NÃO lê produto INDISPONÍVEL de A (isolamento — 0 linhas)", async () => {
+  it("[5] dono B LÊ produto INDISPONÍVEL não-oculto de A porque é catálogo público (não é vazamento)", async () => {
+    // Novo contrato (issue 083 / RN-2): produto esgotado não-oculto de loja ativa
+    // é catálogo PÚBLICO — dono B o enxerga pela policy pública, exatamente como
+    // qualquer anon veria na vitrine de A. Não é canal privilegiado nem vazamento.
+    // O isolamento cross-tenant do dado PRIVADO agora é gate por `oculto = true`
+    // (produto oculto de A não aparece a B — ver rls_produtos_oculto.test.ts).
     const r = await t.asUser(DONO_B, (db) =>
       db.query(`select id from public.produtos where id = $1`, [ids.prodAIndisp]),
     );
-    expect(r.rows.length).toBe(0);
+    expect(r.rows.length).toBe(1);
     expect(await existeId(t, "produtos", ids.prodAIndisp)).toBe(true);
   });
 

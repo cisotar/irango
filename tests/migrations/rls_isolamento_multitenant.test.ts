@@ -219,21 +219,24 @@ describe("054 isolamento multitenant — cruzamento A↔B + público (RN-02/RN-0
   // vazamento: é exatamente o que qualquer cliente vê na vitrine de B. O
   // isolamento RN-02 protege o dado PRIVADO: produto INDISPONÍVEL, e qualquer
   // escrita. Aqui asseguramos só essa parte.
-  it("[1a] dono A NÃO lê produto INDISPONÍVEL (privado) de B (0 linhas; existe)", async () => {
-    // prodAIndisp não basta — precisamos de um indisponível de B. Criamos um.
-    const prodBIndisp = await t.asService(async (db) => {
+  it("[1a] dono A NÃO lê produto OCULTO (privado) de B (0 linhas; existe)", async () => {
+    // Novo contrato (issue 083 / RN-2): o dado PRIVADO cross-tenant agora é gate
+    // por `oculto = true`, não mais por `disponivel = false` (produto esgotado
+    // não-oculto virou catálogo público). Criamos um produto OCULTO de B: só o
+    // dono B pode vê-lo; dono A logado não pode (isolamento RN-02 preservado).
+    const prodBOculto = await t.asService(async (db) => {
       const r = await db.query<{ id: string }>(
-        `insert into public.produtos (loja_id, categoria_id, nome, preco, disponivel)
-           values ($1,$2,'Esgotado B',4.00,false) returning id`,
+        `insert into public.produtos (loja_id, categoria_id, nome, preco, disponivel, oculto)
+           values ($1,$2,'Oculto B',4.00,true,true) returning id`,
         [ids.lojaB, ids.catB],
       );
       return r.rows[0].id;
     });
     const r = await t.asUser(DONO_A, (db) =>
-      db.query(`select id from public.produtos where id = $1`, [prodBIndisp]),
+      db.query(`select id from public.produtos where id = $1`, [prodBOculto]),
     );
     expect(r.rows.length).toBe(0);
-    expect(await existeId(t, "produtos", prodBIndisp)).toBe(true);
+    expect(await existeId(t, "produtos", prodBOculto)).toBe(true);
   });
 
   it("[1b] dono A, ao varrer produtos, NÃO vê indisponíveis de B nem de loja inativa", async () => {
@@ -464,12 +467,33 @@ describe("054 isolamento multitenant — cruzamento A↔B + público (RN-02/RN-0
   });
 
   // ═══════════════ 8. Anon NÃO VÊ produtos/categorias inativos ou de loja inativa
-  it("[8a] anon NÃO lê produto INDISPONÍVEL de loja ativa (0 linhas; existe)", async () => {
+  it("[8a] anon LÊ produto INDISPONÍVEL não-oculto de loja ativa (1 linha — vitrine mostra 'esgotado')", async () => {
+    // Novo contrato (issue 083 / RN-2): leitura pública filtra por `oculto = false`.
+    // Produto esgotado não-oculto de loja ativa segue no catálogo público. O gate
+    // de invisibilidade cross-tenant/privado é `oculto = true` (ver [8f]).
     const r = await t.asAnon((db) =>
       db.query(`select id from public.produtos where id = $1`, [ids.prodAIndisp]),
     );
-    expect(r.rows.length).toBe(0);
+    expect(r.rows.length).toBe(1);
     expect(await existeId(t, "produtos", ids.prodAIndisp)).toBe(true);
+  });
+
+  it("[8f] anon NÃO lê produto OCULTO de loja ativa (0 linhas; existe)", async () => {
+    // Prova o novo gate primário de visibilidade (RN-2): oculto = true some da
+    // vitrine anon mesmo em loja ativa e mesmo disponível.
+    const prodAOculto = await t.asService(async (db) => {
+      const r = await db.query<{ id: string }>(
+        `insert into public.produtos (loja_id, nome, preco, disponivel, oculto)
+           values ($1,'Oculto A',6.00,true,true) returning id`,
+        [ids.lojaA],
+      );
+      return r.rows[0].id;
+    });
+    const r = await t.asAnon((db) =>
+      db.query(`select id from public.produtos where id = $1`, [prodAOculto]),
+    );
+    expect(r.rows.length).toBe(0);
+    expect(await existeId(t, "produtos", prodAOculto)).toBe(true);
   });
 
   it("[8b] anon NÃO lê produto disponível de loja INATIVA (0 linhas; existe)", async () => {
@@ -496,14 +520,18 @@ describe("054 isolamento multitenant — cruzamento A↔B + público (RN-02/RN-0
     expect(await existeId(t, "lojas", ids.lojaInativa)).toBe(true);
   });
 
-  it("[8e] anon, ao varrer produtos, só vê os disponíveis de lojas ativas (nenhum inativo/de loja off)", async () => {
+  it("[8e] anon, ao varrer produtos, vê não-ocultos de lojas ativas (incl. esgotado), nunca de loja off", async () => {
+    // Novo contrato (issue 083 / RN-2): a varredura anon expõe produtos não-ocultos
+    // de lojas ativas — inclusive esgotados (prodAIndisp), que a vitrine renderiza
+    // como "esgotado". O que NUNCA aparece: produto de loja INATIVA (gate de loja
+    // ativa preservado). Ocultos são cobertos em [8f].
     const r = await t.asAnon((db) =>
       db.query<{ id: string }>(`select id from public.produtos`),
     );
     const vistos = r.rows.map((x) => x.id);
     expect(vistos).toContain(ids.prodADisp);
     expect(vistos).toContain(ids.prodBDisp);
-    expect(vistos).not.toContain(ids.prodAIndisp);
+    expect(vistos).toContain(ids.prodAIndisp); // esgotado não-oculto: agora público
     expect(vistos).not.toContain(ids.prodInativaDisp);
   });
 });

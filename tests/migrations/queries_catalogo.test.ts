@@ -167,11 +167,14 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     expect(r.rows.map((x) => x.id)).toEqual([c.prodADisp]);
   });
 
-  it("[2] anon NÃO lê produto INDISPONÍVEL de loja ativa → 0 linhas", async () => {
+  it("[2] anon LÊ produto INDISPONÍVEL não-oculto de loja ativa → 1 linha (vitrine mostra 'esgotado')", async () => {
+    // Novo contrato (issue 083 / RN-2): leitura pública passou a filtrar por
+    // `oculto = false`, não mais por `disponivel = true`. Produto esgotado
+    // não-oculto de loja ativa segue no catálogo público.
     const r = await t.asAnon((db) =>
       db.query(`select * from public.produtos where id = $1`, [c.prodAIndisp]),
     );
-    expect(r.rows.length).toBe(0);
+    expect(r.rows.length).toBe(1);
     expect(await existeProdutoViaService(t, c.prodAIndisp)).toBe(true);
   });
 
@@ -239,13 +242,16 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     expect(r.rows.map((x) => x.id)).toEqual([c.prodInativa]);
   });
 
-  it("[9] dono A NÃO lê produto INDISPONÍVEL da loja de B (isolamento entre lojas) → 0 linhas", async () => {
-    // Ponto crítico: o indisponível NÃO é público (produtos_leitura_publica exige
-    // disponivel=true), então só o dono B deveria vê-lo. Dono A logado não pode.
+  it("[9] dono A LÊ produto INDISPONÍVEL não-oculto de B porque é catálogo público → 1 linha", async () => {
+    // Novo contrato (issue 083 / RN-2): produtos_leitura_publica passou a filtrar
+    // por `oculto = false`. O produto esgotado não-oculto de B (loja ativa) é
+    // catálogo público — dono A o vê como qualquer anon veria na vitrine de B,
+    // não por canal privilegiado. O dado PRIVADO cross-tenant agora é gate por
+    // `oculto = true` (ver rls_produtos_oculto.test.ts).
     const r = await t.asUser(DONO_A, (db) =>
       db.query(`select * from public.produtos where id = $1`, [c.prodBIndisp]),
     );
-    expect(r.rows.length).toBe(0);
+    expect(r.rows.length).toBe(1);
     expect(await existeProdutoViaService(t, c.prodBIndisp)).toBe(true);
   });
 
