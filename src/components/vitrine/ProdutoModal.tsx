@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Minus, Plus } from "lucide-react";
 
@@ -67,10 +67,24 @@ export function ProdutoModal({
   onOpenChange,
   onAdicionar,
 }: ProdutoModalProps) {
-  const [quantidade, setQuantidade] = useState(1);
+  const [quantidade, setQuantidade] = useState(0);
   // Quantidade escolhida por opcional: opcionalId → qtd (0 = não escolhido).
   const [qtdOpcionais, setQtdOpcionais] = useState<Record<string, number>>({});
   const [descricaoExpandida, setDescricaoExpandida] = useState(false);
+  const corpoRef = useRef<HTMLDivElement>(null);
+  const quantidadeSecaoRef = useRef<HTMLDivElement>(null);
+
+  // No mobile, ao sair de 0 (nenhum item escolhido) rola o corpo até a seção
+  // de quantidade/opcionais — imagem e descrição saem da viewport mas seguem
+  // no DOM (design-claude/vitrine/produto-modal-mobile-v2-scroll.html).
+  useEffect(() => {
+    if (quantidade !== 1) return;
+    if (typeof window === "undefined" || window.innerWidth >= 768) return;
+    const corpo = corpoRef.current;
+    const secao = quantidadeSecaoRef.current;
+    if (!corpo || !secao) return;
+    corpo.scrollTo({ top: secao.offsetTop - 8, behavior: "smooth" });
+  }, [quantidade]);
 
   if (!produto) return null;
 
@@ -201,7 +215,7 @@ export function ProdutoModal({
           {/* Corpo rolável — imagem (só mobile) + descrição + preço + quantidade +
               opcionais. No desktop o scroll é AQUI (coluna de conteúdo), nunca na
               imagem. min-h-0 garante que o flex permita o overflow-y-auto. */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={corpoRef} className="min-h-0 flex-1 overflow-y-auto">
             {/* Imagem grande em destaque — SÓ no mobile (no desktop é a coluna esq.) */}
             <div className="p-4 pb-3 md:hidden">{imagem}</div>
 
@@ -241,7 +255,9 @@ export function ProdutoModal({
                 Mesma estrutura grupo/opcional/mini-stepper do mockup
                 (design-claude/vitrine/produto-modal.html). Preços são PREVIEW. */}
             {disponivel && grupos.length > 0 ? (
-              <div className="px-4 pb-4 md:pt-4">
+              <div
+                className={`px-4 pb-4 md:pt-4 ${quantidade > 0 ? "" : "hidden md:block"}`}
+              >
                 <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
                   <p className="mb-1 text-xs font-bold uppercase tracking-wide text-marrom-cafe">
                     Opcionais
@@ -311,7 +327,7 @@ export function ProdutoModal({
             ) : null}
 
             {/* Seção Quantidade — card com label + preço unitário à esq., stepper à dir. */}
-            <div className="px-4 pb-4">
+            <div ref={quantidadeSecaoRef} className="px-4 pb-4">
               <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
                 <p className="mb-3 text-xs font-bold uppercase tracking-wide text-marrom-cafe">
                   Quantidade
@@ -342,8 +358,8 @@ export function ProdutoModal({
                       variant="ghost"
                       size="icon"
                       aria-label="Diminuir quantidade"
-                      disabled={!disponivel || quantidade <= 1}
-                      onClick={() => setQuantidade((q) => Math.max(1, q - 1))}
+                      disabled={!disponivel || quantidade <= 0}
+                      onClick={() => setQuantidade((q) => Math.max(0, q - 1))}
                       className="size-8 rounded-none text-[var(--cor-destaque)]"
                     >
                       <Minus aria-hidden />
@@ -371,6 +387,23 @@ export function ProdutoModal({
                 </div>
               </div>
             </div>
+
+            {/* CTA inline (SÓ mobile) — só aparece após quantidade > 0, logo
+                abaixo dos opcionais/quantidade. No desktop o CTA continua no
+                footer fixo (design-claude/vitrine/produto-modal-mobile-v2-scroll.html). */}
+            {disponivel && quantidade > 0 ? (
+              <div className="px-4 pb-4 md:hidden">
+                <Button
+                  type="button"
+                  onClick={confirmar}
+                  aria-label={`Adicionar ${quantidade} ${produto.nome} ao carrinho por ${formatarMoeda(subtotal)}`}
+                  className="flex min-h-[52px] w-full items-center justify-between gap-2 rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white hover:bg-[var(--cor-destaque)]/90"
+                >
+                  <span>Adicionar ao carrinho</span>
+                  <span>{formatarMoeda(subtotal)}</span>
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           {/* Footer fixo (não rola) — subtotal PREVIEW + CTA + "Mais itens" */}
@@ -396,13 +429,15 @@ export function ProdutoModal({
               <Button
                 type="button"
                 onClick={confirmar}
-                disabled={!disponivel}
+                disabled={!disponivel || quantidade === 0}
                 aria-label={
                   disponivel
                     ? `Adicionar ${quantidade} ${produto.nome} ao carrinho por ${formatarMoeda(subtotal)}`
                     : "Produto esgotado — não é possível adicionar ao carrinho"
                 }
-                className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white hover:bg-[var(--cor-destaque)]/90 disabled:bg-[#9a9a9a]"
+                className={`min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white hover:bg-[var(--cor-destaque)]/90 disabled:bg-[#9a9a9a] ${
+                  disponivel ? "hidden md:flex" : "flex"
+                }`}
               >
                 {disponivel ? "Adicionar ao carrinho" : "Produto esgotado"}
               </Button>
