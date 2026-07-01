@@ -73,15 +73,17 @@ export function ProdutoModal({
   const [descricaoExpandida, setDescricaoExpandida] = useState(false);
   const corpoRef = useRef<HTMLDivElement>(null);
   const quantidadeSecaoRef = useRef<HTMLDivElement>(null);
+  const opcionaisSecaoRef = useRef<HTMLDivElement>(null);
 
-  // No mobile, ao sair de 0 (nenhum item escolhido) rola o corpo até a seção
-  // de quantidade/opcionais — imagem e descrição saem da viewport mas seguem
-  // no DOM (design-claude/vitrine/produto-modal-mobile-v2-scroll.html).
+  // No mobile, ao sair de 0 (nenhum item escolhido) rola o corpo até o título
+  // "Opcionais" (ou até a seção de quantidade se o produto não tiver
+  // opcionais) — imagem e descrição saem da viewport mas seguem no DOM
+  // (design-claude/vitrine/produto-modal-mobile-v2-scroll.html).
   useEffect(() => {
     if (quantidade !== 1) return;
     if (typeof window === "undefined" || window.innerWidth >= 768) return;
     const corpo = corpoRef.current;
-    const secao = quantidadeSecaoRef.current;
+    const secao = opcionaisSecaoRef.current ?? quantidadeSecaoRef.current;
     if (!corpo || !secao) return;
     corpo.scrollTo({ top: secao.offsetTop - 8, behavior: "smooth" });
   }, [quantidade]);
@@ -256,6 +258,7 @@ export function ProdutoModal({
                 (design-claude/vitrine/produto-modal.html). Preços são PREVIEW. */}
             {disponivel && grupos.length > 0 ? (
               <div
+                ref={opcionaisSecaoRef}
                 className={`px-4 pb-4 md:pt-4 ${quantidade > 0 ? "" : "hidden md:block"}`}
               >
                 <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
