@@ -28,6 +28,7 @@ export type ProdutoInicial = {
   preco?: number;
   categoria_id?: string | null;
   disponivel?: boolean;
+  oculto?: boolean;
   foto_url?: string | null;
   /** Preservada no submit; não é campo editável pelo usuário neste form. */
   ordem?: number;
@@ -86,6 +87,7 @@ export function FormProduto({
   );
   const [categoriaId, setCategoriaId] = useState(inicial?.categoria_id ?? "");
   const [disponivel, setDisponivel] = useState(inicial?.disponivel ?? true);
+  const [oculto, setOculto] = useState(inicial?.oculto ?? false);
   const [fotoUrl, setFotoUrl] = useState<string | null>(
     inicial?.foto_url ?? null,
   );
@@ -102,6 +104,7 @@ export function FormProduto({
       preco: precoNumero,
       categoria_id: categoriaId ? categoriaId : null,
       disponivel,
+      oculto,
       foto_url: fotoUrl,
       ordem: inicial?.ordem ?? 0,
     };
@@ -210,13 +213,34 @@ export function FormProduto({
         </select>
       </div>
 
-      <label className="flex cursor-pointer items-center gap-2 text-sm">
-        <Checkbox
-          checked={disponivel}
-          onCheckedChange={(v) => setDisponivel(v === true)}
-        />
-        <span className="text-foreground">Disponível na vitrine</span>
-      </label>
+      <div className="space-y-3">
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <Checkbox
+            checked={disponivel}
+            onCheckedChange={(v) => setDisponivel(v === true)}
+          />
+          <span className="text-foreground">Disponível na vitrine</span>
+        </label>
+
+        <div className="space-y-1">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={oculto}
+              onCheckedChange={(v) => setOculto(v === true)}
+              aria-describedby="produto-oculto-ajuda"
+            />
+            <span className="text-foreground">Ocultar da vitrine</span>
+          </label>
+          <p
+            id="produto-oculto-ajuda"
+            className="text-xs text-muted-foreground"
+          >
+            Produto oculto nunca aparece na vitrine. Diferente de esgotado: um
+            item disponível mas esgotado ainda aparece, marcado como
+            indisponível.
+          </p>
+        </div>
+      </div>
 
       <Button type="submit" className="w-full" disabled={enviando}>
         {enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
