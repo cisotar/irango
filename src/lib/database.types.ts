@@ -692,6 +692,7 @@ export type Database = {
           id: string
           loja_id: string
           nome: string
+          oculto: boolean
           ordem: number
           preco: number
         }
@@ -705,6 +706,7 @@ export type Database = {
           id?: string
           loja_id: string
           nome: string
+          oculto?: boolean
           ordem?: number
           preco: number
         }
@@ -718,6 +720,7 @@ export type Database = {
           id?: string
           loja_id?: string
           nome?: string
+          oculto?: boolean
           ordem?: number
           preco?: number
         }

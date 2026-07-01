@@ -161,6 +161,7 @@ function produtoRow(over: Partial<Tables<"produtos">> = {}): Tables<"produtos"> 
     descricao: null,
     preco: 25.0,
     disponivel: true,
+    oculto: false,
     ordem: 0,
     foto_url: null,
     criado_em: "2026-01-01T00:00:00.000Z",
