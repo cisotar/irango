@@ -164,6 +164,7 @@ export default async function VitrinePage({ params }: PageProps) {
       preco: p.preco,
       foto_url: p.foto_url,
       categoria_id: p.categoria_id,
+      disponivel: p.disponivel,
     })),
   }));
 

@@ -4,7 +4,7 @@ import type { Categoria } from "./categorias";
 
 /**
  * Queries reusáveis de `produtos` para vitrine e painel. RLS já isola (seguranca.md §2):
- *  - produtos_leitura_publica: disponivel=true AND loja_esta_ativa(loja_id);
+ *  - produtos_leitura_publica: oculto=false AND loja_esta_ativa(loja_id);
  *  - produtos_leitura_propria: dono vê os próprios (incl. indisponíveis).
  * Funções recebem o `client` por parâmetro (role escolhida pelo caller).
  * Propagam `error` (§14); `[]` = sem linha, nunca mascara erro.
@@ -42,10 +42,13 @@ export type GrupoCatalogo = {
 };
 
 /**
- * Catálogo público da vitrine: produtos disponíveis de loja ativa, agrupados por
- * categoria (ordem da categoria) e ordenados por `ordem`. Produtos sem categoria
- * caem no grupo "Outros", que fica POR ÚLTIMO. `categorias` é a lista já buscada
- * (buscarCategorias) usada para ordenar/nomear os grupos.
+ * Catálogo público da vitrine: produtos NÃO-ocultos de loja ativa (`oculto=false`),
+ * agrupados por categoria (ordem da categoria) e ordenados por `ordem`. Produtos
+ * indisponíveis (`disponivel=false`) NÃO-ocultos ENTRAM no catálogo (renderizam
+ * como "esgotado" — RN-3, RN-4); o campo `disponivel` vem no objeto via `select("*")`.
+ * O filtro `.eq("oculto", false)` é defesa em profundidade sobre a RLS 083 (§9.4),
+ * não a substitui. Produtos sem categoria caem no grupo "Outros", que fica POR ÚLTIMO.
+ * `categorias` é a lista já buscada (buscarCategorias) usada para ordenar/nomear os grupos.
  */
 export async function buscarCatalogoPublico(
   client: Client,
@@ -56,7 +59,7 @@ export async function buscarCatalogoPublico(
     .from("produtos")
     .select("*")
     .eq("loja_id", lojaId)
-    .eq("disponivel", true)
+    .eq("oculto", false)
     .order("ordem", { ascending: true });
   if (error) throw error;
   const produtos = (data ?? []) as Produto[];

@@ -21,6 +21,8 @@ export type ProdutoCatalogo = {
   foto_url: string | null;
   /** Categoria de produto — usada para resolver os opcionais (issue 087). */
   categoria_id: string | null;
+  /** false → renderiza "esgotado" no card (RN-3, RN-4); produto oculto nem chega aqui. */
+  disponivel: boolean;
 };
 
 /** Uma categoria (ou "Outros") com seus produtos disponíveis. */
@@ -125,6 +127,7 @@ export function SecaoCatalogo({
                 descricao={produto.descricao}
                 preco={produto.preco}
                 fotoUrl={produto.foto_url}
+                disponivel={produto.disponivel}
                 // Em vez de adicionar direto, abre o modal de detalhe do produto.
                 onAdicionar={() => abrirModal(produto)}
               />

@@ -16,11 +16,14 @@ import {
  * para que o RED caia na ASSERÇÃO e não num erro de type-check que mascara tudo.
  * A implementação real é da fase GREEN.
  *
- * Contrato que a GREEN precisa satisfazer:
- *  - buscarCatalogoPublico: fonte TABELA `produtos`, filtra `loja_id` + `disponivel = true`
- *    (defesa em profundidade — a RLS produtos_leitura_publica já filtra, mas o filtro
- *    explícito documenta intenção), ordena por `ordem`, e AGRUPA por categoria com
- *    produtos sem categoria caindo num grupo "Outros" no FIM (critério de aceite).
+ * Contrato que a GREEN precisa satisfazer (ATUALIZADO na issue 086):
+ *  - buscarCatalogoPublico: fonte TABELA `produtos`, filtra `loja_id` + `oculto = false`
+ *    (defesa em profundidade sobre a RLS produtos_leitura_publica da 083 — o filtro
+ *    explícito é a 2ª camada; NÃO substitui a RLS). NÃO filtra mais `disponivel = true`:
+ *    produto não-oculto indisponível (esgotado) PASSA a aparecer na vitrine (RN-3/RN-4).
+ *    Ordena por `ordem`, e AGRUPA por categoria com produtos sem categoria caindo num
+ *    grupo "Outros" no FIM (critério de aceite). O `select("*")` já traz `disponivel`
+ *    e `oculto` — a vitrine usa `disponivel` para renderizar o estado "esgotado".
  *  - buscarProdutosDoLojista: fonte TABELA `produtos`, filtra `loja_id`, traz categoria
  *    ANINHADA (select com join `categorias(...)`), inclui indisponíveis (sem filtro
  *    `disponivel`), ordena por `ordem`.
@@ -75,15 +78,25 @@ function makeClient(terminal: Terminal) {
 
 // ───────────────────────── buscarCatalogoPublico
 describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
-  it("consulta a TABELA produtos filtrando por loja_id e disponivel=true, ordenado por ordem", async () => {
+  it("consulta a TABELA produtos filtrando por loja_id e oculto=false, ordenado por ordem (086)", async () => {
     const { client, calls } = makeClient({ data: [], error: null });
 
     await buscarCatalogoPublico(client, "loja-1");
 
     expect(calls.from).toHaveBeenCalledWith("produtos");
     expect(calls.eq).toHaveBeenCalledWith("loja_id", "loja-1");
-    expect(calls.eq).toHaveBeenCalledWith("disponivel", true);
+    // 086: defesa em profundidade — a função aplica `oculto = false` por si (2ª camada).
+    expect(calls.eq).toHaveBeenCalledWith("oculto", false);
     expect(calls.order).toHaveBeenCalledWith("ordem", { ascending: true });
+  });
+
+  it("NÃO filtra mais por disponivel=true — esgotado não-oculto entra no catálogo (086 / RN-3, RN-4)", async () => {
+    const { client, calls } = makeClient({ data: [], error: null });
+
+    await buscarCatalogoPublico(client, "loja-1");
+
+    // A vitrine mostra "esgotado"; filtrar disponivel esconderia o produto (regressão).
+    expect(calls.eq).not.toHaveBeenCalledWith("disponivel", true);
   });
 
   it("agrupa produtos por categoria e mantém a ordem das categorias", async () => {
@@ -127,6 +140,30 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
   it("PROPAGA o error do PostgREST (não mascara como agrupamento vazio)", async () => {
     const { client } = makeClient({ data: null, error: { message: "db down" } });
     await expect(buscarCatalogoPublico(client, "loja-1")).rejects.toBeTruthy();
+  });
+
+  it("preserva `disponivel` por item ao agrupar catálogo misto (086 — anti-regressão de esgotado)", async () => {
+    // Mesmo grupo (Bebidas) com produto disponível e produto esgotado juntos.
+    // O agrupamento por categoria não pode "achatar" ou perder o campo
+    // `disponivel` de cada item — é o dado que a vitrine usa para renderizar
+    // o ribbon "Esgotado" por CARD, não por grupo.
+    const produtos = [
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", preco: 5, disponivel: true, ordem: 0 },
+      { id: "p2", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Suco Esgotado", preco: 7, disponivel: false, ordem: 1 },
+      { id: "p3", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Água", preco: 3, disponivel: true, ordem: 2 },
+    ];
+    const categorias = [
+      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z" },
+    ];
+    const { client } = makeClient({ data: produtos, error: null });
+
+    const grupos = await buscarCatalogoPublico(client, "loja-1", categorias);
+
+    const bebidas = grupos.find((g) => (g.categoria?.id ?? g.id) === "cat-bebidas")!;
+    // Todos os 3 permanecem no MESMO grupo (esgotado não é removido nem isolado).
+    expect(bebidas.produtos.map((p) => p.id)).toEqual(["p1", "p2", "p3"]);
+    // O campo `disponivel` de CADA item é preservado individualmente.
+    expect(bebidas.produtos.map((p) => p.disponivel)).toEqual([true, false, true]);
   });
 });
 

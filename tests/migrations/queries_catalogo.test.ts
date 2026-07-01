@@ -8,7 +8,7 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  * PostgREST). Roda o SQL equivalente que cada função emite, sob a role correta
  * (asAnon/asUser/asService), provando o CONTRATO DE SEGURANÇA que a fonte de cada
  * função PRECISA respeitar — as policies de catálogo de seguranca.md §2:
- *   - produtos_leitura_publica: disponivel=true AND loja_esta_ativa(loja_id)
+ *   - produtos_leitura_publica: oculto=false AND loja_esta_ativa(loja_id)
  *   - produtos_leitura_propria: dono vê os próprios (incl. indisponíveis)
  *   - categorias_leitura_publica: loja_esta_ativa(loja_id)
  *   - categorias_escrita/leitura própria do dono
@@ -33,8 +33,9 @@ type Cenario = {
   lojaB: string; // dono B, ATIVA
   catA: string; // categoria da loja A
   catInativa: string; // categoria da loja inativa
-  prodADisp: string; // produto da loja A, disponível
-  prodAIndisp: string; // produto da loja A, INDISPONÍVEL
+  prodADisp: string; // produto da loja A, disponível, não-oculto
+  prodAIndisp: string; // produto da loja A, INDISPONÍVEL, não-oculto (esgotado — aparece)
+  prodAOculto: string; // produto da loja A, OCULTO (disponível), NUNCA aparece na vitrine
   prodInativa: string; // produto disponível mas de loja INATIVA
   prodB: string; // produto disponível da loja B (público — visível a qualquer um)
   prodBIndisp: string; // produto INDISPONÍVEL da loja B (só dono B vê)
@@ -100,6 +101,15 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
         [lojaA, catA],
       )
     ).rows[0].id;
+    // Produto OCULTO (disponível) de loja ativa: deve sumir da vitrine mesmo
+    // disponível — visibilidade (oculto) é ortogonal a disponibilidade (086 / RN).
+    const prodAOculto = (
+      await db.query<{ id: string }>(
+        `insert into public.produtos (loja_id, categoria_id, nome, preco, disponivel, oculto, ordem)
+         values ($1,$2,'Item Oculto',6.00,true,true,2) returning id`,
+        [lojaA, catA],
+      )
+    ).rows[0].id;
     const prodInativa = (
       await db.query<{ id: string }>(
         `insert into public.produtos (loja_id, nome, preco, disponivel, ordem)
@@ -130,6 +140,7 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
       catInativa,
       prodADisp,
       prodAIndisp,
+      prodAOculto,
       prodInativa,
       prodB,
       prodBIndisp,
@@ -157,14 +168,34 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
   });
 
   // ───────────────── buscarCatalogoPublico → produtos, role anon
-  it("[1] anon lê produto DISPONÍVEL de loja ATIVA (filtro loja_id + disponivel)", async () => {
+  // 086: o SELECT anon espelha o filtro que a função EMITE — `oculto = false`,
+  // NÃO mais `disponivel = true`. Assim a camada 1 prova o comportamento de dados
+  // do novo contrato (esgotado não-oculto aparece; oculto some).
+  it("[1] anon lê produtos NÃO-OCULTOS de loja ATIVA incl. esgotado (filtro loja_id + oculto=false) — 086", async () => {
     const r = await t.asAnon((db) =>
-      db.query<{ id: string }>(
-        `select * from public.produtos where loja_id = $1 and disponivel = true order by ordem`,
+      db.query<{ id: string; disponivel: boolean }>(
+        `select * from public.produtos where loja_id = $1 and oculto = false order by ordem`,
         [c.lojaA],
       ),
     );
-    expect(r.rows.map((x) => x.id)).toEqual([c.prodADisp]);
+    // Disponível E esgotado (não-ocultos) entram; o oculto NÃO.
+    expect(r.rows.map((x) => x.id)).toEqual([c.prodADisp, c.prodAIndisp]);
+    // O objeto carrega `disponivel` para a vitrine renderizar "esgotado".
+    const esgotado = r.rows.find((x) => x.id === c.prodAIndisp)!;
+    expect(esgotado.disponivel).toBe(false);
+  });
+
+  it("[1b] o filtro oculto=false BARRA o produto oculto por si (anti-falso-verde via asService)", async () => {
+    // Prova que a NEGAÇÃO é por filtro/policy, não por dado ausente: o produto
+    // oculto EXISTE (asService), mas o SELECT do contrato não o retorna.
+    const r = await t.asAnon((db) =>
+      db.query<{ id: string }>(
+        `select * from public.produtos where loja_id = $1 and oculto = false order by ordem`,
+        [c.lojaA],
+      ),
+    );
+    expect(r.rows.map((x) => x.id)).not.toContain(c.prodAOculto);
+    expect(await existeProdutoViaService(t, c.prodAOculto)).toBe(true);
   });
 
   it("[2] anon LÊ produto INDISPONÍVEL não-oculto de loja ativa → 1 linha (vitrine mostra 'esgotado')", async () => {
@@ -186,16 +217,17 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     expect(await existeProdutoViaService(t, c.prodInativa)).toBe(true);
   });
 
-  it("[4] anon NÃO vê produto de OUTRA loja ao consultar a loja A", async () => {
+  it("[4] anon NÃO vê produto de OUTRA loja nem o OCULTO ao consultar a loja A (086)", async () => {
     const r = await t.asAnon((db) =>
       db.query<{ id: string }>(
-        `select * from public.produtos where loja_id = $1 and disponivel = true`,
+        `select * from public.produtos where loja_id = $1 and oculto = false`,
         [c.lojaA],
       ),
     );
     const ids = r.rows.map((x) => x.id);
     expect(ids).not.toContain(c.prodB);
     expect(ids).not.toContain(c.prodInativa);
+    expect(ids).not.toContain(c.prodAOculto);
   });
 
   // ───────────────── buscarCategorias público → categorias, role anon
