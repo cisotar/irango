@@ -3,7 +3,14 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Pencil, Plus, Trash2, Loader2, SlidersHorizontal } from "lucide-react";
+import {
+  Pencil,
+  Plus,
+  Trash2,
+  Loader2,
+  SlidersHorizontal,
+  EyeOff,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -32,6 +39,7 @@ import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
 import {
   removerProduto as removerProdutoLojista,
   alternarDisponibilidade as alternarDisponibilidadeLojista,
+  alternarOculto as alternarOcultoLojista,
   criarProduto as criarProdutoLojista,
   atualizarProduto as atualizarProdutoLojista,
   criarCategoria as criarCategoriaLojista,
@@ -68,6 +76,7 @@ export type ProdutosClientProps = {
   acoes?: {
     removerProduto?: typeof removerProdutoLojista;
     alternarDisponibilidade?: typeof alternarDisponibilidadeLojista;
+    alternarOculto?: typeof alternarOcultoLojista;
     criarProduto?: typeof criarProdutoLojista;
     atualizarProduto?: typeof atualizarProdutoLojista;
     enviarFotoProduto?: EnviarFotoProduto;
@@ -111,6 +120,27 @@ function agruparPorCategoria(
   return naoVazios;
 }
 
+/**
+ * Badge de status efetivo na vitrine, derivado dos dois eixos com precedência
+ * Oculto > Esgotado > Disponível (RN-6 / decisão de design 089). Não depende só
+ * de cor (WCAG 1.4.1): "Oculto" carrega ícone `EyeOff` além do texto.
+ */
+function badgeStatus(p: Produto) {
+  if (p.oculto) {
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        <EyeOff className="size-3" />
+        Oculto
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="secondary">
+      {p.disponivel ? "Disponível" : "Esgotado"}
+    </Badge>
+  );
+}
+
 export function ProdutosClient({
   lojaSlug,
   lojaId,
@@ -126,6 +156,7 @@ export function ProdutosClient({
   const removerProduto = acoes?.removerProduto ?? removerProdutoLojista;
   const alternarDisponibilidade =
     acoes?.alternarDisponibilidade ?? alternarDisponibilidadeLojista;
+  const alternarOculto = acoes?.alternarOculto ?? alternarOcultoLojista;
 
   // null => criar; Produto => editar. `formAberto` controla a abertura do
   // Sheet (mobile) ou Dialog (desktop) — uma árvore por vez, sem duplicar
@@ -142,7 +173,16 @@ export function ProdutosClient({
   const [aRemover, setARemover] = useState<Produto | null>(null);
   const [categoriasAbertas, setCategoriasAbertas] = useState(false);
   const [removendo, startRemocao] = useTransition();
-  const [alternando, startAlternar] = useTransition();
+  const [alternandoDisp, startAlternarDisp] = useTransition();
+  const [alternandoOculto, startAlternarOculto] = useTransition();
+  // Id do produto em transição em cada eixo — evita travar a lista inteira
+  // ao togglar um único produto (cada linha desabilita só o próprio controle).
+  const [idAlternandoDisp, setIdAlternandoDisp] = useState<string | null>(
+    null,
+  );
+  const [idAlternandoOculto, setIdAlternandoOculto] = useState<string | null>(
+    null,
+  );
 
   const grupos = useMemo(
     () => agruparPorCategoria(produtos, categorias),
@@ -180,11 +220,28 @@ export function ProdutosClient({
     });
   }
 
-  function alternar(p: Produto) {
-    startAlternar(async () => {
+  // Eixo DISPONIBILIDADE (`disponivel`) — lógica inalterada da action existente.
+  function alternarDispon(p: Produto) {
+    setIdAlternandoDisp(p.id);
+    startAlternarDisp(async () => {
       const resultado = await alternarDisponibilidade(p.id, !p.disponivel);
       if (!resultado.ok) {
         toast.error(resultado.erro);
+        setIdAlternandoDisp(null);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  // Eixo VISIBILIDADE (`oculto`) — NÃO toca em `disponivel` (RN-6).
+  function alternarVisibilidade(p: Produto) {
+    setIdAlternandoOculto(p.id);
+    startAlternarOculto(async () => {
+      const resultado = await alternarOculto(p.id, !p.oculto);
+      if (!resultado.ok) {
+        toast.error(resultado.erro);
+        setIdAlternandoOculto(null);
         return;
       }
       router.refresh();
@@ -267,7 +324,7 @@ export function ProdutosClient({
                 {grupo.produtos.map((p) => (
                   <div
                     key={p.id}
-                    className="flex items-center gap-3 px-4 py-3"
+                    className="flex min-h-11 items-center gap-3 px-4 py-3"
                   >
                     <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
                     <div className="min-w-0 flex-1">
@@ -275,11 +332,7 @@ export function ProdutosClient({
                         <span className="truncate font-medium text-foreground">
                           {p.nome}
                         </span>
-                        <Badge
-                          variant={p.disponivel ? "secondary" : "outline"}
-                        >
-                          {p.disponivel ? "Disponível" : "Indisponível"}
-                        </Badge>
+                        {badgeStatus(p)}
                       </div>
                       <span className="text-sm text-muted-foreground">
                         {formatarMoeda(p.preco)}
@@ -311,10 +364,30 @@ export function ProdutosClient({
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={alternando}
-                      onClick={() => alternar(p)}
+                      className="min-h-11"
+                      disabled={alternandoOculto && idAlternandoOculto === p.id}
+                      aria-label={
+                        p.oculto
+                          ? `Exibir ${p.nome} na vitrine`
+                          : `Ocultar ${p.nome} da vitrine`
+                      }
+                      onClick={() => alternarVisibilidade(p)}
                     >
-                      {p.disponivel ? "Ocultar" : "Exibir"}
+                      {p.oculto ? "Exibir" : "Ocultar"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="min-h-11"
+                      disabled={alternandoDisp && idAlternandoDisp === p.id}
+                      aria-label={
+                        p.disponivel
+                          ? `Marcar ${p.nome} como esgotado`
+                          : `Disponibilizar ${p.nome}`
+                      }
+                      onClick={() => alternarDispon(p)}
+                    >
+                      {p.disponivel ? "Marcar esgotado" : "Disponibilizar"}
                     </Button>
                     <Button
                       variant="ghost"
