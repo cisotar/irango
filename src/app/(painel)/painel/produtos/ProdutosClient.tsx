@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -196,10 +196,12 @@ export function ProdutosClient({
       <div className="space-y-6">
         {grupos.map((grupo) => (
           <section key={grupo.id ?? "sem-categoria"}>
-            <h2 className="mb-2 text-sm font-medium text-muted-foreground">
-              {grupo.nome}
-            </h2>
             <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="font-heading text-lg font-semibold text-foreground">
+                  {grupo.nome}
+                </CardTitle>
+              </CardHeader>
               <CardContent className="divide-y divide-foreground/10 p-0">
                 {grupo.produtos.map((p) => (
                   <div

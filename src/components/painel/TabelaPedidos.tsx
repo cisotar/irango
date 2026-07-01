@@ -110,8 +110,8 @@ export function TabelaPedidos({ pedidos }: TabelaPedidosProps) {
 
   return (
     <>
-      {/* Desktop: tabela densa */}
-      <div className="hidden overflow-hidden rounded-lg border md:block">
+      {/* Desktop: tabela densa (já dentro de um Card — sem borda própria) */}
+      <div className="hidden overflow-hidden rounded-lg md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50 text-left text-muted-foreground">

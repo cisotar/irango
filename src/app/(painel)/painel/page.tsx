@@ -10,7 +10,7 @@ import {
   type PedidoComItens,
 } from "@/lib/supabase/queries/pedidos";
 import { TabelaPedidos, type PedidoLinha } from "@/components/painel/TabelaPedidos";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
@@ -59,19 +59,20 @@ export default async function DashboardPage(): Promise<ReactElement> {
         />
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-heading text-base font-medium text-foreground">
-          Pedidos recentes
-        </h2>
-        <Link
-          href="/painel/pedidos"
-          className="text-sm font-medium text-primary hover:underline"
-        >
-          Ver todos
-        </Link>
-      </div>
-
-      <TabelaPedidos pedidos={recentes} />
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+          <CardTitle>Pedidos recentes</CardTitle>
+          <Link
+            href="/painel/pedidos"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Ver todos
+          </Link>
+        </CardHeader>
+        <CardContent>
+          <TabelaPedidos pedidos={recentes} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
