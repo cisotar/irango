@@ -3,12 +3,13 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Pencil, Plus, Trash2, Loader2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Loader2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -37,12 +38,15 @@ import {
   atualizarCategoria as atualizarCategoriaLojista,
   removerCategoria as removerCategoriaLojista,
 } from "@/lib/actions/produto";
+import { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type {
   Produto,
   OpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
+
+type CategoriaOpcional = { id: string; nome: string };
 
 export type ProdutosClientProps = {
   lojaSlug: string;
@@ -51,9 +55,12 @@ export type ProdutosClientProps = {
   categorias: Categoria[];
   /**
    * Mapa `categoria_id → grupos de opcionais` carregado no server (issue 105).
-   * Consumido pela UI de thumbnail/opcionais na issue 107.
+   * Consumido pela UI de thumbnail/opcionais na issue 107 e como seleção
+   * inicial do seletor de associação no título da categoria.
    */
   opcionaisPorCategoria: OpcionaisPorCategoria;
+  /** Todas as categorias de opcional da loja, para o seletor por categoria. */
+  categoriasOpcional: CategoriaOpcional[];
   /**
    * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults =
    * comportamento atual). A via admin passa as variantes escopadas por `lojaId`.
@@ -111,6 +118,7 @@ export function ProdutosClient({
   categorias,
   // Encanada no server (issue 105); consumida pela UI na issue 107.
   opcionaisPorCategoria,
+  categoriasOpcional,
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
@@ -125,6 +133,10 @@ export function ProdutosClient({
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Produto | null>(null);
   const ehDesktop = useMediaQuery("(min-width: 768px)");
+
+  // Categoria de produto com o seletor de opcionais aberto (null => fechado).
+  const [categoriaOpcionaisAberta, setCategoriaOpcionaisAberta] =
+    useState<GrupoProdutos | null>(null);
 
   // Produto pendente de remoção (controla o AlertDialog).
   const [aRemover, setARemover] = useState<Produto | null>(null);
@@ -236,10 +248,20 @@ export function ProdutosClient({
         {grupos.map((grupo) => (
           <section key={grupo.id ?? "sem-categoria"}>
             <Card>
-              <CardHeader className="border-b">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 border-b">
                 <CardTitle className="font-heading text-lg font-semibold text-foreground">
                   {grupo.nome}
                 </CardTitle>
+                {grupo.id != null && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCategoriaOpcionaisAberta(grupo)}
+                  >
+                    <SlidersHorizontal className="size-4" />
+                    Opcionais
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="divide-y divide-foreground/10 p-0">
                 {grupo.produtos.map((p) => (
@@ -366,6 +388,45 @@ export function ProdutosClient({
         </Sheet>
       )}
 
+      {/* Seletor de opcionais da categoria */}
+      <Sheet
+        open={categoriaOpcionaisAberta !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) setCategoriaOpcionaisAberta(null);
+        }}
+      >
+        <SheetContent className="overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Opcionais de {categoriaOpcionaisAberta?.nome}</SheetTitle>
+            <SheetDescription>
+              Escolha quais categorias de opcional aparecem para os produtos
+              desta categoria.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="px-4 pb-4">
+            <Separator className="mb-4" />
+            {categoriaOpcionaisAberta && (
+              <SeletorOpcionaisCategoria
+                key={categoriaOpcionaisAberta.id}
+                categoriaId={categoriaOpcionaisAberta.id as string}
+                categoriasOpcional={categoriasOpcional}
+                selecionadosIniciais={
+                  new Set(
+                    (opcionaisPorCategoria[categoriaOpcionaisAberta.id ?? ""] ?? []).map(
+                      (g) => g.categoriaOpcionalId,
+                    ),
+                  )
+                }
+                onSalvo={() => {
+                  setCategoriaOpcionaisAberta(null);
+                  router.refresh();
+                }}
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {/* Confirmação de remoção */}
       <AlertDialog.Root
         open={aRemover !== null}
@@ -403,5 +464,85 @@ export function ProdutosClient({
         </AlertDialog.Portal>
       </AlertDialog.Root>
     </main>
+  );
+}
+
+/**
+ * Checkboxes de categorias de opcional aplicáveis a UMA categoria de produto.
+ * Grava via `salvarAssociacaoOpcionais` (issue 089) — mesma action da tela
+ * /painel/produtos/opcionais, sem lógica nova.
+ */
+function SeletorOpcionaisCategoria({
+  categoriaId,
+  categoriasOpcional,
+  selecionadosIniciais,
+  onSalvo,
+}: {
+  categoriaId: string;
+  categoriasOpcional: CategoriaOpcional[];
+  selecionadosIniciais: Set<string>;
+  onSalvo: () => void;
+}) {
+  const [selecionados, setSelecionados] =
+    useState<Set<string>>(selecionadosIniciais);
+  const [salvando, startSalvar] = useTransition();
+
+  function alternar(catOpcId: string, marcado: boolean) {
+    setSelecionados((atual) => {
+      const proximo = new Set(atual);
+      if (marcado) {
+        proximo.add(catOpcId);
+      } else {
+        proximo.delete(catOpcId);
+      }
+      return proximo;
+    });
+  }
+
+  function salvar() {
+    startSalvar(async () => {
+      const r = await salvarAssociacaoOpcionais({
+        categoria_id: categoriaId,
+        categoria_opcional_id: Array.from(selecionados),
+      });
+      if (!r.ok) {
+        toast.error(r.erro);
+        return;
+      }
+      toast.success("Opcionais atualizados!");
+      onSalvo();
+    });
+  }
+
+  if (categoriasOpcional.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Crie categorias de opcional em &ldquo;Opcionais&rdquo; para poder
+        associá-las.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {categoriasOpcional.map((catOpc) => (
+          <label
+            key={catOpc.id}
+            className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
+          >
+            <Checkbox
+              checked={selecionados.has(catOpc.id)}
+              onCheckedChange={(v) => alternar(catOpc.id, v === true)}
+            />
+            <span>{catOpc.nome}</span>
+          </label>
+        ))}
+      </div>
+      <Button className="w-full" disabled={salvando} onClick={salvar}>
+        {salvando && <Loader2 className="mr-2 size-4 animate-spin" />}
+        Salvar
+      </Button>
+    </div>
   );
 }

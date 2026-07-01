@@ -57,9 +57,11 @@ export function CardapioAdminClient({
       lojaId={lojaId}
       produtos={produtos}
       categorias={categorias}
-      // O cardápio admin não exibe opcionais no rodapé (fora do escopo da
-      // feature): mapa vazio → o rodapé não monta (grupos sempre vazios).
+      // O cardápio admin não exibe opcionais no rodapé nem gerencia a
+      // biblioteca de opcionais (fora do escopo da feature): mapa/lista vazios
+      // → o rodapé não monta e o seletor de categoria não aparece com itens.
       opcionaisPorCategoria={{}}
+      categoriasOpcional={[]}
       acoes={{
         criarCategoria: (payload) => criarCategoriaAdmin(lojaId, payload),
         atualizarCategoria: (id, payload) =>
