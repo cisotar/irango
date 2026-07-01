@@ -24,6 +24,10 @@ export const schemaProduto = z.object({
   // espelhando o tipo `uuid` do Postgres, que não impõe versão.
   categoria_id: z.guid().nullable().optional(),
   disponivel: z.boolean(),
+  // Visibilidade na vitrine (issue 085 / migration 083). Obrigatório e boolean,
+  // espelhando `disponivel`: o form sempre envia o valor explícito; o DEFAULT
+  // false vive no banco (RN-7). Separado de `disponivel` (RN-6-b).
+  oculto: z.boolean(),
   ordem: z.number().int().min(0),
   // foto_url (issue 072): camada autoritativa anti-injeção de URL — renderizada
   // como <Image src> na vitrine pública. `preprocess` normaliza "" (form sem

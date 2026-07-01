@@ -120,6 +120,7 @@ import {
   atualizarProduto,
   removerProduto,
   alternarDisponibilidade,
+  alternarOculto,
   criarCategoria,
   atualizarCategoria,
   removerCategoria,
@@ -136,6 +137,9 @@ function payloadProduto(over: Record<string, unknown> = {}) {
     preco: 25.9,
     categoria_id: null,
     disponivel: true,
+    // Issue 085: schemaProduto passa a exigir `oculto` (boolean). Incluído na
+    // base para manter os payloads dos testes existentes válidos.
+    oculto: false,
     ordem: 0,
     ...over,
   };
@@ -255,6 +259,21 @@ describe("criarProduto (Server Action — gestão do lojista)", () => {
     expect(JSON.stringify(r)).not.toContain("senha");
     spy.mockRestore();
   });
+
+  // oculto (issue 085): flui via `...parsed.data` no insert (nenhum código novo
+  // na action; basta o schema aceitar o campo).
+  it("oculto=true persiste no insert via parsed.data", async () => {
+    const r = await criarProduto(payloadProduto({ oculto: true }));
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.insert?.oculto).toBe(true);
+  });
+
+  it("ATAQUE: payload sem oculto é rejeitado SEM tocar no banco", async () => {
+    const { oculto: _o, ...semOculto } = payloadProduto();
+    const r = await criarProduto(semOculto);
+    expect(r.ok).toBe(false);
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
 });
 
 describe("atualizarProduto (Server Action — gestão do lojista)", () => {
@@ -297,6 +316,13 @@ describe("atualizarProduto (Server Action — gestão do lojista)", () => {
     expect(r.ok).toBe(false);
     expect(opEscrita("produtos")).toBeUndefined();
   });
+
+  // oculto (issue 085): persiste via `...parsed.data` no update.
+  it("oculto=true persiste no update via parsed.data", async () => {
+    const r = await atualizarProduto("produto-1", payloadProduto({ oculto: true }));
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update?.oculto).toBe(true);
+  });
 });
 
 describe("alternarDisponibilidade (toggle público de visibilidade)", () => {
@@ -306,6 +332,68 @@ describe("alternarDisponibilidade (toggle público de visibilidade)", () => {
     expect(opEscrita("produtos")?.update?.disponivel).toBe(false);
     expect(opEscrita("produtos")?.filtros).toContainEqual(["id", "produto-1"]);
     expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  // Regressão (RN-6-b, issue 085): disponibilidade e visibilidade são flags
+  // SEPARADAS. alternarDisponibilidade não pode escrever `oculto`.
+  it("alternarDisponibilidade NÃO escreve oculto", async () => {
+    await alternarDisponibilidade("produto-1", false);
+    expect(opEscrita("produtos")?.update).not.toHaveProperty("oculto");
+  });
+});
+
+describe("alternarOculto (toggle de visibilidade na vitrine — issue 085)", () => {
+  // Contrato espelhado de alternarDisponibilidade: client AUTENTICADO, escopo
+  // por id, sem service_role, erro genérico. Escreve APENAS `oculto` (RN-6-b).
+  it("atualiza apenas o flag oculto escopado por id, via client autenticado", async () => {
+    const r = await alternarOculto("produto-1", true);
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update?.oculto).toBe(true);
+    // Não mexe em disponivel (flag independente).
+    expect(opEscrita("produtos")?.update).not.toHaveProperty("disponivel");
+    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", "produto-1"]);
+    expect(createClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("NÃO usa service_role (escrita do lojista passa pela RLS autenticada)", async () => {
+    await alternarOculto("produto-1", true);
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  // Borda: boolean `false` é um valor válido e distinto de "ausente". Um bug
+  // comum é tratar `oculto: false` como falsy e cair num branch de default —
+  // este teste garante que `false` é gravado explicitamente, não perdido.
+  it("oculto=false (reexibir produto) grava false, não é tratado como ausente", async () => {
+    const r = await alternarOculto("produto-1", false);
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update?.oculto).toBe(false);
+  });
+
+  it("erro de banco → genérico, sem vazar e.message", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: { message: "senha postgres XYZ", code: "XX000" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await alternarOculto("produto-1", true);
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toContain("senha");
+    spy.mockRestore();
+  });
+
+  // ATAQUE: um lojista tenta alternar `oculto` de produto de OUTRA loja.
+  // O isolamento cross-loja efetivo é enforced pela RLS produtos_escrita_propria
+  // no Postgres (não observável no unit com mock). Este caso valida o CONTRATO
+  // que HABILITA a RLS: a escrita passa pelo client AUTENTICADO (nunca
+  // service_role, que bypassaria a RLS) e é escopada por `.eq("id", id)`. O
+  // isolamento real (linha alheia não muda) é coberto por teste de integração
+  // RLS no Supabase local, se/quando a suíte de integração de produtos existir.
+  it("ATAQUE: produto de OUTRA loja — escrita passa pelo client autenticado escopada por id (RLS isola no banco)", async () => {
+    const idAlheio = "produto-de-outra-loja";
+    await alternarOculto(idAlheio, true);
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", idAlheio]);
   });
 });
 
