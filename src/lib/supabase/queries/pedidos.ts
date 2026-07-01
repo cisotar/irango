@@ -6,8 +6,14 @@
 //
 // Tratamento de erro (seguranca.md §14): propagam o `error` do PostgREST.
 // `null`/`[]` significam "sem linha" — NUNCA mascaram erro.
+import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
+
+// z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
+// RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda) —
+// mesmo padrão de src/lib/validacoes/pedido.ts.
+const schemaUuid = z.guid();
 
 type Client = SupabaseClient<Database>;
 
@@ -39,6 +45,11 @@ export async function buscarPedidoPorToken(
   pedidoId: string,
   token: string,
 ): Promise<PedidoComItens | null> {
+  // `id`/`token_acesso` são uuid no banco — formato inválido nunca vira query
+  // (evita 22P02 do Postgres; trata como "sem linha", igual token errado).
+  if (!schemaUuid.safeParse(pedidoId).success || !schemaUuid.safeParse(token).success) {
+    return null;
+  }
   const { data, error } = await client
     .from("pedidos")
     .select("*, itens_pedido(*, itens_pedido_opcionais(*))")

@@ -104,10 +104,28 @@ describe("026 queries de pedidos — contrato TS (camada 2, mock)", () => {
     expect(out).toEqual(row);
   });
 
-  it("buscarPedidoPorToken com token errado → null (maybeSingle não encontra a linha)", async () => {
+  it("buscarPedidoPorToken com token errado (uuid válido, mas incorreto) → null (maybeSingle não encontra a linha)", async () => {
     const { client } = makeClient({ data: null, error: null });
+    const out = await buscarPedidoPorToken(
+      client,
+      PEDIDO_ID,
+      "22222222-2222-2222-2222-222222222299",
+    );
+    expect(out).toBeNull();
+  });
+
+  it("buscarPedidoPorToken com token em formato NÃO-uuid → null sem consultar o banco (111)", async () => {
+    const { client, calls } = makeClient({ data: null, error: null });
     const out = await buscarPedidoPorToken(client, PEDIDO_ID, "token-errado");
     expect(out).toBeNull();
+    expect(calls.from).not.toHaveBeenCalled();
+  });
+
+  it("buscarPedidoPorToken com pedidoId em formato NÃO-uuid → null sem consultar o banco (111)", async () => {
+    const { client, calls } = makeClient({ data: null, error: null });
+    const out = await buscarPedidoPorToken(client, "not-a-uuid", TOKEN_OK);
+    expect(out).toBeNull();
+    expect(calls.from).not.toHaveBeenCalled();
   });
 
   it("buscarPedidoPorToken PROPAGA o error do PostgREST (não mascara como null)", async () => {
