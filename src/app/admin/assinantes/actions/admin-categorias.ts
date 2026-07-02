@@ -38,12 +38,12 @@ export async function criarCategoriaAdmin(
 
   // Fora do try: se a prova de admin falha, PROPAGA (fail-closed, D-4) e o
   // service client nunca é criado.
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    const { error } = await svc.from("categorias").insert({
-      // loja_id autoritativo = parâmetro, NUNCA o payload.
-      loja_id: loja.lojaId,
+    // `escopo.inserir` injeta `loja_id` autoritativo (parâmetro) por último —
+    // impossível o payload sobrescrever o escopo.
+    const { error } = await escopo.inserir("categorias", {
       nome: parsed.data.nome,
       ordem: parsed.data.ordem,
     });
@@ -72,17 +72,13 @@ export async function atualizarCategoriaAdmin(
   const parsed = schemaCategoria.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: "Dados inválidos." };
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    const { error, count } = await svc
-      .from("categorias")
-      .update(
-        { nome: parsed.data.nome, ordem: parsed.data.ordem },
-        { count: "exact" },
-      )
-      .eq("loja_id", loja.lojaId)
-      .eq("id", id);
+    const { error, count } = await escopo.atualizar("categorias", id, {
+      nome: parsed.data.nome,
+      ordem: parsed.data.ordem,
+    });
     if (error) return { ok: false, erro: ERRO_GENERICO };
     if (!count) return { ok: false, erro: "Categoria não encontrada." };
 
@@ -106,14 +102,10 @@ export async function removerCategoriaAdmin(
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    const { error, count } = await svc
-      .from("categorias")
-      .delete({ count: "exact" })
-      .eq("loja_id", loja.lojaId)
-      .eq("id", id);
+    const { error, count } = await escopo.remover("categorias", id);
     if (error) return { ok: false, erro: ERRO_GENERICO };
     if (!count) return { ok: false, erro: "Categoria não encontrada." };
 
@@ -137,16 +129,12 @@ export async function reordenarCategoriasAdmin(
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
     for (const item of ordem) {
-      const { error } = await svc
-        .from("categorias")
-        .update({ ordem: item.ordem }, { count: "exact" })
-        // TODA escrita carrega o escopo da loja-alvo.
-        .eq("loja_id", loja.lojaId)
-        .eq("id", item.id);
+      // TODA escrita carrega o escopo da loja-alvo (via wrapper).
+      const { error } = await escopo.atualizar("categorias", item.id, { ordem: item.ordem });
       if (error) return { ok: false, erro: ERRO_GENERICO };
     }
 
