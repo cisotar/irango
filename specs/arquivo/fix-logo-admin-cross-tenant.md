@@ -39,17 +39,17 @@ O SaaS não processa pagamento; esta feature não toca valor monetário. O eixo 
 - `UploadLogoLoja` — passa a aceitar as actions de salvar/remover via props opcionais (default = actions do lojista). Toda a UI (cropper `react-easy-crop`, preview circular, validação client de metadado + magic bytes) é reuso, sem mudança.
 
 **Behaviors:**
-- [ ] Admin recorta e salva a logo da loja-alvo. Garantido em: **Server Action `salvarLogoAdmin`** (`verificarAdminSaaS()` + `validarLojaIdAdmin` + `validarBlobImagem` + path server-side por `lojaId` + `schemaStorageUrl` + UPDATE allowlist `{ logo_url }` via `escopo.atualizarLoja`). A validação client (tipo/tamanho/magic bytes) é só **gate de UX**.
-- [ ] Admin remove a logo da loja-alvo. Garantido em: **Server Action `removerLogoAdmin(lojaId)`** (`verificarAdminSaaS()` + `validarLojaIdAdmin` + UPDATE `{ logo_url: null }` via `escopo.atualizarLoja`).
-- [ ] Admin com `lojaId` inválido/ausente na URL é rejeitado sem efeito. Garantido em: **Server Action** (`validarLojaIdAdmin` antes de qualquer I/O; não eleva a `service_role`).
-- [ ] Não-admin não consegue salvar/remover logo por essas actions. Garantido em: **Server Action** (`verificarAdminSaaS()` fora do try — fail-closed, propaga; `service_role` nunca é criado).
+- [x] Admin recorta e salva a logo da loja-alvo. Garantido em: **Server Action `salvarLogoAdmin`** (`verificarAdminSaaS()` + `validarLojaIdAdmin` + `validarBlobImagem` + path server-side por `lojaId` + `schemaStorageUrl` + UPDATE allowlist `{ logo_url }` via `escopo.atualizarLoja`). A validação client (tipo/tamanho/magic bytes) é só **gate de UX**.
+- [x] Admin remove a logo da loja-alvo. Garantido em: **Server Action `removerLogoAdmin(lojaId)`** (`verificarAdminSaaS()` + `validarLojaIdAdmin` + UPDATE `{ logo_url: null }` via `escopo.atualizarLoja`).
+- [x] Admin com `lojaId` inválido/ausente na URL é rejeitado sem efeito. Garantido em: **Server Action** (`validarLojaIdAdmin` antes de qualquer I/O; não eleva a `service_role`).
+- [x] Não-admin não consegue salvar/remover logo por essas actions. Garantido em: **Server Action** (`verificarAdminSaaS()` fora do try — fail-closed, propaga; `service_role` nunca é criado).
 
 ### Perfil da loja (painel do lojista) — `/painel/configuracoes/perfil`
 **Mundo:** painel do lojista (auth obrigatório)
 **Descrição:** **Sem mudança de comportamento.** O `UploadLogoLoja` continua usando os defaults (`salvarLogoLoja`/`removerLogoLoja` do lojista, sob RLS, loja derivada do auth). A prova de que nada mudou é ter defaults nas props novas.
 
 **Behaviors:**
-- [ ] Lojista salva/remove a própria logo. Garantido em: **Server Action do lojista + RLS** (`buscarLojaDoDono(auth)` → `lojas_update_proprio` `auth.uid() = dono_id`). Inalterado.
+- [x] Lojista salva/remove a própria logo. Garantido em: **Server Action do lojista + RLS** (`buscarLojaDoDono(auth)` → `lojas_update_proprio` `auth.uid() = dono_id`). Inalterado.
 
 ---
 
