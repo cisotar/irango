@@ -77,8 +77,15 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
     inserir<T extends TabelaComLojaId>(tabela: T, dados: Omit<Tabelas[T]["Insert"], "loja_id">) {
       return from(tabela).insert({ ...dados, loja_id: lojaId });
     },
-    /** UPDATE de linha da loja, escopo duplo `loja_id`+`id`, `count:"exact"`. */
-    atualizar<T extends TabelaComLojaId>(tabela: T, id: string, patch: Tabelas[T]["Update"]) {
+    /** UPDATE de linha da loja, escopo duplo `loja_id`+`id`, `count:"exact"`.
+     * `patch` é `Omit<Update,"loja_id"|"id">`: o `.eq` escopa QUAL linha, não O QUE
+     * se grava — então o wrapper barra POR TIPO re-parentear (loja_id) ou re-chavear
+     * (id) a linha por um patch hostil. Simetria com `inserir` (loja_id por último). */
+    atualizar<T extends TabelaComLojaId>(
+      tabela: T,
+      id: string,
+      patch: Omit<Tabelas[T]["Update"], "loja_id" | "id">,
+    ) {
       return from(tabela).update(patch, { count: "exact" }).eq("loja_id", lojaId).eq("id", id);
     },
     /** DELETE de linha da loja, escopo duplo `loja_id`+`id`, `count:"exact"`. */
