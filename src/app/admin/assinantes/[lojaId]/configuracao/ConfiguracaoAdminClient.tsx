@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 
 import { PerfilClient, type PerfilInicial } from "@/app/(painel)/painel/configuracoes/perfil/PerfilClient";
+import type { UploadLogoLojaProps } from "@/components/painel/UploadLogoLoja";
 import { HorariosClient } from "@/app/(painel)/painel/configuracoes/horarios/HorariosClient";
 import { TemaClient, type Tema } from "@/app/(painel)/painel/configuracoes/tema/TemaClient";
 import { EntregasClient } from "@/app/(painel)/painel/configuracoes/entregas/EntregasClient";
@@ -32,6 +33,10 @@ import {
   salvarQrPixAdmin,
   enviarQrPixAdmin,
 } from "@/app/admin/assinantes/actions/admin-pagamento";
+import {
+  salvarLogoAdmin,
+  removerLogoAdmin,
+} from "@/app/admin/assinantes/actions/admin-logo";
 
 /**
  * Wrapper client da aba Configuração do hub admin (issue 101). Reusa os clients
@@ -90,6 +95,25 @@ export function ConfiguracaoAdminClient({
     [lojaId],
   );
 
+  // O `UploadLogoLoja` (via `PerfilClient`) JÁ monta o FormData com o arquivo em
+  // CAMPO_ARQUIVO e chama `onSalvarLogo(fd)`; aqui só fixamos o `loja_id` da URL
+  // (closure) e encaminhamos para a action admin. O client nunca é autoridade do
+  // escopo — quem valida admin + isola a loja-alvo é `salvarLogoAdmin` no servidor.
+  const onSalvarLogo = useCallback<NonNullable<UploadLogoLojaProps["onSalvar"]>>(
+    (formData) => {
+      formData.set("loja_id", lojaId);
+      return salvarLogoAdmin(formData);
+    },
+    [lojaId],
+  );
+
+  // Remoção escopada pelo `lojaId` da URL; a autoridade (verificarAdminSaaS +
+  // escopo por loja) é de `removerLogoAdmin` no servidor.
+  const onRemoverLogo = useCallback<NonNullable<UploadLogoLojaProps["onRemover"]>>(
+    () => removerLogoAdmin(lojaId),
+    [lojaId],
+  );
+
   return (
     <div className="space-y-12">
       <PerfilClient
@@ -99,6 +123,8 @@ export function ConfiguracaoAdminClient({
         logoUrlInicial={logoUrlInicial}
         onSalvar={(payload) => salvarPerfilAdmin(lojaId, payload)}
         onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
+        onSalvarLogo={onSalvarLogo}
+        onRemoverLogo={onRemoverLogo}
       />
 
       <HorariosClient

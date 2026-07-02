@@ -1,48 +1,3 @@
-# [119] `ConfiguracaoAdminClient` injeta as actions admin de logo (fecha o cross-tenant)
-
-**crítica:** SIM (TDD red-first)
-**Mundo:** painel (admin SaaS)
-**Depende de:** 116, 118
-**Spec:** specs/fix-logo-admin-cross-tenant.md
-
-## Objetivo
-Fiar as actions admin `salvarLogoAdmin`/`removerLogoAdmin` no `PerfilClient` via
-`ConfiguracaoAdminClient`, com o `lojaId` da URL fixado por closure. É a fiação
-que fecha o bug: sem ela, o admin usaria o default do lojista e escreveria na
-loja errada (cross-tenant silencioso quando o admin também é dono de loja).
-
-## Escopo
-- [ ] Em `src/app/admin/assinantes/[lojaId]/configuracao/ConfiguracaoAdminClient.tsx`,
-  criar adapters finos (padrão de `enviarQrPix`):
-  - `onSalvarLogo`: monta `FormData` com `loja_id = lojaId` da URL e chama `salvarLogoAdmin(formData)`.
-  - `onRemoverLogo`: `() => removerLogoAdmin(lojaId)`.
-- [ ] Passar ambos ao `<PerfilClient onSalvarLogo={...} onRemoverLogo={...} />`.
-- [ ] `lojaId` sempre da closure/URL — o client nunca é a autoridade do escopo.
-
-## Fora de escopo
-- Não alterar `salvarLogoAdmin`/`removerLogoAdmin` (issue 116) nem a UI da logo.
-- Não tocar o painel do lojista.
-
-## Reuso esperado
-- `salvarLogoAdmin` / `removerLogoAdmin` — `@/app/admin/assinantes/actions/admin-logo` (issue 116).
-- `PerfilClient` com props de logo (issue 118).
-- Padrão de adapter/closure já usado para `enviarQrPix` no mesmo arquivo.
-
-## Segurança
-- Fecha o vetor cross-tenant: um erro aqui (recair no default do lojista) reintroduz
-  a escrita na loja do admin. Por isso a fiação correta é invariante de segurança.
-- `lojaId` fixado por closure a partir da URL — client não decide o tenant.
-- A autoridade final continua no servidor (116): admin é reprovado sem `verificarAdminSaaS()`.
-
-## Critério de aceite
-- [ ] Teste vermelho antes da implementação e depois verde: o adapter chama
-  `salvarLogoAdmin`/`removerLogoAdmin` com o `lojaId` da URL — **nunca** os defaults
-  do lojista (`salvarLogoLoja`/`removerLogoLoja`) (cobre cenários 2 e 3 do spec).
-- [ ] Em `/admin/assinantes/[lojaId]/configuracao`, admin recorta/salva e remove a
-  logo da loja-alvo com sucesso (fim do toast genérico).
-- [ ] Painel do lojista permanece com defaults (regressão coberta por 117/118).
-- [ ] `next build` verde.
-
 ## Plano Técnico
 
 ### Análise do Codebase
@@ -164,57 +119,10 @@ Nenhuma nova. `react` (`useCallback`), `vitest` + `react-dom/server` (já no pro
 ### Ordem de Implementação
 1. **RED (`/tdd`):** criar `ConfiguracaoAdminClient.test.tsx` e confirmar a falha real (props não injetadas / action admin não chamada). **Obrigatório antes do código de produção** — é a fiação que fecha o cross-tenant; um erro silencioso aqui reintroduz a escrita na loja errada.
 2. **GREEN (`/execute`):** adicionar os dois adapters e a passagem ao `PerfilClient`; mínimo para o teste passar.
-3. **Verde total:** `pnpm... npx? -> npm test` (`vitest run`) + `next build` (client component não sofre a restrição de `"use server"`, mas o build valida a árvore de imports admin↔client).
+3. **Verde total:** `npm test` (`vitest run`) + `next build` (client component não sofre a restrição de `"use server"`, mas o build valida a árvore de imports admin↔client).
 4. **`/verify`:** admin salva/remove a logo da loja-alvo em `/admin/assinantes/[lojaId]/configuracao`; painel do lojista segue com defaults.
 
 ### Riscos
 - **Recair no default do lojista (o bug):** mitigado pelo teste RED asserir explicitamente `salvarLogoAdmin`/`removerLogoAdmin` chamados e `salvarLogoLoja`/`removerLogoLoja` **não** chamados.
 - **Nome do campo do arquivo divergir:** mitigado por reusar `CAMPO_ARQUIVO` (mesmo contrato client↔action); o adapter não recria o FormData nem o campo do arquivo.
 - **`server-only` quebrar o teste no import:** mitigado mockando todos os child clients e módulos de action que o `ConfiguracaoAdminClient` importa.
-
-## Evidência RED
-
-Teste: `src/app/admin/assinantes/[lojaId]/configuracao/ConfiguracaoAdminClient.test.tsx` (novo).
-Comando: `npx vitest run "src/app/admin/assinantes/[lojaId]/configuracao/ConfiguracaoAdminClient.test.tsx"`
-
-Falha real capturada ANTES da implementação — a produção não passa `onSalvarLogo`/`onRemoverLogo` ao `PerfilClient`, então as props capturadas no stub são `undefined`. A falha é na ASSERÇÃO (não no import): o mock isolou `server-only` dos child clients e das actions; o componente renderizou e o stub do `PerfilClient` capturou props vazias.
-
-```
- FAIL  .../ConfiguracaoAdminClient.test.tsx > ... > injeta onSalvarLogo/onRemoverLogo no PerfilClient (props definidas)
-AssertionError: expected undefined to be type of 'function'
-Expected: "function"
-Received: "undefined"
- ❯ ...ConfiguracaoAdminClient.test.tsx:153:36
-    152|     renderizar();
-    153|     expect(capturado.onSalvarLogo).toBeTypeOf("function");
-
- Test Files  1 failed (1)
-      Tests  4 failed (4)
-```
-
-Os 4 casos falham pela mesma causa raiz (props não injetadas): (1) props definidas; (2) `onSalvarLogo(fd)` → `salvarLogoAdmin` com `loja_id` da URL, nunca `salvarLogoLoja`; (3) `onRemoverLogo()` → `removerLogoAdmin(lojaId)`, nunca `removerLogoLoja`; (4) o adapter sobrescreve `loja_id` pré-existente no FormData pelo `lojaId` da closure.
-
-## Evidência GREEN
-
-Após implementar os dois adapters (`onSalvarLogo`/`onRemoverLogo`) e passá-los ao
-`PerfilClient` em `ConfiguracaoAdminClient.tsx` — mesmo teste, agora verde:
-
-```
- RUN  v4.1.9 /home/ozzie/github/irango-1
-
- Test Files  1 passed (1)
-      Tests  4 passed (4)
-   Duration  285ms
-```
-
-`npx tsc --noEmit` → exit 0 (sem erros de tipo; adapters tipados via
-`NonNullable<UploadLogoLojaProps["onSalvar"]>` / `["onRemover"]`, zero `any`).
-
-### Contrato para a fase GREEN
-Implementar em `src/app/admin/assinantes/[lojaId]/configuracao/ConfiguracaoAdminClient.tsx` (único arquivo de produção):
-- `import { salvarLogoAdmin, removerLogoAdmin } from "@/app/admin/assinantes/actions/admin-logo";`
-- `onSalvarLogo = useCallback((formData) => { formData.set("loja_id", lojaId); return salvarLogoAdmin(formData); }, [lojaId])`
-- `onRemoverLogo = useCallback(() => removerLogoAdmin(lojaId), [lojaId])`
-- Passar ambos ao `<PerfilClient ... onSalvarLogo={onSalvarLogo} onRemoverLogo={onRemoverLogo} />`.
-
-Casos que precisam ficar verdes: os 4 acima. Não chamar/importar `salvarLogoLoja`/`removerLogoLoja` no caminho admin.

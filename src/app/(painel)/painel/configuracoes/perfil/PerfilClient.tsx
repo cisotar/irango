@@ -18,7 +18,10 @@ import {
   definirPublicacao as definirPublicacaoLojista,
 } from "@/lib/actions/loja";
 import { buscarCep } from "@/lib/utils/buscarCep";
-import { UploadLogoLoja } from "@/components/painel/UploadLogoLoja";
+import {
+  UploadLogoLoja,
+  type UploadLogoLojaProps,
+} from "@/components/painel/UploadLogoLoja";
 
 export type PerfilInicial = {
   nome: string;
@@ -67,6 +70,8 @@ export function PerfilClient({
   logoUrlInicial,
   onSalvar = salvarPerfilLojista,
   onDefinirPublicacao = definirPublicacaoLojista,
+  onSalvarLogo,
+  onRemoverLogo,
 }: {
   inicial: PerfilInicial;
   publicado: boolean;
@@ -76,6 +81,10 @@ export function PerfilClient({
   onSalvar?: typeof salvarPerfilLojista;
   /** Action de publicar/despublicar. Default: action do lojista. */
   onDefinirPublicacao?: typeof definirPublicacaoLojista;
+  /** Action de salvar a logo. Default (ausente): action do lojista via UploadLogoLoja. */
+  onSalvarLogo?: UploadLogoLojaProps["onSalvar"];
+  /** Action de remover a logo. Default (ausente): action do lojista via UploadLogoLoja. */
+  onRemoverLogo?: UploadLogoLojaProps["onRemover"];
 }) {
   const router = useRouter();
 
@@ -271,7 +280,11 @@ export function PerfilClient({
             }}
           >
             <div className="space-y-1">
-              <UploadLogoLoja logoUrlInicial={logoUrlInicial} />
+              <UploadLogoLoja
+                logoUrlInicial={logoUrlInicial}
+                onSalvar={onSalvarLogo}
+                onRemover={onRemoverLogo}
+              />
             </div>
 
             <div className="space-y-1">
