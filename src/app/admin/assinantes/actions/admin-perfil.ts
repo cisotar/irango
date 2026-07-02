@@ -85,22 +85,18 @@ export async function salvarPerfilAdmin(
 
   // Prova de admin ANTES de qualquer efeito (fail-closed, D-4): fora do try para
   // propagar a exceção — sem service client, sem slugExiste, sem UPDATE.
-  const { svc } = await prepararContextoAdmin(validacao.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(validacao.lojaId);
 
   try {
     // Unicidade autoritativa de slug, excluindo a PRÓPRIA loja (3º arg = lojaId).
     const ocupado = await slugExiste(svc, dados.slug, validacao.lojaId);
     if (ocupado) return { ok: false, erro: ERRO_SLUG_OCUPADO };
 
-    // 1º UPDATE: allowlist explícita (RN-7). .eq("id") obrigatório (PostgREST
-    // recusa UPDATE sem WHERE, 21000), escopado pela loja-alvo.
+    // 1º UPDATE: allowlist explícita (RN-7) via wrapper (escopo por id à loja-alvo).
     // montarPatchPerfil devolve só chaves da allowlist (RN-7); o cast estreita do
     // Record genérico para o tipo do row `lojas` (service client é tipado Database).
     const patch = montarPatchPerfil(dados) as TablesUpdate<"lojas">;
-    const { error } = await svc
-      .from("lojas")
-      .update(patch)
-      .eq("id", validacao.lojaId);
+    const { error } = await escopo.atualizarLoja(patch);
     if (error) throw error;
 
     // 2º UPDATE: par de coords derivado no servidor (RN-1/RN-2), best-effort.
@@ -116,10 +112,7 @@ export async function salvarPerfilAdmin(
         ? { latitude: null, longitude: null }
         : { latitude: coords.latitude, longitude: coords.longitude };
 
-    const { error: erroCoords } = await svc
-      .from("lojas")
-      .update(coordsPatch)
-      .eq("id", validacao.lojaId);
+    const { error: erroCoords } = await escopo.atualizarLoja(coordsPatch);
     if (erroCoords) throw erroCoords;
 
     revalidarLojaAdmin(validacao.lojaId);

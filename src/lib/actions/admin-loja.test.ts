@@ -42,7 +42,27 @@ vi.mock("@/lib/auth/admin", () => ({
 }));
 
 // ── createServiceClient: server-only → mock. Registra ordem ao ser chamado. ────
-const clientServico = { marker: "svc-fake" };
+// Builder-espião: captura tabela/op/payload/eqs das escritas feitas pelo wrapper
+// `escopo` (usado só nos testes do wrapper; os demais não tocam `.from`).
+type OpEspia = { tabela: string; tipo: string; payload?: unknown; eqs: { c: string; v: unknown }[] };
+let opsEspia: OpEspia[] = [];
+function builderEspia(tabela: string) {
+  const op: OpEspia = { tabela, tipo: "select", eqs: [] };
+  opsEspia.push(op);
+  const b: Record<string, unknown> = {
+    insert(p: unknown) { op.tipo = "insert"; op.payload = p; return b; },
+    update(p: unknown) { op.tipo = "update"; op.payload = p; return b; },
+    delete() { op.tipo = "delete"; return b; },
+    select() { return b; },
+    maybeSingle() { return b; },
+    eq(c: string, v: unknown) { op.eqs.push({ c, v }); return b; },
+    then(res: (v: { data: null; error: null; count: number }) => unknown) {
+      return Promise.resolve({ data: null, error: null, count: 1 }).then(res);
+    },
+  };
+  return b;
+}
+const clientServico = { marker: "svc-fake", from: (t: string) => builderEspia(t) };
 const createServiceClient = vi.fn(() => {
   ordemChamadas.push("createServiceClient");
   return clientServico;
@@ -102,6 +122,46 @@ describe("prepararContextoAdmin — prova admin antes de elevar (fail-closed D-4
     // Fail-closed: nunca elevou para service_role após a prova falhar.
     expect(createServiceClient).not.toHaveBeenCalled();
     expect(ordemChamadas).not.toContain("createServiceClient");
+  });
+});
+
+// ─────────────── escopo (wrapper camada 1: amarra o tenant por construção) ───
+describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita", () => {
+  const ID_RECURSO = "33333333-3333-3333-3333-333333333333";
+
+  it("inserir injeta loja_id do PARÂMETRO por último — payload hostil não sobrescreve", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.inserir("categorias", { nome: "x", ordem: 0, loja_id: "hostil" } as never);
+    const op = opsEspia.find((o) => o.tipo === "insert")!;
+    expect((op.payload as Record<string, unknown>).loja_id).toBe(LOJA_ID);
+  });
+
+  it("atualizar escopa por loja_id E id", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.atualizar("categorias", ID_RECURSO, { nome: "y" });
+    const op = opsEspia.find((o) => o.tipo === "update")!;
+    expect(op.eqs).toContainEqual({ c: "loja_id", v: LOJA_ID });
+    expect(op.eqs).toContainEqual({ c: "id", v: ID_RECURSO });
+  });
+
+  it("remover escopa por loja_id E id", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.remover("categorias", ID_RECURSO);
+    const op = opsEspia.find((o) => o.tipo === "delete")!;
+    expect(op.eqs).toContainEqual({ c: "loja_id", v: LOJA_ID });
+    expect(op.eqs).toContainEqual({ c: "id", v: ID_RECURSO });
+  });
+
+  it("atualizarLoja escopa a tabela lojas por id", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.atualizarLoja({ nome: "Nova" });
+    const op = opsEspia.find((o) => o.tabela === "lojas")!;
+    expect(op.tipo).toBe("update");
+    expect(op.eqs).toContainEqual({ c: "id", v: LOJA_ID });
   });
 });
 

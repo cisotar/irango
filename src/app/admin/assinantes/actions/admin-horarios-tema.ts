@@ -11,8 +11,8 @@
 //    service_role. Se a prova de admin lança, a exceção PROPAGA — nunca vira
 //    `{ ok:false }` amigável e o service client NUNCA é criado.
 //  - RLS não protege aqui (seguranca.md §2): o UPDATE roda sob service_role
-//    (BYPASSRLS), então o escopo é reafirmado À MÃO por `eq("id", lojaId)` da
-//    loja-alvo — sem o WHERE escopado o PostgREST recusaria o UPDATE.
+//    (BYPASSRLS), então o escopo à loja-alvo vem do wrapper `escopo.atualizarLoja`
+//    (eq("id", lojaId) por construção) — sem o WHERE escopado o PostgREST recusaria.
 //  - Erro interno não vaza (seguranca.md §14): detalhe vai pro console.error do
 //    servidor; o cliente recebe mensagem genérica.
 //
@@ -44,14 +44,11 @@ export async function salvarHorariosAdmin(
   const horarios = parsed.data;
 
   // Fail-closed (D-4): prova admin ANTES de elevar. Se lança, PROPAGA.
-  const { svc } = await prepararContextoAdmin(idValido.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(idValido.lojaId);
 
   try {
-    // .eq("id", lojaId) obrigatório: escopo manual à loja-alvo sob BYPASSRLS.
-    const { error } = await svc
-      .from("lojas")
-      .update({ horarios })
-      .eq("id", idValido.lojaId);
+    // escopo.atualizarLoja: escopo por id à loja-alvo sob BYPASSRLS (wrapper).
+    const { error } = await escopo.atualizarLoja({ horarios });
     if (error) throw error;
 
     revalidarLojaAdmin(idValido.lojaId);
@@ -76,14 +73,11 @@ export async function salvarTemaAdmin(
   const tema = parsed.data;
 
   // Fail-closed (D-4): prova admin ANTES de elevar. Se lança, PROPAGA.
-  const { svc } = await prepararContextoAdmin(idValido.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(idValido.lojaId);
 
   try {
-    // .eq("id", lojaId) obrigatório: escopo manual à loja-alvo sob BYPASSRLS.
-    const { error } = await svc
-      .from("lojas")
-      .update({ tema })
-      .eq("id", idValido.lojaId);
+    // escopo.atualizarLoja: escopo por id à loja-alvo sob BYPASSRLS (wrapper).
+    const { error } = await escopo.atualizarLoja({ tema });
     if (error) throw error;
 
     revalidarLojaAdmin(idValido.lojaId);

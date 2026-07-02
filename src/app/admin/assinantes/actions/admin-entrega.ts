@@ -2,22 +2,25 @@
 
 // GREEN (issue 093, crítica: SIM) — Server Actions ADMIN do CRUD de ZONAS de
 // entrega (zona + taxa 1:1 + bairros 1:N). Escrevem na loja-alvo (`lojaId`
-// explícito vindo da URL admin), via service_role, SEMPRE escopadas por
-// eq("loja_id", lojaId) (+ eq("id", id) em update/delete). RLS NÃO protege sob
-// service_role: o escopo manual é a única amarra de isolamento entre lojas.
+// explícito vindo da URL admin), via service_role. A ZONA (tem `loja_id`) é
+// escrita/lida pelo wrapper `escopo.*` (injeta eq("loja_id")+eq("id") por
+// construção); as tabelas-FILHO `taxas_entrega`/`bairros_zona` (escopadas por
+// `zona_id`, sem coluna `loja_id`) ficam no `svc` cru, ancoradas na zona cuja
+// posse já foi provada. RLS NÃO protege sob service_role: esse escopo é a única
+// amarra de isolamento entre lojas.
 //
 // Padrão fail-closed espelhando o contrato de admin-entrega.test.ts:
 //   validarLojaIdAdmin(lojaId) → schemaZonaCompleta.safeParse (taxa negativa
 //   reprovada SEM tocar admin/service/insert, RN-6) → verificarAdminSaaS() FORA
 //   do try (propaga, D-4) → createServiceClient() → [em update/remove] CHECAGEM
-//   DE PROPRIEDADE: SELECT zonas_entrega eq("id", id)+eq("loja_id", lojaId)
-//   ANTES de escrever em taxas_entrega/bairros_zona (zona alheia → bloqueia,
-//   zero escrita em filho) → UPDATE/DELETE/INSERT escopado → revalidatePath
+//   DE PROPRIEDADE: escopo.buscarPorId("zonas_entrega", id) ANTES de escrever em
+//   taxas_entrega/bairros_zona (zona alheia → bloqueia, zero escrita em filho) →
+//   escopo.atualizar/remover + inserts-filho por zona_id → revalidatePath
 //   (admin + vitrine) → registrarAcessoAdmin (no-op) → catch genérico.
 //
-// `loja_id` gravado é SEMPRE o parâmetro `lojaId`, NUNCA o do payload (que pode
-// ser hostil). Tipos auxiliares ficam locais (módulo 'use server' só exporta
-// funções async).
+// `loja_id` gravado é SEMPRE o parâmetro `lojaId` (injetado por último pelo
+// wrapper), NUNCA o do payload (que pode ser hostil). Tipos auxiliares ficam
+// locais (módulo 'use server' só exporta funções async).
 
 import {
   validarLojaIdAdmin,
@@ -45,22 +48,22 @@ export async function criarZonaAdmin(
 
   // Fora do try: se a prova de admin falha, PROPAGA (fail-closed, D-4) e o
   // service client nunca é criado.
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    const { data: zona, error: erroZona } = await svc
-      .from("zonas_entrega")
-      .insert({
-        // loja_id autoritativo = parâmetro, NUNCA o payload.
-        loja_id: loja.lojaId,
+    // Zona pelo wrapper: loja_id injetado por último (autoritativo, nunca payload).
+    const { data, error: erroZona } = await escopo
+      .inserir("zonas_entrega", {
         nome: parsed.data.nome,
         tipo: parsed.data.tipo,
         ativo: parsed.data.ativo,
       })
       .select("id")
-      .single();
+      .maybeSingle();
+    const zona = data as { id: string } | null;
     if (erroZona || zona == null) return { ok: false, erro: ERRO_GENERICO };
 
+    // Filhas por zona_id (sem loja_id) → svc cru, ancoradas na zona recém-criada.
     const { error: erroTaxa } = await svc
       .from("taxas_entrega")
       .insert({ ...parsed.data.taxa, zona_id: zona.id });
@@ -99,34 +102,29 @@ export async function atualizarZonaAdmin(
   const parsed = schemaZonaCompleta.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: "Dados inválidos." };
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
     // CHECAGEM DE PROPRIEDADE (central): a zona pertence à loja-alvo? Consulta
-    // escopada por id + loja_id ANTES de escrever em taxas_entrega/bairros_zona.
+    // escopada pelo wrapper (loja_id + id) ANTES de escrever nas filhas.
     // Zona alheia (null) → bloqueia, zero escrita em filho.
-    const { data: zona, error: erroPosse } = await svc
-      .from("zonas_entrega")
-      .select("id")
-      .eq("id", id)
-      .eq("loja_id", loja.lojaId)
-      .maybeSingle();
+    const { data: zona, error: erroPosse } = await escopo.buscarPorId(
+      "zonas_entrega",
+      id,
+      "id",
+    );
     if (erroPosse) return { ok: false, erro: ERRO_GENERICO };
     if (zona == null) return { ok: false, erro: "Zona não encontrada." };
 
-    // UPDATE da zona escopado por id + loja-alvo (cross-loja inalcançável).
-    const { error: erroZona } = await svc
-      .from("zonas_entrega")
-      .update({
-        nome: parsed.data.nome,
-        tipo: parsed.data.tipo,
-        ativo: parsed.data.ativo,
-      })
-      .eq("id", id)
-      .eq("loja_id", loja.lojaId);
+    // UPDATE da zona escopado pelo wrapper (loja_id + id) — cross-loja inalcançável.
+    const { error: erroZona } = await escopo.atualizar("zonas_entrega", id, {
+      nome: parsed.data.nome,
+      tipo: parsed.data.tipo,
+      ativo: parsed.data.ativo,
+    });
     if (erroZona) return { ok: false, erro: ERRO_GENERICO };
 
-    // Taxa 1:1 por zona_id (upsert).
+    // Taxa 1:1 por zona_id (upsert) — filha, svc cru sob a zona já confirmada.
     const { error: erroTaxa } = await svc
       .from("taxas_entrega")
       .upsert({ ...parsed.data.taxa, zona_id: id }, { onConflict: "zona_id" });
@@ -166,16 +164,12 @@ export async function removerZonaAdmin(
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    // DELETE escopado por id + loja-alvo: zona de outra loja não é afetada.
-    // Taxa/bairros caem por cascata de FK.
-    const { error } = await svc
-      .from("zonas_entrega")
-      .delete()
-      .eq("id", id)
-      .eq("loja_id", loja.lojaId);
+    // DELETE escopado pelo wrapper (loja_id + id): zona de outra loja não é
+    // afetada. Taxa/bairros caem por cascata de FK.
+    const { error } = await escopo.remover("zonas_entrega", id);
     if (error) return { ok: false, erro: ERRO_GENERICO };
 
     registrarAcessoAdmin(svc, {

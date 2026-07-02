@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.22 | **Atualizado:** 2026-07-02
+**Versão:** 0.2.24 | **Atualizado:** 2026-07-02
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -478,7 +478,20 @@ const dados = schemaProduto.parse(formData)
 
 Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via RPC (issue 014), ler pedido por `id + token_acesso` (issues 026/037), checar unicidade de slug (issue 030), webhook Hotmart (issue 057), Server Actions admin de gestão de loja (`/admin/assinantes` — issues 083–102).
 
-**Padrão admin (issues 083–102):** Server Actions sob `service_role` precedidas de `verificarAdminSaaS()` — auth.uid() validado contra `ADMIN_EMAIL` antes de elevar para service_role; escopo manual obrigatório (`eq("loja_id"/"id", lojaId)` com `lojaId` validado como UUID). Helpers em `src/lib/actions/admin-loja.ts` (`validarLojaIdAdmin`, `prepararContextoAdmin`, `revalidarLojaAdmin`). Nota: RLS não é a defesa aqui (service_role a bypassa) — o gate é `verificarAdminSaaS()` + escopo manual. Contrasta com o painel do lojista, onde a defesa primária é RLS (`auth.uid() = dono_id`). Log de acesso admin: `registrarAcessoAdmin` é no-op (pendente implementação futura).
+**Padrão admin (issues 083–102):** Server Actions sob `service_role` precedidas de `verificarAdminSaaS()` — auth.uid() validado contra `ADMIN_EMAIL` antes de elevar para service_role; escopo por tenant obrigatório (`lojaId` validado como UUID), garantido pelo wrapper `EscopoLoja` (ver subseção abaixo) em vez de `.eq("loja_id"/"id", lojaId)` manual. Helpers em `src/lib/actions/admin-loja.ts` (`validarLojaIdAdmin`, `prepararContextoAdmin`, `revalidarLojaAdmin`). Nota: RLS não é a defesa aqui (service_role a bypassa) — o gate é `verificarAdminSaaS()` + escopo. Contrasta com o painel do lojista, onde a defesa primária é RLS (`auth.uid() = dono_id`). Log de acesso admin: `registrarAcessoAdmin` é no-op (pendente implementação futura).
+
+### Wrapper `EscopoLoja` — escopo por tenant garantido por tipo, não por convenção
+
+`src/lib/actions/admin-loja.ts` — `criarEscopoLoja(svc, lojaId)`, retornado como `escopo` por `prepararContextoAdmin(lojaId)`. Fecha o risco residual do padrão acima: escopo manual (`.eq("loja_id", lojaId)` digitado à mão em cada escrita) é fácil de esquecer numa action nova, e o esquecimento vira escrita cross-tenant silenciosa sob `service_role` (que bypassa RLS).
+
+**Regra:** toda escrita admin numa tabela com coluna `loja_id` usa `escopo.inserir` / `escopo.atualizar` / `escopo.remover` / `escopo.buscarPorId` — nunca `svc.from(tabela).update()/.delete()/.insert()` cru. UPDATE da própria tabela `lojas` usa `escopo.atualizarLoja` (escopo por `id`, não por `loja_id`). O wrapper injeta o filtro por construção — `.eq("loja_id", lojaId)` (+ `.eq("id", id)` em `atualizar`/`remover`/`buscarPorId`) — e, no INSERT, grava `loja_id` **por último** no objeto (`{ ...dados, loja_id: lojaId }`), imune a um payload hostil que tente sobrescrever o campo.
+
+**Exceções legítimas ao `svc` cru** (não passam pelo wrapper, escopo continua manual):
+- Supabase Storage — paths já namespaced por `${lojaId}/...`;
+- tabelas-filho sem coluna `loja_id`, escopadas por FK (`taxas_entrega`/`bairros_zona` via `zona_id`) — só após provar posse da zona-pai com `escopo.buscarPorId`;
+- camada de query/RPC (billing, criação de loja) fora do CRUD por tabela.
+
+**Enforcement automático:** `src/app/admin/assinantes/enforcement-escopo-admin.test.ts` descobre os módulos de action via `readdirSync` (sem lista manual — action nova entra sozinha) e faz duas verificações estáticas de fonte por `export async function`: camada 2 exige referência a `prepararContextoAdmin`/`verificarAdminSaaS` (prova admin antes de qualquer efeito); camada 3 exige que todo statement `.from(tabela)....update()/.delete()` cru contenha `.eq(...)`. Uma action nova que esqueça o padrão falha no CI sem precisar editar a suíte de teste.
 
 ### Regra do prefixo Next.js
 
@@ -1054,6 +1067,16 @@ alter default privileges in schema public
 **Incidente real:** `vitrine_lojas` ficou gravável por `anon`/`authenticated` por ~3 semanas (desde `20260614008500_grants_roles_supabase.sql`) até o fix em `20260702140000_vitrine_lojas_revoke_escrita.sql` — qualquer portador da anon key podia `PATCH`/`DELETE` lojas ativas via `/rest/v1/vitrine_lojas`, bypassando a RLS de `lojas`. Diagnóstico completo em `specs/vitrine_lojas_select_only.md`.
 
 **Nota histórica (issue 114 — hardening pós-112):** a auditoria da 112 também achou dois resíduos de baixa severidade, não exploráveis, fechados pela `20260702150000_revoke_grants_residuais.sql`: (1) o `revoke` acima ampliado de `insert, update, delete` para `all`, e os default privileges do schema também ampliados para `all` (ver blocos atualizados acima); (2) `EXECUTE` residual em `rls_auto_enable()` — função event-trigger `SECURITY DEFINER` que existe **só no cloud** (fora do histórico de migrations; não é chamável via RPC, e o disparo de event trigger não checa ACL de `EXECUTE`) — revogada por um `do $$ ... to_regprocedure('public.rls_auto_enable()') ... $$` guardado, padrão reutilizável para revogar em objetos que existem no cloud mas não no repo sem quebrar `pglite`/`db reset` local.
+
+### Resíduos conhecidos ainda abertos (pós-114) — não exploráveis, hardening pendente
+
+A auditoria dinâmica de 2026-07-02 (`plan/seguranca-auditoria-2026-07-02.md`, local, não versionado) deixou três itens mapeados, todos de baixa severidade e sem exploração conhecida hoje, mas que fecham a causa raiz por completo:
+
+1. **`ALTER DEFAULT PRIVILEGES` de SEQUENCES ainda concede `ALL` a `anon`/`authenticated`.** A 114 fechou só o default de TABLES; o de SEQUENCES continua amplo (herança do `GRANT ALL ON ALL SEQUENCES` da `20260614008500`). Inerte hoje — o PostgREST não expõe sequences como recurso REST — mas é o mesmo padrão que abriu `vitrine_lojas`. Fechar com `alter default privileges in schema public revoke all on sequences from anon, authenticated`. O default de FUNCTIONS (`EXECUTE` amplo) é decisão deliberada — funções novas precisam ser chamáveis por padrão; a proteção real é revogar caso-a-caso o que retorna dado sensível (como se fez com `loja_por_email_dono`).
+
+2. **Objetos vivos só no cloud, fora do histórico de migrations (drift).** `rls_auto_enable()` e o event trigger que a dispara existem no banco mas não em `supabase/migrations/`. A migration `20260702134823_remote_schema.sql` é um arquivo **de 0 bytes** (resíduo de um `db pull` que não capturou o objeto) — deve ser removida e o objeto real versionado, senão um `db reset` local diverge do cloud e a próxima auditoria estática volta a ficar cega para ele.
+
+3. **`lojas_protege_billing()` sem `SET search_path` fixo.** É trigger function (roda como *invoker*, não `SECURITY DEFINER`), então o risco é baixo — mas destoa do padrão de todas as outras funções do repo, que fixam `search_path` (§ implícito de defesa contra hijack de resolução de nome). Adicionar `set search_path = ''` (ou `pg_catalog`) na próxima recriação da função.
 
 ---
 

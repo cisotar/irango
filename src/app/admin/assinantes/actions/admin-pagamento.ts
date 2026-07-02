@@ -3,22 +3,23 @@
 /**
  * Variantes ADMIN das formas de pagamento (incl. CHAVE PIX sensível) e do QR Pix
  * — issue 094 (crítica: SIM). Escrevem na LOJA-ALVO (`lojaId` EXPLÍCITO vindo da
- * URL admin), via service_role, escopadas por `eq("loja_id", lojaId)` (+ `eq("id",
- * id)`) em TODA escrita. Diferente do CRUD do lojista (src/lib/actions/pagamento.ts),
- * o isolamento NÃO vem de RLS por dono — vem do escopo manual sob service_role,
- * a ÚNICA amarra de isolamento entre lojas (seguranca.md §2/§10/§13/§21, spec
- * admin-onboarding-assistido.md RN-1/2/3).
+ * URL admin), via service_role, escopadas pelo wrapper `escopo` (injeta
+ * `eq("loja_id")` +`eq("id")` por construção). Diferente do CRUD do lojista
+ * (src/lib/actions/pagamento.ts), o isolamento NÃO vem de RLS por dono — vem do
+ * escopo do wrapper sob service_role, a ÚNICA amarra de isolamento entre lojas
+ * (seguranca.md §2/§10/§13/§21, spec admin-onboarding-assistido.md RN-1/2/3).
  *
  * Ordem fail-closed (D-4):
  *  1. validarLojaIdAdmin(lojaId) + schema (schemaFormaPagamento/schemaPixQrUrl)
  *     ANTES de qualquer efeito;
  *  2. verificarAdminSaaS() FORA do try → exceção PROPAGA, service só depois;
- *  3. createServiceClient → INSERT/UPDATE/DELETE escopado por eq("loja_id", lojaId)
- *     (+ eq("id", id)); `loja_id` gravado = `lojaId` da URL, NUNCA do payload;
+ *  3. INSERT/UPDATE/DELETE via `escopo.*` (loja_id +id); `loja_id` gravado =
+ *     `lojaId` da URL, injetado por último, NUNCA do payload;
  *  4. chave Pix NUNCA logada em cru (§21): o catch/console só recebe o objeto de
  *     erro do banco, jamais o payload/config com a chave.
  *  5. upload QR Pix: validarBlobImagem (magic bytes) → path SERVER-SIDE
- *     `${lojaId}/...` no bucket `pix-qr` → getPublicUrl.
+ *     `${lojaId}/...` no bucket `pix-qr` → getPublicUrl (via `svc.storage` cru:
+ *     escopo path-keyed, fora do wrapper por design).
  *
  * REGRA: arquivo 'use server' só exporta funções async — tipos locais sem export.
  */
@@ -27,12 +28,12 @@ import {
   schemaFormaPagamento,
   schemaPixQrUrl,
 } from "@/lib/validacoes/pagamento";
-import { createServiceClient } from "@/lib/supabase/service";
 import {
   validarLojaIdAdmin,
   registrarAcessoAdmin,
   prepararContextoAdmin,
   revalidarLojaAdmin,
+  type EscopoLoja,
 } from "@/lib/actions/admin-loja";
 import { validarBlobImagem } from "@/lib/actions/upload-imagem";
 import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
@@ -44,29 +45,25 @@ type ResultadoQrPixAdmin =
   | { ok: true; pix_qr_url: string }
   | { ok: false; erro: string };
 
-type ServiceClient = ReturnType<typeof createServiceClient>;
-
 const BUCKET_PIX_QR = "pix-qr";
 const CAMPO_LOJA = "loja_id";
 
 /**
- * Lê a config jsonb atual de uma forma da loja-alvo (escopo cross-loja por id +
- * loja_id). Devolve um objeto plano (não-array) para servir de base ao merge; o
- * re-parse no chamador é quem valida o resultado mesclado.
+ * Lê a config jsonb atual de uma forma da loja-alvo (escopo cross-loja do wrapper:
+ * loja_id + id). Devolve um objeto plano (não-array) para servir de base ao merge;
+ * o re-parse no chamador é quem valida o resultado mesclado.
  */
 async function configAtualDaForma(
-  svc: ServiceClient,
-  lojaId: string,
+  escopo: EscopoLoja,
   formaId: string,
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await svc
-    .from("formas_pagamento")
-    .select("config")
-    .eq("loja_id", lojaId)
-    .eq("id", formaId)
-    .maybeSingle();
+  const { data, error } = await escopo.buscarPorId(
+    "formas_pagamento",
+    formaId,
+    "config",
+  );
   if (error) throw error;
-  const config = data?.config;
+  const config = (data as { config?: unknown } | null)?.config;
   return config != null && typeof config === "object" && !Array.isArray(config)
     ? (config as Record<string, unknown>)
     : {};
@@ -87,14 +84,13 @@ export async function salvarFormaPagamentoAdmin(
   }
 
   // Fail-closed: prova de admin FORA do try → propaga, service só depois.
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    // loja_id = lojaId da URL, NUNCA do payload (parsed.data não tem loja_id).
-    const { error } = await svc.from("formas_pagamento").insert({
+    // loja_id = lojaId da URL, injetado por último pelo wrapper (nunca do payload).
+    const { error } = await escopo.inserir("formas_pagamento", {
       tipo: parsed.data.tipo,
       config: parsed.data.config as Json,
-      loja_id: loja.lojaId,
     });
     if (error) {
       // §21: loga só o erro do banco, NUNCA o payload/config com a chave Pix.
@@ -127,12 +123,12 @@ export async function atualizarFormaPagamentoAdmin(
     return { ok: false, erro: "Forma de pagamento inválida." };
   }
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
     // MERGE da config preserva campos gravados à parte (sobretudo `pix_qr_url`
     // do QR). Re-parse barra config inválida e descarta chaves não declaradas.
-    const configAtual = await configAtualDaForma(svc, loja.lojaId, id);
+    const configAtual = await configAtualDaForma(escopo, id);
     const revalidado = schemaFormaPagamento.safeParse({
       tipo: parsed.data.tipo,
       config: { ...configAtual, ...parsed.data.config },
@@ -142,15 +138,11 @@ export async function atualizarFormaPagamentoAdmin(
       return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
     }
 
-    // Escopo cross-loja: loja_id E id — única amarra sob service_role.
-    const { error } = await svc
-      .from("formas_pagamento")
-      .update({
-        tipo: revalidado.data.tipo,
-        config: revalidado.data.config as Json,
-      })
-      .eq("loja_id", loja.lojaId)
-      .eq("id", id);
+    // Escopo cross-loja (loja_id + id) pelo wrapper — única amarra sob service_role.
+    const { error } = await escopo.atualizar("formas_pagamento", id, {
+      tipo: revalidado.data.tipo,
+      config: revalidado.data.config as Json,
+    });
     if (error) {
       console.error("[atualizarFormaPagamentoAdmin]", error);
       return { ok: false, erro: "Não foi possível salvar a forma de pagamento." };
@@ -175,15 +167,11 @@ export async function removerFormaPagamentoAdmin(
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
     // Escopo cross-loja: DELETE alcança só a forma da loja-alvo.
-    const { error } = await svc
-      .from("formas_pagamento")
-      .delete()
-      .eq("loja_id", loja.lojaId)
-      .eq("id", id);
+    const { error } = await escopo.remover("formas_pagamento", id);
     if (error) {
       console.error("[removerFormaPagamentoAdmin]", error);
       return { ok: false, erro: "Não foi possível remover a forma de pagamento." };
@@ -215,11 +203,11 @@ export async function salvarQrPixAdmin(
     return { ok: false, erro: "URL do QR deve pertencer ao Storage do iRango." };
   }
 
-  const { svc } = await prepararContextoAdmin(loja.lojaId);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
     // MERGE preserva chave/tipo_chave da forma Pix existente.
-    const configAtual = await configAtualDaForma(svc, loja.lojaId, formaId);
+    const configAtual = await configAtualDaForma(escopo, formaId);
     const { pix_qr_url: _antigo, ...configSemQr } = configAtual;
     const configNovo =
       parsed.data === undefined
@@ -235,12 +223,10 @@ export async function salvarQrPixAdmin(
       return { ok: false, erro: "Não foi possível salvar o QR Pix." };
     }
 
-    // Escopo cross-loja: loja_id E id (forma).
-    const { error } = await svc
-      .from("formas_pagamento")
-      .update({ config: revalidado.data.config as Json })
-      .eq("loja_id", loja.lojaId)
-      .eq("id", formaId);
+    // Escopo cross-loja: loja_id E id (forma) pelo wrapper.
+    const { error } = await escopo.atualizar("formas_pagamento", formaId, {
+      config: revalidado.data.config as Json,
+    });
     if (error) {
       console.error("[salvarQrPixAdmin]", error);
       return { ok: false, erro: "Não foi possível salvar o QR Pix." };
@@ -274,6 +260,7 @@ export async function enviarQrPixAdmin(
 
   // Prova de admin ANTES do trabalho de CPU/memória da validação de imagem
   // (anti-DoS) e ANTES de elevar a service_role (fail-closed, D-4). Propaga.
+  // Storage é path-keyed (fora do wrapper por design) → usa `svc` cru.
   const { svc } = await prepararContextoAdmin(loja.lojaId);
 
   // Dupla validação server-side (metadado + magic bytes). MIME falso → rejeita
