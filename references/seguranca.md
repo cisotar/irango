@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.20 | **Atualizado:** 2026-07-01
+**Versão:** 0.2.21 | **Atualizado:** 2026-07-02
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -1026,6 +1026,28 @@ CREATE VIEW public.vitrine_lojas
 - É uma projeção somente-leitura de dados já intencionalmente públicos.
 
 **Regra para devs e agentes:** toda query da vitrine pública (role `anon`) deve ler `public.vitrine_lojas`, **nunca `public.lojas` diretamente**. Isso se aplica a todas as issues de vitrine (023, 035 e similares). Ler `lojas` como anon falha silenciosamente (zero linhas por RLS) e exporia colunas sensíveis se a policy fosse relaxada no futuro.
+
+### Views definer auto-atualizáveis: revoke de escrita obrigatório
+
+Uma view `security_invoker = false` (definer) sobre uma **única tabela, sem agregação** (ex.: `vitrine_lojas`) é **auto-atualizável**: o Postgres aceita `INSERT`/`UPDATE`/`DELETE` através dela e os executa na tabela-base **como o dono da view** (postgres), contornando a RLS. Servir só para leitura não é suficiente — se o Supabase concedeu `GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated` (padrão de bootstrap, ver `20260614008500_grants_roles_supabase.sql`), a view nasce ou renasce gravável. `GRANT SELECT` é aditivo — **não anula** um `GRANT ALL` anterior.
+
+**Regra:** toda view definer auto-atualizável e pública sobre tabela com RLS deve **revogar explicitamente** `INSERT`/`UPDATE`/`DELETE` de `anon`/`authenticated`:
+
+```sql
+revoke insert, update, delete on public.vitrine_lojas from anon, authenticated;
+grant select on public.vitrine_lojas to anon, authenticated; -- aditivo, reafirma a intenção
+```
+
+Isso vale para **todo** `drop view` + `create view` da view — a view recriada herda os default privileges do schema, não os revokes de migrations anteriores. O revoke deve ser repetido na mesma migration do `create view` ou em uma posterior. Uma guarda estática automatizada em `tests/migrations/vitrine_lojas_select_only.test.ts` varre `supabase/migrations/*.sql` e falha se detectar recriação de `vitrine_lojas` sem um revoke posterior — usar o mesmo padrão de teste para qualquer outra view definer pública futura.
+
+**Default privileges do schema `public`:** `ALTER DEFAULT PRIVILEGES` para `anon`/`authenticated` deve conceder apenas `SELECT` (nunca `ALL`), para que tabelas/views **futuras** não renasçam graváveis por herança. `service_role` continua com `ALL` (necessário para cadastro/BYPASSRLS).
+
+```sql
+alter default privileges in schema public
+  revoke insert, update, delete on tables from anon, authenticated;
+```
+
+**Incidente real:** `vitrine_lojas` ficou gravável por `anon`/`authenticated` por ~3 semanas (desde `20260614008500_grants_roles_supabase.sql`) até o fix em `20260702140000_vitrine_lojas_revoke_escrita.sql` — qualquer portador da anon key podia `PATCH`/`DELETE` lojas ativas via `/rest/v1/vitrine_lojas`, bypassando a RLS de `lojas`. Diagnóstico completo em `specs/vitrine_lojas_select_only.md`.
 
 ---
 

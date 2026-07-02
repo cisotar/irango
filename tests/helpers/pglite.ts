@@ -53,10 +53,33 @@ grant select on auth.users to service_role;
  * Concede a anon/authenticated os privilégios de tabela que o Supabase dá por
  * padrão. RLS continua filtrando LINHAS; o grant só libera a OPERAÇÃO. Rodar
  * DEPOIS das migrations para cobrir as tabelas criadas por elas.
+ *
+ * Escrita (insert/update/delete) só em TABELAS BASE — nunca em views. Motivo:
+ * este bloco roda DEPOIS de todas as migrations; se re-concedesse escrita em
+ * views, qualquer `revoke insert, update, delete` feito por migration (ex.:
+ * vitrine_lojas SELECT-only) seria desfeito aqui e o teste ficaria falso-verde
+ * para sempre. O pior caso (GRANT amplo em views) continua emulado com
+ * fidelidade: a própria migration 20260614008500 (`GRANT ALL ON ALL TABLES` +
+ * `ALTER DEFAULT PRIVILEGES GRANT ALL`) roda dentro do pglite e reabre escrita
+ * na view a cada drop+create — exatamente como no cloud. Assim, só um revoke
+ * em migration POSTERIOR à recriação da view deixa o teste verde (como em prod).
  */
 const GRANTS_SQL = `
-grant select, insert, update, delete on all tables in schema public to authenticated;
-grant select, insert, update, delete on all tables in schema public to anon;
+grant select on all tables in schema public to anon, authenticated;
+
+do $grants$
+declare t record;
+begin
+  for t in select schemaname, tablename from pg_tables where schemaname = 'public'
+  loop
+    execute format(
+      'grant insert, update, delete on table %I.%I to anon, authenticated',
+      t.schemaname, t.tablename
+    );
+  end loop;
+end
+$grants$;
+
 grant all on all tables in schema public to service_role;
 grant usage, select on all sequences in schema public to anon, authenticated, service_role;
 `;

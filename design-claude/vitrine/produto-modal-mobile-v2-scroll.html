@@ -1,0 +1,333 @@
+<!-- @dsCard group="Vitrine" -->
+<!--
+  produto-modal-mobile-v2-scroll.html
+  PROPOSTA alternativa de refatoração do modal de produto (mobile) — aguardando aprovação.
+  Variante de produto-modal-mobile-v1-colapso.html. Mesmos tokens/estrutura de
+  produto-modal.html.
+
+  Diferença pra V1: aqui é rolagem REAL do container (.corpo.scrollTo), não colapso
+  de altura. Imagem/descrição permanecem no DOM (usuário pode rolar de volta pra
+  cima e revê-las) — a V1 as remove de vez do fluxo. Escolher conforme preferência:
+  V1 = mais "definitivo" (opcionais ganham o espaço todo), V2 = mais "reversível"
+  (rolagem natural, como qualquer lista).
+
+  Comportamento pedido:
+  1. Abertura: título + imagem + descrição visíveis. Quantidade inicial = 0.
+  2. Ao clicar "+" (0 → 1): corpo rola suavemente até o topo do card de opcionais
+     (imagem/descrição saem da viewport, mas continuam no DOM acima). Opcionais
+     aparecem (antes com display:none) e o botão ADICIONAR AO CARRINHO some
+     inline logo abaixo.
+  3. Item só entra no carrinho ao clicar ADICIONAR AO CARRINHO.
+-->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Modal Produto Mobile — V2 Scroll real</title>
+<style>
+  :root {
+    --cor-primaria:  #332616;
+    --cor-fundo:     #f5f0e6;
+    --cor-destaque:  #2d3a27;
+    --marrom-cafe:   #2e2610;
+    --texto:         #3e2723;
+    --texto-muted:   #6b5d4f;
+    --borda-nav:     #dccbb0;
+    --branco:        #ffffff;
+    --cinza-medio:   #eeeeee;
+    --cinza-claro:   #f9f9f9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                 Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { margin: 0; background: #c8bfab; color: var(--texto); min-height: 100vh; }
+  .page { max-width: 480px; margin: 0 auto; background: var(--cor-fundo); min-height: 100vh; }
+
+  .demo-sep {
+    background: var(--cor-primaria); color: rgba(255,255,255,0.80);
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; text-align: center; padding: 10px 16px;
+  }
+  .demo-hint {
+    background: #fff8e1; color: #6b5d4f; font-size: 0.74rem; text-align: center;
+    padding: 8px 16px; border-bottom: 1px solid var(--borda-nav);
+  }
+
+  .cena {
+    position: relative; padding: 24px 16px;
+    background: linear-gradient(rgba(0,0,0,0.50), rgba(0,0,0,0.50)),
+      repeating-linear-gradient(135deg, #e8dcc4 0 40px, #d8c4a0 40px 80px);
+    min-height: 620px; display: flex; align-items: center; justify-content: center;
+  }
+
+  .modal {
+    background: var(--branco); border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45); overflow: hidden;
+    width: 100%; max-width: 448px; display: flex; flex-direction: column;
+    max-height: 560px; position: relative;
+  }
+
+  .header { background: var(--cor-primaria); position: relative; padding: 16px 48px; flex-shrink: 0; }
+  .header-titulo {
+    text-align: center; font-size: 1rem; font-weight: 900; text-transform: uppercase;
+    letter-spacing: 0.5px; line-height: 1.2; color: var(--branco);
+  }
+  .btn-fechar {
+    position: absolute; top: 50%; right: 12px; transform: translateY(-50%);
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.30);
+    color: var(--branco); border-radius: 50%; width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; font-weight: 900; cursor: pointer; line-height: 1;
+  }
+
+  /* ── Mini-header sticky (aparece só depois que rolou) ──────────────── */
+  .mini-header {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--branco); border-bottom: 1px solid var(--cinza-medio);
+    padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+    transform: translateY(-100%); transition: transform 0.25s ease;
+  }
+  .mini-header.visivel { transform: translateY(0); }
+  .mini-thumb {
+    width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+    background: linear-gradient(135deg, #4a3a22, #6b5131);
+    display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+  }
+  .mini-nome { font-size: 0.82rem; font-weight: 700; color: var(--texto); line-height: 1.2; }
+  .mini-preco { font-size: 0.76rem; color: var(--cor-destaque); font-weight: 700; }
+
+  .corpo { flex: 1; min-height: 0; overflow-y: auto; background: var(--branco); scroll-behavior: smooth; }
+
+  .img-wrap { padding: 16px 16px 12px; }
+  .img-hero {
+    width: 100%; aspect-ratio: 4 / 3; border-radius: 16px;
+    border: 1px solid var(--cinza-medio);
+    background: linear-gradient(135deg, #4a3a22, #6b5131);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 5rem; overflow: hidden;
+  }
+  .desc-bloco {
+    padding: 0 16px 16px; display: flex; flex-direction: column;
+    align-items: center; gap: 8px; text-align: center;
+  }
+  .desc { font-size: 0.88rem; color: var(--texto-muted); line-height: 1.4; }
+  .preco { font-size: 1.5rem; font-weight: 900; color: var(--cor-destaque); }
+
+  .card {
+    margin: 0 16px 16px; border: 1px solid var(--cinza-medio); border-radius: 16px;
+    background: var(--cinza-claro); padding: 16px;
+  }
+  .card-titulo {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--marrom-cafe); margin-bottom: 12px;
+  }
+  .qtd-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .qtd-label { font-size: 0.9rem; color: var(--texto); }
+  .qtd-unitario { font-size: 0.78rem; color: var(--texto-muted); margin-top: 2px; }
+
+  .stepper {
+    display: flex; align-items: center; background: var(--branco);
+    border: 1.5px solid var(--borda-nav); border-radius: 10px; overflow: hidden; flex-shrink: 0;
+  }
+  .stepper-btn {
+    background: transparent; border: none; color: var(--cor-destaque);
+    font-size: 1.3rem; font-weight: 900; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; line-height: 1;
+  }
+  .stepper-btn:hover { background: var(--cinza-medio); }
+  .stepper-btn:disabled { color: var(--borda-nav); cursor: not-allowed; }
+  .stepper-valor {
+    min-width: 36px; text-align: center; font-size: 1rem; font-weight: 700; color: var(--texto);
+    padding: 0 4px; border-left: 1px solid var(--borda-nav); border-right: 1px solid var(--borda-nav);
+  }
+
+  .card-opcionais { display: none; }
+  .card-opcionais.visivel { display: block; animation: entra 0.3s ease; }
+  @keyframes entra { from { opacity: 0; transform: translateY(-6px);} to { opacity:1; transform:none; } }
+
+  .grupo-label {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--texto-muted); padding: 12px 0 4px; border-top: 1px solid var(--cinza-medio); margin-top: 4px;
+  }
+  .grupo-label:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+  .opcional-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--cinza-medio);
+  }
+  .opcional-item:last-child { border-bottom: none; }
+  .opcional-nome { font-size: 0.88rem; color: var(--texto); font-weight: 500; }
+  .opcional-preco { font-size: 0.78rem; color: var(--cor-destaque); font-weight: 700; margin-top: 2px; }
+  .mini-stepper {
+    display: flex; align-items: center; border: 1.5px solid var(--borda-nav); border-radius: 8px;
+    overflow: hidden; background: var(--branco); flex-shrink: 0;
+  }
+  .mini-btn {
+    background: transparent; border: none; color: var(--cor-destaque);
+    font-size: 1.1rem; font-weight: 900; width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .mini-btn:hover { background: var(--cinza-medio); }
+  .mini-btn:disabled { color: var(--borda-nav); cursor: not-allowed; }
+  .mini-valor {
+    min-width: 28px; text-align: center; font-size: 0.88rem; font-weight: 700; color: var(--texto);
+    padding: 0 2px; border-left: 1px solid var(--borda-nav); border-right: 1px solid var(--borda-nav);
+  }
+
+  .btn-adicionar-wrap { display: none; padding: 0 16px 20px; }
+  .btn-adicionar-wrap.visivel { display: block; animation: entra 0.3s ease; }
+  .btn-adicionar {
+    width: 100%; background: var(--cor-destaque); color: var(--branco);
+    border: none; border-radius: 12px; min-height: 52px; font-size: 1rem; font-weight: 900;
+    cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; gap: 8px;
+  }
+  .btn-adicionar:hover { background: #1e2a1a; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--cor-destaque); color: #fff; padding: 10px 20px; border-radius: 10px;
+    font-size: 0.85rem; font-weight: 700; opacity: 0; pointer-events: none;
+    transition: all 0.25s ease; z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <div class="demo-sep">V2 · Rolagem real (imagem/descrição continuam no DOM acima)</div>
+  <div class="demo-hint">Clique "+" pra ver o corpo rolar. Sobe de novo pra reaparecer a imagem.</div>
+
+  <div class="cena">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-nome-1">
+      <div class="header">
+        <h2 class="header-titulo" id="modal-nome-1">Pão de queijo artesanal — 12 un</h2>
+        <button class="btn-fechar" aria-label="Fechar detalhes do produto">✕</button>
+      </div>
+
+      <div class="corpo" id="corpo">
+        <div class="mini-header" id="miniHeader">
+          <div class="mini-thumb">🧀</div>
+          <div>
+            <p class="mini-nome">Pão de queijo artesanal</p>
+            <p class="mini-preco">R$ 18,90</p>
+          </div>
+        </div>
+
+        <div class="img-wrap">
+          <div class="img-hero" role="img" aria-label="Foto do produto: pão de queijo">🧀</div>
+        </div>
+        <div class="desc-bloco">
+          <p class="desc">Feito com polvilho azedo e queijo minas, assado na hora. Crocante por fora, macio por dentro.</p>
+          <p class="preco">R$ 18,90</p>
+        </div>
+
+        <div class="card" id="cardQtd">
+          <p class="card-titulo">Quantidade</p>
+          <div class="qtd-row">
+            <div>
+              <p class="qtd-label">Unidades</p>
+              <p class="qtd-unitario">Cada unidade · R$ 18,90</p>
+            </div>
+            <div class="stepper" role="group" aria-label="Selecionar quantidade">
+              <button class="stepper-btn" id="btnMenos" aria-label="Diminuir quantidade" disabled>−</button>
+              <span class="stepper-valor" id="qtdValor" role="status" aria-live="polite">0</span>
+              <button class="stepper-btn" id="btnMais" aria-label="Aumentar quantidade">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card card-opcionais" id="cardOpcionais">
+          <p class="card-titulo">Opcionais</p>
+          <p class="grupo-label">Acompanhamentos</p>
+          <div class="opcional-item">
+            <div>
+              <p class="opcional-nome">Geleia artesanal de goiaba</p>
+              <p class="opcional-preco">+ R$ 6,00</p>
+            </div>
+            <div class="mini-stepper">
+              <button class="mini-btn" disabled>−</button>
+              <span class="mini-valor">0</span>
+              <button class="mini-btn">+</button>
+            </div>
+          </div>
+          <div class="opcional-item">
+            <div>
+              <p class="opcional-nome">Manteiga de garrafa</p>
+              <p class="opcional-preco">+ R$ 4,00</p>
+            </div>
+            <div class="mini-stepper">
+              <button class="mini-btn" disabled>−</button>
+              <span class="mini-valor">0</span>
+              <button class="mini-btn">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-adicionar-wrap" id="btnAdicionarWrap">
+          <button class="btn-adicionar" id="btnAdicionar" aria-label="Adicionar ao carrinho">
+            <span>Adicionar ao carrinho</span>
+            <span id="subtotalTxt">R$ 18,90</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Item adicionado ao carrinho ✓</div>
+
+<script>
+  const PRECO = 18.90;
+  let qtd = 0;
+  const qtdValor = document.getElementById('qtdValor');
+  const btnMenos = document.getElementById('btnMenos');
+  const btnMais = document.getElementById('btnMais');
+  const corpo = document.getElementById('corpo');
+  const cardQtd = document.getElementById('cardQtd');
+  const cardOpcionais = document.getElementById('cardOpcionais');
+  const btnAdicionarWrap = document.getElementById('btnAdicionarWrap');
+  const subtotalTxt = document.getElementById('subtotalTxt');
+  const miniHeader = document.getElementById('miniHeader');
+  const toast = document.getElementById('toast');
+
+  function fmt(v) { return 'R$ ' + v.toFixed(2).replace('.', ','); }
+
+  function render(primeiraVez) {
+    qtdValor.textContent = qtd;
+    btnMenos.disabled = qtd === 0;
+    subtotalTxt.textContent = fmt(qtd * PRECO);
+
+    const ativo = qtd > 0;
+    cardOpcionais.classList.toggle('visivel', ativo);
+    btnAdicionarWrap.classList.toggle('visivel', ativo);
+
+    if (ativo && primeiraVez) {
+      requestAnimationFrame(() => {
+        corpo.scrollTo({ top: cardQtd.offsetTop - 8, behavior: 'smooth' });
+      });
+    }
+  }
+
+  corpo.addEventListener('scroll', () => {
+    miniHeader.classList.toggle('visivel', corpo.scrollTop > 40);
+  });
+
+  btnMais.addEventListener('click', () => {
+    const era0 = qtd === 0;
+    qtd++;
+    render(era0);
+  });
+  btnMenos.addEventListener('click', () => { if (qtd > 0) { qtd--; render(false); } });
+
+  document.getElementById('btnAdicionar').addEventListener('click', () => {
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1600);
+  });
+
+  render(false);
+</script>
+
+</body>
+</html>
