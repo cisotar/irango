@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.21 | **Atualizado:** 2026-07-02
+**Versão:** 0.2.22 | **Atualizado:** 2026-07-02
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -1031,23 +1031,29 @@ CREATE VIEW public.vitrine_lojas
 
 Uma view `security_invoker = false` (definer) sobre uma **única tabela, sem agregação** (ex.: `vitrine_lojas`) é **auto-atualizável**: o Postgres aceita `INSERT`/`UPDATE`/`DELETE` através dela e os executa na tabela-base **como o dono da view** (postgres), contornando a RLS. Servir só para leitura não é suficiente — se o Supabase concedeu `GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated` (padrão de bootstrap, ver `20260614008500_grants_roles_supabase.sql`), a view nasce ou renasce gravável. `GRANT SELECT` é aditivo — **não anula** um `GRANT ALL` anterior.
 
-**Regra:** toda view definer auto-atualizável e pública sobre tabela com RLS deve **revogar explicitamente** `INSERT`/`UPDATE`/`DELETE` de `anon`/`authenticated`:
+**Regra:** toda view definer auto-atualizável e pública sobre tabela com RLS deve **revogar tudo** (`revoke all`, não só `insert`/`update`/`delete`) de `anon`/`authenticated`, reafirmando só `SELECT`:
 
 ```sql
-revoke insert, update, delete on public.vitrine_lojas from anon, authenticated;
+revoke all on public.vitrine_lojas from anon, authenticated;
 grant select on public.vitrine_lojas to anon, authenticated; -- aditivo, reafirma a intenção
 ```
 
+`revoke all` (em vez de listar só `insert, update, delete`) importa porque o `GRANT ALL ON ALL TABLES` de bootstrap também concede `TRUNCATE`/`TRIGGER`/`REFERENCES` — inertes numa view hoje (não se aplicam ou não têm FK apontando para ela), mas residuais por omissão se não fechados (issue 114, pós-112).
+
 Isso vale para **todo** `drop view` + `create view` da view — a view recriada herda os default privileges do schema, não os revokes de migrations anteriores. O revoke deve ser repetido na mesma migration do `create view` ou em uma posterior. Uma guarda estática automatizada em `tests/migrations/vitrine_lojas_select_only.test.ts` varre `supabase/migrations/*.sql` e falha se detectar recriação de `vitrine_lojas` sem um revoke posterior — usar o mesmo padrão de teste para qualquer outra view definer pública futura.
 
-**Default privileges do schema `public`:** `ALTER DEFAULT PRIVILEGES` para `anon`/`authenticated` deve conceder apenas `SELECT` (nunca `ALL`), para que tabelas/views **futuras** não renasçam graváveis por herança. `service_role` continua com `ALL` (necessário para cadastro/BYPASSRLS).
+**Default privileges do schema `public`:** `ALTER DEFAULT PRIVILEGES` para `anon`/`authenticated` deve conceder **exatamente** `SELECT` (`revoke all` + `grant select`, não `ALL`), para que tabelas/views **futuras** não renasçam graváveis (nem com `TRUNCATE`/`TRIGGER`/`REFERENCES` residuais) por herança. `service_role` continua com `ALL` (necessário para cadastro/BYPASSRLS).
 
 ```sql
 alter default privileges in schema public
-  revoke insert, update, delete on tables from anon, authenticated;
+  revoke all on tables from anon, authenticated;
+alter default privileges in schema public
+  grant select on tables to anon, authenticated;
 ```
 
 **Incidente real:** `vitrine_lojas` ficou gravável por `anon`/`authenticated` por ~3 semanas (desde `20260614008500_grants_roles_supabase.sql`) até o fix em `20260702140000_vitrine_lojas_revoke_escrita.sql` — qualquer portador da anon key podia `PATCH`/`DELETE` lojas ativas via `/rest/v1/vitrine_lojas`, bypassando a RLS de `lojas`. Diagnóstico completo em `specs/vitrine_lojas_select_only.md`.
+
+**Nota histórica (issue 114 — hardening pós-112):** a auditoria da 112 também achou dois resíduos de baixa severidade, não exploráveis, fechados pela `20260702150000_revoke_grants_residuais.sql`: (1) o `revoke` acima ampliado de `insert, update, delete` para `all`, e os default privileges do schema também ampliados para `all` (ver blocos atualizados acima); (2) `EXECUTE` residual em `rls_auto_enable()` — função event-trigger `SECURITY DEFINER` que existe **só no cloud** (fora do histórico de migrations; não é chamável via RPC, e o disparo de event trigger não checa ACL de `EXECUTE`) — revogada por um `do $$ ... to_regprocedure('public.rls_auto_enable()') ... $$` guardado, padrão reutilizável para revogar em objetos que existem no cloud mas não no repo sem quebrar `pglite`/`db reset` local.
 
 ---
 

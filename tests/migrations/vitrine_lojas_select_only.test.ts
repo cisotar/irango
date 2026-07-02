@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
@@ -234,5 +234,140 @@ describe("112 guarda estática — create view vitrine_lojas exige revoke de esc
     // RED hoje: 001500/005000/006000/013000 criam a view e NENHUMA migration
     // contém o revoke — a fase GREEN (20260702140000) zera esta lista.
     expect(violacoesRevokeVitrine(migrationsReais())).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase RED (TDD) — issue 114 (hardening pós-112). Asserts de CATÁLOGO
+// (has_table_privilege / has_function_privilege), não de comportamento:
+// TRUNCATE/TRIGGER numa view falham com "is not a table" independente de ACL —
+// só o catálogo distingue "negado por revoke" de "impossível por natureza".
+//
+// Contrato da migration `20260702150000_revoke_grants_residuais.sql`
+// (ainda NÃO escrita — fase GREEN do `executar`):
+//
+//  [T1] vitrine_lojas: revoke all + grant select → anon/authenticated com
+//       exatamente SELECT. RED hoje: TRUNCATE/TRIGGER/REFERENCES ainda true
+//       (herdados do GRANT ALL da 20260614008500, renascidos via default
+//       privileges no último drop+create da view; a 20260702140000 só revogou
+//       insert/update/delete).
+//  [T2] default privileges SELECT-only: tabela FUTURA criada por postgres não
+//       re-granta resíduo a anon (sonda criada DEPOIS do GRANTS_SQL do harness,
+//       então só pg_default_acl explica o que ela herdar). RED hoje: os defaults
+//       da 008500 ainda carregam TRUNCATE/TRIGGER/REFERENCES.
+//  [T3] DO-block guardado por to_regprocedure revoga EXECUTE de
+//       rls_auto_enable() quando ela existe (emulada por stub — a real vive só
+//       no cloud, fora do histórico de migrations) e o ARQUIVO é reaplicável
+//       (2ª execução sem erro = idempotência provada). RED hoje: o arquivo não
+//       existe → nada revoga → EXECUTE do stub segue true → falha por asserção.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MIGRATION_114 = join(MIGRATIONS_DIR, "20260702150000_revoke_grants_residuais.sql");
+const ROLES_API = ["anon", "authenticated"] as const;
+const PRIVS_PROIBIDOS = ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "TRIGGER", "REFERENCES"] as const;
+
+describe("114 grants residuais (revoke all + defaults select-only)", () => {
+  let t: TestDb;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  /** Mede ACL no catálogo como postgres — has_* recebe o role como argumento. */
+  async function privilegioTabela(role: string, relacao: string, priv: string): Promise<boolean> {
+    const r = await t.db.query<{ ok: boolean }>(
+      `select has_table_privilege($1, $2, $3) as ok`,
+      [role, relacao, priv],
+    );
+    return r.rows[0].ok;
+  }
+
+  async function executaFuncao(role: string, assinatura: string): Promise<boolean> {
+    const r = await t.db.query<{ ok: boolean }>(
+      `select has_function_privilege($1, $2, 'execute') as ok`,
+      [role, assinatura],
+    );
+    return r.rows[0].ok;
+  }
+
+  /** Snapshot legível no output de falha: privilégios proibidos ainda concedidos. */
+  async function proibidosConcedidos(role: string, relacao: string): Promise<string[]> {
+    const concedidos: string[] = [];
+    for (const priv of PRIVS_PROIBIDOS) {
+      if (await privilegioTabela(role, relacao, priv)) concedidos.push(priv);
+    }
+    return concedidos;
+  }
+
+  it("[T1] vitrine_lojas: anon/authenticated com exatamente SELECT no catálogo", async () => {
+    for (const role of ROLES_API) {
+      // leitura pública não regride
+      expect({
+        role,
+        select: await privilegioTabela(role, "public.vitrine_lojas", "SELECT"),
+      }).toEqual({ role, select: true });
+
+      // nenhum privilégio além de SELECT — RED hoje: TRUNCATE/TRIGGER/REFERENCES
+      expect({
+        role,
+        proibidos: await proibidosConcedidos(role, "public.vitrine_lojas"),
+      }).toEqual({ role, proibidos: [] });
+    }
+  });
+
+  it("[T2] sonda anti-re-grant: tabela futura criada por postgres herda SÓ SELECT para anon", async () => {
+    await t.db.exec(`create table public._sonda_114_test (id int)`);
+    try {
+      expect({
+        select: await privilegioTabela("anon", "public._sonda_114_test", "SELECT"),
+      }).toEqual({ select: true });
+
+      // prova que pg_default_acl foi zerado além de SELECT — RED hoje
+      expect({
+        proibidos: await proibidosConcedidos("anon", "public._sonda_114_test"),
+      }).toEqual({ proibidos: [] });
+    } finally {
+      await t.db.exec(`drop table public._sonda_114_test`);
+    }
+  });
+
+  it("[T3] rls_auto_enable(): migration aplicada 2x (idempotente) revoga EXECUTE quando a função existe", async () => {
+    // STUB TDD — emula a função cloud-only (existe só no projeto remoto, fora do
+    // histórico de migrations; o dump remote_schema veio vazio). Implementação
+    // real do revoke é da fase GREEN. Função recém-criada nasce com EXECUTE
+    // implícito de PUBLIC — o sanity abaixo garante que o assert final não é trivial.
+    await t.db.exec(
+      `create or replace function public.rls_auto_enable() returns event_trigger
+       language plpgsql security definer as $$ begin end $$`,
+    );
+    expect(await executaFuncao("anon", "public.rls_auto_enable()")).toBe(true);
+
+    // Aplica o ARQUIVO da migration DUAS vezes, cada uma em transação: prova
+    // (1) idempotência dos 3 blocos e (2) que o DO-block guardado por
+    // to_regprocedure revoga de verdade quando a função existe (emula o cloud).
+    // RED hoje: o arquivo ainda não existe → nada é revogado.
+    if (existsSync(MIGRATION_114)) {
+      const sql = readFileSync(MIGRATION_114, "utf8");
+      for (let aplicacao = 0; aplicacao < 2; aplicacao++) {
+        await t.db.exec("begin");
+        try {
+          await t.db.exec(sql);
+          await t.db.exec("commit");
+        } catch (err) {
+          await t.db.exec("rollback");
+          throw err;
+        }
+      }
+    }
+
+    for (const role of ROLES_API) {
+      expect({
+        role,
+        execute: await executaFuncao(role, "public.rls_auto_enable()"),
+      }).toEqual({ role, execute: false });
+    }
   });
 });
