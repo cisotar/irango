@@ -56,3 +56,6 @@ pnpm-workspace.yaml
 
 # Claude Code — dados pessoais de sessão (não compartilhar)
 .claude/memory/
+
+# Relatórios de auditoria de segurança — nunca pushar (detalham vulnerabilidades reais)
+plan/seguranca-auditoria-*.md
