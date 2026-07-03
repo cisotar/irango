@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.25 | **Atualizado:** 2026-07-03
+**Versão:** 0.2.26 | **Atualizado:** 2026-07-03
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -494,6 +494,8 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 - camada de query/RPC (billing, criação de loja) fora do CRUD por tabela.
 
 **Enforcement automático:** `src/app/admin/assinantes/enforcement-escopo-admin.test.ts` descobre os módulos de action via `readdirSync` (sem lista manual — action nova entra sozinha) e faz duas verificações estáticas de fonte por `export async function`: camada 2 exige referência a `prepararContextoAdmin`/`verificarAdminSaaS` (prova admin antes de qualquer efeito); camada 3 exige que todo statement `.from(tabela)....update()/.delete()` cru contenha `.eq(...)`. Uma action nova que esqueça o padrão falha no CI sem precisar editar a suíte de teste.
+
+**Padrão admin para leituras (issue 130):** consultas de leitura sob `service_role` no hub admin usam a variante `(svc, lojaId)` das funções já existentes em `lib/supabase/queries/*.ts` — ex. `listarPedidosDaLoja`/`buscarPedidoDaLoja` (`pedidos.ts`), mesmo precedente de `buscarCategorias` (`categorias.ts`). Não passam pelo wrapper `EscopoLoja` (que cobre só escritas): o escopo é o `.eq("loja_id", lojaId)` explícito dentro da própria query, com `lojaId`/`id` validados por `schemaUuid` (`z.guid()`) antes de tocar o banco — formato inválido é fail-closed (`[]`/`null`, nunca vira query). `lojaId` é validado como UUID pelo caller (loader admin); a query repete o guard como defesa-em-profundidade, não como única validação. **Lacuna conhecida:** o enforcement automático acima só cobre Server Actions de escrita descobertas em `admin/assinantes` — não há verificação estática equivalente para funções de leitura server-only em `lib/supabase/queries/`; uma query nova que esqueça o `.eq("loja_id")` não é pega pelo CI hoje.
 
 ### Regra do prefixo Next.js
 
