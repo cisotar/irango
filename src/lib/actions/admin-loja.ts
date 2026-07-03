@@ -43,6 +43,31 @@ type TabelaComLojaId = {
   [K in keyof Tabelas]: Tabelas[K]["Row"] extends { loja_id: string } ? K : never;
 }[keyof Tabelas];
 
+// Colunas de `lojas` somente-servidor (billing/assinatura/identidade). Espelham o
+// trigger `lojas_protege_billing_v2` + a PK `id` + consentimento (superset além do
+// trigger, também autoritativo). Fonte ÚNICA do guard de tipo e do filtro de runtime
+// de `atualizarLoja`. `satisfies` garante que renomear/remover coluna quebre aqui.
+const CAMPOS_LOJA_SOMENTE_SERVIDOR = [
+  "id",
+  "dono_id",
+  "assinatura_status",
+  "assinatura_inicio",
+  "assinatura_fim_periodo",
+  "assinatura_atualizada_em",
+  "hotmart_subscriber_code",
+  "hotmart_plano",
+  "billing_provider",
+  "provider_subscription_id",
+  "plano_id",
+  "consentimento_versao",
+  "consentimento_em",
+] as const satisfies readonly (keyof Tabelas["lojas"]["Update"])[];
+
+type PatchLojaAdmin = Omit<
+  Tabelas["lojas"]["Update"],
+  (typeof CAMPOS_LOJA_SOMENTE_SERVIDOR)[number]
+>;
+
 /**
  * Wrapper que amarra TODA escrita ao `lojaId` da action admin. Existe para tornar
  * o escopo por tenant IMPOSSÍVEL de esquecer: os helpers injetam `.eq("loja_id")`
@@ -100,9 +125,21 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
     buscarPorId<T extends TabelaComLojaId>(tabela: T, id: string, colunas = "*") {
       return from(tabela).select(colunas).eq("loja_id", lojaId).eq("id", id).maybeSingle();
     },
-    /** UPDATE da PRÓPRIA loja (tabela `lojas`), escopo por `id`, `count:"exact"`. */
-    atualizarLoja(patch: Tabelas["lojas"]["Update"]) {
-      return from("lojas").update(patch, { count: "exact" }).eq("id", lojaId);
+    /** UPDATE da PRÓPRIA loja (`lojas`), escopo por `id`, `count:"exact"`.
+     * `patch` é `PatchLojaAdmin` (Omit das colunas somente-servidor) — barra POR TIPO
+     * chamador que passe object-literal com billing/dono/id. Filtro de runtime é o
+     * backstop real: `svc` roda como service_role, que BYPASSA o trigger
+     * lojas_protege_billing_v2, e o guard de tipo é derrotado por `as`/width-subtyping
+     * (ex.: admin-perfil casta p/ TablesUpdate). Descarta as chaves somente-servidor da
+     * MESMA constante antes do UPDATE. lat/long ficam de fora (coords derivadas no servidor). */
+    atualizarLoja(patch: PatchLojaAdmin) {
+      const bloqueadas = CAMPOS_LOJA_SOMENTE_SERVIDOR as readonly string[];
+      const seguro = Object.fromEntries(
+        Object.entries(patch as Record<string, unknown>).filter(
+          ([k]) => !bloqueadas.includes(k),
+        ),
+      );
+      return from("lojas").update(seguro, { count: "exact" }).eq("id", lojaId);
     },
   };
 }

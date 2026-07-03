@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.24 | **Atualizado:** 2026-07-02
+**Versão:** 0.2.25 | **Atualizado:** 2026-07-03
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -485,6 +485,8 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 `src/lib/actions/admin-loja.ts` — `criarEscopoLoja(svc, lojaId)`, retornado como `escopo` por `prepararContextoAdmin(lojaId)`. Fecha o risco residual do padrão acima: escopo manual (`.eq("loja_id", lojaId)` digitado à mão em cada escrita) é fácil de esquecer numa action nova, e o esquecimento vira escrita cross-tenant silenciosa sob `service_role` (que bypassa RLS).
 
 **Regra:** toda escrita admin numa tabela com coluna `loja_id` usa `escopo.inserir` / `escopo.atualizar` / `escopo.remover` / `escopo.buscarPorId` — nunca `svc.from(tabela).update()/.delete()/.insert()` cru. UPDATE da própria tabela `lojas` usa `escopo.atualizarLoja` (escopo por `id`, não por `loja_id`). O wrapper injeta o filtro por construção — `.eq("loja_id", lojaId)` (+ `.eq("id", id)` em `atualizar`/`remover`/`buscarPorId`) — e, no INSERT, grava `loja_id` **por último** no objeto (`{ ...dados, loja_id: lojaId }`), imune a um payload hostil que tente sobrescrever o campo.
+
+**Hardening de `atualizarLoja` (issue 115):** o patch aceito é tipado como `PatchLojaAdmin = Omit<Tabelas["lojas"]["Update"], CAMPOS_LOJA_SOMENTE_SERVIDOR>` — bloqueia por tipo as 13 colunas somente-servidor (as 10 do trigger `lojas_protege_billing()` + `id` + `consentimento_versao`/`consentimento_em`), listadas uma única vez em `CAMPOS_LOJA_SOMENTE_SERVIDOR` (`admin-loja.ts`), fonte única também do filtro de runtime. `latitude`/`longitude` ficam de fora da blocklist — são coordenadas derivadas no servidor (`geocodificarEnderecoComMotivo`), nunca vindas do cliente. Como o `Omit` de tipo é derrotável por `as`/cast e o trigger de banco não se aplica a `service_role` (que o bypassa), `atualizarLoja` também filtra em **runtime**: descarta qualquer chave da mesma `CAMPOS_LOJA_SOMENTE_SERVIDOR` antes do UPDATE — esse filtro é o backstop real, o tipo é só a primeira defesa. **Convenção:** toda escrita admin em `lojas` passa por `escopo.atualizarLoja` — nunca `svc.from("lojas").update()` cru, mesmo dentro de uma action já autorizada por `verificarAdminSaaS()`.
 
 **Exceções legítimas ao `svc` cru** (não passam pelo wrapper, escopo continua manual):
 - Supabase Storage — paths já namespaced por `${lojaId}/...`;
@@ -1077,6 +1079,8 @@ A auditoria dinâmica de 2026-07-02 (`plan/seguranca-auditoria-2026-07-02.md`, l
 2. **Objetos vivos só no cloud, fora do histórico de migrations (drift).** `rls_auto_enable()` e o event trigger que a dispara existem no banco mas não em `supabase/migrations/`. A migration `20260702134823_remote_schema.sql` é um arquivo **de 0 bytes** (resíduo de um `db pull` que não capturou o objeto) — deve ser removida e o objeto real versionado, senão um `db reset` local diverge do cloud e a próxima auditoria estática volta a ficar cega para ele.
 
 3. **`lojas_protege_billing()` sem `SET search_path` fixo.** É trigger function (roda como *invoker*, não `SECURITY DEFINER`), então o risco é baixo — mas destoa do padrão de todas as outras funções do repo, que fixam `search_path` (§ implícito de defesa contra hijack de resolução de nome). Adicionar `set search_path = ''` (ou `pg_catalog`) na próxima recriação da função.
+
+4. **Sem acoplamento automático entre o trigger de billing e `CAMPOS_LOJA_SOMENTE_SERVIDOR` (issue 115).** A constante TS espelha manualmente as colunas do trigger `lojas_protege_billing()` — não há teste que force as duas listas a andarem juntas. Uma migration futura que estenda o trigger com nova coluna de billing sem atualizar a constante reabre, por omissão, o mesmo furo que a 115 fechou (drift silenciosa entre banco e código). Fechar com um teste que compare a constante contra as colunas lidas do trigger via introspecção, ou um comentário cruzado na migration apontando para `admin-loja.ts`.
 
 ---
 
