@@ -1,10 +1,18 @@
-export type StatusPedido =
-  | "pendente"
-  | "confirmado"
-  | "em_preparo"
-  | "saiu_entrega"
-  | "entregue"
-  | "cancelado";
+/**
+ * Fonte única do enum de status — reusada por `status.ts` (lojista) e
+ * `admin-status.ts` (admin) no `z.enum(STATUS_VALIDOS)`. Evita duas cópias
+ * divergindo silenciosamente se o grafo de `TRANSICOES` ganhar um status novo.
+ */
+export const STATUS_VALIDOS = [
+  "pendente",
+  "confirmado",
+  "em_preparo",
+  "saiu_entrega",
+  "entregue",
+  "cancelado",
+] as const;
+
+export type StatusPedido = (typeof STATUS_VALIDOS)[number];
 
 /**
  * Máquina de estados do status do pedido (RN-08). Retorna `true` apenas se a
@@ -27,5 +35,8 @@ const TRANSICOES: Record<StatusPedido, readonly StatusPedido[]> = {
 };
 
 export function transicaoPermitida(de: StatusPedido, para: StatusPedido): boolean {
-  return TRANSICOES[de].includes(para);
+  // `de` chega tipado StatusPedido, mas o valor real vem do banco via cast
+  // (`pedido.status as StatusPedido`) — defesa em profundidade contra status
+  // fora do enum (drift de schema/dado legado) em vez de lançar TypeError.
+  return (TRANSICOES[de] ?? []).includes(para);
 }

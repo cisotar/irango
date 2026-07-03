@@ -4,19 +4,11 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import {
   transicaoPermitida,
+  STATUS_VALIDOS,
   type StatusPedido,
 } from "@/lib/utils/transicaoStatus";
 
 const ERRO_GENERICO = "Não foi possível atualizar o status do pedido.";
-
-const STATUS_VALIDOS = [
-  "pendente",
-  "confirmado",
-  "em_preparo",
-  "saiu_entrega",
-  "entregue",
-  "cancelado",
-] as const;
 
 const entradaSchema = z.object({
   pedidoId: z.guid(),
