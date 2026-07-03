@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.10 | **Atualizado:** 2026-07-03
+**Versão:** 0.2.11 | **Atualizado:** 2026-07-03
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -340,3 +340,10 @@ const items = order.order_items
 | Reconciliação CEP↔bairro no frete | bairro vem do form; não validado contra CEP real — cliente pode forçar zona mais barata | issue 064 |
 | Guard `email_confirmed_at` no painel | loja nasce `ativo=false`; acesso ao painel deve checar confirmação de email antes de liberar operações | issue 016 |
 | Reconciliação de user órfão | signUp pode criar `auth.user` sem loja se a action falhar após o signUp; limpeza não implementada | issue 065 |
+| **[PRIORIDADE ELEVADA]** Log de auditoria de acesso admin a PII | `registrarAcessoAdmin` continua no-op; volume de PII de cliente exposta ao admin cresceu com as rotas de pedidos do hub admin (dashboard, lista, detalhe) — ver `seguranca.md` §Padrão admin | issue 146 — fase futura: tabela de auditoria + retenção |
+| TOCTOU sem lock otimista em `atualizarStatusPedidoAdmin` | UPDATE filtra só por `loja_id`+`id`, sem condicionar pelo status lido; dois admins concorrentes podem gerar last-write-wins silencioso. Prioridade baixa — herdado do padrão do lojista | issue 133 |
+| `isolamento-admin.test.ts` sem `atualizarStatusPedidoAdmin` na lista manual de imports | cobertura por invocação já existe em arquivo dedicado; falta paridade de auto-cobertura | issue 133 |
+| `token_acesso` incluído no `select("*")` das listagens de pedido admin | capability tipo-senha do checkout público trafega em loaders admin que não precisam dela; pré-existente, não regressão desta feature | issue 130 |
+| `pertenceALoja` triplicada | mesma fórmula de prova de posse (`escopo.buscarPorId(tabela, id, "id")` + `data != null`) reimplementada em `admin-produtos.ts` e 2x em `admin-opcionais.ts` | issue 135 |
+| Tipo `Resultado` duplicado (`admin-opcionais.ts`/`admin-produtos.ts`) | mesmo shape `{ok:true}\|{ok:false;erro}` sem módulo neutro compartilhado (ao contrário de `cupom-erros.ts`/`status.ts`) | issue 135 |
+| DELETE+INSERT não transacional em `salvarAssociacaoOpcionaisAdmin` | falha de INSERT após DELETE commitado deixa associação parcialmente removida; não é vetor cross-tenant, mesmo padrão do CRUD do lojista | issue 135 |
