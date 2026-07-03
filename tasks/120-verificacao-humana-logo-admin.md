@@ -12,7 +12,7 @@ credencial de lojista recuperável no cloud. Optou-se por não impersonar conta 
 
 ## Critérios (executar manualmente, logado como admin SaaS)
 
-- [ ] Em `/admin/assinantes/5ec21485-e58a-4071-a41c-f8963076ae00/configuracao`, recortar
+- [ ] Em `/admin/assinantes/5ec21485-e58a-4071-a41c-f8963076ae00/configuracoes`, recortar
       e salvar uma logo → toast de sucesso, logo aparece, `lojas.logo_url` da loja-alvo
       aponta para `5ec21485-…/logo/<uuid>.webp`.
 - [ ] Remover a logo → `logo_url` zera na loja-alvo.

@@ -26,7 +26,7 @@ export function AbasLoja({ lojaId }: AbasLojaProps): ReactElement {
   const base = `/admin/assinantes/${lojaId}`;
   const abas: Aba[] = [
     { href: `${base}/cardapio`, rotulo: "Cardápio" },
-    { href: `${base}/configuracao`, rotulo: "Configuração" },
+    { href: `${base}/configuracoes`, rotulo: "Configuração" },
   ];
 
   return (
