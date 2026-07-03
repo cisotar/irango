@@ -29,6 +29,14 @@ export type PedidoLinha = {
 
 type TabelaPedidosProps = {
   pedidos: PedidoLinha[];
+  /**
+   * Prefixo de rota para o link de cada pedido (`${basePedidos}/${id}`).
+   * Contrato: passar SEM barra final (ex.: `"/painel/pedidos"`), nunca
+   * `"/painel/pedidos/"` — o componente concatena a barra. Default = painel do
+   * lojista; consumidores admin passam o base já resolvido (ex.:
+   * `"/admin/assinantes/L1/pedidos"`). É navegação, não barreira de segurança.
+   */
+  basePedidos?: string;
 };
 
 /**
@@ -99,7 +107,10 @@ function BadgeStatusPedido({ status }: { status: StatusPedido }) {
  * detalhe. Desktop = tabela densa; mobile = lista de cards (sem scroll
  * horizontal — design-system §9). Mesma fonte de dados alimenta as duas.
  */
-export function TabelaPedidos({ pedidos }: TabelaPedidosProps) {
+export function TabelaPedidos({
+  pedidos,
+  basePedidos = "/painel/pedidos",
+}: TabelaPedidosProps) {
   if (pedidos.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed py-12 text-center">
@@ -130,7 +141,7 @@ export function TabelaPedidos({ pedidos }: TabelaPedidosProps) {
               >
                 <td className="px-4 py-3">
                   <Link
-                    href={`/painel/pedidos/${pedido.id}`}
+                    href={`${basePedidos}/${pedido.id}`}
                     className="font-mono text-foreground after:absolute after:inset-0"
                   >
                     {idCurto(pedido.id)}
@@ -154,7 +165,7 @@ export function TabelaPedidos({ pedidos }: TabelaPedidosProps) {
       <ul className="flex flex-col gap-3 md:hidden">
         {pedidos.map((pedido) => (
           <li key={pedido.id}>
-            <Link href={`/painel/pedidos/${pedido.id}`} className="block">
+            <Link href={`${basePedidos}/${pedido.id}`} className="block">
               <Card size="sm" className="gap-2 transition-colors hover:bg-muted/50">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-sm text-foreground">
