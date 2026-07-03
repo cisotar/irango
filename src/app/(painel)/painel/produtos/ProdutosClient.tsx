@@ -83,6 +83,7 @@ export type ProdutosClientProps = {
     criarCategoria?: typeof criarCategoriaLojista;
     atualizarCategoria?: typeof atualizarCategoriaLojista;
     removerCategoria?: typeof removerCategoriaLojista;
+    salvarAssociacaoOpcionais?: typeof salvarAssociacaoOpcionais;
   };
 };
 
@@ -157,6 +158,8 @@ export function ProdutosClient({
   const alternarDisponibilidade =
     acoes?.alternarDisponibilidade ?? alternarDisponibilidadeLojista;
   const alternarOculto = acoes?.alternarOculto ?? alternarOcultoLojista;
+  const salvarAssociacao =
+    acoes?.salvarAssociacaoOpcionais ?? salvarAssociacaoOpcionais;
 
   // null => criar; Produto => editar. `formAberto` controla a abertura do
   // Sheet (mobile) ou Dialog (desktop) — uma árvore por vez, sem duplicar
@@ -483,6 +486,7 @@ export function ProdutosClient({
                 key={categoriaOpcionaisAberta.id}
                 categoriaId={categoriaOpcionaisAberta.id as string}
                 categoriasOpcional={categoriasOpcional}
+                salvarAssociacao={salvarAssociacao}
                 selecionadosIniciais={
                   new Set(
                     (opcionaisPorCategoria[categoriaOpcionaisAberta.id ?? ""] ?? []).map(
@@ -548,11 +552,13 @@ export function ProdutosClient({
 function SeletorOpcionaisCategoria({
   categoriaId,
   categoriasOpcional,
+  salvarAssociacao,
   selecionadosIniciais,
   onSalvo,
 }: {
   categoriaId: string;
   categoriasOpcional: CategoriaOpcional[];
+  salvarAssociacao: typeof salvarAssociacaoOpcionais;
   selecionadosIniciais: Set<string>;
   onSalvo: () => void;
 }) {
@@ -574,7 +580,7 @@ function SeletorOpcionaisCategoria({
 
   function salvar() {
     startSalvar(async () => {
-      const r = await salvarAssociacaoOpcionais({
+      const r = await salvarAssociacao({
         categoria_id: categoriaId,
         categoria_opcional_id: Array.from(selecionados),
       });
