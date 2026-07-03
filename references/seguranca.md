@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.27 | **Atualizado:** 2026-07-03
+**Versão:** 0.2.28 | **Atualizado:** 2026-07-03
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -496,6 +496,8 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 **Enforcement automático:** `src/app/admin/assinantes/enforcement-escopo-admin.test.ts` descobre os módulos de action via `readdirSync` (sem lista manual — action nova entra sozinha) e faz duas verificações estáticas de fonte por `export async function`: camada 2 exige referência a `prepararContextoAdmin`/`verificarAdminSaaS` (prova admin antes de qualquer efeito); camada 3 exige que todo statement `.from(tabela)....update()/.delete()` cru contenha `.eq(...)`. Uma action nova que esqueça o padrão falha no CI sem precisar editar a suíte de teste. A mesma descoberta cobre também os loaders `[lojaId]/carga*.ts` (`carga.ts`, `carga-opcionais.ts`, …) que elevam a `service_role` fora do fluxo de Server Action — o filtro é por prefixo (`carga` + `.ts`, excluindo `.test.ts`), não lista manual, então um loader novo que eleve privilégio entra automaticamente sob o mesmo guard (achado da issue 132: `carga-opcionais.ts` chegou a existir sem cair sob o enforcement até o glob ser generalizado).
 
 **Padrão admin para leituras (issue 130):** consultas de leitura sob `service_role` no hub admin usam a variante `(svc, lojaId)` das funções já existentes em `lib/supabase/queries/*.ts` — ex. `listarPedidosDaLoja`/`buscarPedidoDaLoja` (`pedidos.ts`), mesmo precedente de `buscarCategorias` (`categorias.ts`). Não passam pelo wrapper `EscopoLoja` (que cobre só escritas): o escopo é o `.eq("loja_id", lojaId)` explícito dentro da própria query, com `lojaId`/`id` validados por `schemaUuid` (`z.guid()`) antes de tocar o banco — formato inválido é fail-closed (`[]`/`null`, nunca vira query). `lojaId` é validado como UUID pelo caller (loader admin); a query repete o guard como defesa-em-profundidade, não como única validação. **Lacuna conhecida:** o enforcement automático acima só cobre Server Actions de escrita descobertas em `admin/assinantes` — não há verificação estática equivalente para funções de leitura server-only em `lib/supabase/queries/`; uma query nova que esqueça o `.eq("loja_id")` não é pega pelo CI hoje.
+
+**Helper `descartarLojaId` — payload `.strict()` que não declara `loja_id` (issue 135):** quando o schema zod da action admin é `.strict()` e não declara `loja_id` (porque o tenant vem do `lojaId` da URL, não do corpo), um `loja_id` hostil no payload faria o `.strict()` rejeitar o request inteiro (400 espúrio), mesmo sem risco real — o wrapper injeta `loja_id` por último de qualquer forma. `src/app/admin/assinantes/actions/admin-opcionais.ts` resolve com `descartarLojaId(payload)`: remove seletivamente só a chave `loja_id` do objeto antes do `.safeParse`, mantendo o `.strict()` como barreira contra qualquer outro campo arbitrário. A barreira real contra cross-tenant continua sendo o wrapper (`loja_id` sempre do `lojaId` da URL, nunca do payload) — o helper só evita ruído de validação, não substitui o escopo.
 
 ### Regra do prefixo Next.js
 
