@@ -23,7 +23,7 @@ export default async function AssinantesPage(): Promise<ReactElement> {
   const assinantes = await listarAssinantes(svc);
 
   return (
-    <div className="space-y-6">
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="font-heading text-2xl font-semibold text-foreground">
@@ -46,6 +46,6 @@ export default async function AssinantesPage(): Promise<ReactElement> {
       </header>
 
       <TabelaAssinantes assinantes={assinantes} />
-    </div>
+    </main>
   );
 }

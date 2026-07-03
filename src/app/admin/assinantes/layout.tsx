@@ -1,4 +1,4 @@
-import type { ReactNode, ReactElement } from "react";
+import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -20,21 +20,22 @@ export const metadata: Metadata = {
  *
  * Qualquer falha (não-admin, sessão inválida, env ausente) → redirect silencioso
  * p/ `/painel`. Detalhe só no `console.error` de `admin.ts`, nunca vaza ao cliente.
+ *
+ * NÃO envolve `children` num container/`<main>` (issue 145): o hub `[lojaId]`
+ * monta seu próprio shell full-height com o seu único `<main>` — um `<main>`
+ * aqui aninharia (HTML/a11y inválido) e espremeria o shell. A lista de
+ * assinantes (`page.tsx`) carrega o container `max-w-6xl` por conta própria.
  */
 export default async function AdminLayout({
   children,
 }: {
   children: ReactNode;
-}): Promise<ReactElement> {
+}): Promise<ReactNode> {
   try {
     await verificarAdminSaaS();
   } catch {
     redirect("/painel");
   }
 
-  return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-      {children}
-    </main>
-  );
+  return children;
 }
