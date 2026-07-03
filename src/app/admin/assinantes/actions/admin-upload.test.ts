@@ -52,6 +52,13 @@ let publicUrlResposta: string | null;
 
 function makeServiceClient() {
   return {
+    // O client real SEMPRE tem `from` (método de protótipo) — o escopo do
+    // contexto admin faz `svc.from.bind(svc)` na criação, mesmo em action que
+    // só usa storage. `enviarFotoProdutoAdmin` não deve consultar tabela alguma:
+    // se chamar, o teste falha aqui.
+    from: (tabela: string) => {
+      throw new Error(`uso inesperado de from("${tabela}") no upload admin`);
+    },
     storage: {
       from: (bucket: string) => ({
         upload: async (
