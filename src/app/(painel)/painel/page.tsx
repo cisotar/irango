@@ -12,6 +12,7 @@ import {
 import { TabelaPedidos, type PedidoLinha } from "@/components/painel/TabelaPedidos";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { calcularMetricasDoDia } from "@/lib/utils/metricasPedidos";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 /**
@@ -75,49 +76,6 @@ export default async function DashboardPage(): Promise<ReactElement> {
       </Card>
     </div>
   );
-}
-
-type Metricas = {
-  pedidosHoje: number;
-  pendentes: number;
-  totalDoDia: number;
-};
-
-/**
- * Métricas do dia derivadas dos pedidos já filtrados por RLS. "Hoje" é o dia
- * corrente no fuso de São Paulo. Pedidos cancelados não somam ao faturamento.
- */
-function calcularMetricasDoDia(pedidos: PedidoComItens[]): Metricas {
-  const hoje = chaveDia(new Date());
-  let pedidosHoje = 0;
-  let pendentes = 0;
-  let totalDoDia = 0;
-
-  for (const pedido of pedidos) {
-    if (pedido.status === "pendente") {
-      pendentes += 1;
-    }
-    if (chaveDia(new Date(pedido.criado_em)) === hoje) {
-      pedidosHoje += 1;
-      if (pedido.status !== "cancelado") {
-        totalDoDia += pedido.total;
-      }
-    }
-  }
-
-  return { pedidosHoje, pendentes, totalDoDia };
-}
-
-const formatadorDia = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Sao_Paulo",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-/** Chave AAAA-MM-DD do dia no fuso de São Paulo (compara dia corrente). */
-function chaveDia(data: Date): string {
-  return formatadorDia.format(data);
 }
 
 function paraLinha(pedido: PedidoComItens): PedidoLinha {
