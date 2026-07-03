@@ -28,16 +28,22 @@ type ModuloAction = { rotulo: string; fonte: string };
 
 /**
  * Descobre todo módulo que expõe Server Actions admin elevando a service_role:
- * `actions/*.ts` + `actions.ts` (billing/criar/excluir) + `[lojaId]/carga.ts`
- * (o loader, que também eleva). Auto-descoberto — não há lista manual a manter.
+ * `actions/*.ts` + `actions.ts` (billing/criar/excluir) + TODO loader
+ * `[lojaId]/carga*.ts` (carga.ts, carga-opcionais.ts, …, que também elevam).
+ * Auto-descoberto — não há lista manual a manter: um loader novo `carga-*.ts`
+ * entra sozinho, sem editar este teste (fecha a lacuna da issue 132, em que
+ * `carga-opcionais.ts` elevava a service_role sem cair sob o guard transversal).
  */
 function modulosDeAction(): ModuloAction[] {
+  const LOJA_DIR = join(RAIZ, "[lojaId]");
   const caminhos = [
     ...readdirSync(ACTIONS_DIR)
       .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
       .map((f) => join(ACTIONS_DIR, f)),
     join(RAIZ, "actions.ts"),
-    join(RAIZ, "[lojaId]", "carga.ts"),
+    ...readdirSync(LOJA_DIR)
+      .filter((f) => f.startsWith("carga") && f.endsWith(".ts") && !f.endsWith(".test.ts"))
+      .map((f) => join(LOJA_DIR, f)),
   ];
   return caminhos.map((caminho) => ({
     rotulo: caminho.slice(caminho.indexOf("src/")),
