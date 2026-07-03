@@ -18,12 +18,23 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { FormCupom } from "@/components/painel/FormCupom";
+import type { AcoesFormCupom } from "@/components/painel/FormCupom";
 import { removerCupom } from "@/lib/actions/cupom";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { Cupom } from "@/lib/supabase/queries/entregaPagamento";
 
+/**
+ * Contrato de actions do `CuponsClient`: o do `FormCupom` (criar/atualizar)
+ * estendido com `remover`, invocado diretamente pela listagem. Reusar
+ * `AcoesFormCupom` mantém uma fonte única do contrato criar/atualizar.
+ */
+export type AcoesCuponsClient = AcoesFormCupom & {
+  remover?: typeof removerCupom;
+};
+
 export type CuponsClientProps = {
   cupons: Cupom[];
+  acoes?: AcoesCuponsClient;
 };
 
 /** Cupom expirado se tem data de expiração no passado. */
@@ -42,8 +53,11 @@ function formatarData(iso: string | null): string {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
 
-export function CuponsClient({ cupons }: CuponsClientProps) {
+export function CuponsClient({ cupons, acoes }: CuponsClientProps) {
   const router = useRouter();
+
+  // Fallback: sem `acoes`, usa a action do lojista (zero regressão no painel).
+  const remover = acoes?.remover ?? removerCupom;
 
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Cupom | null>(null);
@@ -71,7 +85,7 @@ export function CuponsClient({ cupons }: CuponsClientProps) {
     if (!aRemover) return;
     const id = aRemover.id;
     startRemocao(async () => {
-      const resultado = await removerCupom(id);
+      const resultado = await remover(id);
       if (!resultado.ok) {
         toast.error(resultado.erro);
         return;
@@ -162,6 +176,7 @@ export function CuponsClient({ cupons }: CuponsClientProps) {
             <Separator className="mb-4" />
             <FormCupom
               key={emEdicao?.id ?? "novo"}
+              acoes={acoes}
               onSucesso={aoSalvar}
               inicial={
                 emEdicao
