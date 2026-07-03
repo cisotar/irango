@@ -10,9 +10,15 @@
 //     precisa para o checkout) — RLS filtra loja/zona ativa.
 //   - Cupons NÃO têm SELECT público (cupons_acesso_proprio). LOJISTA lê os
 //     próprios; a validação do cliente é Server Action (013) com SERVICE_ROLE.
+import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
 import type { ZonaComTaxa } from "@/lib/utils/calcularFrete";
+
+// z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
+// RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda) —
+// mesmo padrão de src/lib/supabase/queries/pedidos.ts.
+const schemaUuid = z.guid();
 
 type Client = SupabaseClient<Database>;
 
@@ -93,6 +99,36 @@ export async function buscarCupomDoDono(
  */
 export async function listarCuponsDoDono(client: Client): Promise<Cupom[]> {
   const { data, error } = await client.from("cupons").select("*");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Lista os cupons de UMA loja-alvo sob service_role (BYPASSRLS) — caminho do
+ * hub admin. Espelho `(svc, lojaId)` de `listarCuponsDoDono` + escopo explícito
+ * `.eq("loja_id", lojaId)`. Sem cupons → `[]`.
+ *
+ * NOTA DE CONFIANÇA (seguranca.md §2 — cupons): EXIGE client **service_role**
+ * injetado pelo caller (loader admin), que já revalidou `lojaId` e provou admin.
+ * Sob service_role a RLS `cupons_acesso_proprio` NÃO filtra (BYPASSRLS): o
+ * `.eq("loja_id", lojaId)` é a ÚNICA barreira de isolamento cross-tenant — sem
+ * ele o `select("*")` vazaria cupons de TODAS as lojas (estratégia comercial).
+ * Não há SELECT público de cupom: chamada com client anon retorna `[]` SEMPRE.
+ */
+export async function listarCuponsDaLoja(
+  svc: Client,
+  lojaId: string,
+): Promise<Cupom[]> {
+  // `loja_id` é uuid no banco — formato inválido nunca vira query (evita 22P02
+  // vazando erro cru do Postgres, §14). Fail-closed: escopo inválido → nada.
+  // Defesa-em-profundidade; não substitui a validação do caller (loader admin).
+  if (!schemaUuid.safeParse(lojaId).success) {
+    return [];
+  }
+  const { data, error } = await svc
+    .from("cupons")
+    .select("*")
+    .eq("loja_id", lojaId);
   if (error) throw error;
   return data ?? [];
 }
