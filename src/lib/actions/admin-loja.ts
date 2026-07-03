@@ -71,7 +71,11 @@ interface FromSolto {
 }
 
 function criarEscopoLoja(svc: Svc, lojaId: string) {
-  const from = svc.from as unknown as (tabela: string) => FromSolto;
+  // `.bind(svc)` (não `svc.from` solto): `from` é método de protótipo do
+  // supabase-js que lê `this.rest` — desacoplado do client, `this` vira
+  // undefined e TODA escrita do escopo explode em runtime (incidente de
+  // 2026-07-03 em produção; regressão coberta em admin-loja.binding.test.ts).
+  const from = svc.from.bind(svc) as unknown as (tabela: string) => FromSolto;
   return {
     /** INSERT com `loja_id` injetado POR ÚLTIMO — payload hostil não sobrescreve o escopo. */
     inserir<T extends TabelaComLojaId>(tabela: T, dados: Omit<Tabelas[T]["Insert"], "loja_id">) {
