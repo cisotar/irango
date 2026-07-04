@@ -141,6 +141,7 @@ function lojaRow(over: Partial<Tables<"lojas">> = {}): Tables<"lojas"> {
     taxa_entrega_fora_zona: null,
     telefone: null,
     whatsapp: null,
+    whatsapp_envio_automatico: true,
     timezone: "America/Sao_Paulo",
     ...over,
   } as Tables<"lojas">;
