@@ -16,6 +16,22 @@ export function obterAdminUserId(): string {
 }
 
 /**
+ * Comparação server-only e SÍNCRONA de um `user.id` já autoritativo contra
+ * `SAAS_ADMIN_USER_ID`. Ao contrário de `verificarAdminSaaS()`/`obterAdminUserId()`
+ * (fail-CLOSED), este helper é fail-SAFE: env ausente/vazia → `false` (não lança),
+ * para uso no callback OAuth (148) onde o login NUNCA pode quebrar por config
+ * faltando. Não faz `getUser()`: o `userId` deve vir de uma sessão já verificada.
+ */
+export function ehAdminSaaS(userId: string): boolean {
+  if (!userId) return false;
+  try {
+    return userId === obterAdminUserId();
+  } catch {
+    return false; // env ausente/vazia: login segue como não-admin.
+  }
+}
+
+/**
  * Única prova de identidade do dono do SaaS (RN-13). Compara o `user.id` derivado
  * do cookie de sessão HttpOnly (autoritativo, não forjável) com a env do admin.
  * Lança "acesso negado" ANTES de qualquer efeito se não casar — é a ÚNICA linha

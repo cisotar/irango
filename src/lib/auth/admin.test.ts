@@ -38,7 +38,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClient(),
 }));
 
-import { verificarAdminSaaS } from "./admin";
+import { verificarAdminSaaS, ehAdminSaaS } from "./admin";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,5 +81,54 @@ describe("verificarAdminSaaS — fase RED issue 080", () => {
     await expect(verificarAdminSaaS()).rejects.toThrow(
       /acesso negado|não configurado/i,
     );
+  });
+});
+
+/**
+ * Fase RED (TDD) da issue 147 — helper `ehAdminSaaS(userId)`.
+ *
+ * Distinção crítica vs. verificarAdminSaaS() (fail-CLOSED): este helper é
+ * fail-SAFE. É consumido no callback OAuth (148) para rotear o redirect, onde o
+ * login NUNCA pode quebrar por config faltando. Por isso env ausente/vazia →
+ * `false` SEM lançar, em vez de bloquear. É comparação síncrona de um user.id já
+ * autoritativo contra SAAS_ADMIN_USER_ID — não faz getUser() (o mock de
+ * createClient acima não é tocado por estes testes).
+ *
+ * Casos:
+ *  1. userId === SAAS_ADMIN_USER_ID          → true.
+ *  2. userId !== SAAS_ADMIN_USER_ID (lojista) → false.
+ *  3. env ausente (undefined)                 → false SEM lançar.
+ *  4. env vazia ("")                          → false SEM lançar.
+ *  5. userId vazio ("")                        → false.
+ *
+ * Todos falham hoje: `ehAdminSaaS` não existe em `./admin` (fase GREEN a
+ * implementa). O import quebra o type-check e a asserção não roda verde.
+ */
+describe("ehAdminSaaS — fase RED issue 147", () => {
+  it("true quando userId === SAAS_ADMIN_USER_ID", () => {
+    // env já stubada para ADMIN_UID no beforeEach.
+    expect(ehAdminSaaS(ADMIN_UID)).toBe(true);
+  });
+
+  it("false quando userId !== SAAS_ADMIN_USER_ID (lojista)", () => {
+    expect(ehAdminSaaS(LOJISTA_UID)).toBe(false);
+  });
+
+  it("false SEM lançar quando SAAS_ADMIN_USER_ID ausente (fail-safe: login não trava)", () => {
+    // Remove a env stubada no beforeEach → process.env.SAAS_ADMIN_USER_ID undefined.
+    vi.stubEnv("SAAS_ADMIN_USER_ID", undefined as unknown as string);
+    expect(() => ehAdminSaaS(ADMIN_UID)).not.toThrow();
+    expect(ehAdminSaaS(ADMIN_UID)).toBe(false);
+  });
+
+  it("false SEM lançar quando SAAS_ADMIN_USER_ID vazia (fail-safe)", () => {
+    vi.stubEnv("SAAS_ADMIN_USER_ID", "");
+    expect(() => ehAdminSaaS(ADMIN_UID)).not.toThrow();
+    expect(ehAdminSaaS(ADMIN_UID)).toBe(false);
+  });
+
+  it("false para userId vazio (guard antes de tocar a env)", () => {
+    // env válida (ADMIN_UID) no beforeEach; ainda assim userId "" nunca casa.
+    expect(ehAdminSaaS("")).toBe(false);
   });
 });
