@@ -27,6 +27,7 @@ export const LIMITES = {
   fretePreview: { limite: 20, janela: "1 m" },
   salvarPerfil: { limite: 10, janela: "1 m" },
   salvarLogoLoja: { limite: 10, janela: "1 m" },
+  statusPedido: { limite: 30, janela: "1 m" },
 } as const satisfies Record<string, { limite: number; janela: `${number} m` }>;
 
 export type ChaveRateLimit = keyof typeof LIMITES;

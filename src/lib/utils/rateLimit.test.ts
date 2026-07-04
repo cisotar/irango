@@ -96,6 +96,7 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "login",
         "salvarLogoLoja",
         "salvarPerfil",
+        "statusPedido",
         "validarCupom",
       ].sort(),
     );
