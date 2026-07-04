@@ -21,7 +21,8 @@ import { resolverAcaoConfirmacao } from "@/lib/utils/confirmacao";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
-import { ConfirmacaoClient } from "./ConfirmacaoClient";
+import { StatusPedidoLive } from "@/components/vitrine/confirmacao/StatusPedidoLive";
+import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -144,7 +145,12 @@ export default async function ConfirmacaoPage({
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col gap-6 px-4 py-10 md:max-w-2xl">
-      <ConfirmacaoClient />
+      <StatusPedidoLive
+        pedidoId={ped.id}
+        token={token!}
+        statusInicial={ped.status as StatusPedido}
+        tipoEntrega={ped.tipo_entrega}
+      />
 
       <Card>
         <CardHeader className="items-center text-center">
