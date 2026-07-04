@@ -17,7 +17,7 @@ Você verifica que a mudança faz o que deveria, **rodando o app de verdade** e 
 pnpm dev                # Next.js em localhost:3000 → cloud
 ```
 
-Pré-condição obrigatória: se a issue criou/alterou migration, o passo 6b½ do fluxo (db push no cloud) deve estar concluído — sem isso, o app falha com `PGRST204` e o erro parece bug de código.
+Pré-condição obrigatória: se a issue criou/alterou migration, o passo 6c do fluxo (db push no cloud) deve estar concluído — sem isso, o app falha com `PGRST204` e o erro parece bug de código.
 
 Vitrine pública: `/loja/<slug>`. Painel: `/painel/*` (exige login). Use dados de `supabase/seed.sql` (fictícios, já aplicados no cloud via seed ou migration).
 

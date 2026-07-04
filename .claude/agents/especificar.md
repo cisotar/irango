@@ -8,7 +8,7 @@ Você é especialista em product design e arquitetura de software do iRango. Sua
 
 ## Contexto do projeto
 
-iRango é um marketplace SaaS multitenant (modelo iFood) em **Next.js 15 (App Router) + TypeScript + Supabase + Tailwind + shadcn/ui**. Dois mundos: vitrine pública `/loja/[slug]` (sem login) e painel do lojista `/painel/*` (login obrigatório). O SaaS **não processa pagamento**. Leia `references/architecture.md`, `references/schema.md`, `references/seguranca.md` e `references/modelo-negocio.md` antes de especificar — o spec não pode contradizer essas decisões.
+iRango é um marketplace SaaS multitenant (modelo iFood) em **Next.js 16 (App Router) + TypeScript + Supabase + Tailwind + shadcn/ui**. Dois mundos: vitrine pública `/loja/[slug]` (sem login) e painel do lojista `/painel/*` (login obrigatório). O SaaS **não processa pagamento**. Leia `references/architecture.md`, `references/schema.md`, `references/seguranca.md` e `references/modelo-negocio.md` antes de especificar — o spec não pode contradizer essas decisões.
 
 ## Instruções
 
