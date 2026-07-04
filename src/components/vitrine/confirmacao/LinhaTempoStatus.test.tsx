@@ -95,8 +95,11 @@ describe("cancelado — bloco destructive separado", () => {
     expect(html).not.toContain('role="list"');
   });
 
-  it("renderiza um bloco role=status com a cor destructive fixa", () => {
-    expect(html).toContain('role="status"');
+  it("renderiza bloco destructive SEM região viva própria (o pai anuncia)", () => {
+    // role="status" teria aria-live implícito e duplicaria o anúncio com o
+    // anunciador sr-only do StatusPedidoLive.
+    expect(html).not.toContain('role="status"');
+    expect(html).not.toContain("aria-live");
     expect(html).toContain("#fee2e2");
   });
 

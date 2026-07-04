@@ -131,9 +131,10 @@ export function LinhaTempoStatus({ status, tipoEntrega }: LinhaTempoStatusProps)
   if (status === "cancelado") {
     const copy = copyStatusConfirmacao(status, tipoEntrega);
     const cor = APARENCIA.cancelado;
+    // Sem role="status": teria aria-live="polite" implícito e duplicaria o
+    // anúncio com o anunciador sr-only do pai (StatusPedidoLive).
     return (
       <div
-        role="status"
         className="flex items-start gap-3 rounded-xl border p-4"
         style={{
           backgroundColor: cor.tintBg,
