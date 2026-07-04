@@ -40,3 +40,22 @@ export function transicaoPermitida(de: StatusPedido, para: StatusPedido): boolea
   // fora do enum (drift de schema/dado legado) em vez de lançar TypeError.
   return (TRANSICOES[de] ?? []).includes(para);
 }
+
+/**
+ * Predicado puro de terminalidade (issue 127). Terminal ⇔ nó RECONHECIDO no
+ * grafo e sem saída (`entregue`/`cancelado`). Derivado de `TRANSICOES`, não de
+ * uma segunda lista de terminais — se o grafo ganhar um status terminal novo,
+ * este predicado acompanha sem edição.
+ *
+ * Fonte única da regra "terminalidade encerra o polling" — reusada pela action
+ * (status autoritativo do servidor) e pela UI (`StatusPedidoLive`, issue 131).
+ *
+ * Guarda: um `status` fora do enum (drift de schema/dado legado via cast) NÃO é
+ * terminal. Usar `?? []` classificaria desconhecido como terminal (length 0) e
+ * encerraria o polling cedo, escondendo atualizações reais — por isso exigimos
+ * que a lista de saídas EXISTA no grafo antes de checar o tamanho.
+ */
+export function ehStatusTerminal(status: StatusPedido): boolean {
+  const saidas = TRANSICOES[status] as readonly StatusPedido[] | undefined;
+  return saidas !== undefined && saidas.length === 0;
+}
