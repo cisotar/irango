@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
 import type { Categoria } from "./categorias";
@@ -10,6 +11,11 @@ import type { Categoria } from "./categorias";
  * Propagam `error` (§14); `[]` = sem linha, nunca mascara erro.
  */
 type Client = SupabaseClient<Database>;
+
+// z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
+// RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda) —
+// mesmo padrão de entregaPagamento.ts / pedidos.ts.
+const schemaUuid = z.guid();
 
 export type Produto = Tables<"produtos">;
 
@@ -190,7 +196,18 @@ export async function buscarOpcionaisPorCategoria(
     .in("categoria_id", categoriaIds);
   if (error) throw error;
 
-  const linhas = (data ?? []) as unknown as LinhaCategoriaOpcional[];
+  return agruparOpcionaisPorCategoria((data ?? []) as unknown as LinhaCategoriaOpcional[]);
+}
+
+/**
+ * Agrupa/ordena linhas cruas de `categoria_produto_opcionais` em
+ * `OpcionaisPorCategoria` — fonte única do agrupamento reusada por
+ * `buscarOpcionaisPorCategoria` e `buscarOpcionaisPorCategoriaDaLoja` (evita
+ * duas cópias divergindo silenciosamente no critério de ordenação/filtro).
+ */
+function agruparOpcionaisPorCategoria(
+  linhas: LinhaCategoriaOpcional[],
+): OpcionaisPorCategoria {
   const mapa: OpcionaisPorCategoria = {};
 
   for (const linha of linhas) {
@@ -199,6 +216,71 @@ export async function buscarOpcionaisPorCategoria(
 
     const opcionais = [...(cat.opcionais ?? [])].sort((a, b) => a.ordem - b.ordem);
     if (opcionais.length === 0) continue; // grupo sem item visível (RLS escondeu todos)
+
+    const grupos = (mapa[linha.categoria_id] ??= []);
+    grupos.push({
+      categoriaOpcionalId: cat.id,
+      categoriaOpcionalNome: cat.nome,
+      ordem: cat.ordem,
+      opcionais,
+    });
+  }
+
+  for (const grupos of Object.values(mapa)) {
+    grupos.sort((a, b) => a.ordem - b.ordem);
+  }
+
+  return mapa;
+}
+
+/**
+ * Variante ESCOPADA POR LOJA de `buscarOpcionaisPorCategoria`, para uso sob
+ * `service_role` (BYPASSRLS) no loader admin (issue 132, rotas 142/143).
+ *
+ * CONFIANÇA / porquê a variante existe: a original delega 100% a isolação de
+ * loja + o filtro `ativo` à RLS pública (080). Sob `service_role` essa RLS NÃO
+ * se aplica — o JOIN `categoria_produto_opcionais → opcionais_categorias →
+ * opcionais` sem `.eq("loja_id")` confiaria CEGAMENTE na lista `categoriaIds`, e
+ * um `categoria_id` de outra loja vazaria a biblioteca de opcionais dela. Aqui o
+ * `.eq("loja_id", lojaId)` em `categoria_produto_opcionais` é o ÚNICO ponto de
+ * enforcement do escopo de loja (isolação por construção, precedente issue 130).
+ *
+ * NÃO filtra `ativo` (decisão do plano): paridade com a visão do dono no painel,
+ * que enxerga opcionais inativos. Esconder inativos, se preciso, é do cliente.
+ *
+ * Mesmo select aninhado e mesmo agrupamento/ordenação da original (grupos por
+ * `opcionais_categorias.ordem`, itens por `opcionais.ordem`). `categoriaIds`
+ * vazio → `{}` sem consulta. `lojaId` fora de formato uuid → `{}` fail-closed
+ * (defesa em profundidade; não substitui a validação do loader). Propaga `error` (§14).
+ */
+export async function buscarOpcionaisPorCategoriaDaLoja(
+  client: Client,
+  lojaId: string,
+  categoriaIds: string[],
+): Promise<OpcionaisPorCategoria> {
+  if (categoriaIds.length === 0) return {};
+  // `loja_id` é uuid no banco — formato inválido nunca vira query (evita 22P02
+  // vazando erro cru, §14). Fail-closed: escopo inválido → nada.
+  if (!schemaUuid.safeParse(lojaId).success) return {};
+
+  const { data, error } = await client
+    .from("categoria_produto_opcionais")
+    .select(
+      "categoria_id, opcionais_categorias(id, nome, ordem, opcionais(id, nome, preco, ordem))",
+    )
+    .eq("loja_id", lojaId)
+    .in("categoria_id", categoriaIds);
+  if (error) throw error;
+
+  const linhas = (data ?? []) as unknown as LinhaCategoriaOpcional[];
+  const mapa: OpcionaisPorCategoria = {};
+
+  for (const linha of linhas) {
+    const cat = linha.opcionais_categorias;
+    if (!cat) continue;
+
+    const opcionais = [...(cat.opcionais ?? [])].sort((a, b) => a.ordem - b.ordem);
+    if (opcionais.length === 0) continue; // grupo sem item
 
     const grupos = (mapa[linha.categoria_id] ??= []);
     grupos.push({

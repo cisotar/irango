@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { reconciliarPosConfirmacao } from "@/lib/auth/reconciliarPosConfirmacao";
+import { ehAdminSaaS } from "@/lib/auth/admin";
 
 /**
  * Callback OAuth / confirmação de email (padrão `@supabase/ssr`).
@@ -40,7 +41,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     await reconciliarPosConfirmacao(data.user);
   }
 
-  return NextResponse.redirect(`${origin}${next ?? "/painel"}`);
+  // Destino padrão por identidade: dono do SaaS → hub `/admin`; lojista → `/painel`.
+  // Um `next` explícito já sanitizado tem prioridade sobre a decisão por identidade.
+  const destinoPadrao = data.user && ehAdminSaaS(data.user.id) ? "/admin" : "/painel";
+  return NextResponse.redirect(`${origin}${next ?? destinoPadrao}`);
 }
 
 /**

@@ -15,6 +15,11 @@ import type { Database, Tables } from "@/lib/database.types";
 // mesmo padrão de src/lib/validacoes/pedido.ts.
 const schemaUuid = z.guid();
 
+// Projeção única de pedido + itens + opcionais (snapshot). Fonte única para
+// TODAS as leituras de pedido — painel e admin compartilham o mesmo shape
+// (PedidoComItens); uma relação nova entra aqui e vale para os dois mundos.
+const SELECT_PEDIDO_COM_ITENS = "*, itens_pedido(*, itens_pedido_opcionais(*))";
+
 type Client = SupabaseClient<Database>;
 
 /** Row da TABELA `pedidos`. */
@@ -52,7 +57,7 @@ export async function buscarPedidoPorToken(
   }
   const { data, error } = await client
     .from("pedidos")
-    .select("*, itens_pedido(*, itens_pedido_opcionais(*))")
+    .select(SELECT_PEDIDO_COM_ITENS)
     .eq("id", pedidoId)
     .eq("token_acesso", token)
     .maybeSingle();
@@ -67,7 +72,7 @@ export async function listarPedidosDoDono(
 ): Promise<PedidoComItens[]> {
   let query = client
     .from("pedidos")
-    .select("*, itens_pedido(*, itens_pedido_opcionais(*))")
+    .select(SELECT_PEDIDO_COM_ITENS)
     .order("criado_em", { ascending: false });
   if (filtros?.status !== undefined) {
     query = query.eq("status", filtros.status);
@@ -84,8 +89,66 @@ export async function buscarPedidoDoDono(
 ): Promise<PedidoComItens | null> {
   const { data, error } = await client
     .from("pedidos")
-    .select("*, itens_pedido(*, itens_pedido_opcionais(*))")
+    .select(SELECT_PEDIDO_COM_ITENS)
     .eq("id", pedidoId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Hub admin lista pedidos de UMA loja-alvo sob service_role (BYPASSRLS).
+ * A RLS NÃO protege neste role — a isolação cross-tenant vem SÓ do
+ * `.eq("loja_id", lojaId)` explícito. Espelha `listarPedidosDoDono` + escopo por loja.
+ * `lojaId` já validado pelo loader (issue 138). Filtro por status opcional.
+ */
+export async function listarPedidosDaLoja(
+  svc: Client,
+  lojaId: string,
+  filtros?: FiltrosPedidos,
+): Promise<PedidoComItens[]> {
+  // `loja_id` é uuid no banco — formato inválido nunca vira query (evita 22P02
+  // vazando erro cru do Postgres, §14). Fail-closed: escopo inválido → nada.
+  // Simetria com o guard de `id` em buscarPedidoDaLoja; não substitui a validação
+  // do caller (loader admin), é defesa-em-profundidade.
+  if (!schemaUuid.safeParse(lojaId).success) {
+    return [];
+  }
+  let query = svc
+    .from("pedidos")
+    .select(SELECT_PEDIDO_COM_ITENS)
+    .eq("loja_id", lojaId)
+    .order("criado_em", { ascending: false });
+  if (filtros?.status !== undefined) {
+    query = query.eq("status", filtros.status);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Hub admin lê um pedido de UMA loja-alvo sob service_role (BYPASSRLS).
+ * Duplo `.eq("loja_id", lojaId).eq("id", id)`: um id válido de OUTRA loja → null
+ * (a linha não bate o loja_id). Espelha `buscarPedidoDoDono` + escopo por loja.
+ * `lojaId` já validado pelo loader (issue 138); guard local é defesa-em-profundidade.
+ * id em formato não-UUID → null sem tocar o banco (evita 22P02).
+ */
+export async function buscarPedidoDaLoja(
+  svc: Client,
+  lojaId: string,
+  id: string,
+): Promise<PedidoComItens | null> {
+  // Ambos `loja_id` e `id` são uuid no banco — formato inválido em qualquer um
+  // deles nunca vira query (evita 22P02, §14). Fail-closed → null.
+  if (!schemaUuid.safeParse(lojaId).success || !schemaUuid.safeParse(id).success) {
+    return null;
+  }
+  const { data, error } = await svc
+    .from("pedidos")
+    .select(SELECT_PEDIDO_COM_ITENS)
+    .eq("loja_id", lojaId)
+    .eq("id", id)
     .maybeSingle();
   if (error) throw error;
   return data;

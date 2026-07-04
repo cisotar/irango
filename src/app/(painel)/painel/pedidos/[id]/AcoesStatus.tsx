@@ -16,8 +16,18 @@ import {
  * Botões de transição de status do pedido (issue 049). Exibe APENAS ações
  * permitidas a partir do status atual, usando a mesma função pura `transicaoPermitida`
  * que o servidor (033). A UI é só conveniência — a AUTORIDADE da máquina de
- * estados (RN-08) é a Server Action `atualizarStatusPedido`, que revalida tudo.
+ * estados (RN-08) é a Server Action que executa a transição, que revalida tudo.
+ *
+ * O prop `acao` (issue 124) permite injetar a Server Action de transição —
+ * default `atualizarStatusPedido` (lojista); o wrapper admin injeta sua variante
+ * escopada por loja. O prop NÃO afrouxa a autoridade: ambas as actions revalidam
+ * `transicaoPermitida` no servidor. É injeção de dependência de UI, nada mais.
  */
+// Derivado da action real (não escrito à mão): se `ResultadoAtualizarStatus`
+// mudar, este tipo acompanha em compile-time. Exportado para o wrapper admin
+// (issues 133/140) tipar sua variante sem redigitar a assinatura.
+export type AcaoStatus = typeof atualizarStatusPedido;
+
 const ACOES: { status: StatusPedido; rotulo: string }[] = [
   { status: "confirmado", rotulo: "Confirmar" },
   { status: "em_preparo", rotulo: "Iniciar preparo" },
@@ -29,12 +39,15 @@ const ACOES: { status: StatusPedido; rotulo: string }[] = [
 export function AcoesStatus({
   pedidoId,
   statusAtual,
+  acao,
 }: {
   pedidoId: string;
   statusAtual: StatusPedido;
+  acao?: AcaoStatus;
 }) {
   const router = useRouter();
   const [pendente, startTransition] = useTransition();
+  const executar = acao ?? atualizarStatusPedido;
 
   const disponiveis = ACOES.filter((a) =>
     transicaoPermitida(statusAtual, a.status),
@@ -50,7 +63,7 @@ export function AcoesStatus({
 
   function aplicar(novoStatus: StatusPedido) {
     startTransition(async () => {
-      const resultado = await atualizarStatusPedido(pedidoId, novoStatus);
+      const resultado = await executar(pedidoId, novoStatus);
       if (!resultado.ok) {
         toast.error(resultado.erro);
         return;

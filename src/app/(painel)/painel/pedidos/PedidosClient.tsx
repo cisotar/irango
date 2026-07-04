@@ -14,6 +14,11 @@ import type { StatusPedido } from "@/lib/utils/transicaoStatus";
  */
 export type PedidosClientProps = {
   pedidos: PedidoLinha[];
+  /**
+   * Prefixo de rota dos links de pedido, repassado a `TabelaPedidos`. Contrato:
+   * SEM barra final. Default = painel do lojista.
+   */
+  basePedidos?: string;
 };
 
 type FiltroStatus = "todos" | StatusPedido;
@@ -28,7 +33,10 @@ const FILTROS: { valor: FiltroStatus; rotulo: string }[] = [
   { valor: "cancelado", rotulo: "Cancelados" },
 ];
 
-export function PedidosClient({ pedidos }: PedidosClientProps) {
+export function PedidosClient({
+  pedidos,
+  basePedidos = "/painel/pedidos",
+}: PedidosClientProps) {
   const [filtro, setFiltro] = useState<FiltroStatus>("todos");
 
   const visiveis = useMemo(
@@ -68,7 +76,7 @@ export function PedidosClient({ pedidos }: PedidosClientProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <TabelaPedidos pedidos={visiveis} />
+          <TabelaPedidos pedidos={visiveis} basePedidos={basePedidos} />
         </CardContent>
       </Card>
     </div>

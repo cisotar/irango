@@ -147,3 +147,70 @@ describe("múltiplos produtos com estados distintos não vazam rótulo entre lin
     expect(html).toContain('aria-label="Disponibilizar Suco"');
   });
 });
+
+/**
+ * Testes do slot `acoes.salvarAssociacaoOpcionais` (issue 129).
+ *
+ * A resolução `const salvarAssociacao = acoes?.salvarAssociacaoOpcionais ??
+ * salvarAssociacaoOpcionais` roda no CORPO de `ProdutosClient` — a cada
+ * render, incondicionalmente (não dentro de um handler de clique). Ou seja,
+ * ao contrário da maioria das actions deste arquivo (resolvidas dentro de
+ * handlers), um bug aqui — por exemplo trocar `acoes?.salvarAssociacaoOpcionais`
+ * por `acoes!.salvarAssociacaoOpcionais` — lançaria em TODO render do painel
+ * do lojista (que sempre renderiza sem `acoes`), o mesmo padrão de regressão
+ * do commit 0bb5864 ("escopo admin perdia o binding do client — toda escrita
+ * admin quebrava em prod"). Os testes existentes acima já renderizam sem
+ * `acoes` e cobrem isso incidentalmente; os dois abaixo tornam essa garantia
+ * explícita para o 10º slot acrescentado por esta issue.
+ */
+describe("slot acoes.salvarAssociacaoOpcionais (issue 129)", () => {
+  it("sem acoes: painel do lojista renderiza normalmente (a resolução no corpo do componente não lança)", () => {
+    const html = renderLista([produtoBase()]);
+    expect(html).toContain("Produtos");
+  });
+
+  it("com as 10 actions de acoes injetadas (incluindo salvarAssociacaoOpcionais): HTML idêntico ao sem acoes, nenhuma é chamada", () => {
+    const acoesMock = {
+      removerProduto: vi.fn(async () => ({ ok: true }) as const),
+      alternarDisponibilidade: vi.fn(async () => ({ ok: true }) as const),
+      alternarOculto: vi.fn(async () => ({ ok: true }) as const),
+      criarProduto: vi.fn(async () => ({ ok: true }) as const),
+      atualizarProduto: vi.fn(async () => ({ ok: true }) as const),
+      enviarFotoProduto: vi.fn(async () => ({ ok: true, url: "" }) as never),
+      criarCategoria: vi.fn(async () => ({ ok: true }) as const),
+      atualizarCategoria: vi.fn(async () => ({ ok: true }) as const),
+      removerCategoria: vi.fn(async () => ({ ok: true }) as const),
+      salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
+    } as unknown as NonNullable<
+      Parameters<typeof ProdutosClient>[0]["acoes"]
+    >;
+
+    const produtos = [produtoBase()];
+    const semAcoes = renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={[]}
+        opcionaisPorCategoria={{}}
+        categoriasOpcional={[]}
+      />,
+    );
+    const comAcoes = renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={[]}
+        opcionaisPorCategoria={{}}
+        categoriasOpcional={[]}
+        acoes={acoesMock}
+      />,
+    );
+
+    expect(comAcoes).toBe(semAcoes);
+    for (const fn of Object.values(acoesMock)) {
+      expect(fn).not.toHaveBeenCalled();
+    }
+  });
+});

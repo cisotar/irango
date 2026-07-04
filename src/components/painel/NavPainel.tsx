@@ -34,37 +34,75 @@ type ItemNav = {
   subitens?: { href: string; rotulo: string }[];
 };
 
-const ITENS: ItemNav[] = [
-  { href: "/painel", rotulo: "Dashboard", icone: LayoutDashboard },
-  { href: "/painel/pedidos", rotulo: "Pedidos", icone: ClipboardList },
-  {
-    href: "/painel/produtos",
-    rotulo: "Produtos",
-    icone: Package,
-    subitens: [{ href: "/painel/produtos/opcionais", rotulo: "Opcionais" }],
-  },
-  { href: "/painel/cupons", rotulo: "Cupons", icone: Ticket },
-  {
-    href: "/painel/configuracoes",
-    rotulo: "Configurações",
-    icone: Settings,
-    subitens: [
-      { href: "/painel/configuracoes/perfil", rotulo: "Perfil" },
-      { href: "/painel/configuracoes/horarios", rotulo: "Horários" },
-      { href: "/painel/configuracoes/entregas", rotulo: "Entregas" },
-      { href: "/painel/configuracoes/pagamentos", rotulo: "Pagamentos" },
-      { href: "/painel/configuracoes/tema", rotulo: "Tema" },
-      { href: "/painel/configuracoes/assinatura", rotulo: "Assinatura" },
-    ],
-  },
-];
+/**
+ * Contexto que parametriza o shell de navegação. TODO opcional → o default
+ * (`{}`) reproduz o painel do lojista byte-a-byte (`/painel`, Assinatura
+ * visível, Configurações com subitens). Só primitivos: os ícones (`LucideIcon`)
+ * NUNCA cruzam a fronteira RSC→client — são resolvidos aqui dentro, no módulo
+ * `'use client'`, por `construirItens`.
+ */
+export type ContextoNav = {
+  /** Raiz das rotas do menu. Default `/painel`. */
+  basePath?: string;
+  /** Título exibido no topo do menu. Default `iRango`. */
+  titulo?: string;
+  /** Admin: `true` remove o subitem Assinatura (organização, não segurança). */
+  ocultarAssinatura?: boolean;
+  /** Admin: `true` deixa Configurações sem subitens (item consolidado). */
+  configConsolidada?: boolean;
+};
 
 /**
- * `/painel` é prefixo de tudo — só está ativo em correspondência exata.
- * Demais itens ativam por prefixo (cobre sub-rotas como /pedidos/[id]).
+ * Gera os itens do menu a partir do `basePath`, reescrevendo hrefs relativos à
+ * base e mantendo ordem/ícones/rótulos idênticos. Helper puro DENTRO do módulo
+ * client (ícones não cruzam a fronteira RSC). Sem contexto → itens do lojista.
  */
-function estaAtivo(pathname: string, href: string): boolean {
-  if (href === "/painel") return pathname === "/painel";
+function construirItens(contexto: ContextoNav = {}): ItemNav[] {
+  const base = contexto.basePath ?? "/painel";
+
+  const itemConfiguracoes: ItemNav = contexto.configConsolidada
+    ? { href: `${base}/configuracoes`, rotulo: "Configurações", icone: Settings }
+    : {
+        href: `${base}/configuracoes`,
+        rotulo: "Configurações",
+        icone: Settings,
+        subitens: [
+          { href: `${base}/configuracoes/perfil`, rotulo: "Perfil" },
+          { href: `${base}/configuracoes/horarios`, rotulo: "Horários" },
+          { href: `${base}/configuracoes/entregas`, rotulo: "Entregas" },
+          { href: `${base}/configuracoes/pagamentos`, rotulo: "Pagamentos" },
+          { href: `${base}/configuracoes/tema`, rotulo: "Tema" },
+          ...(contexto.ocultarAssinatura
+            ? []
+            : [
+                {
+                  href: `${base}/configuracoes/assinatura`,
+                  rotulo: "Assinatura",
+                },
+              ]),
+        ],
+      };
+
+  return [
+    { href: base, rotulo: "Dashboard", icone: LayoutDashboard },
+    { href: `${base}/pedidos`, rotulo: "Pedidos", icone: ClipboardList },
+    {
+      href: `${base}/produtos`,
+      rotulo: "Produtos",
+      icone: Package,
+      subitens: [{ href: `${base}/produtos/opcionais`, rotulo: "Opcionais" }],
+    },
+    { href: `${base}/cupons`, rotulo: "Cupons", icone: Ticket },
+    itemConfiguracoes,
+  ];
+}
+
+/**
+ * A `raiz` (basePath) é prefixo de tudo — só está ativa em correspondência
+ * exata. Demais itens ativam por prefixo (cobre sub-rotas como /pedidos/[id]).
+ */
+function estaAtivo(pathname: string, href: string, raiz: string): boolean {
+  if (href === raiz) return pathname === raiz;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -99,20 +137,35 @@ function LinkNav({
 }
 
 /** Lista de navegação — fonte única para desktop e mobile. */
-function ListaNav({ onNavegar }: { onNavegar?: () => void }) {
+function ListaNav({
+  contexto = {},
+  onNavegar,
+}: {
+  contexto?: ContextoNav;
+  onNavegar?: () => void;
+}) {
   const pathname = usePathname();
+  const itens = construirItens(contexto);
+  const raiz = contexto.basePath ?? "/painel";
 
   return (
     <nav className="flex flex-1 flex-col gap-1">
-      {ITENS.map((item) => {
-        const ativo = estaAtivo(pathname, item.href);
+      {itens.map((item) => {
+        // Pai com subitens: `estaAtivo` casa por prefixo, então uma sub-rota
+        // (ex. /produtos/opcionais) também "ativaria" o pai /produtos. Só
+        // suprime o destaque do pai quando um subitem específico é o match —
+        // na própria rota do pai (sem subitem ativo), o pai acende normalmente.
+        const subitemAtivo =
+          item.subitens?.some((sub) => estaAtivo(pathname, sub.href, raiz)) ??
+          false;
+        const ativo = estaAtivo(pathname, item.href, raiz) && !subitemAtivo;
         return (
           <div key={item.href} className="flex flex-col gap-1">
             <LinkNav
               href={item.href}
               rotulo={item.rotulo}
               icone={item.icone}
-              ativo={item.subitens ? false : ativo}
+              ativo={ativo}
               onNavegar={onNavegar}
             />
             {item.subitens ? (
@@ -122,7 +175,7 @@ function ListaNav({ onNavegar }: { onNavegar?: () => void }) {
                     key={sub.href}
                     href={sub.href}
                     rotulo={sub.rotulo}
-                    ativo={estaAtivo(pathname, sub.href)}
+                    ativo={estaAtivo(pathname, sub.href, raiz)}
                     onNavegar={onNavegar}
                   />
                 ))}
@@ -166,13 +219,20 @@ function BotaoLogout() {
   );
 }
 
-function ConteudoSidebar({ onNavegar }: { onNavegar?: () => void }) {
+function ConteudoSidebar({
+  contexto = {},
+  onNavegar,
+}: {
+  contexto?: ContextoNav;
+  onNavegar?: () => void;
+}) {
+  const titulo = contexto.titulo ?? "iRango";
   return (
     <>
-      <div className="px-3 py-2 text-lg font-semibold">iRango</div>
+      <div className="px-3 py-2 text-lg font-semibold">{titulo}</div>
       <Separator />
       <div className="flex flex-1 flex-col px-2 py-2">
-        <ListaNav onNavegar={onNavegar} />
+        <ListaNav contexto={contexto} onNavegar={onNavegar} />
       </div>
       <Separator />
       <div className="px-2 py-2">
@@ -183,17 +243,18 @@ function ConteudoSidebar({ onNavegar }: { onNavegar?: () => void }) {
 }
 
 /** Sidebar fixa do desktop (≥1024px). */
-export function SidebarPainel() {
+export function SidebarPainel({ contexto = {} }: { contexto?: ContextoNav }) {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r bg-card lg:flex">
-      <ConteudoSidebar />
+      <ConteudoSidebar contexto={contexto} />
     </aside>
   );
 }
 
 /** Topbar do mobile (<1024px): hamburger abre a sidebar como Sheet. */
-export function TopbarPainel() {
+export function TopbarPainel({ contexto = {} }: { contexto?: ContextoNav }) {
   const [aberto, setAberto] = useState(false);
+  const titulo = contexto.titulo ?? "iRango";
 
   return (
     <header className="flex h-14 items-center gap-2 border-b bg-card px-4 lg:hidden">
@@ -212,11 +273,11 @@ export function TopbarPainel() {
         </SheetTrigger>
         <SheetContent side="left" className="flex w-72 flex-col gap-0 p-0">
           <SheetHeader className="px-3 py-3">
-            <SheetTitle className="text-lg">iRango</SheetTitle>
+            <SheetTitle className="text-lg">{titulo}</SheetTitle>
           </SheetHeader>
           <Separator />
           <div className="flex flex-1 flex-col px-2 py-2">
-            <ListaNav onNavegar={() => setAberto(false)} />
+            <ListaNav contexto={contexto} onNavegar={() => setAberto(false)} />
           </div>
           <Separator />
           <div className="px-2 py-2">
@@ -224,7 +285,7 @@ export function TopbarPainel() {
           </div>
         </SheetContent>
       </Sheet>
-      <span className="text-base font-semibold">iRango</span>
+      <span className="text-base font-semibold">{titulo}</span>
     </header>
   );
 }

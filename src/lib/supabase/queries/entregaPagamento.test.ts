@@ -7,6 +7,10 @@ import {
   buscarCupomDoDono,
   listarCuponsDoDono,
   buscarCupomPorCodigo,
+  // Fase RED issue 131 — ainda NÃO existe em ./entregaPagamento: binding
+  // undefined → cada chamada lança "is not a function" (RED por ausência real
+  // de implementação, não por erro de import que mascararia a asserção).
+  listarCuponsDaLoja,
 } from "./entregaPagamento";
 
 /**
@@ -220,5 +224,62 @@ describe("025 queries entrega/pagamento/cupom — contrato TS (camada 2, mock)",
   it("buscarCupomPorCodigo PROPAGA o error do PostgREST (não mascara como null)", async () => {
     const { client } = makeClient({ data: null, error: { message: "boom" } });
     await expect(buscarCupomPorCodigo(client, "loja-1", "X")).rejects.toBeTruthy();
+  });
+});
+
+/**
+ * Fase RED (TDD) da issue 131 — `listarCuponsDaLoja(svc, lojaId)` (camada 2).
+ *
+ * Espelho `(svc, lojaId)` de `listarCuponsDoDono`: MESMA fonte (`cupons`), MESMA
+ * projeção (`select("*")`), MESMA propagação de erro, ACRESCENTANDO o escopo
+ * explícito `.eq("loja_id", lojaId)`. Sob service_role a RLS NÃO filtra
+ * (BYPASSRLS) — este `.eq` é a ÚNICA barreira de isolamento cross-tenant. Este
+ * arquivo prova FONTE/FILTRO/guard/erro; o isolamento em SQL real está na
+ * camada 1 (queries_cupons_por_loja.test.ts).
+ *
+ * A função ainda NÃO existe em ./entregaPagamento → `listarCuponsDaLoja` é
+ * `undefined` no import → cada chamada lança "is not a function" (RED real por
+ * ausência de implementação, não por asserção trivial). A GREEN (issue) cria a
+ * função + o guard `schemaUuid = z.guid()`, e todos estes casos passam a verde.
+ */
+describe("131 listarCuponsDaLoja — contrato TS escopado por lojaId (camada 2, mock)", () => {
+  // UUID válido: passa o guard schemaUuid (z.guid()) e chega ao `.from()`.
+  const LOJA_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
+  it("[131-2-1] consulta `cupons` e APLICA .eq('loja_id', lojaId) — a barreira de isolamento sob service_role", async () => {
+    const linhas = [
+      { id: "cup-a1", loja_id: LOJA_A, codigo: "PROMO_A", tipo: "percentual", valor: 10 },
+      { id: "cup-a2", loja_id: LOJA_A, codigo: "FRETE_A", tipo: "fixo", valor: 5 },
+    ];
+    const { client, calls } = makeClient({ data: linhas, error: null });
+
+    const out = await listarCuponsDaLoja(client, LOJA_A);
+
+    expect(calls.from).toHaveBeenCalledWith("cupons");
+    // SEM este .eq a isolação vaza sob service_role — este é o teste que prova a barreira.
+    expect(calls.eq).toHaveBeenCalledWith("loja_id", LOJA_A);
+    expect(out).toEqual(linhas);
+  });
+
+  it("[131-2-2] lojaId em formato NÃO-UUID → [] SEM chamar .from() (guard fail-closed, evita 22P02)", async () => {
+    const { client, calls } = makeClient({ data: [{ id: "nunca" }], error: null });
+
+    const out = await listarCuponsDaLoja(client, "not-a-uuid");
+
+    expect(out).toEqual([]);
+    // não vira query: o guard barra ANTES de tocar o banco.
+    expect(calls.from).not.toHaveBeenCalled();
+  });
+
+  it("[131-2-3] PROPAGA o error do PostgREST (não mascara como []) — anti-falso-verde vs. stub que engole erro", async () => {
+    const err = { message: "db down", code: "PGRST500" };
+    const { client } = makeClient({ data: null, error: err });
+    await expect(listarCuponsDaLoja(client, LOJA_A)).rejects.toBe(err);
+  });
+
+  it("[131-2-4] loja sem cupons → [] (sem lançar)", async () => {
+    const { client } = makeClient({ data: [], error: null });
+    const out = await listarCuponsDaLoja(client, LOJA_A);
+    expect(out).toEqual([]);
   });
 });

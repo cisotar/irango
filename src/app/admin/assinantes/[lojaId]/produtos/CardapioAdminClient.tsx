@@ -4,7 +4,7 @@ import { useCallback } from "react";
 
 import { ProdutosClient } from "@/app/(painel)/painel/produtos/ProdutosClient";
 import type { Categoria } from "@/components/painel/FormProduto";
-import type { Produto } from "@/lib/supabase/queries/produtos";
+import type { Produto, OpcionaisPorCategoria } from "@/lib/supabase/queries/produtos";
 import {
   criarCategoriaAdmin,
   atualizarCategoriaAdmin,
@@ -15,8 +15,10 @@ import {
   atualizarProdutoAdmin,
   removerProdutoAdmin,
   alternarDisponibilidadeAdmin,
+  alternarOcultoAdmin,
 } from "@/app/admin/assinantes/actions/admin-produtos";
 import { enviarFotoProdutoAdmin } from "@/app/admin/assinantes/actions/admin-upload";
+import { salvarAssociacaoOpcionaisAdmin } from "@/app/admin/assinantes/actions/admin-opcionais";
 
 /**
  * Wrapper client da aba Cardápio do hub admin (issue 100). Reusa o
@@ -35,11 +37,15 @@ export function CardapioAdminClient({
   lojaId,
   produtos,
   categorias,
+  opcionaisPorCategoria,
+  categoriasOpcional,
 }: {
   lojaSlug: string;
   lojaId: string;
   produtos: Produto[];
   categorias: Categoria[];
+  opcionaisPorCategoria: OpcionaisPorCategoria;
+  categoriasOpcional: { id: string; nome: string }[];
 }) {
   // Foto: o `UploadFotoProduto` monta o FormData só com o arquivo (CAMPO_ARQUIVO).
   // A action admin lê `loja_id` do FormData; injetamos o `lojaId` da URL aqui.
@@ -57,11 +63,12 @@ export function CardapioAdminClient({
       lojaId={lojaId}
       produtos={produtos}
       categorias={categorias}
-      // O cardápio admin não exibe opcionais no rodapé nem gerencia a
-      // biblioteca de opcionais (fora do escopo da feature): mapa/lista vazios
-      // → o rodapé não monta e o seletor de categoria não aparece com itens.
-      opcionaisPorCategoria={{}}
-      categoriasOpcional={[]}
+      // Opcionais reais da loja-alvo (loader 132). Guard 122-129: habilitar
+      // `categoriasOpcional` reais EXIGE injetar `salvarAssociacaoOpcionais`
+      // admin no `acoes` (abaixo) na MESMA mudança — sem isso o fallback cai na
+      // action do lojista (resolve loja por auth.uid() = admin → cross-tenant).
+      opcionaisPorCategoria={opcionaisPorCategoria}
+      categoriasOpcional={categoriasOpcional}
       acoes={{
         criarCategoria: (payload) => criarCategoriaAdmin(lojaId, payload),
         atualizarCategoria: (id, payload) =>
@@ -73,7 +80,10 @@ export function CardapioAdminClient({
         removerProduto: (id) => removerProdutoAdmin(lojaId, id),
         alternarDisponibilidade: (id, disponivel) =>
           alternarDisponibilidadeAdmin(lojaId, id, disponivel),
+        alternarOculto: (id, oculto) => alternarOcultoAdmin(lojaId, id, oculto),
         enviarFotoProduto,
+        salvarAssociacaoOpcionais: (payload) =>
+          salvarAssociacaoOpcionaisAdmin(lojaId, payload),
       }}
     />
   );

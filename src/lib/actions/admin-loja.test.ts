@@ -163,6 +163,78 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
     expect(op.tipo).toBe("update");
     expect(op.eqs).toContainEqual({ c: "id", v: LOJA_ID });
   });
+
+  // Letalidade do filtro de runtime (issue 115): o `Omit` protege só chamadores que
+  // passam object-literal; `as`/width-subtyping o derrotam, e `service_role` BYPASSA o
+  // trigger lojas_protege_billing_v2. O filtro é o backstop real — descarta as chaves
+  // somente-servidor mesmo quando o tipo é burlado por `as never`.
+  it("atualizarLoja descarta chaves somente-servidor mesmo sob cast (backstop de runtime)", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.atualizarLoja({ dono_id: "atacante", nome: "ok" } as never);
+    const op = opsEspia.find((o) => o.tabela === "lojas")!;
+    const payload = op.payload as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("dono_id");
+    expect(payload.nome).toBe("ok");
+  });
+
+  // Issue 115 — completude do filtro: a blocklist tem 13 colunas (espelhando o
+  // trigger lojas_protege_billing_v2 + id + consentimento_*), não só `dono_id`.
+  // Lista hardcoded AQUI (não importada de admin-loja.ts): se alguém remover uma
+  // entrada de CAMPOS_LOJA_SOMENTE_SERVIDOR por engano, este teste pega — importar
+  // a mesma constante do módulo sob teste esconderia a regressão.
+  it("atualizarLoja descarta TODAS as colunas da blocklist, não só dono_id (letalidade completa)", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    const colunasBloqueadas = [
+      "id",
+      "dono_id",
+      "assinatura_status",
+      "assinatura_inicio",
+      "assinatura_fim_periodo",
+      "assinatura_atualizada_em",
+      "hotmart_subscriber_code",
+      "hotmart_plano",
+      "billing_provider",
+      "provider_subscription_id",
+      "plano_id",
+      "consentimento_versao",
+      "consentimento_em",
+    ];
+    const payloadHostil = {
+      ...Object.fromEntries(colunasBloqueadas.map((c) => [c, `forjado-${c}`])),
+      nome: "ok",
+    } as never;
+
+    await escopo.atualizarLoja(payloadHostil);
+
+    const op = opsEspia.find((o) => o.tabela === "lojas")!;
+    const payload = op.payload as Record<string, unknown>;
+    for (const col of colunasBloqueadas) {
+      expect(payload, `coluna '${col}' deveria ter sido descartada`).not.toHaveProperty(col);
+    }
+    expect(payload.nome).toBe("ok");
+  });
+
+  // Issue 115 — payload SÓ com chaves bloqueadas (nenhuma legítima sobra). O
+  // filtro deve produzir um UPDATE com objeto vazio, não lançar nem enviar
+  // undefined/null que quebre o builder do PostgREST.
+  it("atualizarLoja com payload SÓ de chaves bloqueadas → UPDATE vazio, não explode", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    const somenteBloqueadas = {
+      dono_id: "atacante",
+      plano_id: "premium-forjado",
+      consentimento_versao: "v999",
+    } as never;
+
+    const resultado = await escopo.atualizarLoja(somenteBloqueadas);
+
+    expect(resultado.error).toBeNull();
+    const op = opsEspia.find((o) => o.tabela === "lojas")!;
+    expect(op.tipo).toBe("update");
+    expect(op.payload).toEqual({});
+  });
 });
 
 // ─────────────────── registrarAcessoAdmin (no-op best-effort) ────────────────

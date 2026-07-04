@@ -44,11 +44,29 @@ import type {
 type CategoriaProduto = { id: string; nome: string };
 type Associacao = { categoria_id: string; categoria_opcional_id: string };
 
+/**
+ * Actions injetáveis das 8 operações de opcionais. Omitidas no painel do
+ * lojista (caem nos defaults = imports de `lib/actions/opcional`,
+ * comportamento atual). A via admin (137) passa as variantes escopadas por
+ * `lojaId`. Tipadas via `typeof` (single-source, espelha `ProdutosClient`).
+ */
+export type OpcionaisClientAcoes = {
+  criarCategoriaOpcional?: typeof criarCategoriaOpcional;
+  atualizarCategoriaOpcional?: typeof atualizarCategoriaOpcional;
+  removerCategoriaOpcional?: typeof removerCategoriaOpcional;
+  criarOpcional?: typeof criarOpcional;
+  atualizarOpcional?: typeof atualizarOpcional;
+  alternarOpcionalAtivo?: typeof alternarOpcionalAtivo;
+  removerOpcional?: typeof removerOpcional;
+  salvarAssociacaoOpcionais?: typeof salvarAssociacaoOpcionais;
+};
+
 export type OpcionaisClientProps = {
   categoriasOpcional: CategoriaOpcional[];
   opcionais: Opcional[];
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
+  acoes?: OpcionaisClientAcoes;
 };
 
 export function OpcionaisClient({
@@ -56,18 +74,21 @@ export function OpcionaisClient({
   opcionais,
   categoriasProduto,
   associacoes,
+  acoes,
 }: OpcionaisClientProps) {
   return (
     <main className="mx-auto w-full max-w-3xl space-y-10 px-4 py-6">
       <BibliotecaOpcionais
         categoriasOpcional={categoriasOpcional}
         opcionais={opcionais}
+        acoes={acoes}
       />
       <Separator />
       <AssociacaoOpcionais
         categoriasOpcional={categoriasOpcional}
         categoriasProduto={categoriasProduto}
         associacoes={associacoes}
+        acoes={acoes}
       />
     </main>
   );
@@ -78,9 +99,11 @@ export function OpcionaisClient({
 function BibliotecaOpcionais({
   categoriasOpcional,
   opcionais,
+  acoes,
 }: {
   categoriasOpcional: CategoriaOpcional[];
   opcionais: Opcional[];
+  acoes?: OpcionaisClientAcoes;
 }) {
   const router = useRouter();
   const [busca, setBusca] = useState("");
@@ -127,7 +150,8 @@ function BibliotecaOpcionais({
     if (!catARemover) return;
     const id = catARemover.id;
     startRemoverCat(async () => {
-      const r = await removerCategoriaOpcional(id);
+      const r = await (acoes?.removerCategoriaOpcional ??
+        removerCategoriaOpcional)(id);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -142,7 +166,7 @@ function BibliotecaOpcionais({
     if (!opcARemover) return;
     const id = opcARemover.id;
     startRemoverOpc(async () => {
-      const r = await removerOpcional(id);
+      const r = await (acoes?.removerOpcional ?? removerOpcional)(id);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -155,7 +179,10 @@ function BibliotecaOpcionais({
 
   function alternar(o: Opcional) {
     startAlternar(async () => {
-      const r = await alternarOpcionalAtivo(o.id, !o.ativo);
+      const r = await (acoes?.alternarOpcionalAtivo ?? alternarOpcionalAtivo)(
+        o.id,
+        !o.ativo,
+      );
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -315,6 +342,7 @@ function BibliotecaOpcionais({
               key={catForm.cat?.id ?? "nova"}
               inicial={catForm.cat}
               onSucesso={aoSalvar}
+              acoes={acoes}
             />
           </div>
         </SheetContent>
@@ -344,6 +372,7 @@ function BibliotecaOpcionais({
               categoriasOpcional={categoriasOpcional}
               categoriaOpcionalIdPadrao={opcForm.categoriaOpcionalId}
               onSucesso={aoSalvar}
+              acoes={acoes}
             />
           </div>
         </SheetContent>
@@ -383,9 +412,11 @@ function BibliotecaOpcionais({
 function FormCategoriaOpcional({
   inicial,
   onSucesso,
+  acoes,
 }: {
   inicial: CategoriaOpcional | null;
   onSucesso: () => void;
+  acoes?: OpcionaisClientAcoes;
 }) {
   const ehEdicao = inicial != null;
   const [nome, setNome] = useState(inicial?.nome ?? "");
@@ -402,8 +433,11 @@ function FormCategoriaOpcional({
     startEnvio(async () => {
       const r =
         ehEdicao && inicial
-          ? await atualizarCategoriaOpcional(inicial.id, parsed.data)
-          : await criarCategoriaOpcional(parsed.data);
+          ? await (acoes?.atualizarCategoriaOpcional ??
+              atualizarCategoriaOpcional)(inicial.id, parsed.data)
+          : await (acoes?.criarCategoriaOpcional ?? criarCategoriaOpcional)(
+              parsed.data,
+            );
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -454,11 +488,13 @@ function FormOpcional({
   categoriasOpcional,
   categoriaOpcionalIdPadrao,
   onSucesso,
+  acoes,
 }: {
   inicial: Opcional | null;
   categoriasOpcional: CategoriaOpcional[];
   categoriaOpcionalIdPadrao: string | null;
   onSucesso: () => void;
+  acoes?: OpcionaisClientAcoes;
 }) {
   const ehEdicao = inicial != null;
   const [nome, setNome] = useState(inicial?.nome ?? "");
@@ -490,8 +526,11 @@ function FormOpcional({
     startEnvio(async () => {
       const r =
         ehEdicao && inicial
-          ? await atualizarOpcional(inicial.id, parsed.data)
-          : await criarOpcional(parsed.data);
+          ? await (acoes?.atualizarOpcional ?? atualizarOpcional)(
+              inicial.id,
+              parsed.data,
+            )
+          : await (acoes?.criarOpcional ?? criarOpcional)(parsed.data);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -575,10 +614,12 @@ function AssociacaoOpcionais({
   categoriasOpcional,
   categoriasProduto,
   associacoes,
+  acoes,
 }: {
   categoriasOpcional: CategoriaOpcional[];
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
+  acoes?: OpcionaisClientAcoes;
 }) {
   const router = useRouter();
 
@@ -620,6 +661,7 @@ function AssociacaoOpcionais({
             categoriasOpcional={categoriasOpcional}
             selecionadosIniciais={inicialPorProduto.get(catProd.id) ?? new Set()}
             onSalvo={() => router.refresh()}
+            acoes={acoes}
           />
         ))}
       </div>
@@ -632,11 +674,13 @@ function CartaoAssociacao({
   categoriasOpcional,
   selecionadosIniciais,
   onSalvo,
+  acoes,
 }: {
   categoriaProduto: CategoriaProduto;
   categoriasOpcional: CategoriaOpcional[];
   selecionadosIniciais: Set<string>;
   onSalvo: () => void;
+  acoes?: OpcionaisClientAcoes;
 }) {
   const [selecionados, setSelecionados] =
     useState<Set<string>>(selecionadosIniciais);
@@ -656,7 +700,8 @@ function CartaoAssociacao({
 
   function salvar() {
     startSalvar(async () => {
-      const r = await salvarAssociacaoOpcionais({
+      const r = await (acoes?.salvarAssociacaoOpcionais ??
+        salvarAssociacaoOpcionais)({
         categoria_id: categoriaProduto.id,
         categoria_opcional_id: Array.from(selecionados),
       });

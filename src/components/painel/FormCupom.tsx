@@ -24,10 +24,23 @@ export type CupomInicial = Pick<
   | "ativo"
 >;
 
+/**
+ * Actions de persistência injetáveis (issue 126). Tipadas via `typeof` das
+ * actions do lojista — `payload: unknown` no 2º parâmetro deixa a injeção
+ * type-safe sem acoplar o form ao shape do parse. Default = actions do lojista.
+ * O wrapper admin (136) fixa `lojaId` em closure para casar estas assinaturas.
+ */
+export type AcoesFormCupom = {
+  criar?: typeof criarCupom;
+  atualizar?: typeof atualizarCupom;
+};
+
 export type FormCupomProps = {
   /** Se presente (com `id`), o form opera em modo edição. */
   inicial?: CupomInicial;
   onSucesso?: () => void;
+  /** Actions de persistência. Ausente → actions do lojista (default). */
+  acoes?: AcoesFormCupom;
 };
 
 const selectClassName =
@@ -49,8 +62,13 @@ function isoParaDatetimeLocal(iso: string | null): string {
  * (032) revalida o mesmo schema, deriva `loja_id` do dono e impõe código único
  * no banco; código duplicado retorna "Este código já existe".
  */
-export function FormCupom({ inicial, onSucesso }: FormCupomProps) {
+export function FormCupom({ inicial, onSucesso, acoes }: FormCupomProps) {
   const ehEdicao = inicial?.id != null;
+
+  // Fallback POR FUNÇÃO: `acoes` parcial ({ criar } sem { atualizar }) ainda
+  // cai no default do lojista para o buraco individual (não por-objeto).
+  const criar = acoes?.criar ?? criarCupom;
+  const atualizar = acoes?.atualizar ?? atualizarCupom;
 
   const [codigo, setCodigo] = useState(inicial?.codigo ?? "");
   const [tipo, setTipo] = useState<"percentual" | "fixo">(
@@ -96,8 +114,8 @@ export function FormCupom({ inicial, onSucesso }: FormCupomProps) {
     startEnvio(async () => {
       const resultado =
         ehEdicao && inicial?.id
-          ? await atualizarCupom(inicial.id, parsed.data)
-          : await criarCupom(parsed.data);
+          ? await atualizar(inicial.id, parsed.data)
+          : await criar(parsed.data);
 
       if (!resultado.ok) {
         toast.error(resultado.erro);

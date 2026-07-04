@@ -3,21 +3,29 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { SidebarPainel, TopbarPainel } from "@/components/painel/NavPainel";
 import { carregarCabecalhoLojaAdmin } from "./cabecalho";
-import { AbasLoja } from "./AbasLoja";
 
 // Dados da loja-alvo mudam por ação admin a qualquer momento — nunca cachear.
 export const dynamic = "force-dynamic";
 
 /**
- * Layout do hub de gestão de UMA loja-alvo (issue 099). Server Component sob
- * `/admin` (o guard `verificarAdminSaaS` está em `admin/assinantes/layout.tsx`).
+ * Shell do hub de gestão de UMA loja-alvo (issue 145). Server Component sob
+ * `/admin` (o guard `verificarAdminSaaS` está em `admin/assinantes/layout.tsx`
+ * e é re-provado em `carregarCabecalhoLojaAdmin` por request).
+ *
+ * Paridade visual com o painel do lojista: monta `SidebarPainel`/`TopbarPainel`
+ * PARAMETRIZADOS pelo contexto admin (basePath da loja-alvo, Assinatura oculta,
+ * Configurações consolidada) — nenhum markup de nav copiado. A identidade da
+ * loja-alvo e o aviso de contexto vivem na FAIXA persistente da coluna de
+ * conteúdo (visível nos dois breakpoints, em todas as áreas) — não dentro da
+ * Sidebar/Topbar, que se escondem por breakpoint.
+ *
+ * Nav/faixa são UX pura: ocultar Assinatura é organização, não segurança. A
+ * barreira real é `verificarAdminSaaS()` + a ausência da rota `.../assinatura`.
  *
  * Decisão de carga (layout vs sub-rota): o layout carrega só o cabeçalho LEVE
- * (`carregarCabecalhoLojaAdmin` — uma query escopada por `lojaId`, que re-prova
- * admin), enquanto cada sub-rota (cardápio/configuração — 100/101) chama
- * `carregarLojaAdmin` para o agregado completo. Assim o agregado pesado não é
- * carregado duas vezes (layout + página).
+ * (`carregarCabecalhoLojaAdmin`), enquanto cada sub-rota carrega seu agregado.
  */
 export default async function HubLojaLayout({
   children,
@@ -29,45 +37,45 @@ export default async function HubLojaLayout({
   const { lojaId } = await params;
   const loja = await carregarCabecalhoLojaAdmin(lojaId);
 
-  return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <Link
-          href="/admin/assinantes"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" aria-hidden />
-          Voltar para assinantes
-        </Link>
+  const contexto = {
+    basePath: `/admin/assinantes/${lojaId}`,
+    ocultarAssinatura: true,
+    configConsolidada: true,
+  };
 
-        <header className="space-y-3">
+  return (
+    <div className="flex min-h-svh">
+      <SidebarPainel contexto={contexto} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopbarPainel contexto={contexto} />
+
+        {/* Faixa de contexto persistente (issue 145): Voltar + nome + Badge +
+            aviso amber. Fica na coluna de conteúdo (acima de children) para
+            aparecer em desktop E mobile, em todas as áreas. */}
+        <div className="space-y-3 border-b bg-amber-50 px-4 py-3 dark:bg-amber-950/40 lg:px-6">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-heading text-2xl font-semibold text-foreground">
+            <Link
+              href="/admin/assinantes"
+              className="inline-flex items-center gap-1.5 text-sm text-amber-900/80 transition-colors hover:text-amber-900 dark:text-amber-200/80 dark:hover:text-amber-100"
+            >
+              <ArrowLeft className="size-4" aria-hidden />
+              Voltar para assinantes
+            </Link>
+            <span className="font-heading text-base font-semibold text-amber-950 dark:text-amber-100">
               {loja.nome}
-            </h1>
+            </span>
             <Badge variant={loja.ativo ? "default" : "secondary"}>
               {loja.ativo ? "Publicada" : "Não publicada"}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-mono">/{loja.slug}</span>
-          </p>
-
-          {/* Aviso de contexto explícito (issue 099, spec "Gestão da Loja"): o admin
-              está editando a loja de OUTRO lojista, não a sua própria. */}
-          <div
-            role="note"
-            className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
-          >
+          <p role="note" className="text-sm text-amber-900 dark:text-amber-200">
             Você está editando a loja de outro lojista. Toda alteração feita aqui
             afeta a loja <span className="font-medium">{loja.nome}</span>.
-          </div>
-        </header>
+          </p>
+        </div>
 
-        <AbasLoja lojaId={loja.id} />
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
-
-      {children}
     </div>
   );
 }

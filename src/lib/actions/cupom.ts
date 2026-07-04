@@ -38,17 +38,13 @@ export type ResultadoValidacaoCupom =
 import { cupomSchema } from "@/lib/validacoes/cupom";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
-
-export type ResultadoGestaoCupom = { ok: true } | { ok: false; erro: string };
-
-// Mapeia o `error` do PostgREST para o contrato { ok:false, erro } — código
-// duplicado (unique violation) ganha mensagem específica; o resto é genérico.
-function erroPersistencia(error: { code?: string }): ResultadoGestaoCupom {
-  if (error.code === "23505") {
-    return { ok: false, erro: "Este código já existe" };
-  }
-  return { ok: false, erro: "Não foi possível salvar o cupom." };
-}
+// Fonte ÚNICA do contrato de resultado + do mapper 23505 (compartilhada com o
+// CRUD admin, admin-cupom.ts). Módulo NEUTRO: 'use server' não pode exportar
+// type nem função sync (ver MEMORY use-server-export-constraint).
+import {
+  erroPersistenciaCupom as erroPersistencia,
+  type ResultadoGestaoCupom,
+} from "@/lib/actions/cupom-erros";
 
 export async function criarCupom(
   payload: unknown,

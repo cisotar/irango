@@ -180,6 +180,37 @@ export async function alternarDisponibilidadeAdmin(
   }
 }
 
+export async function alternarOcultoAdmin(
+  lojaId: string,
+  id: string,
+  oculto: boolean,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // Toggle de VISIBILIDADE escopado por id E loja_id (cross-loja) pelo wrapper.
+    // NÃO mexe em `disponivel` (RN-6-b), espelha alternarOculto do lojista.
+    const { error } = await escopo.atualizar("produtos", id, { oculto });
+    if (error) {
+      console.error("[alternarOcultoAdmin]", error);
+      return { ok: false, erro: "Não foi possível atualizar o produto." };
+    }
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "produto.visibilidade",
+      entidadeId: id,
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[alternarOcultoAdmin]", e);
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+}
+
 export async function reordenarProdutosAdmin(
   lojaId: string,
   ordem: { id: string; ordem: number }[],

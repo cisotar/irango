@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.9 | **Atualizado:** 2026-06-30
+**Versão:** 0.2.13 | **Atualizado:** 2026-07-04
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -148,7 +148,8 @@ irango/
 │   │       ├── lojaAberta.ts             # verifica horário de funcionamento
 │   │       ├── manifest.ts               # montarIconesManifest + constantes de tema padrão (vitrine e painel)
 │   │       ├── manifestPainel.ts         # montarManifestPainel(loja|null) → ManifestPainel; puro (sem I/O)
-│   │       └── fotoSegura.ts             # fotoSegura(url?): string|null — fonte única da invariante anti-XSS §15 (só https vira src)
+│   │       ├── fotoSegura.ts             # fotoSegura(url?): string|null — fonte única da invariante anti-XSS §15 (só https vira src)
+│   │       └── metricasPedidos.ts        # calcularMetricasDoDia(pedidos) + chaveDia(data); puro; extraído do Dashboard do lojista, reuso previsto pelo Dashboard admin (issues 122/138)
 │   │
 │   ├── types/
 │   │   ├── supabase.ts                   # gerado: pnpm supabase gen types typescript
@@ -201,12 +202,15 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 - **Middleware:** `middleware.ts` na raiz — refresha sessão em toda request
 - **Guard de painel:** `app/(painel)/painel/layout.tsx` verifica sessão server-side; redireciona pra `/login` se ausente
 - **Vitrine pública:** sem auth — `app/(publica)` usa `supabase/server.ts` sem verificar sessão
+- **Guard admin do SaaS:** `verificarAdminSaaS()` (`src/lib/auth/admin.ts`) — fail-closed, compara `user.id` contra `SAAS_ADMIN_USER_ID` server-only. Usado em `admin/assinantes/layout.tsx` (guard de subárvore) e direto em `admin/page.tsx` (guard de page isolada, opção A — ver `seguranca.md` §7)
 
 ### Fluxo de login
 
 ```
 /login → supabase.auth.signInWithPassword() → cookie setado → redirect /painel
 ```
+
+O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-login pela identidade: sem `next` explícito, dono do SaaS (`user.id === SAAS_ADMIN_USER_ID`, via `ehAdminSaaS()`) → `/admin` (hub de seleção); qualquer outro usuário → `/painel`, como hoje. `next` explícito sanitizado sempre tem prioridade sobre esse destino padrão.
 
 ### Fluxo de proteção do painel
 
@@ -306,7 +310,7 @@ const items = order.order_items
 - Componente aparece em 2+ lugares → extrai pra `components/`
 - `components/ui/` → shadcn gerado, não editar manualmente
 - `components/vitrine/` → exclusivos da loja pública
-- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente
+- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente. O shell de navegação segue o mesmo princípio: `NavPainel.tsx` (`SidebarPainel`/`TopbarPainel`) recebe um `contexto?` opcional (`basePath`/`título`/flags de menu; default = comportamento do painel do lojista) — o painel do lojista é a fonte única do front, o hub admin (`/admin/assinantes/[lojaId]`) reusa o mesmo shell por parametrização, nunca por cópia de markup
 
 ### Server vs Client
 
@@ -339,3 +343,10 @@ const items = order.order_items
 | Reconciliação CEP↔bairro no frete | bairro vem do form; não validado contra CEP real — cliente pode forçar zona mais barata | issue 064 |
 | Guard `email_confirmed_at` no painel | loja nasce `ativo=false`; acesso ao painel deve checar confirmação de email antes de liberar operações | issue 016 |
 | Reconciliação de user órfão | signUp pode criar `auth.user` sem loja se a action falhar após o signUp; limpeza não implementada | issue 065 |
+| **[PRIORIDADE ELEVADA]** Log de auditoria de acesso admin a PII | `registrarAcessoAdmin` continua no-op; volume de PII de cliente exposta ao admin cresceu com as rotas de pedidos do hub admin (dashboard, lista, detalhe) — ver `seguranca.md` §Padrão admin | issue 146 — fase futura: tabela de auditoria + retenção |
+| TOCTOU sem lock otimista em `atualizarStatusPedidoAdmin` | UPDATE filtra só por `loja_id`+`id`, sem condicionar pelo status lido; dois admins concorrentes podem gerar last-write-wins silencioso. Prioridade baixa — herdado do padrão do lojista | issue 133 |
+| `isolamento-admin.test.ts` sem `atualizarStatusPedidoAdmin` na lista manual de imports | cobertura por invocação já existe em arquivo dedicado; falta paridade de auto-cobertura | issue 133 |
+| `token_acesso` incluído no `select("*")` das listagens de pedido admin | capability tipo-senha do checkout público trafega em loaders admin que não precisam dela; pré-existente, não regressão desta feature | issue 130 |
+| `pertenceALoja` triplicada | mesma fórmula de prova de posse (`escopo.buscarPorId(tabela, id, "id")` + `data != null`) reimplementada em `admin-produtos.ts` e 2x em `admin-opcionais.ts` | issue 135 |
+| Tipo `Resultado` duplicado (`admin-opcionais.ts`/`admin-produtos.ts`) | mesmo shape `{ok:true}\|{ok:false;erro}` sem módulo neutro compartilhado (ao contrário de `cupom-erros.ts`/`status.ts`) | issue 135 |
+| DELETE+INSERT não transacional em `salvarAssociacaoOpcionaisAdmin` | falha de INSERT após DELETE commitado deixa associação parcialmente removida; não é vetor cross-tenant, mesmo padrão do CRUD do lojista | issue 135 |

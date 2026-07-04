@@ -6,6 +6,11 @@ import {
   buscarProdutosDoLojista,
   buscarProdutosPorIds,
   buscarOpcionaisPorCategoria,
+  // RED (issue 132): variante escopada por loja — AINDA NÃO EXISTE em ./produtos.
+  // O import resolve para `undefined` (esbuild não faz type-check); a chamada
+  // cai em `TypeError: ... is not a function` — vermelho por asserção, não por
+  // erro de compilação que mascararia o resto da suite. Implementação é da GREEN.
+  buscarOpcionaisPorCategoriaDaLoja,
 } from "./produtos";
 
 /**
@@ -334,5 +339,173 @@ describe("081 buscarOpcionaisPorCategoria — contrato TS (camada 2, mock)", () 
   it("PROPAGA o error do PostgREST (não mascara como mapa vazio)", async () => {
     const { client } = makeClient({ data: null, error: { message: "rls denied" } });
     await expect(buscarOpcionaisPorCategoria(client, ["cat-paes"])).rejects.toBeTruthy();
+  });
+});
+
+// ───────────────────────── buscarOpcionaisPorCategoriaDaLoja (issue 132 — variante service_role escopada)
+/**
+ * Fase RED (TDD) da issue 132 — variante ESCOPADA POR LOJA de
+ * `buscarOpcionaisPorCategoria`, para uso sob `service_role` (BYPASSRLS) no loader
+ * admin. A função `buscarOpcionaisPorCategoriaDaLoja(svc, lojaId, categoriaIds)`
+ * AINDA NÃO EXISTE → import resolve `undefined`, chamada cai em `TypeError`.
+ *
+ * Por que a variante existe (diferença crítica vs. a original):
+ *  - a original delega 100% a isolação de loja + filtro `ativo` à RLS pública (080);
+ *    sob `service_role` essa RLS NÃO se aplica → o JOIN
+ *    `categoria_produto_opcionais → opcionais_categorias → opcionais` sem `.eq("loja_id")`
+ *    passaria a confiar CEGAMENTE na lista `categoriaIds` recebida. Um `categoria_id`
+ *    de outra loja na lista vazaria a biblioteca de opcionais dela.
+ *  - a variante adiciona `.eq("loja_id", lojaId)` em `categoria_produto_opcionais`
+ *    como ÚNICO ponto de enforcement (isolação por construção), mantendo
+ *    `.in("categoria_id", categoriaIds)` e o mesmo agrupamento/ordenação da original.
+ *
+ * Contrato que a GREEN precisa satisfazer:
+ *  1. `.from("categoria_produto_opcionais")` com `.eq("loja_id", lojaId)` E
+ *     `.in("categoria_id", categoriaIds)`, e o MESMO select aninhado da original.
+ *  2. Agrupa/ordena idêntico à original (grupos por `opcionais_categorias.ordem`,
+ *     itens por `opcionais.ordem`) → mesmo shape `OpcionaisPorCategoria`.
+ *  3. `categoriaIds` vazio → `{}` sem tocar `.from()`.
+ *  4. PROPAGA error (§14) — não mascara como mapa vazio.
+ */
+describe("132 buscarOpcionaisPorCategoriaDaLoja — contrato TS (camada 2, mock)", () => {
+  const LOJA_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
+  function linhasAssoc() {
+    return [
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: {
+          id: "oc-laticinios",
+          nome: "Laticínios",
+          ordem: 1,
+          opcionais: [
+            { id: "o-catupiry", nome: "Catupiry", preco: 5, ordem: 1 },
+            { id: "o-brie", nome: "Brie extra", preco: 8, ordem: 0 },
+          ],
+        },
+      },
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: {
+          id: "oc-doces",
+          nome: "Doces",
+          ordem: 0,
+          opcionais: [{ id: "o-doce", nome: "Doce de leite", preco: 4, ordem: 0 }],
+        },
+      },
+    ];
+  }
+
+  it("emite .eq(loja_id, lojaId) E .in(categoria_id, ...) na TABELA categoria_produto_opcionais, com opcionais aninhados", async () => {
+    const { client, calls } = makeClient({ data: linhasAssoc(), error: null });
+
+    await buscarOpcionaisPorCategoriaDaLoja(client, LOJA_A, ["cat-paes"]);
+
+    expect(calls.from).toHaveBeenCalledWith("categoria_produto_opcionais");
+    // GUARD CENTRAL: sem este .eq, a biblioteca de outra loja vaza sob service_role.
+    expect(calls.eq).toHaveBeenCalledWith("loja_id", LOJA_A);
+    expect(calls.in).toHaveBeenCalledWith("categoria_id", ["cat-paes"]);
+    const selectArg = String(calls.select.mock.calls[0]?.[0] ?? "");
+    expect(selectArg).toContain("opcionais_categorias");
+    expect(selectArg).toContain("opcionais");
+  });
+
+  it("agrupa/ordena PARITÁRIO à original (grupos por ordem, itens por ordem) — mesmo shape OpcionaisPorCategoria", async () => {
+    const { client } = makeClient({ data: linhasAssoc(), error: null });
+
+    const mapa = await buscarOpcionaisPorCategoriaDaLoja(client, LOJA_A, ["cat-paes"]);
+    const grupos = mapa["cat-paes"];
+
+    // Grupos por ordem: Doces (0) antes de Laticínios (1).
+    expect(grupos.map((g) => g.categoriaOpcionalNome)).toEqual(["Doces", "Laticínios"]);
+    // Itens de Laticínios por ordem: Brie (0) antes de Catupiry (1).
+    const latic = grupos.find((g) => g.categoriaOpcionalId === "oc-laticinios")!;
+    expect(latic.opcionais.map((o) => o.id)).toEqual(["o-brie", "o-catupiry"]);
+    expect(latic.opcionais[0]).toEqual({ id: "o-brie", nome: "Brie extra", preco: 8, ordem: 0 });
+  });
+
+  it("categoriaIds vazio → {} sem tocar o banco (não chama .from)", async () => {
+    const { client, calls } = makeClient({ data: [], error: null });
+
+    const mapa = await buscarOpcionaisPorCategoriaDaLoja(client, LOJA_A, []);
+
+    expect(mapa).toEqual({});
+    expect(calls.from).not.toHaveBeenCalled();
+  });
+
+  it("PROPAGA o error do PostgREST (não mascara como mapa vazio)", async () => {
+    const { client } = makeClient({ data: null, error: { message: "db down" } });
+    await expect(
+      buscarOpcionaisPorCategoriaDaLoja(client, LOJA_A, ["cat-paes"]),
+    ).rejects.toBeTruthy();
+  });
+
+  it("lojaId fora do formato uuid → {} SEM tocar o banco (defesa em profundidade, fail-closed)", async () => {
+    // Guarda `schemaUuid.safeParse(lojaId)` interna da variante — não é redundante
+    // com a validação do loader (carga-opcionais.ts): esta função pode, em tese,
+    // ser chamada por outro caller sem passar por `validarLojaIdAdmin` antes. Sem
+    // este teste, remover/inverter a checagem não quebra nenhum caso existente
+    // (todos usam LOJA_A válido) e o bug passaria despercebido.
+    const { client, calls } = makeClient({ data: linhasAssoc(), error: null });
+
+    const mapa = await buscarOpcionaisPorCategoriaDaLoja(client, "nao-e-uuid", ["cat-paes"]);
+
+    expect(mapa).toEqual({});
+    expect(calls.from).not.toHaveBeenCalled();
+  });
+
+  it("grupo de opcional SEM nenhum item (opcionais: []) é descartado do mapa — categoria some, não vira grupo vazio", async () => {
+    // Cobre o ramo `if (opcionais.length === 0) continue` — sem este teste, remover
+    // essa checagem não quebra nenhum caso existente (todos os outros grupos têm
+    // ao menos 1 item) e a página admin passaria a renderizar um grupo vazio.
+    const linhas = [
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: {
+          id: "oc-vazio",
+          nome: "Grupo sem itens",
+          ordem: 0,
+          opcionais: [],
+        },
+      },
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: {
+          id: "oc-doces",
+          nome: "Doces",
+          ordem: 1,
+          opcionais: [{ id: "o-doce", nome: "Doce de leite", preco: 4, ordem: 0 }],
+        },
+      },
+    ];
+    const { client } = makeClient({ data: linhas, error: null });
+
+    const mapa = await buscarOpcionaisPorCategoriaDaLoja(client, LOJA_A, ["cat-paes"]);
+
+    const grupos = mapa["cat-paes"];
+    expect(grupos.map((g) => g.categoriaOpcionalId)).toEqual(["oc-doces"]);
+    expect(grupos.find((g) => g.categoriaOpcionalId === "oc-vazio")).toBeUndefined();
+  });
+
+  it("linha sem opcionais_categorias (join órfão) é ignorada — categoria some do mapa em vez de quebrar", async () => {
+    // Cobre o ramo `if (!cat) continue` — join órfão (associação apontando para
+    // categoria_opcional inexistente/deletada) não deve lançar nem virar grupo `null`.
+    const linhas = [
+      { categoria_id: "cat-paes", opcionais_categorias: null },
+      {
+        categoria_id: "cat-paes",
+        opcionais_categorias: {
+          id: "oc-doces",
+          nome: "Doces",
+          ordem: 0,
+          opcionais: [{ id: "o-doce", nome: "Doce de leite", preco: 4, ordem: 0 }],
+        },
+      },
+    ];
+    const { client } = makeClient({ data: linhas, error: null });
+
+    const mapa = await buscarOpcionaisPorCategoriaDaLoja(client, LOJA_A, ["cat-paes"]);
+
+    expect(mapa["cat-paes"].map((g) => g.categoriaOpcionalId)).toEqual(["oc-doces"]);
   });
 });
