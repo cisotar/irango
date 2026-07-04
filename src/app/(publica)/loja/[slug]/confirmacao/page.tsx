@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, MessageCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,11 +15,14 @@ import {
   buscarPedidoPorToken,
   type PedidoComItens,
 } from "@/lib/supabase/queries/pedidos";
+import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
 import { listarFormasPagamento } from "@/lib/supabase/queries/entregaPagamento";
 import { resolverAcaoConfirmacao } from "@/lib/utils/confirmacao";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
-import { ConfirmacaoClient } from "./ConfirmacaoClient";
+import { StatusPedidoLive } from "@/components/vitrine/confirmacao/StatusPedidoLive";
+import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -137,9 +140,19 @@ export default async function ConfirmacaoPage({
   const forma = formas.find((f) => f.tipo === ped.forma_pagamento);
   const instrucao = forma ? instrucaoPagamento(forma.config) : null;
 
+  const loja = await buscarLojaParaPedido(svc, ped.loja_id);
+  const linkWhatsapp = loja ? montarLinkWhatsappPedido(ped, loja) : null;
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col gap-6 px-4 py-10 md:max-w-2xl">
-      <ConfirmacaoClient />
+      {/* token! é seguro: `acao.pedido` só existe se buscarPedidoPorToken achou
+          o par (pedidoId, token) — logo `token` é truthy aqui. */}
+      <StatusPedidoLive
+        pedidoId={ped.id}
+        token={token!}
+        statusInicial={ped.status as StatusPedido}
+        tipoEntrega={ped.tipo_entrega}
+      />
 
       <Card>
         <CardHeader className="items-center text-center">
@@ -257,6 +270,27 @@ export default async function ConfirmacaoPage({
           </div>
         </CardContent>
       </Card>
+
+      {linkWhatsapp ? (
+        <Button
+          className="w-full"
+          nativeButton={false}
+          render={
+            <a
+              href={linkWhatsapp.href}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <MessageCircle aria-hidden className="size-4" />
+              Avisar a loja no WhatsApp
+            </a>
+          }
+        />
+      ) : (
+        <p className="text-center text-sm text-muted-foreground">
+          Seu pedido já foi registrado. A loja acompanhará pelo painel.
+        </p>
+      )}
 
       <Button
         className="w-full"

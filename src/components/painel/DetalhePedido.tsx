@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
 import {
@@ -145,22 +146,39 @@ export function DetalhePedido({
         </CardHeader>
         <CardContent className="p-0">
           <ul className="divide-y divide-foreground/10">
-            {pedido.itens_pedido.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between gap-3 px-6 py-3 text-sm"
-              >
-                <span className="text-foreground">
-                  <span className="text-muted-foreground">
-                    {item.quantidade}×{" "}
-                  </span>
-                  {item.nome}
-                </span>
-                <span className="text-foreground">
-                  {formatarMoeda(item.preco * item.quantidade)}
-                </span>
-              </li>
-            ))}
+            {pedido.itens_pedido.map((item) => {
+              // SNAPSHOT autoritativo (RN-O6): mesmo cálculo da confirmação —
+              // acréscimo dos opcionais entra no total da linha, nunca recalculado
+              // dos opcionais atuais do produto.
+              const opcionais = item.itens_pedido_opcionais ?? [];
+              const acrescimo = opcionais.reduce(
+                (s, o) => s + o.preco_snapshot * o.quantidade,
+                0,
+              );
+              return (
+                <li key={item.id} className="px-6 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-foreground">
+                      <span className="text-muted-foreground">
+                        {item.quantidade}×{" "}
+                      </span>
+                      {item.nome}
+                    </span>
+                    <span className="text-foreground">
+                      {formatarMoeda((item.preco + acrescimo) * item.quantidade)}
+                    </span>
+                  </div>
+                  <ListaOpcionaisItem
+                    opcionais={opcionais.map((o) => ({
+                      id: o.id,
+                      nome: o.nome_snapshot,
+                      preco: o.preco_snapshot,
+                      quantidade: o.quantidade,
+                    }))}
+                  />
+                </li>
+              );
+            })}
           </ul>
 
           <Separator />

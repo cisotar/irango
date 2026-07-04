@@ -54,6 +54,7 @@ function lojaFake(overrides: Partial<LojaPublica>): LojaPublica {
     tema: null,
     timezone: "America/Sao_Paulo",
     whatsapp: null,
+    whatsapp_envio_automatico: true,
   };
   return { ...base, ...overrides };
 }

@@ -366,6 +366,7 @@ export type Database = {
           tema: Json
           timezone: string
           whatsapp: string | null
+          whatsapp_envio_automatico: boolean
         }
         Insert: {
           assinatura_atualizada_em?: string | null
@@ -401,6 +402,7 @@ export type Database = {
           tema?: Json
           timezone?: string
           whatsapp?: string | null
+          whatsapp_envio_automatico?: boolean
         }
         Update: {
           assinatura_atualizada_em?: string | null
@@ -436,6 +438,7 @@ export type Database = {
           tema?: Json
           timezone?: string
           whatsapp?: string | null
+          whatsapp_envio_automatico?: boolean
         }
         Relationships: [
           {
@@ -948,6 +951,7 @@ export type Database = {
           tema: Json | null
           timezone: string | null
           whatsapp: string | null
+          whatsapp_envio_automatico: boolean | null
         }
         Insert: {
           assinatura_fim_periodo?: string | null
@@ -969,6 +973,7 @@ export type Database = {
           tema?: Json | null
           timezone?: string | null
           whatsapp?: string | null
+          whatsapp_envio_automatico?: boolean | null
         }
         Update: {
           assinatura_fim_periodo?: string | null
@@ -990,6 +995,7 @@ export type Database = {
           tema?: Json | null
           timezone?: string | null
           whatsapp?: string | null
+          whatsapp_envio_automatico?: boolean | null
         }
         Relationships: []
       }
@@ -1064,6 +1070,7 @@ export type Database = {
           tema: Json
           timezone: string
           whatsapp: string | null
+          whatsapp_envio_automatico: boolean
         }[]
         SetofOptions: {
           from: "*"
@@ -1108,6 +1115,7 @@ export type Database = {
           tema: Json
           timezone: string
           whatsapp: string | null
+          whatsapp_envio_automatico: boolean
         }[]
         SetofOptions: {
           from: "*"

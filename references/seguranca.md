@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.31 | **Atualizado:** 2026-07-04
+**Versão:** 0.2.32 | **Atualizado:** 2026-07-04
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -815,6 +815,7 @@ Endpoints sensíveis precisam de trava por IP — sem isso, brute force em login
 | `criarPedido` | 10/min por IP | anti spam de pedido |
 | `validarCupom` | 20/min por IP | anti enumeração de códigos |
 | `calcularFreteAction` | 20/min por IP | anti abuso de lookup externo (ViaCEP + cálculo) |
+| `consultarStatusPedido` | 30/min por IP | anti brute force do par `(id, token_acesso)` — polling da confirmação (issue 128) |
 
 Implementado em `src/lib/utils/rateLimit.ts` via **`@upstash/ratelimit`** + **`@upstash/redis`** (issue 052). Sliding window por IP/minuto. Supabase Auth tem rate limit interno de login, mas a camada própria cobre todas as Server Actions sensíveis.
 
