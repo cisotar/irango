@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.30 | **Atualizado:** 2026-07-04
+**Versão:** 0.2.31 | **Atualizado:** 2026-07-04
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -481,6 +481,8 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 **Padrão admin (issues 083–102):** Server Actions sob `service_role` precedidas de `verificarAdminSaaS()` — auth.uid() validado contra `ADMIN_EMAIL` antes de elevar para service_role; escopo por tenant obrigatório (`lojaId` validado como UUID), garantido pelo wrapper `EscopoLoja` (ver subseção abaixo) em vez de `.eq("loja_id"/"id", lojaId)` manual. Helpers em `src/lib/actions/admin-loja.ts` (`validarLojaIdAdmin`, `prepararContextoAdmin`, `revalidarLojaAdmin`). Nota: RLS não é a defesa aqui (service_role a bypassa) — o gate é `verificarAdminSaaS()` + escopo. Contrasta com o painel do lojista, onde a defesa primária é RLS (`auth.uid() = dono_id`). Log de acesso admin: `registrarAcessoAdmin` é no-op (pendente implementação futura).
 
 **`ehAdminSaaS()` — variante fail-safe da mesma identidade (issue 147):** `src/lib/auth/admin.ts` também exporta `ehAdminSaaS(userId: string): boolean`, comparação **síncrona** do mesmo `SAAS_ADMIN_USER_ID` contra um `user.id` já autoritativo (vindo de sessão verificada, não recebe `userId` do cliente). Ao contrário de `verificarAdminSaaS()`/`obterAdminUserId()` — fail-**closed**, lançam quando a env está ausente, porque bloquear toda ação administrativa é o comportamento seguro — `ehAdminSaaS()` é fail-**safe**: env ausente/vazia captura a exceção e retorna `false` em vez de lançar. É para o callback OAuth (issue 148, redirect pós-login): ali um erro de configuração não pode derrubar o login de ninguém, então a falha degrada para "não é admin" (cai no fluxo comum) em vez de quebrar a sessão. **Regra ao escolher entre as duas:** se a ausência da env deve bloquear a operação (qualquer ação administrativa sob `service_role`), use `verificarAdminSaaS()`/`obterAdminUserId()`; se a ausência da env deve apenas negar o papel de admin sem interromper um fluxo que precisa continuar (ex.: login), use `ehAdminSaaS()`.
+
+**Guard direto na page — opção A (issue 149):** `src/app/admin/page.tsx` (hub de seleção `/admin`) chama `verificarAdminSaaS()` no próprio Server Component, em vez de subir o guard para um `layout.tsx` que envolveria toda a subárvore `/admin/*`. Padrão adotado quando o guard só precisa valer para uma page isolada, sem alterar o raio do guard já existente em `admin/assinantes/layout.tsx`. Nuance obrigatória: o `try` envolve **só** a chamada do guard — `redirect("/painel")` fica no `catch`, fora de qualquer `try` aninhado. `redirect()` lança um erro interno (`NEXT_REDIRECT`) para interromper a renderização; chamá-lo dentro do próprio `try` faria esse erro ser reengolido pelo `catch` como se fosse a falha do guard. Comportamento documentado oficialmente pelo Next.js (App Router — função `redirect`): "redirect throws an error so it should be called outside the try block when using try/catch statements". Vale para qualquer guard novo em page/Server Action que combine `verificarAdminSaaS()`/checagem de sessão com `try/catch` + `redirect()`.
 
 ### Wrapper `EscopoLoja` — escopo por tenant garantido por tipo, não por convenção
 

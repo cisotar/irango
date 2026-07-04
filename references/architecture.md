@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.12 | **Atualizado:** 2026-07-03
+**Versão:** 0.2.13 | **Atualizado:** 2026-07-04
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -202,12 +202,15 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 - **Middleware:** `middleware.ts` na raiz — refresha sessão em toda request
 - **Guard de painel:** `app/(painel)/painel/layout.tsx` verifica sessão server-side; redireciona pra `/login` se ausente
 - **Vitrine pública:** sem auth — `app/(publica)` usa `supabase/server.ts` sem verificar sessão
+- **Guard admin do SaaS:** `verificarAdminSaaS()` (`src/lib/auth/admin.ts`) — fail-closed, compara `user.id` contra `SAAS_ADMIN_USER_ID` server-only. Usado em `admin/assinantes/layout.tsx` (guard de subárvore) e direto em `admin/page.tsx` (guard de page isolada, opção A — ver `seguranca.md` §7)
 
 ### Fluxo de login
 
 ```
 /login → supabase.auth.signInWithPassword() → cookie setado → redirect /painel
 ```
+
+O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-login pela identidade: sem `next` explícito, dono do SaaS (`user.id === SAAS_ADMIN_USER_ID`, via `ehAdminSaaS()`) → `/admin` (hub de seleção); qualquer outro usuário → `/painel`, como hoje. `next` explícito sanitizado sempre tem prioridade sobre esse destino padrão.
 
 ### Fluxo de proteção do painel
 

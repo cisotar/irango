@@ -50,10 +50,10 @@ O spec adota **(A)** como padrão; (B) só se o `/plan` justificar.
 - Tokens de tema via classes utilitárias Tailwind v4 (tokens em `globals.css @theme`; sem `tailwind.config.ts`).
 
 **Behaviors:**
-- [ ] Ver os dois cards ("Minha loja", "Clientes") ao acessar `/admin`. Garantido em: Server Component — a página só renderiza após `verificarAdminSaaS()` provar que `user.id === SAAS_ADMIN_USER_ID` no servidor.
-- [ ] Ser redirecionado para `/painel` ao acessar `/admin` sem ser o dono do SaaS (lojista comum, sessão inválida ou env ausente). Garantido em: Server Component — `verificarAdminSaaS()` fail-closed → `redirect("/painel")`, mesmo tratamento das demais rotas `/admin/*`; nenhum dado admin é renderizado.
-- [ ] Clicar em "Minha loja" e navegar para `/painel`. Garantido em: cliente (navegação/UX); a autoridade do destino é o guard de sessão do painel.
-- [ ] Clicar em "Clientes" e navegar para `/admin/assinantes`. Garantido em: cliente (navegação/UX); a autoridade do destino é `verificarAdminSaaS()` no `assinantes/layout.tsx`.
+- [x] Ver os dois cards ("Minha loja", "Clientes") ao acessar `/admin`. Garantido em: Server Component — a página só renderiza após `verificarAdminSaaS()` provar que `user.id === SAAS_ADMIN_USER_ID` no servidor.
+- [x] Ser redirecionado para `/painel` ao acessar `/admin` sem ser o dono do SaaS (lojista comum, sessão inválida ou env ausente). Garantido em: Server Component — `verificarAdminSaaS()` fail-closed → `redirect("/painel")`, mesmo tratamento das demais rotas `/admin/*`; nenhum dado admin é renderizado.
+- [x] Clicar em "Minha loja" e navegar para `/painel`. Garantido em: cliente (navegação/UX); a autoridade do destino é o guard de sessão do painel.
+- [x] Clicar em "Clientes" e navegar para `/admin/assinantes`. Garantido em: cliente (navegação/UX); a autoridade do destino é `verificarAdminSaaS()` no `assinantes/layout.tsx`.
 
 ---
 
