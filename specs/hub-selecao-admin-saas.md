@@ -71,10 +71,10 @@ O anti-open-redirect existente (`sanitizarNext`: aceita só path interno, rejeit
 **Reuso, não recriação:** a decisão consome `obterAdminUserId()` (já existe). Não introduzir nova leitura de env nem novo helper de identidade. `verificarAdminSaaS()` faz um `getUser()` adicional que aqui é redundante (o handler já tem `data.user` do `exchangeCodeForSession`); preferir comparar `data.user.id` contra `obterAdminUserId()` diretamente, encapsulado num pequeno helper server-only reutilizável (ex. `ehAdminSaaS(userId: string): boolean` em `admin.ts`) para não duplicar a leitura da env — decidir no `/plan`.
 
 **Behaviors:**
-- [ ] Fazer login como dono do SaaS (sem `next` explícito) e ser levado a `/admin`. Garantido em: Route Handler (servidor) — `data.user.id` do `exchangeCodeForSession` comparado com `SAAS_ADMIN_USER_ID` server-only.
-- [ ] Fazer login como lojista comum (sem `next` explícito) e continuar indo para `/painel`. Garantido em: Route Handler (servidor) — id não bate → destino padrão inalterado.
-- [ ] Login com `next` explícito (ex. deep link) respeitado para qualquer usuário, após `sanitizarNext`. Garantido em: Route Handler (servidor) — `next` tem prioridade e passa pelo anti-open-redirect existente.
-- [ ] `SAAS_ADMIN_USER_ID` ausente/vazia não quebra o login de ninguém → cai em `/painel`. Garantido em: Route Handler (servidor) — leitura tolerante a ausência (fail-safe para `/painel`), sem lançar no fluxo de login.
+- [x] Fazer login como dono do SaaS (sem `next` explícito) e ser levado a `/admin`. Garantido em: Route Handler (servidor) — `data.user.id` do `exchangeCodeForSession` comparado com `SAAS_ADMIN_USER_ID` server-only.
+- [x] Fazer login como lojista comum (sem `next` explícito) e continuar indo para `/painel`. Garantido em: Route Handler (servidor) — id não bate → destino padrão inalterado.
+- [x] Login com `next` explícito (ex. deep link) respeitado para qualquer usuário, após `sanitizarNext`. Garantido em: Route Handler (servidor) — `next` tem prioridade e passa pelo anti-open-redirect existente.
+- [x] `SAAS_ADMIN_USER_ID` ausente/vazia não quebra o login de ninguém → cai em `/painel`. Garantido em: Route Handler (servidor) — leitura tolerante a ausência (fail-safe para `/painel`), sem lançar no fluxo de login.
 
 ---
 
