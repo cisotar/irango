@@ -49,6 +49,7 @@ function lojaFake(overrides: Partial<LojaCompleta>): LojaCompleta {
     tema: {},
     timezone: "America/Sao_Paulo",
     whatsapp: null,
+    whatsapp_envio_automatico: true,
   };
   return { ...base, ...overrides };
 }
