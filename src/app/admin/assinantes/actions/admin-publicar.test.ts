@@ -71,8 +71,9 @@ vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => createServiceClient(),
 }));
 
-// `registrarAcessoAdmin` é no-op (best-effort); `lojaIdSchema` é o validador real
-// reusado da feature. Mantemos o schema REAL (z.guid) e só espionamos o no-op.
+// `registrarAcessoAdmin` (best-effort: INSERT em admin_acessos) é espionado aqui;
+// `lojaIdSchema` é o validador real reusado da feature. Mantemos o schema REAL
+// (z.guid) e só espionamos a chamada de auditoria.
 vi.mock("@/lib/actions/admin-loja", async (orig) => {
   const real = (await orig()) as Record<string, unknown>;
   return { ...real, registrarAcessoAdmin: vi.fn() };

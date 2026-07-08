@@ -286,7 +286,8 @@ export async function enviarQrPixAdmin(
   registrarAcessoAdmin(svc, {
     lojaId: loja.lojaId,
     acao: "pagamento.qr_pix_upload",
-    entidadeId: path,
+    // path (storage) NÃO é uuid → coluna entidade_id é uuid: vai em metadados (jsonb).
+    metadados: { path },
   });
   revalidarLojaAdmin(loja.lojaId);
 

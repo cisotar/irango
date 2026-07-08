@@ -16,7 +16,7 @@
  *  2. verificarAdminSaaS() FORA do try → exceção PROPAGA, service só depois.
  *  3. escopo.atualizarLoja({ ativo: publicar }) — patch EXATAMENTE { ativo }
  *     (RN-8/§9), escopo por id só a loja-alvo (RN-3).
- *  4. revalidatePath admin + vitrine; registrarAcessoAdmin no-op; catch genérico.
+ *  4. revalidatePath admin + vitrine; registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico.
  *
  * REGRA: arquivo 'use server' só exporta funções async — tipos locais sem export.
  */

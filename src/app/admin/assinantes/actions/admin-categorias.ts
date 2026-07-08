@@ -7,7 +7,8 @@
 //   validarLojaIdAdmin(lojaId) → schemaCategoria.safeParse (onde aplicável) →
 //   verificarAdminSaaS() FORA do try (propaga, D-4) → createServiceClient() →
 //   escrita escopada com { count:"exact" } → count 0 → "Categoria não encontrada."
-//   → revalidatePath (admin cardápio + vitrine) → registrarAcessoAdmin (no-op) →
+//   → revalidatePath (admin cardápio + vitrine) → registrarAcessoAdmin
+//   (best-effort: INSERT em admin_acessos) →
 //   catch genérico.
 //
 // `loja_id` gravado é SEMPRE o parâmetro `lojaId`, NUNCA o do payload (que pode

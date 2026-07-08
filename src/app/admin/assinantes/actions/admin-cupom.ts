@@ -17,7 +17,7 @@
  *     gravado = lojaId, NUNCA do payload (injetado por último).
  *  4. 23505 (UNIQUE loja_id+codigo) → "Este código já existe" (erroPersistenciaCupom);
  *     count === 0 no update/remove → "Cupom não encontrado." (não vaza cross-loja).
- *  5. revalidarLojaAdmin; registrarAcessoAdmin no-op; catch genérico.
+ *  5. revalidarLojaAdmin; registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico.
  *
  * O valor do cupom é DEFINIÇÃO comercial persistida, não o valor cobrado: a
  * autoridade de quanto se paga permanece no checkout (criarPedido re-deriva o

@@ -18,7 +18,7 @@
  *     escopo.buscarPorId (SELECT escopado por loja) ANTES de gravar.
  *  4. INSERT/UPDATE/DELETE/toggle via `escopo.*` (loja_id +id); loja_id gravado =
  *     lojaId, NUNCA do payload (injetado por último pelo wrapper).
- *  5. revalidarLojaAdmin; registrarAcessoAdmin no-op; catch genérico (seguranca.md §14).
+ *  5. revalidarLojaAdmin; registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico (seguranca.md §14).
  *
  * REGRA: arquivo 'use server' só exporta funções async — tipos locais sem export.
  */

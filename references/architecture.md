@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.14 | **Atualizado:** 2026-07-07
+**Versão:** 0.2.15 | **Atualizado:** 2026-07-08
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -354,7 +354,7 @@ const items = order.order_items
 | Reconciliação CEP↔bairro no frete | bairro vem do form; não validado contra CEP real — cliente pode forçar zona mais barata | issue 064 |
 | Guard `email_confirmed_at` no painel | loja nasce `ativo=false`; acesso ao painel deve checar confirmação de email antes de liberar operações | issue 016 |
 | Reconciliação de user órfão | signUp pode criar `auth.user` sem loja se a action falhar após o signUp; limpeza não implementada | issue 065 |
-| **[PRIORIDADE ELEVADA]** Log de auditoria de acesso admin a PII | `registrarAcessoAdmin` continua no-op; volume de PII de cliente exposta ao admin cresceu com as rotas de pedidos do hub admin (dashboard, lista, detalhe) — ver `seguranca.md` §Padrão admin | issue 146 — fase futura: tabela de auditoria + retenção |
+| Log de auditoria de acesso admin a PII | implementado (issues 146/147): tabela `admin_acessos` (RLS deny-all, só `service_role` — migration `20260707122000`) + `registrarAcessoAdmin` (`admin-loja.ts`) faz INSERT best-effort fire-and-forget; log quebrado nunca derruba a action chamadora — ver `seguranca.md` §Padrão admin | resíduo — fase futura: policy de SELECT admin + retenção/consulta do log |
 | TOCTOU sem lock otimista em `atualizarStatusPedidoAdmin` | UPDATE filtra só por `loja_id`+`id`, sem condicionar pelo status lido; dois admins concorrentes podem gerar last-write-wins silencioso. Prioridade baixa — herdado do padrão do lojista | issue 133 |
 | `isolamento-admin.test.ts` sem `atualizarStatusPedidoAdmin` na lista manual de imports | cobertura por invocação já existe em arquivo dedicado; falta paridade de auto-cobertura | issue 133 |
 | `token_acesso` incluído no `select("*")` das listagens de pedido admin | capability tipo-senha do checkout público trafega em loaders admin que não precisam dela; pré-existente, não regressão desta feature | issue 130 |

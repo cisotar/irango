@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.13 | **Atualizado:** 2026-07-07
+**Versão:** 0.1.14 | **Atualizado:** 2026-07-08
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -368,6 +368,28 @@ CREATE TABLE webhook_eventos_hotmart (
 );
 ```
 
+### `admin_acessos`
+
+```sql
+-- Trilha de auditoria das ações admin (service_role) sobre lojas de assinantes.
+-- RLS: deny-all permanente — acesso exclusivo via service_role (BYPASSRLS).
+-- SEM FK em loja_id (deliberado, revisão de auditoria da issue 146): audit log
+-- sobrevive ao hard-delete da loja (excluirLojaPermanente, issue 084) — a evidência
+-- da própria exclusão não pode desaparecer junto com a loja. Integridade referencial
+-- fica na aplicação: o único writer (registrarAcessoAdmin) sempre recebe um loja_id
+-- já validado por validarLojaIdAdmin/verificarAdminSaaS antes de logar.
+-- Migration: 20260707122000_admin_acessos.sql (issues 146/147)
+CREATE TABLE admin_acessos (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_user_id uuid NOT NULL,   -- id do dono do SaaS (sem FK: sem semântica de cascade)
+  loja_id       uuid NOT NULL,   -- loja-alvo; SEM FK — sobrevive ao hard-delete (ver nota acima)
+  acao          text NOT NULL,   -- ex: 'criar_loja', 'salvar_tema', 'alternar_modulo'
+  entidade_id   uuid,            -- id da entidade tocada, quando houver (path de Storage NÃO entra aqui — não é uuid, vai em metadados)
+  metadados     jsonb,           -- payload contextual (ex: { modulo, ativo, coluna }); só metadado operacional, nunca PII de comprador
+  criado_em     timestamptz NOT NULL DEFAULT now()
+);
+```
+
 ---
 
 ## 3. Indexes
@@ -407,6 +429,10 @@ CREATE INDEX ON opcionais_categorias(loja_id, ordem);
 CREATE INDEX ON opcionais(loja_id, categoria_opcional_id, ativo, ordem);
 CREATE INDEX ON categoria_produto_opcionais(loja_id, categoria_id);
 CREATE INDEX ON itens_pedido_opcionais(item_pedido_id);
+
+-- Auditoria admin por loja, mais recentes primeiro
+-- Migration: 20260707122000_admin_acessos.sql
+CREATE INDEX ON admin_acessos(loja_id, criado_em DESC);
 ```
 
 ---
@@ -420,6 +446,7 @@ Regra geral:
 - **Dados do lojista** (cupons, pedidos, formas_pagamento, zonas) → somente `auth.uid() = lojas.dono_id`
 - **INSERT de pedido** → público (cliente não precisa de login)
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`
+- **`admin_acessos`** → deny-all permanente; acesso exclusivo via `service_role` (trilha de auditoria de acesso admin, issues 146/147)
 
 ---
 

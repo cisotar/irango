@@ -107,7 +107,8 @@ export async function salvarLogoAdmin(
     registrarAcessoAdmin(svc, {
       lojaId,
       acao: "salvar_logo",
-      entidadeId: path,
+      // path (storage) NÃO é uuid → coluna entidade_id é uuid: vai em metadados (jsonb).
+      metadados: { path },
     });
     revalidarLojaAdmin(lojaId);
 

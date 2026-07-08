@@ -16,7 +16,7 @@
  *     { ok:false } sem gravar.
  *  4. INSERT/UPDATE/DELETE/toggle em `produtos` via `escopo.*` (loja_id +id);
  *     loja_id gravado = lojaId, NUNCA do payload (injetado por último).
- *  5. revalidatePath admin + vitrine; registrarAcessoAdmin no-op; catch genérico.
+ *  5. revalidatePath admin + vitrine; registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico.
  *
  * REGRA: arquivo 'use server' só exporta funções async — tipos locais sem export.
  */
