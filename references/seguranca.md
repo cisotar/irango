@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.38 | **Atualizado:** 2026-07-08
+**Versão:** 0.2.39 | **Atualizado:** 2026-07-08
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -592,6 +592,7 @@ const adminEmail = process.env.SEED_ADMIN_EMAIL
 - `supabase/seed.sql` usa **apenas dados fictícios** (nomes, emails, telefones inventados)
 - Nunca usar email ou telefone real de nenhuma pessoa (nem do próprio dono do projeto)
 - Dados de teste de produção (contas reais para smoke test) ficam no `.env.local` — nunca no código
+- **`supabase/seed.sql` NUNCA é aplicado no Supabase cloud/produção.** É só para `supabase db reset` local. O arquivo grava uma senha fixa em texto claro (`dono.teste@irango.local` / `senha-de-teste-123`, commitada no repo) — aplicar isso no cloud criaria uma conta real, alcançável pela internet, com credencial conhecida por qualquer um com acesso ao repo. Consequência: o Supabase cloud **não tem** dados de `loja-teste`; verificação manual/E2E contra cloud precisa criar conta descartável via `/cadastro` (fluxo público real) e apagá-la ao final — não reaproveitar o seed local.
 
 ---
 
