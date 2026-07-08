@@ -409,16 +409,18 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
   });
 
   // ═══════════════════════════ ITENS_PEDIDO
-  it("[19] anon INSERE item do pedido (aceito; persistiu via service)", async () => {
-    // SEM `returning`: idem [10]. O design proíbe SELECT anon em itens_pedido
-    // (testes [20]/[22]), então RETURNING como anon falharia sempre. Fluxo real
-    // (seguranca.md §2 linhas 213-223, policy itens_pedido_insert_publico): anon
-    // INSERE (WITH CHECK true) e o service_role lê depois. Permissão provada por
-    // affectedRows; linha reconferida via service_role por marcador único (nome).
+  it("[19] anon NÃO insere item, nem em pedido PENDENTE dedicado (deny-all pós-remoção de itens_pedido_insert_publico)", async () => {
+    // Reconciliado com o achado de pentest #3A (migration
+    // 20260708130000_ip_remove_insert_publico): a policy itens_pedido_insert_publico
+    // foi REMOVIDA. O pedido_id vai na URL de confirmação (não é segredo) e o
+    // WITH CHECK herdado da auditoria 006 só exigia status='pendente' + loja ativa,
+    // então qualquer anon anexava item a pedido pendente ALHEIO (escrita
+    // cross-customer). Agora INSERT é deny-all para anon; a única escrita legítima
+    // de item é a RPC criar_pedido (service_role/BYPASSRLS), fora de RLS.
     const MARCADOR = "Item Anon [19]";
-    // Pedido pendente DEDICADO (via service) — não reusa pedidoA, cujo status o
-    // teste [14] muda. A policy itens_pedido_insert_publico (hardening auditoria
-    // 006) só aceita item de pedido 'pendente' de loja ativa.
+    // Pedido pendente DEDICADO (via service) — o pior caso do vetor antigo, que a
+    // policy removida ACEITAVA. Prova que a negação agora é INCONDICIONAL: nem
+    // 'pendente' + loja ativa liberam o anon (não depende mais do status do pedido).
     const pedFresco = await t.asService((db) =>
       db.query<{ id: string }>(
         `insert into public.pedidos (loja_id, nome_cliente, subtotal, total)
@@ -440,8 +442,9 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
     } catch {
       inseriu = false;
     }
-    expect(inseriu).toBe(true);
-    expect(await existePorMarcador(t, "itens_pedido", "nome", MARCADOR)).toBe(1);
+    expect(inseriu).toBe(false);
+    // anti-falso-verde: nada persistiu no pedido pendente da vítima.
+    expect(await existePorMarcador(t, "itens_pedido", "nome", MARCADOR)).toBe(0);
   });
 
   it("[19b] anon NÃO insere pedido em loja INATIVA (hardening auditoria 006)", async () => {
@@ -468,8 +471,12 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
     expect(await existePorMarcador(t, "pedidos", "nome_cliente", MARCADOR)).toBe(0);
   });
 
-  it("[19c] anon NÃO anexa item a pedido NÃO-pendente de terceiro (hardening auditoria 006)", async () => {
-    // pedido confirmado (não-pendente) de loja ativa — anon conhece o id mas não pode anexar item.
+  it("[19c] anon NÃO anexa item a pedido de terceiro (deny-all pós-remoção de itens_pedido_insert_publico)", async () => {
+    // pedido confirmado (não-pendente) de loja ativa — anon conhece o id (vai na
+    // URL de confirmação) mas não anexa item. Antes: negado pelo helper
+    // pedido_aceita_itens (status != 'pendente'). Depois do achado de pentest #3A
+    // (migration 20260708130000): negado por AUSÊNCIA de policy de INSERT
+    // (deny-all), independente do status do pedido.
     const ped = await t.asService((db) =>
       db.query<{ id: string }>(
         `insert into public.pedidos (loja_id, nome_cliente, subtotal, total, status)
@@ -547,14 +554,21 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
  *   pedidos_insert_publico       INSERT WITH CHECK (true)
  *   pedidos_acesso_lojista       ALL    USING/WITH CHECK (EXISTS loja do dono)
  *                                       — NENHUMA policy de SELECT para anon
- *   itens_pedido_insert_publico  INSERT WITH CHECK (true)
+ *   itens_pedido_insert_publico  INSERT — endurecida na auditoria 006 para
+ *                                       WITH CHECK (public.pedido_aceita_itens(pedido_id))
+ *                                       e depois REMOVIDA pelo achado de pentest #3A
+ *                                       (migration 20260708130000_ip_remove_insert_publico):
+ *                                       INSERT anon vira deny-all; escrita de item só
+ *                                       pela RPC criar_pedido (service_role).
  *   itens_pedido_lojista         SELECT USING (EXISTS pedido JOIN loja do dono)
  *                                       — NENHUMA policy de SELECT para anon
  *
  * Casos que precisam passar após a migration: [1]..[23].
  *  - [1][5][6][13][14][21] (leitura/CRUD do dono) só passam com as policies do lojista.
  *  - [4] cupom INSERT do dono pela cupons_acesso_proprio (FOR ALL cobre INSERT).
- *  - [10][19] anon INSERE pedido/item pelas *_insert_publico WITH CHECK (true).
+ *  - [10] anon INSERE pedido pela pedidos_insert_publico (loja ativa).
+ *  - [19] anon NÃO insere item: itens_pedido_insert_publico foi REMOVIDA (pentest
+ *    #3A); a única escrita de item é a RPC criar_pedido (service_role), fora de RLS.
  *  - [7] cupom forjado e [16] troca de loja_id rejeitados pelo WITH CHECK.
  *  - [2][3][11][15][18][20][22] (negações) já passam por deny-all hoje — o GREEN
  *    NÃO pode regredi-los criando SELECT anon em cupons/pedidos/itens.
