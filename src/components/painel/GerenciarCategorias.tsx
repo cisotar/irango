@@ -219,10 +219,18 @@ export function GerenciarCategorias({
                       <span className="flex-1 truncate text-sm text-foreground">
                         {cat.nome}
                       </span>
+                      <span
+                        className="whitespace-nowrap text-xs text-muted-foreground"
+                        aria-hidden="true"
+                      >
+                        {(exibicaoOtimista[cat.id] ?? cat.exibir_imagens)
+                          ? "Imagens visíveis"
+                          : "Imagens ocultas"}
+                      </span>
                       <Switch
                         checked={exibicaoOtimista[cat.id] ?? cat.exibir_imagens}
                         disabled={salvando}
-                        aria-label={`Exibir imagens dos produtos de ${cat.nome}`}
+                        aria-label={`Exibir imagens dos produtos de ${cat.nome} na vitrine`}
                         onCheckedChange={() => alternarExibirImagens(cat)}
                       />
                       <Button
