@@ -22,6 +22,10 @@ import { Redis } from "@upstash/redis";
 //   login ~5/min · criarPedido ~10/min · validarCupom ~20/min · fretePreview ~20/min.
 export const LIMITES = {
   login: { limite: 5, janela: "1 m" },
+  // Cadastro é ainda mais caro que login (dispara email de confirmação Supabase +
+  // cria linha em auth.users). Teto conservador ≤5/min por IP fecha enumeração de
+  // conta, email bombing e flood de auth.users (achado pentest área 4).
+  cadastro: { limite: 5, janela: "1 m" },
   criarPedido: { limite: 10, janela: "1 m" },
   validarCupom: { limite: 20, janela: "1 m" },
   fretePreview: { limite: 20, janela: "1 m" },
