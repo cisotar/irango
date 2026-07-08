@@ -232,18 +232,56 @@ describe("128 trigger v3 protege flags de módulo pago (modulo_impressao_a4, mod
     return r.rows[0].c;
   }
 
-  it("[128-9] dono SEM loja NÃO cria loja com modulo_impressao_*=true no INSERT (bloqueado, nada persiste)", async () => {
-    expect(await contarLojasDono(DONO_B)).toBe(0);
-    const res = await tentarUpdateComoDono(
-      t,
-      DONO_B,
-      `insert into public.lojas (dono_id, slug, nome, modulo_impressao_a4, modulo_impressao_termica)
-         values ($1, 'loja-b-hack', 'B', true, true)`,
-      [DONO_B],
-    );
-    expect(res.bloqueou).toBe(true);
-    expect(await contarLojasDono(DONO_B)).toBe(0);
-  });
+  // [128-9] PARAMETRIZADO (achado #4A do pentest 2026-07-08) — antes só
+  // testava modulo_impressao_a4/modulo_impressao_termica (2 colunas) num único
+  // INSERT combinado. O trigger v4 bloqueia, no ramo INSERT, TREZE colunas
+  // (11 de billing/identidade da v3 + 2 de consentimento LGPD somadas pela v4:
+  // 20260708120000_lojas_protege_billing_v4_consentimento.sql, bloco
+  // `if tg_op = 'INSERT'`) — mas só 3 delas (as 2 de módulo + assinatura_status
+  // via [128-10]) tinham teste. As outras 10 (agora cobertas aqui) podiam
+  // regredir — alguém apaga uma cláusula do `or` na função — sem NENHUM teste
+  // vermelho: um dono sem loja nasceria com billing/identidade/consentimento
+  // forjado de graça, sem passar pelo webhook.
+  type ColunaInsertHostil = { coluna: string; valor: (ids: Cenario) => unknown };
+
+  const COLUNAS_INSERT_PROTEGIDAS: ColunaInsertHostil[] = [
+    // já cobertas antes desta parametrização (mantidas para não perder o rótulo):
+    { coluna: "modulo_impressao_a4", valor: () => true },
+    { coluna: "modulo_impressao_termica", valor: () => true },
+    { coluna: "assinatura_status", valor: () => "ativa" },
+    // as 8 faltantes exigidas pelo achado #4A:
+    { coluna: "plano_id", valor: (ids) => ids.planoCaro },
+    { coluna: "billing_provider", valor: () => "hotmart" },
+    { coluna: "provider_subscription_id", valor: () => "sub_hack" },
+    { coluna: "hotmart_subscriber_code", valor: () => "HOTMART-HACK" },
+    { coluna: "hotmart_plano", valor: () => "PLANO-HACK" },
+    { coluna: "assinatura_inicio", valor: () => "2026-01-01T00:00:00Z" },
+    { coluna: "assinatura_fim_periodo", valor: () => "2030-01-01T00:00:00Z" },
+    { coluna: "assinatura_atualizada_em", valor: () => "2026-01-01T00:00:00Z" },
+    // fora do pedido mínimo, mas no mesmo espírito — a v4 somou estas duas ao
+    // mesmo ramo INSERT (fix pentest ÁREA 3, consentimento somente-servidor):
+    { coluna: "consentimento_versao", valor: () => "FORJADO" },
+    { coluna: "consentimento_em", valor: () => "2000-01-01T00:00:00Z" },
+  ];
+
+  for (const { coluna, valor } of COLUNAS_INSERT_PROTEGIDAS) {
+    it(`[128-9] dono SEM loja NÃO cria loja com ${coluna} fora do default seguro no INSERT (bloqueado, nada persiste)`, async () => {
+      expect(await contarLojasDono(DONO_B)).toBe(0);
+      // slug só aceita [a-z0-9-] (check constraint lojas_slug_check) — o nome
+      // da coluna tem "_", por isso o "_" vira "-" aqui. Sem essa troca o
+      // INSERT falharia pelo slug malformado, não pelo trigger, e o teste
+      // "passaria" pelo motivo ERRADO (falso-verde descoberto ao provar esta
+      // rede: os 13 casos bloqueavam mesmo com a cláusula do trigger removida).
+      const res = await tentarUpdateComoDono(
+        t,
+        DONO_B,
+        `insert into public.lojas (dono_id, slug, nome, ${coluna}) values ($1, $2, 'B', $3)`,
+        [DONO_B, `loja-b-hack-${coluna.replace(/_/g, "-")}`, valor(ids)],
+      );
+      expect(res.bloqueou).toBe(true);
+      expect(await contarLojasDono(DONO_B)).toBe(0);
+    });
+  }
 
   it("[128-10] dono SEM loja NÃO cria loja com assinatura_status='ativa' no INSERT (backstop cobre billing na criação)", async () => {
     const res = await tentarUpdateComoDono(
