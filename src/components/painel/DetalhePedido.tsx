@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import {
   ROTULO_FORMA_PAGAMENTO,
   mapearOpcionaisExibicao,
@@ -111,7 +112,7 @@ export function DetalhePedido({
           </Link>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="font-heading text-xl font-semibold text-foreground">
-              Pedido #{pedido.id.slice(0, 8).toUpperCase()}
+              Pedido #{formatarNumeroPedido(pedido.id)}
             </h1>
             <div className="flex items-center gap-2">
               {aparencia && (

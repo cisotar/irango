@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 /**
@@ -79,10 +80,6 @@ const APARENCIA_STATUS: Record<
   },
 };
 
-function idCurto(id: string): string {
-  return `#${id.slice(0, 8).toUpperCase()}`;
-}
-
 const formatadorHora = new Intl.DateTimeFormat("pt-BR", {
   hour: "2-digit",
   minute: "2-digit",
@@ -144,7 +141,7 @@ export function TabelaPedidos({
                     href={`${basePedidos}/${pedido.id}`}
                     className="font-mono text-foreground after:absolute after:inset-0"
                   >
-                    {idCurto(pedido.id)}
+                    #{formatarNumeroPedido(pedido.id)}
                   </Link>
                 </td>
                 <td className="px-4 py-3">{pedido.nome_cliente}</td>
@@ -169,7 +166,7 @@ export function TabelaPedidos({
               <Card size="sm" className="gap-2 transition-colors hover:bg-muted/50">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-sm text-foreground">
-                    {idCurto(pedido.id)}
+                    #{formatarNumeroPedido(pedido.id)}
                   </span>
                   <BadgeStatusPedido status={pedido.status} />
                 </div>

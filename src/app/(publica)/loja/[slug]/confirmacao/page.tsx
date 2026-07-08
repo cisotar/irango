@@ -19,6 +19,7 @@ import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
 import { listarFormasPagamento } from "@/lib/supabase/queries/entregaPagamento";
 import { resolverAcaoConfirmacao } from "@/lib/utils/confirmacao";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { StatusPedidoLive } from "@/components/vitrine/confirmacao/StatusPedidoLive";
@@ -30,11 +31,6 @@ type PageProps = {
 };
 
 export const metadata = { title: "Pedido confirmado — iRango" };
-
-/** Número curto exibido ao cliente — primeiros 8 chars do id, maiúsculo. */
-function numeroCurto(id: string): string {
-  return id.slice(0, 8).toUpperCase();
-}
 
 /** Rótulo amigável da forma de pagamento. */
 function rotuloForma(tipo: string | null): string {
@@ -164,7 +160,7 @@ export default async function ConfirmacaoPage({
           <p className="text-sm text-muted-foreground">
             Pedido nº{" "}
             <span className="font-mono font-semibold">
-              {numeroCurto(ped.id)}
+              {formatarNumeroPedido(ped.id)}
             </span>
           </p>
         </CardHeader>

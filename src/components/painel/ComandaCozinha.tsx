@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { formatarDataHora } from "@/lib/utils/formatarDataHora";
+import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import {
   ROTULO_TIPO_ENTREGA,
   lerBairro,
@@ -26,7 +27,7 @@ import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
  */
 
 export function ComandaCozinha({ pedido }: { pedido: PedidoComItens }): ReactElement {
-  const numero = pedido.id.slice(0, 8).toUpperCase();
+  const numero = formatarNumeroPedido(pedido.id);
   const tipoEntrega = ROTULO_TIPO_ENTREGA[pedido.tipo_entrega] ?? pedido.tipo_entrega;
   // Bairro só faz sentido em entrega; retirada não tem endereço.
   const bairro =
