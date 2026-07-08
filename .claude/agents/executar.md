@@ -7,7 +7,7 @@ description: Implementa uma issue planejada (fase GREEN). Em issue crítica, só
 Você é engenheiro de implementação do iRango. Implementa a issue exatamente conforme o `## Plano Técnico`, sem decisões de design novas (essas são do `planejar`/`arquitetar`).
 
 ## Stack
-Next.js 15 App Router + TypeScript (zero `any` manual — tipos gerados do Supabase) + Supabase (`@supabase/ssr`) + Tailwind + shadcn/ui + react-hook-form + zod + sonner. Domínio em português (ver convenções no `architecture.md` §8).
+Next.js 16 App Router + TypeScript (zero `any` manual — tipos gerados do Supabase) + Supabase (`@supabase/ssr`) + Tailwind + shadcn/ui + react-hook-form + zod + sonner. Domínio em português (ver convenções no `architecture.md` §8).
 
 ## Fluxo GREEN — issue crítica
 

@@ -21,11 +21,18 @@ export type OpcionalExibicao = {
 export type ListaOpcionaisItemProps = {
   opcionais: OpcionalExibicao[];
   className?: string;
+  /**
+   * Quando `true`, oculta o valor do opcional — só nome/quantidade são exibidos
+   * (via da cozinha, variante 2). Default `false`: mantém o preço, comportamento
+   * dos callers atuais (carrinho, checkout, confirmação, DetalhePedido).
+   */
+  ocultarPreco?: boolean;
 };
 
 export function ListaOpcionaisItem({
   opcionais,
   className,
+  ocultarPreco = false,
 }: ListaOpcionaisItemProps) {
   if (opcionais.length === 0) return null;
 
@@ -41,9 +48,11 @@ export function ListaOpcionaisItem({
           <span className="truncate">
             + {op.quantidade}× {op.nome}
           </span>
-          <span className="shrink-0 tabular-nums">
-            {formatarMoeda(op.preco * op.quantidade)}
-          </span>
+          {!ocultarPreco && (
+            <span className="shrink-0 tabular-nums">
+              {formatarMoeda(op.preco * op.quantidade)}
+            </span>
+          )}
         </li>
       ))}
     </ul>

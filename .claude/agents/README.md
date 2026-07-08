@@ -1,6 +1,6 @@
 # Agentes do iRango
 
-Agentes especializados (subagents) para implementar o iRango. Cada um tem um papel único e conhece o stack do projeto (Next.js 15 + TypeScript + Supabase + Tailwind + shadcn/ui) e as referências em `references/`.
+Agentes especializados (subagents) para implementar o iRango. Cada um tem um papel único e conhece o stack do projeto (Next.js 16 + TypeScript + Supabase + Tailwind + shadcn/ui) e as referências em `references/`.
 
 ## Três mandatos — válidos em TODOS os agentes
 

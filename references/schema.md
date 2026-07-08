@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.12 | **Atualizado:** 2026-07-01
+**Versão:** 0.1.13 | **Atualizado:** 2026-07-07
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -90,12 +90,20 @@ CREATE TABLE lojas (
 
   -- Assinatura Hotmart
   assinatura_status          text NOT NULL DEFAULT 'trial'
-                             CHECK (assinatura_status IN ('trial','ativa','inadimplente','cancelada')),
+                             CHECK (assinatura_status IN ('trial','ativa','inadimplente','cancelada','suspensa','cortesia')),
   hotmart_subscriber_code    text,
   hotmart_plano              text,
   assinatura_inicio          timestamptz,
   assinatura_fim_periodo     timestamptz,
   assinatura_atualizada_em   timestamptz,
+
+  -- Módulos pagos de impressão de pedido (entitlement por feature, billing-controlled).
+  -- DEFAULT false = fail-closed: loja nasce sem nenhum módulo contratado; só o
+  -- servidor de billing liga. Nunca editável pelo lojista — protegido pelo mesmo
+  -- trigger de billing e por CAMPOS_LOJA_SOMENTE_SERVIDOR (seguranca.md §2).
+  -- Migration: 20260707120000_lojas_modulos_impressao.sql (issue 127)
+  modulo_impressao_a4         boolean NOT NULL DEFAULT false,
+  modulo_impressao_termica    boolean NOT NULL DEFAULT false,
 
   -- Logo da loja (exibida na vitrine pública — dado público, não PII)
   -- NULL = loja sem logo. CHECK de defesa-em-profundidade; autoridade real é a Server Action.
@@ -427,7 +435,7 @@ Valores válidos:
 | `cupons.tipo` | `percentual`, `fixo` |
 | `formas_pagamento.tipo` | `pix`, `dinheiro`, `link`, `cartao` |
 | `pedidos.status` | `pendente`, `confirmado`, `em_preparo`, `saiu_entrega`, `entregue`, `cancelado` |
-| `lojas.assinatura_status` | `trial`, `ativa`, `inadimplente`, `cancelada` |
+| `lojas.assinatura_status` | `trial`, `ativa`, `inadimplente`, `cancelada`, `suspensa`, `cortesia` |
 
 ---
 

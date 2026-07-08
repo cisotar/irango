@@ -20,6 +20,11 @@ import { carregarPedidoDetalheAdmin } from "../../carga-pedido-detalhe";
  * servidor (nunca vem do payload do cliente) e produz uma Server Action ligada com
  * assinatura `(id, novoStatus) => Promise<ResultadoAtualizarStatus>`, que casa o
  * tipo `AcaoStatus`. A autoridade da transição vive inteiramente na action (133).
+ *
+ * RN-M2 (issue 137 — espelho do entitlement): o loader devolve `modulosImpressao`
+ * (variantes da loja-ALVO, já computadas por `variantesHabilitadas` sob service_role
+ * ESCOPADO por `lojaId` validado) e `nomeLoja` (recibo). A page só repassa a lista
+ * PRONTA a `<DetalhePedido>` — parity com a page do painel (136), um único caminho.
  */
 export const dynamic = "force-dynamic";
 
@@ -29,13 +34,16 @@ export default async function DetalhePedidoAdminPage({
   params: Promise<{ lojaId: string; id: string }>;
 }): Promise<ReactElement> {
   const { lojaId, id } = await params;
-  const pedido = await carregarPedidoDetalheAdmin(lojaId, id);
+  const { pedido, modulosImpressao, nomeLoja } =
+    await carregarPedidoDetalheAdmin(lojaId, id);
 
   return (
     <DetalhePedido
       pedido={pedido}
       basePedidos={`/admin/assinantes/${lojaId}/pedidos`}
       acaoStatus={atualizarStatusPedidoAdmin.bind(null, lojaId)}
+      modulosImpressao={modulosImpressao}
+      nomeLoja={nomeLoja}
     />
   );
 }

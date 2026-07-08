@@ -25,7 +25,14 @@ vi.mock("next/navigation", () => ({
 
 import { DetalhePedido } from "@/components/painel/DetalhePedido";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
+import type { VarianteImpressao } from "@/lib/utils/variantesHabilitadas";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+
+// Token de acesso do pedido — SEGREDO que jamais pode vazar no markup renderizado
+// (invariante do detalhe; leitura sem login só com id + este token). Valor
+// distintivo, improvável de colidir com qualquer outra string do DOM, para a
+// asserção negativa da issue 135 (caso 5).
+const TOKEN_ACESSO_SECRETO = "tok-3f9c1a2b-NUNCA-NO-DOM";
 
 function pedido(over: Partial<PedidoComItens> = {}): PedidoComItens {
   return {
@@ -41,6 +48,14 @@ function pedido(over: Partial<PedidoComItens> = {}): PedidoComItens {
     forma_pagamento: "pix",
     observacoes: null,
     endereco_entrega: null,
+    // Campos exigidos pelos blocos de impressão (ComandaCozinha/ReciboCliente)
+    // quando o gate os monta (GREEN): `criado_em` alimenta formatarDataHora,
+    // `tipo_entrega`/`troco_para` completam o snapshot. `token_acesso` fica no
+    // objeto mas NUNCA deve ser renderizado (caso 5).
+    token_acesso: TOKEN_ACESSO_SECRETO,
+    criado_em: "2026-07-07T17:32:00Z",
+    tipo_entrega: "retirada",
+    troco_para: null,
     itens_pedido: [
       {
         id: "item-1",
@@ -53,13 +68,26 @@ function pedido(over: Partial<PedidoComItens> = {}): PedidoComItens {
   } as unknown as PedidoComItens;
 }
 
-function render(
-  props: Partial<Parameters<typeof DetalhePedido>[0]> = {},
-): string {
+// Contrato-alvo da issue 135 (GREEN): a assinatura passa a incluir
+// `modulosImpressao: VarianteImpressao[]` (decidida no servidor) e `nomeLoja`
+// (exigido por ReciboCliente). O tipo atual do componente ainda NÃO declara
+// essas props — sob vitest/esbuild o type-check é ignorado e o teste RODA (o
+// componente atual só ignora props extras); `next build`/tsc passam a exigir as
+// props depois que o executar as adicionar.
+type PropsDetalhe = {
+  pedido?: PedidoComItens;
+  basePedidos?: string;
+  modulosImpressao?: VarianteImpressao[];
+  nomeLoja?: string;
+};
+
+function render(props: PropsDetalhe = {}): string {
   return renderToStaticMarkup(
     <DetalhePedido
       pedido={props.pedido ?? pedido()}
       basePedidos={props.basePedidos}
+      modulosImpressao={props.modulosImpressao ?? []}
+      nomeLoja={props.nomeLoja ?? "Loja Teste"}
     />,
   );
 }
@@ -192,5 +220,74 @@ describe("DetalhePedido bordas", () => {
     expect(html).toContain("Rua das Flores");
     expect(html).toContain("42");
     expect(html).toContain("CEP 01000-000");
+  });
+});
+
+// Marcadores de texto LITERAIS que cada bloco renderiza. `renderToStaticMarkup`
+// NÃO aplica o CSS `uppercase`, então o texto sai exatamente como no componente
+// (com em-dash U+2014, não hífen). O executar (GREEN) deve preservar esses
+// literais nos componentes montados, ou o gate deixa de ser observável no teste:
+//   - ComandaCozinha → "Comanda — Cozinha"          (ComandaCozinha.tsx, título)
+//   - ReciboCliente  → "Documento sem valor fiscal"  (rodapé não-fiscal RN-P6)
+//   - Seletor 1 var. → "Via da cozinha" / "Recibo do cliente" (botão direto)
+//   - Seletor 2+ var.→ "Imprimir" (MenuTrigger; os itens ficam no portal, que
+//     NÃO sai no markup estático — por isso não asserto rótulos dentro do menu).
+const MARCADOR_COMANDA = "Comanda — Cozinha";
+const MARCADOR_RECIBO = "Documento sem valor fiscal";
+
+describe("DetalhePedido gate de módulos de impressão (RN-M1)", () => {
+  it("modulosImpressao=[] → sem seletor e SEM comanda/recibo no DOM (gate fechado)", () => {
+    const html = render({ modulosImpressao: [] });
+    // Nada habilitado: nenhum bloco de impressão montado, nenhum seletor.
+    expect(html).not.toContain("Imprimir");
+    expect(html).not.toContain(MARCADOR_COMANDA);
+    expect(html).not.toContain(MARCADOR_RECIBO);
+  });
+
+  it("modulosImpressao=['cozinha'] → comanda + seletor no DOM; recibo AUSENTE", () => {
+    const html = render({ modulosImpressao: ["cozinha"] });
+    expect(html).toContain(MARCADOR_COMANDA); // bloco cozinha montado
+    expect(html).toContain("Via da cozinha"); // seletor (1 variante) presente
+    expect(html).not.toContain(MARCADOR_RECIBO); // recibo NÃO habilitado → fora do DOM
+  });
+
+  it("modulosImpressao=['recibo'] → recibo + seletor no DOM; comanda AUSENTE", () => {
+    const html = render({ modulosImpressao: ["recibo"] });
+    expect(html).toContain(MARCADOR_RECIBO); // bloco recibo montado
+    expect(html).toContain("Recibo do cliente"); // seletor (1 variante) presente
+    expect(html).not.toContain(MARCADOR_COMANDA); // comanda NÃO habilitada → fora do DOM
+  });
+
+  it("modulosImpressao=['a4'] → só seletor com 'Comum (A4)'; comanda e recibo AUSENTES", () => {
+    // Combinação real do domínio (RN-M2): só Módulo A habilitado, sem Módulo B
+    // (térmica). Isola o branch "a4" do seletor (rótulo próprio, sem overlap
+    // com os literais de cozinha/recibo) e prova que nenhum dos dois blocos
+    // térmicos é montado quando SÓ a4 está na lista.
+    const html = render({ modulosImpressao: ["a4"] });
+    expect(html).toContain("Comum (A4)"); // seletor (1 variante) presente
+    expect(html).not.toContain(MARCADOR_COMANDA);
+    expect(html).not.toContain(MARCADOR_RECIBO);
+    expect(html).not.toContain("Via da cozinha");
+    expect(html).not.toContain("Recibo do cliente");
+  });
+
+  it("modulosImpressao=['a4','cozinha','recibo'] → comanda + recibo + seletor no DOM", () => {
+    const html = render({ modulosImpressao: ["a4", "cozinha", "recibo"] });
+    expect(html).toContain(MARCADOR_COMANDA);
+    expect(html).toContain(MARCADOR_RECIBO);
+    expect(html).toContain("Imprimir"); // seletor (2+ variantes) → trigger de menu
+  });
+
+  it("token_acesso NUNCA aparece no markup, em qualquer combinação de módulos", () => {
+    const combinacoes: VarianteImpressao[][] = [
+      [],
+      ["cozinha"],
+      ["recibo"],
+      ["a4", "cozinha", "recibo"],
+    ];
+    for (const modulosImpressao of combinacoes) {
+      const html = render({ modulosImpressao });
+      expect(html).not.toContain(TOKEN_ACESSO_SECRETO);
+    }
   });
 });

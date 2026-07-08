@@ -1,11 +1,7 @@
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
-
-/** Número curto exibido ao cliente — primeiros 8 chars do id, maiúsculo. */
-function numeroCurto(id: string): string {
-  return id.slice(0, 8).toUpperCase();
-}
+import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 
 /** Rótulo amigável da forma de pagamento. */
 function rotuloForma(tipo: string | null): string {
@@ -77,7 +73,7 @@ export function montarLinkWhatsappPedido(
   const linhas = [
     "Novo pedido iRango",
     `Loja: ${loja.nome}`,
-    `Pedido nº ${numeroCurto(pedido.id)}`,
+    `Pedido nº ${formatarNumeroPedido(pedido.id)}`,
     "",
     "Itens:",
     ...linhasItens,
@@ -120,7 +116,7 @@ export function montarLinkWhatsappPedido(
     linhas.push(`Obs.: ${pedido.observacoes}`);
   }
 
-  linhas.push("", `Localize este pedido no painel pelo nº ${numeroCurto(pedido.id)}.`);
+  linhas.push("", `Localize este pedido no painel pelo nº ${formatarNumeroPedido(pedido.id)}.`);
 
   const mensagem = linhas.join("\n");
   return {

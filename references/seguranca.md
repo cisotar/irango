@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.32 | **Atualizado:** 2026-07-04
+**Versão:** 0.2.33 | **Atualizado:** 2026-07-07
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -94,23 +94,24 @@ CREATE POLICY "lojas_update_proprio"
 -- guard de admin. Nenhum authenticated tem DELETE em lojas.
 ```
 
-> **Nota sobre RLS vs. colunas de billing:** RLS filtra LINHA, não COLUNA. As policies acima permitem que o lojista autenticado faça UPDATE na própria linha — sem proteção adicional, isso incluiria escrever `assinatura_status`, `assinatura_inicio`, `assinatura_fim_periodo`, `assinatura_atualizada_em`, `hotmart_subscriber_code`, `hotmart_plano` e `dono_id` via PostgREST (vetor de auto-promoção). O gate real de coluna é o trigger abaixo.
+> **Nota sobre RLS vs. colunas de billing:** RLS filtra LINHA, não COLUNA. As policies acima permitem que o lojista autenticado faça INSERT/UPDATE na própria linha (`lojas_insert_proprio`/`lojas_update_proprio`, sem guarda de coluna) — sem proteção adicional, isso incluiria escrever `assinatura_status`, `assinatura_inicio`, `assinatura_fim_periodo`, `assinatura_atualizada_em`, `hotmart_subscriber_code`, `hotmart_plano`, `dono_id`, `billing_provider`, `provider_subscription_id`, `plano_id`, `modulo_impressao_a4`/`modulo_impressao_termica` via PostgREST (vetor de auto-promoção/auto-provisão). O gate real de coluna é o trigger abaixo.
 
-#### Trigger `lojas_protege_billing_trg` — gate de coluna de billing
+#### Trigger `lojas_protege_billing_trg` — gate de coluna de billing (v3, INSERT + UPDATE)
 
-Migration: `20260614004500_lojas_protege_billing.sql`
+Migrations: `20260614004500_lojas_protege_billing.sql` (v1, só UPDATE, auditoria 057) → `20260621094000_lojas_protege_billing_v2.sql` (v2, +`billing_provider`/`provider_subscription_id`/`plano_id`, issue 074) → `20260707121000_lojas_protege_billing_v3_modulos.sql` (v3, +`modulo_impressao_a4`/`modulo_impressao_termica` **e passa a cobrir também INSERT**, issue 128).
 
 ```sql
--- BEFORE UPDATE TRIGGER: bloqueia qualquer role ≠ service_role/postgres de
--- alterar as colunas de billing ou o dono_id.
--- Fecha o vetor: lojista com JWT válido não consegue escrever
--- assinatura_status='ativa' via PATCH direto no PostgREST.
+-- BEFORE INSERT OR UPDATE TRIGGER (v3): bloqueia qualquer role ≠
+-- service_role/postgres/supabase_admin de gravar as colunas de billing/
+-- identidade — tanto ao CRIAR a linha (INSERT) quanto ao EDITAR (UPDATE).
 CREATE TRIGGER lojas_protege_billing_trg
-  BEFORE UPDATE ON lojas
+  BEFORE INSERT OR UPDATE ON lojas
   FOR EACH ROW EXECUTE FUNCTION lojas_protege_billing();
 ```
 
-A função `lojas_protege_billing()` verifica `current_role` e levanta `EXCEPTION` se qualquer uma das colunas protegidas mudar fora de `service_role` ou `postgres`. A allowlist da Server Action de cadastro é camada extra de defesa (filtro no código), não o gate primário — o trigger é o gate primário no banco.
+**Padrão INSERT + UPDATE (por que o trigger cobre os dois eventos):** v1/v2 só bloqueavam UPDATE. A auditoria da issue 128 achou o vetor de INSERT: a policy `lojas_insert_proprio` concede INSERT ao dono autenticado (`WITH CHECK auth.uid() = dono_id`, sem guarda de coluna), e a loja nem sempre já existe — um usuário recém-cadastrado (JWT `authenticated` válido) pode fazer `POST /rest/v1/lojas` com `modulo_impressao_*`/`assinatura_status` já setados **antes** de `garantir_loja_do_dono` auto-provisionar a loja (idempotente — devolveria a linha já forjada como no-op). A função (`CREATE OR REPLACE`) passou a tratar os dois `TG_OP` na mesma definição: no **INSERT** por autor não-sistema, exige que as colunas de billing/identidade nasçam nos defaults seguros (`assinatura_status = 'trial'`, `modulo_impressao_* = false`, resto `NULL` — `dono_id` não é checado aqui, a policy já o amarra a `auth.uid()`); no **UPDATE**, compara `NEW` contra `OLD` como antes. Bypass idêntico nos dois ramos: `current_user IN ('service_role', 'postgres', 'supabase_admin')` — os caminhos legítimos de criação (`garantir_loja_do_dono`, `criarLoja`, seeds/migrations) rodam sob esses roles. **Regra ao estender:** toda tabela com policy de INSERT self-service (`WITH CHECK auth.uid() = dono_id`, sem guarda de coluna) e colunas server-only precisa do mesmo tratamento — proteger só o UPDATE deixa a criação da linha como vetor aberto.
+
+A função `lojas_protege_billing()` protege hoje **12 colunas**: `assinatura_status`, `assinatura_inicio`, `assinatura_fim_periodo`, `assinatura_atualizada_em`, `hotmart_subscriber_code`, `hotmart_plano`, `dono_id`, `billing_provider`, `provider_subscription_id`, `plano_id`, `modulo_impressao_a4`, `modulo_impressao_termica` — e levanta `EXCEPTION` se qualquer uma mudar (UPDATE) ou nascer fora do default seguro (INSERT) fora de `service_role`/`postgres`/`supabase_admin`. A allowlist da Server Action de cadastro é camada extra de defesa (filtro no código), não o gate primário — o trigger é o gate primário no banco.
 
 #### Helper `public.loja_esta_ativa(uuid) → boolean`
 
@@ -490,7 +491,7 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 
 **Regra:** toda escrita admin numa tabela com coluna `loja_id` usa `escopo.inserir` / `escopo.atualizar` / `escopo.remover` / `escopo.buscarPorId` — nunca `svc.from(tabela).update()/.delete()/.insert()` cru. UPDATE da própria tabela `lojas` usa `escopo.atualizarLoja` (escopo por `id`, não por `loja_id`). O wrapper injeta o filtro por construção — `.eq("loja_id", lojaId)` (+ `.eq("id", id)` em `atualizar`/`remover`/`buscarPorId`) — e, no INSERT, grava `loja_id` **por último** no objeto (`{ ...dados, loja_id: lojaId }`), imune a um payload hostil que tente sobrescrever o campo.
 
-**Hardening de `atualizarLoja` (issue 115):** o patch aceito é tipado como `PatchLojaAdmin = Omit<Tabelas["lojas"]["Update"], CAMPOS_LOJA_SOMENTE_SERVIDOR>` — bloqueia por tipo as 13 colunas somente-servidor (as 10 do trigger `lojas_protege_billing()` + `id` + `consentimento_versao`/`consentimento_em`), listadas uma única vez em `CAMPOS_LOJA_SOMENTE_SERVIDOR` (`admin-loja.ts`), fonte única também do filtro de runtime. `latitude`/`longitude` ficam de fora da blocklist — são coordenadas derivadas no servidor (`geocodificarEnderecoComMotivo`), nunca vindas do cliente. Como o `Omit` de tipo é derrotável por `as`/cast e o trigger de banco não se aplica a `service_role` (que o bypassa), `atualizarLoja` também filtra em **runtime**: descarta qualquer chave da mesma `CAMPOS_LOJA_SOMENTE_SERVIDOR` antes do UPDATE — esse filtro é o backstop real, o tipo é só a primeira defesa. **Convenção:** toda escrita admin em `lojas` passa por `escopo.atualizarLoja` — nunca `svc.from("lojas").update()` cru, mesmo dentro de uma action já autorizada por `verificarAdminSaaS()`.
+**Hardening de `atualizarLoja` (issue 115, estendido na 129):** o patch aceito é tipado como `PatchLojaAdmin = Omit<Tabelas["lojas"]["Update"], CAMPOS_LOJA_SOMENTE_SERVIDOR>` — bloqueia por tipo as 15 colunas somente-servidor (as 12 do trigger `lojas_protege_billing()` — billing/assinatura + `dono_id` + `modulo_impressao_a4`/`modulo_impressao_termica` — mais `id` + `consentimento_versao`/`consentimento_em`, que só a constante protege), listadas uma única vez em `CAMPOS_LOJA_SOMENTE_SERVIDOR` (`admin-loja.ts`), fonte única também do filtro de runtime. `latitude`/`longitude` ficam de fora da blocklist — são coordenadas derivadas no servidor (`geocodificarEnderecoComMotivo`), nunca vindas do cliente. Como o `Omit` de tipo é derrotável por `as`/cast e o trigger de banco não se aplica a `service_role` (que o bypassa), `atualizarLoja` também filtra em **runtime**: descarta qualquer chave da mesma `CAMPOS_LOJA_SOMENTE_SERVIDOR` antes do UPDATE — esse filtro é o backstop real, o tipo é só a primeira defesa. **Convenção:** toda escrita admin em `lojas` passa por `escopo.atualizarLoja` — nunca `svc.from("lojas").update()` cru, mesmo dentro de uma action já autorizada por `verificarAdminSaaS()`.
 
 **Exceções legítimas ao `svc` cru** (não passam pelo wrapper, escopo continua manual):
 - Supabase Storage — paths já namespaced por `${lojaId}/...`;
