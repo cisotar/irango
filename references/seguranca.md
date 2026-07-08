@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.36 | **Atualizado:** 2026-07-08
+**Versão:** 0.2.37 | **Atualizado:** 2026-07-08
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -144,7 +144,9 @@ A tabela `lojas` não tem SELECT público para anon (§19 — a vitrine usa `vit
 
 Migration: `20260614002500_rls_cupons_pedidos.sql`
 
-Função `security definer` usada pela policy `itens_pedido_insert_publico` para verificar se um pedido aceita novos itens sem expor a tabela `pedidos` ao anon.
+Função `security definer` que verifica se um pedido aceita novos itens sem expor a tabela `pedidos` ao anon.
+
+> **Modelo de escrita de `itens_pedido` (migration `20260708130000_ip_remove_insert_publico.sql`, achado #3A do pentest 2026-07-08):** a policy `itens_pedido_insert_publico` (INSERT para anon/authenticated, `WITH CHECK public.pedido_aceita_itens(pedido_id)`) foi removida. O `WITH CHECK` checava só `status = 'pendente'` + loja ativa — não posse nem token — e o `pedido_id` trafega na URL de confirmação (não é segredo): um anon que conhecesse o id de um pedido pendente alheio anexava item arbitrário a ele (escrita cross-customer). INSERT na tabela é agora deny-all para anon e authenticated — a única escrita legítima é a RPC `public.criar_pedido(...)` executada sob `service_role` (BYPASSRLS). Espelha o fix já aplicado a `itens_pedido_opcionais` (migration `20260621098000`, issue 110). O helper permanece como guard reutilizável, e a policy de leitura `itens_pedido_lojista` (SELECT do dono) fica intacta — mas não há mais policy pública de INSERT consumindo o helper.
 
 ```sql
 CREATE FUNCTION public.pedido_aceita_itens(p_pedido_id uuid)
@@ -165,11 +167,11 @@ REVOKE ALL ON FUNCTION public.pedido_aceita_itens(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.pedido_aceita_itens(uuid) TO anon, authenticated, service_role;
 ```
 
-**Por que não usar `EXISTS (SELECT 1 FROM pedidos …)` diretamente na policy:**
+**Por que não usar `EXISTS (SELECT 1 FROM pedidos …)` diretamente:**
 
-A tabela `pedidos` não tem SELECT público para anon (anti-enumeração de pedidos alheios). Um `EXISTS` contra `pedidos` rodando sob RLS do anon retorna sempre zero linhas, bloqueando todo INSERT de item. A função `security definer` contorna isso respondendo só o booleano — mesmo padrão de `loja_esta_ativa`.
+A tabela `pedidos` não tem SELECT público para anon (anti-enumeração de pedidos alheios). Um `EXISTS` contra `pedidos` rodando sob RLS do anon retorna sempre zero linhas. A função `security definer` contorna isso respondendo só o booleano — mesmo padrão de `loja_esta_ativa`.
 
-**Regra para devs e agentes:** toda policy de INSERT público em `itens_pedido` deve usar `public.pedido_aceita_itens(pedido_id)`. Nunca `WITH CHECK (true)` — permite anexar item a pedido alheio ou pedido já confirmado/cancelado. Nunca `EXISTS` direto em `pedidos` — quebra silenciosamente para anon.
+**Regra para devs e agentes:** INSERT em `itens_pedido` é exclusivo da RPC `public.criar_pedido(...)` (service_role). Não reintroduzir policy de INSERT público sem passar pelo helper `public.pedido_aceita_itens(pedido_id)` **e** sem checar posse/token — um `WITH CHECK` baseado só em status+loja ativa não basta (foi exatamente o que o achado #3A explorou). Nunca `WITH CHECK (true)` nem `EXISTS` direto em `pedidos`.
 
 ---
 
@@ -331,13 +333,9 @@ O token é gerado no INSERT e funciona como senha do pedido. Sem token + id corr
 
 #### `itens_pedido`
 
-```sql
--- Cliente insere itens (sem login) — só em pedido pendente de loja ativa (endurecida: não mais WITH CHECK (true))
--- Usa helper security definer porque anon não tem SELECT em pedidos (ver helper abaixo)
-CREATE POLICY "itens_pedido_insert_publico"
-  ON itens_pedido FOR INSERT
-  WITH CHECK (public.pedido_aceita_itens(pedido_id));
+> **INSERT público removido** (migration `20260708130000_ip_remove_insert_publico.sql`, achado #3A do pentest 2026-07-08): a policy `itens_pedido_insert_publico` foi dropada. INSERT em `itens_pedido` é deny-all para anon/authenticated — a única escrita legítima é a RPC `public.criar_pedido(...)` sob `service_role`. Detalhe do achado e do racional na subseção do helper `pedido_aceita_itens` (acima).
 
+```sql
 -- Lojista vê itens dos próprios pedidos
 CREATE POLICY "itens_pedido_lojista"
   ON itens_pedido FOR SELECT
@@ -499,6 +497,8 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 - camada de query/RPC (billing, criação de loja) fora do CRUD por tabela.
 
 **Enforcement automático:** `src/app/admin/assinantes/enforcement-escopo-admin.test.ts` descobre os módulos de action via `readdirSync` (sem lista manual — action nova entra sozinha) e faz duas verificações estáticas de fonte por `export async function`: camada 2 exige referência a `prepararContextoAdmin`/`verificarAdminSaaS` (prova admin antes de qualquer efeito); camada 3 exige que todo statement `.from(tabela)....update()/.delete()` cru contenha `.eq(...)`. Uma action nova que esqueça o padrão falha no CI sem precisar editar a suíte de teste. A mesma descoberta cobre também os loaders `[lojaId]/carga*.ts` (`carga.ts`, `carga-opcionais.ts`, …) que elevam a `service_role` fora do fluxo de Server Action — o filtro é por prefixo (`carga` + `.ts`, excluindo `.test.ts`), não lista manual, então um loader novo que eleve privilégio entra automaticamente sob o mesmo guard (achado da issue 132: `carga-opcionais.ts` chegou a existir sem cair sob o enforcement até o glob ser generalizado).
+
+**Reforço pós-pentest 2026-07-08 (achados #4A/#4B):** a descoberta de módulos passou a incluir, além de `actions/*.ts` e `[lojaId]/carga*.ts` por nome, **qualquer** `.ts`/`.tsx` sob `assinantes/**` cujo texto referencie `createServiceClient` — por conteúdo, não por nome/pasta. Isso fecha o buraco achado na 4A: `src/app/admin/assinantes/page.tsx` lê **todas** as lojas via `service_role` (é um `page.tsx`, não uma action nem um `carga*.ts`) e escapava por completo da descoberta anterior. A camada 2 ganhou um ramo para `export default async function` (loader de page/layout, que só pode exportar default) — sem ele, um `page.tsx` recém-descoberto geraria zero blocos de asserção e passaria "verde" por ausência de teste, não por o guard existir. A própria `page.tsx` foi corrigida (achado #4B): agora chama `verificarAdminSaaS()` diretamente no Server Component, **antes** de `createServiceClient()`, em vez de depender só do guard do `layout.tsx` — padrão D-4 (re-provar admin antes de elevar a `service_role`, defesa em profundidade; auth só-em-layout é desaconselhada porque o loader roda concorrente ao guard). A camada 3 também passou a casar `insert` (antes só via `update`/`delete`) — um `svc.from(tabela).insert(...)` cru sem `.eq(...)` agora conta como escrita não-escopada, com exceção de uma allowlist explícita e revisada linha a linha para inserts-filho ancorados por posse anterior (hoje só `taxas_entrega`/`bairros_zona` em `admin-entrega.ts`, que não têm `loja_id` próprio mas são inseridos sob uma zona já comprovadamente da loja-alvo). **Regra ao criar page/layout admin novo sob `service_role`:** re-provar `verificarAdminSaaS()`/`prepararContextoAdmin` no próprio Server Component antes de `createServiceClient()` — não confiar só no guard do layout ancestral.
 
 **Padrão admin para leituras (issue 130):** consultas de leitura sob `service_role` no hub admin usam a variante `(svc, lojaId)` das funções já existentes em `lib/supabase/queries/*.ts` — ex. `listarPedidosDaLoja`/`buscarPedidoDaLoja` (`pedidos.ts`), mesmo precedente de `buscarCategorias` (`categorias.ts`). Não passam pelo wrapper `EscopoLoja` (que cobre só escritas): o escopo é o `.eq("loja_id", lojaId)` explícito dentro da própria query, com `lojaId`/`id` validados por `schemaUuid` (`z.guid()`) antes de tocar o banco — formato inválido é fail-closed (`[]`/`null`, nunca vira query). `lojaId` é validado como UUID pelo caller (loader admin); a query repete o guard como defesa-em-profundidade, não como única validação. **Lacuna conhecida:** o enforcement automático acima só cobre Server Actions de escrita descobertas em `admin/assinantes` — não há verificação estática equivalente para funções de leitura server-only em `lib/supabase/queries/`; uma query nova que esqueça o `.eq("loja_id")` não é pega pelo CI hoje.
 
@@ -1070,6 +1070,8 @@ grant select on public.vitrine_lojas to anon, authenticated; -- aditivo, reafirm
 
 Isso vale para **todo** `drop view` + `create view` da view — a view recriada herda os default privileges do schema, não os revokes de migrations anteriores. O revoke deve ser repetido na mesma migration do `create view` ou em uma posterior. Uma guarda estática automatizada em `tests/migrations/vitrine_lojas_select_only.test.ts` varre `supabase/migrations/*.sql` e falha se detectar recriação de `vitrine_lojas` sem um revoke posterior — usar o mesmo padrão de teste para qualquer outra view definer pública futura.
 
+**Guard de allowlist de colunas — obrigatório além do revoke de escrita (achado #5 do pentest, 2026-07-08):** revogar escrita não basta; a view também precisa travar o **conjunto de colunas** exposto. `vitrine_lojas` é recriada via `drop view` + `create view` a cada coluna nova de `lojas` (já 6×) — sem uma lista fixa de colunas proibidas, uma recriação desatenta pode projetar `consentimento_*`, `billing_*`, `assinatura_inicio`/`assinatura_atualizada_em`, `plano_id` ou `modulo_impressao_*` e vazar PII/estratégia comercial sem quebrar nenhum teste existente. O bloco `[VIEW-COLS]` em `tests/migrations/pentest_area2_isolamento.test.ts` fecha isso: consulta `information_schema.columns` para `vitrine_lojas` e falha se qualquer coluna de uma lista `PROIBIDAS` (`dono_id`, `consentimento_em`, `consentimento_versao`, `assinatura_inicio`, `assinatura_atualizada_em`, `hotmart_subscriber_code`, `hotmart_plano`, `billing_provider`, `provider_subscription_id`, `plano_id`, `modulo_impressao_a4`, `modulo_impressao_termica`, `latitude`, `longitude`) aparecer na projeção. **Regra:** toda view definer pública nova (`security_invoker = false`) precisa dos **dois** guards — revoke de escrita (acima) **e** allowlist de colunas proibidas no mesmo molde do `[VIEW-COLS]` — não apenas um dos dois.
+
 **Default privileges do schema `public`:** `ALTER DEFAULT PRIVILEGES` para `anon`/`authenticated` deve conceder **exatamente** `SELECT` (`revoke all` + `grant select`, não `ALL`), para que tabelas/views **futuras** não renasçam graváveis (nem com `TRUNCATE`/`TRIGGER`/`REFERENCES` residuais) por herança. `service_role` continua com `ALL` (necessário para cadastro/BYPASSRLS).
 
 ```sql
@@ -1087,7 +1089,7 @@ alter default privileges in schema public
 
 A auditoria dinâmica de 2026-07-02 (`plan/seguranca-auditoria-2026-07-02.md`, local, não versionado) deixou três itens mapeados, todos de baixa severidade e sem exploração conhecida hoje, mas que fecham a causa raiz por completo:
 
-1. **`ALTER DEFAULT PRIVILEGES` de SEQUENCES ainda concede `ALL` a `anon`/`authenticated`.** A 114 fechou só o default de TABLES; o de SEQUENCES continua amplo (herança do `GRANT ALL ON ALL SEQUENCES` da `20260614008500`). Inerte hoje — o PostgREST não expõe sequences como recurso REST — mas é o mesmo padrão que abriu `vitrine_lojas`. Fechar com `alter default privileges in schema public revoke all on sequences from anon, authenticated`. O default de FUNCTIONS (`EXECUTE` amplo) é decisão deliberada — funções novas precisam ser chamáveis por padrão; a proteção real é revogar caso-a-caso o que retorna dado sensível (como se fez com `loja_por_email_dono`).
+1. ~~`ALTER DEFAULT PRIVILEGES` de SEQUENCES ainda concede `ALL` a `anon`/`authenticated`.~~ **Fechado** pela migration `20260708140000_revoke_grants_sequences.sql` (achado #4C do pentest, 2026-07-08): default privileges de SEQUENCES para `anon`/`authenticated` agora são `usage, select` (eram `all`, herdados do `GRANT ALL ON ALL SEQUENCES` da `20260614008500`; a `20260702150000`/issue 114 tinha fechado só TABLES). Continuava latente até aqui — o PostgREST não expõe sequences como recurso REST e o schema é 100% UUID — mas é anti-regressão para o dia em que uma tabela nova usar `serial`/`identity`. `service_role` não foi tocado (segue com o grant do webhook/BYPASSRLS). O default de FUNCTIONS (`EXECUTE` amplo) segue decisão deliberada — funções novas precisam ser chamáveis por padrão; a proteção real é revogar caso-a-caso o que retorna dado sensível (como se fez com `loja_por_email_dono`).
 
 2. **Objetos vivos só no cloud, fora do histórico de migrations (drift).** `rls_auto_enable()` e o event trigger que a dispara existem no banco mas não em `supabase/migrations/`. A migration `20260702134823_remote_schema.sql` é um arquivo **de 0 bytes** (resíduo de um `db pull` que não capturou o objeto) — deve ser removida e o objeto real versionado, senão um `db reset` local diverge do cloud e a próxima auditoria estática volta a ficar cega para ele.
 
