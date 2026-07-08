@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.15 | **Atualizado:** 2026-07-08
+**Versão:** 0.2.16 | **Atualizado:** 2026-07-08
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -78,19 +78,24 @@ irango/
 │   │   │
 │   │   ├── (painel)/                     # lojista logado
 │   │   │   └── painel/
-│   │   │       ├── layout.tsx            # guard de auth
-│   │   │       ├── page.tsx              # dashboard
+│   │   │       ├── layout.tsx            # guard de sessão/email/loja (decidirAcessoBase) + chrome
+│   │   │       ├── assinatura-bloqueada/ # paywall — FORA do route group (bloqueavel), nunca gated (anti-loop)
 │   │   │       ├── manifest.webmanifest/
 │   │   │       │   └── route.ts          # manifest PWA do painel (auth obrigatório; force-dynamic; Cache-Control: private, no-store)
-│   │   │       ├── produtos/
-│   │   │       ├── cupons/
-│   │   │       ├── pedidos/
-│   │   │       └── configuracoes/
-│   │   │           ├── perfil/           # nome, slug, telefone, whatsapp
-│   │   │           ├── horarios/
-│   │   │           ├── entregas/         # zonas e taxas
-│   │   │           ├── pagamentos/       # formas aceitas
-│   │   │           └── tema/             # cores da vitrine
+│   │   │       ├── configuracoes/
+│   │   │       │   └── assinatura/       # gestão da própria assinatura — FORA do (bloqueavel), nunca gated (anti-loop)
+│   │   │       └── (bloqueavel)/         # route group: layout aninhado aplica só decidirAssinatura (issue 142)
+│   │   │           ├── layout.tsx        # guard de assinatura (decidirAssinatura) — sem chrome, sem sessão
+│   │   │           ├── page.tsx          # dashboard
+│   │   │           ├── produtos/
+│   │   │           ├── cupons/
+│   │   │           ├── pedidos/
+│   │   │           └── configuracoes/
+│   │   │               ├── perfil/       # nome, slug, telefone, whatsapp
+│   │   │               ├── horarios/
+│   │   │               ├── entregas/     # zonas e taxas
+│   │   │               ├── pagamentos/   # formas aceitas
+│   │   │               └── tema/         # cores da vitrine
 │   │   │
 │   │   ├── (auth)/
 │   │   │   ├── login/
@@ -200,7 +205,7 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 - **Provider:** Supabase Auth (email/senha + Google OAuth)
 - **Sessão:** gerenciada por `@supabase/ssr` via cookies HttpOnly
 - **Middleware:** `middleware.ts` na raiz — refresha sessão em toda request
-- **Guard de painel:** `app/(painel)/painel/layout.tsx` verifica sessão server-side; redireciona pra `/login` se ausente
+- **Guard de painel:** dois layouts em camada, posicionais. `app/(painel)/painel/layout.tsx` decide sessão/email/loja (`decidirAcessoBase`) e monta o chrome; o route group aninhado `app/(painel)/painel/(bloqueavel)/layout.tsx` decide só a assinatura (`decidirAssinatura`) sobre as rotas que estão posicionalmente dentro dele. Telas isentas do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) ficam fora do grupo por estrutura de pastas — isenção não depende de header de rota (achado #3B do pentest 2026-07-08, ver `seguranca.md` §4)
 - **Vitrine pública:** sem auth — `app/(publica)` usa `supabase/server.ts` sem verificar sessão
 - **Guard admin do SaaS:** `verificarAdminSaaS()` (`src/lib/auth/admin.ts`) — fail-closed, compara `user.id` contra `SAAS_ADMIN_USER_ID` server-only. Usado em `admin/assinantes/layout.tsx` (guard de subárvore) e direto em `admin/page.tsx` (guard de page isolada, opção A — ver `seguranca.md` §7)
 
@@ -215,9 +220,18 @@ O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-lo
 ### Fluxo de proteção do painel
 
 ```
-middleware.ts → supabase.auth.getUser() → sem sessão → redirect /login
-               → com sessão → passa pra route handler
+middleware.ts → só refresh de sessão/cookie — não decide acesso, não propaga header de rota
+painel/layout.tsx → decidirAcessoBase(user, loja)
+    → sem sessão → redirect /login
+    → email não confirmado → redirect /confirmar-email
+    → sem loja (user órfão) → auto-cura + redirect /painel
+    → ok → chrome (Sidebar/Topbar) + children
+(bloqueavel)/layout.tsx (aninhado, só sob esse route group) → decidirAssinatura(loja, agora)
+    → bloqueada → redirect /painel/assinatura-bloqueada
+    → ok → children (herda o chrome do layout pai)
 ```
+
+A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configuracoes/assinatura/` vivem fora de `(bloqueavel)/`, então nunca passam por `decidirAssinatura` (anti-loop). Detalhe da migração em `seguranca.md` §4.
 
 ---
 
@@ -264,7 +278,7 @@ calcularFrete(zonas: ZonaEntrega[], endereco: Endereco): number
 variantesHabilitadas(loja: Pick<LojaCompleta, "modulo_impressao_a4" | "modulo_impressao_termica"> | null): VarianteImpressao[]
 ```
 
-Primeiro primitivo do projeto de **entitlement por feature** (até então o gate de acesso era só global — `assinatura_status` via `decidirAcessoPainel`/`assinaturaPermiteAcesso`, `lib/utils/acessoPainel.ts`). Padrão: flag booleana por módulo pago em `lojas` (billing-controlled, ver `seguranca.md` §2), decidida por um util puro server-autoritativo e fail-closed (dúvida sobre a flag → não habilita), consumido igualmente por painel e admin. O Server Component só recebe a lista já decidida e renderiza — ou **não renderiza** — o bloco correspondente; nunca esconde por CSS uma variante não habilitada. Próximo módulo pago que precisar de gate por-feature segue o mesmo desenho: coluna booleana em `lojas` + util puro em `lib/utils/` + trigger `lojas_protege_billing()` estendido.
+Primeiro primitivo do projeto de **entitlement por feature** (até então o gate de acesso era só global — `assinatura_status` via `decidirAssinatura`/`assinaturaPermiteAcesso`, `lib/utils/acessoPainel.ts`). Padrão: flag booleana por módulo pago em `lojas` (billing-controlled, ver `seguranca.md` §2), decidida por um util puro server-autoritativo e fail-closed (dúvida sobre a flag → não habilita), consumido igualmente por painel e admin. O Server Component só recebe a lista já decidida e renderiza — ou **não renderiza** — o bloco correspondente; nunca esconde por CSS uma variante não habilitada. Próximo módulo pago que precisar de gate por-feature segue o mesmo desenho: coluna booleana em `lojas` + util puro em `lib/utils/` + trigger `lojas_protege_billing()` estendido.
 
 ---
 

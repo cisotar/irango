@@ -20,7 +20,7 @@ const capturado = vi.hoisted(() => ({
   acoes: undefined as Record<string, unknown> | undefined,
 }));
 
-vi.mock("@/app/(painel)/painel/produtos/ProdutosClient", () => ({
+vi.mock("@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient", () => ({
   ProdutosClient: (props: { acoes?: Record<string, unknown> }) => {
     capturado.acoes = props.acoes;
     return null;

@@ -1,34 +1,32 @@
 import { describe, it, expect } from "vitest";
 import type { User } from "@supabase/supabase-js";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
-import {
-  decidirAcessoPainel,
-  ROTAS_EXCECAO_ASSINATURA,
-} from "./acessoPainel";
+import { decidirAcessoBase, decidirAssinatura } from "./acessoPainel";
 
-// ===========================================================================
-// CONTRATO (issue 016 — Plano Técnico, "Assinaturas")
+// ###########################################################################
+// SPLIT (issue 140/142 — spec desacoplar-authz-assinatura-route-group.md §Contratos)
 //
-// decidirAcessoPainel(
-//   user: User | null,
-//   loja: LojaCompleta | null,
-//   rota: string,           // pathname atual
-//   agora: Date,            // injetado (PURA — sem Date.now())
-// ): 'ok' | 'login' | 'confirmar-email' | 'onboarding' | 'assinatura-bloqueada'
+// decidirAcessoBase(user, loja): "ok" | "login" | "confirmar-email" | "onboarding"
+//   — sessão/email/existência de loja. SEM rota, SEM assinatura.
+//   Precedência FIXA:
+//     1. user null                    → "login"
+//     2. !email_confirmed_at           → "confirmar-email"
+//     3. loja null                     → "onboarding"
+//     4. senão                         → "ok"   (NÃO olha assinatura — isso é decidirAssinatura)
 //
-// Precedência FIXA (sessão → email → loja → assinatura(+exceção)):
-//   1. user null/sem sessão                         → 'login'  (vence tudo, inclusive rota de exceção)
-//   2. email_confirmed_at undefined OU null         → 'confirmar-email' (defesa em profundidade §17)
-//   3. user confirmado mas loja null                → 'onboarding'
-//   4. assinaturaPermiteAcesso(...) === false       → 'assinatura-bloqueada' (fail-closed, D4)
-//          EXCETO se rota ∈ ROTAS_EXCECAO_ASSINATURA → 'ok' (anti-loop) — só p/ bloqueio de assinatura
-//   5. tudo ok                                      → 'ok'
+// decidirAssinatura(loja, agora): "ok" | "assinatura-bloqueada"
+//   — SÓ assinatura, loja NON-NULL, fail-closed. SEM rota, SEM headers().
+//     assinaturaLibera(loja, agora) ? "ok" : "assinatura-bloqueada"
 //
-// Reusa assinaturaPermiteAcesso (assinatura.ts): 'ativa' sempre; 'suspensa' nunca;
-// trial/inadimplente/cancelada → agora <= fim (carência inclusiva).
-// Fail-closed (D4): status fora do union conhecido, ou fim=null com status que
-// exige carência → bloqueia.
-// ===========================================================================
+// RN-06: puras — decidirAssinatura NÃO recebe input de transporte. A isenção do
+// paywall passou a ser POSICIONAL (route group `(bloqueavel)/`), não mais pela
+// antiga lista de exceção por rota (removida na 142 junto do gate por rota).
+//
+// Semântica de assinatura (reusa assinaturaLibera):
+//   ativa/cortesia sempre liberam; suspensa sempre bloqueia;
+//   trial/inadimplente/cancelada → carência inclusiva (agora <= fim);
+//   fail-closed: status fora do union, ou fim=null com status que exige carência.
+// ###########################################################################
 
 // --- Builders de input não-confiável (espelham a forma real, não a lógica) ---
 
@@ -44,10 +42,7 @@ function fazerUser(emailConfirmedAt: string | null | undefined): User {
   } as unknown as User;
 }
 
-function fazerLoja(
-  status: string,
-  fim: string | null,
-): LojaCompleta {
+function fazerLoja(status: string, fim: string | null): LojaCompleta {
   return {
     assinatura_status: status,
     assinatura_fim_periodo: fim,
@@ -57,271 +52,139 @@ function fazerLoja(
 const AGORA = new Date("2026-06-14T12:00:00Z");
 const FUTURO = "2026-06-20T12:00:00Z"; // dentro da carência (agora < fim)
 const PASSADO = "2026-06-01T12:00:00Z"; // fora da carência (agora > fim)
-const ROTA_OK = "/painel";
 
 const userConfirmado = fazerUser("2026-01-02T00:00:00Z");
 
 // ===========================================================================
-// 1. SESSÃO — vence tudo
+// decidirAcessoBase — sessão → email → loja (sem assinatura)
 // ===========================================================================
-describe("precedência 1 — sessão (sem sessão vence tudo)", () => {
+describe("decidirAcessoBase — precedência 1 (sessão)", () => {
   it("user null → 'login'", () => {
-    expect(decidirAcessoPainel(null, null, ROTA_OK, AGORA)).toBe("login");
+    expect(decidirAcessoBase(null, null)).toBe("login");
   });
 
   it("user null mesmo com loja ativa → 'login' (sessão é pré-requisito)", () => {
-    expect(
-      decidirAcessoPainel(null, fazerLoja("ativa", null), ROTA_OK, AGORA),
-    ).toBe("login");
-  });
-
-  it("user null em rota de exceção → 'login' (anônimo NÃO vê tela de bloqueio)", () => {
-    expect(
-      decidirAcessoPainel(null, null, "/painel/assinatura-bloqueada", AGORA),
-    ).toBe("login");
+    expect(decidirAcessoBase(null, fazerLoja("ativa", null))).toBe("login");
   });
 });
 
-// ===========================================================================
-// 2. EMAIL — defesa em profundidade §17
-// ===========================================================================
-describe("precedência 2 — email não confirmado", () => {
+describe("decidirAcessoBase — precedência 2 (email não confirmado)", () => {
   it("email_confirmed_at undefined → 'confirmar-email'", () => {
     expect(
-      decidirAcessoPainel(
-        fazerUser(undefined),
-        fazerLoja("ativa", null),
-        ROTA_OK,
-        AGORA,
-      ),
+      decidirAcessoBase(fazerUser(undefined), fazerLoja("ativa", null)),
     ).toBe("confirmar-email");
   });
 
   it("email_confirmed_at null → 'confirmar-email'", () => {
     expect(
-      decidirAcessoPainel(
-        fazerUser(null),
-        fazerLoja("ativa", null),
-        ROTA_OK,
-        AGORA,
-      ),
+      decidirAcessoBase(fazerUser(null), fazerLoja("ativa", null)),
     ).toBe("confirmar-email");
   });
 
   it("email não confirmado vence loja null (email antes de loja)", () => {
-    expect(
-      decidirAcessoPainel(fazerUser(undefined), null, ROTA_OK, AGORA),
-    ).toBe("confirmar-email");
-  });
-
-  it("email não confirmado em rota de exceção → 'confirmar-email' (exceção só cobre assinatura)", () => {
-    expect(
-      decidirAcessoPainel(
-        fazerUser(null),
-        fazerLoja("suspensa", null),
-        "/painel/assinatura-bloqueada",
-        AGORA,
-      ),
-    ).toBe("confirmar-email");
+    expect(decidirAcessoBase(fazerUser(undefined), null)).toBe(
+      "confirmar-email",
+    );
   });
 });
 
-// ===========================================================================
-// 3. LOJA — user órfão
-// ===========================================================================
-describe("precedência 3 — sessão+email OK mas sem loja", () => {
+describe("decidirAcessoBase — precedência 3 (loja / user órfão)", () => {
   it("loja null → 'onboarding'", () => {
+    expect(decidirAcessoBase(userConfirmado, null)).toBe("onboarding");
+  });
+});
+
+describe("decidirAcessoBase — precedência 4 (ok) — NÃO olha assinatura", () => {
+  it("sessão+email+loja OK → 'ok'", () => {
     expect(
-      decidirAcessoPainel(userConfirmado, null, ROTA_OK, AGORA),
-    ).toBe("onboarding");
+      decidirAcessoBase(userConfirmado, fazerLoja("ativa", null)),
+    ).toBe("ok");
   });
 
-  it("loja null em rota de exceção → 'onboarding' (exceção não cobre falta de loja)", () => {
+  it("loja com assinatura VENCIDA ainda → 'ok' (base ignora assinatura; gate é separado)", () => {
+    // Prova o desacoplamento: decidirAcessoBase NÃO decide assinatura.
+    // Uma loja 'suspensa' passa no base — quem bloqueia é decidirAssinatura.
     expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        null,
-        "/painel/configuracoes/assinatura",
-        AGORA,
-      ),
-    ).toBe("onboarding");
+      decidirAcessoBase(userConfirmado, fazerLoja("suspensa", PASSADO)),
+    ).toBe("ok");
   });
 });
 
 // ===========================================================================
-// 4. ASSINATURA — fail-closed, reusa assinaturaPermiteAcesso
+// decidirAssinatura — só assinatura, fail-closed, loja NON-NULL, (loja, agora)
 // ===========================================================================
-describe("precedência 4 — assinatura (loja presente)", () => {
-  it("'ativa' → 'ok' (mesmo com fim=null)", () => {
-    expect(
-      decidirAcessoPainel(userConfirmado, fazerLoja("ativa", null), ROTA_OK, AGORA),
-    ).toBe("ok");
+describe("decidirAssinatura — libera", () => {
+  it("'ativa' (fim=null) → 'ok'", () => {
+    expect(decidirAssinatura(fazerLoja("ativa", null), AGORA)).toBe("ok");
   });
 
-  it("'trial' válido (agora < fim) → 'ok'", () => {
-    expect(
-      decidirAcessoPainel(userConfirmado, fazerLoja("trial", FUTURO), ROTA_OK, AGORA),
-    ).toBe("ok");
+  it("'cortesia' (fim=null) → 'ok'", () => {
+    expect(decidirAssinatura(fazerLoja("cortesia", null), AGORA)).toBe("ok");
   });
 
-  it("'trial' expirado (agora > fim) → 'assinatura-bloqueada'", () => {
-    expect(
-      decidirAcessoPainel(userConfirmado, fazerLoja("trial", PASSADO), ROTA_OK, AGORA),
-    ).toBe("assinatura-bloqueada");
+  it("'trial' dentro da carência (agora < fim) → 'ok'", () => {
+    expect(decidirAssinatura(fazerLoja("trial", FUTURO), AGORA)).toBe("ok");
   });
 
   it("'inadimplente' dentro da carência → 'ok'", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("inadimplente", FUTURO),
-        ROTA_OK,
-        AGORA,
-      ),
-    ).toBe("ok");
-  });
-
-  it("'inadimplente' fora da carência → 'assinatura-bloqueada'", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("inadimplente", PASSADO),
-        ROTA_OK,
-        AGORA,
-      ),
-    ).toBe("assinatura-bloqueada");
+    expect(decidirAssinatura(fazerLoja("inadimplente", FUTURO), AGORA)).toBe(
+      "ok",
+    );
   });
 
   it("'cancelada' dentro do período pago → 'ok'", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("cancelada", FUTURO),
-        ROTA_OK,
-        AGORA,
-      ),
-    ).toBe("ok");
-  });
-
-  it("'cancelada' fora do período → 'assinatura-bloqueada'", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("cancelada", PASSADO),
-        ROTA_OK,
-        AGORA,
-      ),
-    ).toBe("assinatura-bloqueada");
-  });
-
-  it("'suspensa' → 'assinatura-bloqueada' SEMPRE (corte imediato, sem carência)", () => {
-    expect(
-      decidirAcessoPainel(userConfirmado, fazerLoja("suspensa", FUTURO), ROTA_OK, AGORA),
-    ).toBe("assinatura-bloqueada");
+    expect(decidirAssinatura(fazerLoja("cancelada", FUTURO), AGORA)).toBe("ok");
   });
 
   it("borda de carência inclusiva (agora == fim) → 'ok'", () => {
     expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("trial", AGORA.toISOString()),
-        ROTA_OK,
-        AGORA,
-      ),
+      decidirAssinatura(fazerLoja("trial", AGORA.toISOString()), AGORA),
     ).toBe("ok");
   });
 });
 
-// ===========================================================================
-// 4b. FAIL-CLOSED (D4) — input não-confiável vindo do próprio banco
-// ===========================================================================
-describe("precedência 4 — fail-closed (D4)", () => {
+describe("decidirAssinatura — bloqueia", () => {
+  it("'trial' expirado (agora > fim) → 'assinatura-bloqueada'", () => {
+    expect(decidirAssinatura(fazerLoja("trial", PASSADO), AGORA)).toBe(
+      "assinatura-bloqueada",
+    );
+  });
+
+  it("'inadimplente' fora da carência → 'assinatura-bloqueada'", () => {
+    expect(decidirAssinatura(fazerLoja("inadimplente", PASSADO), AGORA)).toBe(
+      "assinatura-bloqueada",
+    );
+  });
+
+  it("'cancelada' fora do período → 'assinatura-bloqueada'", () => {
+    expect(decidirAssinatura(fazerLoja("cancelada", PASSADO), AGORA)).toBe(
+      "assinatura-bloqueada",
+    );
+  });
+
+  it("'suspensa' → 'assinatura-bloqueada' SEMPRE (corte imediato, mesmo com fim futuro)", () => {
+    expect(decidirAssinatura(fazerLoja("suspensa", FUTURO), AGORA)).toBe(
+      "assinatura-bloqueada",
+    );
+  });
+});
+
+describe("decidirAssinatura — fail-closed (D4 / RN-04)", () => {
   it("status fora do union conhecido → 'assinatura-bloqueada'", () => {
     expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("pendente_de_pagamento", FUTURO),
-        ROTA_OK,
-        AGORA,
-      ),
+      decidirAssinatura(fazerLoja("pendente_de_pagamento", FUTURO), AGORA),
     ).toBe("assinatura-bloqueada");
   });
 
-  it("status que exige carência com fim=null → 'assinatura-bloqueada' (não dá p/ avaliar)", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("inadimplente", null),
-        ROTA_OK,
-        AGORA,
-      ),
-    ).toBe("assinatura-bloqueada");
+  it("'inadimplente' com fim=null → 'assinatura-bloqueada' (não dá p/ avaliar carência)", () => {
+    expect(decidirAssinatura(fazerLoja("inadimplente", null), AGORA)).toBe(
+      "assinatura-bloqueada",
+    );
   });
 
   it("'trial' com fim=null → 'assinatura-bloqueada' (fail-closed)", () => {
-    expect(
-      decidirAcessoPainel(userConfirmado, fazerLoja("trial", null), ROTA_OK, AGORA),
-    ).toBe("assinatura-bloqueada");
-  });
-});
-
-// ===========================================================================
-// 5. ANTI-LOOP — exceção de rota cobre SÓ o bloqueio de assinatura
-// ===========================================================================
-describe("anti-loop — rotas de exceção com assinatura inválida", () => {
-  it("'/painel/assinatura-bloqueada' com 'suspensa' (sessão+email+loja OK) → 'ok'", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("suspensa", FUTURO),
-        "/painel/assinatura-bloqueada",
-        AGORA,
-      ),
-    ).toBe("ok");
-  });
-
-  it("'/painel/configuracoes/assinatura' com 'trial' expirado → 'ok'", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("trial", PASSADO),
-        "/painel/configuracoes/assinatura",
-        AGORA,
-      ),
-    ).toBe("ok");
-  });
-
-  it("rota de exceção por prefixo (subpath de configuracoes/assinatura) → 'ok'", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("cancelada", PASSADO),
-        "/painel/configuracoes/assinatura/historico",
-        AGORA,
-      ),
-    ).toBe("ok");
-  });
-
-  it("rota de exceção com assinatura VÁLIDA → 'ok' (continua liberando normalmente)", () => {
-    expect(
-      decidirAcessoPainel(
-        userConfirmado,
-        fazerLoja("ativa", null),
-        "/painel/assinatura-bloqueada",
-        AGORA,
-      ),
-    ).toBe("ok");
-  });
-});
-
-// ===========================================================================
-// Sanidade do contrato exportado
-// ===========================================================================
-describe("contrato — constante de rotas de exceção", () => {
-  it("ROTAS_EXCECAO_ASSINATURA contém as duas rotas do plano", () => {
-    expect(ROTAS_EXCECAO_ASSINATURA).toContain("/painel/assinatura-bloqueada");
-    expect(ROTAS_EXCECAO_ASSINATURA).toContain(
-      "/painel/configuracoes/assinatura",
+    expect(decidirAssinatura(fazerLoja("trial", null), AGORA)).toBe(
+      "assinatura-bloqueada",
     );
   });
 });

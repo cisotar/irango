@@ -21,7 +21,7 @@ import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
 import {
   AcoesStatus,
   type AcaoStatus,
-} from "@/app/(painel)/painel/pedidos/[id]/AcoesStatus";
+} from "@/app/(painel)/painel/(bloqueavel)/pedidos/[id]/AcoesStatus";
 
 /**
  * Detalhe do pedido — componente compartilhado (issue 125). Server Component

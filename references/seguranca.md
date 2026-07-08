@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.37 | **Atualizado:** 2026-07-08
+**Versão:** 0.2.39 | **Atualizado:** 2026-07-08
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -382,7 +382,7 @@ CREATE POLICY "zonas_escrita_propria" ON zonas_entrega FOR ALL
 | Buscar dados da vitrine | Server Component | SSR + RLS garante isolamento |
 | Buscar dados do painel | Server Component / Server Action | nunca expor service role no client |
 | Criar pedido | Server Action | valida estoque, cupom, frete no servidor |
-| Auth check no painel | `middleware.ts` + layout server | double-check: middleware bloqueia, layout confirma |
+| Auth check no painel | `layout.tsx` + `(bloqueavel)/layout.tsx` | dois guards em camada: layout pai decide sessão/email/loja (`decidirAcessoBase`), layout aninhado decide assinatura (`decidirAssinatura`) — isenção do paywall é posicional (route group), não por header de rota; `middleware.ts` só refresha sessão (achado #3B do pentest 2026-07-08, ver §4) |
 | Formulários | Client Component (react-hook-form) | UX — validação instantânea |
 | Submit de form | Server Action | validação Zod no servidor, nunca confiar no client |
 
@@ -397,9 +397,11 @@ CREATE POLICY "zonas_escrita_propria" ON zonas_entrega FOR ALL
 ## 4. Autenticação
 
 - Sessão via cookies HttpOnly gerenciados por `@supabase/ssr`
-- `middleware.ts` refresha token em toda request — sem sessão expirada silenciosa
-- Painel: guard duplo (middleware + layout server-side)
+- `middleware.ts` refresha token em toda request — sem sessão expirada silenciosa; não participa de authz (não bloqueia rota, não propaga header de pathname)
+- Painel: guard duplo em camadas de layout, posicional — `(painel)/painel/layout.tsx` decide sessão/email/loja (`decidirAcessoBase`); o route group aninhado `(painel)/painel/(bloqueavel)/layout.tsx` decide só a assinatura (`decidirAssinatura`) sobre as rotas que estão dentro dele
 - Vitrine: sem auth — acesso público lido via anon key + RLS
+
+> **Gate de assinatura virou posicional, não por header de rota** (achado #3B do pentest 2026-07-08, issue 142): até aqui, a isenção do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) era decidida por `decidirAcessoPainel(user, loja, rota, agora)` comparando um prefixo de pathname — lido de um header `x-pathname` que `middleware.ts` escrevia a partir do request — contra a lista `ROTAS_EXCECAO_ASSINATURA`. Header de request é dado de transporte, potencialmente forjável pelo client (classe **CVE-2025-29927** — bypass de authz em middleware do Next.js via header manipulado). Fix: `decidirAcessoPainel` e `ROTAS_EXCECAO_ASSINATURA` foram **deletados** de `lib/utils/acessoPainel.ts` — reintrodução travada por `acessoPainel.deprecacao.test.ts` — e substituídos por duas funções puras sem input de transporte: `decidirAcessoBase(user, loja)` (sessão/email/loja) e `decidirAssinatura(loja, agora)` (só assinatura). A isenção do paywall virou estrutura de filesystem: as telas isentas ficam FORA do route group `src/app/(painel)/painel/(bloqueavel)/`, que tem `layout.tsx` próprio aplicando `decidirAssinatura` só às rotas posicionalmente dentro dele — imune a header forjado por construção, não por validação. Anti-loop (uma tela isenta movida por engano para dentro do grupo causaria deadlock de redirect) travado por `route-group.guard.test.ts`. `middleware.ts`/`updateSession` pararam de escrever `x-pathname` — hoje só refrescam a sessão, travado por `middleware.test.ts`. Nenhuma URL mudou; sem impacto em schema/RLS.
 
 ---
 
@@ -591,6 +593,7 @@ const adminEmail = process.env.SEED_ADMIN_EMAIL
 - `supabase/seed.sql` usa **apenas dados fictícios** (nomes, emails, telefones inventados)
 - Nunca usar email ou telefone real de nenhuma pessoa (nem do próprio dono do projeto)
 - Dados de teste de produção (contas reais para smoke test) ficam no `.env.local` — nunca no código
+- **`supabase/seed.sql` NUNCA é aplicado no Supabase cloud/produção.** É só para `supabase db reset` local. O arquivo grava uma senha fixa em texto claro (`dono.teste@irango.local` / `senha-de-teste-123`, commitada no repo) — aplicar isso no cloud criaria uma conta real, alcançável pela internet, com credencial conhecida por qualquer um com acesso ao repo. Consequência: o Supabase cloud **não tem** dados de `loja-teste`; verificação manual/E2E contra cloud precisa criar conta descartável via `/cadastro` (fluxo público real) e apagá-la ao final — não reaproveitar o seed local.
 
 ---
 

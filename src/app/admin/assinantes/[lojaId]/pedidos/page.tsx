@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 
 import { paraLinhaPedido } from "@/lib/utils/paraLinhaPedido";
-import { PedidosClient } from "@/app/(painel)/painel/pedidos/PedidosClient";
+import { PedidosClient } from "@/app/(painel)/painel/(bloqueavel)/pedidos/PedidosClient";
 import { carregarDashboardLojaAdmin } from "../carga-pedidos";
 
 /**

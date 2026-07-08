@@ -9,19 +9,6 @@ import {
   type StatusAssinatura,
 } from "./assinatura";
 
-export type DecisaoPainel =
-  | "ok"
-  | "login"
-  | "confirmar-email"
-  | "onboarding"
-  | "assinatura-bloqueada";
-
-// Rotas acessíveis mesmo com assinatura inválida (anti-loop). Prefixo de pathname.
-export const ROTAS_EXCECAO_ASSINATURA: readonly string[] = [
-  "/painel/assinatura-bloqueada",
-  "/painel/configuracoes/assinatura",
-];
-
 // Status conhecidos do union. `ativa`/`cortesia`/`suspensa` não dependem de `fim`;
 // os demais exigem `assinatura_fim_periodo` para avaliar a carência (fail-closed se null).
 const STATUS_CONHECIDOS: readonly StatusAssinatura[] = [
@@ -66,12 +53,24 @@ function assinaturaLibera(loja: LojaCompleta, agora: Date): boolean {
   return assinaturaPermiteAcesso(statusConhecido, new Date(fim), agora);
 }
 
-export function decidirAcessoPainel(
+// ---------------------------------------------------------------------------
+// Split (issue 140/142) — authz do painel em duas funções puras.
+// Assinaturas conforme specs/desacoplar-authz-assinatura-route-group.md §Contratos.
+// `decidirAcessoBase` gateia sessão/email/loja no layout pai; `decidirAssinatura`
+// gateia assinatura no layout aninhado `(bloqueavel)/`. Nenhuma recebe `rota` nem
+// `headers()` — a isenção do paywall é posicional (route group), não por string.
+// ---------------------------------------------------------------------------
+
+export type DecisaoBase = "ok" | "login" | "confirmar-email" | "onboarding";
+export type DecisaoAssinatura = "ok" | "assinatura-bloqueada";
+
+// Sessão / email / existência de loja. Sem rota, sem assinatura.
+// Precedência: user null → "login"; !email_confirmed_at → "confirmar-email";
+// loja null → "onboarding"; senão "ok".
+export function decidirAcessoBase(
   user: User | null,
   loja: LojaCompleta | null,
-  rota: string,
-  agora: Date,
-): DecisaoPainel {
+): DecisaoBase {
   // 1. Sessão — vence tudo (anônimo nunca vê tela de bloqueio).
   if (user === null) {
     return "login";
@@ -87,17 +86,15 @@ export function decidirAcessoPainel(
     return "onboarding";
   }
 
-  // 4. Assinatura (fail-closed). A exceção de rota cobre SÓ este bloqueio (anti-loop).
-  if (!assinaturaLibera(loja, agora)) {
-    const emExcecao = ROTAS_EXCECAO_ASSINATURA.some((prefixo) =>
-      rota.startsWith(prefixo),
-    );
-    if (emExcecao) {
-      return "ok";
-    }
-    return "assinatura-bloqueada";
-  }
-
-  // 5. Tudo ok.
+  // 4. Tudo ok — NÃO consulta assinatura (isso é decidirAssinatura).
   return "ok";
+}
+
+// Só assinatura, fail-closed, loja NON-NULL. Sem rota, sem headers().
+// assinaturaLibera(loja, agora) ? "ok" : "assinatura-bloqueada".
+export function decidirAssinatura(
+  loja: LojaCompleta,
+  agora: Date,
+): DecisaoAssinatura {
+  return assinaturaLibera(loja, agora) ? "ok" : "assinatura-bloqueada";
 }

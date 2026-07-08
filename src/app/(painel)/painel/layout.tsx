@@ -1,6 +1,5 @@
 import type { ReactNode, ReactElement } from "react";
 import type { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
@@ -10,7 +9,7 @@ import {
   garantirLojaDoDono,
   type LojaCompleta,
 } from "@/lib/supabase/queries/lojas";
-import { decidirAcessoPainel } from "@/lib/utils/acessoPainel";
+import { decidirAcessoBase } from "@/lib/utils/acessoPainel";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
 import { THEME_PADRAO } from "@/lib/utils/manifest";
 import { SidebarPainel, TopbarPainel } from "@/components/painel/NavPainel";
@@ -25,9 +24,11 @@ export const viewport: Viewport = {
 };
 
 /**
- * Guard ÚNICO e AUTORITATIVO do painel (issue 016). Server Component.
- * Orquestra o I/O (sessão + loja) e APLICA a decisão de `decidirAcessoPainel`.
- * A regra de authz vive na função pura; aqui só há I/O + redirect.
+ * Guard de SESSÃO/IDENTIDADE e dono do chrome do painel (issue 016 / 142).
+ * Server Component. Orquestra o I/O (sessão + loja) e APLICA `decidirAcessoBase`
+ * (sessão → email → loja). O gate de ASSINATURA saiu daqui: virou posicional,
+ * no layout aninhado `(bloqueavel)/layout.tsx` (issue 142). Não lê mais
+ * `headers()` nem qualquer header de rota — authz não depende de dado de transporte.
  *
  * Fail-closed (§14, D5): qualquer erro de I/O → redirect p/ login, detalhe só
  * no `console.error`, nunca vaza ao cliente.
@@ -37,9 +38,6 @@ export default async function PainelLayout({
 }: {
   children: ReactNode;
 }): Promise<ReactElement> {
-  const headerList = await headers();
-  const rota = headerList.get("x-pathname") ?? "/painel";
-
   let user: User | null;
   let loja: LojaCompleta | null;
   try {
@@ -51,7 +49,7 @@ export default async function PainelLayout({
     redirect("/login?erro=sessao");
   }
 
-  const decisao = decidirAcessoPainel(user, loja, rota, new Date());
+  const decisao = decidirAcessoBase(user, loja);
 
   switch (decisao) {
     case "login":
@@ -61,7 +59,7 @@ export default async function PainelLayout({
     case "onboarding": {
       // User órfão (sessão + email OK, sem loja): em vez de mandar para uma tela
       // de onboarding inexistente, AUTO-CURA — cria a loja via service_role e
-      // recarrega o painel. `decidirAcessoPainel` só devolve "onboarding" quando
+      // recarrega o painel. `decidirAcessoBase` só devolve "onboarding" quando
       // `user` é não-nulo e tem email confirmado, então o `!` é seguro aqui.
       // `user.id`/`user.email` são AUTORITATIVOS (getUser server-side), nunca do
       // browser; a versão dos termos é a constante do servidor. Fail-closed: se a
@@ -79,8 +77,6 @@ export default async function PainelLayout({
       }
       redirect("/painel");
     }
-    case "assinatura-bloqueada":
-      redirect("/painel/assinatura-bloqueada");
     case "ok":
       return (
         <div className="flex min-h-svh">
