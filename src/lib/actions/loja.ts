@@ -152,14 +152,18 @@ const ERRO_PERFIL_INCOMPLETO =
 /**
  * Publica (ativo=true) ou despublica (ativo=false) a vitrine da loja do dono.
  *
- * `ativo` é coluna PROTEGIDA pelo trigger anti-billing (057) — o dono não pode
- * alterá-la via client autenticado. Por isso o flip roda no service_role
- * (BYPASSRLS). Como o service_role ignora RLS, o escopo é reafirmado À MÃO por
- * `id` + `dono_id` da loja JÁ resolvida sob RLS (buscarLojaDoDono no client
- * autenticado) — impede ativar a loja de terceiro mesmo se `id` vazasse.
- *
  * Gate de publicação (não confiar no cliente): exige perfil mínimo (nome +
- * whatsapp) verificado no servidor a partir do banco, nunca do payload.
+ * whatsapp) verificado no servidor a partir do banco, nunca do payload. É uma
+ * regra de NEGÓCIO reforçada aqui — NÃO há trigger de banco protegendo `ativo`
+ * (o trigger anti-billing 057/074/128 nunca cobriu essa coluna). Logo o gate é
+ * best-effort: o dono poderia, via PATCH direto na PRÓPRIA linha (RLS
+ * `lojas_update_proprio` permite), publicar a loja incompleta. É auto-dano, sem
+ * cross-tenant/dinheiro/escalonamento — aceito como BAIXA (débito 140).
+ *
+ * O flip roda no service_role (escrita uniforme com o resto do painel). Como o
+ * service_role ignora RLS, o escopo é reafirmado À MÃO por `id` + `dono_id` da
+ * loja JÁ resolvida sob RLS (buscarLojaDoDono no client autenticado) — impede
+ * ativar a loja de terceiro mesmo se `id` vazasse.
  */
 export async function definirPublicacao(
   publicar: boolean,
@@ -175,8 +179,8 @@ export async function definirPublicacao(
       return { ok: false, erro: ERRO_PERFIL_INCOMPLETO };
     }
 
-    // service_role: trigger 057 bloqueia o dono de mexer em `ativo`. Escopo
-    // reafirmado por id + dono_id (BYPASSRLS não tem RLS para conter).
+    // service_role para escrita uniforme; escopo reafirmado por id + dono_id
+    // (BYPASSRLS não tem RLS para conter). NÃO há proteção de trigger em `ativo`.
     const { error } = await createServiceClient()
       .from("lojas")
       .update({ ativo: publicar })
