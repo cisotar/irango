@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.13 | **Atualizado:** 2026-07-04
+**Versão:** 0.2.14 | **Atualizado:** 2026-07-07
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -254,6 +254,17 @@ middleware.ts → supabase.auth.getUser() → sem sessão → redirect /login
 // Reutilizado na vitrine (PREVIEW de UX) e na Server Action (valor AUTORITATIVO)
 calcularFrete(zonas: ZonaEntrega[], endereco: Endereco): number
 ```
+
+### Entitlement de módulo pago (por feature)
+
+```ts
+// lib/utils/variantesHabilitadas.ts — única fonte de verdade do mapa módulo→feature
+// Pura, sem I/O; recebe a loja (flags já lidas sob RLS/loader). Mesmo caminho
+// para o painel do lojista e o hub admin — nenhum dos dois reimplementa o mapa
+variantesHabilitadas(loja: Pick<LojaCompleta, "modulo_impressao_a4" | "modulo_impressao_termica"> | null): VarianteImpressao[]
+```
+
+Primeiro primitivo do projeto de **entitlement por feature** (até então o gate de acesso era só global — `assinatura_status` via `decidirAcessoPainel`/`assinaturaPermiteAcesso`, `lib/utils/acessoPainel.ts`). Padrão: flag booleana por módulo pago em `lojas` (billing-controlled, ver `seguranca.md` §2), decidida por um util puro server-autoritativo e fail-closed (dúvida sobre a flag → não habilita), consumido igualmente por painel e admin. O Server Component só recebe a lista já decidida e renderiza — ou **não renderiza** — o bloco correspondente; nunca esconde por CSS uma variante não habilitada. Próximo módulo pago que precisar de gate por-feature segue o mesmo desenho: coluna booleana em `lojas` + util puro em `lib/utils/` + trigger `lojas_protege_billing()` estendido.
 
 ---
 

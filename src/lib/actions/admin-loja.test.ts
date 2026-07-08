@@ -178,11 +178,37 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
     expect(payload.nome).toBe("ok");
   });
 
-  // Issue 115 — completude do filtro: a blocklist tem 13 colunas (espelhando o
-  // trigger lojas_protege_billing_v2 + id + consentimento_*), não só `dono_id`.
-  // Lista hardcoded AQUI (não importada de admin-loja.ts): se alguém remover uma
-  // entrada de CAMPOS_LOJA_SOMENTE_SERVIDOR por engano, este teste pega — importar
-  // a mesma constante do módulo sob teste esconderia a regressão.
+  // Issue 129 (crítica) — RN-M3: flags de módulo pago (`modulo_impressao_*`) só o
+  // servidor de billing liga. `svc` roda como service_role e BYPASSA o trigger 128,
+  // então o filtro de runtime de `atualizarLoja` é a AUTORIDADE real. Sem a entrada
+  // na constante, um patch admin castado por `as never` (o vetor real: admin-perfil
+  // casta para TablesUpdate) ligaria o módulo pago → burla de billing.
+  it("atualizarLoja descarta modulo_impressao_a4 sob cast — não liga módulo pago (RN-M3)", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.atualizarLoja({ nome: "ok", modulo_impressao_a4: true } as never);
+    const op = opsEspia.find((o) => o.tabela === "lojas")!;
+    const payload = op.payload as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("modulo_impressao_a4");
+    expect(payload.nome).toBe("ok");
+  });
+
+  it("atualizarLoja descarta modulo_impressao_termica sob cast — não liga módulo pago (RN-M3)", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.atualizarLoja({ nome: "ok", modulo_impressao_termica: true } as never);
+    const op = opsEspia.find((o) => o.tabela === "lojas")!;
+    const payload = op.payload as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("modulo_impressao_termica");
+    expect(payload.nome).toBe("ok");
+  });
+
+  // Issue 115 + 129 — completude do filtro: a blocklist tem 15 colunas (espelhando o
+  // trigger lojas_protege_billing_v2 + id + consentimento_* + módulos de impressão),
+  // não só `dono_id`. Lista hardcoded AQUI (não importada de admin-loja.ts): se alguém
+  // remover uma entrada de CAMPOS_LOJA_SOMENTE_SERVIDOR por engano, este teste pega —
+  // importar a mesma constante do módulo sob teste esconderia a regressão (drift entre
+  // a constante e o esperado).
   it("atualizarLoja descarta TODAS as colunas da blocklist, não só dono_id (letalidade completa)", async () => {
     opsEspia = [];
     const { escopo } = await prepararContextoAdmin(LOJA_ID);
@@ -200,6 +226,8 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
       "plano_id",
       "consentimento_versao",
       "consentimento_em",
+      "modulo_impressao_a4",
+      "modulo_impressao_termica",
     ];
     const payloadHostil = {
       ...Object.fromEntries(colunasBloqueadas.map((c) => [c, `forjado-${c}`])),

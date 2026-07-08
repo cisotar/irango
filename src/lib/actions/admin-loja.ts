@@ -44,7 +44,7 @@ type TabelaComLojaId = {
 }[keyof Tabelas];
 
 // Colunas de `lojas` somente-servidor (billing/assinatura/identidade). Espelham o
-// trigger `lojas_protege_billing_v2` + a PK `id` + consentimento (superset além do
+// trigger `lojas_protege_billing` (v3, issue 128) + a PK `id` + consentimento (superset além do
 // trigger, também autoritativo). Fonte ÚNICA do guard de tipo e do filtro de runtime
 // de `atualizarLoja`. `satisfies` garante que renomear/remover coluna quebre aqui.
 const CAMPOS_LOJA_SOMENTE_SERVIDOR = [
@@ -61,6 +61,10 @@ const CAMPOS_LOJA_SOMENTE_SERVIDOR = [
   "plano_id",
   "consentimento_versao",
   "consentimento_em",
+  // Módulos pagos de impressão (issues 127/128, RN-M3): só o servidor de billing
+  // liga. Espelham as colunas protegidas pelo trigger lojas_protege_billing.
+  "modulo_impressao_a4",
+  "modulo_impressao_termica",
 ] as const satisfies readonly (keyof Tabelas["lojas"]["Update"])[];
 
 type PatchLojaAdmin = Omit<
@@ -129,7 +133,7 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
      * `patch` é `PatchLojaAdmin` (Omit das colunas somente-servidor) — barra POR TIPO
      * chamador que passe object-literal com billing/dono/id. Filtro de runtime é o
      * backstop real: `svc` roda como service_role, que BYPASSA o trigger
-     * lojas_protege_billing_v2, e o guard de tipo é derrotado por `as`/width-subtyping
+     * lojas_protege_billing (v3, issue 128), e o guard de tipo é derrotado por `as`/width-subtyping
      * (ex.: admin-perfil casta p/ TablesUpdate). Descarta as chaves somente-servidor da
      * MESMA constante antes do UPDATE. lat/long ficam de fora (coords derivadas no servidor). */
     atualizarLoja(patch: PatchLojaAdmin) {

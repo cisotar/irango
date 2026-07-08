@@ -213,3 +213,85 @@ body {
     }
   }
 }
+
+/* ============================================================
+   IMPRESSÃO — @media print (issue 138 · fonte única · RN-P3)
+   Mostra APENAS a variante ativa e oculta o resto + todo `.no-print`.
+   Keyed pelo `data-print-variant` que o SeletorImprimirPedido (132)
+   grava no <html> no clique e limpa no `afterprint`.
+
+   🛑 FAIL-CLOSED (requisito de segurança do audit · RN-M2):
+   TODAS as regras abaixo (reset de zoom, esconder chrome, isolar a
+   variante, contraste térmico) são escopadas sob `html[data-print-variant]`.
+   Esse atributo SÓ existe quando o seletor — server-gated pelo entitlement
+   da loja (130/135) — o setou. No **Ctrl+P NATIVO** o atributo está AUSENTE:
+   nenhuma regra especial casa e o navegador imprime a PÁGINA CRUA, com o
+   chrome visível. Uma loja SEM o Módulo A4 NÃO obtém um A4 formatado
+   imprimindo direto — o layout formatado só passa a existir quando o seletor
+   ativa a variante. CSS não é barreira de segurança (o entitlement é DOM,
+   RN-M1): isto é defesa em profundidade contra impressão acidental. */
+
+/* Vias térmicas (cozinha/recibo) são `print-only`: invisíveis na TELA. Regra
+   base FORA de @media print → no Ctrl+P nativo permanecem ocultas, então
+   NUNCA vazam no impresso cru. Só o @media print da variante ativa as revela. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Desfaz o zoom base (html { font-size: 120% }): sem isto a via térmica
+     infla e estoura a largura do papel. Gated na variante → o Ctrl+P nativo
+     fica intocado (imprime a tela crua, sem nenhuma regra especial). */
+  html[data-print-variant] {
+    font-size: 100%;
+  }
+
+  /* Com uma variante ativa, todo o chrome de tela some (Voltar, Ações,
+     seletor, badges). `!important` vence as utilities de display do Tailwind. */
+  html[data-print-variant] .no-print {
+    display: none !important;
+  }
+
+  /* --- Variante A4 (comum) ------------------------------------------------
+     `.print-a4` (conteúdo de tela) imprime naturalmente; só ocultamos as vias
+     térmicas (já ocultas pela base `.print-only` — explícito por clareza). */
+  html[data-print-variant="a4"] .print-cozinha,
+  html[data-print-variant="a4"] .print-recibo {
+    display: none !important;
+  }
+
+  /* --- Variante COZINHA --------------------------------------------------- */
+  html[data-print-variant="cozinha"] .print-a4,
+  html[data-print-variant="cozinha"] .print-recibo {
+    display: none !important;
+  }
+  html[data-print-variant="cozinha"] .print-cozinha {
+    display: block !important;
+  }
+
+  /* --- Variante RECIBO ---------------------------------------------------- */
+  html[data-print-variant="recibo"] .print-a4,
+  html[data-print-variant="recibo"] .print-cozinha {
+    display: none !important;
+  }
+  html[data-print-variant="recibo"] .print-recibo {
+    display: block !important;
+  }
+
+  /* Contraste térmico (WCAG AA / papel térmico P&B): `--muted-foreground`
+     (~#737373, usado por ListaOpcionaisItem) reprova em térmica. Sob as
+     variantes térmicas, força preto puro em todo o bloco. */
+  html[data-print-variant="cozinha"] .print-cozinha,
+  html[data-print-variant="cozinha"] .print-cozinha *,
+  html[data-print-variant="recibo"] .print-recibo,
+  html[data-print-variant="recibo"] .print-recibo * {
+    color: #000 !important;
+  }
+
+  /* Margem neutra. NÃO fixar `size` (A4 × 80mm é escolhido no diálogo do
+     navegador); a térmica cabe por width:auto + coluna única já nos
+     componentes, sem hardcodar largura em px de tela. */
+  @page {
+    margin: 8mm;
+  }
+}

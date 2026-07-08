@@ -62,6 +62,8 @@ function lojaFake(overrides: Partial<LojaCompleta>): LojaCompleta {
     latitude: null,
     logo_url: null,
     longitude: null,
+    modulo_impressao_a4: false,
+    modulo_impressao_termica: false,
     nome: "Loja A",
     slug: "loja-a",
     taxa_entrega_fora_zona: null,

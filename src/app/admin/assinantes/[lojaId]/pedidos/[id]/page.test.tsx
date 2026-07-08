@@ -19,9 +19,15 @@ const pedidoFake = {
   itens_pedido: [],
 };
 
-// Loader mockado: já testado à parte (carga-pedido-detalhe.test.ts).
+// Loader mockado: já testado à parte (carga-pedido-detalhe.test.ts). Contrato
+// da 137: devolve `{ pedido, modulosImpressao, nomeLoja }` (o entitlement da
+// loja-ALVO já computado). A page apenas o repassa a DetalhePedido.
 const carregarPedidoDetalheAdmin = vi.fn(
-  async (_lojaId: string, _id: string) => pedidoFake,
+  async (_lojaId: string, _id: string) => ({
+    pedido: pedidoFake,
+    modulosImpressao: ["a4"] as const,
+    nomeLoja: "Pizzaria Alvo",
+  }),
 );
 vi.mock("../../carga-pedido-detalhe", () => ({
   carregarPedidoDetalheAdmin: (lojaId: string, id: string) =>
@@ -52,6 +58,8 @@ type PropsDetalhe = {
   pedido: unknown;
   basePedidos: string;
   acaoStatus: (id: string, novoStatus: string) => unknown;
+  modulosImpressao: readonly string[];
+  nomeLoja: string;
 };
 
 async function renderizarPage(): Promise<PropsDetalhe> {
@@ -71,6 +79,13 @@ describe("page admin de detalhe do pedido — fiação", () => {
 
     expect(carregarPedidoDetalheAdmin).toHaveBeenCalledWith(LOJA_ID, PEDIDO_ID);
     expect(props.pedido).toBe(pedidoFake);
+  });
+
+  it("repassa o entitlement da loja-ALVO (modulosImpressao + nomeLoja) a DetalhePedido — parity com o painel", async () => {
+    const props = await renderizarPage();
+
+    expect(props.modulosImpressao).toEqual(["a4"]);
+    expect(props.nomeLoja).toBe("Pizzaria Alvo");
   });
 
   it("monta basePedidos escopado no servidor a partir do lojaId da URL", async () => {

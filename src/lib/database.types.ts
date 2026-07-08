@@ -357,6 +357,8 @@ export type Database = {
           latitude: number | null
           logo_url: string | null
           longitude: number | null
+          modulo_impressao_a4: boolean
+          modulo_impressao_termica: boolean
           nome: string
           plano_id: string | null
           provider_subscription_id: string | null
@@ -393,6 +395,8 @@ export type Database = {
           latitude?: number | null
           logo_url?: string | null
           longitude?: number | null
+          modulo_impressao_a4?: boolean
+          modulo_impressao_termica?: boolean
           nome: string
           plano_id?: string | null
           provider_subscription_id?: string | null
@@ -429,6 +433,8 @@ export type Database = {
           latitude?: number | null
           logo_url?: string | null
           longitude?: number | null
+          modulo_impressao_a4?: boolean
+          modulo_impressao_termica?: boolean
           nome?: string
           plano_id?: string | null
           provider_subscription_id?: string | null
@@ -1061,6 +1067,8 @@ export type Database = {
           latitude: number | null
           logo_url: string | null
           longitude: number | null
+          modulo_impressao_a4: boolean
+          modulo_impressao_termica: boolean
           nome: string
           plano_id: string | null
           provider_subscription_id: string | null
@@ -1106,6 +1114,8 @@ export type Database = {
           latitude: number | null
           logo_url: string | null
           longitude: number | null
+          modulo_impressao_a4: boolean
+          modulo_impressao_termica: boolean
           nome: string
           plano_id: string | null
           provider_subscription_id: string | null

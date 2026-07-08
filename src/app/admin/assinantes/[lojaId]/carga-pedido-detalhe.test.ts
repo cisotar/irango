@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import type { VarianteImpressao } from "@/lib/utils/variantesHabilitadas";
+
 /**
+ * RED (fase /tdd) da issue 137 — extensão do loader para ESPELHAR o entitlement
+ * de impressão da loja-ALVO (RN-M2 admin). Além dos invariantes da 140 abaixo, o
+ * loader passa a devolver `modulosImpressao` + `nomeLoja`, lendo as flags da loja
+ * via `buscarLojaAdminPorId(svc, lojaId)` ESCOPADA por `.eq("id", lojaId)` — o
+ * `lojaId` já validado, NUNCA do payload nem a loja do próprio admin. A decisão
+ * usa o MESMO util do painel (`variantesHabilitadas`, issue 130), fail-closed.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
  * RED (fase /tdd) da issue 140 — loader `carregarPedidoDetalheAdmin(lojaId, id)`
  * em `src/app/admin/assinantes/[lojaId]/carga-pedido-detalhe.ts` (NÃO existe
  * ainda; será criado na fase GREEN). Espelha `carga-pedidos.test.ts`: mocks de
@@ -85,9 +95,62 @@ vi.mock("@/lib/supabase/queries/pedidos", () => ({
     buscarPedidoDaLoja(svc, lojaId, id),
 }));
 
+// ── Query de flags: buscarLojaAdminPorId(svc, lojaId) — leitura ESCOPADA da ────
+// loja-ALVO (`.eq("id", lojaId)`, queries/lojas.ts). Capturamos os argumentos
+// para provar que o escopo é o `lojaId` VALIDADO, nunca outra loja.
+// Só o subconjunto de flags que `variantesHabilitadas` (130) consome + o nome.
+type LojaAlvoFlags = {
+  id: string;
+  nome: string;
+  modulo_impressao_a4: boolean | null;
+  modulo_impressao_termica: boolean | null;
+};
+const lojaAlvoSoA4: LojaAlvoFlags = {
+  id: LOJA_ID,
+  nome: "Pizzaria Alvo",
+  modulo_impressao_a4: true,
+  modulo_impressao_termica: false,
+};
+const buscarLojaAdminPorId = vi.fn(
+  async (_svc: unknown, _lojaId: string): Promise<LojaAlvoFlags | null> => {
+    ordemChamadas.push("buscarLojaAdminPorId");
+    return lojaAlvoSoA4;
+  },
+);
+// `variantesHabilitadas` (util PURO, 130) NÃO é mockado: usa o MESMO caminho de
+// decisão do painel (DRY / anti-drift). Só a leitura de I/O é mockada.
+vi.mock("@/lib/supabase/queries/lojas", () => ({
+  buscarLojaAdminPorId: (svc: unknown, lojaId: string) =>
+    buscarLojaAdminPorId(svc, lojaId),
+}));
+
 // validarLojaIdAdmin (083) NÃO é mockado: usa a implementação real (z.guid()).
 
+/**
+ * Contrato-alvo da fase GREEN (issue 137): o loader passa a devolver, além do
+ * pedido, o entitlement de impressão da loja-ALVO já COMPUTADO e o nome da loja
+ * (p/ o recibo). Assinatura esperada:
+ *   Promise<{ pedido: PedidoComItens; modulosImpressao: VarianteImpressao[]; nomeLoja: string }>
+ * O `as unknown as` documenta esse contrato SEM depender do tipo atual (ainda
+ * `Promise<PedidoComItens>`) — o RED é por ASSERÇÃO em runtime, não por type-check.
+ */
+type ResultadoLoaderAlvo = {
+  pedido: unknown;
+  modulosImpressao: VarianteImpressao[];
+  nomeLoja: string;
+};
+
 import { carregarPedidoDetalheAdmin } from "./carga-pedido-detalhe";
+
+async function carregar(
+  lojaId: string,
+  id: string,
+): Promise<ResultadoLoaderAlvo> {
+  return (await carregarPedidoDetalheAdmin(
+    lojaId,
+    id,
+  )) as unknown as ResultadoLoaderAlvo;
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -170,10 +233,12 @@ describe("carregarPedidoDetalheAdmin — sucesso: ordem, escopo e retorno", () =
     expect(idRecebido).toBe(PEDIDO_ID);
   });
 
-  it("retorna o pedido da query mockada sem transformação", async () => {
-    const resultado = await carregarPedidoDetalheAdmin(LOJA_ID, PEDIDO_ID);
+  it("retorna o pedido da query mockada sem transformação (em resultado.pedido)", async () => {
+    // Contrato 137: o pedido agora vem em `resultado.pedido`, ao lado do
+    // entitlement. A referência é preservada (sem cópia/transformação).
+    const resultado = await carregar(LOJA_ID, PEDIDO_ID);
 
-    expect(resultado).toBe(pedidoFake);
+    expect(resultado.pedido).toBe(pedidoFake);
     expect(notFound).not.toHaveBeenCalled();
   });
 });
@@ -187,5 +252,115 @@ describe("carregarPedidoDetalheAdmin — falha na query propaga (não é engolid
       "erro de conexão com o banco",
     );
     expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Issue 137 — ESPELHO do entitlement da loja-ALVO (RN-M2 admin).
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("carregarPedidoDetalheAdmin — RN-M2 admin: espelha o entitlement da loja-ALVO", () => {
+  it("loja-alvo só com A4 → modulosImpressao = ['a4']", async () => {
+    buscarLojaAdminPorId.mockResolvedValueOnce({
+      id: LOJA_ID,
+      nome: "Pizzaria Alvo",
+      modulo_impressao_a4: true,
+      modulo_impressao_termica: false,
+    });
+
+    const resultado = await carregar(LOJA_ID, PEDIDO_ID);
+
+    expect(resultado.modulosImpressao).toEqual(["a4"]);
+  });
+
+  it("loja-alvo com módulo térmico → modulosImpressao inclui 'cozinha' e 'recibo' (mapa RN-M2)", async () => {
+    buscarLojaAdminPorId.mockResolvedValueOnce({
+      id: LOJA_ID,
+      nome: "Pizzaria Alvo",
+      modulo_impressao_a4: false,
+      modulo_impressao_termica: true,
+    });
+
+    const resultado = await carregar(LOJA_ID, PEDIDO_ID);
+
+    expect(resultado.modulosImpressao).toEqual(["cozinha", "recibo"]);
+  });
+
+  it("loja-alvo SEM módulo (flags false) → [] (fail-closed)", async () => {
+    buscarLojaAdminPorId.mockResolvedValueOnce({
+      id: LOJA_ID,
+      nome: "Pizzaria Alvo",
+      modulo_impressao_a4: false,
+      modulo_impressao_termica: false,
+    });
+
+    const resultado = await carregar(LOJA_ID, PEDIDO_ID);
+
+    expect(resultado.modulosImpressao).toEqual([]);
+  });
+
+  it("loja-alvo null (flag não lida) → [] e NÃO vira notFound — o pedido existe", async () => {
+    // Fail-closed do issue 137: loja-alvo `null` → entitlement vazio, mas a page
+    // ainda renderiza (o pedido foi encontrado). Não confundir com notFound.
+    buscarLojaAdminPorId.mockResolvedValueOnce(null);
+
+    const resultado = await carregar(LOJA_ID, PEDIDO_ID);
+
+    expect(resultado.modulosImpressao).toEqual([]);
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("nomeLoja repassado é o da loja-ALVO (parity com o painel: usado no recibo)", async () => {
+    buscarLojaAdminPorId.mockResolvedValueOnce({
+      id: LOJA_ID,
+      nome: "Pizzaria Alvo",
+      modulo_impressao_a4: true,
+      modulo_impressao_termica: false,
+    });
+
+    const resultado = await carregar(LOJA_ID, PEDIDO_ID);
+
+    expect(resultado.nomeLoja).toBe("Pizzaria Alvo");
+  });
+});
+
+describe("carregarPedidoDetalheAdmin — RN-M1 + isolamento cross-tenant: escopo da leitura de flag", () => {
+  it("lê as flags ESCOPADAS por (svc elevado, lojaId VALIDADO) — nunca outra loja, nunca a loja do admin", async () => {
+    // O teste mais importante: a flag lida é a da loja-ALVO validada. Um bug de
+    // escopo aqui espelharia o entitlement da loja errada (burla RN-M1).
+    await carregar(LOJA_ID, PEDIDO_ID);
+
+    expect(buscarLojaAdminPorId).toHaveBeenCalledTimes(1);
+    const [svcRecebido, lojaIdRecebido] = buscarLojaAdminPorId.mock.calls[0]!;
+    // Sob service_role (BYPASSRLS) o isolamento É o `.eq("id", lojaId)` com o id
+    // validado — não a RLS. Logo o argumento tem de ser exatamente o lojaId validado.
+    expect(lojaIdRecebido).toBe(LOJA_ID);
+    expect(lojaIdRecebido).not.toBe(OUTRA_LOJA);
+    // Elevada: o client é o service client já criado, não outro.
+    expect(svcRecebido).toBe(clientServico);
+  });
+});
+
+describe("carregarPedidoDetalheAdmin — ordem fail-closed do entitlement (validar → provar admin → elevar → ler)", () => {
+  it("lê a flag DEPOIS de provar admin e de elevar a service_role", async () => {
+    await carregar(LOJA_ID, PEDIDO_ID);
+
+    const iAdmin = ordemChamadas.indexOf("verificarAdminSaaS");
+    const iSvc = ordemChamadas.indexOf("createServiceClient");
+    const iFlag = ordemChamadas.indexOf("buscarLojaAdminPorId");
+
+    expect(iFlag).toBeGreaterThan(-1); // a flag CHEGA a ser lida no caminho feliz
+    expect(iAdmin).toBeLessThan(iFlag); // admin provado ANTES de ler flag
+    expect(iSvc).toBeLessThan(iFlag); // elevação ANTES de ler flag
+  });
+
+  it("prova de admin falha → NENHUMA flag é lida (buscarLojaAdminPorId não chamado)", async () => {
+    // Guard de ordem para a GREEN: a leitura de flag não pode preceder a prova de
+    // admin. (Companion do teste feliz acima — juntos travam a ordem inegociável.)
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(carregar(LOJA_ID, PEDIDO_ID)).rejects.toThrow("acesso negado");
+
+    expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
   });
 });
