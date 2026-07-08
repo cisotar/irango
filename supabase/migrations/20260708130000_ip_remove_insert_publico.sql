@@ -1,0 +1,15 @@
+-- Pentest área 2, achado #3A — remove a superfície de escrita anon órfã em itens_pedido.
+-- A policy `itens_pedido_insert_publico` permitia INSERT por anon/authenticated
+-- (WITH CHECK public.pedido_aceita_itens(pedido_id), que só exige status='pendente'
+-- + loja ativa — NÃO posse nem token). Como o pedido_id vai na URL de confirmação
+-- (não é segredo), um anon que conhecesse o id de um pedido pendente ALHEIO anexava
+-- item arbitrário a ele (escrita cross-customer, provada em pglite).
+-- A produção só insere item via RPC `criar_pedido` sob service_role (BYPASSRLS) —
+-- não há INSERT anon direto em itens_pedido no código (src/lib/actions/pedido.ts);
+-- a policy nunca participava de caminho legítimo. Pós-drop o INSERT vira deny-all
+-- para anon/authenticated.
+-- Mesma classe já fechada em itens_pedido_opcionais (migration
+-- 20260621098000_ipo_remove_insert_publico, issue 110). Espelha aquele fix:
+-- o helper `pedido_aceita_itens` PERMANECE (não dropar) e a policy de leitura
+-- `itens_pedido_lojista` (SELECT do dono) fica intacta.
+drop policy if exists "itens_pedido_insert_publico" on public.itens_pedido;

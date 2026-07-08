@@ -19,6 +19,10 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    // TZ fixo: testes de timestamptz comparam a string renderizada pela sessão
+    // pglite, que herda o TZ do processo. Sem pin, verde em CI (UTC) e vermelho
+    // em dev BR (America/Sao_Paulo, -03). Trava em UTC para determinismo.
+    env: { TZ: "UTC" },
     include: ["src/**/*.{test,spec}.{ts,tsx}", "tests/**/*.{test,spec}.{ts,tsx}"],
     // pglite sobe um Postgres WASM por arquivo — lento sob contenção de CPU em
     // paralelo. Timeout generoso evita flake; o custo real por teste é baixo.

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { verificarAdminSaaS } from "@/lib/auth/admin";
 import { createServiceClient } from "@/lib/supabase/service";
 import { listarAssinantes } from "@/lib/supabase/queries/adminAssinatura";
 import { TabelaAssinantes } from "./TabelaAssinantes";
@@ -12,13 +13,18 @@ export const dynamic = "force-dynamic";
 
 /**
  * Tela admin de assinantes (issue 082). Server Component: lê TODAS as lojas via
- * service_role (sem RLS de dono). O guard de identidade é o `layout.tsx`
- * (`verificarAdminSaaS`) — este componente já assume sessão de admin provada.
+ * service_role (sem RLS de dono). Além do guard do `layout.tsx`, esta page RE-PROVA
+ * o admin com `verificarAdminSaaS()` ANTES de elevar a service_role (padrão D-4,
+ * defesa em profundidade) — auth só-em-layout é desaconselhada porque o loader roda
+ * concorrente ao guard. A falha (redirect/throw) PROPAGA: não há try/catch que a
+ * engoliria, então o `redirect()` (`NEXT_REDIRECT`) nunca é reinterpretado como falha.
  *
  * NENHUM dado de billing é editável aqui: a tabela é read-only e toda mutação
  * passa pelas Server Actions (`actions.ts`), que revalidam o status no servidor.
  */
 export default async function AssinantesPage(): Promise<ReactElement> {
+  await verificarAdminSaaS();
+
   const svc = createServiceClient();
   const assinantes = await listarAssinantes(svc);
 

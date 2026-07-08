@@ -11,9 +11,9 @@
 // D9: confirmação de email é config do painel Supabase (seguranca.md §17); a
 //     loja nasce com `ativo` no default. Gate de email confirmado, se houver,
 //     é no painel/middleware — não aqui.
-// D6: rate limit de login (~5/min por IP) — issue 052. Guard no topo de `entrar`,
-//     IP lido de headers() server-side (não forjável pelo payload). Escopo: só
-//     login (não `cadastrar`), conforme a issue.
+// D6: rate limit por IP (~5/min) — issue 052 travou `entrar`; o pentest (área 4)
+//     estendeu a mesma trava a `cadastrar` sob a chave "cadastro". IP lido de
+//     headers() server-side (não forjável pelo payload). Guard no topo de ambas.
 
 import { headers } from "next/headers";
 import { schemaCadastro, schemaLogin } from "@/lib/validacoes/auth";
@@ -52,6 +52,13 @@ async function resolverSlugUnico(
 }
 
 export async function cadastrar(payload: unknown): Promise<ResultadoCadastro> {
+  // Rate limit por IP ANTES do safeParse — espelha `entrar` (issue 052 só cobria
+  // login). Fecha enumeração de conta + email bombing + flood de auth.users.
+  const ip = extrairIp(await headers());
+  if (!(await verificarRateLimit("cadastro", ip)).permitido) {
+    return { ok: false, erro: "Muitas tentativas. Tente novamente em alguns instantes." };
+  }
+
   // 1) Valida ANTES de qualquer I/O. Aceite ausente/false ou senha < 8 saem
   //    como erro SEM chamar signUp/criarLoja (.strict rejeita campos injetados).
   const parsed = schemaCadastro.safeParse(payload);
@@ -65,7 +72,8 @@ export async function cadastrar(payload: unknown): Promise<ResultadoCadastro> {
   const { data, error } = await supabase.auth.signUp({ email, password: senha });
   if (error || !data.user) {
     // Email duplicado cai aqui — mensagem amigável (D5: revelar existência é
-    // inevitável no cadastro; mitigado por rate limit da 052).
+    // inevitável no cadastro; abuso contido pelo rate limit "cadastro" no topo
+    // desta Action — NÃO pela 052, que só cobre `entrar`).
     return { ok: false, erro: "Este email já está cadastrado." };
   }
   const userId = data.user.id; // AUTORITATIVO: dono_id vem do signUp, nunca do payload.
