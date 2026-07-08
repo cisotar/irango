@@ -43,10 +43,11 @@ type TabelaComLojaId = {
   [K in keyof Tabelas]: Tabelas[K]["Row"] extends { loja_id: string } ? K : never;
 }[keyof Tabelas];
 
-// Colunas de `lojas` somente-servidor (billing/assinatura/identidade). Espelham o
-// trigger `lojas_protege_billing` (v3, issue 128) + a PK `id` + consentimento (superset além do
-// trigger, também autoritativo). Fonte ÚNICA do guard de tipo e do filtro de runtime
-// de `atualizarLoja`. `satisfies` garante que renomear/remover coluna quebre aqui.
+// Colunas de `lojas` somente-servidor (billing/assinatura/identidade + consentimento
+// LGPD). Espelham o trigger `lojas_protege_billing` (v4, issue 128 + pentest área 3,
+// que passou a cobrir consentimento_versao/_em) + a PK `id`. Fonte ÚNICA do guard de
+// tipo e do filtro de runtime de `atualizarLoja`. `satisfies` garante que
+// renomear/remover coluna quebre aqui.
 const CAMPOS_LOJA_SOMENTE_SERVIDOR = [
   "id",
   "dono_id",
