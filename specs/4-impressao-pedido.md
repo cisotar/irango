@@ -11,7 +11,7 @@
 > para `BEFORE INSERT OR UPDATE` default-aware). Débitos abertos: 140 (gate `ativo`
 > em `definirPublicacao`), 141 (`formatarNumeroPedido`), + nota de log de acesso
 > admin (LGPD, pré-existente). **Pendente:** confirmação visual manual do
-> print-preview das 3 variantes (👁️ nos behaviors).
+> print-preview das 3 variantes — **confirmado localmente (passou)**.
 >
 > **Changelog 0.5.0 (auditoria contra o codebase, 2026-07-07):** todas as
 > afirmações do levantamento foram validadas contra o código real (caminhos e
