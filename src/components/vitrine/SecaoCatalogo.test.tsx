@@ -84,3 +84,75 @@ describe("086 SecaoCatalogo — propaga `disponivel` ao CardProduto", () => {
     expect(html).not.toContain('aria-label="Coca Gelada esgotado"');
   });
 });
+
+/**
+ * Issue "toggle-imagens-por-categoria" (RN-3/RN-4): por grupo, `SecaoCatalogo`
+ * escolhe `CardProduto` (grid, exibir_imagens true/ausente) ou
+ * `ItemProdutoLista` (lista textual, exibir_imagens false) — nunca mistura os
+ * dois no mesmo grupo. A escolha vem pronta do dado resolvido no servidor.
+ */
+describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista por grupo", () => {
+  function categoriasComToggle(): CategoriaComProdutos[] {
+    const salgado: ProdutoCatalogo = {
+      id: "p-salgado",
+      nome: "Coxinha de frango",
+      descricao: null,
+      preco: 8.5,
+      foto_url: null,
+      categoria_id: "cat-salgados",
+      disponivel: true,
+    };
+    const bebida: ProdutoCatalogo = {
+      id: "p-bebida",
+      nome: "Suco de laranja 500ml",
+      descricao: null,
+      preco: 9,
+      foto_url: "https://exemplo.com/suco.jpg",
+      categoria_id: "cat-bebidas",
+      disponivel: true,
+    };
+    return [
+      {
+        id: "cat-salgados",
+        nome: "Salgados",
+        exibir_imagens: true,
+        produtos: [salgado],
+      },
+      {
+        id: "cat-bebidas",
+        nome: "Bebidas",
+        exibir_imagens: false,
+        produtos: [bebida],
+      },
+    ];
+  }
+
+  it("grupo com exibir_imagens=true renderiza CardProduto (grid, com área de imagem)", () => {
+    const html = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasComToggle()} />,
+    );
+
+    // CardProduto expõe o botão "Adicionar X ao carrinho" (contrato do grid).
+    expect(html).toContain(
+      'aria-label="Adicionar Coxinha de frango ao carrinho"',
+    );
+  });
+
+  it("grupo com exibir_imagens=false renderiza ItemProdutoLista (sem imagem)", () => {
+    const html = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasComToggle()} />,
+    );
+
+    // ItemProdutoLista: role="button" + aria-label "Ver detalhes de..." — sem
+    // botão de adicionar rápido, sem <img>/foto_url no HTML da linha.
+    // Nota: formatarMoeda usa Intl.NumberFormat pt-BR, que insere um espaço
+    // NBSP (U+00A0) entre "R$" e o valor — não um espaço comum.
+    expect(html).toContain(
+      "aria-label=\"Ver detalhes de Suco de laranja 500ml, R$ 9,00\"",
+    );
+    expect(html).not.toContain(
+      'aria-label="Adicionar Suco de laranja 500ml ao carrinho"',
+    );
+    expect(html).not.toContain("exemplo.com/suco.jpg");
+  });
+});

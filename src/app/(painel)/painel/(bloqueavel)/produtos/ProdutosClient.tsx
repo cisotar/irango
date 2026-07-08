@@ -45,6 +45,7 @@ import {
   criarCategoria as criarCategoriaLojista,
   atualizarCategoria as atualizarCategoriaLojista,
   removerCategoria as removerCategoriaLojista,
+  alternarExibirImagens as alternarExibirImagensLojista,
 } from "@/lib/actions/produto";
 import { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
@@ -83,6 +84,7 @@ export type ProdutosClientProps = {
     criarCategoria?: typeof criarCategoriaLojista;
     atualizarCategoria?: typeof atualizarCategoriaLojista;
     removerCategoria?: typeof removerCategoriaLojista;
+    alternarExibirImagens?: typeof alternarExibirImagensLojista;
     salvarAssociacaoOpcionais?: typeof salvarAssociacaoOpcionais;
   };
 };
@@ -424,6 +426,7 @@ export function ProdutosClient({
         onCriar={acoes?.criarCategoria}
         onAtualizar={acoes?.atualizarCategoria}
         onRemover={acoes?.removerCategoria}
+        onAlternarExibirImagens={acoes?.alternarExibirImagens}
       />
 
       {/* Criar/editar: Dialog centralizado no desktop (aproveita a largura da

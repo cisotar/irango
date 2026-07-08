@@ -49,7 +49,11 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       lojaSlug={loja.slug}
       lojaId={loja.id}
       produtos={produtos}
-      categorias={categorias.map((c) => ({ id: c.id, nome: c.nome }))}
+      categorias={categorias.map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        exibir_imagens: c.exibir_imagens,
+      }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
       categoriasOpcional={categoriasOpcional.map((c) => ({
         id: c.id,

@@ -148,6 +148,7 @@ export type Database = {
       categorias: {
         Row: {
           criado_em: string
+          exibir_imagens: boolean
           id: string
           loja_id: string
           nome: string
@@ -155,6 +156,7 @@ export type Database = {
         }
         Insert: {
           criado_em?: string
+          exibir_imagens?: boolean
           id?: string
           loja_id: string
           nome: string
@@ -162,6 +164,7 @@ export type Database = {
         }
         Update: {
           criado_em?: string
+          exibir_imagens?: boolean
           id?: string
           loja_id?: string
           nome?: string

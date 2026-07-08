@@ -112,8 +112,8 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
     ];
     // Categorias do lojista, na ordem definida.
     const categorias = [
-      { id: "cat-lanches", loja_id: "loja-1", nome: "Lanches", ordem: 0, criado_em: "2026-01-01T00:00:00Z" },
-      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 1, criado_em: "2026-01-01T00:00:00Z" },
+      { id: "cat-lanches", loja_id: "loja-1", nome: "Lanches", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 1, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
     ];
     const { client } = makeClient({ data: produtos, error: null });
 
@@ -132,7 +132,7 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
       { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", preco: 5, disponivel: true, ordem: 0 },
       { id: "p9", loja_id: "loja-1", categoria_id: null, nome: "Brinde", preco: 0, disponivel: true, ordem: 0 },
     ];
-    const categorias = [{ id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z" }];
+    const categorias = [{ id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true }];
     const { client } = makeClient({ data: produtos, error: null });
 
     const grupos = await buscarCatalogoPublico(client, "loja-1", categorias);
@@ -158,7 +158,7 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
       { id: "p3", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Água", preco: 3, disponivel: true, ordem: 2 },
     ];
     const categorias = [
-      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z" },
+      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
     ];
     const { client } = makeClient({ data: produtos, error: null });
 

@@ -157,12 +157,17 @@ export default async function VitrinePage({ params }: PageProps) {
   const categoriasComProdutos: CategoriaComProdutos[] = grupos.map((grupo) => ({
     id: grupo.id,
     nome: grupo.nome,
+    // exibir_imagens decide grid (true) vs. lista textual (false) na vitrine.
+    // Grupo "Outros" (categoria null) cai em true → grid (RN-5).
+    exibir_imagens: grupo.categoria?.exibir_imagens ?? true,
     produtos: grupo.produtos.map((p) => ({
       id: p.id,
       nome: p.nome,
       descricao: p.descricao,
       preco: p.preco,
-      foto_url: p.foto_url,
+      // RN-3: em categoria "ocultar", a foto NÃO trafega ao cliente — zerada aqui
+      // no SSR, não só escondida no render (o payload RSC não carrega a URL).
+      foto_url: grupo.categoria?.exibir_imagens === false ? null : p.foto_url,
       categoria_id: p.categoria_id,
       disponivel: p.disponivel,
     })),

@@ -19,7 +19,12 @@ import {
   type EnviarFotoProduto,
 } from "@/components/painel/UploadFotoProduto";
 
-export type Categoria = { id: string; nome: string };
+export type Categoria = {
+  id: string;
+  nome: string;
+  /** Preferência da categoria (issue toggle-imagens-por-categoria): grid com foto (true) vs. lista textual sem imagem (false) na vitrine. */
+  exibir_imagens: boolean;
+};
 
 export type ProdutoInicial = {
   id?: string;

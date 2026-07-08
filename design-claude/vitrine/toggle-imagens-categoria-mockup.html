@@ -1,0 +1,275 @@
+<!-- @dsCard group="Vitrine" — MOCKUP de decisão: toggle exibir/ocultar imagens por categoria (v0.2 — lista + emoji no modal). NÃO é a fonte oficial. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toggle imagens por categoria — mockup de decisão v0.2</title>
+<style>
+  :root {
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;
+    --irango-cta: #2d3a27;
+    --irango-brand: #332616;
+    --texto: #3e2723;
+    --texto-muted: #6b5d4f;
+    --preto: #111111;
+    --branco: #ffffff;
+    --borda-nav: #dccbb0;
+    --cinza-medio: #eeeeee;
+    --cinza-claro: #f9f9f9;
+    --sombra-suave: rgba(0,0,0,0.1);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cinza-claro); color: var(--texto); padding: 28px 16px 60px; }
+
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  h1 { font-size: 1.3rem; font-weight: 900; margin: 0 0 6px; color: var(--irango-brand); }
+  .sub {
+    font-size: 0.85rem; color: var(--texto-muted); margin: 0 0 8px; line-height: 1.5; max-width: 68ch;
+  }
+  .tag-versao {
+    display: inline-block; font-size: 0.66rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.6px; background: #e4ede1; color: var(--cor-destaque);
+    padding: 3px 9px; border-radius: 999px; margin-bottom: 10px;
+  }
+
+  h2 {
+    font-size: 0.95rem; font-weight: 800; color: var(--irango-brand); margin: 36px 0 4px;
+    padding-top: 20px; border-top: 1px solid var(--borda-nav);
+  }
+  h2:first-of-type { padding-top: 0; border-top: none; }
+  .h2-nota { font-size: 0.8rem; color: var(--texto-muted); margin: 0 0 16px; line-height: 1.5; max-width: 68ch; }
+
+  /* --- Mini painel: linha de categoria com switch (fiel ao form-produto.html) --- */
+  .painel-linha {
+    background: var(--branco); border: 1px solid var(--cinza-medio); border-radius: 10px;
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    max-width: 380px; margin-bottom: 16px;
+  }
+  .painel-info { display: flex; flex-direction: column; gap: 2px; }
+  .painel-info .cat-nome { font-size: 0.86rem; font-weight: 700; color: var(--texto); }
+  .painel-info .cat-hint { font-size: 0.72rem; color: var(--texto-muted); }
+  .switch-btn { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+  .switch-btn input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch-track {
+    display: block; width: 44px; height: 24px; border-radius: 999px;
+    background: #d1d5db; cursor: default; transition: background 0.2s;
+  }
+  .switch-btn input:checked + .switch-track { background: var(--irango-cta); }
+  .switch-thumb {
+    position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--branco); box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    transition: transform 0.2s; pointer-events: none;
+  }
+  .switch-btn input:checked ~ .switch-thumb { transform: translateX(20px); }
+
+  /* --- Grid: cards (categoria "exibir") --- */
+  .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; max-width: 500px; }
+  .card {
+    background: var(--branco); border: 1px solid var(--cinza-medio); border-radius: 12px;
+    overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 4px 12px var(--sombra-suave);
+  }
+  .card .img {
+    height: 120px; width: 100%; display: flex; align-items: center; justify-content: center; font-size: 2.1rem;
+  }
+  .card .img.foto-real { background: linear-gradient(135deg,#e8dcc4,#d8c4a0) center/cover; }
+  .card .img.placeholder {
+    background: repeating-linear-gradient(135deg, #f2ede3, #f2ede3 10px, #eae2d2 10px, #eae2d2 20px);
+    color: #8a7a63; font-size: 1.5rem;
+  }
+  .card .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .card .nome { font-size: 0.84rem; font-weight: 700; color: var(--preto); margin: 0; line-height: 1.25; }
+  .card .footer { display: flex; align-items: center; justify-content: space-between; }
+  .card .preco { font-size: 1rem; font-weight: 900; color: var(--cor-destaque); }
+  .btn-add {
+    background: var(--cor-destaque); color: var(--branco); border: none; border-radius: 8px;
+    width: 32px; height: 32px; font-size: 1.1rem; font-weight: 900; line-height: 1;
+  }
+
+  /* --- Lista: itens (categoria "ocultar") --- */
+  .lista-cardapio {
+    max-width: 460px; background: var(--branco); border: 1px solid var(--cinza-medio);
+    border-radius: 12px; box-shadow: 0 4px 12px var(--sombra-suave); overflow: hidden;
+  }
+  .item-lista {
+    display: flex; align-items: baseline; gap: 8px; padding: 13px 16px;
+    border-bottom: 1px solid var(--cinza-medio); cursor: pointer; min-height: 44px;
+  }
+  .item-lista:last-child { border-bottom: none; }
+  .item-lista:hover { background: var(--cinza-claro); }
+  .item-lista .nome-item {
+    font-size: 0.88rem; font-weight: 600; color: var(--texto); white-space: nowrap;
+    flex-shrink: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis;
+  }
+  .item-lista .pontilhado {
+    flex: 1; border-bottom: 2px dotted var(--borda-nav); margin-bottom: 4px; min-width: 16px;
+  }
+  .item-lista .preco-item {
+    font-size: 0.9rem; font-weight: 800; color: var(--cor-destaque); flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- Mini modal preview --- */
+  .modal-preview {
+    max-width: 280px; background: var(--branco); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 8px 24px var(--sombra-suave); border: 1px solid var(--cinza-medio);
+  }
+  .modal-preview .header {
+    background: var(--irango-brand); color: var(--branco); text-align: center;
+    font-size: 0.78rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px;
+    padding: 12px 14px;
+  }
+  .modal-preview .img-hero {
+    margin: 14px; aspect-ratio: 4/3; border-radius: 12px; border: 1px solid var(--cinza-medio);
+    background: linear-gradient(135deg, #4a3a22, #6b5131);
+    display: flex; align-items: center; justify-content: center; font-size: 3.2rem;
+  }
+  .modal-preview .preco-modal {
+    text-align: center; font-size: 1.15rem; font-weight: 900; color: var(--cor-destaque);
+    padding: 0 14px 16px;
+  }
+  .legenda-modal {
+    font-size: 0.76rem; color: var(--texto-muted); text-align: center; margin: 8px 0 0;
+    max-width: 280px;
+  }
+
+  .par-modais { display: flex; gap: 24px; flex-wrap: wrap; }
+  .col-modal { display: flex; flex-direction: column; align-items: center; }
+  .col-modal .rotulo {
+    font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--texto-muted); margin-bottom: 10px;
+  }
+
+  .rodape {
+    margin-top: 40px; padding: 16px 18px; background: var(--branco); border: 1px solid var(--cinza-medio);
+    border-radius: 12px; font-size: 0.8rem; color: var(--texto-muted); line-height: 1.6;
+  }
+  .rodape code {
+    font-family: ui-monospace, monospace; background: var(--cinza-claro); padding: 1px 5px; border-radius: 4px;
+    font-size: 0.78rem; color: var(--irango-brand);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="tag-versao">v0.2 — lista + emoji no modal</span>
+  <h1>Toggle "exibir imagens" por categoria</h1>
+  <p class="sub">
+    A preferência da categoria agora decide o <strong>layout inteiro</strong> do grupo, não só se a
+    imagem aparece: <strong>exibir</strong> → grid de cards (igual hoje). <strong>ocultar</strong> →
+    lista estilo cardápio, sem área de imagem nenhuma.
+  </p>
+
+  <!-- ===================== EXIBIR → GRID ===================== -->
+  <h2>Categoria "exibir" → grid de cards (inalterado)</h2>
+  <p class="h2-nota">Comportamento atual, sem mudança: foto quando o produto tem, placeholder de gradiente quando não tem.</p>
+
+  <div class="painel-linha">
+    <div class="painel-info">
+      <span class="cat-nome">Categoria: Salgados</span>
+      <span class="cat-hint">Exibir imagens desta categoria</span>
+    </div>
+    <div class="switch-btn">
+      <input type="checkbox" checked disabled aria-label="Exibir imagens ligado">
+      <span class="switch-track" aria-hidden="true"></span>
+      <span class="switch-thumb" aria-hidden="true"></span>
+    </div>
+  </div>
+
+  <div class="grid-cards">
+    <article class="card">
+      <div class="img foto-real" aria-hidden="true">🧀</div>
+      <div class="body">
+        <h3 class="nome">Pão de queijo — 6un</h3>
+        <div class="footer"><span class="preco">R$ 18,90</span><button class="btn-add" aria-hidden="true">+</button></div>
+      </div>
+    </article>
+    <article class="card">
+      <div class="img placeholder" aria-hidden="true">＋</div>
+      <div class="body">
+        <h3 class="nome">Coxinha de frango</h3>
+        <div class="footer"><span class="preco">R$ 8,50</span><button class="btn-add" aria-hidden="true">+</button></div>
+      </div>
+    </article>
+  </div>
+
+  <!-- ===================== OCULTAR → LISTA ===================== -->
+  <h2>Categoria "ocultar" → lista estilo cardápio (novo)</h2>
+  <p class="h2-nota">
+    Nome à esquerda, linha pontilhada, preço à direita. Sem imagem, sem placeholder — o layout muda
+    inteiro, independente de o produto ter foto cadastrada ou não. Toque na linha abre o modal do produto.
+  </p>
+
+  <div class="painel-linha">
+    <div class="painel-info">
+      <span class="cat-nome">Categoria: Bebidas</span>
+      <span class="cat-hint">Ocultar imagens desta categoria</span>
+    </div>
+    <div class="switch-btn">
+      <input type="checkbox" disabled aria-label="Exibir imagens desligado">
+      <span class="switch-track" aria-hidden="true"></span>
+      <span class="switch-thumb" aria-hidden="true"></span>
+    </div>
+  </div>
+
+  <div class="lista-cardapio" role="list">
+    <div class="item-lista" role="listitem" tabindex="0" aria-label="Ver detalhes de Suco de laranja 500ml, R$ 9,00">
+      <span class="nome-item">Suco de laranja 500ml</span>
+      <span class="pontilhado" aria-hidden="true"></span>
+      <span class="preco-item">R$ 9,00</span>
+    </div>
+    <div class="item-lista" role="listitem" tabindex="0" aria-label="Ver detalhes de Água mineral com gás, R$ 5,00">
+      <span class="nome-item">Água mineral com gás</span>
+      <span class="pontilhado" aria-hidden="true"></span>
+      <span class="preco-item">R$ 5,00</span>
+    </div>
+    <div class="item-lista" role="listitem" tabindex="0" aria-label="Ver detalhes de Refrigerante lata 350ml, R$ 6,50">
+      <span class="nome-item">Refrigerante lata 350ml</span>
+      <span class="pontilhado" aria-hidden="true"></span>
+      <span class="preco-item">R$ 6,50</span>
+    </div>
+    <div class="item-lista" role="listitem" tabindex="0" aria-label="Ver detalhes de Café expresso duplo com leite vaporizado, R$ 11,00">
+      <span class="nome-item">Café expresso duplo com leite vaporizado</span>
+      <span class="pontilhado" aria-hidden="true"></span>
+      <span class="preco-item">R$ 11,00</span>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: EMOJI ===================== -->
+  <h2>Modal de produto — emoji fixo quando não há foto</h2>
+  <p class="h2-nota">
+    Tocar numa linha da lista (ou num card sem foto) abre o mesmo modal de sempre. Quando não há
+    <code>foto_url</code> pra mostrar, o campo de imagem exibe um emoji genérico — igual pra
+    qualquer produto/categoria, sem customização — em vez de ficar vazio.
+  </p>
+
+  <div class="par-modais">
+    <div class="col-modal">
+      <span class="rotulo">Com foto (comportamento atual)</span>
+      <div class="modal-preview">
+        <div class="header">Pão de queijo artesanal</div>
+        <div class="img-hero" role="img" aria-label="Foto do produto">🧀</div>
+        <div class="preco-modal">R$ 18,90</div>
+      </div>
+    </div>
+    <div class="col-modal">
+      <span class="rotulo">Sem foto → emoji genérico (novo)</span>
+      <div class="modal-preview">
+        <div class="header">Suco de laranja 500ml</div>
+        <div class="img-hero" role="img" aria-label="Sem foto cadastrada">🍽️</div>
+        <div class="preco-modal">R$ 9,00</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rodape">
+    Categoria é <strong>toda</strong> grid ou <strong>toda</strong> lista — nunca mista dentro do
+    mesmo grupo (<code>RN-4</code>). Emoji do modal é fixo e genérico, sem campo novo no banco
+    (<code>RN-9</code>). Fonte: <code>specs/toggle-imagens-por-categoria.md</code> v0.2.0.
+  </div>
+</div>
+</body>
+</html>
