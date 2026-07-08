@@ -39,6 +39,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_acessos: {
+        Row: {
+          acao: string
+          admin_user_id: string
+          criado_em: string
+          entidade_id: string | null
+          id: string
+          loja_id: string
+          metadados: Json | null
+        }
+        Insert: {
+          acao: string
+          admin_user_id: string
+          criado_em?: string
+          entidade_id?: string | null
+          id?: string
+          loja_id: string
+          metadados?: Json | null
+        }
+        Update: {
+          acao?: string
+          admin_user_id?: string
+          criado_em?: string
+          entidade_id?: string | null
+          id?: string
+          loja_id?: string
+          metadados?: Json | null
+        }
+        Relationships: []
+      }
       bairros_zona: {
         Row: {
           id: string

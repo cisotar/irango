@@ -17,19 +17,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  *    service_role. Se a prova lança, a exceção PROPAGA (fail-closed, D-4) e
  *    `createServiceClient` NUNCA é chamado — nunca vira `{ ok:false }` amigável.
  *    Ordem: verificarAdminSaaS antes de createServiceClient.
- *  - registrarAcessoAdmin: no-op (ponto de extensão de log futuro). Nunca lança,
- *    retorna void/undefined. Best-effort por design.
+ *  - registrarAcessoAdmin (issue 147): INSERT best-effort fire-and-forget em
+ *    `admin_acessos` via `svc`. Resolve admin_user_id = adminId ?? obterAdminUserId(),
+ *    dispara o insert SEM await, nunca lança e retorna void. RED em describe dedicado
+ *    abaixo (contra o no-op atual, `capturas` fica vazio → payload/adminId/null falham).
  *
  * CONTRATO que o GREEN deve satisfazer (arquivo: src/lib/actions/admin-loja.ts):
  *   validarLojaIdAdmin(lojaId: unknown): { ok:true; lojaId:string } | { ok:false }
  *   prepararContextoAdmin(lojaId: string): Promise<{ svc: <service client> }>
  *     (ou retorno equivalente que exponha o service client; o teste só exige que
  *      verificarAdminSaaS rode ANTES, e que a falha de admin propague)
- *   registrarAcessoAdmin(svc, { adminId?, lojaId, acao, entidadeId?, metadados? }):
- *     void  (no-op com TODO)
+ *   registrarAcessoAdmin(svc: Svc, { adminId?, lojaId, acao, entidadeId?, metadados? }):
+ *     void  (INSERT best-effort fire-and-forget em admin_acessos — issue 147)
  */
 
 const LOJA_ID = "11111111-1111-1111-1111-111111111111";
+// Id autoritativo do dono do SaaS que `obterAdminUserId()` resolve no servidor
+// (env server-only). Usado como `admin_user_id` esperado no payload do audit.
+const ADMIN_USER_ID = "99999999-9999-9999-9999-999999999999";
 
 // ── verificarAdminSaaS: prova de admin. Default passa; teste de negação faz
 //    mockRejectedValueOnce. Ordem capturada via array `ordemChamadas`. ──────────
@@ -37,8 +42,14 @@ const ordemChamadas: string[] = [];
 const verificarAdminSaaS = vi.fn(async () => {
   ordemChamadas.push("verificarAdminSaaS");
 });
+// ── obterAdminUserId: fonte ÚNICA do id do dono do SaaS (no real é fail-closed —
+//    lança se SAAS_ADMIN_USER_ID ausente). Default devolve id fixo; o teste de
+//    env-ausente usa mockImplementationOnce(throw). SEM este mock o novo corpo veria
+//    `undefined` → o happy path falharia pelo motivo errado (plan §"Padrão de teste").
+const obterAdminUserId = vi.fn(() => ADMIN_USER_ID);
 vi.mock("@/lib/auth/admin", () => ({
   verificarAdminSaaS: () => verificarAdminSaaS(),
+  obterAdminUserId: () => obterAdminUserId(),
 }));
 
 // ── createServiceClient: server-only → mock. Registra ordem ao ser chamado. ────
@@ -84,6 +95,10 @@ beforeEach(() => {
   verificarAdminSaaS.mockImplementation(async () => {
     ordemChamadas.push("verificarAdminSaaS");
   });
+  // Reset da fila `once` + impl default: o teste de env-ausente usa
+  // mockImplementationOnce, que `clearAllMocks` NÃO limpa (só zera calls).
+  obterAdminUserId.mockReset();
+  obterAdminUserId.mockReturnValue(ADMIN_USER_ID);
 });
 
 // ─────────────────── validarLojaIdAdmin (validação UUID) ─────────────────────
@@ -265,25 +280,165 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
   });
 });
 
-// ─────────────────── registrarAcessoAdmin (no-op best-effort) ────────────────
-describe("registrarAcessoAdmin — no-op, nunca lança", () => {
-  it("retorna void/undefined sem lançar", () => {
-    const r = registrarAcessoAdmin(clientServico, {
+// ─────────── registrarAcessoAdmin (INSERT best-effort fire-and-forget) ────────
+// Fase RED — issue 147 (crítica). O corpo ATUAL é no-op: `svc.from` nunca é chamado,
+// então `capturas` fica vazio. Os 3 primeiros testes (payload/adminId/normalização)
+// FALHAM agora — é o RED que conta. Os de robustez (não-lança / não-insere) passam
+// trivialmente contra o no-op, mas TRAVAM um GREEN ingênuo que propague o erro do log
+// para a action de billing/PII que chamou (invariante crítica desta issue).
+describe("registrarAcessoAdmin — INSERT best-effort fire-and-forget", () => {
+  // svc-espião: `.from("admin_acessos").insert(payload)` captura o payload SÍNCRONO
+  // (antes do 1º await do IIFE) e devolve um thenable que resolve/rejeita por cenário.
+  // `then` recebe (res, rej) → a rejeição é tratada (sem unhandled-rejection).
+  function svcComInsert(cenario: "ok" | "erroPg" | "rejeita") {
+    const capturas: { t: string; payload: unknown }[] = [];
+    const svc = {
+      from: (t: string) => ({
+        insert: (payload: unknown) => {
+          capturas.push({ t, payload });
+          return {
+            then: (
+              res: (v: { error: unknown }) => unknown,
+              rej: (e: unknown) => unknown,
+            ) =>
+              cenario === "rejeita"
+                ? Promise.reject(new Error("network")).then(res, rej)
+                : Promise.resolve({
+                    error: cenario === "erroPg" ? { message: "dup" } : null,
+                  }).then(res, rej),
+          };
+        },
+      }),
+    };
+    return { svc, capturas };
+  }
+
+  it("happy path: dispara .from('admin_acessos').insert com admin_user_id resolvido + campos", async () => {
+    const { svc, capturas } = svcComInsert("ok");
+    registrarAcessoAdmin(svc as never, {
       lojaId: LOJA_ID,
-      acao: "leitura",
+      acao: "alternar_modulo",
+      entidadeId: "prod-1",
+      metadados: { modulo: "a4", ativo: true },
     });
-    expect(r).toBeUndefined();
+    expect(capturas).toEqual([
+      {
+        t: "admin_acessos",
+        payload: {
+          admin_user_id: ADMIN_USER_ID,
+          loja_id: LOJA_ID,
+          acao: "alternar_modulo",
+          entidade_id: "prod-1",
+          metadados: { modulo: "a4", ativo: true },
+        },
+      },
+    ]);
+    await Promise.resolve(); // drena o microtask do insert entre testes
   });
 
-  it("com metadados completos ainda é no-op silencioso", () => {
+  it("adminId explícito no acesso → usado no lugar de obterAdminUserId()", async () => {
+    const { svc, capturas } = svcComInsert("ok");
+    registrarAcessoAdmin(svc as never, {
+      adminId: "admin-explicito",
+      lojaId: LOJA_ID,
+      acao: "edicao",
+    });
+    const payload = capturas[0]?.payload as Record<string, unknown> | undefined;
+    expect(payload?.admin_user_id).toBe("admin-explicito");
+    expect(obterAdminUserId).not.toHaveBeenCalled();
+    await Promise.resolve();
+  });
+
+  it("entidadeId/metadados ausentes → payload normaliza para null", async () => {
+    const { svc, capturas } = svcComInsert("ok");
+    registrarAcessoAdmin(svc as never, { lojaId: LOJA_ID, acao: "criar_categoria" });
+    const payload = capturas[0]?.payload as Record<string, unknown> | undefined;
+    expect(payload?.entidade_id).toBeNull();
+    expect(payload?.metadados).toBeNull();
+    await Promise.resolve();
+  });
+
+  // Regressão (issue 147, MÉDIA da auditoria): as actions de Storage (salvar_logo,
+  // upload_foto_produto, comprovante Pix) registram o `path` do bucket, que NÃO é
+  // uuid. A coluna `entidade_id` é `uuid` — enfiar um path lá quebra o INSERT (ou,
+  // pior, aceita lixo). O contrato é: caller passa `path` em `metadados`, NUNCA em
+  // `entidadeId`. Este teste trava a regressão no ponto de contrato do helper: dado
+  // `metadados: { path }` e SEM `entidadeId`, o payload sai com `entidade_id: null`
+  // e o `path` preservado em `metadados`.
+  it("Storage: path (não-uuid) vai em metadados, NUNCA em entidade_id", async () => {
+    const { svc, capturas } = svcComInsert("ok");
+    registrarAcessoAdmin(svc as never, {
+      lojaId: LOJA_ID,
+      acao: "salvar_logo",
+      metadados: { path: "loja-x/logo/uuid.png" },
+    });
+    const payload = capturas[0]?.payload as Record<string, unknown> | undefined;
+    expect(payload?.entidade_id).toBeNull();
+    expect(payload?.metadados).toEqual({ path: "loja-x/logo/uuid.png" });
+    await Promise.resolve();
+  });
+
+  it("INSERT rejeita (rede) → NÃO lança, caller segue, sem unhandled-rejection", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { svc } = svcComInsert("rejeita");
     expect(() =>
-      registrarAcessoAdmin(clientServico, {
-        adminId: "admin-1",
-        lojaId: LOJA_ID,
-        acao: "edicao",
-        entidadeId: "prod-1",
-        metadados: { campo: "preco" },
-      }),
+      registrarAcessoAdmin(svc as never, { lojaId: LOJA_ID, acao: "x" }),
     ).not.toThrow();
+    // A rejeição do insert é engolida no catch do IIFE — se escapasse, o
+    // unhandled-rejection derrubaria o teste. Flush por macrotask (não um número
+    // fixo de microtasks): o thenable de teste encadeia Promise.reject().then(),
+    // que soma mais ticks do que um await nativo — contar "dois flushes" é frágil
+    // e mascarava esta asserção (achado de mutação: 0 chamadas com 2 ticks fixos).
+    await new Promise((r) => setTimeout(r, 0));
+    // Não basta "não lançar": um catch mudo (sem log) também não lançaria e
+    // esconderia a falha do log de auditoria. Prova que o erro foi de fato
+    // registrado — não só engolido silenciosamente.
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("[registrarAcessoAdmin]"),
+      expect.any(Error),
+    );
+    spy.mockRestore();
+  });
+
+  it("INSERT retorna { error } (erro PostgREST) → NÃO lança", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { svc } = svcComInsert("erroPg");
+    expect(() =>
+      registrarAcessoAdmin(svc as never, { lojaId: LOJA_ID, acao: "x" }),
+    ).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+    // Mesma prova: o ramo `if (error)` precisa logar, não só evitar o throw.
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("[registrarAcessoAdmin]"),
+      "dup",
+    );
+    spy.mockRestore();
+  });
+
+  it("SAAS_ADMIN_USER_ID ausente (obterAdminUserId lança) → NÃO lança e NÃO insere", async () => {
+    obterAdminUserId.mockImplementationOnce(() => {
+      throw new Error("SAAS_ADMIN_USER_ID não configurado");
+    });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { svc, capturas } = svcComInsert("ok");
+    expect(() =>
+      registrarAcessoAdmin(svc as never, { lojaId: LOJA_ID, acao: "x" }),
+    ).not.toThrow();
+    expect(capturas).toHaveLength(0); // a resolução do admin falhou ANTES do insert
+    await Promise.resolve();
+    // Prova que o throw síncrono de obterAdminUserId também é logado, não só
+    // engolido — mesmo padrão de prova dos outros dois canais de erro.
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("[registrarAcessoAdmin]"),
+      expect.any(Error),
+    );
+    spy.mockRestore();
+  });
+
+  it("ainda retorna void síncrono (o caller nunca dá await)", () => {
+    const { svc } = svcComInsert("ok");
+    expect(
+      registrarAcessoAdmin(svc as never, { lojaId: LOJA_ID, acao: "x" }),
+    ).toBeUndefined();
   });
 });

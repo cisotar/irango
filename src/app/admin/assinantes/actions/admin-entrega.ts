@@ -16,7 +16,8 @@
 //   DE PROPRIEDADE: escopo.buscarPorId("zonas_entrega", id) ANTES de escrever em
 //   taxas_entrega/bairros_zona (zona alheia → bloqueia, zero escrita em filho) →
 //   escopo.atualizar/remover + inserts-filho por zona_id → revalidatePath
-//   (admin + vitrine) → registrarAcessoAdmin (no-op) → catch genérico.
+//   (admin + vitrine) → registrarAcessoAdmin (best-effort: INSERT em admin_acessos)
+//   → catch genérico.
 //
 // `loja_id` gravado é SEMPRE o parâmetro `lojaId` (injetado por último pelo
 // wrapper), NUNCA o do payload (que pode ser hostil). Tipos auxiliares ficam

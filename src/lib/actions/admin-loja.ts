@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { verificarAdminSaaS } from "@/lib/auth/admin";
+import { verificarAdminSaaS, obterAdminUserId } from "@/lib/auth/admin";
 import { createServiceClient } from "@/lib/supabase/service";
-import type { Database } from "@/lib/database.types";
+import type { Database, Json } from "@/lib/database.types";
 
 /**
  * Helper NEUTRO (sem `'use server'`) compartilhado por TODA Server Action admin
@@ -198,17 +198,34 @@ type AcessoAdmin = {
 };
 
 /**
- * Ponto de extensão para o log de acesso admin (spec "Auditoria / Log de Acesso").
- * Hoje é no-op best-effort: nunca lança, sempre retorna void.
- *
- * TODO(issue futura — "Auditoria / Log de Acesso"): persistir o acesso (admin,
- * loja, ação, entidade, metadados, timestamp) numa tabela de auditoria via `svc`.
+ * Log de acesso admin (spec "Auditoria / Log de Acesso") — INSERT best-effort em
+ * `admin_acessos` (tabela deny-all: só `service_role` escreve). Fire-and-forget:
+ * o caller NUNCA dá await e falha de log NUNCA derruba a action chamadora
+ * (billing / permissão / PII). Resolve `admin_user_id = adminId ?? obterAdminUserId()`
+ * — id autoritativo do dono do SaaS (a prova `verificarAdminSaaS` já rodou em
+ * `prepararContextoAdmin` antes de qualquer caller).
  */
-export function registrarAcessoAdmin(
-  // Tipado como `unknown`: o no-op não usa o client. Quando a issue de log o
-  // consumir, troca-se por `ReturnType<typeof createServiceClient>`.
-  _svc: unknown,
-  _acesso: AcessoAdmin,
-): void {
-  // no-op (ver TODO acima).
+export function registrarAcessoAdmin(svc: Svc, acesso: AcessoAdmin): void {
+  // Fire-and-forget: o caller NUNCA dá await. `void` marca a intenção e satisfaz
+  // no-floating-promises. A IIFE async colapsa o throw síncrono de obterAdminUserId
+  // e a rejeição do insert num único try/catch; a promise sempre resolve → zero
+  // unhandled-rejection. Log quebrado (env ausente, rede, tabela indisponível)
+  // NUNCA propaga para a action de billing/PII que chamou (seguranca.md §14).
+  void (async () => {
+    try {
+      const admin_user_id = acesso.adminId ?? obterAdminUserId(); // fail-closed: pode lançar
+      const { error } = await svc.from("admin_acessos").insert({
+        admin_user_id,
+        loja_id: acesso.lojaId,
+        acao: acesso.acao,
+        entidade_id: acesso.entidadeId ?? null,
+        metadados: (acesso.metadados ?? null) as Json,
+      });
+      if (error) {
+        console.error("[registrarAcessoAdmin] insert falhou (best-effort):", error.message);
+      }
+    } catch (e) {
+      console.error("[registrarAcessoAdmin] falha ao registrar acesso (best-effort)", e);
+    }
+  })();
 }

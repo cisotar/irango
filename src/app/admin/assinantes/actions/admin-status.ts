@@ -20,7 +20,7 @@
  *  5. escopo.atualizar("pedidos", id, { status }) escopado por loja_id+id, guard
  *     count === 1 (corrida/escopo zerado → { ok:false }, não mente ok:true).
  *  6. revalidarLojaAdmin + revalidatePath das rotas de pedidos admin;
- *     registrarAcessoAdmin no-op; catch genérico (detalhe só no log).
+ *     registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico (detalhe só no log).
  *
  * REGRA: arquivo 'use server' só exporta funções async — o tipo de retorno é
  * importado de @/lib/actions/status (não redeclarado).

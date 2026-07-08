@@ -302,7 +302,7 @@ describe("admin-categorias — loja_id autoritativo (parâmetro, nunca payload)"
  *   count/linhas afetadas 0 → { ok:false, erro:"Categoria não encontrada." }
  *   loja_id no INSERT/UPDATE vem do PARÂMETRO lojaId, nunca do payload
  *   revalidatePath(rota admin do cardápio) + revalidatePath("/loja/[slug]")
- *   registrarAcessoAdmin no-op; catch genérico
+ *   registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico
  *
  * Casos que precisam passar: os 4 describes acima.
  */
