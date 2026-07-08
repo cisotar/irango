@@ -203,6 +203,29 @@ export async function alternarOculto(
   }
 }
 
+export async function alternarExibirImagens(
+  id: string,
+  exibirImagens: boolean,
+): Promise<ResultadoGestaoCategoria> {
+  try {
+    const supabase = await createClient();
+    // Toggle escopado por id; RLS categorias_escrita_propria isola por dono.
+    const { error } = await supabase
+      .from("categorias")
+      .update({ exibir_imagens: exibirImagens })
+      .eq("id", id);
+    if (error) {
+      console.error("[alternarExibirImagens]", error);
+      return { ok: false, erro: "Não foi possível atualizar a categoria." };
+    }
+    revalidatePath(CAMINHO_PAINEL);
+    return { ok: true };
+  } catch (e) {
+    console.error("[alternarExibirImagens]", e);
+    return { ok: false, erro: "Não foi possível atualizar a categoria." };
+  }
+}
+
 export async function criarCategoria(
   payload: unknown,
 ): Promise<ResultadoGestaoCategoria> {

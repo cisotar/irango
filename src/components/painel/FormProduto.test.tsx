@@ -29,7 +29,7 @@ vi.mock("next/navigation", () => ({
 
 import { FormProduto, type ProdutoInicial } from "@/components/painel/FormProduto";
 
-const CATEGORIAS = [{ id: "c1", nome: "Lanches" }];
+const CATEGORIAS = [{ id: "c1", nome: "Lanches", exibir_imagens: true }];
 
 function renderForm(inicial?: ProdutoInicial): string {
   return renderToStaticMarkup(

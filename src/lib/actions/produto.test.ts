@@ -121,6 +121,7 @@ import {
   removerProduto,
   alternarDisponibilidade,
   alternarOculto,
+  alternarExibirImagens,
   criarCategoria,
   atualizarCategoria,
   removerCategoria,
@@ -453,6 +454,41 @@ describe("atualizarCategoria (Server Action — gestão do lojista)", () => {
     const upd = opEscrita("categorias")?.update;
     if (upd && "loja_id" in upd) expect(upd.loja_id).toBe(LOJA_DONO);
     expect(upd?.loja_id).not.toBe(LOJA_OUTRA);
+  });
+});
+
+describe("alternarExibirImagens (toggle exibir/ocultar imagens por categoria)", () => {
+  // Contrato espelhado de alternarOculto: client AUTENTICADO, escopo por id,
+  // sem service_role, erro genérico. Escreve APENAS `exibir_imagens`.
+  it("atualiza apenas o flag exibir_imagens escopado por id, via client autenticado", async () => {
+    const r = await alternarExibirImagens("cat-1", false);
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("categorias")?.update?.exibir_imagens).toBe(false);
+    expect(opEscrita("categorias")?.filtros).toContainEqual(["id", "cat-1"]);
+    expect(createClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("NÃO usa service_role (escrita do lojista passa pela RLS autenticada)", async () => {
+    await alternarExibirImagens("cat-1", true);
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  it("exibir_imagens=true grava true explicitamente", async () => {
+    const r = await alternarExibirImagens("cat-1", true);
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("categorias")?.update?.exibir_imagens).toBe(true);
+  });
+
+  it("erro de banco → genérico, sem vazar e.message", async () => {
+    respostaPorTabela.categorias = {
+      data: null,
+      error: { message: "senha postgres XYZ", code: "XX000" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await alternarExibirImagens("cat-1", false);
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toContain("senha");
+    spy.mockRestore();
   });
 });
 

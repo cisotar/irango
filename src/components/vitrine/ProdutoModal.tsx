@@ -16,6 +16,10 @@ import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { OpcionalCarrinho } from "@/types/dominio";
 
+// Emoji fixo e único do fallback do campo de imagem (RN-9, spec
+// toggle-imagens-por-categoria.md) — sem customização, sem campo novo.
+const EMOJI_SEM_FOTO = "🍽️";
+
 /** Produto exibido no modal — subconjunto do modelo `produtos` + grupos de opcional. */
 export type ProdutoModalDados = {
   id: string;
@@ -148,7 +152,15 @@ export function ProdutoModal({
             disponivel ? "" : "[filter:grayscale(0.7)_brightness(0.75)]"
           }`}
         />
-      ) : null}
+      ) : (
+        <div
+          role="img"
+          aria-label="Sem foto cadastrada"
+          className="flex size-full items-center justify-center text-5xl"
+        >
+          <span aria-hidden="true">{EMOJI_SEM_FOTO}</span>
+        </div>
+      )}
     </div>
   );
 

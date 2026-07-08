@@ -9,6 +9,7 @@ import {
   criarCategoriaAdmin,
   atualizarCategoriaAdmin,
   removerCategoriaAdmin,
+  alternarExibirImagensAdmin,
 } from "@/app/admin/assinantes/actions/admin-categorias";
 import {
   criarProdutoAdmin,
@@ -74,6 +75,8 @@ export function CardapioAdminClient({
         atualizarCategoria: (id, payload) =>
           atualizarCategoriaAdmin(lojaId, id, payload),
         removerCategoria: (id) => removerCategoriaAdmin(lojaId, id),
+        alternarExibirImagens: (id, exibirImagens) =>
+          alternarExibirImagensAdmin(lojaId, id, exibirImagens),
         criarProduto: (payload) => criarProdutoAdmin(lojaId, payload),
         atualizarProduto: (id, payload) =>
           atualizarProdutoAdmin(lojaId, id, payload),

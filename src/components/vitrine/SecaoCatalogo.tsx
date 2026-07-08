@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { CardProduto } from "@/components/vitrine/CardProduto";
+import { ItemProdutoLista } from "@/components/vitrine/ItemProdutoLista";
 import {
   ProdutoModal,
   type ProdutoModalDados,
@@ -29,6 +30,14 @@ export type ProdutoCatalogo = {
 export type CategoriaComProdutos = {
   id: string | null;
   nome: string;
+  /**
+   * Preferência de imagem da categoria (SSR — categorias.exibir_imagens).
+   * `true`/ausente (grupo "Outros", sem categoria) → grid de `CardProduto`
+   * (comportamento atual). `false` → lista textual (`ItemProdutoLista`), sem
+   * imagem/placeholder (specs/toggle-imagens-por-categoria.md, RN-3/RN-5).
+   * Decisão já resolvida no servidor — aqui só espelha, sem toggle client-side.
+   */
+  exibir_imagens?: boolean;
   produtos: ProdutoCatalogo[];
 };
 
@@ -47,10 +56,14 @@ function ancora(id: string | null, indice: number): string {
 }
 
 /**
- * Catálogo da vitrine: seções por categoria com grid de `CardProduto`. É client
- * porque o clique de cada card abre o `ProdutoModal` (estado de UX no client) e a
- * confirmação sobe para `useCarrinho().adicionar`. Preço/subtotal são preview — o
- * servidor recalcula valores no checkout (seguranca.md §10).
+ * Catálogo da vitrine: seções por categoria, renderizadas como grid de
+ * `CardProduto` (exibir_imagens true/ausente) ou lista textual de
+ * `ItemProdutoLista` (exibir_imagens false) — escolha feita a partir do dado
+ * já resolvido no servidor (specs/toggle-imagens-por-categoria.md, RN-3). É
+ * client porque o clique de cada card/linha abre o `ProdutoModal` (estado de
+ * UX no client) e a confirmação sobe para `useCarrinho().adicionar`.
+ * Preço/subtotal são preview — o servidor recalcula valores no checkout
+ * (seguranca.md §10).
  */
 export function SecaoCatalogo({
   categorias,
@@ -118,21 +131,34 @@ export function SecaoCatalogo({
               className="h-0.5 flex-1 bg-[linear-gradient(90deg,transparent,var(--marrom-cafe),transparent)]"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4">
-            {categoria.produtos.map((produto) => (
-              <CardProduto
-                key={produto.id}
-                id={produto.id}
-                nome={produto.nome}
-                descricao={produto.descricao}
-                preco={produto.preco}
-                fotoUrl={produto.foto_url}
-                disponivel={produto.disponivel}
-                // Em vez de adicionar direto, abre o modal de detalhe do produto.
-                onAdicionar={() => abrirModal(produto)}
-              />
-            ))}
-          </div>
+          {categoria.exibir_imagens === false ? (
+            <div className="overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+              {categoria.produtos.map((produto) => (
+                <ItemProdutoLista
+                  key={produto.id}
+                  nome={produto.nome}
+                  preco={produto.preco}
+                  onSelecionar={() => abrirModal(produto)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4">
+              {categoria.produtos.map((produto) => (
+                <CardProduto
+                  key={produto.id}
+                  id={produto.id}
+                  nome={produto.nome}
+                  descricao={produto.descricao}
+                  preco={produto.preco}
+                  fotoUrl={produto.foto_url}
+                  disponivel={produto.disponivel}
+                  // Em vez de adicionar direto, abre o modal de detalhe do produto.
+                  onAdicionar={() => abrirModal(produto)}
+                />
+              ))}
+            </div>
+          )}
         </section>
       ))}
 

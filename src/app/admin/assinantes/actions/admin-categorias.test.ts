@@ -127,6 +127,7 @@ import {
   atualizarCategoriaAdmin,
   removerCategoriaAdmin,
   reordenarCategoriasAdmin,
+  alternarExibirImagensAdmin,
 } from "./admin-categorias";
 
 // Helper: encontra a operação de escrita (não-select) registrada.
@@ -276,6 +277,81 @@ describe("admin-categorias — loja_id autoritativo (parâmetro, nunca payload)"
     for (const op of escritas) {
       expect(op.eqs).toContainEqual({ coluna: "loja_id", valor: LOJA_ID });
     }
+  });
+});
+
+// ───── alternarExibirImagensAdmin (toggle exibir/ocultar imagens — issue) ────
+describe("admin-categorias — alternarExibirImagensAdmin", () => {
+  it("lojaId não-UUID → erro SEM admin/service/escrita", async () => {
+    const r = await alternarExibirImagensAdmin("xxx", CATEGORIA_ID, false);
+
+    expect(r).toEqual({ ok: false, erro: "Loja inválida." });
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(ops).toHaveLength(0);
+  });
+
+  it("payload não-boolean → { ok:false, erro:'Dados inválidos.' } SEM efeito", async () => {
+    const r = await alternarExibirImagensAdmin(
+      LOJA_ID,
+      CATEGORIA_ID,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "true" as any,
+    );
+
+    expect(r).toEqual({ ok: false, erro: "Dados inválidos." });
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(ops).toHaveLength(0);
+  });
+
+  it("admin negado → propaga (fail-closed), zero efeito", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("Acesso negado."));
+
+    await expect(
+      alternarExibirImagensAdmin(LOJA_ID, CATEGORIA_ID, false),
+    ).rejects.toThrow("Acesso negado.");
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(ops).toHaveLength(0);
+  });
+
+  it("grava exibir_imagens escopado por loja_id E id, na loja-alvo", async () => {
+    const r = await alternarExibirImagensAdmin(LOJA_ID, CATEGORIA_ID, false);
+
+    expect(r).toEqual({ ok: true });
+    const op = opEscrita();
+    expect(op).toBeDefined();
+    expect(op!.tabela).toBe("categorias");
+    expect(op!.tipo).toBe("update");
+    expect(op!.payload).toEqual({ exibir_imagens: false });
+    expect(op!.eqs).toContainEqual({ coluna: "loja_id", valor: LOJA_ID });
+    expect(op!.eqs).toContainEqual({ coluna: "id", valor: CATEGORIA_ID });
+    expect(revalidatePath).toHaveBeenCalled();
+  });
+
+  // ISOLAMENTO: categoria existe (id casa), mas pertence a OUTRA loja — o
+  // escopo eq("loja_id", lojaId) zera o match (count 0), então a categoria
+  // alheia NÃO é afetada mesmo com o id correto.
+  it("ISOLADO: categoria de OUTRA loja (mesmo id) → count 0 → 'Categoria não encontrada.', não afeta a alheia", async () => {
+    terminalResponder = (op) => {
+      const escopadaPelaLojaCerta = op.eqs.some(
+        (e) => e.coluna === "loja_id" && e.valor === LOJA_ID,
+      );
+      const casou = escopadaPelaLojaCerta ? 0 : 1;
+      return { data: [], error: null, count: casou };
+    };
+
+    const r = await alternarExibirImagensAdmin(LOJA_ID, CATEGORIA_ID, true);
+
+    expect(r).toEqual({ ok: false, erro: "Categoria não encontrada." });
+    const op = opEscrita();
+    expect(op!.eqs).toContainEqual({ coluna: "loja_id", valor: LOJA_ID });
+  });
+
+  it("exibir_imagens=true grava true explicitamente (não é tratado como ausente)", async () => {
+    const r = await alternarExibirImagensAdmin(LOJA_ID, CATEGORIA_ID, true);
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita()!.payload).toEqual({ exibir_imagens: true });
   });
 });
 

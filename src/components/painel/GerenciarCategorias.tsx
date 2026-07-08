@@ -15,11 +15,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import type { Categoria } from "@/components/painel/FormProduto";
 import {
   criarCategoria as criarCategoriaLojista,
   atualizarCategoria as atualizarCategoriaLojista,
   removerCategoria as removerCategoriaLojista,
+  alternarExibirImagens as alternarExibirImagensLojista,
 } from "@/lib/actions/produto";
 
 /**
@@ -38,6 +40,7 @@ export function GerenciarCategorias({
   onCriar = criarCategoriaLojista,
   onAtualizar = atualizarCategoriaLojista,
   onRemover = removerCategoriaLojista,
+  onAlternarExibirImagens = alternarExibirImagensLojista,
 }: {
   categorias: Categoria[];
   open: boolean;
@@ -48,6 +51,11 @@ export function GerenciarCategorias({
   onAtualizar?: typeof atualizarCategoriaLojista;
   /** Action de remoção. Default: action do lojista. */
   onRemover?: typeof removerCategoriaLojista;
+  /** Action do toggle "exibir imagens". Default: action do lojista. A via admin injeta a variante por `lojaId`. */
+  onAlternarExibirImagens?: (
+    id: string,
+    exibirImagens: boolean,
+  ) => Promise<{ ok: boolean; erro?: string }>;
 }) {
   const router = useRouter();
   const [nova, setNova] = useState("");
@@ -56,6 +64,29 @@ export function GerenciarCategorias({
   // Edição inline de uma categoria existente.
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [nomeEdicao, setNomeEdicao] = useState("");
+
+  // Preview otimista do toggle "exibir imagens", por categoria (id → estado
+  // local). Fonte de verdade é `categoria.exibir_imagens` (prop); este mapa só
+  // existe enquanto uma alternância está em voo ou acabou de ser confirmada
+  // nesta sessão — evita esperar o `router.refresh()` para o switch responder.
+  const [exibicaoOtimista, setExibicaoOtimista] = useState<
+    Record<string, boolean>
+  >({});
+
+  function alternarExibirImagens(cat: Categoria) {
+    const anterior = exibicaoOtimista[cat.id] ?? cat.exibir_imagens;
+    const novo = !anterior;
+    setExibicaoOtimista((atual) => ({ ...atual, [cat.id]: novo })); // otimista
+    startSalvar(async () => {
+      const r = await onAlternarExibirImagens(cat.id, novo);
+      if (!r.ok) {
+        setExibicaoOtimista((atual) => ({ ...atual, [cat.id]: anterior })); // rollback
+        toast.error(r.erro ?? "Não foi possível atualizar a categoria.");
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   function adicionar() {
     const nome = nova.trim();
@@ -188,6 +219,12 @@ export function GerenciarCategorias({
                       <span className="flex-1 truncate text-sm text-foreground">
                         {cat.nome}
                       </span>
+                      <Switch
+                        checked={exibicaoOtimista[cat.id] ?? cat.exibir_imagens}
+                        disabled={salvando}
+                        aria-label={`Exibir imagens dos produtos de ${cat.nome}`}
+                        onCheckedChange={() => alternarExibirImagens(cat)}
+                      />
                       <Button
                         variant="ghost"
                         size="icon-sm"

@@ -96,6 +96,40 @@ export async function atualizarCategoriaAdmin(
   }
 }
 
+export async function alternarExibirImagensAdmin(
+  lojaId: string,
+  id: string,
+  exibirImagens: boolean,
+): Promise<ResultadoCategoriaAdmin> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  if (typeof exibirImagens !== "boolean") {
+    return { ok: false, erro: "Dados inválidos." };
+  }
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    const { error, count } = await escopo.atualizar("categorias", id, {
+      exibir_imagens: exibirImagens,
+    });
+    if (error) return { ok: false, erro: ERRO_GENERICO };
+    if (!count) return { ok: false, erro: "Categoria não encontrada." };
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "alternar_exibir_imagens_categoria",
+      entidadeId: id,
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[alternarExibirImagensAdmin]", e);
+    return { ok: false, erro: ERRO_GENERICO };
+  }
+}
+
 export async function removerCategoriaAdmin(
   lojaId: string,
   id: string,
