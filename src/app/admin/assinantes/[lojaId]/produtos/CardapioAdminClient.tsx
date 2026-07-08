@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 
-import { ProdutosClient } from "@/app/(painel)/painel/produtos/ProdutosClient";
+import { ProdutosClient } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import type { Categoria } from "@/components/painel/FormProduto";
 import type { Produto, OpcionaisPorCategoria } from "@/lib/supabase/queries/produtos";
 import {

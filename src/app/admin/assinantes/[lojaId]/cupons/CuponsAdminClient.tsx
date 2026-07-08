@@ -1,6 +1,6 @@
 "use client";
 
-import { CuponsClient } from "@/app/(painel)/painel/cupons/CuponsClient";
+import { CuponsClient } from "@/app/(painel)/painel/(bloqueavel)/cupons/CuponsClient";
 import type { Cupom } from "@/lib/supabase/queries/entregaPagamento";
 import {
   criarCupomAdmin,

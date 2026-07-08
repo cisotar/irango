@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 
 import type { Horarios } from "@/lib/utils/lojaAberta";
-import type { Tema } from "@/app/(painel)/painel/configuracoes/tema/TemaClient";
+import type { Tema } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/tema/TemaClient";
 
 import { carregarLojaAdmin } from "../carga";
 import { ConfiguracaoAdminClient } from "./ConfiguracaoAdminClient";

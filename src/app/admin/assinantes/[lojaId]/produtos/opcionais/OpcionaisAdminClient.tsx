@@ -1,7 +1,7 @@
 "use client";
 
-import { OpcionaisClient } from "@/app/(painel)/painel/produtos/opcionais/OpcionaisClient";
-import type { OpcionaisClientProps } from "@/app/(painel)/painel/produtos/opcionais/OpcionaisClient";
+import { OpcionaisClient } from "@/app/(painel)/painel/(bloqueavel)/produtos/opcionais/OpcionaisClient";
+import type { OpcionaisClientProps } from "@/app/(painel)/painel/(bloqueavel)/produtos/opcionais/OpcionaisClient";
 import {
   criarCategoriaOpcionalAdmin,
   atualizarCategoriaOpcionalAdmin,

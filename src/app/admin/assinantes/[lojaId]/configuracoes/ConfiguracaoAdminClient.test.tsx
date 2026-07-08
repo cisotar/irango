@@ -47,7 +47,7 @@ const capturado = vi.hoisted(() => ({
 
 // --- child clients: stubs que não renderizam a árvore real (sem server-only) ---
 vi.mock(
-  "@/app/(painel)/painel/configuracoes/perfil/PerfilClient",
+  "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient",
   () => ({
     PerfilClient: (props: {
       onSalvarLogo?: (formData: FormData) => unknown;
@@ -59,16 +59,16 @@ vi.mock(
     },
   }),
 );
-vi.mock("@/app/(painel)/painel/configuracoes/horarios/HorariosClient", () => ({
+vi.mock("@/app/(painel)/painel/(bloqueavel)/configuracoes/horarios/HorariosClient", () => ({
   HorariosClient: () => null,
 }));
-vi.mock("@/app/(painel)/painel/configuracoes/tema/TemaClient", () => ({
+vi.mock("@/app/(painel)/painel/(bloqueavel)/configuracoes/tema/TemaClient", () => ({
   TemaClient: () => null,
 }));
-vi.mock("@/app/(painel)/painel/configuracoes/entregas/EntregasClient", () => ({
+vi.mock("@/app/(painel)/painel/(bloqueavel)/configuracoes/entregas/EntregasClient", () => ({
   EntregasClient: () => null,
 }));
-vi.mock("@/app/(painel)/painel/configuracoes/pagamentos/PagamentosClient", () => ({
+vi.mock("@/app/(painel)/painel/(bloqueavel)/configuracoes/pagamentos/PagamentosClient", () => ({
   PagamentosClient: () => null,
 }));
 

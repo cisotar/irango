@@ -33,7 +33,7 @@ const capturado = vi.hoisted(() => ({
 }));
 
 // --- CuponsClient: stub que captura `acoes` sem renderizar a árvore real ---
-vi.mock("@/app/(painel)/painel/cupons/CuponsClient", () => ({
+vi.mock("@/app/(painel)/painel/(bloqueavel)/cupons/CuponsClient", () => ({
   CuponsClient: (props: { acoes?: unknown }) => {
     capturado.acoes = props.acoes as (typeof capturado)["acoes"];
     return null;

@@ -2,12 +2,12 @@
 
 import { useCallback } from "react";
 
-import { PerfilClient, type PerfilInicial } from "@/app/(painel)/painel/configuracoes/perfil/PerfilClient";
+import { PerfilClient, type PerfilInicial } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient";
 import type { UploadLogoLojaProps } from "@/components/painel/UploadLogoLoja";
-import { HorariosClient } from "@/app/(painel)/painel/configuracoes/horarios/HorariosClient";
-import { TemaClient, type Tema } from "@/app/(painel)/painel/configuracoes/tema/TemaClient";
-import { EntregasClient } from "@/app/(painel)/painel/configuracoes/entregas/EntregasClient";
-import { PagamentosClient } from "@/app/(painel)/painel/configuracoes/pagamentos/PagamentosClient";
+import { HorariosClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/horarios/HorariosClient";
+import { TemaClient, type Tema } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/tema/TemaClient";
+import { EntregasClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/entregas/EntregasClient";
+import { PagamentosClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/pagamentos/PagamentosClient";
 import type { Horarios } from "@/lib/utils/lojaAberta";
 import type { EnviarQrPix, ResultadoUploadQr } from "@/components/painel/UploadQrPix";
 import type {
