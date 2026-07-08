@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.33 | **Atualizado:** 2026-07-07
+**Versão:** 0.2.34 | **Atualizado:** 2026-07-08
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -496,7 +496,8 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 **Exceções legítimas ao `svc` cru** (não passam pelo wrapper, escopo continua manual):
 - Supabase Storage — paths já namespaced por `${lojaId}/...`;
 - tabelas-filho sem coluna `loja_id`, escopadas por FK (`taxas_entrega`/`bairros_zona` via `zona_id`) — só após provar posse da zona-pai com `escopo.buscarPorId`;
-- camada de query/RPC (billing, criação de loja) fora do CRUD por tabela.
+- camada de query/RPC (billing, criação de loja) fora do CRUD por tabela;
+- escrita direta em coluna de `CAMPOS_LOJA_SOMENTE_SERVIDOR` a partir de action admin **dedicada** (não do CRUD genérico) — `escopo.atualizarLoja` descartaria essas colunas em runtime por design (hardening acima), então a única via é o UPDATE cru `svc.from("lojas").update(...).eq("id", lojaId)`. Exemplos: `desvincularBilling` (`actions.ts`, valores fixos `null`) e `alternarModuloImpressao` (`admin-modulos-impressao.ts`, issue 142, valor booleano vindo do cliente). Quando, como na 142, o **nome da coluna-alvo** também depende de um parâmetro do cliente (`modulo: "a4" | "termica"`), o vetor de injeção de identificador é fechado validando contra um `z.enum` fixo e resolvendo a coluna por um mapa server-side (`COLUNA_POR_MODULO`) — nunca interpolando a string do cliente como chave computada (`{ [modulo]: valor }`); fora do enum, falha **antes** de tocar o banco. **Regra ao estender:** toda action nova que precise gravar coluna somente-servidor com alvo escolhido pelo cliente repete esse par (enum fixo + mapa server-side), nunca aceita nome de coluna livre.
 
 **Enforcement automático:** `src/app/admin/assinantes/enforcement-escopo-admin.test.ts` descobre os módulos de action via `readdirSync` (sem lista manual — action nova entra sozinha) e faz duas verificações estáticas de fonte por `export async function`: camada 2 exige referência a `prepararContextoAdmin`/`verificarAdminSaaS` (prova admin antes de qualquer efeito); camada 3 exige que todo statement `.from(tabela)....update()/.delete()` cru contenha `.eq(...)`. Uma action nova que esqueça o padrão falha no CI sem precisar editar a suíte de teste. A mesma descoberta cobre também os loaders `[lojaId]/carga*.ts` (`carga.ts`, `carga-opcionais.ts`, …) que elevam a `service_role` fora do fluxo de Server Action — o filtro é por prefixo (`carga` + `.ts`, excluindo `.test.ts`), não lista manual, então um loader novo que eleve privilégio entra automaticamente sob o mesmo guard (achado da issue 132: `carga-opcionais.ts` chegou a existir sem cair sob o enforcement até o glob ser generalizado).
 
