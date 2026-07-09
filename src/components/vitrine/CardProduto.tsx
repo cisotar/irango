@@ -69,13 +69,13 @@ export function CardProduto({
         ) : null}
       </div>
 
-      <div className="card-body flex flex-1 flex-col gap-2 p-3">
-        <h3 className="line-clamp-2 text-sm font-bold leading-tight text-[#111111]">
+      <div className="card-body flex flex-1 flex-col gap-2 p-3 lg:gap-1.5 lg:p-2.5">
+        <h3 className="line-clamp-2 text-sm font-bold leading-tight text-[#111111] lg:text-xs">
           {nome}
         </h3>
 
         <div className="mt-auto flex items-center justify-between gap-2">
-          <span className="text-lg font-black text-[var(--cor-destaque)]">
+          <span className="text-lg font-black text-[var(--cor-destaque)] lg:text-sm">
             {formatarMoeda(preco)}
           </span>
           <button
@@ -85,7 +85,7 @@ export function CardProduto({
             aria-label={
               disponivel ? `Adicionar ${nome} ao carrinho` : `${nome} esgotado`
             }
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--cor-destaque)] text-base font-black leading-none text-white focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-[#9a9a9a]"
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--cor-destaque)] text-base font-black leading-none text-white focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-[#9a9a9a] lg:h-7 lg:w-7 lg:text-sm"
           >
             +
           </button>

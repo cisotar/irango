@@ -143,7 +143,7 @@ export function SecaoCatalogo({
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
               {categoria.produtos.map((produto) => (
                 <CardProduto
                   key={produto.id}
