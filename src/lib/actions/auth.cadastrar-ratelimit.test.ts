@@ -25,7 +25,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock server-only rateLimit: por padrão LIBERA (permitido:true). Cada teste
 // sobrescreve para simular a trava estourada.
-const verificarRateLimit = vi.fn(async () => ({ permitido: true }));
+const verificarRateLimit = vi.fn(async (..._a: unknown[]) => ({ permitido: true }));
 vi.mock("next/headers", () => ({ headers: () => new Headers() }));
 vi.mock("@/lib/utils/rateLimit", () => ({
   extrairIp: () => "203.0.113.7",
