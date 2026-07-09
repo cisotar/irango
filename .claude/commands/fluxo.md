@@ -19,7 +19,7 @@ Execute **todas as etapas em ordem**, sempre:
 0. Verificar escopo existente + aprender padrões
 1. Especificar
 2. Quebrar em issues
-3. Para cada issue: planejar/arquitetar → **[RED-FIRST: teste falho]** → executar → revisar ‖ testar ‖ auditar → [popular + deploy de migration, se schema] → verificar → documentar
+3. Para cada issue: planejar/arquitetar → **[RED-FIRST: teste falho]** → executar → revisar ‖ testar ‖ auditar → [popular + deploy de migration, se schema] → verificar → escriba
 4. Verificação final + aviso de deploy
 
 **Não há "escopo trivial" que justifique pular quebrar, planejar, TDD, testar, auditar ou verificar.** Mesmo um fix de 1 linha passa por todas as etapas. A redundância é intencional — cada etapa cobre uma classe de erro diferente. Se considerar pular alguma etapa, pare e pergunte ao usuário antes.
@@ -79,7 +79,7 @@ O modelo de cada agente é definido no frontmatter do próprio arquivo em `.clau
 | `depurar` | Bloqueio | Quando `executar` ou `verificar` trava — erro de runtime, PGRST204, build quebrado. Isola causa raiz, propõe fix mínimo. Alternativa a re-planejar. |
 | `popular` | Schema | Após `migrar` + `executar` em issue de schema. Atualiza `supabase/seed.sql` com dados fictícios compatíveis. Pré-condição de `verificar` quando seed está desatualizado. |
 | `verificar` | Validação | **Sempre** após revisar/testar/auditar. Roda o app (contra cloud) e confirma comportamento real. Pré-condição: migration no cloud (passo 6c). |
-| `documentar` | Documentação | **Sempre** após validação. Mantém `references/` sincronizado. Conservador — decide sozinho se há mudança real; reporta "nenhuma atualização necessária" quando aplicável |
+| `escriba` | Documentação | **Sempre** após validação. Mantém `references/` sincronizado. Conservador — decide sozinho se há mudança real; reporta "nenhuma atualização necessária" quando aplicável |
 
 ### Regra de roteamento — planejamento
 
@@ -103,9 +103,9 @@ Após `executar` cada issue, ordem obrigatória:
    - `testar` — qualidade funcional. Confirma que o teste RED (issue crítica) está GREEN. Cobre bordas e recálculo no servidor.
    - `auditar` — segurança. Recebe todos os arquivos modificados + relacionados. Findings MÉDIA+ corrigidos no mesmo ciclo.
 2. **`verificar`** — roda o app (contra cloud, não local) e confirma o comportamento real do fluxo afetado. Pré-condição: passo 6c concluído se houver migration.
-3. **`documentar`** — sempre. Agente decide se atualiza `references/`. Se reportar "nenhuma atualização necessária", seguir adiante.
+3. **`escriba`** — sempre. Agente decide se atualiza `references/`. Se reportar "nenhuma atualização necessária", seguir adiante.
 
-`revisar`, `testar`, `auditar`, `verificar` e `documentar` nunca são pulados. Se o agente concluir que não há nada a fazer, ele reporta explicitamente — a decisão é dele, não sua.
+`revisar`, `testar`, `auditar`, `verificar` e `escriba` nunca são pulados. Se o agente concluir que não há nada a fazer, ele reporta explicitamente — a decisão é dele, não sua.
 
 ---
 
@@ -231,7 +231,7 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
      4. Após o push: `npx supabase migration list` reconfirma Remote preenchido; regenerar `src/lib/database.types.ts` (gate 6 acima).
      5. Só então avançar para `verificar`. Se o usuário recusar o push, **parar a issue** e registrar que `verificar` fica pendente até o deploy — não marcar a issue como verificada.
    - 6d. `verificar` — sobe o app (`pnpm dev`, contra o cloud — não é Supabase local) e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel). Pré-condições: 6c concluído quando houver migration; 6b concluído para seed atualizado.
-   - 6e. `documentar` — sempre. Se "nenhuma atualização necessária", seguir adiante.
+   - 6e. `escriba` — sempre. Se "nenhuma atualização necessária", seguir adiante.
 7. **Verificar critérios `[x]`:** se algum ficar `[ ]`, NÃO feche a issue — complete, ou registre débito explícito como nova issue.
 8. **Fechar a issue:** sem bloqueios pendentes:
    - Se criada no GitHub: `gh issue close <número> --comment "Implementado, testado, auditado e verificado."`
@@ -275,7 +275,7 @@ O fluxo termina quando:
 
 Ao concluir, exiba o resumo:
 - Total de issues executadas
-- Agentes usados por tipo (especificar: N, quebrar: N, planejar: N, arquitetar: N, migrar: N, desenhar: N, tdd: N, executar: N, revisar: N, testar: N, auditar: N, depurar: N, popular: N, verificar: N, documentar: N)
+- Agentes usados por tipo (especificar: N, quebrar: N, planejar: N, arquitetar: N, migrar: N, desenhar: N, tdd: N, executar: N, revisar: N, testar: N, auditar: N, depurar: N, popular: N, verificar: N, escriba: N)
 - Vulnerabilidades encontradas pelo `auditar` e status (corrigida / issue aberta)
 - Cobertura de testes por tipo (unitário: N, Server Action: N, RLS: N, fluxo: N)
 - Arquivos criados/modificados

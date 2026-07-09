@@ -13,7 +13,7 @@ Agentes especializados (subagents) para implementar o iRango. Cada um tem um pap
 ```
 especificar → quebrar → planejar (ou arquitetar/migrar) → [tdd RED] → executar GREEN
                                                               └── só em issue crítica ──┘
-    → [revisar ‖ testar ‖ auditar] → [popular se schema] → verificar → documentar
+    → [revisar ‖ testar ‖ auditar] → [popular se schema] → verificar → escriba
 ```
 
 Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
@@ -34,7 +34,7 @@ Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
 | `depurar` | Debug de bloqueio: runtime error, PGRST204, comportamento errado | opus |
 | `popular` | Atualiza `seed.sql` após issue de schema — pré-condição de verificar | sonnet |
 | `verificar` | Roda o app (contra cloud) e confirma comportamento real | sonnet |
-| `documentar` | Mantém `references/` sincronizado (conservador) | sonnet |
+| `escriba` | Mantém `references/` sincronizado (conservador) | sonnet |
 
 ## Como invocar
 Pelo orquestrador (Task/Agent) passando o `subagent_type` (ex.: `auditar`) e o caminho do alvo (issue, arquivo, ou descrição). Issues críticas: `tdd` antes de `executar`.

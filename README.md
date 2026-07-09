@@ -38,7 +38,7 @@ Specs em `specs/`, issues em `tasks/`, agentes especializados em `.claude/agents
 ```
 especificar → quebrar → planejar (ou arquitetar/migrar) → [tdd RED] → executar GREEN
                                                               └── só issue crítica ──┘
-    → [revisar ‖ testar ‖ auditar] → [popular se schema] → verificar → documentar
+    → [revisar ‖ testar ‖ auditar] → [popular se schema] → verificar → escriba
 ```
 
 Três mandatos válidos em todo o código:
