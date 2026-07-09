@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.39 | **Atualizado:** 2026-07-08
+**Versão:** 0.2.40 | **Atualizado:** 2026-07-09
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -752,6 +752,8 @@ O bairro declarado pelo cliente no checkout seleciona a zona de frete — é um 
 Implementação: `src/lib/utils/reconciliarBairroCep.ts` — I/O isolada, sem estado, fail-closed total (try/catch engole toda exceção). Separada de `calcularFrete` (que permanece pura/sem I/O).
 
 **Escopo da política (issue 067):** o preview de frete (`calcularFreteAction` em `src/lib/actions/frete.ts`) aplica a mesma reconciliação fail-closed. CEP é opcional no schema do preview — quando ausente, não reconcilia e usa o bairro declarado; quando presente, segue a mesma política do autoritativo. Isso fecha o vetor de oráculo parcial: o preview não revela zonas baratas que o autoritativo rejeitaria.
+
+**Residual não coberto — `tipo='faixa_cep'` (pentest 2026-07-09, informacional):** a reconciliação acima cobre só zonas `tipo='bairro'` (bairro é forçado ao canônico do CEP via ViaCEP). Zonas `tipo='faixa_cep'` selecionam a zona a partir do **CEP declarado** pelo cliente — e não existe fonte mais canônica pra reconciliar esse CEP server-side (ao contrário do bairro, que é confrontado contra o CEP). Se a loja tem uma zona `faixa_cep` mais barata, um cliente pode declarar um CEP dessa faixa. **Não há defesa técnica possível**: não se prova server-side qual é "o CEP real do cliente". É risco residual inerente, mitigável só operacionalmente — o lojista modela zonas `faixa_cep` com cautela (ex.: evitar faixas com preços muito distintos cobrindo a mesma região real). Ver comentário em `src/lib/actions/pedido.ts` (~linha 220).
 
 > **Nota sobre ViaCEP:** a tabela de APIs (§12) documenta ViaCEP como chamável do client (sem credencial). Isso continua válido para o autocomplete de endereço no checkout. A reconciliação de frete é um uso distinto e obrigatoriamente server-side — o mesmo endpoint externo, propósitos e contextos de segurança diferentes.
 

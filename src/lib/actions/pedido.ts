@@ -90,7 +90,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     }
 
     // (4) Produtos: existem? disponíveis? não-ocultos? da loja correta? (subtotal do PREÇO REAL)
-    const ids = dados.itens.map((i) => i.produto_id);
+    const ids = [...new Set(dados.itens.map((i) => i.produto_id))];
     const produtos = await buscarProdutosPorIds(svc, ids);
     const porId = new Map(produtos.map((p) => [p.id, p]));
 
@@ -217,8 +217,12 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // o declarado reabriria o vetor (cliente força timeout do ViaCEP e casa a
       // zona barata). Sem bairro reconciliado, calcularFrete não casa nenhuma zona
       // tipo='bairro' e cai no fallback fora-de-zona (mais caro) ou indisponível.
-      // O CEP numérico permanece para zonas tipo='faixa_cep' (já reconciliadas por
-      // natureza — faixa numérica, sem string livre forjável).
+      // O CEP numérico permanece intacto para zonas tipo='faixa_cep'. ATENÇÃO: essa
+      // reconciliação cobre só tipo='bairro'. Para 'faixa_cep' a seleção de zona
+      // depende do CEP DECLARADO pelo cliente — não há fonte mais canônica pra
+      // reconciliar server-side (ao contrário do bairro, que é validado contra o
+      // CEP via ViaCEP). Risco residual inerente, mitigável só operacionalmente
+      // (seguranca.md §10-A).
       let enderecoAutoritativo = endereco;
       if (endereco.bairro) {
         const rec = endereco.cep
