@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.2.0 | **Atualizado:** 2026-06-18
+**Versão:** 0.2.1 | **Atualizado:** 2026-07-09
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -54,7 +54,7 @@ Fonte: architecture.md §2 e §7, spec "Stack Tecnológica". Não introduzir lib
 | Função | Lib | Observação |
 |--------|-----|------------|
 | Estilização | **Tailwind CSS v4** | utility-first; tokens CSS-first em `src/app/globals.css` (`@theme`), sem `tailwind.config.ts` |
-| Componentes | **shadcn/ui** (Radix UI + Tailwind) | gerados pelo CLI em `components/ui/` — não editar |
+| Componentes | **shadcn/ui** (Base UI + Tailwind) | gerados pelo CLI em `components/ui/` — não editar |
 | Ícones | **lucide-react** | já usado pelo shadcn — consistência garantida |
 | Toast | **sonner** | feedback de sucesso/erro |
 | Forms | **react-hook-form** + **zod** | mesmo schema no client e na Server Action |
@@ -132,7 +132,7 @@ Critério de aceite de toda tela. Referência: spec (forms com label, validaçã
 - **Foco visível** em todo interativo: `focus-visible:ring-2` (**proposta** de padrão consistente, alinhado ao default do shadcn).
 - **Label em todo input.** Forms usam o componente `Form` do shadcn (react-hook-form), que já vincula `<label>` ao campo. Erro de validação com `aria-invalid` + `aria-describedby` apontando para a mensagem.
 - **`aria-label` em ícone sem texto** (botões de ação que usam só ícone lucide-react, ex.: remover item, editar).
-- **Modal acessível:** usar `Dialog`/`AlertDialog` do shadcn (Radix) — já entregam `role="dialog"`, foco preso e fechamento por ESC. Não recriar modal ad-hoc.
+- **Modal acessível:** usar `Dialog`/`AlertDialog` do shadcn (Base UI) — já entregam `role="dialog"`, foco preso e fechamento por ESC. Não recriar modal ad-hoc.
 - **Não depender só de cor.** `BadgeStatus` e badges de disponibilidade combinam **cor + texto** (ex.: "Aberto agora", "Indisponível") — ver §8.
 
 ---

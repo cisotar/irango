@@ -1,0 +1,93 @@
+<!-- @dsCard group="Vitrine" -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrine · Header texturizado — v1 (sutis)</title>
+<style>
+  :root {
+    --bg: #f6f2ec; --surface: #fffdfa; --ink: #241f1a; --ink-soft: #6b6156;
+    --line: #e6ddd0; --accent: #c2410c; --code-bg: #2b2620; --code-ink: #e9e2d6;
+    --radius: 16px; --cor-primaria: #c1352b;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+  h1 { font-size: clamp(28px,5vw,40px); line-height: 1.08; margin: 0 0 12px; font-weight: 800; letter-spacing: -.02em; }
+  .lede { font-size: 17px; color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; margin: 28px 0 40px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .controls label { font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 10px; }
+  .controls input[type="color"] { inline-size: 40px; block-size: 30px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; }
+  .swatches { display: inline-flex; gap: 8px; }
+  .swatches button { inline-size: 26px; block-size: 26px; border-radius: 50%; border: 2px solid #ffffff55; cursor: pointer; padding: 0; box-shadow: 0 1px 3px #0003; }
+  .example { margin-bottom: 44px; }
+  .example-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .num { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 13px; color: var(--accent); }
+  .example-head h2 { font-size: 20px; margin: 0; font-weight: 750; }
+  .example-head p { margin: 0; color: var(--ink-soft); font-size: 14px; flex: 1 1 220px; }
+  .device { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); box-shadow: 0 10px 30px -18px #0007; background: var(--surface); }
+  .header { position: relative; isolation: isolate; background: var(--cor-primaria); color: #fff; padding: 14px 20px; overflow: hidden; }
+  .header-inner { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 16px; max-width: 640px; margin: 0 auto; }
+  .logo { inline-size: 76px; block-size: 76px; flex: none; border-radius: 50%; border: 3px solid #ffffff59; background: #4a3a22; display: grid; place-items: center; font-size: 30px; font-weight: 900; box-shadow: 0 4px 14px #0000003d; }
+  .meta h3 { margin: 0 0 8px; font-size: 23px; font-weight: 900; text-transform: uppercase; letter-spacing: .03em; text-shadow: 0 1px 2px #0000002e; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; background: #16a34a; color: #fff; padding: 3px 10px; border-radius: 999px; margin-bottom: 8px; }
+  .badge .dot { inline-size: 7px; block-size: 7px; border-radius: 50%; background: #fff; }
+  .wpp { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: #ffffffe6; }
+  .wpp svg { inline-size: 15px; block-size: 15px; }
+
+  .tex-grao::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); opacity: .13; mix-blend-mode: overlay; }
+  .tex-grao::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(120% 140% at 50% -20%, #ffffff26 0%, #0000 45%), radial-gradient(120% 120% at 50% 120%, #00000038 0%, #0000 55%); }
+  .tex-mesh::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(60% 120% at 12% 18%, #ffffff40 0%, #0000 45%), radial-gradient(50% 110% at 88% 8%, #ffffff2e 0%, #0000 50%), radial-gradient(70% 130% at 78% 108%, #00000047 0%, #0000 55%), radial-gradient(55% 120% at 22% 116%, #0000003b 0%, #0000 50%); }
+  .tex-ripas::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background-image: repeating-linear-gradient(135deg, #ffffff14 0 2px, #0000 2px 11px); }
+  .tex-ripas::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(90deg, #00000030 0%, #0000 22% 78%, #ffffff1c 100%); }
+  .tex-dots::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background-image: radial-gradient(#ffffff2b 1.4px, #0000 1.6px); background-size: 14px 14px; -webkit-mask-image: linear-gradient(105deg, #000 0%, #0006 60%, #0000 100%); mask-image: linear-gradient(105deg, #000 0%, #0006 60%, #0000 100%); }
+
+  .code { background: var(--code-bg); color: var(--code-ink); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.6; padding: 14px 16px; overflow-x: auto; }
+  .code b { color: #f0a35a; font-weight: 600; }
+  .code .cmt { color: #7d7566; }
+  .foot { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Vitrine · Header da loja · v1 (REJEITADA — sutil demais)</p>
+  <h1>Quatro texturas para a banda do topo</h1>
+  <p class="lede">Banda continua na cor da loja (<code>--cor-primaria</code>). Cada textura é só camada <code>::before/::after</code> por cima — funciona em qualquer tema. Sucessora: <code>barra-textura-v2.html</code>.</p>
+
+  <div class="controls">
+    <label>Cor da loja <input id="picker" type="color" value="#c1352b"></label>
+    <span class="swatches">
+      <button data-c="#c1352b" style="background:#c1352b"></button>
+      <button data-c="#166534" style="background:#166534"></button>
+      <button data-c="#1e3a8a" style="background:#1e3a8a"></button>
+      <button data-c="#7c2d92" style="background:#7c2d92"></button>
+      <button data-c="#b45309" style="background:#b45309"></button>
+      <button data-c="#0f172a" style="background:#0f172a"></button>
+    </span>
+  </div>
+
+  <section class="example"><div class="example-head"><span class="num">01</span><h2>Grão de filme</h2><p>Ruído fractal + vinheta. Orgânico.</p></div>
+    <div class="device"><div class="header tex-grao"><div class="header-inner"><div class="logo">B</div><div class="meta"><h3>Burger do Zé</h3><span class="badge"><span class="dot"></span>Aberto agora</span><br><span class="wpp"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.4 5 5.2-1.4A10 10 0 1 0 12 2Z"/></svg>(11) 98888-7777</span></div></div></div></div></section>
+
+  <section class="example"><div class="example-head"><span class="num">02</span><h2>Mesh gradient</h2><p>4 brilhos radiais. Glow moderno.</p></div>
+    <div class="device"><div class="header tex-mesh"><div class="header-inner"><div class="logo">B</div><div class="meta"><h3>Burger do Zé</h3><span class="badge"><span class="dot"></span>Aberto agora</span><br><span class="wpp"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.4 5 5.2-1.4A10 10 0 1 0 12 2Z"/></svg>(11) 98888-7777</span></div></div></div></div></section>
+
+  <section class="example"><div class="example-head"><span class="num">03</span><h2>Ripas diagonais</h2><p>Faixas 135° + brilho lateral.</p></div>
+    <div class="device"><div class="header tex-ripas"><div class="header-inner"><div class="logo">B</div><div class="meta"><h3>Burger do Zé</h3><span class="badge"><span class="dot"></span>Aberto agora</span><br><span class="wpp"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.4 5 5.2-1.4A10 10 0 1 0 12 2Z"/></svg>(11) 98888-7777</span></div></div></div></div></section>
+
+  <section class="example"><div class="example-head"><span class="num">04</span><h2>Dot matrix</h2><p>Grade de pontos com máscara diagonal.</p></div>
+    <div class="device"><div class="header tex-dots"><div class="header-inner"><div class="logo">B</div><div class="meta"><h3>Burger do Zé</h3><span class="badge"><span class="dot"></span>Aberto agora</span><br><span class="wpp"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.4 5 5.2-1.4A10 10 0 1 0 12 2Z"/></svg>(11) 98888-7777</span></div></div></div></div></section>
+
+  <p class="foot">Banda continua <code>bg-[var(--cor-primaria)]</code>. Adicione <code>relative isolate overflow-hidden</code> no <code>&lt;header&gt;</code>, conteúdo com <code>z-10</code>, textura numa <code>::before</code>.</p>
+</div>
+<script>
+  const picker = document.getElementById("picker"), root = document.documentElement;
+  const setCor = c => { root.style.setProperty("--cor-primaria", c); picker.value = c; };
+  picker.addEventListener("input", e => setCor(e.target.value));
+  document.querySelectorAll(".swatches button").forEach(b => b.addEventListener("click", () => setCor(b.dataset.c)));
+</script>
+</body>
+</html>

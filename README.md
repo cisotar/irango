@@ -4,7 +4,7 @@ Marketplace SaaS multitenant (modelo iFood) — lojistas cadastram loja, catálo
 
 ## Stack
 
-Next.js 16 (App Router) + TypeScript · Supabase (Postgres/Auth/Storage/RLS) · Tailwind v4 + shadcn/ui · react-hook-form + zod · Vitest + pglite · Vercel
+Next.js 16 (App Router) + TypeScript · Supabase (Postgres/Auth/Storage/RLS) · Tailwind v4 + shadcn/ui (primitivos `@base-ui`) · react-hook-form + zod · Upstash Redis (rate limit) · Serwist (PWA) · Sentry (observabilidade) · Vitest + pglite · Vercel
 
 Detalhes e justificativas em [`references/architecture.md`](references/architecture.md).
 

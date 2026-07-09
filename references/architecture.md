@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.16 | **Atualizado:** 2026-07-08
+**Versão:** 0.2.17 | **Atualizado:** 2026-07-09
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -42,7 +42,7 @@ iRango é um **marketplace SaaS multitenant** no modelo iFood — lojistas cadas
 | Linguagem | **TypeScript** | tipos gerados do schema Supabase — zero `any` manual |
 | Backend | **Supabase** | Postgres + Auth + Storage + Realtime + RLS multitenant |
 | Estilização | **Tailwind CSS v4** | utility-first; tokens CSS-first em `src/app/globals.css` (`@theme`), sem `tailwind.config.ts` |
-| Componentes | **shadcn/ui** | Radix UI + Tailwind, sem dependência opaca |
+| Componentes | **shadcn/ui** | Base UI (`@base-ui/react`) + Tailwind, sem dependência opaca |
 | Forms | **react-hook-form** + **zod** | validação isomórfica (mesma regra no client e server action) |
 | Toast | **sonner** | recomendado pelo shadcn |
 | Ícones | **lucide-react** | usado pelo shadcn, consistência garantida |
