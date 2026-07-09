@@ -59,7 +59,11 @@ type ProdutoModalProps = {
  *  - Desktop (>= md): PAISAGEM 2 colunas — à esquerda imagem grande (flex-1) +
  *    DESCRIÇÃO logo abaixo dela (fonte menor, scroll próprio, sem vazar); à
  *    direita o conteúdo (título/preço/quantidade/opcionais/subtotal/CTA) com
- *    SCROLL PRÓPRIO e footer fixo. Modal mais largo (md:max-w-3xl), altura fixa.
+ *    SCROLL PRÓPRIO e footer fixo. Modal full-screen (preenche a viewport toda).
+ *
+ * O container é FULL-SCREEN em ambos os breakpoints (mobile e desktop): ocupa a
+ * tela inteira, sem cantos arredondados, parecendo uma página nova. É só a moldura
+ * — o layout interno (retrato/paisagem) e toda a lógica de scroll não mudam.
  *
  * Preço unitário e subtotal aqui são PREVIEW de UX — o servidor recalcula tudo a
  * partir do banco no checkout (seguranca.md §10). Nenhum valor monetário daqui é
@@ -79,17 +83,25 @@ export function ProdutoModal({
   const quantidadeSecaoRef = useRef<HTMLDivElement>(null);
   const opcionaisSecaoRef = useRef<HTMLDivElement>(null);
 
-  // No mobile, ao sair de 0 (nenhum item escolhido) rola o corpo até o título
-  // "Opcionais" (ou até a seção de quantidade se o produto não tiver
-  // opcionais) — imagem e descrição saem da viewport mas seguem no DOM
+  // Ao sair de 0 (nenhum item escolhido) rola o corpo até o título "Opcionais"
+  // (ou até a seção de quantidade se o produto não tiver opcionais) — a seção de
+  // opcionais só aparece após o 1º item, então rola-se para revelá-la. Vale nos
+  // dois breakpoints: no mobile imagem/descrição saem da viewport (seguem no DOM);
+  // no desktop o corpo é a coluna direita rolável
   // (design-claude/vitrine/produto-modal-mobile-v2-scroll.html).
   useEffect(() => {
     if (quantidade !== 1) return;
-    if (typeof window === "undefined" || window.innerWidth >= 768) return;
+    if (typeof window === "undefined") return;
     const corpo = corpoRef.current;
     const secao = opcionaisSecaoRef.current ?? quantidadeSecaoRef.current;
     if (!corpo || !secao) return;
-    corpo.scrollTo({ top: secao.offsetTop - 8, behavior: "smooth" });
+    // Deslocamento medido em relação ao CORPO rolável (não ao offsetParent, que é o
+    // Popup fixed e embute a altura do header) — assim o TOPO da seção "Opcionais"
+    // encosta no topo do corpo e o título fica visível. Usar offsetTop rolava a mais
+    // (a altura do header), empurrando o título pra fora e deixando o 1º item no topo.
+    const desloc =
+      secao.getBoundingClientRect().top - corpo.getBoundingClientRect().top;
+    corpo.scrollTo({ top: corpo.scrollTop + desloc - 8, behavior: "smooth" });
   }, [quantidade]);
 
   if (!produto) return null;
@@ -180,10 +192,15 @@ export function ProdutoModal({
       <DialogContent
         // Esconde o botão de fechar padrão do primitivo — usamos o ✕ sobre a
         // faixa primária (contraste branco), abaixo. Sem padding no container:
-        // header/corpo/footer controlam o próprio espaçamento. No desktop o modal
-        // fica mais largo (md:max-w-3xl) e com altura fixa para o layout paisagem.
+        // header/corpo/footer controlam o próprio espaçamento. FULL-SCREEN só no
+        // MOBILE (parece página nova): base sobrescreve o box do primitivo —
+        // top-0/left-0 + translate zerado, w-screen/h-dvh + max-w/max-h-none,
+        // rounded-none (full-bleed). No DESKTOP (md:) restaura o box centralizado
+        // original do primitivo (top/left-1/2 + translate, w-[calc(100vw-2rem)],
+        // max-w-3xl, altura min(560px,…), rounded-2xl) e o layout paisagem
+        // (md:flex-row). h-dvh acompanha o viewport dinâmico do mobile (barra do browser).
         showCloseButton={false}
-        className="gap-0 p-0 md:max-w-3xl md:h-[min(560px,calc(100dvh-2rem))] md:flex-row [&>button.absolute]:hidden"
+        className="gap-0 p-0 top-0 left-0 translate-x-0 translate-y-0 h-dvh max-h-none w-screen max-w-none rounded-none md:top-1/2 md:left-1/2 md:h-[min(560px,calc(100dvh-2rem))] md:max-h-[calc(100dvh-2rem)] md:w-[calc(100vw-2rem)] md:max-w-3xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:flex-row [&>button.absolute]:hidden"
       >
         {/* Coluna ESQUERDA (desktop) — imagem em destaque + descrição abaixo.
             É uma flex-column de altura cheia: a imagem ocupa o espaço flexível
@@ -217,10 +234,10 @@ export function ProdutoModal({
               type="button"
               aria-label="Fechar detalhes do produto"
               onClick={() => onOpenChange(false)}
-              className="absolute right-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white hover:bg-white/25"
+              className="absolute right-3 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white hover:bg-white/25"
             >
-              {/* X grande sem depender de lib aqui (a faixa é nossa) */}
-              <span aria-hidden className="text-lg font-black leading-none">
+              {/* X sem depender de lib aqui (a faixa é nossa) */}
+              <span aria-hidden className="text-sm font-black leading-none">
                 ✕
               </span>
             </button>
@@ -271,7 +288,7 @@ export function ProdutoModal({
             {disponivel && grupos.length > 0 ? (
               <div
                 ref={opcionaisSecaoRef}
-                className={`px-4 pb-4 md:pt-4 ${quantidade > 0 ? "" : "hidden md:block"}`}
+                className={`px-4 pb-4 md:pt-4 ${quantidade > 0 ? "" : "hidden"}`}
               >
                 <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
                   <p className="mb-1 text-xs font-bold uppercase tracking-wide text-marrom-cafe">
@@ -402,12 +419,15 @@ export function ProdutoModal({
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* CTA inline (SÓ mobile) — só aparece após quantidade > 0, logo
-                abaixo dos opcionais/quantidade. No desktop o CTA continua no
-                footer fixo (design-claude/vitrine/produto-modal-mobile-v2-scroll.html). */}
-            {disponivel && quantidade > 0 ? (
-              <div className="px-4 pb-4 md:hidden">
+          {/* Footer fixo (não rola) — CTA de adicionar (com subtotal no próprio
+              botão) OU esgotado quando indisponível + "Mais itens". Fixo nos dois
+              breakpoints (design-claude/vitrine/produto-modal-mobile-v2-scroll.html). */}
+          <div className="shrink-0 border-t border-[#eeeeee]">
+            {/* CTA + ação secundária */}
+            <div className="flex flex-col gap-2 p-4 pb-5">
+              {disponivel && quantidade > 0 ? (
                 <Button
                   type="button"
                   onClick={confirmar}
@@ -417,45 +437,17 @@ export function ProdutoModal({
                   <span>Adicionar ao carrinho</span>
                   <span>{formatarMoeda(subtotal)}</span>
                 </Button>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Footer fixo (não rola) — subtotal PREVIEW + CTA + "Mais itens" */}
-          <div className="shrink-0 border-t border-[#eeeeee]">
-            {/* Subtotal ao vivo (PREVIEW) */}
-            <div
-              aria-live="polite"
-              aria-atomic="true"
-              className={`flex items-center justify-between bg-[#f9f9f9] px-4 py-3 ${
-                disponivel ? "" : "opacity-45"
-              }`}
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--texto-muted)]">
-                Subtotal do item
-              </span>
-              <span className="text-lg font-black text-[var(--cor-destaque)]">
-                {formatarMoeda(subtotal)}
-              </span>
-            </div>
-
-            {/* CTA + ação secundária */}
-            <div className="flex flex-col gap-2 p-4 pb-5">
-              <Button
-                type="button"
-                onClick={confirmar}
-                disabled={!disponivel || quantidade === 0}
-                aria-label={
-                  disponivel
-                    ? `Adicionar ${quantidade} ${produto.nome} ao carrinho por ${formatarMoeda(subtotal)}`
-                    : "Produto esgotado — não é possível adicionar ao carrinho"
-                }
-                className={`min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white hover:bg-[var(--cor-destaque)]/90 disabled:bg-[#9a9a9a] ${
-                  disponivel ? "hidden md:flex" : "flex"
-                }`}
-              >
-                {disponivel ? "Adicionar ao carrinho" : "Produto esgotado"}
-              </Button>
+              ) : null}
+              {!disponivel ? (
+                <Button
+                  type="button"
+                  disabled
+                  aria-label="Produto esgotado — não é possível adicionar ao carrinho"
+                  className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white disabled:bg-[#9a9a9a]"
+                >
+                  Produto esgotado
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
