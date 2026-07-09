@@ -19,7 +19,7 @@ Execute **todas as etapas em ordem**, sempre:
 0. Verificar escopo existente + aprender padrões
 1. Especificar
 2. Quebrar em issues
-3. Para cada issue: planejar/arquitetar → **[RED-FIRST: teste falho]** → executar → revisar ‖ testar ‖ auditar → [popular + deploy de migration, se schema] → verificar → escriba
+3. Para cada issue: planejar/arquitetar → **[RED-FIRST: teste falho]** → executar → revisar ‖ testar ‖ auditar [‖ acelerar, se perf-sensível] → [popular + deploy de migration, se schema] → verificar → escriba
 4. Verificação final + aviso de deploy
 
 **Não há "escopo trivial" que justifique pular quebrar, planejar, TDD, testar, auditar ou verificar.** Mesmo um fix de 1 linha passa por todas as etapas. A redundância é intencional — cada etapa cobre uma classe de erro diferente. Se considerar pular alguma etapa, pare e pergunte ao usuário antes.
@@ -76,6 +76,7 @@ O modelo de cada agente é definido no frontmatter do próprio arquivo em `.clau
 | `revisar` | Qualidade | **Sempre** após `executar` (paralelo com `testar`/`auditar`). Code review: TypeScript, padrões do projeto, DRY, dead code. Não é segurança. |
 | `testar` | Qualidade | **Sempre** após `executar` (paralelo com `revisar`/`auditar`). Cobre código já implementado; confirma que o RED virou GREEN |
 | `auditar` | Segurança | **Sempre** após `executar` (paralelo com `revisar`/`testar`). Pega vetores sutis. Recebe TODOS os arquivos modificados na issue |
+| `acelerar` | Performance | Após `executar` em issue **perf-sensível**: toca vitrine/rota pública, checkout, query nova/alterada, migration, componente `'use client'` novo ou dependência nova no cliente. Roda em paralelo com os três acima. Só audita — findings GARGALO corrigidos no mesmo ciclo |
 | `depurar` | Bloqueio | Quando `executar` ou `verificar` trava — erro de runtime, PGRST204, build quebrado. Isola causa raiz, propõe fix mínimo. Alternativa a re-planejar. |
 | `popular` | Schema | Após `migrar` + `executar` em issue de schema. Atualiza `supabase/seed.sql` com dados fictícios compatíveis. Pré-condição de `verificar` quando seed está desatualizado. |
 | `verificar` | Validação | **Sempre** após revisar/testar/auditar. Roda o app (contra cloud) e confirma comportamento real. Pré-condição: migration no cloud (passo 6c). |
@@ -98,14 +99,15 @@ Issue que cria/altera UI (tela, componente, fluxo do cliente): consulte `desenha
 
 Após `executar` cada issue, ordem obrigatória:
 
-1. **`revisar` + `testar` + `auditar` em paralelo** — dispare os três agentes numa única mensagem (múltiplas tool calls) para rodarem simultaneamente sobre o código implementado:
+1. **`revisar` + `testar` + `auditar` [+ `acelerar`] em paralelo** — dispare os agentes numa única mensagem (múltiplas tool calls) para rodarem simultaneamente sobre o código implementado:
    - `revisar` — qualidade: TypeScript, padrões do projeto, DRY, dead code. Findings CONTRATO corrigidos no mesmo ciclo.
    - `testar` — qualidade funcional. Confirma que o teste RED (issue crítica) está GREEN. Cobre bordas e recálculo no servidor.
    - `auditar` — segurança. Recebe todos os arquivos modificados + relacionados. Findings MÉDIA+ corrigidos no mesmo ciclo.
+   - `acelerar` — **só em issue perf-sensível** (vitrine/rota pública, checkout, query nova/alterada, migration, `'use client'` novo, dependência nova no cliente). Findings GARGALO corrigidos no mesmo ciclo; registra a auditoria em `performance/AAAA-MM-DD-<escopo>.md`.
 2. **`verificar`** — roda o app (contra cloud, não local) e confirma o comportamento real do fluxo afetado. Pré-condição: passo 6c concluído se houver migration.
 3. **`escriba`** — sempre. Agente decide se atualiza `references/`. Se reportar "nenhuma atualização necessária", seguir adiante.
 
-`revisar`, `testar`, `auditar`, `verificar` e `escriba` nunca são pulados. Se o agente concluir que não há nada a fazer, ele reporta explicitamente — a decisão é dele, não sua.
+`revisar`, `testar`, `auditar`, `verificar` e `escriba` nunca são pulados. Se o agente concluir que não há nada a fazer, ele reporta explicitamente — a decisão é dele, não sua. `acelerar` é condicional (critério de perf-sensível acima); quando não incluído, registre "acelerar: não aplicável" no relatório da issue.
 
 ---
 
@@ -219,10 +221,11 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
    - `depurar` reporta "bloqueio de schema" → reexecute `migrar`
    - `depurar` reporta causa lógica simples → reexecute `planejar`
 6. **Validação pós-`executar` (ordem obrigatória):**
-   - 6a. **`revisar` + `testar` + `auditar` em paralelo** — dispare os três numa única mensagem (múltiplas tool calls):
+   - 6a. **`revisar` + `testar` + `auditar` [+ `acelerar`] em paralelo** — dispare todos numa única mensagem (múltiplas tool calls):
      - `revisar` — qualidade do código. Findings CONTRATO viram Edit imediato + `pnpm build`.
      - `testar` — confirma RED→GREEN, cobre bordas e recálculo no servidor.
      - `auditar` — recebe todos os arquivos modificados. Findings MÉDIA+ viram Edit imediato + `pnpm build` + `npx vitest run` (fix pode quebrar teste existente). NUNCA fechar com brecha "para follow-up".
+     - `acelerar` — **incluir se a issue é perf-sensível**: toca vitrine/rota pública, checkout, query nova/alterada, migration, componente `'use client'` novo ou dependência nova no cliente. Findings GARGALO viram Edit imediato + `pnpm build`; CUSTO pode virar issue separada. O agente registra a auditoria (mesmo sem achados) em `performance/AAAA-MM-DD-<escopo>.md`. Issue de copy/CSS puro/doc: não incluir, registrar "acelerar: não aplicável" no relatório.
    - 6b. **`popular` (se a issue criou/alterou migration)** — atualiza `supabase/seed.sql` com dados fictícios compatíveis com o schema novo. Pré-condição de `verificar` quando o seed está desatualizado.
    - **6c. 🛑 DEPLOY DE MIGRATION (obrigatório se a issue criou/alterou `supabase/migrations/`).** O app roda contra o cloud — sem este passo, `verificar` falha com `PGRST204` e a issue parece quebrada. NÃO é opcional nem "para o fim":
      1. `npx supabase migration list` — a nova migration aparece como **só-local** (coluna Remote vazia)?
@@ -275,8 +278,9 @@ O fluxo termina quando:
 
 Ao concluir, exiba o resumo:
 - Total de issues executadas
-- Agentes usados por tipo (especificar: N, quebrar: N, planejar: N, arquitetar: N, migrar: N, desenhar: N, tdd: N, executar: N, revisar: N, testar: N, auditar: N, depurar: N, popular: N, verificar: N, escriba: N)
+- Agentes usados por tipo (especificar: N, quebrar: N, planejar: N, arquitetar: N, migrar: N, desenhar: N, tdd: N, executar: N, revisar: N, testar: N, auditar: N, acelerar: N, depurar: N, popular: N, verificar: N, escriba: N)
 - Vulnerabilidades encontradas pelo `auditar` e status (corrigida / issue aberta)
+- Findings de performance do `acelerar` por severidade e status (corrigido / issue aberta / não aplicável) + caminhos dos registros em `performance/`
 - Cobertura de testes por tipo (unitário: N, Server Action: N, RLS: N, fluxo: N)
 - Arquivos criados/modificados
 - Desvios registrados
