@@ -105,7 +105,7 @@ O iRango **não participa** da etapa de pagamento. O lojista é responsável por
 
 ## 5. Modelo de Cobrança (Lojistas)
 
-> Decisão pendente — a definir antes do primeiro cliente pago.
+> Modelo de cobrança final (mensalidade vs. freemium etc.) — decisão pendente, a definir antes do primeiro cliente pago.
 
 Sugestões a avaliar:
 
@@ -114,6 +114,18 @@ Sugestões a avaliar:
 | Mensalidade fixa | previsível pro lojista e pro SaaS | não escala com uso |
 | Freemium (grátis até X pedidos) | baixa barreira de entrada | risco de abuso |
 | Trial 14 dias grátis + plano pago | padrão SaaS, baixo risco | precisa cobrança automatizada |
+
+### RN-A6 — Trial de 14 dias no cadastro (já implementado)
+
+Toda loja nasce com `assinatura_status = 'trial'` e `assinatura_fim_periodo = now() + 14 dias`. Decidido 100% pelo servidor — o client nunca envia esses campos (RLS de INSERT em `lojas` rejeita `assinatura_status != 'trial'` na criação).
+
+Três caminhos de criação de loja aplicam a regra:
+
+1. **Cadastro público** — `src/lib/actions/auth.ts` (`TRIAL_DIAS = 14`).
+2. **Auto-cura de conta órfã** — RPC `garantir_loja_do_dono` (`supabase/migrations/20260615011500_garantir_loja_do_dono.sql`).
+3. **Coluna do banco** — `assinatura_status` tem `default 'trial'` no schema (`supabase/migrations/20260614000129_schema_inicial.sql`), como rede de segurança.
+
+**Exceção conhecida — criação via painel admin:** `src/app/admin/assinantes/actions.ts` (`criarLojaAdmin`) seta `assinatura_status: 'trial'` mas **não** seta `assinatura_fim_periodo`. Como a coluna não tem valor padrão, fica `NULL` → trial sem data de término (efetivamente indefinido, não 14 dias). Comportamento aceito como está (loja criada por admin não precisa do prazo padrão) — não é bug a corrigir, é assimetria intencional entre os fluxos.
 
 ---
 
