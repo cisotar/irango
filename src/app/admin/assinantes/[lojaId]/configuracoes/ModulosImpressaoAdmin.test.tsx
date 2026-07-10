@@ -9,7 +9,7 @@
  *       exceção → error genérico.
  *
  * Ambiente: vitest environment=node — SEM jsdom/@testing-library (padrão do
- * projeto: ConfiguracaoAdminClient.test.tsx, AcoesStatus.test.tsx). Não há clique
+ * projeto: CuponsAdminClient.test.tsx, AcoesStatus.test.tsx). Não há clique
  * DOM real; a prova de wiring é feita CAPTURANDO as props que cada `Switch`
  * recebe (via stub mockado, indexado por `id`) e INVOCANDO o `onCheckedChange`.
  *

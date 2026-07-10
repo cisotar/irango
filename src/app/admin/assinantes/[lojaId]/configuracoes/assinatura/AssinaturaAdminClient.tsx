@@ -21,7 +21,7 @@ import {
  *
  * As actions do lojista têm forma `(payload)` / `()`; as admin têm `(lojaId, payload)`
  * / `(lojaId)`. Aqui adaptamos `(lojaId, payload) → (payload)` / `(lojaId) → ()`
- * fixando `lojaId` — mesmo padrão dos adapters de `ConfiguracaoAdminClient` (wrapper
+ * fixando `lojaId` — mesmo padrão dos adapters do `PerfilAdminClient` (wrapper
  * `'use client'` com closure JS). Ambas retornam a MESMA união
  * `{ ok:true } | { ok:true; url } | { ok:false; erro }`, então as closures são
  * estruturalmente assinaláveis a `AcoesAssinatura`.
