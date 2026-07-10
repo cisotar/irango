@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.19 | **Atualizado:** 2026-07-10
+**Versão:** 0.2.20 | **Atualizado:** 2026-07-10
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -337,7 +337,7 @@ const items = order.order_items
 - Componente aparece em 2+ lugares → extrai pra `components/`
 - `components/ui/` → shadcn gerado, não editar manualmente
 - `components/vitrine/` → exclusivos da loja pública
-- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente. O shell de navegação segue o mesmo princípio: `NavPainel.tsx` (`SidebarPainel`/`TopbarPainel`) recebe um `contexto?` opcional (`basePath`/`título`/flags de menu; default = comportamento do painel do lojista) — o painel do lojista é a fonte única do front, o hub admin (`/admin/assinantes/[lojaId]`) reusa o mesmo shell por parametrização, nunca por cópia de markup
+- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente. O shell de navegação segue o mesmo princípio: `NavPainel.tsx` (`SidebarPainel`/`TopbarPainel`) recebe um `contexto?` opcional (só `basePath`/`título`; default = comportamento do painel do lojista) — o painel do lojista é a fonte única do front, o hub admin (`/admin/assinantes/[lojaId]`) reusa o mesmo shell trocando só o `basePath`, byte-a-byte idêntico ao lojista, nunca por cópia de markup
 
 ### Server vs Client
 

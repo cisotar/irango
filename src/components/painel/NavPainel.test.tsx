@@ -109,11 +109,7 @@ describe("NavPainel — default (lojista, sem contexto)", () => {
 });
 
 describe("NavPainel — contexto admin", () => {
-  const ctxAdmin: ContextoNav = {
-    basePath: "/admin/assinantes/L1",
-    ocultarAssinatura: true,
-    configConsolidada: true,
-  };
+  const ctxAdmin: ContextoNav = { basePath: "/admin/assinantes/L1" };
 
   it("reescreve todos os hrefs para a base admin", () => {
     const hrefs = links(render("/admin/assinantes/L1", ctxAdmin)).map(
@@ -130,16 +126,22 @@ describe("NavPainel — contexto admin", () => {
     expect(hrefs.every((h) => h.startsWith("/admin/assinantes/L1"))).toBe(true);
   });
 
-  it("omite Assinatura e consolida Configurações (sem subitens)", () => {
+  it("renderiza os 6 sub-itens de Configurações sob a base admin, incluindo Assinatura", () => {
     const hrefs = links(render("/admin/assinantes/L1", ctxAdmin)).map(
       (l) => l.href,
     );
 
-    expect(hrefs).not.toContain("/admin/assinantes/L1/configuracoes/assinatura");
-    // configConsolidada: nenhum subitem de configurações.
+    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/perfil");
+    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/horarios");
+    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/entregas");
+    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/pagamentos");
+    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/tema");
+    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/assinatura");
+    // Exatamente 6 sub-itens sob configuracoes/ — paridade com o lojista.
     expect(
-      hrefs.some((h) => h.startsWith("/admin/assinantes/L1/configuracoes/")),
-    ).toBe(false);
+      hrefs.filter((h) => h.startsWith("/admin/assinantes/L1/configuracoes/"))
+        .length,
+    ).toBe(6);
     // Opcionais continua presente nos dois contextos.
     expect(hrefs).toContain("/admin/assinantes/L1/produtos/opcionais");
   });

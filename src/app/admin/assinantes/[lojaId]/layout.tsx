@@ -15,14 +15,15 @@ export const dynamic = "force-dynamic";
  * e é re-provado em `carregarCabecalhoLojaAdmin` por request).
  *
  * Paridade visual com o painel do lojista: monta `SidebarPainel`/`TopbarPainel`
- * PARAMETRIZADOS pelo contexto admin (basePath da loja-alvo, Assinatura oculta,
- * Configurações consolidada) — nenhum markup de nav copiado. A identidade da
- * loja-alvo e o aviso de contexto vivem na FAIXA persistente da coluna de
- * conteúdo (visível nos dois breakpoints, em todas as áreas) — não dentro da
- * Sidebar/Topbar, que se escondem por breakpoint.
+ * PARAMETRIZADOS pelo contexto admin (só o basePath da loja-alvo) — nenhum
+ * markup de nav copiado. A identidade da loja-alvo e o aviso de contexto vivem
+ * na FAIXA persistente da coluna de conteúdo (visível nos dois breakpoints, em
+ * todas as áreas) — não dentro da Sidebar/Topbar, que se escondem por
+ * breakpoint.
  *
- * Nav/faixa são UX pura: ocultar Assinatura é organização, não segurança. A
- * barreira real é `verificarAdminSaaS()` + a ausência da rota `.../assinatura`.
+ * Nav/faixa são UX pura: nenhum link concede poder. A barreira real de acesso é
+ * `verificarAdminSaaS()` + as Server Actions admin escopadas por `loja_id` no
+ * servidor — não a presença ou ausência de um item de menu.
  *
  * Decisão de carga (layout vs sub-rota): o layout carrega só o cabeçalho LEVE
  * (`carregarCabecalhoLojaAdmin`), enquanto cada sub-rota carrega seu agregado.
@@ -37,11 +38,7 @@ export default async function HubLojaLayout({
   const { lojaId } = await params;
   const loja = await carregarCabecalhoLojaAdmin(lojaId);
 
-  const contexto = {
-    basePath: `/admin/assinantes/${lojaId}`,
-    ocultarAssinatura: true,
-    configConsolidada: true,
-  };
+  const contexto = { basePath: `/admin/assinantes/${lojaId}` };
 
   return (
     <div className="flex min-h-svh">
