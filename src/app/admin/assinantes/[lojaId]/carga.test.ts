@@ -105,7 +105,7 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
 // que já existe. Garante que o loader recusa não-UUID via o helper canônico.
 
 // Módulo alvo: hoje só um STUB que lança "TODO: GREEN" → RED por asserção.
-import { carregarLojaAdmin } from "./carga";
+import { carregarLojaAdmin, carregarLojaAdminBase } from "./carga";
 
 const todasAsQueries = [
   buscarLojaAdminPorId,
@@ -203,6 +203,105 @@ describe("carregarLojaAdmin — sucesso: escopo RN-2/3", () => {
       const idRecebido = q.mock.calls[0]?.[1];
       expect(idRecebido).toBe(LOJA_ID);
       expect(idRecebido).not.toBe(OUTRA_LOJA);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// carregarLojaAdminBase (issue 150) — loader ENXUTO: SÓ a linha `lojas`.
+// Mesma ordem fail-closed de carregarLojaAdmin, mas SEM over-fetch de
+// categorias/produtos/zonas/formas (as sub-rotas Perfil/Horários/Tema/Assinatura).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Queries de over-fetch que o loader base NÃO deve tocar (só as sub-rotas 152/153).
+const queriesOverFetch = [
+  buscarCategorias,
+  buscarProdutosDoLojista,
+  listarZonasComTaxas,
+  listarFormasPagamento,
+];
+
+describe("carregarLojaAdminBase — RN-1: admin não provado", () => {
+  it("propaga a exceção e NÃO faz nenhuma leitura (fail-closed)", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(carregarLojaAdminBase(LOJA_ID)).rejects.toThrow("acesso negado");
+
+    // verificarAdminSaaS está FORA do try → a falha propaga sem elevar/ler.
+    expect(createServiceClient).not.toHaveBeenCalled();
+    for (const q of todasAsQueries) {
+      expect(q).not.toHaveBeenCalled();
+    }
+    expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+describe("carregarLojaAdminBase — lojaId inválido (083)", () => {
+  it("recusa não-UUID com notFound() ANTES de qualquer leitura", async () => {
+    await expect(carregarLojaAdminBase("nao-e-uuid")).rejects.toBeInstanceOf(NotFoundError);
+
+    // notFound dispara antes de provar admin, elevar svc ou rodar query.
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    for (const q of todasAsQueries) {
+      expect(q).not.toHaveBeenCalled();
+    }
+  });
+
+  it("recusa string vazia com notFound() ANTES de qualquer leitura", async () => {
+    await expect(carregarLojaAdminBase("")).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    for (const q of todasAsQueries) {
+      expect(q).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe("carregarLojaAdminBase — loja inexistente", () => {
+  it("sinaliza notFound() quando buscarLojaAdminPorId retorna null", async () => {
+    buscarLojaAdminPorId.mockResolvedValueOnce(null as never);
+
+    await expect(carregarLojaAdminBase(LOJA_ID)).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(notFound).toHaveBeenCalledTimes(1);
+    expect(verificarAdminSaaS).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("carregarLojaAdminBase — sucesso", () => {
+  it("prova admin ANTES de elevar service_role e ler", async () => {
+    await carregarLojaAdminBase(LOJA_ID);
+
+    expect(ordemChamadas[0]).toBe("verificarAdminSaaS");
+    expect(ordemChamadas.indexOf("verificarAdminSaaS")).toBeLessThan(
+      ordemChamadas.indexOf("createServiceClient"),
+    );
+  });
+
+  it("retorna a linha `lojas` (loja em onboarding ativo=false INCLUSA)", async () => {
+    const loja = await carregarLojaAdminBase(LOJA_ID);
+
+    expect(notFound).not.toHaveBeenCalled();
+    expect(loja).toBe(lojaFake);
+    expect((loja as { ativo: boolean }).ativo).toBe(false);
+  });
+
+  it("busca a loja pelo lojaId VALIDADO, nunca OUTRA_LOJA", async () => {
+    await carregarLojaAdminBase(LOJA_ID);
+
+    expect(buscarLojaAdminPorId).toHaveBeenCalledTimes(1);
+    const idRecebido = buscarLojaAdminPorId.mock.calls[0]?.[1];
+    expect(idRecebido).toBe(LOJA_ID);
+    expect(idRecebido).not.toBe(OUTRA_LOJA);
+  });
+
+  it("NÃO faz over-fetch: categorias/produtos/zonas/formas nunca são buscadas", async () => {
+    await carregarLojaAdminBase(LOJA_ID);
+
+    for (const q of queriesOverFetch) {
+      expect(q).not.toHaveBeenCalled();
     }
   });
 });

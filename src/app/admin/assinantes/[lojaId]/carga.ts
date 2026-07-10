@@ -67,3 +67,42 @@ export async function carregarLojaAdmin(lojaId: string): Promise<LojaAdminAgrega
 
   return { loja, categorias, produtos, zonas, formasPagamento };
 }
+
+/**
+ * Loader server-only ENXUTO do painel admin SaaS: carrega SÓ a linha `lojas`
+ * (via `buscarLojaAdminPorId`), sem categorias/produtos/zonas/formas. Serve as
+ * sub-rotas Perfil/Horários/Tema/Assinatura (issues 152/153), que precisam dos
+ * campos completos da loja (perfil, `horarios`, `tema`, `timezone`) — mas NÃO do
+ * catálogo/entrega/pagamento que `carregarLojaAdmin` traz (evita over-fetch).
+ *
+ * MESMA ordem inegociável (fail-closed) de `carregarLojaAdmin`:
+ *  1. `validarLojaIdAdmin(lojaId)` (083, z.guid()) — não-UUID → `notFound()`
+ *     ANTES de qualquer leitura (nenhum service client, nenhuma query).
+ *  2. `verificarAdminSaaS()` FORA do try, ANTES de `createServiceClient()` — a
+ *     falha PROPAGA (RN-1, D-4): nenhuma elevação a service_role nem leitura.
+ *  3. `buscarLojaAdminPorId(svc, id)` (TABELA base, enxerga loja inativa em
+ *     onboarding); `null` → `notFound()`.
+ *
+ * A elevação a service_role fica AQUI (nunca em `page.tsx`): a decisão (b) do
+ * plano (issue 150) mantém o `svc` dentro dos loaders — a página recebe só o
+ * dado materializado. Ver `enforcement-escopo-admin.test.ts`.
+ */
+export async function carregarLojaAdminBase(lojaId: string): Promise<LojaCompleta> {
+  const validacao = validarLojaIdAdmin(lojaId);
+  if (!validacao.ok) {
+    notFound();
+  }
+  const idValidado = validacao.lojaId;
+
+  // Prova de admin ANTES de elevar a service_role; a falha PROPAGA (nenhuma leitura).
+  await verificarAdminSaaS();
+
+  const svc = createServiceClient();
+
+  const loja = await buscarLojaAdminPorId(svc, idValidado);
+  if (!loja) {
+    notFound();
+  }
+
+  return loja;
+}
