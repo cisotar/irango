@@ -101,6 +101,22 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
   listarFormasPagamento: (c: unknown, id: string) => listarFormasPagamento(c, id),
 }));
 
+// ── Queries de assinatura (issue 153): planos + faturas. ───────────────────────
+const planoAtualFake = { id: "plano-1", nome: "Mensal", preco: 5000, intervalo: "mês" };
+const buscarPlanoAtivo = vi.fn(async (_c: unknown, _id: string) => planoAtualFake);
+const planosCatalogoFake = [{ id: "plano-1" }, { id: "plano-2" }];
+const listarPlanosAtivos = vi.fn(async (_c: unknown) => planosCatalogoFake);
+vi.mock("@/lib/supabase/queries/planos", () => ({
+  buscarPlanoAtivo: (c: unknown, id: string) => buscarPlanoAtivo(c, id),
+  listarPlanosAtivos: (c: unknown) => listarPlanosAtivos(c),
+}));
+
+const faturasAdminFake = [{ id: "fat-1", loja_id: LOJA_ID }];
+const listarFaturasDaLojaAdmin = vi.fn(async (_c: unknown, _id: string) => faturasAdminFake);
+vi.mock("@/lib/supabase/queries/pagamentosAssinatura", () => ({
+  listarFaturasDaLojaAdmin: (c: unknown, id: string) => listarFaturasDaLojaAdmin(c, id),
+}));
+
 // validarLojaIdAdmin (083) NÃO é mockado: usa a implementação real (z.guid()),
 // que já existe. Garante que o loader recusa não-UUID via o helper canônico.
 
@@ -110,6 +126,7 @@ import {
   carregarLojaAdminBase,
   carregarZonasAdmin,
   carregarFormasPagamentoAdmin,
+  carregarAssinaturaAdmin,
 } from "./carga";
 
 const todasAsQueries = [
@@ -400,5 +417,114 @@ describe("carregarFormasPagamentoAdmin — fail-closed + escopo", () => {
     expect(buscarCategorias).not.toHaveBeenCalled();
     expect(buscarProdutosDoLojista).not.toHaveBeenCalled();
     expect(listarZonasComTaxas).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// carregarAssinaturaAdmin (issue 153) — loader AGREGADO da sub-rota de Assinatura:
+// { loja, planoAtual, planos, faturas } sob UM único svc admin-provado. Mesma
+// cadeia fail-closed dos demais loaders; escopa tudo pela lojaId validada.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("carregarAssinaturaAdmin — RN-1: admin não provado", () => {
+  it("propaga a exceção e NÃO faz nenhuma leitura (fail-closed)", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(carregarAssinaturaAdmin(LOJA_ID)).rejects.toThrow("acesso negado");
+
+    // verificarAdminSaaS está FORA do try → a falha propaga sem elevar/ler.
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
+    expect(buscarPlanoAtivo).not.toHaveBeenCalled();
+    expect(listarPlanosAtivos).not.toHaveBeenCalled();
+    expect(listarFaturasDaLojaAdmin).not.toHaveBeenCalled();
+    expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+describe("carregarAssinaturaAdmin — lojaId inválido (083)", () => {
+  it("recusa não-UUID com notFound() ANTES de provar admin, elevar ou ler", async () => {
+    await expect(carregarAssinaturaAdmin("nao-e-uuid")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
+    expect(listarPlanosAtivos).not.toHaveBeenCalled();
+    expect(listarFaturasDaLojaAdmin).not.toHaveBeenCalled();
+  });
+});
+
+describe("carregarAssinaturaAdmin — loja inexistente", () => {
+  it("sinaliza notFound() quando buscarLojaAdminPorId retorna null (sem ler planos/faturas)", async () => {
+    buscarLojaAdminPorId.mockResolvedValueOnce(null as never);
+
+    await expect(carregarAssinaturaAdmin(LOJA_ID)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+
+    expect(notFound).toHaveBeenCalledTimes(1);
+    expect(verificarAdminSaaS).toHaveBeenCalledTimes(1);
+    // notFound interrompe ANTES do Promise.all de planos/faturas.
+    expect(buscarPlanoAtivo).not.toHaveBeenCalled();
+    expect(listarPlanosAtivos).not.toHaveBeenCalled();
+    expect(listarFaturasDaLojaAdmin).not.toHaveBeenCalled();
+  });
+});
+
+describe("carregarAssinaturaAdmin — sucesso: escopo + agregação", () => {
+  it("prova admin ANTES de elevar service_role e ler", async () => {
+    await carregarAssinaturaAdmin(LOJA_ID);
+
+    expect(ordemChamadas[0]).toBe("verificarAdminSaaS");
+    expect(ordemChamadas.indexOf("verificarAdminSaaS")).toBeLessThan(
+      ordemChamadas.indexOf("createServiceClient"),
+    );
+  });
+
+  it("retorna o agregado { loja, planoAtual, planos, faturas } da loja pedida", async () => {
+    // Loja com plano vigente: exercita o ramo `loja.plano_id ? buscarPlanoAtivo`.
+    buscarLojaAdminPorId.mockResolvedValueOnce({
+      ...lojaFake,
+      plano_id: "plano-1",
+    } as never);
+
+    const resultado = await carregarAssinaturaAdmin(LOJA_ID);
+
+    expect(notFound).not.toHaveBeenCalled();
+    expect(resultado.loja).toEqual({ ...lojaFake, plano_id: "plano-1" });
+    expect(resultado.planoAtual).toBe(planoAtualFake);
+    expect(resultado.planos).toBe(planosCatalogoFake);
+    expect(resultado.faturas).toBe(faturasAdminFake);
+  });
+
+  it("escopa TODAS as queries pela lojaId validada (planos por plano_id da loja; faturas por lojaId)", async () => {
+    buscarLojaAdminPorId.mockResolvedValueOnce({
+      ...lojaFake,
+      plano_id: "plano-1",
+    } as never);
+
+    await carregarAssinaturaAdmin(LOJA_ID);
+
+    expect(buscarLojaAdminPorId.mock.calls[0]?.[1]).toBe(LOJA_ID);
+    // planoAtual buscado pelo plano_id da loja-alvo (não por um id do cliente).
+    expect(buscarPlanoAtivo).toHaveBeenCalledTimes(1);
+    expect(buscarPlanoAtivo.mock.calls[0]?.[1]).toBe("plano-1");
+    // faturas escopadas pela lojaId validada, nunca OUTRA_LOJA.
+    expect(listarFaturasDaLojaAdmin).toHaveBeenCalledTimes(1);
+    expect(listarFaturasDaLojaAdmin.mock.calls[0]?.[1]).toBe(LOJA_ID);
+    expect(listarFaturasDaLojaAdmin.mock.calls[0]?.[1]).not.toBe(OUTRA_LOJA);
+  });
+
+  it("loja NUNCA-assinou (plano_id ausente) → planoAtual null SEM chamar buscarPlanoAtivo", async () => {
+    // lojaFake base não tem plano_id → ramo `: Promise.resolve(null)`.
+    const resultado = await carregarAssinaturaAdmin(LOJA_ID);
+
+    expect(buscarPlanoAtivo).not.toHaveBeenCalled();
+    expect(resultado.planoAtual).toBeNull();
+    // Catálogo e faturas seguem sendo lidos normalmente.
+    expect(listarPlanosAtivos).toHaveBeenCalledTimes(1);
+    expect(listarFaturasDaLojaAdmin).toHaveBeenCalledTimes(1);
   });
 });

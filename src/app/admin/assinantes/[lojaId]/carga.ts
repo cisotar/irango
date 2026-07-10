@@ -14,6 +14,15 @@ import {
   type ZonaVitrine,
   type FormaPagamento,
 } from "@/lib/supabase/queries/entregaPagamento";
+import {
+  buscarPlanoAtivo,
+  listarPlanosAtivos,
+  type Plano,
+} from "@/lib/supabase/queries/planos";
+import {
+  listarFaturasDaLojaAdmin,
+  type FaturaAssinatura,
+} from "@/lib/supabase/queries/pagamentosAssinatura";
 
 /**
  * Agregado de leitura do painel admin SaaS para UMA loja-alvo (issue 096,
@@ -164,4 +173,64 @@ export async function carregarFormasPagamentoAdmin(
   const svc = createServiceClient();
 
   return listarFormasPagamento(svc, idValidado);
+}
+
+/**
+ * Agregado de leitura da sub-rota admin de Assinatura (issue 153). Reúne, sob UM
+ * único `svc` admin-provado, tudo que a central de assinatura da loja-alvo
+ * precisa: a linha `lojas` (status/plano/flags), o plano atual, o catálogo de
+ * planos ativos e as faturas. A page NUNCA eleva a service_role inline — a
+ * elevação vive AQUI (decisão b, issue 150; ver `enforcement-escopo-admin.test.ts`).
+ *
+ * `carregarLojaAdminBase` (150) devolve só a `LojaCompleta` e NÃO expõe o `svc`
+ * que criou, logo não alimentaria `buscarPlanoAtivo`/`listarPlanosAtivos`/
+ * `listarFaturasDaLojaAdmin`; um loader agregado evita criar um SEGUNDO `svc`
+ * inline (proibido) ou duplicar a prova de admin por query.
+ *
+ * MESMA ordem inegociável (fail-closed) dos demais loaders:
+ *  1. `validarLojaIdAdmin(lojaId)` (083, z.guid()) — não-UUID → `notFound()`
+ *     ANTES de qualquer leitura (nenhum service client, nenhuma query).
+ *  2. `verificarAdminSaaS()` FORA do try, ANTES de `createServiceClient()` — a
+ *     falha PROPAGA (RN-1, D-4): nenhuma elevação a service_role nem leitura.
+ *  3. `buscarLojaAdminPorId(svc, id)` (TABELA base, enxerga loja inativa em
+ *     onboarding); `null` → `notFound()`.
+ *  4. `planoAtual` só é buscado se `loja.plano_id != null` (loja nunca-assinou →
+ *     `null`); catálogo e faturas em paralelo, todos escopados por `lojaId`.
+ *
+ * Valor é AUTORITATIVO do banco: `planos.preco` (RN-1) e `pagamentos_assinatura.valor`
+ * (webhook 077); a UI apenas formata, nunca recalcula (seguranca.md §10).
+ */
+export type AssinaturaAdminAgregado = {
+  loja: LojaCompleta;
+  planoAtual: Plano | null;
+  planos: Plano[];
+  faturas: FaturaAssinatura[];
+};
+
+export async function carregarAssinaturaAdmin(
+  lojaId: string,
+): Promise<AssinaturaAdminAgregado> {
+  const validacao = validarLojaIdAdmin(lojaId);
+  if (!validacao.ok) {
+    notFound();
+  }
+  const idValidado = validacao.lojaId;
+
+  // Prova de admin ANTES de elevar a service_role; a falha PROPAGA (nenhuma leitura).
+  await verificarAdminSaaS();
+
+  const svc = createServiceClient();
+
+  const loja = await buscarLojaAdminPorId(svc, idValidado);
+  if (!loja) {
+    notFound();
+  }
+
+  const [planoAtual, planos, faturas] = await Promise.all([
+    loja.plano_id ? buscarPlanoAtivo(svc, loja.plano_id) : Promise.resolve(null),
+    listarPlanosAtivos(svc),
+    listarFaturasDaLojaAdmin(svc, idValidado),
+  ]);
+
+  return { loja, planoAtual, planos, faturas };
 }
