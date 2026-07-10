@@ -105,7 +105,12 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
 // que já existe. Garante que o loader recusa não-UUID via o helper canônico.
 
 // Módulo alvo: hoje só um STUB que lança "TODO: GREEN" → RED por asserção.
-import { carregarLojaAdmin, carregarLojaAdminBase } from "./carga";
+import {
+  carregarLojaAdmin,
+  carregarLojaAdminBase,
+  carregarZonasAdmin,
+  carregarFormasPagamentoAdmin,
+} from "./carga";
 
 const todasAsQueries = [
   buscarLojaAdminPorId,
@@ -303,5 +308,97 @@ describe("carregarLojaAdminBase — sucesso", () => {
     for (const q of queriesOverFetch) {
       expect(q).not.toHaveBeenCalled();
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// carregarZonasAdmin / carregarFormasPagamentoAdmin (issue 152) — loaders de
+// SEÇÃO das sub-rotas Entregas/Pagamentos. Mesma cadeia fail-closed dos loaders
+// acima, mas cada um lê SÓ a sua query (sem loja/catálogo).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("carregarZonasAdmin — fail-closed + escopo", () => {
+  it("admin não provado: propaga a exceção sem elevar nem ler", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(carregarZonasAdmin(LOJA_ID)).rejects.toThrow("acesso negado");
+
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("lojaId inválido: notFound() ANTES de provar admin, elevar ou ler", async () => {
+    await expect(carregarZonasAdmin("nao-e-uuid")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+  });
+
+  it("sucesso: prova admin ANTES de elevar e escopa pela lojaId validada", async () => {
+    const zonas = await carregarZonasAdmin(LOJA_ID);
+
+    expect(ordemChamadas.indexOf("verificarAdminSaaS")).toBeLessThan(
+      ordemChamadas.indexOf("createServiceClient"),
+    );
+    expect(listarZonasComTaxas).toHaveBeenCalledTimes(1);
+    expect(listarZonasComTaxas.mock.calls[0]?.[1]).toBe(LOJA_ID);
+    expect(zonas).toBe(zonasFake);
+  });
+
+  it("NÃO faz over-fetch: loja/categorias/produtos/formas nunca são buscadas", async () => {
+    await carregarZonasAdmin(LOJA_ID);
+
+    expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
+    expect(buscarCategorias).not.toHaveBeenCalled();
+    expect(buscarProdutosDoLojista).not.toHaveBeenCalled();
+    expect(listarFormasPagamento).not.toHaveBeenCalled();
+  });
+});
+
+describe("carregarFormasPagamentoAdmin — fail-closed + escopo", () => {
+  it("admin não provado: propaga a exceção sem elevar nem ler", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(carregarFormasPagamentoAdmin(LOJA_ID)).rejects.toThrow(
+      "acesso negado",
+    );
+
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(listarFormasPagamento).not.toHaveBeenCalled();
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("lojaId inválido: notFound() ANTES de provar admin, elevar ou ler", async () => {
+    await expect(
+      carregarFormasPagamentoAdmin("nao-e-uuid"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(listarFormasPagamento).not.toHaveBeenCalled();
+  });
+
+  it("sucesso: prova admin ANTES de elevar e escopa pela lojaId validada", async () => {
+    const formas = await carregarFormasPagamentoAdmin(LOJA_ID);
+
+    expect(ordemChamadas.indexOf("verificarAdminSaaS")).toBeLessThan(
+      ordemChamadas.indexOf("createServiceClient"),
+    );
+    expect(listarFormasPagamento).toHaveBeenCalledTimes(1);
+    expect(listarFormasPagamento.mock.calls[0]?.[1]).toBe(LOJA_ID);
+    expect(formas).toBe(formasFake);
+  });
+
+  it("NÃO faz over-fetch: loja/categorias/produtos/zonas nunca são buscadas", async () => {
+    await carregarFormasPagamentoAdmin(LOJA_ID);
+
+    expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
+    expect(buscarCategorias).not.toHaveBeenCalled();
+    expect(buscarProdutosDoLojista).not.toHaveBeenCalled();
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
   });
 });

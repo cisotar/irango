@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.40 | **Atualizado:** 2026-07-09
+**Versão:** 0.2.41 | **Atualizado:** 2026-07-10
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -508,6 +508,8 @@ Casos de uso aprovados: validar cupom por código (issue 013), criar pedido via 
 **Padrão `.bind(null, lojaId)` para Server Action como prop (issue 140):** quando a página é um Server Component que passa a Server Action **direto** para um Client Component filho (sem um wrapper `AdminClient` intermediário — contraste com `CardapioAdminClient`/`CuponsAdminClient`, que fecham `lojaId` via closure JS comum dentro de um componente `'use client'`), o `lojaId` é fixado no servidor com `.bind(null, lojaId)` sobre a Server Action, nunca com uma arrow function inline (`(id, status) => action(lojaId, id, status)` desfaria a serialização de Server Action pela fronteira RSC). Exemplo: `atualizarStatusPedidoAdmin.bind(null, lojaId)` em `pedidos/[id]/page.tsx`, repassado como prop `acaoStatus` para `AcoesStatus` (`'use client'`). Padrão oficial do Next.js para argumentos adicionais em Server Actions passadas a Client Components (Server Actions — passing additional arguments via `bind()`). O `lojaId` nunca chega pelo payload do cliente — só a chamada já fixada cruza a fronteira; a autoridade da operação continua inteira na action.
 
 **Helper `descartarLojaId` — payload `.strict()` que não declara `loja_id` (issue 135):** quando o schema zod da action admin é `.strict()` e não declara `loja_id` (porque o tenant vem do `lojaId` da URL, não do corpo), um `loja_id` hostil no payload faria o `.strict()` rejeitar o request inteiro (400 espúrio), mesmo sem risco real — o wrapper injeta `loja_id` por último de qualquer forma. `src/app/admin/assinantes/actions/admin-opcionais.ts` resolve com `descartarLojaId(payload)`: remove seletivamente só a chave `loja_id` do objeto antes do `.safeParse`, mantendo o `.strict()` como barreira contra qualquer outro campo arbitrário. A barreira real contra cross-tenant continua sendo o wrapper (`loja_id` sempre do `lojaId` da URL, nunca do payload) — o helper só evita ruído de validação, não substitui o escopo.
+
+**Gate de publicação — paridade lojista/admin revalidada no servidor (issue 152):** `publicarLojaAdmin` alternava `ativo` sem checar o perfil mínimo da loja (nome + WhatsApp) — o lojista (`definirPublicacao`, `src/lib/actions/loja.ts`) já bloqueava publicar sem esses dados, mas o admin publicava por cima dessa regra. `src/lib/utils/publicacao.ts` extrai o predicado para `podePublicarLoja(nome, whatsapp)` + `ERRO_PERFIL_INCOMPLETO`, fonte única consumida em dois papéis: preview de UX no cliente (desabilita o botão Publicar nas duas pages de perfil) e gate autoritativo revalidado no servidor, agora nos dois fluxos (`definirPublicacao` e `publicarLojaAdmin`) — o cliente nunca decide, só antecipa a mesma regra que o servidor reaplica. `publicarLojaAdmin` só roda o gate ao publicar; despublicar nunca passa por ele.
 
 ### Regra do prefixo Next.js
 

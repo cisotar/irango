@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
+import { podePublicarLoja } from "@/lib/utils/publicacao";
 import { PerfilClient } from "./PerfilClient";
 
 /**
@@ -36,7 +37,7 @@ export default async function PerfilPage(): Promise<ReactElement> {
       }}
       publicado={loja.ativo}
       // Perfil mínimo para publicar (mesma regra do servidor em definirPublicacao).
-      podePublicar={Boolean(loja.nome?.trim() && loja.whatsapp)}
+      podePublicar={podePublicarLoja(loja.nome, loja.whatsapp)}
       logoUrlInicial={loja.logo_url}
     />
   );

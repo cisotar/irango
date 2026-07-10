@@ -79,6 +79,22 @@ vi.mock("@/lib/actions/admin-loja", async (orig) => {
   return { ...real, registrarAcessoAdmin: vi.fn() };
 });
 
+// `buscarLojaAdminPorId`: usado pelo gate de perfil mínimo (nome + WhatsApp) ao
+// PUBLICAR. Default = loja COMPLETA (passa no gate). Preserva o resto do módulo
+// (admin-loja e outros consumidores reais dependem dele).
+const buscarLojaAdminPorId = vi.fn(
+  async (
+    ..._a: unknown[]
+  ): Promise<{ nome: string | null; whatsapp: string | null }> => ({
+    nome: "Loja Teste",
+    whatsapp: "5511999999999",
+  }),
+);
+vi.mock("@/lib/supabase/queries/lojas", async (orig) => {
+  const real = (await orig()) as Record<string, unknown>;
+  return { ...real, buscarLojaAdminPorId: (...a: unknown[]) => buscarLojaAdminPorId(...a) };
+});
+
 // 'use server' é só diretiva; o módulo é importável no runner node. O STUB lança
 // "TODO: GREEN" → RED ao invocar (asserção, não compilação).
 import { publicarLojaAdmin } from "./admin-publicar";
@@ -88,6 +104,11 @@ beforeEach(() => {
   updateCalls.length = 0;
   updateError = null;
   verificarAdminSaaS.mockResolvedValue(undefined);
+  // Default: loja COMPLETA (passa no gate de perfil mínimo).
+  buscarLojaAdminPorId.mockResolvedValue({
+    nome: "Loja Teste",
+    whatsapp: "5511999999999",
+  });
 });
 
 // ─────────────── Caso 1: admin negado → exceção propaga, zero update ─────────
@@ -148,5 +169,44 @@ describe("publicarLojaAdmin — escopo na loja-alvo (RN-3)", () => {
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0].eqCol).toBe("id");
     expect(updateCalls[0].eqVal).toBe(LOJA_ID);
+  });
+});
+
+// ─────── Caso 5: gate de perfil mínimo revalidado no SERVIDOR (RN-8) ─────────
+describe("publicarLojaAdmin — gate de perfil mínimo (nome + WhatsApp)", () => {
+  it("publicar=true com WhatsApp vazio → { ok:false } e ZERO update (gate barra no servidor)", async () => {
+    buscarLojaAdminPorId.mockResolvedValue({ nome: "Loja Teste", whatsapp: null });
+
+    const r = await publicarLojaAdmin(LOJA_ID, true);
+
+    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("publicar=true com nome só de espaços → { ok:false } e ZERO update", async () => {
+    buscarLojaAdminPorId.mockResolvedValue({ nome: "   ", whatsapp: "5511999999999" });
+
+    const r = await publicarLojaAdmin(LOJA_ID, true);
+
+    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("DESPUBLICAR (publicar=false) NÃO passa pelo gate — sempre pode, mesmo perfil incompleto", async () => {
+    buscarLojaAdminPorId.mockResolvedValue({ nome: null, whatsapp: null });
+
+    const r = await publicarLojaAdmin(LOJA_ID, false);
+
+    expect(r).toEqual({ ok: true });
+    expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
+    expect(updateCalls[0].patch).toEqual({ ativo: false });
+  });
+
+  it("publicar=true com perfil completo → publica (1 update)", async () => {
+    const r = await publicarLojaAdmin(LOJA_ID, true);
+
+    expect(r).toEqual({ ok: true });
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].patch).toEqual({ ativo: true });
   });
 });

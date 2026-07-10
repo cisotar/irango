@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.17 | **Atualizado:** 2026-07-09
+**Versão:** 0.2.18 | **Atualizado:** 2026-07-10
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -154,7 +154,9 @@ irango/
 │   │       ├── manifest.ts               # montarIconesManifest + constantes de tema padrão (vitrine e painel)
 │   │       ├── manifestPainel.ts         # montarManifestPainel(loja|null) → ManifestPainel; puro (sem I/O)
 │   │       ├── fotoSegura.ts             # fotoSegura(url?): string|null — fonte única da invariante anti-XSS §15 (só https vira src)
-│   │       └── metricasPedidos.ts        # calcularMetricasDoDia(pedidos) + chaveDia(data); puro; extraído do Dashboard do lojista, reuso previsto pelo Dashboard admin (issues 122/138)
+│   │       ├── metricasPedidos.ts        # calcularMetricasDoDia(pedidos) + chaveDia(data); puro; extraído do Dashboard do lojista, reuso previsto pelo Dashboard admin (issues 122/138)
+│   │       ├── publicacao.ts             # podePublicarLoja(nome, whatsapp) + ERRO_PERFIL_INCOMPLETO; fonte única do gate "perfil mínimo pra publicar" — preview no cliente, gate autoritativo revalidado no servidor (lojista e admin) — ver seguranca.md §7 (issue 152)
+│   │       └── tema.ts                   # montarTemaInicial(tema) → Tema; unifica lerCor/TEMA_PADRAO antes duplicado entre a page de tema do lojista e a page consolidada do admin (issue 152)
 │   │
 │   ├── types/
 │   │   ├── supabase.ts                   # gerado: pnpm supabase gen types typescript

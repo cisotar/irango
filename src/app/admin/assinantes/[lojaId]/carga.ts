@@ -106,3 +106,62 @@ export async function carregarLojaAdminBase(lojaId: string): Promise<LojaComplet
 
   return loja;
 }
+
+/**
+ * Loader server-only de SEÇÃO do painel admin SaaS: carrega SÓ as zonas de
+ * entrega (com taxas/bairros) da loja-alvo, para a sub-rota de Entregas (issue
+ * 152). Não faz over-fetch de loja/catálogo/formas.
+ *
+ * MESMA ordem inegociável (fail-closed) de `carregarLojaAdminBase`:
+ *  1. `validarLojaIdAdmin(lojaId)` (083, z.guid()) — não-UUID → `notFound()`
+ *     ANTES de qualquer leitura.
+ *  2. `verificarAdminSaaS()` FORA do try, ANTES de `createServiceClient()` — a
+ *     falha PROPAGA (RN-1, D-4): nenhuma elevação a service_role nem leitura.
+ *  3. `listarZonasComTaxas(svc, id)` escopada pela `lojaId` validada.
+ *
+ * A elevação a service_role fica AQUI, nunca em `page.tsx` (decisão b, issue
+ * 150) — a página recebe só o dado materializado. Ver `enforcement-escopo-admin.test.ts`.
+ */
+export async function carregarZonasAdmin(lojaId: string): Promise<ZonaVitrine[]> {
+  const validacao = validarLojaIdAdmin(lojaId);
+  if (!validacao.ok) {
+    notFound();
+  }
+  const idValidado = validacao.lojaId;
+
+  // Prova de admin ANTES de elevar a service_role; a falha PROPAGA (nenhuma leitura).
+  await verificarAdminSaaS();
+
+  const svc = createServiceClient();
+
+  return listarZonasComTaxas(svc, idValidado);
+}
+
+/**
+ * Loader server-only de SEÇÃO do painel admin SaaS: carrega SÓ as formas de
+ * pagamento da loja-alvo, para a sub-rota de Pagamentos (issue 152). Não faz
+ * over-fetch de loja/catálogo/zonas.
+ *
+ * MESMA ordem inegociável (fail-closed) de `carregarLojaAdminBase`:
+ *  1. `validarLojaIdAdmin(lojaId)` (083, z.guid()) — não-UUID → `notFound()`
+ *     ANTES de qualquer leitura.
+ *  2. `verificarAdminSaaS()` FORA do try, ANTES de `createServiceClient()` — a
+ *     falha PROPAGA (RN-1, D-4): nenhuma elevação a service_role nem leitura.
+ *  3. `listarFormasPagamento(svc, id)` escopada pela `lojaId` validada.
+ */
+export async function carregarFormasPagamentoAdmin(
+  lojaId: string,
+): Promise<FormaPagamento[]> {
+  const validacao = validarLojaIdAdmin(lojaId);
+  if (!validacao.ok) {
+    notFound();
+  }
+  const idValidado = validacao.lojaId;
+
+  // Prova de admin ANTES de elevar a service_role; a falha PROPAGA (nenhuma leitura).
+  await verificarAdminSaaS();
+
+  const svc = createServiceClient();
+
+  return listarFormasPagamento(svc, idValidado);
+}

@@ -1,57 +1,30 @@
 "use client";
 
-import { useCallback } from "react";
-
-import { PerfilClient, type PerfilInicial } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient";
-import type { UploadLogoLojaProps } from "@/components/painel/UploadLogoLoja";
-import { HorariosClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/horarios/HorariosClient";
-import { TemaClient, type Tema } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/tema/TemaClient";
-import { EntregasClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/entregas/EntregasClient";
-import { PagamentosClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/pagamentos/PagamentosClient";
+import type { PerfilInicial } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient";
+import type { Tema } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/tema/TemaClient";
 import type { Horarios } from "@/lib/utils/lojaAberta";
-import type { EnviarQrPix, ResultadoUploadQr } from "@/components/painel/UploadQrPix";
 import type {
   ZonaVitrine,
   FormaPagamento,
 } from "@/lib/supabase/queries/entregaPagamento";
 
-import { salvarPerfilAdmin } from "@/app/admin/assinantes/actions/admin-perfil";
-import { publicarLojaAdmin } from "@/app/admin/assinantes/actions/admin-publicar";
-import {
-  salvarHorariosAdmin,
-  salvarTemaAdmin,
-} from "@/app/admin/assinantes/actions/admin-horarios-tema";
-import {
-  criarZonaAdmin,
-  atualizarZonaAdmin,
-  removerZonaAdmin,
-} from "@/app/admin/assinantes/actions/admin-entrega";
-import {
-  salvarFormaPagamentoAdmin,
-  atualizarFormaPagamentoAdmin,
-  removerFormaPagamentoAdmin,
-  salvarQrPixAdmin,
-  enviarQrPixAdmin,
-} from "@/app/admin/assinantes/actions/admin-pagamento";
-import {
-  salvarLogoAdmin,
-  removerLogoAdmin,
-} from "@/app/admin/assinantes/actions/admin-logo";
+import { PerfilAdminClient } from "./perfil/PerfilAdminClient";
+import { HorariosAdminClient } from "./horarios/HorariosAdminClient";
+import { TemaAdminClient } from "./tema/TemaAdminClient";
+import { EntregasAdminClient } from "./entregas/EntregasAdminClient";
+import { PagamentosAdminClient } from "./pagamentos/PagamentosAdminClient";
 
 /**
- * Wrapper client da aba Configuração do hub admin (issue 101). Reusa os clients
- * parametrizados do painel (097) — `PerfilClient`, `HorariosClient`, `TemaClient`,
- * `EntregasClient` e `PagamentosClient` — e INJETA as Server Actions admin
- * (091–095) com o `lojaId` da URL fixado via closures finas.
+ * Wrapper client da aba Configuração CONSOLIDADA do hub admin (issue 101).
  *
- * Segurança: aqui é só fiação de UI. A autoridade (allowlist de colunas,
- * geocoding, taxa, chave Pix, gate de `ativo`, path de upload, escopo cross-loja)
- * é das actions admin no servidor. As actions admin têm assinatura `(lojaId, ...)`;
- * os wrappers abaixo adaptam para a forma sem `lojaId` que cada client espera
- * (mesmas assinaturas das actions do lojista).
+ * A partir da issue 152 este componente apenas COMPÕE os 5 wrappers admin finos
+ * co-locados com suas sub-rotas (`PerfilAdminClient`, `HorariosAdminClient`,
+ * `TemaAdminClient`, `EntregasAdminClient`, `PagamentosAdminClient`) — cada um já
+ * fixa o `lojaId` por closure e injeta a action admin correspondente. Zero
+ * markup/fiação duplicada: a autoridade de cada seção vive nos wrappers/actions.
  *
- * O controle "Publicar loja" (RN-8) já vem embutido no `PerfilClient` via
- * `onDefinirPublicacao` — aqui injetamos `publicarLojaAdmin(lojaId, publicar)`.
+ * A assinatura de props externa NÃO muda (a page consolidada segue chamando
+ * igual até a issue 154 aposentar esta consolidação).
  */
 export function ConfiguracaoAdminClient({
   lojaId,
@@ -78,91 +51,31 @@ export function ConfiguracaoAdminClient({
   zonas: ZonaVitrine[];
   formasPagamento: FormaPagamento[];
 }) {
-  // O `UploadQrPix` chama `onEnviar(lojaId, arquivo)` e espera `ResultadoUploadQr`.
-  // A action admin recebe um FormData (lê `loja_id` dele) e devolve outra forma de
-  // resultado — este adapter monta o FormData com o `lojaId` da URL e mapeia o
-  // retorno. A autoridade (validação UUID, magic bytes, path server-side) é da action.
-  const enviarQrPix = useCallback<EnviarQrPix>(
-    async (_lojaIdDoComponente, arquivo): Promise<ResultadoUploadQr> => {
-      const formData = new FormData();
-      formData.set("loja_id", lojaId);
-      formData.set("file", arquivo);
-      const resultado = await enviarQrPixAdmin(formData);
-      return resultado.ok
-        ? { urlPublica: resultado.pix_qr_url }
-        : { erro: resultado.erro };
-    },
-    [lojaId],
-  );
-
-  // O `UploadLogoLoja` (via `PerfilClient`) JÁ monta o FormData com o arquivo em
-  // CAMPO_ARQUIVO e chama `onSalvarLogo(fd)`; aqui só fixamos o `loja_id` da URL
-  // (closure) e encaminhamos para a action admin. O client nunca é autoridade do
-  // escopo — quem valida admin + isola a loja-alvo é `salvarLogoAdmin` no servidor.
-  const onSalvarLogo = useCallback<NonNullable<UploadLogoLojaProps["onSalvar"]>>(
-    (formData) => {
-      formData.set("loja_id", lojaId);
-      return salvarLogoAdmin(formData);
-    },
-    [lojaId],
-  );
-
-  // Remoção escopada pelo `lojaId` da URL; a autoridade (verificarAdminSaaS +
-  // escopo por loja) é de `removerLogoAdmin` no servidor.
-  const onRemoverLogo = useCallback<NonNullable<UploadLogoLojaProps["onRemover"]>>(
-    () => removerLogoAdmin(lojaId),
-    [lojaId],
-  );
-
   return (
     <div className="space-y-12">
-      <PerfilClient
+      <PerfilAdminClient
+        lojaId={lojaId}
         inicial={perfilInicial}
         publicado={publicado}
         podePublicar={podePublicar}
         logoUrlInicial={logoUrlInicial}
-        onSalvar={(payload) => salvarPerfilAdmin(lojaId, payload)}
-        onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
-        onSalvarLogo={onSalvarLogo}
-        onRemoverLogo={onRemoverLogo}
       />
 
-      <HorariosClient
+      <HorariosAdminClient
+        lojaId={lojaId}
         inicial={horariosInicial}
         timezone={timezone}
-        onSalvar={(payload) => salvarHorariosAdmin(lojaId, payload)}
       />
 
-      <TemaClient
-        inicial={temaInicial}
-        nomeLoja={nomeLoja}
-        onSalvar={(payload) => salvarTemaAdmin(lojaId, payload)}
-      />
-
-      <EntregasClient
-        zonas={zonas}
-        acoes={{
-          criarZona: (payload) => criarZonaAdmin(lojaId, payload),
-          atualizarZona: (id, payload) =>
-            atualizarZonaAdmin(lojaId, id, payload),
-          removerZona: (id) => removerZonaAdmin(lojaId, id),
-        }}
-      />
-
-      <PagamentosClient
-        formas={formasPagamento}
+      <TemaAdminClient
         lojaId={lojaId}
-        acoes={{
-          salvarFormaPagamento: (payload) =>
-            salvarFormaPagamentoAdmin(lojaId, payload),
-          atualizarFormaPagamento: (id, payload) =>
-            atualizarFormaPagamentoAdmin(lojaId, id, payload),
-          removerFormaPagamento: (id) => removerFormaPagamentoAdmin(lojaId, id),
-          salvarQrPix: (formaId, pixQrUrl) =>
-            salvarQrPixAdmin(lojaId, formaId, pixQrUrl),
-          enviarQrPix,
-        }}
+        temaInicial={temaInicial}
+        nomeLoja={nomeLoja}
       />
+
+      <EntregasAdminClient lojaId={lojaId} zonas={zonas} />
+
+      <PagamentosAdminClient lojaId={lojaId} formasPagamento={formasPagamento} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 
 import type { Horarios } from "@/lib/utils/lojaAberta";
-import type { Tema } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/tema/TemaClient";
+import { montarTemaInicial } from "@/lib/utils/tema";
 
 import { carregarLojaAdmin } from "../carga";
 import { ConfiguracaoAdminClient } from "./ConfiguracaoAdminClient";
@@ -19,20 +19,6 @@ import { ModulosImpressaoAdmin } from "./ModulosImpressaoAdmin";
  * O cabeçalho, as abas e o guard de admin vêm do `layout.tsx`. Nenhum valor
  * autoritativo (geocoding, taxa, chave Pix, `ativo`) é decidido aqui — só fiação.
  */
-const TEMA_PADRAO: Tema = {
-  primaria: "#e11d48",
-  fundo: "#ffffff",
-  destaque: "#f59e0b",
-};
-
-const reHex = /^#[0-9a-fA-F]{6}$/;
-
-/** Lê uma cor do jsonb `tema` com fallback seguro se ausente/inválida. */
-function lerCor(tema: Record<string, unknown>, chave: keyof Tema): string {
-  const v = tema[chave];
-  return typeof v === "string" && reHex.test(v) ? v : TEMA_PADRAO[chave];
-}
-
 export default async function ConfiguracaoAdminPage({
   params,
 }: {
@@ -41,12 +27,7 @@ export default async function ConfiguracaoAdminPage({
   const { lojaId } = await params;
   const { loja, zonas, formasPagamento } = await carregarLojaAdmin(lojaId);
 
-  const temaJson = (loja.tema ?? {}) as Record<string, unknown>;
-  const temaInicial: Tema = {
-    primaria: lerCor(temaJson, "primaria"),
-    fundo: lerCor(temaJson, "fundo"),
-    destaque: lerCor(temaJson, "destaque"),
-  };
+  const temaInicial = montarTemaInicial(loja.tema);
 
   return (
     <div className="space-y-12">
