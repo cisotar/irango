@@ -342,3 +342,25 @@ export async function resolverDonoPorEmail(
   }
   return null;
 }
+
+/**
+ * Resolve o e-mail do dono (auth.users) a partir do `dono_id` (issue 151).
+ * Direção INVERSA de `resolverDonoPorEmail` (email→id): aqui o id já é conhecido,
+ * então usa `auth.admin.getUserById` — GET direto O(1) do GoTrue, sem varrer a
+ * base (a paginação de `resolverDonoPorEmail`/`mapearEmailsDosDonos` só existe
+ * porque a busca por *e-mail* não tem endpoint direto). Isso EVITA a 3ª cópia do
+ * loop paginado em vez de reproduzi-la.
+ *
+ * EXIGE client **service_role**: `auth.admin.*` só funciona com a service key.
+ * Dono inexistente / sem e-mail → `null`. NUNCA loga o e-mail cru (PII, §21).
+ * Fail-loud: erro do Admin API PROPAGA (seguranca.md §14) — quem chama distingue
+ * "não existe" (null) de "lookup falhou" (throw), como `resolverDonoPorEmail`.
+ */
+export async function resolverEmailDoDono(
+  client: Client,
+  donoId: string,
+): Promise<string | null> {
+  const { data, error } = await client.auth.admin.getUserById(donoId);
+  if (error) throw error;
+  return data.user?.email ?? null;
+}

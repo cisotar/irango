@@ -8,6 +8,7 @@ import {
   contarLojasDoDono,
   buscarCoordsLoja,
   resolverDonoPorEmail,
+  resolverEmailDoDono,
   buscarLojaAdminPorId,
 } from "./lojas";
 
@@ -428,5 +429,88 @@ describe("085 resolverDonoPorEmail — contrato TS (camada 2, mock Admin API)", 
     expect(listUsers).toHaveBeenCalledTimes(2);
     // Prova que a segunda chamada pediu a página 2
     expect(chamadas[1]).toMatchObject({ page: 2 });
+  });
+});
+
+/**
+ * Fase RED (TDD) da issue 151 — `resolverEmailDoDono(svc, donoId)`.
+ *
+ * Direção INVERSA de `resolverDonoPorEmail`: o `dono_id` já é conhecido, então usa
+ * `auth.admin.getUserById` (GET direto O(1)) em vez de varrer a base paginada.
+ *
+ * Contrato que a GREEN precisa satisfazer (plano da issue 151):
+ *  - resolve o e-mail via `svc.auth.admin.getUserById(donoId)`, passando o id cru;
+ *  - dono existente com e-mail → retorna o e-mail;
+ *  - dono sem e-mail / `data.user` null → null;
+ *  - erro do Admin API PROPAGA (fail-loud, seguranca.md §14) — NÃO mascara como null;
+ *  - NUNCA loga o e-mail cru (PII, scrubbing §21) — borda assertada.
+ *
+ * Mock: client mínimo só com `auth.admin.getUserById`, resolvendo
+ * `{ data: { user }, error }` no formato de `UserResponse` do supabase-js.
+ */
+describe("151 resolverEmailDoDono — contrato TS (camada 2, mock Admin API)", () => {
+  type AdminUser = { id: string; email: string | null } | null;
+
+  /**
+   * Client mínimo só com `auth.admin.getUserById`. `user` é o usuário devolvido
+   * (ou null); `error` simula falha do Admin API. `chamadas` registra os ids.
+   */
+  function makeAdminClient(user: AdminUser, error: unknown = null) {
+    const chamadas: string[] = [];
+    const getUserById = vi.fn(async (uid: string) => {
+      chamadas.push(uid);
+      return { data: { user }, error };
+    });
+    const client = {
+      auth: { admin: { getUserById } },
+    } as unknown as SupabaseClient<Database>;
+    return { client, getUserById, chamadas };
+  }
+
+  it("dono existente → resolve o e-mail via getUserById(donoId) com o id cru", async () => {
+    const { client, getUserById } = makeAdminClient({ id: "dono-1", email: "dono@x.com" });
+
+    const out = await resolverEmailDoDono(client, "dono-1");
+
+    expect(out).toBe("dono@x.com");
+    // GET direto O(1): passa o id conhecido, sem varrer a base (sem listUsers).
+    expect(getUserById).toHaveBeenCalledWith("dono-1");
+  });
+
+  it("dono sem e-mail → null (defensivo)", async () => {
+    const { client } = makeAdminClient({ id: "dono-1", email: null });
+    const out = await resolverEmailDoDono(client, "dono-1");
+    expect(out).toBeNull();
+  });
+
+  it("dono inexistente (data.user null) → null", async () => {
+    const { client } = makeAdminClient(null);
+    const out = await resolverEmailDoDono(client, "dono-inexistente");
+    expect(out).toBeNull();
+  });
+
+  it("PROPAGA o error do Admin API (fail-loud — não mascara como null)", async () => {
+    const { client } = makeAdminClient(null, { message: "admin api down" });
+    await expect(resolverEmailDoDono(client, "dono-1")).rejects.toBeTruthy();
+  });
+
+  it("NÃO loga o e-mail cru (PII — scrubbing §21)", async () => {
+    const { client } = makeAdminClient({ id: "dono-1", email: "dono@x.com" });
+    const spies = [
+      vi.spyOn(console, "log").mockImplementation(() => {}),
+      vi.spyOn(console, "error").mockImplementation(() => {}),
+      vi.spyOn(console, "warn").mockImplementation(() => {}),
+      vi.spyOn(console, "info").mockImplementation(() => {}),
+    ];
+
+    await resolverEmailDoDono(client, "dono-1");
+
+    for (const spy of spies) {
+      for (const call of spy.mock.calls) {
+        const linha = call.map((a) => String(a)).join(" ").toLowerCase();
+        expect(linha).not.toContain("dono@x.com");
+      }
+      spy.mockRestore();
+    }
   });
 });

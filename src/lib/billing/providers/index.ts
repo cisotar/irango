@@ -14,3 +14,18 @@ export function getBillingProvider(provider: string): BillingProvider {
   }
   throw new Error(`Provider de billing desconhecido: ${provider}`);
 }
+
+/**
+ * Nome do provider de billing ativo (env, default 'asaas'). Fonte ÚNICA do
+ * default — consumido tanto para resolver o objeto provider quanto para gravar
+ * `lojas.billing_provider`. Centraliza o literal antes repetido nas actions do
+ * lojista (078) e do admin (151): trocar o default é um ponto só.
+ */
+export function nomeProviderBillingAtivo(): string {
+  return process.env.BILLING_PROVIDER ?? "asaas";
+}
+
+/** Provider de billing ativo (env, default 'asaas'). Agnóstico. */
+export function providerBillingAtivo(): BillingProvider {
+  return getBillingProvider(nomeProviderBillingAtivo());
+}
