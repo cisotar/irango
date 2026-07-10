@@ -123,3 +123,36 @@ describe("FormProduto — checkbox 'Ocultar da vitrine' (issue 088)", () => {
     expect(html).toContain("Ocultar da vitrine");
   });
 });
+
+/**
+ * Extrai os `value` das <option> marcadas como selected dentro do select
+ * de categoria (id="produto-categoria"), sem depender da ordem dos
+ * atributos no SSR.
+ */
+function opcoesSelecionadas(html: string): string[] {
+  const selectInicio = html.indexOf('id="produto-categoria"');
+  if (selectInicio === -1) throw new Error("select de categoria não encontrado");
+  const trecho = html.slice(selectInicio, html.indexOf("</select>", selectInicio));
+  return [...trecho.matchAll(/<option([^>]*)>/g)]
+    .filter((m) => m[1].includes("selected"))
+    .map((m) => m[1].match(/value="([^"]*)"/)?.[1] ?? "");
+}
+
+describe("FormProduto — categoria pré-selecionada ao criar (spec botao-novo-produto-por-categoria)", () => {
+  it("inicial={categoria_id} SEM id: select nasce com a categoria marcada e o form segue em modo criar (RN-1)", () => {
+    const html = renderForm({ categoria_id: "c1" });
+    expect(opcoesSelecionadas(html)).toEqual(["c1"]);
+    // Sem `id` => ehEdicao=false: submit é "Criar produto", nunca edição.
+    expect(html).toContain("Criar produto");
+    expect(html).not.toContain("Salvar alterações");
+  });
+
+  it("criar sem inicial (botão global): nenhuma categoria real selecionada — cai em 'Sem categoria' (value vazio)", () => {
+    const html = renderForm(undefined);
+    const selecionadas = opcoesSelecionadas(html);
+    // React SSR marca a option de value "" (Sem categoria) ou nenhuma —
+    // ambas equivalem a select vazio; o que NÃO pode é "c1" vir marcada.
+    expect(selecionadas).not.toContain("c1");
+    expect(html).toContain("Criar produto");
+  });
+});
