@@ -168,6 +168,12 @@ export function ProdutosClient({
   // estado/efeitos do FormProduto (mesmo padrão do CheckoutWizard, issue 006).
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Produto | null>(null);
+  // Categoria pré-selecionada ao criar pelo botão do header de um card
+  // (null => criar global, sem pré-seleção). Segue o padrão de `emEdicao`:
+  // não reseta no fechamento — cada `abrir*` define o valor fresco.
+  const [categoriaNovoProduto, setCategoriaNovoProduto] = useState<
+    string | null
+  >(null);
   const ehDesktop = useMediaQuery("(min-width: 768px)");
 
   // Categoria de produto com o seletor de opcionais aberto (null => fechado).
@@ -195,6 +201,11 @@ export function ProdutosClient({
   );
 
   function abrirCriar() {
+    abrirCriarNaCategoria(null);
+  }
+
+  function abrirCriarNaCategoria(categoriaId: string | null) {
+    setCategoriaNovoProduto(categoriaId);
     setEmEdicao(null);
     setFormAberto(true);
   }
@@ -255,8 +266,9 @@ export function ProdutosClient({
 
   const formProduto = (
     <FormProduto
-      // Recria o form ao alternar entre produtos / criar.
-      key={emEdicao?.id ?? "novo"}
+      // Recria o form ao alternar entre produtos / criar (global ou por
+      // categoria) — o useState do select só lê `inicial` na montagem (RN-3).
+      key={emEdicao?.id ?? `novo-${categoriaNovoProduto ?? ""}`}
       categorias={categorias}
       lojaSlug={lojaSlug}
       lojaId={lojaId}
@@ -276,7 +288,11 @@ export function ProdutosClient({
               foto_url: emEdicao.foto_url,
               ordem: emEdicao.ordem,
             }
-          : undefined
+          : categoriaNovoProduto != null
+            ? // Sem `id` => FormProduto permanece em modo criar (RN-1);
+              // a categoria é só valor inicial do select, editável.
+              { categoria_id: categoriaNovoProduto }
+            : undefined
       }
     />
   );
@@ -315,14 +331,27 @@ export function ProdutosClient({
                   {grupo.nome}
                 </CardTitle>
                 {grupo.id != null && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setCategoriaOpcionaisAberta(grupo)}
-                  >
-                    <SlidersHorizontal className="size-4" />
-                    Opcionais
-                  </Button>
+                  <div className="flex items-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCategoriaOpcionaisAberta(grupo)}
+                    >
+                      <SlidersHorizontal className="size-4" />
+                      Opcionais
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Novo produto em ${grupo.nome}`}
+                      onClick={() => abrirCriarNaCategoria(grupo.id)}
+                    >
+                      <Plus className="size-4" />
+                      {/* Ícone-only no mobile para o header não estourar (RN-5);
+                          o aria-label mantém o nome acessível. */}
+                      <span className="hidden sm:inline">Novo produto</span>
+                    </Button>
+                  </div>
                 )}
               </CardHeader>
               <CardContent className="divide-y divide-foreground/10 p-0">

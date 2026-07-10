@@ -214,3 +214,51 @@ describe("slot acoes.salvarAssociacaoOpcionais (issue 129)", () => {
     }
   });
 });
+
+describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto-por-categoria)", () => {
+  const CATEGORIAS = [
+    { id: "c1", nome: "Lanches", exibir_imagens: true },
+    { id: "c2", nome: "Bebidas", exibir_imagens: true },
+  ];
+
+  function renderComCategorias(produtos: Produto[]): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={CATEGORIAS}
+        opcionaisPorCategoria={{}}
+        categoriasOpcional={[]}
+      />,
+    );
+  }
+
+  it("cada card de categoria real exibe o botão, identificado pela categoria no aria-label", () => {
+    const html = renderComCategorias([
+      produtoBase({ categoria_id: "c1" }),
+      produtoBase({ id: "prod-2", nome: "Guaraná", categoria_id: "c2" }),
+    ]);
+    expect(html).toContain('aria-label="Novo produto em Lanches"');
+    expect(html).toContain('aria-label="Novo produto em Bebidas"');
+  });
+
+  it("grupo 'Sem categoria' (id null) NÃO recebe o botão (RN-2), mesma guarda do 'Opcionais'", () => {
+    const html = renderComCategorias([
+      produtoBase({ categoria_id: "c1" }),
+      produtoBase({ id: "prod-2", nome: "Avulso", categoria_id: null }),
+    ]);
+    expect(html).toContain("Sem categoria");
+    // Só a categoria real ganha o botão: exatamente 1 aria-label no HTML.
+    expect(html.match(/aria-label="Novo produto em /g)?.length).toBe(1);
+    expect(html).toContain('aria-label="Novo produto em Lanches"');
+  });
+
+  it("botão global 'Novo produto' do topo continua presente mesmo sem nenhum botão de card", () => {
+    // Só produto sem categoria => zero botões de card; o "Novo produto"
+    // encontrado é necessariamente o global do topo.
+    const html = renderComCategorias([produtoBase({ categoria_id: null })]);
+    expect(html.match(/aria-label="Novo produto em /g)).toBeNull();
+    expect(html).toContain(">Novo produto<");
+  });
+});

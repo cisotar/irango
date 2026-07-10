@@ -52,7 +52,9 @@ export const schemaPayloadPedido = z
     loja_id: z.guid(),
     // tipo_entrega: 'retirada' | 'entrega' — instrução operacional, não financeira (RN-C2).
     tipo_entrega: z.enum(["retirada", "entrega"]),
-    itens: z.array(schemaItemPedido).min(1),
+    // teto de cardinalidade do array raiz (CWE-770 — anti DoS/amplificação de
+    // recurso). Espelha o .max(50) dos opcionais (linha ~32). .min(1) preservado.
+    itens: z.array(schemaItemPedido).min(1).max(50),
     // endereco_entrega: opcional na raiz — o refine abaixo impõe a obrigatoriedade
     // condicional: obrigatório quando tipo_entrega='entrega', ignorado em 'retirada'.
     endereco_entrega: schemaEnderecoEntrega.optional(),
