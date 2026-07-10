@@ -46,18 +46,49 @@ export type PlanoView = {
   intervalo: string;
 };
 
+/**
+ * Objeto de ações injetáveis (issue 148). Os 4 campos são OBRIGATÓRIOS: as
+ * actions de assinatura andam sempre juntas — o lojista usa as 4 do default,
+ * o admin injeta as 4 variantes escopadas por lojaId. `typeof` reaproveita a
+ * assinatura exata de cada action (retorno { ok:true } | { ok:true; url } |
+ * { ok:false; erro } é inferido, não re-escrito). Arquivo é `'use client'`,
+ * então exportar tipo aqui é permitido (a restrição "só async" é dos módulos
+ * `'use server'`).
+ */
+export type AcoesAssinatura = {
+  iniciarAssinatura: typeof iniciarAssinatura;
+  trocarPlano: typeof trocarPlano;
+  atualizarMeioPagamentoAssinatura: typeof atualizarMeioPagamentoAssinatura;
+  cancelarAssinatura: typeof cancelarAssinatura;
+};
+
+// Default = as 4 actions do lojista, agrupadas. Const de módulo em client
+// component é seguro (mesma natureza dos defaults de PerfilClient).
+const ACOES_LOJISTA: AcoesAssinatura = {
+  iniciarAssinatura,
+  trocarPlano,
+  atualizarMeioPagamentoAssinatura,
+  cancelarAssinatura,
+};
+
 export type GerenciarAssinaturaClientProps = {
   planos: PlanoView[];
   /** id do plano atual da loja (ou null se nunca assinou). */
   planoAtualId: string | null;
   /** Há assinatura em vigor? (define assinar vs. trocar / mostra cancelar). */
   temAssinatura: boolean;
+  /**
+   * Actions injetáveis. Omitido no lojista (default = as 4 do lojista,
+   * comportamento atual). Admin injeta as 4 variantes escopadas por lojaId.
+   */
+  acoes?: AcoesAssinatura;
 };
 
 export function GerenciarAssinaturaClient({
   planos,
   planoAtualId,
   temAssinatura,
+  acoes = ACOES_LOJISTA,
 }: GerenciarAssinaturaClientProps) {
   const router = useRouter();
   const [selecionado, setSelecionado] = useState<string>(
@@ -87,7 +118,7 @@ export function GerenciarAssinaturaClient({
 
   function confirmarPlano() {
     if (!selecionado) return;
-    const acao = temAssinatura ? trocarPlano : iniciarAssinatura;
+    const acao = temAssinatura ? acoes.trocarPlano : acoes.iniciarAssinatura;
     const sucesso = temAssinatura
       ? "Plano atualizado! A mudança será confirmada pelo provedor."
       : "Assinatura iniciada! Conclua o pagamento para ativar.";
@@ -110,7 +141,7 @@ export function GerenciarAssinaturaClient({
 
   function atualizarPagamento() {
     startPagamento(async () => {
-      const resultado = await atualizarMeioPagamentoAssinatura();
+      const resultado = await acoes.atualizarMeioPagamentoAssinatura();
       if (!resultado.ok) {
         toast.error(resultado.erro);
         return;
@@ -127,7 +158,7 @@ export function GerenciarAssinaturaClient({
 
   function confirmarCancelamento() {
     startCancelar(async () => {
-      const resultado = await cancelarAssinatura();
+      const resultado = await acoes.cancelarAssinatura();
       if (!resultado.ok) {
         toast.error(resultado.erro);
         return;
