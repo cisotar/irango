@@ -22,7 +22,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaDoDono, persistirAssinaturaLoja } from "@/lib/supabase/queries/lojas";
 import { buscarPlanoAtivo } from "@/lib/supabase/queries/planos";
-import { getBillingProvider } from "@/lib/billing/providers";
+import {
+  providerBillingAtivo,
+  nomeProviderBillingAtivo,
+} from "@/lib/billing/providers";
 import { iniciarAssinaturaSchema } from "@/lib/validacoes/assinatura";
 import type { LojaParaProvider } from "@/lib/billing/tipos";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
@@ -31,11 +34,6 @@ type ResultadoAssinatura =
   | { ok: true }
   | { ok: true; url: string }
   | { ok: false; erro: string };
-
-/** Provider de billing ativo (env, default 'asaas'). Agnóstico (D6). */
-function provider() {
-  return getBillingProvider(process.env.BILLING_PROVIDER ?? "asaas");
-}
 
 /**
  * Monta o `loja` AGNÓSTICO passado ao provider. `email` vem do usuário
@@ -91,7 +89,7 @@ export async function iniciarAssinatura(
     }
 
     // 5) Cria no provider com `value` = planos.preco (NUNCA do cliente).
-    const { subscriptionId } = await provider().criarAssinatura({
+    const { subscriptionId } = await providerBillingAtivo().criarAssinatura({
       value: plano.preco,
       plano,
       loja: await lojaParaProvider(supabase, loja),
@@ -99,7 +97,7 @@ export async function iniciarAssinatura(
 
     // 6) Persiste billing-intent via service_role. NÃO inclui assinatura_status (RN-2).
     await persistirAssinaturaLoja(svc, loja.id, {
-      billing_provider: process.env.BILLING_PROVIDER ?? "asaas",
+      billing_provider: nomeProviderBillingAtivo(),
       provider_subscription_id: subscriptionId,
       plano_id: plano.id,
     });
@@ -144,7 +142,7 @@ export async function trocarPlano(
       return { ok: false, erro: "Plano indisponível." };
     }
 
-    await provider().atualizarAssinatura({
+    await providerBillingAtivo().atualizarAssinatura({
       subscriptionId: loja.provider_subscription_id,
       value: plano.preco,
       plano,
@@ -153,7 +151,7 @@ export async function trocarPlano(
 
     // Persiste o novo plano_id (billing-intent); NÃO escreve assinatura_status (RN-2).
     await persistirAssinaturaLoja(svc, loja.id, {
-      billing_provider: process.env.BILLING_PROVIDER ?? "asaas",
+      billing_provider: nomeProviderBillingAtivo(),
       provider_subscription_id: loja.provider_subscription_id,
       plano_id: plano.id,
     });
@@ -183,7 +181,9 @@ export async function atualizarMeioPagamentoAssinatura(): Promise<ResultadoAssin
       return { ok: false, erro: "Nenhuma assinatura ativa." };
     }
 
-    const { url } = await provider().urlMeioPagamento(loja.provider_subscription_id);
+    const { url } = await providerBillingAtivo().urlMeioPagamento(
+      loja.provider_subscription_id,
+    );
     return { ok: true, url };
   } catch (e) {
     console.error("[atualizarMeioPagamentoAssinatura]", e);
@@ -210,7 +210,7 @@ export async function cancelarAssinatura(): Promise<ResultadoAssinatura> {
       return { ok: false, erro: "Nenhuma assinatura para cancelar." };
     }
 
-    await provider().cancelarAssinatura(loja.provider_subscription_id);
+    await providerBillingAtivo().cancelarAssinatura(loja.provider_subscription_id);
     return { ok: true };
   } catch (e) {
     console.error("[cancelarAssinatura]", e);

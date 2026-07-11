@@ -46,10 +46,6 @@ export type ContextoNav = {
   basePath?: string;
   /** Título exibido no topo do menu. Default `iRango`. */
   titulo?: string;
-  /** Admin: `true` remove o subitem Assinatura (organização, não segurança). */
-  ocultarAssinatura?: boolean;
-  /** Admin: `true` deixa Configurações sem subitens (item consolidado). */
-  configConsolidada?: boolean;
 };
 
 /**
@@ -60,28 +56,19 @@ export type ContextoNav = {
 function construirItens(contexto: ContextoNav = {}): ItemNav[] {
   const base = contexto.basePath ?? "/painel";
 
-  const itemConfiguracoes: ItemNav = contexto.configConsolidada
-    ? { href: `${base}/configuracoes`, rotulo: "Configurações", icone: Settings }
-    : {
-        href: `${base}/configuracoes`,
-        rotulo: "Configurações",
-        icone: Settings,
-        subitens: [
-          { href: `${base}/configuracoes/perfil`, rotulo: "Perfil" },
-          { href: `${base}/configuracoes/horarios`, rotulo: "Horários" },
-          { href: `${base}/configuracoes/entregas`, rotulo: "Entregas" },
-          { href: `${base}/configuracoes/pagamentos`, rotulo: "Pagamentos" },
-          { href: `${base}/configuracoes/tema`, rotulo: "Tema" },
-          ...(contexto.ocultarAssinatura
-            ? []
-            : [
-                {
-                  href: `${base}/configuracoes/assinatura`,
-                  rotulo: "Assinatura",
-                },
-              ]),
-        ],
-      };
+  const itemConfiguracoes: ItemNav = {
+    href: `${base}/configuracoes`,
+    rotulo: "Configurações",
+    icone: Settings,
+    subitens: [
+      { href: `${base}/configuracoes/perfil`, rotulo: "Perfil" },
+      { href: `${base}/configuracoes/horarios`, rotulo: "Horários" },
+      { href: `${base}/configuracoes/entregas`, rotulo: "Entregas" },
+      { href: `${base}/configuracoes/pagamentos`, rotulo: "Pagamentos" },
+      { href: `${base}/configuracoes/tema`, rotulo: "Tema" },
+      { href: `${base}/configuracoes/assinatura`, rotulo: "Assinatura" },
+    ],
+  };
 
   return [
     { href: base, rotulo: "Dashboard", icone: LayoutDashboard },

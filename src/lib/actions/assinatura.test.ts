@@ -91,6 +91,9 @@ const provider = {
 const getBillingProvider = vi.fn((..._a: unknown[]) => provider);
 vi.mock("@/lib/billing/providers", () => ({
   getBillingProvider: (...a: unknown[]) => getBillingProvider(...(a as [string])),
+  nomeProviderBillingAtivo: () => process.env.BILLING_PROVIDER ?? "asaas",
+  providerBillingAtivo: () =>
+    getBillingProvider(process.env.BILLING_PROVIDER ?? "asaas"),
 }));
 
 // 'use server' é só diretiva; importável em teste node. Este import FALHA hoje

@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.17 | **Atualizado:** 2026-07-09
+**Versão:** 0.2.20 | **Atualizado:** 2026-07-10
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -154,7 +154,9 @@ irango/
 │   │       ├── manifest.ts               # montarIconesManifest + constantes de tema padrão (vitrine e painel)
 │   │       ├── manifestPainel.ts         # montarManifestPainel(loja|null) → ManifestPainel; puro (sem I/O)
 │   │       ├── fotoSegura.ts             # fotoSegura(url?): string|null — fonte única da invariante anti-XSS §15 (só https vira src)
-│   │       └── metricasPedidos.ts        # calcularMetricasDoDia(pedidos) + chaveDia(data); puro; extraído do Dashboard do lojista, reuso previsto pelo Dashboard admin (issues 122/138)
+│   │       ├── metricasPedidos.ts        # calcularMetricasDoDia(pedidos) + chaveDia(data); puro; extraído do Dashboard do lojista, reuso previsto pelo Dashboard admin (issues 122/138)
+│   │       ├── publicacao.ts             # podePublicarLoja(nome, whatsapp) + ERRO_PERFIL_INCOMPLETO; fonte única do gate "perfil mínimo pra publicar" — preview no cliente, gate autoritativo revalidado no servidor (lojista e admin) — ver seguranca.md §7 (issue 152)
+│   │       └── tema.ts                   # montarTemaInicial(tema) → Tema; unifica lerCor/TEMA_PADRAO antes duplicado entre a page de tema do lojista e a page de tema do admin (issue 152; admin era página consolidada até a issue 154, hoje sub-rota própria `configuracoes/tema/`)
 │   │
 │   ├── types/
 │   │   ├── supabase.ts                   # gerado: pnpm supabase gen types typescript
@@ -335,7 +337,7 @@ const items = order.order_items
 - Componente aparece em 2+ lugares → extrai pra `components/`
 - `components/ui/` → shadcn gerado, não editar manualmente
 - `components/vitrine/` → exclusivos da loja pública
-- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente. O shell de navegação segue o mesmo princípio: `NavPainel.tsx` (`SidebarPainel`/`TopbarPainel`) recebe um `contexto?` opcional (`basePath`/`título`/flags de menu; default = comportamento do painel do lojista) — o painel do lojista é a fonte única do front, o hub admin (`/admin/assinantes/[lojaId]`) reusa o mesmo shell por parametrização, nunca por cópia de markup
+- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente. O shell de navegação segue o mesmo princípio: `NavPainel.tsx` (`SidebarPainel`/`TopbarPainel`) recebe um `contexto?` opcional (só `basePath`/`título`; default = comportamento do painel do lojista) — o painel do lojista é a fonte única do front, o hub admin (`/admin/assinantes/[lojaId]`) reusa o mesmo shell trocando só o `basePath`, byte-a-byte idêntico ao lojista, nunca por cópia de markup
 
 ### Server vs Client
 

@@ -109,9 +109,9 @@ const slugExiste = vi.fn<(...a: unknown[]) => Promise<boolean>>(async () => fals
 const criarLoja = vi.fn<(...a: unknown[]) => Promise<{ id: string }>>(
   async () => ({ id: LOJA_A }),
 );
-const buscarLojaAdminPorId = vi.fn<(...a: unknown[]) => Promise<{ id: string; nome: string; ativo: boolean }>>(
-  async () => ({ id: LOJA_A, nome: "Loja A", ativo: false }),
-);
+const buscarLojaAdminPorId = vi.fn<
+  (...a: unknown[]) => Promise<{ id: string; nome: string; whatsapp: string; ativo: boolean }>
+>(async () => ({ id: LOJA_A, nome: "Loja A", whatsapp: "5511999999999", ativo: false }));
 vi.mock("@/lib/supabase/queries/lojas", () => ({
   resolverDonoPorEmail: (...a: unknown[]) => resolverDonoPorEmail(...a),
   slugExiste: (...a: unknown[]) => slugExiste(...a),
@@ -242,7 +242,12 @@ beforeEach(() => {
   criarLoja.mockResolvedValue({ id: LOJA_A });
   excluirLojaPermanente.mockResolvedValue({ linhasAfetadas: 1 });
   aplicarStatusAdmin.mockResolvedValue({ linhasAfetadas: 1 });
-  buscarLojaAdminPorId.mockResolvedValue({ id: LOJA_A, nome: "Loja A", ativo: false });
+  buscarLojaAdminPorId.mockResolvedValue({
+    id: LOJA_A,
+    nome: "Loja A",
+    whatsapp: "5511999999999",
+    ativo: false,
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

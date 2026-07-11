@@ -6,7 +6,7 @@
  *
  * Lacuna que este arquivo fecha: nenhum teste existente prova o REPASSE de
  * `onSalvarLogo`/`onRemoverLogo` dentro do próprio `PerfilClient`.
- * `ConfiguracaoAdminClient.test.tsx` (issue 119) stuba `PerfilClient` — prova
+ * `PerfilAdminClient.test.tsx` (issue 119, migrado em 154) stuba `PerfilClient` — prova
  * só a fiação ACIMA dele (wrapper admin → PerfilClient), nunca executa o corpo
  * real do `PerfilClient`. `logo.test.ts` (issue 003) testa `salvarLogoLoja`/
  * `removerLogoLoja` isoladas, sem passar pelo `PerfilClient`. Faltava provar
@@ -16,7 +16,7 @@
  *       `undefined` ao `UploadLogoLoja` — nunca substitui por outra função —
  *       para que os defaults REAIS do componente (`salvarLogoLoja`/
  *       `removerLogoLoja`, ver UploadLogoLoja.tsx:65-66) sejam o que executa;
- *   (b) no fluxo ADMIN (`ConfiguracaoAdminClient`, que passa as duas props),
+ *   (b) no fluxo ADMIN (`PerfilAdminClient`, que passa as duas props),
  *       repassa exatamente as MESMAS referências recebidas — sem trocar
  *       `onSalvarLogo` por `onRemoverLogo` nem inventar um wrapper que perca
  *       a identidade da closure fixada pelo `lojaId` da URL.
@@ -30,7 +30,7 @@
  * estão instalados, ver ProdutosClient.test.tsx). `UploadLogoLoja` é
  * stubado para CAPTURAR as props recebidas — não clicamos em nada; a prova é
  * por CAPTURA + comparação de referência, mesmo molde de
- * ConfiguracaoAdminClient.test.tsx.
+ * PerfilAdminClient.test.tsx.
  *
  * Lacuna que PERMANECE (fora do alcance deste arquivo, documentada como em
  * ProdutosClient.test.tsx): provar que os defaults internos do

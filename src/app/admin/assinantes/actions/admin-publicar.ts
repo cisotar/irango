@@ -14,7 +14,10 @@
  *  1. validarLojaIdAdmin(lojaId) (z.guid) ANTES de qualquer efeito → inválido =
  *     { ok:false } sem tocar admin/service/update.
  *  2. verificarAdminSaaS() FORA do try → exceção PROPAGA, service só depois.
- *  3. escopo.atualizarLoja({ ativo: publicar }) — patch EXATAMENTE { ativo }
+ *  3. Ao PUBLICAR: gate de perfil mínimo (nome + WhatsApp) revalidado no servidor
+ *     (`podePublicarLoja`), paridade com o lojista — o preview do cliente não é
+ *     autoridade. Despublicar não passa pelo gate.
+ *  4. escopo.atualizarLoja({ ativo: publicar }) — patch EXATAMENTE { ativo }
  *     (RN-8/§9), escopo por id só a loja-alvo (RN-3).
  *  4. revalidatePath admin + vitrine; registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico.
  *
@@ -27,6 +30,11 @@ import {
   prepararContextoAdmin,
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
+import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
+import {
+  podePublicarLoja,
+  ERRO_PERFIL_INCOMPLETO,
+} from "@/lib/utils/publicacao";
 
 type Resultado = { ok: true } | { ok: false; erro: string };
 
@@ -41,6 +49,17 @@ export async function publicarLojaAdmin(
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
+    // Gate de perfil mínimo (RN-8), revalidado no SERVIDOR — paridade com o
+    // lojista (`definirPublicacao`). O `podePublicar` do cliente é só preview;
+    // a autoridade é aqui. Só barra ao PUBLICAR (despublicar sempre pode).
+    if (publicar) {
+      const alvo = await buscarLojaAdminPorId(svc, loja.lojaId);
+      if (alvo == null) return { ok: false, erro: "Loja não encontrada." };
+      if (!podePublicarLoja(alvo.nome, alvo.whatsapp)) {
+        return { ok: false, erro: ERRO_PERFIL_INCOMPLETO };
+      }
+    }
+
     // Patch EXATO { ativo } (RN-8/§9): nenhuma coluna de billing/assinatura/dono.
     // Escopo por id (RN-3) pelo wrapper: só a loja-alvo é tocada.
     const { error } = await escopo.atualizarLoja({ ativo: publicar });

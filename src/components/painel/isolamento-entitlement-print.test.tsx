@@ -229,12 +229,13 @@ describe("Fonte única do entitlement de impressão", () => {
     // DECISÃO de variante: não reimplementa o mapa modulo_impressao_* → variante
     // (que segue exclusivo de variantesHabilitadas.ts), logo não reabre RN-M2.
     join(SRC, "app/admin/assinantes/actions/admin-modulos-impressao.ts"),
-    // Page admin de configuração (issue 144) — LÊ as flags só para SEMEAR o estado
-    // inicial do toggle admin de módulos pagos (RN-3: verdade do banco). Fiação pura
-    // de billing/entitlement admin-only: repassa `{ a4, termica }` ao componente e
-    // NÃO reimplementa o mapa modulo_impressao_* → variante (mesma classe de consumo
-    // da write action da 142), logo não abre 2ª fonte de decisão de variante (RN-M2).
-    join(SRC, "app/admin/assinantes/[lojaId]/configuracoes/page.tsx"),
+    // Sub-rota admin de Assinatura (issue 153; a consolidada foi aposentada em 154,
+    // virou redirect) — LÊ as flags só para SEMEAR o estado inicial do toggle admin
+    // de módulos pagos (RN-3: verdade do banco). Fiação pura de billing/entitlement
+    // admin-only: repassa `{ a4, termica }` ao `ModulosImpressaoAdmin` e NÃO
+    // reimplementa o mapa modulo_impressao_* → variante (mesma classe de consumo da
+    // write action da 142), logo não abre 2ª fonte de decisão de variante (RN-M2).
+    join(SRC, "app/admin/assinantes/[lojaId]/configuracoes/assinatura/page.tsx"),
   ]);
 
   it("modulo_impressao_a4/modulo_impressao_termica só aparecem no util, na blocklist admin-loja, nos tipos gerados, ou em testes", () => {

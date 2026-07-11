@@ -9,7 +9,7 @@
  * actions do servidor (134); este teste só cobre a montagem da chamada.
  *
  * Ambiente: environment=node, sem jsdom/@testing-library (padrão do projeto —
- * ver ConfiguracaoAdminClient.test.tsx). A prova de wiring é feita CAPTURANDO o
+ * ver PerfilAdminClient.test.tsx). A prova de wiring é feita CAPTURANDO o
  * objeto `acoes` que o `CuponsAdminClient` injeta no `CuponsClient` (stub) e
  * INVOCANDO cada operação, então asserindo qual action foi chamada e com quais
  * argumentos.
