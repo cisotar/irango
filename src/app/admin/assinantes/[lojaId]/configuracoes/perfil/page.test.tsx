@@ -22,6 +22,7 @@ const lojaFake = {
   slug: "pizzaria-alvo",
   telefone: null,
   whatsapp: "5511999999999" as string | null,
+  whatsapp_envio_automatico: true,
   endereco_cep: null,
   endereco_rua: null,
   endereco_numero: null,
@@ -46,7 +47,12 @@ import PerfilConfiguracaoAdminPage from "./page";
 
 type Props = {
   lojaId: string;
-  inicial: { nome: string; slug: string; whatsapp: string | null };
+  inicial: {
+    nome: string;
+    slug: string;
+    whatsapp: string | null;
+    whatsapp_envio_automatico: boolean;
+  };
   publicado: boolean;
   podePublicar: boolean;
   logoUrlInicial: string | null;
@@ -90,5 +96,29 @@ describe("page admin /configuracoes/perfil — fiação", () => {
     carregarLojaAdminBase.mockResolvedValueOnce({ ...lojaFake, whatsapp: null });
     const el = await renderizar();
     expect(el.props.podePublicar).toBe(false);
+  });
+
+  // Issue 123/124: paridade do toggle de envio automático via admin. A page
+  // precisa repassar `whatsapp_envio_automatico` DA LOJA-ALVO (retorno do
+  // loader escopado por lojaId) — não um valor fixo. Se alguém hardcodar
+  // `true` (ou esquecer o campo, o que já quebraria a tipagem de
+  // `PerfilInicial`), este teste pega o caso em que o campo é copiado mas com
+  // valor errado/estático.
+  it("repassa whatsapp_envio_automatico DA LOJA-ALVO (não um valor fixo) quando ligado", async () => {
+    carregarLojaAdminBase.mockResolvedValueOnce({
+      ...lojaFake,
+      whatsapp_envio_automatico: true,
+    });
+    const el = await renderizar();
+    expect(el.props.inicial.whatsapp_envio_automatico).toBe(true);
+  });
+
+  it("repassa whatsapp_envio_automatico DA LOJA-ALVO quando desligado — prova que não é um `true` fixo", async () => {
+    carregarLojaAdminBase.mockResolvedValueOnce({
+      ...lojaFake,
+      whatsapp_envio_automatico: false,
+    });
+    const el = await renderizar();
+    expect(el.props.inicial.whatsapp_envio_automatico).toBe(false);
   });
 });

@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { schemaPerfil, sanitizarSlug } from "@/lib/validacoes/loja";
 import {
   salvarPerfil as salvarPerfilLojista,
@@ -22,12 +23,19 @@ import {
   UploadLogoLoja,
   type UploadLogoLojaProps,
 } from "@/components/painel/UploadLogoLoja";
+import { apenasDigitos, montarPayloadPerfil } from "./montarPayloadPerfil";
 
 export type PerfilInicial = {
   nome: string;
   slug: string;
   telefone: string | null;
   whatsapp: string | null;
+  /**
+   * Preferência de disparar o WhatsApp ao confirmar o pedido (spec 5).
+   * Obrigatório: a coluna é `NOT NULL DEFAULT true`, então o SSR sempre traz um
+   * valor real — um `?? true` aqui seria um segundo default fora do banco.
+   */
+  whatsapp_envio_automatico: boolean;
   endereco_cep: string | null;
   endereco_rua: string | null;
   endereco_numero: string | null;
@@ -37,11 +45,6 @@ export type PerfilInicial = {
 };
 
 const BASE_VITRINE = "https://irango.com.br/loja";
-
-/** Mantém apenas dígitos. */
-function apenasDigitos(s: string): string {
-  return s.replace(/\D/g, "");
-}
 
 /**
  * Converte o WhatsApp armazenado (`55DDXXXXXXXXX`) para o número nacional
@@ -97,6 +100,11 @@ export function PerfilClient({
   const [whatsapp, setWhatsapp] = useState(
     whatsappArmazenadoParaExibicao(inicial.whatsapp),
   );
+  // Preferência de envio automático (spec 5). Só UX: quem decide emitir o link
+  // do WhatsApp é o servidor em `criarPedido` (RN-A2).
+  const [envioAutomatico, setEnvioAutomatico] = useState(
+    inicial.whatsapp_envio_automatico,
+  );
 
   // Endereço da loja (issue 009). Coords NÃO entram no form (derivadas no
   // servidor, issue 008). Pré-preenchido a partir do `inicial`.
@@ -139,6 +147,14 @@ export function PerfilClient({
   const slugValido = schemaPerfil.shape.slug.safeParse(slug).success;
   const slugMudou = slug !== inicial.slug;
 
+  // Destrava assim que o lojista digita um WhatsApp válido — sem esperar o save.
+  // Reusa o MESMO predicado do servidor (`reWhatsapp`, via `schemaPerfil`), no
+  // mesmo formato normalizado que o payload envia — evita habilitar o toggle
+  // com um número pela metade. Mesmo truque de `slugValido` acima.
+  const podeAtivarEnvio = schemaPerfil.shape.whatsapp.safeParse(
+    `55${apenasDigitos(whatsapp)}`,
+  ).success;
+
   // Auto-sugestão: enquanto o lojista não editar o slug manualmente, mudar o nome
   // recalcula o slug via sanitizarSlug (cuja saída sempre passa no reSlug do schema).
   function alterarNome(novoNome: string) {
@@ -171,25 +187,22 @@ export function PerfilClient({
     numeroRef.current?.focus();
   }
 
-  function montarPayload() {
-    const whatsappDigitos = apenasDigitos(whatsapp);
-    const telefoneDigitos = apenasDigitos(telefone);
-    return {
-      nome: nome.trim(),
-      slug: slug.trim(),
-      ...(telefoneDigitos ? { telefone: telefoneDigitos } : {}),
-      ...(whatsappDigitos ? { whatsapp: `55${whatsappDigitos}` } : {}),
-      ...(enderecoCep.trim() ? { endereco_cep: enderecoCep.trim() } : {}),
-      ...(enderecoRua.trim() ? { endereco_rua: enderecoRua.trim() } : {}),
-      ...(enderecoNumero.trim() ? { endereco_numero: enderecoNumero.trim() } : {}),
-      ...(enderecoBairro.trim() ? { endereco_bairro: enderecoBairro.trim() } : {}),
-      ...(enderecoCidade.trim() ? { endereco_cidade: enderecoCidade.trim() } : {}),
-      ...(enderecoEstado.trim() ? { endereco_estado: enderecoEstado.trim() } : {}),
-    };
-  }
-
   function salvar() {
-    const payload = montarPayload();
+    // Montagem do payload vive em `montarPayloadPerfil` (função pura, testável
+    // sem DOM). Aqui só traduzimos o estado do form nos campos que ela recebe.
+    const payload = montarPayloadPerfil({
+      nome,
+      slug,
+      telefone,
+      whatsapp,
+      envioAutomatico,
+      enderecoCep,
+      enderecoRua,
+      enderecoNumero,
+      enderecoBairro,
+      enderecoCidade,
+      enderecoEstado,
+    });
 
     const parsed = schemaPerfil.safeParse(payload);
     if (!parsed.success) {
@@ -309,6 +322,64 @@ export function PerfilClient({
                 inputMode="tel"
                 className={className}
               />
+            </div>
+
+            {/* Envio automático do WhatsApp ao confirmar o pedido (spec 5).
+                Fica colado ao campo de WhatsApp porque só faz sentido com um
+                número cadastrado. `disabled` é gate de UX: o servidor já não
+                emite o link sem WhatsApp (RN-A2/RN-A3).
+                A11y: o `Switch` do Base UI roda com `nativeButton = false`, então
+                o `id` recebido vai para o `<input type="checkbox">` oculto — o
+                `Label htmlFor` associa nativamente (clique no rótulo alterna) e o
+                Base UI propaga o nome ao `role="switch"`. Por isso NÃO há
+                `aria-label` aqui: duplicaria o rótulo. */}
+            <div
+              className="group space-y-1"
+              data-disabled={podeAtivarEnvio ? undefined : "true"}
+            >
+              <div className="flex min-h-11 items-center justify-between gap-3">
+                <Label
+                  htmlFor="perfil-whatsapp-envio-automatico"
+                  className="cursor-pointer"
+                >
+                  Enviar a mensagem de WhatsApp automaticamente ao confirmar o
+                  pedido
+                </Label>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {envioAutomatico ? "Ligado" : "Desligado"}
+                  </span>
+                  <Switch
+                    id="perfil-whatsapp-envio-automatico"
+                    checked={envioAutomatico}
+                    disabled={!podeAtivarEnvio}
+                    onCheckedChange={(v) => setEnvioAutomatico(v === true)}
+                    className="data-disabled:cursor-not-allowed data-disabled:opacity-50"
+                    aria-describedby={
+                      podeAtivarEnvio
+                        ? "perfil-whatsapp-envio-automatico-ajuda"
+                        : "perfil-whatsapp-envio-automatico-ajuda perfil-whatsapp-envio-automatico-motivo"
+                    }
+                  />
+                </div>
+              </div>
+
+              <p
+                id="perfil-whatsapp-envio-automatico-ajuda"
+                className="text-xs text-muted-foreground"
+              >
+                Ao confirmar o pedido, o WhatsApp abre sozinho com o resumo. O
+                botão para avisar a loja continua disponível para o cliente.
+              </p>
+
+              {!podeAtivarEnvio && (
+                <p
+                  id="perfil-whatsapp-envio-automatico-motivo"
+                  className="text-xs text-amber-600 dark:text-amber-500"
+                >
+                  Cadastre um WhatsApp para ativar o envio automático.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1">

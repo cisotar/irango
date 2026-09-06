@@ -84,6 +84,7 @@ const INICIAL: PerfilInicial = {
   slug: "loja-teste",
   telefone: null,
   whatsapp: null,
+  whatsapp_envio_automatico: true,
   endereco_cep: null,
   endereco_rua: null,
   endereco_numero: null,
@@ -96,15 +97,17 @@ function renderizar(
   extra: {
     onSalvarLogo?: UploadLogoLojaProps["onSalvar"];
     onRemoverLogo?: UploadLogoLojaProps["onRemover"];
+    inicial?: Partial<PerfilInicial>;
   } = {},
-) {
-  renderToStaticMarkup(
+): string {
+  const { inicial, ...props } = extra;
+  return renderToStaticMarkup(
     <PerfilClient
-      inicial={INICIAL}
+      inicial={{ ...INICIAL, ...inicial }}
       publicado={false}
       podePublicar
       logoUrlInicial={null}
-      {...extra}
+      {...props}
     />,
   );
 }
@@ -138,5 +141,96 @@ describe("PerfilClient — repasse das actions de logo ao UploadLogoLoja (cenár
     expect(capturado.onRemover).toBe(onRemoverLogo);
     expect(capturado.onSalvar).not.toBe(onRemoverLogo);
     expect(capturado.onRemover).not.toBe(onSalvarLogo);
+  });
+});
+
+/**
+ * Toggle de envio automático do WhatsApp (issue 123, spec 5).
+ *
+ * Alcance possível sem DOM real (o projeto não tem jsdom/@testing-library —
+ * ver cabeçalho): asserts sobre o MARKUP ESTÁTICO — presença do `role="switch"`,
+ * do `aria-checked` refletindo o SSR, do estado desabilitado e da dica.
+ *
+ * Lacuna que PERMANECE (mesma razão do bloco de logo acima): provar
+ * clique → `setEnvioAutomatico` → `montarPayload` inclui
+ * `whatsapp_envio_automatico: false` exige clique DOM real. A gravação do
+ * booleano já está coberta a montante em `patches-loja.test.ts` /
+ * `admin-perfil.test.ts` (issue 122); o resto se prova em `/verificar` manual.
+ */
+describe("PerfilClient — toggle de envio automático do WhatsApp (issue 123)", () => {
+  it("reflete a coluna LIGADA quando há WhatsApp válido: switch marcado e habilitado, sem a dica de bloqueio", () => {
+    const markup = renderizar({
+      inicial: { whatsapp: "5511999999999", whatsapp_envio_automatico: true },
+    });
+
+    expect(markup).toContain('role="switch"');
+    expect(markup).toContain('aria-checked="true"');
+    expect(markup).not.toContain("Cadastre um WhatsApp para ativar o envio automático.");
+    // Habilitado: nem `aria-disabled` no `role="switch"`, nem `disabled` no
+    // `<input type="checkbox">` oculto que o Base UI renderiza com o nosso `id`.
+    expect(markup).not.toContain('aria-disabled="true"');
+    expect(markup).not.toContain('<input disabled="" id="perfil-whatsapp-envio-automatico"');
+    // A11y (design: "a string é montada condicionalmente e nunca deve
+    // referenciar um id que não está no DOM"): habilitado, o describedby cita
+    // SÓ o id da ajuda (sem o id do motivo, que não existe aqui) — e esse id
+    // realmente existe como elemento no markup.
+    expect(markup).toContain(
+      'aria-describedby="perfil-whatsapp-envio-automatico-ajuda"',
+    );
+    expect(markup).toContain('id="perfil-whatsapp-envio-automatico-ajuda"');
+    expect(markup).not.toContain("perfil-whatsapp-envio-automatico-motivo");
+  });
+
+  it("reflete a coluna DESLIGADA (prova que `false` do SSR não vira `true` por default no cliente)", () => {
+    const markup = renderizar({
+      inicial: { whatsapp: "5511999999999", whatsapp_envio_automatico: false },
+    });
+
+    expect(markup).toContain('aria-checked="false"');
+    expect(markup).toContain("Desligado");
+  });
+
+  it("sem WhatsApp cadastrado: switch desabilitado + dica (RN-A3), sem zerar a preferência gravada", () => {
+    const markup = renderizar({
+      inicial: { whatsapp: null, whatsapp_envio_automatico: true },
+    });
+
+    expect(markup).toContain("Cadastre um WhatsApp para ativar o envio automático.");
+    expect(markup).toContain('id="perfil-whatsapp-envio-automatico-motivo"');
+    // Desabilitado de fato: o root `role="switch"` sai da tabulação e o input
+    // oculto carrega `disabled` — nada é submetível/alternável.
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup).toContain('<input disabled="" id="perfil-whatsapp-envio-automatico"');
+    // A dica de bloqueio é anunciada junto do texto auxiliar.
+    expect(markup).toContain(
+      'aria-describedby="perfil-whatsapp-envio-automatico-ajuda perfil-whatsapp-envio-automatico-motivo"',
+    );
+    // Os DOIS ids citados no describedby existem de fato no DOM (design:
+    // nunca referenciar um id ausente) — a dica auxiliar continua presente
+    // mesmo desabilitado, não só o motivo.
+    expect(markup).toContain('id="perfil-whatsapp-envio-automatico-ajuda"');
+    expect(markup).toContain('id="perfil-whatsapp-envio-automatico-motivo"');
+    // O valor da coluna NÃO é zerado ao desabilitar — só o controle trava.
+    expect(markup).toContain('aria-checked="true"');
+  });
+
+  it("WhatsApp incompleto (menos dígitos que o `reWhatsapp` do servidor) mantém o switch travado", () => {
+    const markup = renderizar({
+      inicial: { whatsapp: "5511999", whatsapp_envio_automatico: true },
+    });
+
+    expect(markup).toContain("Cadastre um WhatsApp para ativar o envio automático.");
+  });
+
+  it("associa o rótulo ao controle por `htmlFor` (o `id` do Base UI vai para o input oculto) e não duplica com `aria-label`", () => {
+    const markup = renderizar({
+      inicial: { whatsapp: "5511999999999", whatsapp_envio_automatico: true },
+    });
+
+    expect(markup).toContain('for="perfil-whatsapp-envio-automatico"');
+    expect(markup).toContain(
+      "Enviar a mensagem de WhatsApp automaticamente ao confirmar o pedido",
+    );
+    expect(markup).not.toContain("aria-label=\"Enviar a mensagem");
   });
 });
