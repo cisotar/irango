@@ -43,6 +43,11 @@ export type CheckoutWizardProps = {
   /** false se a loja não aceita entrega (sem zonas e sem fallback fora-de-zona). */
   aceitaEntrega: boolean;
   formasPagamento: FormaPagamentoWizard[];
+  /**
+   * [126] Derivada no SSR: loja com `whatsapp_envio_automatico = true` E número
+   * de WhatsApp preenchido. Pré-abre a aba no clique de confirmar (RN-A5).
+   */
+  preAbrirWhatsapp?: boolean;
 };
 
 export function CheckoutWizard({
@@ -52,6 +57,7 @@ export function CheckoutWizard({
   lojaAberta,
   aceitaEntrega,
   formasPagamento,
+  preAbrirWhatsapp = false,
 }: CheckoutWizardProps) {
   const router = useRouter();
   const { itens, incrementar, decrementar, remover } = useCarrinho();
@@ -145,6 +151,7 @@ export function CheckoutWizard({
     itens: itensPayload,
     estado,
     onEstadoChange: patch,
+    preAbrirWhatsapp,
   });
 
   // Handlers estáveis: FormEndereco/EtapaEntrega têm essas props no dep array de
@@ -248,6 +255,7 @@ export function CheckoutWizard({
           frete={fretePreviewEfetivo}
           onEstadoChange={patch}
           onVoltar={() => setEtapa(2)}
+          preAbrirWhatsapp={preAbrirWhatsapp}
         />
       )}
     </div>
@@ -309,6 +317,7 @@ export function CheckoutWizard({
             frete={fretePreviewEfetivo}
             onEstadoChange={patch}
             onVoltar={() => {}}
+            preAbrirWhatsapp={preAbrirWhatsapp}
           />
         </div>
 

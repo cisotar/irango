@@ -67,6 +67,8 @@ export type EtapaPagamentoProps = {
    * "desktop": 3 seções empilhadas — resumo e CTA vivem na coluna sticky (006).
    */
   variante?: "wizard" | "desktop";
+  /** [126] Pré-abre a aba do WhatsApp no clique de confirmar (RN-A5). */
+  preAbrirWhatsapp?: boolean;
 };
 
 export function EtapaPagamento({
@@ -82,6 +84,7 @@ export function EtapaPagamento({
   onEstadoChange,
   onVoltar,
   variante = "wizard",
+  preAbrirWhatsapp = false,
 }: EtapaPagamentoProps) {
   const desktop = variante === "desktop";
   const formaSelecionada = formasPagamento.find(
@@ -96,6 +99,7 @@ export function EtapaPagamento({
     itens,
     estado,
     onEstadoChange,
+    preAbrirWhatsapp,
   });
 
   async function copiarChave(chave: string) {

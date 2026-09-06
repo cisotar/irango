@@ -93,6 +93,14 @@ export default async function CheckoutPage({ params }: PageProps) {
       return tipo === "pix" ? { ...base, ...extrairConfigPix(f.config) } : base;
     });
 
+  // [126] RN-A5: preview de UX para pré-abrir a aba do WhatsApp no clique de
+  // confirmar. `=== true` estrito (a view devolve boolean | null) e exige
+  // número cadastrado — fail-closed. A DECISÃO real de emitir o link é do
+  // servidor em `criarPedido` (125); aqui o cliente só reage.
+  const preAbrirWhatsapp =
+    loja.whatsapp_envio_automatico === true &&
+    (loja.whatsapp ?? "").trim() !== "";
+
   return (
     <CheckoutWizard
       lojaId={lojaId}
@@ -101,6 +109,7 @@ export default async function CheckoutPage({ params }: PageProps) {
       lojaAberta={aberta}
       aceitaEntrega={aceitaEntrega}
       formasPagamento={formasPagamento}
+      preAbrirWhatsapp={preAbrirWhatsapp}
     />
   );
 }
