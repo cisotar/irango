@@ -20,6 +20,8 @@ export type DadosPerfil = {
   endereco_bairro?: string | null;
   endereco_cidade?: string | null;
   endereco_estado?: string | null;
+  /** Preferência operacional (issue 122): envio automático do pedido no WhatsApp. */
+  whatsapp_envio_automatico?: boolean;
 };
 
 /**
@@ -42,6 +44,10 @@ export function montarPatchPerfil(
   if (d.endereco_bairro !== undefined) patch.endereco_bairro = d.endereco_bairro;
   if (d.endereco_cidade !== undefined) patch.endereco_cidade = d.endereco_cidade;
   if (d.endereco_estado !== undefined) patch.endereco_estado = d.endereco_estado;
+  // Preferência operacional (issue 122): `!== undefined` (nunca truthiness) —
+  // `false` PRECISA ser gravado; ausente PRECISA preservar o valor no banco.
+  if (d.whatsapp_envio_automatico !== undefined)
+    patch.whatsapp_envio_automatico = d.whatsapp_envio_automatico;
   return patch;
 }
 

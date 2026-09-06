@@ -39,20 +39,18 @@ type ResultadoPerfilAdmin =
   | { ok: true; geocodificado: boolean }
   | { ok: false; erro: string };
 
-// Chaves do perfil aceitas (paridade com schemaPerfil). Usadas no allowlist-pick
-// ANTES do parse `.strict()`, descartando colunas autoritativas do payload hostil.
-const CHAVES_PERFIL = [
-  "nome",
-  "slug",
-  "telefone",
-  "whatsapp",
-  "endereco_cep",
-  "endereco_rua",
-  "endereco_numero",
-  "endereco_bairro",
-  "endereco_cidade",
-  "endereco_estado",
-] as const;
+// Chaves do perfil aceitas no allowlist-pick ANTES do parse `.strict()`, que
+// descarta colunas autoritativas de um payload hostil.
+//
+// DERIVADA de `schemaPerfil`, nunca copiada à mão: uma lista manual sai de
+// sincronia em silêncio. Chave a menos e o campo novo some sem erro nesta via
+// (o pick o descarta antes do parse); chave a mais e o `.strict()` derruba todo
+// save admin. Derivar do schema faz as duas vias aceitarem exatamente o mesmo
+// conjunto por construção.
+//
+// A allowlist coluna-a-coluna de `montarPatchPerfil` continua sendo a barreira
+// que decide o que chega ao UPDATE — derivar aqui não a afrouxa.
+const CHAVES_PERFIL = Object.keys(schemaPerfil.shape) as (keyof typeof schemaPerfil.shape)[];
 
 const ERRO_GENERICO = "Não foi possível salvar. Tente novamente.";
 const ERRO_VALIDACAO = "Dados inválidos. Confira os campos e tente novamente.";

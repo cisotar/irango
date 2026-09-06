@@ -467,3 +467,61 @@ describe("schemaNovaLojaAdmin (issue 086, validação isomórfica)", () => {
     expect(schemaNovaLojaAdmin.safeParse({ ...valido, slug }).success).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue 122 — flag `whatsapp_envio_automatico` no schemaPerfil.
+// Preferência operacional booleana e OPCIONAL. Invariante crítica: SEM
+// `.default(true)` no zod — payload sem a chave tem que sair do parse SEM a
+// chave, para `montarPatchPerfil` não gravar nada e o valor no banco (DEFAULT
+// da migration 121) ser PRESERVADO. Um default aqui sobrescreveria a escolha
+// do lojista em todo save de perfil que não mandasse o campo.
+// ---------------------------------------------------------------------------
+describe("schemaPerfil — whatsapp_envio_automatico (issue 122)", () => {
+  it("aceita a flag em true", () => {
+    const r = schemaPerfil.safeParse({
+      nome: "Loja",
+      slug: "loja-ok",
+      whatsapp_envio_automatico: true,
+    });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.whatsapp_envio_automatico).toBe(true);
+  });
+
+  it("aceita a flag em false (valor preservado, sem coerção para true)", () => {
+    const r = schemaPerfil.safeParse({
+      nome: "Loja",
+      slug: "loja-ok",
+      whatsapp_envio_automatico: false,
+    });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.whatsapp_envio_automatico).toBe(false);
+  });
+
+  it("aceita payload SEM a flag e NÃO aplica default (chave ausente do data)", () => {
+    const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok" });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.whatsapp_envio_automatico).toBeUndefined();
+    expect(r.success && "whatsapp_envio_automatico" in r.data).toBe(false);
+  });
+
+  it("rejeita valor não-booleano (sem coerção): 'true', 1, 0, null, 'false'", () => {
+    for (const valor of ["true", "false", 1, 0, null, "sim", {}]) {
+      const r = schemaPerfil.safeParse({
+        nome: "Loja",
+        slug: "loja-ok",
+        whatsapp_envio_automatico: valor,
+      });
+      expect(r.success).toBe(false);
+    }
+  });
+
+  it("continua aceitando a flag junto do endereço completo", () => {
+    const r = schemaPerfil.safeParse({
+      nome: "Loja",
+      slug: "loja-ok",
+      ...enderecoValido,
+      whatsapp_envio_automatico: false,
+    });
+    expect(r.success).toBe(true);
+  });
+});

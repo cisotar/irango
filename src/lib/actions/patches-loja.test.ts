@@ -31,6 +31,8 @@ const COLUNAS_PERMITIDAS = [
   "endereco_cidade",
   "endereco_estado",
   "endereco_cep",
+  // Issue 122: preferência operacional (NÃO é coluna autoritativa/billing).
+  "whatsapp_envio_automatico",
 ] as const;
 
 describe("montarPatchPerfil — allowlist RN-7", () => {
@@ -46,6 +48,7 @@ describe("montarPatchPerfil — allowlist RN-7", () => {
       endereco_cidade: "São Paulo",
       endereco_estado: "SP",
       endereco_cep: "01001000",
+      whatsapp_envio_automatico: true,
     });
 
     expect(patch).toEqual({
@@ -59,6 +62,7 @@ describe("montarPatchPerfil — allowlist RN-7", () => {
       endereco_cidade: "São Paulo",
       endereco_estado: "SP",
       endereco_cep: "01001000",
+      whatsapp_envio_automatico: true,
     });
     // Nenhuma chave fora da allowlist (trava a lista exata).
     expect(Object.keys(patch).sort()).toEqual([...COLUNAS_PERMITIDAS].sort());
@@ -70,6 +74,47 @@ describe("montarPatchPerfil — allowlist RN-7", () => {
       slug: "bar-do-joao",
     });
 
+    expect(patch).toEqual({ nome: "Bar do João", slug: "bar-do-joao" });
+  });
+
+  // ── Issue 122: flag whatsapp_envio_automatico ──────────────────────────────
+  it("inclui whatsapp_envio_automatico quando true", () => {
+    const patch = montarPatchPerfil({
+      nome: "Bar do João",
+      slug: "bar-do-joao",
+      whatsapp_envio_automatico: true,
+    });
+
+    expect(patch).toEqual({
+      nome: "Bar do João",
+      slug: "bar-do-joao",
+      whatsapp_envio_automatico: true,
+    });
+  });
+
+  it("inclui whatsapp_envio_automatico quando FALSE (checa !== undefined, não truthiness)", () => {
+    const patch = montarPatchPerfil({
+      nome: "Bar do João",
+      slug: "bar-do-joao",
+      whatsapp_envio_automatico: false,
+    });
+
+    expect("whatsapp_envio_automatico" in patch).toBe(true);
+    expect(patch.whatsapp_envio_automatico).toBe(false);
+    expect(patch).toEqual({
+      nome: "Bar do João",
+      slug: "bar-do-joao",
+      whatsapp_envio_automatico: false,
+    });
+  });
+
+  it("NÃO inclui whatsapp_envio_automatico quando ausente (preserva o valor no banco)", () => {
+    const patch = montarPatchPerfil({
+      nome: "Bar do João",
+      slug: "bar-do-joao",
+    });
+
+    expect("whatsapp_envio_automatico" in patch).toBe(false);
     expect(patch).toEqual({ nome: "Bar do João", slug: "bar-do-joao" });
   });
 
