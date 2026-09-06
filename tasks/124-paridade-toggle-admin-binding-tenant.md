@@ -562,3 +562,145 @@ de 4 porque o erro de tipo de `PerfilInicial` aparece no `build`, não no vitest
       WhatsApp `5511999998888` já é o padrão fictício do repo)
 - [ ] Manual: admin desliga o toggle da loja-alvo → `/painel/configuracoes/perfil`
       da loja **do próprio admin** continua com a flag original
+
+---
+
+## RED capturado
+
+Fase RED executada em 2026-09-06. Comandos: `npx vitest run <arquivo>` (npm, não pnpm).
+Nenhuma linha de código de produção foi escrita nem deixada modificada por esta fase.
+
+### Estado encontrado — a produção da 124 já estava no repo
+
+A "única mudança de produção" prevista no plano (`whatsapp_envio_automatico:
+loja.whatsapp_envio_automatico` em `.../[lojaId]/configuracoes/perfil/page.tsx`)
+**já havia entrado junto com o commit `eb92a54 feat(123)`**, junto com dois testes
+de C2 em `page.test.tsx`. Consequência: **C1, C2 e C3 passam de primeira** — os três
+são registrados como **testes de CARACTERIZAÇÃO/REGRESSÃO**, exatamente a saída
+prevista pelo passo 1 da Ordem de Implementação. Nenhum código de produção foi
+quebrado para forçar vermelho artificial.
+
+Como um teste que nasce verde não prova nada por si, cada cenário foi submetido a
+uma **verificação de mutação temporária** (mutante aplicado, suíte rodada, arquivo
+restaurado por backup na mesma chamada; `git diff` de produção limpo ao final).
+O `FAIL` real dessas mutações é a evidência de que os testes prendem a invariante.
+
+### C1 — `admin-loja.binding.test.ts` (client real-shape) — VERDE de caracterização
+
+```
+ ✓ salvarPerfilAdmin — binding por tenant da flag whatsapp_envio_automatico (124) > C1.1 — flag `false` grava na LOJA-ALVO, escopada exatamente por id 3ms
+ ✓ ... > C1.2 — flag `true` idem (a via não trata a flag por truthiness) 1ms
+ ✓ ... > C1.3 — `id`/`loja_id`/`dono_id` hostis NO PAYLOAD não redirecionam a escrita 1ms
+ ✓ ... > C1.4 — nenhum UPDATE em `lojas` sai sem escopo (a loja do próprio admin fica intacta) 1ms
+ ✓ ... > C1.5 — `lojaId` de rota inválido é fail-closed: zero I/O, zero UPDATE 1ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+```
+
+Prova de que a cadeia 122 está íntegra **sob o dublê que reproduz o incidente
+2026-07-03** (`from` no protótipo lendo `this.rest`) — nenhum `TypeError`.
+
+**Mutante M1** — `escopo.atualizarLoja` ganha um segundo filtro (`.eq("ativo", true)`),
+afrouxando/alterando o conjunto de linhas atingidas em `src/lib/actions/admin-loja.ts:147`:
+
+```
+     × todos os helpers do escopo executam sem TypeError e injetam o escopo por loja 12ms
+     × removerLogoAdmin (ponta a ponta da action) retorna ok com o client real-shape 6ms
+     × C1.1 — flag `false` grava na LOJA-ALVO, escopada exatamente por id 4ms
+     × C1.2 — flag `true` idem (a via não trata a flag por truthiness) 1ms
+     × C1.3 — `id`/`loja_id`/`dono_id` hostis NO PAYLOAD não redirecionam a escrita 1ms
+     × C1.4 — nenhum UPDATE em `lojas` sai sem escopo (a loja do próprio admin fica intacta) 1ms
+      Tests  6 failed | 1 passed (7)
+```
+
+**Mutante M2** — `montarPatchPerfil` volta a testar a flag por truthiness
+(`if (d.whatsapp_envio_automatico)` em vez de `!== undefined`), o bug que impediria
+o admin de **desligar** o envio automático:
+
+```
+     × C1.1 — flag `false` grava na LOJA-ALVO, escopada exatamente por id 4ms
+     × C1.3 — `id`/`loja_id`/`dono_id` hostis NO PAYLOAD não redirecionam a escrita 1ms
+      Tests  2 failed | 5 passed (7)
+```
+
+**Achado (defesa em profundidade confirmada).** Uma terceira mutação — fazer
+`atualizarLoja` honrar `patch.id` como destino (`.eq("id", patch.id ?? lojaId)`,
+a forma literal do incidente cross-tenant) — **não** derrubou nenhum teste, e isso
+é correto: `id` nunca chega ao patch porque é descartado duas camadas antes (pick
+por `CHAVES_PERFIL` e allowlist de `montarPatchPerfil`). C1.3 fica como rede de
+segurança para o dia em que uma dessas camadas cair.
+
+### C2 — `page.test.tsx` (SSR repassa a flag da loja-alvo) — VERDE de caracterização
+
+```
+ ✓ page admin /configuracoes/perfil — fiação > repassa whatsapp_envio_automatico DA LOJA-ALVO (não um valor fixo) quando ligado 0ms
+ ✓ page admin /configuracoes/perfil — fiação > repassa whatsapp_envio_automatico DA LOJA-ALVO quando desligado — prova que não é um `true` fixo 0ms
+      Tests  6 passed (6)
+```
+
+**Mutante M3** — `page.tsx` hardcoda `whatsapp_envio_automatico: true` em vez de ler
+da loja-alvo (o vetor que o `DEFAULT true` da coluna mascararia):
+
+```
+     × repassa whatsapp_envio_automatico DA LOJA-ALVO quando desligado — prova que não é um `true` fixo 5ms
+AssertionError: expected true to be false // Object.is equality
+      Tests  1 failed | 5 passed (6)
+```
+
+Confirma a exigência do plano: só o caso `false` distingue "leu da loja-alvo" de
+"caiu no default".
+
+### C3 — `PerfilAdminClient.test.tsx` (fiação de `onSalvar`) — VERDE de caracterização
+
+Lacuna real fechada: o arquivo cobria só a fiação de **logo** (issue 119).
+
+```
+ ✓ PerfilAdminClient — fiação de onSalvar (issue 124) > C3.1 — injeta onSalvar no PerfilClient (prop definida, não cai no default do lojista) 1ms
+ ✓ ... > C3.2 — onSalvar(payload) chama salvarPerfilAdmin(lojaId da URL, payload intacto) — nunca salvarPerfil 2ms
+ ✓ ... > C3.3 — tenant vem da URL, nunca do payload: `id`/`loja_id` hostis não mudam o 1º argumento 0ms
+      Tests  7 passed (7)
+```
+
+**Mutante M4** — remoção da prop `onSalvar={(payload) => salvarPerfilAdmin(lojaId, payload)}`
+do `PerfilAdminClient`. É a regressão silenciosa de maior risco da issue: o
+`PerfilClient` tem `onSalvar = salvarPerfilLojista` como **default de prop**, então
+o build passa, a UI funciona, e o perfil (incluindo a flag) é gravado na loja **DO
+ADMIN** — mesma forma do bug de logo da issue 119:
+
+```
+ × PerfilAdminClient — fiação de onSalvar (issue 124) > C3.1 — injeta onSalvar no PerfilClient (prop definida, não cai no default do lojista) 9ms
+   → expected undefined to be type of 'function'
+ × ... > C3.2 — onSalvar(payload) chama salvarPerfilAdmin(lojaId da URL, payload intacto) — nunca salvarPerfil 5ms
+   → expected undefined to be type of 'function'
+ × ... > C3.3 — tenant vem da URL, nunca do payload: `id`/`loja_id` hostis não mudam o 1º argumento 2ms
+   → expected undefined to be type of 'function'
+      Tests  3 failed | 4 passed (7)
+```
+
+### Arquivos tocados nesta fase (somente teste)
+
+- `src/lib/actions/admin-loja.binding.test.ts` — `neq` aditivo no `criarEncadeavel`
+  (exigido por `slugExiste`, registrado no mesmo array de `eqs`); `vi.mock` de
+  `@/lib/utils/geocodificarEndereco` (D3, zero rede no CI); import de
+  `salvarPerfilAdmin`; `describe` com C1.1–C1.5. Nenhum caso pré-existente alterado.
+- `src/app/admin/assinantes/[lojaId]/configuracoes/perfil/PerfilAdminClient.test.tsx`
+  — captura de `onSalvar` no stub; `vi.mock("@/lib/actions/loja")` (defaults do
+  lojista); `salvarPerfilAdmin` com retorno realista; `describe` com C3.1–C3.3.
+
+`page.test.tsx` **não** foi tocado — os dois casos de C2 já existiam (entraram com
+a 123) e cobrem o cenário do plano, inclusive o caso `false`.
+
+### Observações para a fase GREEN
+
+- **Não há GREEN a fazer nesta issue.** A linha de produção prevista já está em
+  `page.tsx` (commit `eb92a54`). O passo 3 da Ordem de Implementação está satisfeito;
+  restam apenas os passos 4–6 (rodadas de suíte + `npm run build`).
+- Ruído de `stderr` no C1 (não afeta asserções): `registrarAcessoAdmin` é
+  fire-and-forget e loga `No "obterAdminUserId" export is defined on the
+  "@/lib/auth/admin" mock`. Deliberadamente **não** adicionei o export ao mock —
+  isso passaria a gerar um `insert` assíncrono em `admin_acessos` fora do controle
+  do `beforeEach`, arriscando flakiness cross-test no `capturado.inserts`.
+- Não foi executado nada contra Supabase local: esta issue não altera RLS (o
+  caminho admin roda sob `service_role`, cuja política de escopo é o
+  `.eq("id", lojaId)` provado em C1).

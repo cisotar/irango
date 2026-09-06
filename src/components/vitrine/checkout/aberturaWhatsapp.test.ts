@@ -29,6 +29,39 @@ function janelaFake() {
   return { janela, close };
 }
 
+/**
+ * Janela que registra a ORDEM entre `opener = null` e a navegação — a mitigação
+ * de reverse tabnabbing só vale se o desapossamento vier ANTES do href externo.
+ */
+function janelaComOrdem() {
+  const ordem: string[] = [];
+  const close = vi.fn(() => ordem.push("close"));
+  let href = "";
+  let opener: unknown = {};
+  const janela: JanelaWhatsapp = {
+    close,
+    get location() {
+      return {
+        get href() {
+          return href;
+        },
+        set href(v: string) {
+          href = v;
+          ordem.push("navegar");
+        },
+      };
+    },
+    get opener() {
+      return opener;
+    },
+    set opener(v: unknown) {
+      opener = v;
+      ordem.push("opener=null");
+    },
+  };
+  return { janela, ordem, close, lerHref: () => href, lerOpener: () => opener };
+}
+
 describe("prepararAbaWhatsapp", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -90,8 +123,21 @@ describe("prepararAbaWhatsapp", () => {
     expect(() => aba.concluir(null)).not.toThrow();
   });
 
-  it.each(["javascript:alert(1)", "http://api.whatsapp.com/send", "//evil.com"])(
-    "anti-XSS §15: href %s fecha a aba e não navega",
+  it.each([
+    "javascript:alert(1)",
+    "JaVaScRiPt:alert(1)",
+    " javascript:alert(1)",
+    "\tjavascript:alert(1)",
+    "\njavascript:alert(1)",
+    "\u0000https://api.whatsapp.com/send",
+    "data:text/html,<script>alert(1)</script>",
+    "vbscript:msgbox(1)",
+    "http://api.whatsapp.com/send",
+    "HTTPS://api.whatsapp.com/send",
+    "//evil.com",
+    "https:/api.whatsapp.com/send",
+  ])(
+    "anti-XSS §15: href %j fecha a aba e não navega",
     (href) => {
       const { janela, close } = janelaFake();
 
@@ -101,6 +147,58 @@ describe("prepararAbaWhatsapp", () => {
       expect(close).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("reverse tabnabbing: anula `opener` ANTES de navegar para o domínio externo", () => {
+    const { janela, ordem, lerOpener, close } = janelaComOrdem();
+
+    prepararAbaWhatsapp(true, () => janela).concluir(HREF_OK);
+
+    expect(ordem).toEqual(["opener=null", "navegar"]);
+    expect(lerOpener()).toBeNull();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("fail-closed: se `opener` não puder ser anulado, NÃO navega e fecha a aba", () => {
+    const close = vi.fn();
+    const janela: JanelaWhatsapp = {
+      location: { href: "" },
+      close,
+      set opener(_v: unknown) {
+        throw new TypeError("somente leitura");
+      },
+      get opener() {
+        return {};
+      },
+    };
+
+    prepararAbaWhatsapp(true, () => janela).concluir(HREF_OK);
+
+    expect(janela.location.href).toBe("");
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("atribuição de href que lança: fecha a aba em vez de deixá-la órfã", () => {
+    const close = vi.fn();
+    const janela: JanelaWhatsapp = {
+      close,
+      opener: {},
+      get location() {
+        return {
+          get href() {
+            return "";
+          },
+          set href(_v: string) {
+            throw new Error("COOP");
+          },
+        };
+      },
+    };
+
+    expect(() =>
+      prepararAbaWhatsapp(true, () => janela).concluir(HREF_OK),
+    ).not.toThrow();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
 
   it("close() que lança não propaga a exceção (best-effort RN-A4)", () => {
     const janela: JanelaWhatsapp = {

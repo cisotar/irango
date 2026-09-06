@@ -17,7 +17,12 @@
 import { urlHttpsSegura } from "@/lib/utils/urlHttpsSegura";
 
 /** Superfície mínima de `Window` usada aqui — permite fake no teste. */
-export type JanelaWhatsapp = { location: { href: string }; close: () => void };
+export type JanelaWhatsapp = {
+  location: { href: string };
+  close: () => void;
+  /** `window.opener` — anulado antes de navegar (anti reverse tabnabbing). */
+  opener?: unknown;
+};
 
 /** Abridor de janela injetável. Devolve `null` quando não foi possível abrir. */
 export type AbrirJanela = () => JanelaWhatsapp | null;
@@ -38,9 +43,30 @@ export type AbaWhatsapp = {
 export function abrirAbaEmBranco(): JanelaWhatsapp | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.open("", "_blank") as JanelaWhatsapp | null;
+    return window.open("", "_blank");
   } catch {
     return null;
+  }
+}
+
+/**
+ * Desapossa a aba (`window.opener = null`) ANTES de ela receber conteúdo de
+ * terceiro — mitigação de reverse tabnabbing (OWASP; equivale ao
+ * `rel="noopener"` do link manual da confirmação, `confirmacao/page.tsx`).
+ * Sem isso, a página aberta em `api.whatsapp.com` mantém uma referência viva
+ * à aba do checkout e pode navegá-la (`opener.location = ...`) para um clone
+ * de phishing de pagamento. `window.open("", "_blank", "noopener")` devolveria
+ * `null` e mataria a mecânica de pré-abertura, então desapossamos aqui,
+ * enquanto a aba ainda é `about:blank` (same-origin → `opener` é gravável).
+ *
+ * Fail-closed (§15): se não for possível desapossar, a aba NÃO navega.
+ */
+function desapossar(janela: JanelaWhatsapp): boolean {
+  try {
+    janela.opener = null;
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -66,14 +92,18 @@ export function prepararAbaWhatsapp(
       // Guard §15 (seguranca.md): fonte ÚNICA do predicado anti-XSS. Só
       // `https://` navega; `javascript:`/`http:` fecham a aba.
       const destino = urlHttpsSegura(href);
-      try {
-        if (destino) {
+      if (destino && desapossar(janela)) {
+        try {
           janela.location.href = destino;
-        } else {
-          janela.close();
+          return;
+        } catch {
+          // atribuição pode lançar (COOP, aba já fechada) — cai no close.
         }
+      }
+      try {
+        janela.close();
       } catch {
-        // best-effort: atribuição/close podem lançar (COOP, aba já fechada).
+        // best-effort: close pode lançar (aba já fechada pelo usuário).
       }
     },
   };
