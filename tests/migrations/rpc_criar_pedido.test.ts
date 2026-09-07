@@ -114,6 +114,8 @@ async function chamarCriarPedido(
       nome: string;
       preco: number;
       quantidade: number;
+      // [166] observação por item viaja DENTRO de p_itens (assinatura da RPC inalterada).
+      observacao?: string;
       opcionais?: { opcional_id: string; nome_snapshot: string; preco_snapshot: number; quantidade: number }[];
     }[];
   },
@@ -787,5 +789,320 @@ describe("085/086 RPC criar_pedido — integração com opcionais (pglite)", () 
       [itemId],
     );
     expect(n).toBe(0);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 166 — Fase RED: coluna itens_pedido.observacao + RPC criar_pedido
+// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * Issue tasks/166-observacao-item-migration-e-rpc.md (crítica: SIM).
+ * Spec: specs/observacoes-por-item-pedido.md §Modelos de Dados.
+ *
+ * A coluna `itens_pedido.observacao` e o INSERT correspondente na RPC ainda NÃO
+ * existem — logo todo `select observacao` aqui falha com
+ * `column "observacao" does not exist`. Esse é o RED.
+ *
+ * O que estes testes provam que a migration PRECISA garantir:
+ *  - (a) `observacao` dentro de p_itens persiste em itens_pedido.observacao;
+ *  - (b) `''` e `'   '` (espaços ASCII) normalizam para NULL — NUNCA string vazia.
+ *        NB: `trim()` do Postgres é `btrim`, que remove SÓ espaço ASCII: `\n`,
+ *        `\t`, `\r` e NBSP NÃO são removidos aqui. Normalizar esses é
+ *        responsabilidade do zod (issue 167), não do SQL — por isso este caso
+ *        usa espaços, e só espaços;
+ *  - (c) 201 caracteres NÃO derrubam o pedido inteiro: a RPC trunca em 200
+ *        (`left(...,200)`), enquanto o CHECK da coluna rejeita um INSERT DIRETO
+ *        de 201 (defesa em profundidade). O par 200-ok / 201-rejeitado é
+ *        anti-falso-verde: sem a coluna, o INSERT de 200 também falha;
+ *  - (d) `asAnon` continua SEM conseguir INSERT em itens_pedido — a coluna nova
+ *        não abriu via de escrita (seguranca.md §itens_pedido, achado #3A);
+ *  - (e) item sem o campo grava NULL e o total recalculado pelo servidor é
+ *        IDÊNTICO com e sem observação — a observação nunca entra em cálculo de
+ *        valor.
+ */
+
+type CenarioObs = {
+  lojaAtiva: string;
+  produto1: string; // preco 25.00
+};
+
+async function semearObs(t: TestDb): Promise<CenarioObs> {
+  const DONO_OBS = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+  await t.db.query(
+    `insert into auth.users (id, email) values ($1, 'dono-obs@teste.local') on conflict (id) do nothing`,
+    [DONO_OBS],
+  );
+
+  return t.asService(async (db) => {
+    const ins = async (sql: string, params: unknown[]) => {
+      const r = await db.query<{ id: string }>(sql, params);
+      return r.rows[0].id;
+    };
+    const lojaAtiva = await ins(
+      `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-obs','Loja Obs',true) returning id`,
+      [DONO_OBS],
+    );
+    const produto1 = await ins(
+      `insert into public.produtos (loja_id, nome, preco, disponivel) values ($1,'X-Burguer',25.00,true) returning id`,
+      [lojaAtiva],
+    );
+    return { lojaAtiva, produto1 };
+  });
+}
+
+/** Lê a coluna nova dos itens de um pedido, na ordem de inserção (id estável por nome). */
+async function lerObservacoes(t: TestDb, pedidoId: string): Promise<(string | null)[]> {
+  const r = await t.asService((db) =>
+    db.query<{ observacao: string | null }>(
+      `select observacao from public.itens_pedido where pedido_id = $1 order by nome`,
+      [pedidoId],
+    ),
+  );
+  return r.rows.map((row) => row.observacao);
+}
+
+describe("166 itens_pedido.observacao — persistência via RPC criar_pedido (pglite)", () => {
+  let t: TestDb;
+  let co: CenarioObs;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    co = await semearObs(t);
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  // ──────────────────────── (a) persistência
+  it("[166a] observacao enviada em p_itens persiste em itens_pedido.observacao", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      itens: [
+        {
+          produto_id: co.produto1,
+          nome: "X-Burguer",
+          preco: 25.0,
+          quantidade: 1,
+          observacao: "sem cebola",
+        },
+      ],
+    });
+
+    expect(await lerObservacoes(t, r.pedido_id)).toEqual(["sem cebola"]);
+  });
+
+  it("[166a2] observacao é POR ITEM: dois itens no mesmo pedido guardam textos distintos", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 50.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 50.0,
+      itens: [
+        { produto_id: co.produto1, nome: "A-Burguer", preco: 25.0, quantidade: 1, observacao: "bem passado" },
+        { produto_id: co.produto1, nome: "B-Burguer", preco: 25.0, quantidade: 1, observacao: "ao ponto" },
+      ],
+    });
+
+    // ordenado por nome: A-Burguer, B-Burguer
+    expect(await lerObservacoes(t, r.pedido_id)).toEqual(["bem passado", "ao ponto"]);
+  });
+
+  // ──────────────────────── (b) normalização vazio/whitespace → NULL
+  it("[166b] string vazia e whitespace de espaços viram NULL (nunca '')", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 50.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 50.0,
+      itens: [
+        { produto_id: co.produto1, nome: "Vazio", preco: 25.0, quantidade: 1, observacao: "" },
+        { produto_id: co.produto1, nome: "Whitespace", preco: 25.0, quantidade: 1, observacao: "   " },
+      ],
+    });
+
+    // ordenado por nome: Vazio, Whitespace
+    const obs = await lerObservacoes(t, r.pedido_id);
+    expect(obs).toEqual([null, null]);
+    // asserção explícita: NULL, não string vazia (o `''` é o bug que este teste trava)
+    expect(obs.some((o) => o === "")).toBe(false);
+  });
+
+  it("[166b2] texto com espaços nas bordas é gravado sem elas (trim aplicado)", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      itens: [
+        { produto_id: co.produto1, nome: "Bordas", preco: 25.0, quantidade: 1, observacao: "  sem cebola  " },
+      ],
+    });
+    expect(await lerObservacoes(t, r.pedido_id)).toEqual(["sem cebola"]);
+  });
+
+  // ──────────────────────── (c) 201 chars não derruba o pedido; CHECK barra INSERT direto
+  it("[166c] 201 caracteres NÃO abortam o pedido: RPC trunca e grava exatamente 200", async () => {
+    const texto201 = "a".repeat(201);
+
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      itens: [
+        { produto_id: co.produto1, nome: "Longo", preco: 25.0, quantidade: 1, observacao: texto201 },
+      ],
+    });
+
+    // o pedido EXISTE (o CHECK não abortou a transação inteira)
+    const pedidos = await contar(t, `select 1 from public.pedidos where id = $1`, [r.pedido_id]);
+    expect(pedidos).toBe(1);
+
+    const obs = await lerObservacoes(t, r.pedido_id);
+    expect(obs[0]).not.toBeNull();
+    expect(obs[0]!.length).toBe(200);
+    expect(obs[0]).toBe("a".repeat(200));
+  });
+
+  it("[166c2] CHECK da coluna: INSERT direto de 200 chars PASSA e de 201 chars é REJEITADO", async () => {
+    const pedidoId = await t.asService(async (db) => {
+      const p = await db.query<{ id: string }>(
+        `insert into public.pedidos (loja_id, nome_cliente, subtotal, total)
+           values ($1,'Cli CHECK obs',25,25) returning id`,
+        [co.lojaAtiva],
+      );
+      return p.rows[0].id;
+    });
+
+    // 200 chars: DEVE passar. Anti-falso-verde — sem a coluna, este INSERT já
+    // falha ("column observacao does not exist"), então o teste é RED de verdade
+    // e não passa por acidente pelo lado negativo.
+    await t.asService((db) =>
+      db.query(
+        `insert into public.itens_pedido (pedido_id, nome, preco, quantidade, observacao)
+           values ($1,'Item200',25,1,$2)`,
+        [pedidoId, "b".repeat(200)],
+      ),
+    );
+    const n200 = await contar(
+      t,
+      `select 1 from public.itens_pedido where pedido_id = $1 and nome = 'Item200'`,
+      [pedidoId],
+    );
+    expect(n200).toBe(1);
+
+    // 201 chars: o CHECK da coluna barra.
+    let rejeitou = false;
+    try {
+      await t.asService((db) =>
+        db.query(
+          `insert into public.itens_pedido (pedido_id, nome, preco, quantidade, observacao)
+             values ($1,'Item201',25,1,$2)`,
+          [pedidoId, "b".repeat(201)],
+        ),
+      );
+    } catch {
+      rejeitou = true;
+    }
+    expect(rejeitou).toBe(true);
+
+    const n201 = await contar(
+      t,
+      `select 1 from public.itens_pedido where pedido_id = $1 and nome = 'Item201'`,
+      [pedidoId],
+    );
+    expect(n201).toBe(0); // nada persistiu
+  });
+
+  // ──────────────────────── (d) anon continua sem via de escrita
+  it("[166d] asAnon continua SEM INSERT em itens_pedido — a coluna nova não abriu escrita", async () => {
+    const pedidoId = await t.asService(async (db) => {
+      const p = await db.query<{ id: string }>(
+        `insert into public.pedidos (loja_id, nome_cliente, subtotal, total)
+           values ($1,'Cli anon obs',25,25) returning id`,
+        [co.lojaAtiva],
+      );
+      return p.rows[0].id;
+    });
+
+    let negou = false;
+    try {
+      await t.asAnon((db) =>
+        db.query(
+          `insert into public.itens_pedido (pedido_id, nome, preco, quantidade, observacao)
+             values ($1,'Item anon',25,1,'sem cebola')`,
+          [pedidoId],
+        ),
+      );
+    } catch {
+      negou = true; // RLS deny-all de escrita (a operação está grantada; a policy é que barra)
+    }
+    expect(negou).toBe(true);
+
+    const n = await contar(t, `select 1 from public.itens_pedido where pedido_id = $1`, [pedidoId]);
+    expect(n).toBe(0); // nada entrou pela via anônima
+  });
+
+  // ──────────────────────── (e) NULL por omissão + observação não altera valor
+  it("[166e] item sem observacao grava NULL e o total do servidor é IDÊNTICO com e sem observação", async () => {
+    const base = {
+      loja_id: co.lojaAtiva,
+      subtotal: 50.0, // 25 × 2
+      taxa_entrega: 7.0,
+      desconto: 0,
+      total: 57.0,
+    };
+
+    const semObs = await chamarCriarPedido(t, {
+      ...base,
+      itens: [{ produto_id: co.produto1, nome: "Sem obs", preco: 25.0, quantidade: 2 }],
+    });
+    const comObs = await chamarCriarPedido(t, {
+      ...base,
+      itens: [
+        {
+          produto_id: co.produto1,
+          nome: "Com obs",
+          preco: 25.0,
+          quantidade: 2,
+          observacao: "sem cebola, capricha no molho",
+        },
+      ],
+    });
+
+    // omissão do campo ⇒ NULL
+    expect(await lerObservacoes(t, semObs.pedido_id)).toEqual([null]);
+    expect(await lerObservacoes(t, comObs.pedido_id)).toEqual(["sem cebola, capricha no molho"]);
+
+    // os valores persistidos pelo servidor são idênticos nos dois pedidos:
+    // a observação NÃO entra em nenhum cálculo monetário.
+    const valores = async (id: string) => {
+      const r = await t.asService((db) =>
+        db.query<{ subtotal: string; taxa_entrega: string; desconto: string; total: string }>(
+          `select subtotal, taxa_entrega, desconto, total from public.pedidos where id = $1`,
+          [id],
+        ),
+      );
+      const v = r.rows[0];
+      return {
+        subtotal: Number(v.subtotal),
+        taxa_entrega: Number(v.taxa_entrega),
+        desconto: Number(v.desconto),
+        total: Number(v.total),
+      };
+    };
+
+    const vSem = await valores(semObs.pedido_id);
+    const vCom = await valores(comObs.pedido_id);
+    expect(vCom).toEqual(vSem);
+    expect(vCom).toEqual({ subtotal: 50.0, taxa_entrega: 7.0, desconto: 0, total: 57.0 });
   });
 });
