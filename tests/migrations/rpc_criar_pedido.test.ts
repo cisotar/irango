@@ -1106,3 +1106,258 @@ describe("166 itens_pedido.observacao — persistência via RPC criar_pedido (pg
     expect(vCom).toEqual({ subtotal: 50.0, taxa_entrega: 7.0, desconto: 0, total: 57.0 });
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 166 — Lacunas de cobertura (testar): UTF-8 multibyte, whitespace não-ASCII,
+// muitos itens, RLS cross-loja e linha pré-existente (migration aditiva).
+// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * A fase RED/GREEN (tdd/executar) cobriu persistência, normalização de espaço
+ * ASCII, truncamento de 201 chars ASCII e o grant de RLS. Este bloco cobre o
+ * que fica de fora dessas 8 asserções e que PODE quebrar em produção:
+ *
+ *  - (f) `left()`/`char_length()` do Postgres operam por CODE POINT, não por
+ *        byte. Uma observação de emoji (4 bytes/codepoint em UTF-8) precisa
+ *        truncar em 200 CARACTERES, não em 200 bytes — senão o `left())
+ *        corta no meio de um codepoint multi-byte e o CHECK (que também é
+ *        char_length-based) aceitaria um valor com bytes quebrados;
+ *  - (g) `trim()` do Postgres é `btrim`: remove só espaço ASCII (0x20). Tab,
+ *        newline, CR e NBSP (U+00A0) NÃO são removidos pelo SQL — a
+ *        normalização desses fica para o zod da issue 167. Se alguém assumir
+ *        que o banco já limpa esses caracteres, o teste aqui documenta que
+ *        NÃO limpa;
+ *  - (h) pedido com muitos itens (perto do teto de 50 da spec), só PARTE com
+ *        observação — cada item precisa manter a observação correta, sem
+ *        deslocar para o item vizinho;
+ *  - (i) RLS cross-loja: o dono da loja B não pode ler itens (nem a
+ *        observação) de um pedido da loja A via `itens_pedido_lojista`;
+ *  - (j) migration é ADITIVA: uma linha inserida sem informar `observacao`
+ *        (simulando dado pré-migration) continua legível com `NULL`, e
+ *        `select *` não quebra por causa da coluna nova.
+ */
+describe("166 lacunas — UTF-8, whitespace não-ASCII, volume, RLS e dado legado", () => {
+  let t: TestDb;
+  let co: CenarioObs;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    co = await semearObs(t);
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  // ──────────────────────── (f) UTF-8 multibyte: truncamento por CARACTERE
+  it("[166f] 200 emoji (multibyte) passam intactos; 201 truncam no CARACTERE 200, sem corromper", async () => {
+    const emoji200 = "😀".repeat(200);
+    const emoji201 = "😀".repeat(201);
+
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 50.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 50.0,
+      itens: [
+        { produto_id: co.produto1, nome: "Emoji200", preco: 25.0, quantidade: 1, observacao: emoji200 },
+        { produto_id: co.produto1, nome: "Emoji201", preco: 25.0, quantidade: 1, observacao: emoji201 },
+      ],
+    });
+
+    // ordenado por nome: Emoji200, Emoji201
+    const obs = await lerObservacoes(t, r.pedido_id);
+    expect(obs[0]).toBe(emoji200); // 200 chars passam sem alteração
+    // truncamento respeita fronteira de codepoint: o resultado é exatamente os
+    // 200 primeiros emoji, nunca um caractere quebrado/mojibake.
+    expect(obs[1]).toBe(emoji200);
+    expect(obs[1]).not.toBeNull();
+    expect(Array.from(obs[1]!).length).toBe(200); // char_length real, não byte length (800)
+
+    // o CHECK da coluna concorda: char_length de ambos os valores gravados é 200.
+    const tamanhos = await t.asService((db) =>
+      db.query<{ tam: number }>(
+        `select char_length(observacao) as tam from public.itens_pedido
+           where pedido_id = $1 order by nome`,
+        [r.pedido_id],
+      ),
+    );
+    expect(tamanhos.rows.map((row) => row.tam)).toEqual([200, 200]);
+  });
+
+  it("[166f2] acento composto (NFD, 2 codepoints por letra) conta caracteres, não grafemas visuais", async () => {
+    // "á" como 'a' + combining acute (U+0061 U+0301) = 2 codepoints Postgres,
+    // mas 1 grafema visual. 150 repetições ⇒ 300 codepoints ⇒ ultrapassa 200 e
+    // deve truncar em exatamente 200 CODEPOINTS (não em 200 grafemas/150 letras).
+    const par = "á"; // 2 codepoints
+    const texto = par.repeat(150); // 300 codepoints
+
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      itens: [{ produto_id: co.produto1, nome: "NFD", preco: 25.0, quantidade: 1, observacao: texto }],
+    });
+
+    const obs = (await lerObservacoes(t, r.pedido_id))[0];
+    expect(obs).not.toBeNull();
+    expect(Array.from(obs!).length).toBe(200);
+    expect(obs).toBe(Array.from(texto).slice(0, 200).join(""));
+  });
+
+  // ──────────────────────── (g) whitespace NÃO-ASCII não é removido pelo btrim
+  it("[166g] tab, newline e NBSP NÃO são removidos pelo trim SQL — só espaço ASCII é", async () => {
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 75.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 75.0,
+      itens: [
+        // só tab/newline nas bordas, ZERO espaço ASCII: btrim não mexe.
+        { produto_id: co.produto1, nome: "Tab", preco: 25.0, quantidade: 1, observacao: "\tsem cebola\n" },
+        // só NBSP (U+00A0) nas bordas: btrim ASCII também não mexe.
+        {
+          produto_id: co.produto1,
+          nome: "Nbsp",
+          preco: 25.0,
+          quantidade: 1,
+          observacao: " sem cebola ",
+        },
+        // mistura: espaço ASCII na borda EXTERNA é removido, tab interno permanece.
+        {
+          produto_id: co.produto1,
+          nome: "Misto",
+          preco: 25.0,
+          quantidade: 1,
+          observacao: "  \tsem cebola\t  ",
+        },
+      ],
+    });
+
+    // ordenado por nome: Misto, Nbsp, Tab
+    const obs = await lerObservacoes(t, r.pedido_id);
+    expect(obs).toEqual(["\tsem cebola\t", " sem cebola ", "\tsem cebola\n"]);
+  });
+
+  // ──────────────────────── (h) volume: muitos itens, só parte com observação
+  it("[166h] pedido com 50 itens (teto da spec) — só os pares têm observação, sem deslocar", async () => {
+    const N = 50;
+    const itens = Array.from({ length: N }, (_, i) => ({
+      produto_id: co.produto1,
+      // nome com prefixo zero-padded para a ordenação por nome ser estável e previsível.
+      nome: `Item${String(i).padStart(2, "0")}`,
+      preco: 25.0,
+      quantidade: 1,
+      ...(i % 2 === 0 ? { observacao: `obs-${i}` } : {}),
+    }));
+
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 25.0 * N,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0 * N,
+      itens,
+    });
+
+    const obs = await lerObservacoes(t, r.pedido_id);
+    expect(obs.length).toBe(N);
+    obs.forEach((valor, i) => {
+      if (i % 2 === 0) {
+        expect(valor).toBe(`obs-${i}`);
+      } else {
+        expect(valor).toBeNull();
+      }
+    });
+  });
+
+  // ──────────────────────── (i) RLS cross-loja: dono de outra loja não lê
+  it("[166i] dono da loja B não lê itens (nem observação) de pedido da loja A via itens_pedido_lojista", async () => {
+    const DONO_B = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+    await t.db.query(
+      `insert into auth.users (id, email) values ($1, 'dono-b-obs@teste.local') on conflict (id) do nothing`,
+      [DONO_B],
+    );
+    const donoALojaId = await t.asService(async (db) => {
+      const rows = await db.query<{ dono_id: string }>(
+        `select dono_id from public.lojas where id = $1`,
+        [co.lojaAtiva],
+      );
+      return rows.rows[0].dono_id;
+    });
+
+    const r = await chamarCriarPedido(t, {
+      loja_id: co.lojaAtiva,
+      subtotal: 25.0,
+      taxa_entrega: 0,
+      desconto: 0,
+      total: 25.0,
+      itens: [
+        { produto_id: co.produto1, nome: "Sigiloso", preco: 25.0, quantidade: 1, observacao: "alergia a amendoim" },
+      ],
+    });
+
+    // dono legítimo (loja A) LÊ normalmente — controle positivo, sem o qual um
+    // RLS quebrado por excesso de restrição passaria escondido.
+    const comoDonoA = await t.asUser(donoALojaId, (db) =>
+      db.query<{ observacao: string | null }>(
+        `select observacao from public.itens_pedido where pedido_id = $1`,
+        [r.pedido_id],
+      ),
+    );
+    expect(comoDonoA.rows.map((row) => row.observacao)).toEqual(["alergia a amendoim"]);
+
+    // dono de OUTRA loja (B) não vê NADA da loja A — nem a linha, nem a observação.
+    const comoDonoB = await t.asUser(DONO_B, (db) =>
+      db.query<{ observacao: string | null }>(
+        `select observacao from public.itens_pedido where pedido_id = $1`,
+        [r.pedido_id],
+      ),
+    );
+    expect(comoDonoB.rows.length).toBe(0);
+
+    // anon também não lê (nenhuma policy de SELECT pública nesta tabela).
+    const comoAnon = await t.asAnon((db) =>
+      db.query<{ observacao: string | null }>(
+        `select observacao from public.itens_pedido where pedido_id = $1`,
+        [r.pedido_id],
+      ),
+    );
+    expect(comoAnon.rows.length).toBe(0);
+  });
+
+  // ──────────────────────── (j) migration aditiva: linha legada sem a coluna
+  it("[166j] linha pré-existente (sem observacao no INSERT) lê NULL — migration não quebra dado legado", async () => {
+    // Simula uma linha gravada ANTES desta migration: INSERT que nem menciona
+    // a coluna nova, exatamente como todo INSERT pré-166 fazia.
+    const pedidoId = await t.asService(async (db) => {
+      const p = await db.query<{ id: string }>(
+        `insert into public.pedidos (loja_id, nome_cliente, subtotal, total)
+           values ($1,'Cli legado',25,25) returning id`,
+        [co.lojaAtiva],
+      );
+      return p.rows[0].id;
+    });
+    const itemId = await t.asService(async (db) => {
+      // nenhuma menção a `observacao` no INSERT — coluna aditiva, sem default explícito.
+      const it = await db.query<{ id: string }>(
+        `insert into public.itens_pedido (pedido_id, nome, preco, quantidade)
+           values ($1,'Item legado',25,1) returning id`,
+        [pedidoId],
+      );
+      return it.rows[0].id;
+    });
+
+    const r = await t.asService((db) =>
+      db.query<{ id: string; nome: string; observacao: string | null }>(
+        `select * from public.itens_pedido where id = $1`,
+        [itemId],
+      ),
+    );
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].nome).toBe("Item legado");
+    expect(r.rows[0].observacao).toBeNull(); // aditiva: linha legada é NULL, não erro
+  });
+});

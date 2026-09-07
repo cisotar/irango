@@ -190,3 +190,58 @@ values
     now() - interval '60 days'
   )
 on conflict (provider, provider_payment_id) do nothing;
+
+-- ── [2026-09-07] seed: itens_pedido.observacao (migration 20260907120000) ────
+-- Até aqui o seed não populava `pedidos`/`itens_pedido` — nenhum dos dois é
+-- tocado por policy nova nem por outro delta, então não havia necessidade.
+-- A issue 166 adiciona `itens_pedido.observacao` (nullable, CHECK <= 200) e
+-- exige cenário próprio: 2 pedidos fictícios cobrindo
+--   - maioria dos itens SEM observação (NULL) — caso comum;
+--   - observação curta realista ("sem cebola", "ponto da carne mal passada");
+--   - observação com quebra de linha (textarea multi-linha, spec v0.2.0);
+--   - observação perto do limite de 200 chars (borda do CHECK).
+-- Inserido direto (sem passar pela RPC criar_pedido) como superuser/BYPASSRLS,
+-- igual ao resto do seed — não exercita a RPC, só o shape de dado da coluna.
+-- seed de desenvolvimento, não usar em produção
+insert into public.pedidos (
+  id, loja_id, nome_cliente, telefone_cliente, endereco_entrega,
+  subtotal, desconto, taxa_entrega, total, forma_pagamento,
+  status, tipo_entrega, observacoes
+)
+values
+  (
+    '00000000-0000-4000-8000-000000000100',
+    '00000000-0000-4000-8000-000000000010',   -- loja-teste
+    'Cliente Teste 1',
+    '+550000000000',                          -- telefone fictício (não real)
+    '{"rua":"Rua de Teste","numero":"200","bairro":"Centro","cidade":"Cidade Teste","cep":"00000-000"}',
+    66.40, 0, 5.00, 71.40, 'pix', 'pendente', 'entrega', null
+  ),
+  (
+    '00000000-0000-4000-8000-000000000101',
+    '00000000-0000-4000-8000-000000000010',   -- loja-teste
+    'Cliente Teste 2',
+    '+550000000000',                          -- telefone fictício (não real)
+    '{"rua":"Rua de Teste","numero":"201","bairro":"Centro","cidade":"Cidade Teste","cep":"00000-000"}',
+    80.30, 0, 5.00, 85.30, 'dinheiro', 'pendente', 'entrega', null
+  )
+on conflict (id) do nothing;
+
+insert into public.itens_pedido (id, pedido_id, produto_id, nome, preco, quantidade, observacao)
+values
+  -- pedido 1: caso comum (sem observação) + uma observação curta
+  ('00000000-0000-4000-8000-000000000110', '00000000-0000-4000-8000-000000000100',
+   '00000000-0000-4000-8000-000000000030', 'X-Burguer Teste', 25.90, 1, null),
+  ('00000000-0000-4000-8000-000000000111', '00000000-0000-4000-8000-000000000100',
+   '00000000-0000-4000-8000-000000000031', 'X-Salada Teste', 28.50, 1, 'sem cebola'),
+  ('00000000-0000-4000-8000-000000000112', '00000000-0000-4000-8000-000000000100',
+   '00000000-0000-4000-8000-000000000032', 'Refrigerante Lata Teste', 6.00, 2, null),
+  -- pedido 2: observação curta, multi-linha e perto do limite de 200 chars
+  ('00000000-0000-4000-8000-000000000113', '00000000-0000-4000-8000-000000000101',
+   '00000000-0000-4000-8000-000000000030', 'X-Burguer Teste', 25.90, 1, 'ponto da carne mal passada'),
+  ('00000000-0000-4000-8000-000000000114', '00000000-0000-4000-8000-000000000101',
+   '00000000-0000-4000-8000-000000000031', 'X-Salada Teste', 28.50, 1, E'sem cebola\nmolho à parte'),
+  ('00000000-0000-4000-8000-000000000115', '00000000-0000-4000-8000-000000000101',
+   '00000000-0000-4000-8000-000000000030', 'X-Burguer Teste', 25.90, 1,
+   'Por favor, capriche no ponto da carne, sem sal em excesso, embalar os molhos separados para nao amolecer o pao, e se possivel cortar o sanduiche ao meio antes de embalar. Obrigado desde ja mesmo!')
+on conflict (id) do nothing;
