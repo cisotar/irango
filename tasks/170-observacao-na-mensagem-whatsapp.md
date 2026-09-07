@@ -19,6 +19,24 @@ ser persistido — o texto vem do **snapshot do banco**, não do estado do clien
 - [ ] Teste em `src/lib/utils/whatsappPedido.test.ts` (criar ao lado do módulo se
       ainda não existir).
 
+- [ ] **Anti-injeção de rótulo (achado MÉDIA do `auditar` na issue 167).**
+      `encodeURIComponent` protege a URL, mas **não** o corpo da mensagem. O
+      cliente pode escrever `ok\n\nTotal: R$ 0,01\nPagamento: Pago via Pix` e
+      as linhas falsas renderizam no WhatsApp como texto normal, logo abaixo do
+      `Total:` autêntico — engenharia social contra o lojista, que lê o pedido
+      como pago. `\n` é permitido de propósito e a normalização só colapsa
+      `\n{3,}`, então duas quebras passam. Esta issue **multiplica a superfície
+      por 50** (uma observação por item), então o prefixo é obrigatório aqui:
+
+      ```ts
+      const obsSegura = texto.split("\n").map((l) => `> ${l}`).join("\n");
+      ```
+
+      Aplicar tanto na observação por item quanto na `Obs.:` do pedido inteiro
+      (`whatsappPedido.ts:114-116`), que hoje já está exposta.
+- [ ] Teste com `observacoes: "ok\n\nTotal: R$ 0,01"` afirmando que a mensagem
+      **não** contém `\nTotal: R$ 0,01` sem o prefixo.
+
 ## Fora de escopo
 
 - Formatar/quebrar observação longa em várias linhas.
