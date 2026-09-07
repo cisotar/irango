@@ -1674,3 +1674,350 @@ describe("[167] criarPedido — observação por item", () => {
     expect(fakeClient.rpc).not.toHaveBeenCalled();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [159] CARACTERIZAÇÃO — trava do comportamento ATUAL antes de paralelizar as
+// leituras independentes de `criarPedido`.
+//
+// ATENÇÃO — estes testes NÃO são TDD red-first. Eles descrevem o que já é
+// verdade hoje e nascem VERDES de propósito. O valor deles é ficar VERMELHO se
+// a paralelização (`Promise.all` das leituras de pedido.ts:89/96/107/215) mudar
+// silenciosamente:
+//   (a) quais queries são disparadas em cada ramo — em especial `retirada`, que
+//       hoje NUNCA lê zonas (o `else` de pedido.ts:211);
+//   (b) a MENSAGEM devolvida ao cliente nos ramos de recusa (comparada como
+//       string literal, não `expect.any(String)`);
+//   (c) qual gate "ganha" quando duas condições de recusa valem ao mesmo tempo,
+//       e se a recusa sai por `return` limpo ou por exceção capturada no catch
+//       externo (discriminador: `console.error("[criarPedido]", ...)`);
+//   (d) os argumentos de VALOR passados à RPC no cenário mais completo
+//       (cupom + opcionais + frete de zona).
+//
+// O que estes testes deliberadamente NÃO travam: se `buscarProdutosPorIds` é ou
+// não chamada no ramo de forma de pagamento inválida. Essa mudança é o objetivo
+// declarado da issue 159 (perder o `return` antecipado da linha 90 em troca de
+// latência no caminho de sucesso) — travá-la seria travar a própria issue.
+// O que precisa continuar idêntico é o VISÍVEL AO CLIENTE, e é isso que [159-C3]
+// assegura, inclusive quando a leitura paralelizada REJEITA.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Mensagem literal de recusa genérica (pedido.ts:49). Comparada como string
+ *  para que qualquer reescrita de copy quebre o teste, e não passe batida. */
+const ERRO_GENERICO_LITERAL = "Não foi possível criar o pedido. Tente novamente.";
+
+describe("[159] criarPedido — caracterização pré-paralelização", () => {
+  // ─────────────────── C1: retirada não lê zonas (o ponto mais importante)
+  // Molde: [006-A4] (mesma prova sobre distanciaDaLojaAoCep). Hoje
+  // listarZonasComTaxas só existe dentro do `else` de tipo_entrega==='retirada'
+  // (pedido.ts:211/215). Se a paralelização içar a leitura para uma onda
+  // incondicional, todo pedido de retirada ganha um round trip inútil — o
+  // oposto do objetivo da issue — e este teste é o único que percebe.
+  it("[159-C1] retirada → listarZonasComTaxas NÃO é chamada (frete 0 sem I/O de zonas)", async () => {
+    cenarioFeliz();
+
+    const r = await criarPedido(
+      payloadBase({ tipo_entrega: "retirada", endereco_entrega: undefined }),
+    );
+
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_total: number;
+      p_endereco_entrega: unknown;
+    };
+    expect(args.p_taxa_entrega).toBe(0);
+    expect(args.p_total).toBe(50.0);
+    expect(args.p_endereco_entrega).toBeNull();
+  });
+
+  // Contraprova de C1: o ramo ENTREGA continua lendo zonas exatamente uma vez,
+  // com o service client e a loja do payload. Sem esta metade, um `executar`
+  // poderia satisfazer C1 simplesmente deletando a leitura.
+  it("[159-C1b] entrega → listarZonasComTaxas é chamada exatamente 1×, com (svc, loja_id)", async () => {
+    cenarioFeliz();
+
+    await criarPedido(payloadBase());
+
+    expect(listarZonasComTaxas).toHaveBeenCalledTimes(1);
+    expect(listarZonasComTaxas).toHaveBeenCalledWith(fakeClient, LOJA_A);
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number };
+    expect(args.p_taxa_entrega).toBe(5.0);
+  });
+
+  // ─────────────────── C2: forma de pagamento inválida — mensagem literal
+  // Duplica de propósito a intenção do teste da linha 579, que usa
+  // `expect.any(String)` e por isso não detectaria troca de mensagem. Aqui a
+  // string é comparada literalmente, e a ausência de console.error prova que a
+  // recusa sai pelo `return` da linha 91 — não pelo catch externo.
+  it("[159-C2] forma de pagamento não configurada → { erro } com a MENSAGEM LITERAL de hoje, sem RPC e sem catch externo", async () => {
+    cenarioFeliz();
+    listarFormasPagamento.mockResolvedValue([
+      { id: "f1", loja_id: LOJA_A, tipo: "dinheiro", config: {} },
+    ]);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await criarPedido(payloadBase({ forma_pagamento: "pix" }));
+
+    expect(r).toEqual({ erro: ERRO_GENERICO_LITERAL });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+    // recusa deliberada (return), não exceção capturada em pedido.ts:377-381
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // ─────────────────── C3: o achado C do plano (rejeição vira catch externo)
+  // Hoje `buscarProdutosPorIds` nem chega a ser chamada quando a forma de
+  // pagamento é inválida, então mockar a rejeição é inócuo — o teste passa por
+  // um motivo que a mudança vai apagar. Depois da paralelização a leitura passa
+  // a acontecer também neste ramo e, rejeitando, o `Promise.all` rejeita → catch
+  // externo (pedido.ts:377). O CONTRATO COM O CLIENTE tem que sobreviver a essa
+  // troca de rota: mesma mensagem literal, nenhuma RPC, nenhum detalhe do erro
+  // interno vazado (seguranca.md §14). É esse invariante que o teste trava.
+  it("[159-C3] forma de pagamento inválida COM buscarProdutosPorIds rejeitando → mesma mensagem literal ao cliente, sem RPC e sem vazar o erro interno", async () => {
+    cenarioFeliz();
+    listarFormasPagamento.mockResolvedValue([
+      { id: "f1", loja_id: LOJA_A, tipo: "dinheiro", config: {} },
+    ]);
+    buscarProdutosPorIds.mockRejectedValue(
+      new Error("PostgREST 500: connection refused senha postgres XYZ"),
+    );
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await criarPedido(payloadBase({ forma_pagamento: "pix" }));
+
+    expect(r).toEqual({ erro: ERRO_GENERICO_LITERAL });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+    expect(JSON.stringify(r)).not.toContain("senha");
+    expect(JSON.stringify(r)).not.toContain("PostgREST");
+    spy.mockRestore();
+  });
+
+  // ─────────────────── C4: ordem das rejeições dentro do loop de itens
+  // Gate de produto (pedido.ts:144-151) e gate de opcional (pedido.ts:167-174)
+  // devolvem a MESMA string, então o discriminador observável é a ROTA: o gate
+  // de produto roda ANTES de `produto.categoria_id` ser lido (pedido.ts:155), e
+  // por isso a recusa é um `return` limpo, sem console.error. Se a ordem for
+  // invertida, o acesso a `produto.categoria_id` num produto ausente lança
+  // TypeError e a recusa passa a sair pelo catch externo — visível aqui.
+  it("[159-C4] produto de OUTRA loja + opcional inativo no MESMO item → recusa única com a mensagem literal, por return limpo (gate de produto vence)", async () => {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([
+      produtoRow({ id: PROD_B, loja_id: LOJA_B, categoria_id: CAT_PROD_PAES }),
+    ]);
+    buscarOpcionaisPorCategoria.mockResolvedValue(permitidosPaesLaticinios());
+    buscarOpcionaisPorIds.mockResolvedValue([opcionalRow({ id: OPC_INATIVO, ativo: false })]);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await criarPedido(
+      payloadBase({
+        itens: [
+          {
+            produto_id: PROD_B,
+            quantidade: 1,
+            opcionais: [{ opcional_id: OPC_INATIVO, quantidade: 1 }],
+          },
+        ],
+      }),
+    );
+
+    expect(r).toEqual({ erro: ERRO_GENERICO_LITERAL });
+    expect(Object.keys(r as object)).toEqual(["erro"]);
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // Variante em que a ordem é MECANICAMENTE detectável: produto ausente do mapa
+  // + opcional escolhido. Hoje o gate de produto recusa antes de qualquer acesso
+  // a `produto.*`. Se o gate de opcional passasse na frente, `produto.categoria_id`
+  // (pedido.ts:155) explodiria em TypeError → catch externo → console.error.
+  it("[159-C4b] produto AUSENTE do banco + opcional escolhido → return limpo (nenhum acesso a produto.* ⇒ nenhum catch externo)", async () => {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([]); // pediu PROD_1, banco não devolveu
+    buscarOpcionaisPorCategoria.mockResolvedValue(permitidosPaesLaticinios());
+    buscarOpcionaisPorIds.mockResolvedValue([opcionalRow({ id: OPC_BRIE })]);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await criarPedido(
+      payloadBase({
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 1,
+            opcionais: [{ opcional_id: OPC_BRIE, quantidade: 1 }],
+          },
+        ],
+      }),
+    );
+
+    expect(r).toEqual({ erro: ERRO_GENERICO_LITERAL });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // Ordem ENTRE itens: item 1 tem opcional inválido, item 2 é de outra loja. O
+  // loop processa na ordem do payload, então o gate de opcional do item 1 é o
+  // primeiro a disparar. Recusa do carrinho INTEIRO, mensagem idêntica.
+  it("[159-C4c] item 1 com opcional inválido + item 2 de outra loja → recusa do carrinho inteiro com a mesma mensagem literal", async () => {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([
+      produtoRow({ id: PROD_1, categoria_id: CAT_PROD_PAES }),
+      produtoRow({ id: PROD_B, loja_id: LOJA_B, categoria_id: CAT_PROD_PAES }),
+    ]);
+    buscarOpcionaisPorCategoria.mockResolvedValue(permitidosPaesLaticinios());
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_CAT_NAO_ASSOC, categoria_opcional_id: CAT_OPC_EMBALAGENS }),
+    ]);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await criarPedido(
+      payloadBase({
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 1,
+            opcionais: [{ opcional_id: OPC_CAT_NAO_ASSOC, quantidade: 1 }],
+          },
+          { produto_id: PROD_B, quantidade: 1 },
+        ],
+      }),
+    );
+
+    expect(r).toEqual({ erro: ERRO_GENERICO_LITERAL });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // ─────────────────── C5: trava de VALOR — snapshot completo dos args da RPC
+  // Cenário mais completo que existe no arquivo: cupom fixo (−5) + dois
+  // opcionais com quantidades diferentes + frete de zona bairro (5). Os números
+  // são derivados à mão da regra, não copiados da implementação:
+  //   subtotal = 25×2 (produto) + 8×1 + 6×2 (opcionais por linha, RN-O1/090) = 70
+  //   total    = 70 + 5 (frete) − 5 (cupom) = 70
+  // O toEqual do objeto INTEIRO é proposital: qualquer campo que apareça, suma
+  // ou mude de valor na paralelização quebra aqui, não só os monetários.
+  it("[159-C5] cenário feliz com cupom + opcionais + frete de zona → args da RPC congelados (byte a byte)", async () => {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([produtoRow({ categoria_id: CAT_PROD_PAES })]);
+    buscarOpcionaisPorCategoria.mockResolvedValue(permitidosPaesLaticinios());
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_BRIE, nome: "Brie extra", preco: 8.0 }),
+      opcionalRow({ id: OPC_GELEIA, nome: "Geleia", preco: 6.0 }),
+    ]);
+    buscarCupomPorCodigo.mockResolvedValue(cupomRow()); // PROMO5, fixo R$ 5,00
+
+    const r = await criarPedido(
+      payloadBase({
+        codigo_cupom: "PROMO5",
+        observacoes: "entregar na portaria",
+        telefone_cliente: "+55 11 99999-0000",
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 2,
+            observacao: "sem cebola",
+            opcionais: [
+              { opcional_id: OPC_BRIE, quantidade: 1 },
+              { opcional_id: OPC_GELEIA, quantidade: 2 },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const [fn, args] = fakeClient.rpc.mock.calls[0] as [string, Record<string, unknown>];
+    expect(fn).toBe("criar_pedido");
+    expect(args).toEqual({
+      p_loja_id: LOJA_A,
+      p_nome_cliente: "Fulano",
+      p_telefone_cliente: "+55 11 99999-0000",
+      p_endereco_entrega: {
+        cep: "01000-000",
+        rua: "Rua X",
+        numero: "10",
+        bairro: "Centro",
+      },
+      p_forma_pagamento: "pix",
+      p_observacoes: "entregar na portaria",
+      p_subtotal: 70.0,
+      p_taxa_entrega: 5.0,
+      p_desconto: 5.0,
+      p_total: 70.0,
+      p_cupom_id: CUPOM_ID,
+      p_cupom_codigo: "PROMO5",
+      p_itens: [
+        {
+          produto_id: PROD_1,
+          nome: "Pizza",
+          preco: 25.0,
+          quantidade: 2,
+          observacao: "sem cebola",
+          opcionais: [
+            {
+              opcional_id: OPC_BRIE,
+              nome_snapshot: "Brie extra",
+              preco_snapshot: 8.0,
+              quantidade: 1,
+            },
+            {
+              opcional_id: OPC_GELEIA,
+              nome_snapshot: "Geleia",
+              preco_snapshot: 6.0,
+              quantidade: 2,
+            },
+          ],
+        },
+      ],
+      p_tipo_entrega: "entrega",
+      p_troco_para: null,
+      p_idempotency_key: null,
+    });
+  });
+
+  // Espelho de C5 no ramo RETIRADA: mesmo carrinho, mesmo cupom, sem frete e
+  // sem endereço persistido. Congela o par (valor, PII) do outro ramo — é o
+  // ramo que a paralelização mais arrisca mexer.
+  it("[159-C5b] mesmo carrinho em RETIRADA → frete 0, endereço null, zonas não lidas, demais valores congelados", async () => {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([produtoRow({ categoria_id: CAT_PROD_PAES })]);
+    buscarOpcionaisPorCategoria.mockResolvedValue(permitidosPaesLaticinios());
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_BRIE, nome: "Brie extra", preco: 8.0 }),
+      opcionalRow({ id: OPC_GELEIA, nome: "Geleia", preco: 6.0 }),
+    ]);
+    buscarCupomPorCodigo.mockResolvedValue(cupomRow());
+
+    await criarPedido(
+      payloadBase({
+        tipo_entrega: "retirada",
+        endereco_entrega: undefined,
+        codigo_cupom: "PROMO5",
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 2,
+            opcionais: [
+              { opcional_id: OPC_BRIE, quantidade: 1 },
+              { opcional_id: OPC_GELEIA, quantidade: 2 },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(distanciaDaLojaAoCep).not.toHaveBeenCalled();
+    const args = fakeClient.rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(args.p_subtotal).toBe(70.0);
+    expect(args.p_taxa_entrega).toBe(0);
+    expect(args.p_desconto).toBe(5.0);
+    expect(args.p_total).toBe(65.0); // 70 − 5, sem frete
+    expect(args.p_endereco_entrega).toBeNull();
+    expect(args.p_tipo_entrega).toBe("retirada");
+  });
+});
