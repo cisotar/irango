@@ -26,6 +26,11 @@ const CAMPOS_PII = [
   "cnpj",
   "endereco",
   "cep",
+  // Texto livre do comprador: rotineiramente carrega endereço, ponto de
+  // referência e nome de terceiro ("portão azul, falar com a Maria"), que os
+  // PADROES_VALOR abaixo não pegam por não serem email nem telefone.
+  "observacao",
+  "observacoes",
   // Dados de comprador Hotmart
   "hotmart_subscriber_code",
   "subscriber_code",

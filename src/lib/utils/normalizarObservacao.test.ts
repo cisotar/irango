@@ -146,6 +146,75 @@ describe("normalizarObservacao — passo 7: trim final das bordas", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Ordem das 7 transformações: entradas onde inverter dois passos adjacentes
+// produziria uma saída DIFERENTE da atual. Se alguém reordenar o `.replace`
+// chain do módulo, estes testes devem quebrar.
+// ---------------------------------------------------------------------------
+describe("normalizarObservacao — a ORDEM dos passos importa", () => {
+  it("passo 1 (CRLF→LF) precisa rodar ANTES do passo 6 (colapso de linhas em branco): CRLF triplo colapsa para 2 quebras", () => {
+    // Se o passo 6 rodasse primeiro, a regex /\n{3,}/ não casaria "\r\n\r\n\r\n"
+    // (há \r intercalado entre os \n) e o resultado ficaria com 3 quebras.
+    expect(normalizarObservacao("a\r\n\r\n\r\nb")).toBe("a\n\nb");
+  });
+
+  it("passo 1 antes do passo 6: CRLF triplo misturado com \\n solto também colapsa para 2", () => {
+    expect(normalizarObservacao("a\r\n\n\r\nb")).toBe("a\n\nb");
+  });
+
+  it("passo 3 (remove invisíveis) precisa rodar ANTES do passo 5 (colapsa espaço horizontal): zero-width no meio de um run de espaços não impede o colapso", () => {
+    // Zero-width space NÃO casa a classe [^\S\n] (não é whitespace p/ JS regex).
+    // Se o passo 5 rodasse antes do 3, o ZWSP quebraria o run em dois runs de
+    // 2 espaços cada, cada um colapsando para " " — sobrando dois espaços
+    // separados por nada (ZWSP removido depois): "a  b" (2 espaços), não "a b".
+    expect(normalizarObservacao(`a  ${ZWSP}  b`)).toBe("a b");
+  });
+
+  it("colapsa run misto de NBSP + tab entre duas palavras em um único espaço", () => {
+    expect(normalizarObservacao(`a${NBSP}\t${NBSP}b`)).toBe("a b");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Surrogate pairs / emoji: JS `.length` conta unidades UTF-16, o
+// `char_length` do Postgres conta CODEPOINTS. Para qualquer caractere fora do
+// BMP (a maioria dos emoji), 1 codepoint = 2 unidades UTF-16 → `.length`
+// SUPERESTIMA o tamanho em relação ao banco. Isso significa que o gate do zod
+// (que usa `.length` via `.max()`) é sempre IGUAL OU MAIS RESTRITIVO que o
+// CHECK do Postgres — nunca mais permissivo. Não há payload que passe no zod
+// e viole o CHECK por causa de emoji/surrogate pairs.
+// ---------------------------------------------------------------------------
+describe("normalizarObservacao — surrogate pairs (emoji) vs. char_length do Postgres", () => {
+  const EMOJI = "\u{1F600}"; // 😀 — fora do BMP, 2 unidades UTF-16, 1 codepoint
+
+  it("emoji fora do BMP conta 2 no .length do JS mas 1 codepoint (o que o char_length do Postgres mediria)", () => {
+    expect(EMOJI.length).toBe(2);
+    expect(Array.from(EMOJI).length).toBe(1);
+  });
+
+  it("100 emoji: .length=200 (no limite do zod) só corresponde a 100 codepoints (bem abaixo do CHECK de 200 do banco)", () => {
+    const entrada = EMOJI.repeat(100);
+    expect(entrada).toHaveLength(200);
+    expect(normalizarObservacao(entrada)).toHaveLength(200);
+    // codepoints reais — o que o CHECK char_length(...) <= 200 do banco mede:
+    expect(Array.from(normalizarObservacao(entrada)).length).toBe(100);
+  });
+
+  it("INVARIANTE: .length (JS) nunca é menor que a contagem de codepoints (Array.from) — o gate do zod nunca é mais permissivo que o char_length do banco", () => {
+    const fixturas = [
+      "sem cebola",
+      EMOJI.repeat(50),
+      "a" + EMOJI + "b" + EMOJI,
+      "café com açúcar", // acentos precompostos, 1 codepoint cada
+      EMOJI.repeat(1) + "texto normal" + EMOJI.repeat(3),
+    ];
+    for (const entrada of fixturas) {
+      const saida = normalizarObservacao(entrada);
+      expect(saida.length).toBeGreaterThanOrEqual(Array.from(saida).length);
+    }
+  });
+});
+
 describe("normalizarObservacao — comprimento (o gate de 200 depende disto)", () => {
   it("210 chars com 15 de padding nas bordas normalizam para 195", () => {
     const entrada = " ".repeat(15) + "a".repeat(195);
@@ -212,5 +281,35 @@ describe("normalizarObservacao — caminho real do cliente", () => {
   it("textarea de Windows com padding e parágrafos vira forma canônica", () => {
     const entrada = "  sem cebola\r\n\r\n\r\ntrocar\tbatata  ";
     expect(normalizarObservacao(entrada)).toBe("sem cebola\n\ntrocar batata");
+  });
+});
+
+// Achado MÉDIA do `auditar` na issue 167: a classe do passo 3 parava em U+2064
+// e o comentário prometia cobrir "overrides RTL (spoofing de comanda)". Ficavam
+// de fora os isolates do Trojan Source (CVE-2021-42574) e o ALM.
+describe("normalizarObservacao — controle bidirecional completo (CVE-2021-42574)", () => {
+  const BIDI = [
+    ["U+061C ALM", "؜"],
+    ["U+2066 LRI", "⁦"],
+    ["U+2067 RLI", "⁧"],
+    ["U+2068 FSI", "⁨"],
+    ["U+2069 PDI", "⁩"],
+    ["U+206A inibidor de simetria", "⁪"],
+    ["U+206F formatação de dígito", "⁯"],
+  ] as const;
+
+  it.each(BIDI)("remove %s do texto", (_nome, char) => {
+    expect(normalizarObservacao(`sem${char} cebola`)).toBe("sem cebola");
+  });
+
+  it("neutraliza o par isolate que reordena a comanda visualmente", () => {
+    // Sem a correção, o lojista imprime uma comanda que lê diferente do que
+    // está gravado no banco.
+    const ataque = "Pizza ⁦⁧ GRATIS ⁩ sem queijo";
+    const saida = normalizarObservacao(ataque);
+    for (const [, char] of BIDI) {
+      expect(saida).not.toContain(char);
+    }
+    expect(saida).toBe("Pizza GRATIS sem queijo");
   });
 });

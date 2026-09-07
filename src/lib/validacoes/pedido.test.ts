@@ -638,6 +638,45 @@ describe("[167] schemaItemPedido.observacao — tamanho (gate autoritativo, §10
     );
     expect(r.success).toBe(false);
   });
+
+  it("FRONTEIRA: 201 chars ANTES de normalizar (1 espaço de borda + 200 visíveis) → 200 DEPOIS → ACEITO", () => {
+    const entrada = " " + "a".repeat(200);
+    expect(entrada).toHaveLength(201);
+    const r = schemaPayloadPedido.safeParse(payload({ itens: itemComObs(entrada) }));
+    expect(item0(r).observacao).toBe("a".repeat(200));
+  });
+
+  it("FRONTEIRA: 202 chars ANTES de normalizar (1 espaço de borda + 201 visíveis) → 201 DEPOIS → REJEITADO", () => {
+    const entrada = " " + "a".repeat(201);
+    expect(entrada).toHaveLength(202);
+    const r = schemaPayloadPedido.safeParse(payload({ itens: itemComObs(entrada) }));
+    expect(r.success).toBe(false);
+  });
+
+  // [167] surrogate pairs / emoji: .length (JS, UTF-16) vs. char_length do
+  // Postgres (codepoints). Para caracteres fora do BMP, 1 codepoint = 2
+  // unidades UTF-16 → o gate do zod (usa .length) é MAIS restritivo que o
+  // CHECK do banco (20260907120000_itens_pedido_observacao.sql:51,
+  // `char_length(observacao) <= 200`), nunca menos. Não existe payload aceito
+  // pelo zod que viole o CHECK por causa de emoji — a divergência, quando
+  // existe, só rejeita de mais (perda de UX), nunca abre brecha de tamanho.
+  it("200 emoji fora do BMP (.length=400) → REJEITADO pelo zod mesmo tendo só 100 codepoints (bem abaixo do CHECK de 200 do banco)", () => {
+    const EMOJI = "\u{1F600}";
+    const entrada = EMOJI.repeat(200);
+    expect(entrada).toHaveLength(400);
+    expect(Array.from(entrada).length).toBe(200);
+    const r = schemaPayloadPedido.safeParse(payload({ itens: itemComObs(entrada) }));
+    expect(r.success).toBe(false);
+  });
+
+  it("100 emoji fora do BMP (.length=200, no limite do zod) tem só 100 codepoints — aceito no zod E dentro do CHECK do banco", () => {
+    const EMOJI = "\u{1F600}";
+    const entrada = EMOJI.repeat(100);
+    expect(entrada).toHaveLength(200);
+    expect(Array.from(entrada).length).toBe(100);
+    const r = schemaPayloadPedido.safeParse(payload({ itens: itemComObs(entrada) }));
+    expect(r.success).toBe(true);
+  });
 });
 
 describe("[167] schemaItemPedido.observacao — opcionalidade e vazio (SEM .min(1))", () => {
@@ -706,21 +745,43 @@ describe("[167] schemaItemPedido.observacao — normalização", () => {
 });
 
 describe("[167] schemaItemPedido.observacao — tipos inválidos", () => {
+  // Estes 5 casos passavam ANTES do GREEN pelo motivo ERRADO: com `observacao`
+  // não declarada no schema, o `.strict()` rejeitava o payload por CAMPO
+  // DESCONHECIDO — não por tipo inválido. Agora que o campo existe, a rejeição
+  // precisa vir do `z.string()` de `schemaObservacao` (invalid_type), no path
+  // exato `itens[0].observacao`. Sem essa asserção de path/code, um `.strict()`
+  // afrouxado em outro lugar do item continuaria fazendo este teste passar.
   it.each([
     ["número", 123],
     ["null", null],
     ["objeto", {}],
     ["array", ["a"]],
     ["booleano", true],
-  ])("rejeita observacao do tipo %s", (_rotulo, valor) => {
+  ])("rejeita observacao do tipo %s pelo motivo certo (invalid_type em itens[0].observacao)", (_rotulo, valor) => {
     const r = schemaPayloadPedido.safeParse(payload({ itens: itemComObs(valor) }));
     expect(r.success).toBe(false);
+    if (r.success) return;
+    const erro = r.error.issues.find(
+      (i) => i.path.join(".") === "itens.0.observacao",
+    );
+    expect(erro).toBeDefined();
+    expect(erro?.code).toBe("invalid_type");
+    // anti-regressão: NENHUM issue deveria reclamar de chave desconhecida —
+    // isso indicaria que voltamos ao comportamento "campo não declarado".
+    expect(r.error.issues.some((i) => i.code === "unrecognized_keys")).toBe(false);
   });
 });
 
 describe("[167] ANTI-REGRESSÃO do .strict() do item (trava anti-injeção monetária)", () => {
+  // Estes 7 casos (6 do it.each + 1 abaixo) passavam ANTES do GREEN pelo
+  // motivo ERRADO: `observacao` não declarada fazia o `.strict()` rejeitar o
+  // payload por causa DELA, não do campo monetário/desconhecido sob teste —
+  // o teste "passava" mesmo que o `.strict()` do campo alvo estivesse quebrado.
+  // Agora que `observacao` é um campo legítimo, a rejeição só prova o que o
+  // nome do teste promete se o issue do zod apontar para o campo INJETADO
+  // (`unrecognized_keys` com esse nome no path do item) — não para `observacao`.
   it.each(["preco", "total", "subtotal", "desconto", "taxa_entrega", "observacoes"])(
-    "declarar 'observacao' NÃO afrouxa o item: campo desconhecido '%s' continua rejeitado",
+    "declarar 'observacao' NÃO afrouxa o item: campo desconhecido '%s' continua rejeitado pelo motivo certo",
     (campo) => {
       const r = schemaPayloadPedido.safeParse(
         payload({
@@ -728,16 +789,29 @@ describe("[167] ANTI-REGRESSÃO do .strict() do item (trava anti-injeção monet
         }),
       );
       expect(r.success).toBe(false);
+      if (r.success) return;
+      const erro = r.error.issues.find((i) => i.path.join(".") === "itens.0");
+      expect(erro).toBeDefined();
+      expect(erro?.code).toBe("unrecognized_keys");
+      // zod 4 lista as chaves não reconhecidas no issue — `observacao` NÃO
+      // pode estar entre elas (ela está declarada e válida: "ok").
+      expect((erro as { keys?: string[] } | undefined)?.keys).toContain(campo);
+      expect((erro as { keys?: string[] } | undefined)?.keys).not.toContain("observacao");
     },
   );
 
-  it("item com observacao válida + campo desconhecido arbitrário → rejeitado", () => {
+  it("item com observacao válida + campo desconhecido arbitrário → rejeitado pelo campo arbitrário, não por observacao", () => {
     const r = schemaPayloadPedido.safeParse(
       payload({
         itens: [{ produto_id: UUID2, quantidade: 2, observacao: "ok", xpto: "x" }],
       }),
     );
     expect(r.success).toBe(false);
+    if (r.success) return;
+    const erro = r.error.issues.find((i) => i.path.join(".") === "itens.0");
+    expect(erro?.code).toBe("unrecognized_keys");
+    expect((erro as { keys?: string[] } | undefined)?.keys).toContain("xpto");
+    expect((erro as { keys?: string[] } | undefined)?.keys).not.toContain("observacao");
   });
 });
 

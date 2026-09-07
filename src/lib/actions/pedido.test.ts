@@ -1619,4 +1619,58 @@ describe("[167] criarPedido — observação por item", () => {
     expect(r).toEqual({ erro: expect.any(String) });
     expect(fakeClient.rpc).not.toHaveBeenCalled();
   });
+
+  it("[167-A15] 50 itens, cada um com observação de EXATAMENTE 200 chars → todos aceitos e propagados íntegros ao p_itens", async () => {
+    cenarioFeliz();
+    // teto de cardinalidade de `itens` é 50 (pedido.ts) — este é o caso limite
+    // combinado com o teto de 200 chars de cada observação (~10 KB de payload,
+    // dentro do bodySizeLimit de 2MB, plan/167 §Custo e quota).
+    const itens = Array.from({ length: 50 }, (_, i) => {
+      const sufixo = String(i).padStart(2, "0"); // 2 chars — diferencia o item
+      return {
+        produto_id: PROD_1,
+        quantidade: 1,
+        observacao: sufixo + "a".repeat(198), // 200 chars exatos
+      };
+    });
+    const r = await criarPedido(payloadBase({ itens }));
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    const pItens = argsDaChamada().p_itens;
+    expect(pItens).toHaveLength(50);
+    for (let i = 0; i < 50; i++) {
+      expect(pItens[i].observacao).toHaveLength(200);
+      expect(pItens[i].observacao).toBe(itens[i].observacao);
+    }
+  });
+
+  it("[167-A16] produto indisponível recusa o PEDIDO INTEIRO antes de tocar em observação — não existe caminho de 'item descartado' que preserve observações de outros itens parcialmente", async () => {
+    // [167] não introduz nenhum caminho de descarte parcial de item: a action
+    // é fail-closed (pedido.ts:141-146) — qualquer item com produto
+    // indisponível/oculto/cross-loja recusa o pedido INTEIRO, mesmo que outros
+    // itens (com observação válida) estivessem ok. Prova que observação não
+    // interfere nesse gate nem sobrevive parcialmente.
+    buscarLojaParaPedido.mockResolvedValue(lojaRow());
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Centro", reconciliado: true });
+    buscarOpcionaisPorIds.mockResolvedValue([]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+    buscarPedidoPorToken.mockResolvedValue(null);
+    const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000099";
+    buscarProdutosPorIds.mockResolvedValue([
+      produtoRow(), // PROD_1 disponível
+      produtoRow({ id: PROD_2, disponivel: false }), // PROD_2 indisponível
+    ]);
+    const r = await criarPedido(
+      payloadBase({
+        itens: [
+          { produto_id: PROD_1, quantidade: 1, observacao: "sem cebola" },
+          { produto_id: PROD_2, quantidade: 1, observacao: "bem passado" },
+        ],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
 });

@@ -17,9 +17,13 @@ export function normalizarObservacao(texto: string): string {
       .replace(/\r\n?/g, "\n")
       // 2. Controles C0/C1 e DEL, PRESERVANDO \n (U+000A) e \t (U+0009).
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
-      // 3. Invisíveis/bidi: zero-width, separadores de linha/parágrafo,
-      //    overrides RTL (spoofing de comanda) e BOM.
-      .replace(/[\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\uFEFF]/g, "")
+      // 3. Invisíveis/bidi: zero-width, separadores de linha/parágrafo, BOM e
+      //    TODA a família de controle bidirecional — overrides (U+202A-202E),
+      //    isolates (U+2066-U+2069, o par do Trojan Source, CVE-2021-42574),
+      //    format chars depreciados (U+206A-206F) e o ALM (U+061C). Sem eles a
+      //    comanda impressa pode ser reordenada visualmente: o lojista lê algo
+      //    diferente do que está gravado.
+      .replace(/[\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\uFEFF]/g, "")
       // 4. Tab → espaço (tab quebra alinhamento de comanda/recibo).
       .replace(/\t/g, " ")
       // 5. Colapsa espaço horizontal repetido (inclui NBSP) — anti-padding.

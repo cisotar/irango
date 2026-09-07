@@ -19,8 +19,13 @@ import { normalizarObservacao } from "@/lib/utils/normalizarObservacao";
 // 🛑 PROIBIDO `.min(1)`: uma observação só de espaços normaliza para "" e, com
 // .min(1), derrubaria o PEDIDO INTEIRO por um campo cosmético. O "" é aceito
 // aqui e descartado na Server Action (a RPC grava NULL).
+// O teto bruto de 8× é defesa em profundidade: a normalização roda ANTES de
+// qualquer medição, então sem ele um payload de megabytes seria normalizado
+// antes de ser rejeitado. A folga de 8× nunca recusa texto legítimo — a
+// invariante da normalização é que ela só encurta.
 const schemaObservacao = z
   .string()
+  .max(LIMITE_OBSERVACAO * 8)
   .transform(normalizarObservacao)
   .pipe(z.string().max(LIMITE_OBSERVACAO));
 
