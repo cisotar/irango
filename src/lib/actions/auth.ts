@@ -23,9 +23,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { contarLojasDoDono, slugExiste, criarLoja } from "@/lib/supabase/queries/lojas";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
+import { ehAdminSaaS } from "@/lib/auth/admin";
 
 export type ResultadoCadastro = { ok: true } | { ok: false; erro: string };
-export type ResultadoLogin = { ok: true } | { ok: false; erro: string };
+export type ResultadoLogin =
+  | { ok: true; destino: string }
+  | { ok: false; erro: string };
 
 // D8: versão corrente dos Termos/Privacidade — agora em @/lib/constants/termos
 // (compartilhada com as páginas públicas /termos e /privacidade, issue 062).
@@ -157,7 +160,10 @@ export async function entrar(payload: unknown): Promise<ResultadoLogin> {
     if (error || !data.user) {
       return { ok: false, erro: "Email ou senha incorretos" };
     }
-    return { ok: true };
+    // Mesmo critério do callback OAuth (auth/callback/route.ts): dono do SaaS →
+    // hub /admin; lojista → /painel. Decidido aqui (servidor), nunca no cliente.
+    const destino = ehAdminSaaS(data.user.id) ? "/admin" : "/painel";
+    return { ok: true, destino };
   } catch (e) {
     console.error("[entrar]", e);
     return { ok: false, erro: "Email ou senha incorretos" };

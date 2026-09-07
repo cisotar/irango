@@ -34,6 +34,12 @@ export const schemaPerfil = z
       .regex(reUf)
       .transform((v) => v.toUpperCase())
       .optional(),
+    // Preferência operacional (issue 122 / spec 5): opcional e SEM `.default`.
+    // Payload sem a chave PRESERVA o valor no banco — `montarPatchPerfil` só
+    // grava quando `!== undefined` e o DEFAULT vive na coluna (migration 121).
+    // Um default aqui sobrescreveria a escolha do lojista em todo save que não
+    // mandasse o campo.
+    whatsapp_envio_automatico: z.boolean().optional(),
   })
   .strict();
 

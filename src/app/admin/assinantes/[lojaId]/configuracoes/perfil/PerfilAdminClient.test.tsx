@@ -34,6 +34,9 @@ const LOJA_ALVO = "11111111-1111-4111-8111-111111111111";
 const capturado = vi.hoisted(() => ({
   onSalvarLogo: undefined as ((formData: FormData) => unknown) | undefined,
   onRemoverLogo: undefined as (() => unknown) | undefined,
+  // Issue 124: a fiação de `onSalvar` é a MESMA classe de vetor do bug de logo
+  // da 119 — se a prop sumir, `PerfilClient` cai no default do LOJISTA.
+  onSalvar: undefined as ((payload: unknown) => unknown) | undefined,
 }));
 
 // --- child client do painel: stub que captura as props e não renderiza árvore real ---
@@ -43,9 +46,11 @@ vi.mock(
     PerfilClient: (props: {
       onSalvarLogo?: (formData: FormData) => unknown;
       onRemoverLogo?: () => unknown;
+      onSalvar?: (payload: unknown) => unknown;
     }) => {
       capturado.onSalvarLogo = props.onSalvarLogo;
       capturado.onRemoverLogo = props.onRemoverLogo;
+      capturado.onSalvar = props.onSalvar;
       return null;
     },
   }),
@@ -53,7 +58,7 @@ vi.mock(
 
 // --- actions admin importadas pelo wrapper (todas mockadas) ---
 vi.mock("@/app/admin/assinantes/actions/admin-perfil", () => ({
-  salvarPerfilAdmin: vi.fn(),
+  salvarPerfilAdmin: vi.fn(async () => ({ ok: true, geocodificado: false })),
 }));
 vi.mock("@/app/admin/assinantes/actions/admin-publicar", () => ({
   publicarLojaAdmin: vi.fn(),
@@ -67,6 +72,13 @@ vi.mock("@/app/admin/assinantes/actions/admin-logo", () => ({
 }));
 
 // --- defaults do LOJISTA: devem permanecer intocados no caminho admin ---
+// `salvarPerfil`/`definirPublicacao` derivam a loja pelo AUTH (buscarLojaDoDono):
+// se o wrapper admin não injetar `onSalvar`, o perfil da loja DO ADMIN é que
+// seria gravado. Mockados aqui para poder asserir que NUNCA são chamados.
+vi.mock("@/lib/actions/loja", () => ({
+  salvarPerfil: vi.fn(async () => ({ ok: true, geocodificado: false })),
+  definirPublicacao: vi.fn(async () => ({ ok: true })),
+}));
 vi.mock("@/lib/actions/logo", () => ({
   salvarLogoLoja: vi.fn(async () => ({
     ok: true,
@@ -81,6 +93,8 @@ import {
   removerLogoAdmin,
 } from "@/app/admin/assinantes/actions/admin-logo";
 import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
+import { salvarPerfilAdmin } from "@/app/admin/assinantes/actions/admin-perfil";
+import { salvarPerfil } from "@/lib/actions/loja";
 
 function renderizar(lojaId = LOJA_ALVO) {
   // Como o `PerfilClient` é stub, os dados de perfil são irrelevantes ao wiring —
@@ -101,6 +115,7 @@ describe("PerfilAdminClient — fiação das actions admin de logo (issue 119, m
     vi.clearAllMocks();
     capturado.onSalvarLogo = undefined;
     capturado.onRemoverLogo = undefined;
+    capturado.onSalvar = undefined;
   });
 
   it("injeta onSalvarLogo/onRemoverLogo no PerfilClient (props definidas)", () => {
@@ -155,5 +170,64 @@ describe("PerfilAdminClient — fiação das actions admin de logo (issue 119, m
     // O client nunca é autoridade do escopo: o loja_id da URL prevalece.
     expect(fdRecebido.get("loja_id")).toBe(LOJA_ALVO);
     expect(fdRecebido.get("loja_id")).not.toBe(OUTRA_LOJA);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue 124 — fiação de `onSalvar`. Lacuna real: o arquivo cobria só a logo.
+// `PerfilClient` tem `onSalvar = salvarPerfilLojista` como DEFAULT de prop; um
+// wrapper admin que esqueça de injetar a variante admin não quebra o build nem
+// a UI — grava silenciosamente no perfil da loja DO ADMIN. Mesma forma do bug
+// da 119, agora sobre o perfil (e sobre `whatsapp_envio_automatico`).
+const PAYLOAD_MIN = {
+  nome: "Pizzaria Alvo",
+  slug: "pizzaria-alvo",
+  whatsapp: "5511999998888",
+};
+const LOJA_HOSTIL = "99999999-9999-4999-8999-999999999999";
+
+describe("PerfilAdminClient — fiação de onSalvar (issue 124)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturado.onSalvar = undefined;
+  });
+
+  it("C3.1 — injeta onSalvar no PerfilClient (prop definida, não cai no default do lojista)", () => {
+    renderizar();
+    expect(capturado.onSalvar).toBeTypeOf("function");
+  });
+
+  it("C3.2 — onSalvar(payload) chama salvarPerfilAdmin(lojaId da URL, payload intacto) — nunca salvarPerfil", async () => {
+    renderizar();
+    expect(capturado.onSalvar).toBeTypeOf("function");
+
+    const payload = { ...PAYLOAD_MIN, whatsapp_envio_automatico: false };
+    await capturado.onSalvar!(payload);
+
+    expect(salvarPerfilAdmin).toHaveBeenCalledTimes(1);
+    // 1º arg = tenant da URL (closure); 2º arg = payload NÃO reescrito pelo wrapper.
+    expect(salvarPerfilAdmin).toHaveBeenCalledWith(LOJA_ALVO, payload);
+
+    // AC-4 (metade cliente): o default do lojista fecharia a escrita na loja do admin.
+    expect(salvarPerfil).not.toHaveBeenCalled();
+  });
+
+  it("C3.3 — tenant vem da URL, nunca do payload: `id`/`loja_id` hostis não mudam o 1º argumento", async () => {
+    renderizar(LOJA_ALVO);
+    expect(capturado.onSalvar).toBeTypeOf("function");
+
+    await capturado.onSalvar!({
+      ...PAYLOAD_MIN,
+      whatsapp_envio_automatico: false,
+      id: LOJA_HOSTIL,
+      loja_id: LOJA_HOSTIL,
+    });
+
+    expect(vi.mocked(salvarPerfilAdmin).mock.calls[0][0]).toBe(LOJA_ALVO);
+    expect(vi.mocked(salvarPerfilAdmin).mock.calls[0][0]).not.toBe(LOJA_HOSTIL);
+    // A defesa final contra o payload hostil é do SERVIDOR (C1.3 em
+    // admin-loja.binding.test.ts); aqui provamos só que o wrapper não lê tenant
+    // do payload.
+    expect(salvarPerfil).not.toHaveBeenCalled();
   });
 });

@@ -22,3 +22,14 @@ painel/ pra manter bounded contexts separados.
 Definir na spec: layout exato dos opcionais por item (indentado sob o
 produto?), como somar no subtotal exibido, tratamento quando item não tem
 opcionais.
+
+---
+
+## Status: implementado e arquivado (2026-09-06)
+
+`DetalhePedido.tsx` já itera `item.itens_pedido_opcionais` via
+`mapearOpcionaisExibicao` e renderiza cada opcional indentado sob o produto
+com `ListaOpcionaisItem` (reaproveitado de `vitrine/`, sem duplicação). O
+acréscimo dos opcionais entra no total da linha
+(`(item.preco + acrescimo) * item.quantidade`). Cupom seguiu exibido, sem
+necessidade de retrabalho. Gap de renderização fechado.

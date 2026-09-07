@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.20 | **Atualizado:** 2026-07-10
+**Versão:** 0.2.21 | **Atualizado:** 2026-09-06
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -331,6 +331,7 @@ const items = order.order_items
 - Validação → `lib/validacoes/` — mesmo schema no form e na Server Action
 - Queries → `lib/supabase/queries/` — nunca escrever `.from('produtos').select(...)` inline
 - Helper de I/O compartilhado entre actions → `lib/actions/` — módulo neutro (sem `'use server'`); exporta só funções puras de validação/transformação; o I/O em si (upload, DB) fica em cada action. Exemplo: `upload-imagem.ts` reutilizado por `upload.ts` e `logo.ts`
+- Mecânica de browser que precisa ser testada sem jsdom (repo não usa jsdom) → módulo neutro (sem `'use client'`/`'use server'`) com o objeto global (janela, timer) **injetado por parâmetro**, nunca lido direto de `window`/`document` dentro da função — permite cobrir em `environment: node` com fake injetado. Padrão usado 2x: `criarControladorPolling`/`DepsPolling` (`confirmacao/StatusPedidoLive.tsx`, polling de status) e `prepararAbaWhatsapp`/`AbrirJanela` (`checkout/aberturaWhatsapp.ts`, issue 126)
 
 ### Componentes
 

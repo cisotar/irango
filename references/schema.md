@@ -57,6 +57,13 @@ CREATE TABLE lojas (
   whatsapp         text,                    -- formato: 5511999999999
   ativo            boolean NOT NULL DEFAULT true,
 
+  -- Preferência de notificação (spec 5): quando true, o checkout abre o WhatsApp
+  -- automaticamente ao confirmar o pedido, sem o segundo clique do cliente. O
+  -- botão manual da confirmação independe desta flag. NÃO é billing nem PII —
+  -- fica fora de CAMPOS_LOJA_SOMENTE_SERVIDOR e é gravável pelo lojista (RLS
+  -- lojas_update_proprio) e pelo admin SaaS (escopo.atualizarLoja).
+  whatsapp_envio_automatico boolean NOT NULL DEFAULT true,
+
   -- Endereço
   endereco_rua     text,
   endereco_numero  text,
@@ -429,6 +436,11 @@ CREATE INDEX ON opcionais_categorias(loja_id, ordem);
 CREATE INDEX ON opcionais(loja_id, categoria_opcional_id, ativo, ordem);
 CREATE INDEX ON categoria_produto_opcionais(loja_id, categoria_id);
 CREATE INDEX ON itens_pedido_opcionais(item_pedido_id);
+
+-- Itens de um pedido (embed `itens_pedido(*)` de SELECT_PEDIDO_COM_ITENS).
+-- FK sem indice = Seq Scan na tabela inteira a cada leitura de pedido.
+-- Migration: 20260906120000_itens_pedido_pedido_id_idx.sql
+CREATE INDEX ON itens_pedido(pedido_id);
 
 -- Auditoria admin por loja, mais recentes primeiro
 -- Migration: 20260707122000_admin_acessos.sql

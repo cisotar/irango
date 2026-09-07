@@ -53,7 +53,7 @@ export function LoginForm({ erroOAuth = false }: { erroOAuth?: boolean }) {
 
     const resultado = await entrar(parsed.data);
     if (resultado.ok) {
-      router.push("/painel");
+      router.push(resultado.destino);
       return;
     }
     setErroCredencial(resultado.erro);

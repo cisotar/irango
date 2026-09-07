@@ -1,6 +1,58 @@
 # Spec: Toggle de envio automático da mensagem de WhatsApp ao confirmar o pedido
 
-**Versão:** 0.1.0 | **Atualizado:** 2026-07-04
+**Versão:** 0.1.0 | **Atualizado:** 2026-09-06
+
+## Status atual (2026-09-06)
+
+**Só a base de dados foi feita.** A migration
+`supabase/migrations/20260704120000_lojas_whatsapp_envio_automatico.sql` já
+criou a coluna `lojas.whatsapp_envio_automatico` (`boolean NOT NULL DEFAULT
+true`), e ela já aparece nos tipos gerados (`src/lib/database.types.ts`) e em
+mocks de teste (`manifestPainel.test.ts`, `assinatura.test.ts`, rotas de
+manifest). **Nenhum outro behavior desta spec foi implementado ainda:**
+
+- Nenhum toggle (`Switch`) existe em `PerfilClient.tsx` nem no admin
+  (`/admin/assinantes/[lojaId]/configuracao`).
+- `schemaPerfil`, `DadosPerfil` e `montarPatchPerfil`
+  (`src/lib/actions/loja.ts`) não conhecem o campo — o lojista não consegue
+  ligar/desligar nada hoje.
+- `atualizarPerfilAdmin` (admin) também não referencia o campo.
+- `criarPedido` (`src/lib/actions/pedido.ts`) não devolve `whatsappHref`.
+- `useEnviarPedido.ts` não tem a mecânica de pré-abrir aba (RN-A5) nem
+  qualquer lógica de disparo automático — continua só chamando `criarPedido`
+  e navegando para a confirmação.
+
+Ou seja: a coluna existe no banco, mas está "morta" — nada lê nem escreve
+nela fora dos testes. Todos os behaviors abaixo seguem `[ ]` até essa fiação
+ser feita.
+
+## Status da verificação (2026-09-06)
+
+Implementação completa e commitada (issues 122, 123, 124, 125, 126).
+
+**Verificado em navegador, com clique e digitação reais** — os 5 behaviors do
+painel marcados `[x]`:
+- Toggle desabilitado com a dica quando a loja não tem WhatsApp.
+- Habilita ao cadastrar WhatsApp.
+- **Desligar, salvar e recarregar do zero mantém `false`** — o caso que a
+  implementação quase errou (com spread condicional o `false` seria omitido do
+  payload e o lojista nunca conseguiria desligar). Confirmado também no banco.
+- Paridade admin provada com DUAS lojas de donos distintos: a escrita foi para a
+  loja-alvo e a loja do próprio admin ficou intacta.
+
+**Os 4 behaviors do checkout seguem `[ ]` por falta de verificação em navegador,
+não por falta de implementação.** O código está pronto e coberto por 47 testes,
+incluindo um que trava a ORDEM da pré-abertura (mover a abertura para depois do
+`await` deixa vermelho) e o fix de reverse tabnabbing. O que faltou foi o
+ambiente:
+- O dev local aponta para o Supabase de PRODUÇÃO, que tem contas de pessoas reais.
+- A `loja-smoke` tem trial vencido em 28/06/2026, então o gate de assinatura fecha
+  a vitrine antes do checkout.
+- Estender `assinatura_fim_periodo` é escrita em coluna de billing em produção, e
+  está corretamente bloqueada pelo classificador de permissão.
+
+Fechar esses 4 exige subir o Supabase LOCAL (`npx supabase start` + `db reset`),
+onde a loja de teste é descartável. Depende de acesso ao Docker na máquina.
 
 ## Visão Geral
 
@@ -65,14 +117,14 @@ com dica ("Cadastre um WhatsApp para ativar o envio automático").
   `schemaPerfil` + `DadosPerfil` + `montarPatchPerfil`.
 
 **Behaviors:**
-- [ ] Ver o estado atual do toggle (ligado por default). Garantido em: SSR — valor
+- [x] Ver o estado atual do toggle (ligado por default). Garantido em: SSR — valor
   lido de `lojas.whatsapp_envio_automatico` na carga da página (`buscarLojaDoDono`).
-- [ ] Ligar/desligar o toggle e salvar. Garantido em: **Server Action + RLS** —
+- [x] Ligar/desligar o toggle e salvar. Garantido em: **Server Action + RLS** —
   `salvarPerfil` valida (`schemaPerfil`), monta patch por allowlist
   (`montarPatchPerfil`) e grava em `lojas` escopado por `dono_id`
   (`lojas_update_proprio`). O valor do toggle no cliente é só UX; o servidor
   regrava a coluna a partir do payload validado.
-- [ ] Ver o toggle desabilitado quando a loja não tem WhatsApp. Garantido em:
+- [x] Ver o toggle desabilitado quando a loja não tem WhatsApp. Garantido em:
   cliente (UX) — condicional sobre `whatsapp` carregado no SSR. (A ausência de
   WhatsApp já impede o envio no servidor de qualquer forma — RN-A3.)
 
@@ -94,12 +146,12 @@ gravando na loja-alvo (`lojaId`), não na loja do admin.
   schema/dados; o patch já flui pelo mesmo `montarPatchPerfil`.
 
 **Behaviors:**
-- [ ] Ver e alternar o toggle da **loja-alvo**. Garantido em: **Server Action +
+- [x] Ver e alternar o toggle da **loja-alvo**. Garantido em: **Server Action +
   binding por tenant** — `prepararContextoAdmin(lojaId)` + `escopo.atualizarLoja`
   injeta `.eq("id", lojaId)` por construção (PRs #99/#101). O cliente admin nunca
   escolhe qual loja é gravada; o `lojaId` vem da rota validada
   (`validarLojaIdAdmin`), não do payload.
-- [ ] Não conseguir escrever coluna somente-servidor por essa via. Garantido em:
+- [x] Não conseguir escrever coluna somente-servidor por essa via. Garantido em:
   Server Action — `CAMPOS_LOJA_SOMENTE_SERVIDOR` é backstop de runtime;
   `whatsapp_envio_automatico` **não** está nessa lista (é preferência, não
   billing) → é permitida por design. Ver Segurança.
@@ -159,7 +211,7 @@ porque a abertura acontece dentro do gesto do usuário.
 
 ## Modelos de Dados
 
-**Migration nova:** `supabase/migrations/<timestamp>_lojas_whatsapp_envio_automatico.sql`
+**Migration já aplicada:** `supabase/migrations/20260704120000_lojas_whatsapp_envio_automatico.sql`
 
 ```sql
 ALTER TABLE lojas

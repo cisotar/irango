@@ -1,0 +1,36 @@
+-- [125-perf] Índice em `itens_pedido (pedido_id)` — o embed de itens deixa de
+-- varrer a tabela inteira.
+--
+-- MOTIVO. O Postgres NÃO cria índice automático para chave estrangeira. A FK
+-- `itens_pedido_pedido_id_fkey` existia sem índice de suporte desde o schema
+-- inicial (20260614000129), então TODA leitura de pedido com itens
+-- (`SELECT_PEDIDO_COM_ITENS` = "*, itens_pedido(*, itens_pedido_opcionais(*))"
+-- em src/lib/supabase/queries/pedidos.ts) resolvia o embed com Seq Scan sobre
+-- `itens_pedido` INTEIRA — todas as lojas, todos os pedidos, para sempre.
+-- A tabela-neta `itens_pedido_opcionais` já tinha o índice equivalente
+-- (20260614007500); só o nível do meio estava descoberto.
+--
+-- MEDIÇÃO (Supabase local, 50k pedidos / 150k itens / 150k opcionais,
+-- buscarPedidoPorToken, EXPLAIN ANALYZE do shape do PostgREST):
+--   antes:  Seq Scan on itens_pedido, "Rows Removed by Filter: 149997",
+--           shared hit=1420, Execution Time 11.445 ms
+--   depois: Bitmap Index Scan on itens_pedido_pedido_id_idx,
+--           shared hit=18 read=3, Execution Time 0.157 ms   (~73x)
+--   ponta a ponta via PostgREST: mediana 12.5ms → 2.4ms; p95 16.7ms → 5.7ms
+-- O custo antes crescia LINEARMENTE com o volume global de itens; depois é O(1)
+-- no tamanho da tabela.
+--
+-- URGÊNCIA. A issue 125 põe essa leitura no caminho crítico do CHECKOUT público
+-- (`criarPedido` relê o pedido gravado para montar o `whatsappHref`), e a coluna
+-- `lojas.whatsapp_envio_automatico` tem `default true` — ou seja, a MAIORIA das
+-- lojas passa a pagar essa leitura em cada pedido. Também alivia o painel do
+-- lojista (`listarPedidosDoDono`), a página de confirmação e o hub admin, que
+-- usam a mesma projeção.
+--
+-- Nota de operação: em produção, se `itens_pedido` já for grande, prefira rodar
+-- `create index concurrently` fora de migration (não roda em transação) para não
+-- bloquear escrita. No volume atual o lock breve do CREATE INDEX é aceitável.
+--
+-- Idempotente. Rollback: `drop index if exists public.itens_pedido_pedido_id_idx;`
+create index if not exists itens_pedido_pedido_id_idx
+  on public.itens_pedido (pedido_id);

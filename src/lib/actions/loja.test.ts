@@ -63,6 +63,8 @@ const COLUNAS_PERMITIDAS = new Set([
   // (par tudo-ou-nada). NÃO vêm do payload — são geradas por geocodificarEndereco.
   "latitude",
   "longitude",
+  // Preferência operacional (issue 122): opcional, NÃO é billing/autoritativa.
+  "whatsapp_envio_automatico",
   // específicas de cada action:
   "horarios",
   "tema",
@@ -424,6 +426,66 @@ describe("salvarPerfil — ATAQUE RN-A5 (seguranca.md §2/§10): allowlist de co
       // se .strict() rejeitou os campos extras, nenhum UPDATE aconteceu.
       expect(updatePatch).not.toHaveBeenCalled();
     }
+  });
+});
+
+// ── (issue 122) whatsapp_envio_automatico via VIA LOJISTA (salvarPerfil) ──────
+// A cobertura de validacoes/loja.test.ts e patches-loja.test.ts prova a peça
+// isomórfica isolada; aqui provamos ponta a ponta que salvarPerfil (RLS por
+// dono_id, client AUTENTICADO — não service_role) de fato propaga a flag ao
+// UPDATE real, com as mesmas bordas críticas: false explícito, ausência
+// preserva o valor gravado, coerção reprova sem I/O.
+describe("salvarPerfil — whatsapp_envio_automatico via lojista (issue 122)", () => {
+  it("flag TRUE chega ao 1º UPDATE, escopado por id da loja resolvida sob RLS", async () => {
+    const r = await salvarPerfil({ ...PERFIL_OK, whatsapp_envio_automatico: true });
+
+    expect(r).toMatchObject({ ok: true });
+    const patch = updatePatch.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch).toHaveProperty("whatsapp_envio_automatico", true);
+    expect(updateEq).toHaveBeenNthCalledWith(1, "id", LOJA_ID);
+  });
+
+  it("flag FALSE explícito chega ao patch — prova que a checagem é !== undefined, não truthiness", async () => {
+    const r = await salvarPerfil({ ...PERFIL_OK, whatsapp_envio_automatico: false });
+
+    expect(r).toMatchObject({ ok: true });
+    const patch = updatePatch.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch).toHaveProperty("whatsapp_envio_automatico");
+    expect(patch.whatsapp_envio_automatico).toBe(false);
+  });
+
+  it("payload SEM a flag não emite a chave no UPDATE — preserva o valor já gravado no banco", async () => {
+    const r = await salvarPerfil(PERFIL_OK);
+
+    expect(r).toMatchObject({ ok: true });
+    const patch = updatePatch.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch).not.toHaveProperty("whatsapp_envio_automatico");
+  });
+
+  it.each(["true", 1, null, "sim"])(
+    "flag não-booleana (%j) reprova no schema — zero UPDATE, zero geocoding",
+    async (valor) => {
+      const r = await salvarPerfil({ ...PERFIL_OK, whatsapp_envio_automatico: valor });
+
+      expect(r).toMatchObject({ ok: false });
+      expect(updatePatch).not.toHaveBeenCalled();
+      expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ATAQUE combinado: flag legítima + colunas autoritativas no mesmo payload → .strict() reprova TUDO, zero UPDATE", async () => {
+    // Diferente da via admin (que faz allowlist-pick antes do parse), a via
+    // lojista só tem o .strict() como barreira: qualquer chave desconhecida
+    // reprova o payload inteiro — a flag legítima não "salva" o resto.
+    const r = await salvarPerfil({
+      ...PERFIL_OK,
+      whatsapp_envio_automatico: true,
+      dono_id: "99999999-9999-9999-9999-999999999999",
+      ativo: true,
+    });
+
+    expect(r).toMatchObject({ ok: false });
+    expect(updatePatch).not.toHaveBeenCalled();
   });
 });
 

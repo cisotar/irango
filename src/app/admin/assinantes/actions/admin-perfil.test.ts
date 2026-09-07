@@ -279,3 +279,59 @@ describe("salvarPerfilAdmin — caminho feliz (admin ok, slug livre)", () => {
     expect(updates[1].eqVal).toBe(LOJA_ID);
   });
 });
+
+// ───────── Caso 5 (issue 122): flag whatsapp_envio_automatico via admin ──────
+describe("salvarPerfilAdmin — whatsapp_envio_automatico (issue 122)", () => {
+  it("flag false sobrevive ao pick CHAVES_PERFIL e chega ao 1º UPDATE escopado por lojaId", async () => {
+    const r = await salvarPerfilAdmin(LOJA_ID, {
+      ...PAYLOAD_BASE,
+      whatsapp_envio_automatico: false,
+    });
+
+    expect(r).toMatchObject({ ok: true });
+    const perfil = updates[0];
+    expect(perfil.patch).toHaveProperty("whatsapp_envio_automatico", false);
+    expect(perfil.eqCol).toBe("id");
+    expect(perfil.eqVal).toBe(LOJA_ID);
+  });
+
+  it("payload SEM a flag não emite a chave no patch (preserva o valor no banco)", async () => {
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toMatchObject({ ok: true });
+    expect(updates[0].patch).not.toHaveProperty("whatsapp_envio_automatico");
+  });
+
+  it("payload hostil + flag: só a flag e os campos de perfil sobrevivem; autoritativas seguem fora", async () => {
+    await salvarPerfilAdmin(LOJA_ID, {
+      ...PAYLOAD_BASE,
+      whatsapp_envio_automatico: true,
+      ativo: true,
+      dono_id: "00000000-0000-0000-0000-000000000000",
+      assinatura_status: "ativa",
+      latitude: 0.0001,
+      longitude: 0.0001,
+      id: "99999999-9999-9999-9999-999999999999",
+    });
+
+    const patchPerfil = updates[0].patch;
+    for (const chave of CHAVES_PROIBIDAS) {
+      expect(patchPerfil).not.toHaveProperty(chave);
+    }
+    expect(patchPerfil).toHaveProperty("whatsapp_envio_automatico", true);
+    expect(patchPerfil).toMatchObject({
+      nome: "Pizzaria do Zé",
+      slug: "pizzaria-do-ze",
+    });
+  });
+
+  it("flag não-booleana ('true') reprova no schema → ERRO_VALIDACAO, zero UPDATE", async () => {
+    const r = await salvarPerfilAdmin(LOJA_ID, {
+      ...PAYLOAD_BASE,
+      whatsapp_envio_automatico: "true",
+    });
+
+    expect(r).toMatchObject({ ok: false });
+    expect(updates).toHaveLength(0);
+  });
+});
