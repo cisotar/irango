@@ -15,10 +15,13 @@ Marketplace SaaS multitenant (modelo iFood) em Next.js 16 + TypeScript + Supabas
 
 ```bash
 npm run dev        # app local → cloud
+npx tsc --noEmit   # 1º passo do CI
+npm run lint       # 2º passo do CI — 0 erros. O CI roda tsc → lint → test → build; o gate local espelha os quatro
+npm test           # suíte inteira (vitest run); com pouca memória: npx vitest run --maxWorkers=2
 npm run build      # obrigatório antes de fechar: const exportada em 'use server' só quebra aqui
-npm test           # suíte inteira (vitest run)
 npx vitest run <arquivo>
 npx supabase migration list   # coluna Remote vazia = migration só-local
+gh pr checks <n>   # nada está "pronto" com check do CI vermelho
 ```
 
 ## Qual skill usar

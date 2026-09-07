@@ -157,10 +157,11 @@ estiver no cloud. O deploy de migration deixou de ser "passo final manual" — v
 
 ### Gates antes de qualquer deploy
 
-1. **Build verde** — `npm run build` (zero erros, zero warnings novos)
-2. **Testes verdes** — `npx vitest run` (suite inteira, não só afetada)
-3. **RLS validada** — quando houver mudança de política/tabela: teste negativo em pglite (anon, lojista A, lojista B) confirmando isolamento
-4. **Zero regressão** — contagem de testes passando ≥ baseline pré-issue
+1. **Tipos e lint verdes** — `npx tsc --noEmit` e `npm run lint` com 0 erros. São os dois primeiros passos do CI; sem eles, testes e build nem rodam lá. Warning pré-existente não derruba, warning nova não entra.
+2. **Build verde** — `npm run build` (zero erros, zero warnings novos)
+3. **Testes verdes** — `npx vitest run` (suite inteira, não só afetada)
+4. **RLS validada** — quando houver mudança de política/tabela: teste negativo em pglite (anon, lojista A, lojista B) confirmando isolamento
+5. **Zero regressão** — contagem de testes passando ≥ baseline pré-issue
 5. **Migration no cloud** — `npx supabase migration list` mostra a nova migration com coluna **Remote preenchida** (zero migrations só-local). Ver passo 6c.
 6. **Tipos sincronizados** — após mudança de schema, regenerar `src/lib/database.types.ts` (NÃO `src/types/supabase.ts`, que está morto). Com cloud aplicado: `npx supabase gen types typescript > src/lib/database.types.ts`. Sem cloud/disco apertado: patch manual determinístico da coluna em Row/Insert/Update + qualquer RPC `setof <tabela>`.
 
@@ -251,10 +252,11 @@ Repita até a última issue ter todos os critérios `[x]`.
 Quando todas as issues tiverem critérios `[x]`:
 
 1. Confirmar que nenhuma issue do grafo ficou pendente e que todos os critérios estão `[x]`.
-2. **Build verde:** `npm run build` (zero erros, zero warnings novos). **Obrigatório mesmo para issues de UI — `const` exportada em Server Action quebra só no build (não no tsc/vitest).**
-3. **Suite completa verde:** `npx vitest run` (todos os testes). Os testes de RLS/migration rodam em pglite dentro da suíte (`tests/migrations/`) — não existe Supabase local.
-4. **Zero regressão:** contagem de testes passando ≥ baseline.
-5. **Tipos sincronizados:** confirmar `src/lib/database.types.ts` regenerado se o schema mudou (NÃO `src/types/supabase.ts`).
+2. **Tipos e lint verdes:** `npx tsc --noEmit` e `npm run lint` com 0 erros — a mesma ordem do CI (`tsc → lint → test → build`). Teste de captura de hook via `renderToStaticMarkup` cai em `react-hooks/globals`; prefira a forma que a regra aceita antes de qualquer `eslint-disable`.
+3. **Build verde:** `npm run build` (zero erros, zero warnings novos). **Obrigatório mesmo para issues de UI — `const` exportada em Server Action quebra só no build (não no tsc/vitest).**
+4. **Suite completa verde:** `npx vitest run` (todos os testes). Os testes de RLS/migration rodam em pglite dentro da suíte (`tests/migrations/`) — não existe Supabase local.
+5. **Zero regressão:** contagem de testes passando ≥ baseline.
+6. **Tipos sincronizados:** confirmar `src/lib/database.types.ts` regenerado se o schema mudou (NÃO `src/types/supabase.ts`).
 6. **🛑 GATE DE MIGRATION NO CLOUD (bloqueante).** Rodar `npx supabase migration list` e confirmar **zero migrations só-local** (toda linha com Remote preenchido). Se alguma migration do fluxo ficou só-local:
    - Normalmente já foi aplicada no passo 6c da Etapa 3. Se chegou aqui só-local, é porque o `verificar` da issue de schema foi pulado — **não feche o fluxo**. Pedir autorização e rodar `npx supabase db push` (com `migration repair` se desync) agora, depois regenerar os tipos.
    - Frontend não precisa de push manual aqui → Vercel faz CI/CD ao mergear em `main`.

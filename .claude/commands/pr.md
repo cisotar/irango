@@ -32,14 +32,19 @@ git log main..HEAD --oneline
 
 ## Etapa 2 — Gates (todos obrigatórios, nesta ordem)
 
+A ordem espelha `.github/workflows/ci.yml`. **O gate local é uma cópia do CI, não uma seleção dele** — se o workflow ganhar um passo, ele entra aqui no mesmo dia. Em 2026-09-07 dois PRs foram abertos com o CI vermelho porque o lint nunca esteve nesta lista.
+
 ```bash
-npm run build                      # zero erros, zero warnings novos
-npm test                           # suíte inteira em pglite
+npx tsc --noEmit                   # 1º passo do CI — tipos
+npm run lint                       # 2º passo do CI — 0 erros (warning pré-existente não derruba; não crie nova)
+npm test                           # 3º — suíte inteira em pglite
+npm run build                      # 4º — zero erros, zero warnings novos
 npx supabase migration list        # toda linha com Remote preenchido
 ```
 
 Regras:
 
+0. **Tipos ou lint** vermelho → pare. Antes de corrigir, `git branch -r`: a correção pode já existir numa branch sem PR. `eslint-disable` pontual só com justificativa no comentário **e** só depois de provar que a forma limpa (rename, refatoração) não atende — em 2026-09-07 um disable entrou na `main` com justificativa errada; a correção certa era um rename que já estava no remoto. Erro pré-existente: prove num worktree de `origin/main` e registre no corpo do PR.
 1. **Build** vermelho → corrija ou pare. `const` exportada em arquivo `'use server'` só quebra aqui, não no tsc.
 2. **Suíte** com falha → pare. Não abra PR "com um teste quebrado que já estava assim". Se for pré-existente, prove com `git stash` + rerun em `main` e registre no corpo do PR.
 3. **Migration só-local** (coluna Remote vazia) → pare. O app de produção roda contra o cloud; PR com migration não aplicada gera `PGRST204` após o deploy da Vercel. O push é irreversível: apresente a migration, confirme que é aditiva e **peça autorização** para `npx supabase db push`. Sem "sim", o PR não abre.
@@ -89,9 +94,12 @@ Modelo do corpo (preencha só as seções com conteúdo; remova as vazias):
 ```bash
 git push -u origin "$(git branch --show-current)"
 gh pr create --base main --title "<título>" --body-file <arquivo temporário no scratchpad>
+gh pr checks --watch               # o PR só está "aberto" quando o CI DELE está verde
 ```
 
-Mostre a URL do PR. **Não faça merge**, não aprove, não marque auto-merge.
+Mostre a URL do PR **junto com o resultado dos checks**. Check vermelho = PR não está pronto: leia o log (`gh run view <id> --log-failed`), corrija na branch, faça push e espere de novo. Nunca anuncie o PR como concluído com check pendente ou vermelho — o usuário não pode descobrir isso pelo GitHub. Se `gh` não estiver instalada, instale o binário em `~/.local/bin` (sem sudo) antes de seguir; não é motivo para pular a etapa.
+
+**Não faça merge**, não aprove, não marque auto-merge.
 
 ## Etapa 5 — Smoke pós-merge (só com `--smoke <url>`)
 
