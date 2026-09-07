@@ -101,6 +101,7 @@ O que o cliente envia vs. o que o servidor recalcula do zero.
 ### Arquivos a Criar / Modificar (nível função) / NÃO tocar (com motivo)
 
 ### Dependências Externas (pacote@versão + doc)
+**Custo e quota (obrigatório, `architecture.md` §9 nº1):** cobra por chamada? limite do plano atual? comportamento ao estourar (fail-closed vs degradar)? Custo variável sem análise explícita = plano incompleto.
 
 ### Ordem de Implementação
 Estrita, com justificativa de dependência. Issue crítica: **fase RED (`tdd`) primeiro**, depois GREEN.
@@ -117,6 +118,7 @@ Estrita, com justificativa de dependência. Issue crítica: **fase RED (`tdd`) p
 - [ ] Causa raiz descrita, não só o sintoma
 - [ ] Mapa de impacto cobre todos os arquivos afetados
 - [ ] Cada decisão de design tem alternativas documentadas
+- [ ] Dependência externa nova tem custo/quota/comportamento-ao-estourar mapeado
 - [ ] Toda invariante de valor/permissão tem camada server-side (RLS / Server Action)
 - [ ] Bordas incluem race conditions e estado de erro
 - [ ] Ordem justificada; se crítica, começa por teste vermelho

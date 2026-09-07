@@ -71,6 +71,14 @@ O risco nº 1 do marketplace. Para a Server Action de criar pedido:
 - [ ] Dado pessoal (email/telefone/Pix) hardcoded em código, comentário ou seed de produção
 - [ ] Query retornando campo interno ou linhas de múltiplas lojas
 
+### LGPD e PII (`seguranca.md` §8, §20, §21; `modelo-negocio.md` §7)
+O SaaS não processa pagamento, mas responde pelos dados pessoais que guarda (nome, telefone, endereço do comprador; email/telefone do lojista).
+- [ ] Feature cria campo/coluna com dado pessoal sem necessidade pra entregar o pedido (minimização — sem CPF, sem nascimento na v1) → MÉDIA
+- [ ] PII de comprador em `console.*`, em `metadados` de `admin_acessos`, ou em evento Sentry fora do alcance do `sentryBeforeSend` (campo novo que o scrubber não cobre) → MÉDIA
+- [ ] PII trafegando em loader/`select` que não precisa dela (`telefone_cliente`, `endereco_entrega`, `token_acesso` em listagem) ou em view pública → ALTA
+- [ ] Dado pessoal novo sem caminho de exclusão/anonimização (retenção §20) ou sem cascata no hard-delete da loja → registrar como issue, não fechar sem
+- [ ] Consentimento (`consentimento_em`/`consentimento_versao`) ignorado onde a feature depende dele → MÉDIA
+
 ## Formato de saída
 Para cada vulnerabilidade:
 ```markdown

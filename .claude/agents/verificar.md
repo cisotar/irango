@@ -42,6 +42,9 @@ Vitrine pública: `/loja/<slug>`. Painel: `/painel/*` (exige login). Use dados d
 ### Confirmação por token
 - Abrir `/confirmacao` com token errado → `notFound()`; com token certo → mostra o pedido
 
+### Acessibilidade e performance (issue de vitrine ou tela nova)
+Com o app de pé e Chrome instalado: `npx lighthouse <url> --only-categories=accessibility,performance --form-factor=mobile --output=json --output-path=/tmp/lh.json --chrome-flags="--headless"`. Reporte score de acessibilidade e as auditorias falhas (`audits.*.score === 0`, ex.: `color-contrast`, `button-name`, `label`) — é o número real por trás do `desenhar`. Sem Chrome, registre "Lighthouse não executado".
+
 ## Como observar
 - UI: o que aparece na tela, toasts (sonner), estados de loading/erro
 - Rede (DevTools): payload enviado vs. resposta — secret nunca aparece

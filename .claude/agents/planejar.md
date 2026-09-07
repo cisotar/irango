@@ -68,7 +68,7 @@ Que campos o cliente envia (produto_id, quantidade, endereco, codigo_cupom) e qu
 Liste com motivo. `components/ui/` (shadcn) não se edita à mão.
 
 ### Dependências Externas
-Pacote/API, versão, link da doc.
+Pacote/API, versão, link da doc. **Custo e quota (obrigatório, `architecture.md` §9 nº1):** cobra por chamada? limite do plano atual (Upstash, Nominatim 1 req/s, Sentry por evento, Vercel Hobby)? o que acontece quando a quota estoura — fail-closed ou degrada? Custo variável sem essa análise = plano incompleto.
 
 ### Ordem de Implementação
 Justificada por dependência. Para issue crítica: **fase RED (`tdd`) vem antes do código de produção.**
@@ -77,6 +77,7 @@ Justificada por dependência. Para issue crítica: **fase RED (`tdd`) vem antes 
 ## Checklist
 
 - [ ] Reuso inventariado antes de propor criação
+- [ ] Dependência externa nova tem custo/quota/comportamento-ao-estourar mapeado
 - [ ] Toda regra de valor/permissão tem camada server-side identificada (RLS / Server Action)
 - [ ] Tabela nova tem RLS planejada
 - [ ] Cenários cobrem caminho feliz E bordas
