@@ -10,6 +10,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
+import {
+  ajudaObservacao,
+  derivarContadorObservacao,
+} from "@/lib/utils/contadorObservacao";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
@@ -47,8 +53,9 @@ type ProdutoModalProps = {
     quantidade: number,
     opcionais: OpcionalCarrinho[],
     /**
-     * Observação livre desta linha (issue 168). Só o CONTRATO existe aqui — o
-     * `<textarea>` que a preenche é a issue 169; por ora sai sempre `undefined`.
+     * Observação livre desta linha (168), CRUA como o cliente digitou (169). A
+     * canonização (trim, colapso, corte no teto) é do caminho de dados — quem
+     * recebe canoniza antes de guardar, e o servidor revalida (167).
      */
     observacao?: string,
   ) => void;
@@ -84,9 +91,14 @@ export function ProdutoModal({
   // Quantidade escolhida por opcional: opcionalId → qtd (0 = não escolhido).
   const [qtdOpcionais, setQtdOpcionais] = useState<Record<string, number>>({});
   const [descricaoExpandida, setDescricaoExpandida] = useState(false);
+  // Texto CRU da observação desta linha (169). Não trimar aqui: a canonização é
+  // do caminho de dados (168) e a autoridade do teto é o zod do servidor (167).
+  const [observacao, setObservacao] = useState("");
   const corpoRef = useRef<HTMLDivElement>(null);
   const quantidadeSecaoRef = useRef<HTMLDivElement>(null);
   const opcionaisSecaoRef = useRef<HTMLDivElement>(null);
+  const observacaoSecaoRef = useRef<HTMLDivElement>(null);
+  const timerFocoObservacao = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Ao sair de 0 (nenhum item escolhido) rola o corpo até o título "Opcionais"
   // (ou até a seção de quantidade se o produto não tiver opcionais) — a seção de
@@ -108,6 +120,14 @@ export function ProdutoModal({
       secao.getBoundingClientRect().top - corpo.getBoundingClientRect().top;
     corpo.scrollTo({ top: corpo.scrollTop + desloc - 8, behavior: "smooth" });
   }, [quantidade]);
+
+  // O timer do foco da observação é assíncrono (espera a animação do teclado):
+  // se o modal fechar antes de disparar, ele tocaria refs já desmontadas.
+  useEffect(() => {
+    return () => {
+      if (timerFocoObservacao.current) clearTimeout(timerFocoObservacao.current);
+    };
+  }, []);
 
   if (!produto) return null;
 
@@ -147,9 +167,32 @@ export function ProdutoModal({
     });
   };
 
+  const contadorObservacao = derivarContadorObservacao(observacao);
+
+  // No mobile o teclado virtual cobre metade da tela e o campo é o último do
+  // corpo: sem isso o cliente digita às cegas. Espera-se a animação do teclado
+  // (~300ms) e rola-se o CORPO ROLÁVEL — nunca scrollIntoView, que rolaria o
+  // body por baixo do modal fixed. Mesmo cálculo relativo do efeito de
+  // quantidade acima (getBoundingClientRect, não offsetTop).
+  const aoFocarObservacao = () => {
+    if (typeof window === "undefined") return;
+    if (timerFocoObservacao.current) clearTimeout(timerFocoObservacao.current);
+    timerFocoObservacao.current = setTimeout(() => {
+      const corpo = corpoRef.current;
+      const secao = observacaoSecaoRef.current;
+      if (!corpo || !secao) return;
+      const desloc =
+        secao.getBoundingClientRect().top - corpo.getBoundingClientRect().top;
+      corpo.scrollTo({ top: corpo.scrollTop + desloc - 8, behavior: "smooth" });
+    }, 300);
+  };
+
   const confirmar = () => {
     if (!disponivel) return;
-    onAdicionar(produto.id, quantidade, opcionaisEscolhidos);
+    onAdicionar(produto.id, quantidade, opcionaisEscolhidos, observacao);
+    // O `key` do SecaoCatalogo não remonta o modal ao reabrir o MESMO produto:
+    // sem este reset a observação anterior vazaria para a próxima adição.
+    setObservacao("");
     onOpenChange(false);
   };
 
@@ -424,9 +467,66 @@ export function ProdutoModal({
                 </div>
               </div>
             </div>
+
+            {/* Seção Observações (issue 169) — mesma moldura de card das seções
+                acima. Só aparece depois do 1º item (mesmo padrão de Opcionais):
+                sem quantidade escolhida não há linha para observar. O teto é
+                UX — a autoridade é o zod do servidor (167). */}
+            {disponivel ? (
+              <div
+                ref={observacaoSecaoRef}
+                className={`px-4 pb-4 ${quantidade > 0 ? "" : "hidden"}`}
+              >
+                <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
+                  <label
+                    htmlFor="observacao-produto"
+                    className="mb-3 block text-xs font-bold uppercase tracking-wide text-marrom-cafe"
+                  >
+                    Observações
+                  </label>
+                  <Textarea
+                    id="observacao-produto"
+                    rows={3}
+                    maxLength={LIMITE_OBSERVACAO}
+                    value={observacao}
+                    onChange={(e) => setObservacao(e.target.value)}
+                    onFocus={aoFocarObservacao}
+                    placeholder="Ex: sem cebola, ponto da carne…"
+                    aria-describedby="observacao-produto-ajuda observacao-produto-contador"
+                    className="min-h-[76px] resize-none border-[var(--borda-nav)] bg-white text-sm text-[var(--texto)] placeholder:text-[var(--texto-muted)] focus-visible:border-[var(--cor-destaque)] focus-visible:ring-[var(--cor-destaque)]/30"
+                  />
+                  <div className="mt-1.5 flex items-start justify-between gap-3">
+                    <p
+                      id="observacao-produto-ajuda"
+                      className="text-xs text-[var(--texto-muted)]"
+                    >
+                      {ajudaObservacao()}
+                    </p>
+                    {/* Contador: cor E peso mudam no alerta — cor sozinha não é
+                        sinal acessível (WCAG 1.4.1). Não é live region: ele está
+                        no aria-describedby e seria lido a cada tecla. */}
+                    <p
+                      id="observacao-produto-contador"
+                      className={`shrink-0 text-xs tabular-nums ${
+                        contadorObservacao.proximoDoLimite
+                          ? "font-bold text-marrom-cafe"
+                          : "text-[var(--texto-muted)]"
+                      }`}
+                    >
+                      {observacao.length}/{LIMITE_OBSERVACAO}
+                    </p>
+                  </div>
+                  {/* Anúncio do leitor de tela: a string muda só nos DOIS
+                      limiares (aviso e limite), nunca a cada tecla. */}
+                  <p role="status" aria-live="polite" className="sr-only">
+                    {contadorObservacao.aviso}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          {/* Footer fixo (não rola) — CTA de adicionar (com subtotal no próprio
+          {/* Footer fixo (não rola)— CTA de adicionar (com subtotal no próprio
               botão) OU esgotado quando indisponível + "Mais itens". Fixo nos dois
               breakpoints (design-claude/vitrine/produto-modal-mobile-v2-scroll.html). */}
           <div className="shrink-0 border-t border-[#eeeeee]">
