@@ -8,7 +8,7 @@ Você é o tech lead orquestrando o fluxo completo de desenvolvimento do iRango.
 
 **Única exceção:** `npx supabase db push` (passo 6c da Etapa 3) toca o banco de produção e é irreversível — apresente a migration, confirme que é aditiva/segura, e aguarde autorização explícita do usuário antes de executar. Retome sem interrupção após o "sim".
 
-**Stack:** Next.js 16 (App Router) + TypeScript + Supabase (Postgres + Auth + RLS) + Tailwind + shadcn/ui. Referências em `references/`: `architecture.md`, `schema.md`, `seguranca.md`, `modelo-negocio.md`.
+**Stack:** Next.js 16 (App Router) + TypeScript + Supabase (Postgres + Auth + RLS) + Tailwind + shadcn/ui. Referências em `references/`: `architecture.md`, `schema.md`, `seguranca.md`, `modelo-negocio.md`, `design-system.md` (UI).
 
 **Branch:** todos os commits vão para a branch ativa no momento da execução. Nunca troque de branch durante o fluxo. Se não tiver certeza da branch atual, rode `git branch --show-current` antes de começar.
 
@@ -134,7 +134,7 @@ Se sim, o escopo da issue **deve** incluir enforcement server-side. Nunca feche 
 
 **Qualquer finding MÉDIA, ALTA ou CRÍTICA deve ser corrigida NO MESMO ciclo da issue. NUNCA fechar issue com brecha apenas "documentada para follow-up".** BAIXA pode virar issue separada se for puramente otimização.
 
-Pattern: `auditar` reporta com severidade → se MÉDIA+, aplicar fix (Edit) imediatamente → rodar `pnpm build` **e `npx vitest run`** (fix de segurança pode quebrar teste existente) → reauditar o fix antes de fechar.
+Pattern: `auditar` reporta com severidade → se MÉDIA+, aplicar fix (Edit) imediatamente → rodar `npm run build` **e `npx vitest run`** (fix de segurança pode quebrar teste existente) → reauditar o fix antes de fechar.
 
 ### 🛑 REALIDADE DE AMBIENTE — o dev local roda contra o Supabase CLOUD
 
@@ -150,17 +150,18 @@ sempre o mesmo e foi recorrente em debug:
 PGRST204 Could not find the '<coluna>' column of '<tabela>' in the schema cache
 ```
 
-Build verde + 1219 testes verdes em pglite **não provam nada** sobre o cloud. Por
+Build verde + suíte inteira verde em pglite **não provam nada** sobre o cloud. Por
 isso `verificar` (subir o app) é **impossível de passar** enquanto a migration não
 estiver no cloud. O deploy de migration deixou de ser "passo final manual" — virou
 **gate obrigatório no meio do ciclo da issue de schema** (Etapa 3, passo 6c).
 
 ### Gates antes de qualquer deploy
 
-1. **Build verde** — `pnpm build` (zero erros, zero warnings novos)
-2. **Testes verdes** — `npx vitest run` (suite inteira, não só afetada)
-3. **RLS validada** — quando houver mudança de política/tabela: teste negativo em pglite (anon, lojista A, lojista B) confirmando isolamento
-4. **Zero regressão** — contagem de testes passando ≥ baseline pré-issue
+1. **Tipos e lint verdes** — `npx tsc --noEmit` e `npm run lint` com 0 erros. São os dois primeiros passos do CI; sem eles, testes e build nem rodam lá. Warning pré-existente não derruba, warning nova não entra.
+2. **Build verde** — `npm run build` (zero erros, zero warnings novos)
+3. **Testes verdes** — `npx vitest run` (suite inteira, não só afetada)
+4. **RLS validada** — quando houver mudança de política/tabela: teste negativo em pglite (anon, lojista A, lojista B) confirmando isolamento
+5. **Zero regressão** — contagem de testes passando ≥ baseline pré-issue
 5. **Migration no cloud** — `npx supabase migration list` mostra a nova migration com coluna **Remote preenchida** (zero migrations só-local). Ver passo 6c.
 6. **Tipos sincronizados** — após mudança de schema, regenerar `src/lib/database.types.ts` (NÃO `src/types/supabase.ts`, que está morto). Com cloud aplicado: `npx supabase gen types typescript > src/lib/database.types.ts`. Sem cloud/disco apertado: patch manual determinístico da coluna em Row/Insert/Update + qualquer RPC `setof <tabela>`.
 
@@ -178,7 +179,7 @@ Antes de especificar, reporte (nota informativa, não bloqueante — não pare o
 
 Antes de especificar:
 
-1. **Ler `references/`** para entender padrões já estabelecidos (estrutura de dados, RLS, recálculo no servidor, convenções de português no domínio). Entender o padrão **ANTES** de propor escopo novo.
+1. **Ler `references/`** para entender padrões já estabelecidos (estrutura de dados, RLS, recálculo no servidor, convenções de português no domínio; `design-system.md` quando a feature tem UI). Entender o padrão **ANTES** de propor escopo novo.
 2. `ls specs/ tasks/` — existe spec/issue com nome similar? Se sim, leia e verifique o que já está marcado `[x]`.
 3. Se o repo tem remote e `gh` disponível: `gh issue list --state closed --limit 50` — escopo já coberto?
 4. Grep no código pelas entidades centrais da descrição — já existe implementação? `grep -rn "export const\|function\|export async function" src/ | grep -i <palavra-chave>`
@@ -222,10 +223,10 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
    - `depurar` reporta causa lógica simples → reexecute `planejar`
 6. **Validação pós-`executar` (ordem obrigatória):**
    - 6a. **`revisar` + `testar` + `auditar` [+ `acelerar`] em paralelo** — dispare todos numa única mensagem (múltiplas tool calls):
-     - `revisar` — qualidade do código. Findings CONTRATO viram Edit imediato + `pnpm build`.
+     - `revisar` — qualidade do código. Findings CONTRATO viram Edit imediato + `npm run build`.
      - `testar` — confirma RED→GREEN, cobre bordas e recálculo no servidor.
-     - `auditar` — recebe todos os arquivos modificados. Findings MÉDIA+ viram Edit imediato + `pnpm build` + `npx vitest run` (fix pode quebrar teste existente). NUNCA fechar com brecha "para follow-up".
-     - `acelerar` — **incluir se a issue é perf-sensível**: toca vitrine/rota pública, checkout, query nova/alterada, migration, componente `'use client'` novo ou dependência nova no cliente. Findings GARGALO viram Edit imediato + `pnpm build`; CUSTO pode virar issue separada. O agente registra a auditoria (mesmo sem achados) em `performance/AAAA-MM-DD-<escopo>.md`. Issue de copy/CSS puro/doc: não incluir, registrar "acelerar: não aplicável" no relatório.
+     - `auditar` — recebe todos os arquivos modificados. Findings MÉDIA+ viram Edit imediato + `npm run build` + `npx vitest run` (fix pode quebrar teste existente). NUNCA fechar com brecha "para follow-up".
+     - `acelerar` — **incluir se a issue é perf-sensível**: toca vitrine/rota pública, checkout, query nova/alterada, migration, componente `'use client'` novo ou dependência nova no cliente. Findings GARGALO viram Edit imediato + `npm run build`; CUSTO pode virar issue separada. O agente registra a auditoria (mesmo sem achados) em `performance/AAAA-MM-DD-<escopo>.md`. Issue de copy/CSS puro/doc: não incluir, registrar "acelerar: não aplicável" no relatório.
    - 6b. **`popular` (se a issue criou/alterou migration)** — atualiza `supabase/seed.sql` com dados fictícios compatíveis com o schema novo. Pré-condição de `verificar` quando o seed está desatualizado.
    - **6c. 🛑 DEPLOY DE MIGRATION (obrigatório se a issue criou/alterou `supabase/migrations/`).** O app roda contra o cloud — sem este passo, `verificar` falha com `PGRST204` e a issue parece quebrada. NÃO é opcional nem "para o fim":
      1. `npx supabase migration list` — a nova migration aparece como **só-local** (coluna Remote vazia)?
@@ -233,7 +234,7 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
      3. **Pedir autorização ao usuário** para `npx supabase db push` (única ação outward — toca o banco de produção). Apresentar a migration e que é aditiva/segura. Aguardar o "sim".
      4. Após o push: `npx supabase migration list` reconfirma Remote preenchido; regenerar `src/lib/database.types.ts` (gate 6 acima).
      5. Só então avançar para `verificar`. Se o usuário recusar o push, **parar a issue** e registrar que `verificar` fica pendente até o deploy — não marcar a issue como verificada.
-   - 6d. `verificar` — sobe o app (`pnpm dev`, contra o cloud — não é Supabase local) e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel). Pré-condições: 6c concluído quando houver migration; 6b concluído para seed atualizado.
+   - 6d. `verificar` — sobe o app (`npm run dev`, contra o cloud — não é Supabase local) e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel). Pré-condições: 6c concluído quando houver migration; 6b concluído para seed atualizado.
    - 6e. `escriba` — sempre. Se "nenhuma atualização necessária", seguir adiante.
 7. **Verificar critérios `[x]`:** se algum ficar `[ ]`, NÃO feche a issue — complete, ou registre débito explícito como nova issue.
 8. **Fechar a issue:** sem bloqueios pendentes:
@@ -251,17 +252,18 @@ Repita até a última issue ter todos os critérios `[x]`.
 Quando todas as issues tiverem critérios `[x]`:
 
 1. Confirmar que nenhuma issue do grafo ficou pendente e que todos os critérios estão `[x]`.
-2. **Build verde:** `pnpm build` (zero erros, zero warnings novos). **Obrigatório mesmo para issues de UI — `const` exportada em Server Action quebra só no build (não no tsc/vitest).**
-3. **Suite completa verde:** `npx vitest run` (todos os testes). Se houve mudança de RLS/schema, rodar os testes de RLS no Supabase local.
-4. **Zero regressão:** contagem de testes passando ≥ baseline.
-5. **Tipos sincronizados:** confirmar `src/lib/database.types.ts` regenerado se o schema mudou (NÃO `src/types/supabase.ts`).
+2. **Tipos e lint verdes:** `npx tsc --noEmit` e `npm run lint` com 0 erros — a mesma ordem do CI (`tsc → lint → test → build`). Teste de captura de hook via `renderToStaticMarkup` cai em `react-hooks/globals`; prefira a forma que a regra aceita antes de qualquer `eslint-disable`.
+3. **Build verde:** `npm run build` (zero erros, zero warnings novos). **Obrigatório mesmo para issues de UI — `const` exportada em Server Action quebra só no build (não no tsc/vitest).**
+4. **Suite completa verde:** `npx vitest run` (todos os testes). Os testes de RLS/migration rodam em pglite dentro da suíte (`tests/migrations/`) — não existe Supabase local.
+5. **Zero regressão:** contagem de testes passando ≥ baseline.
+6. **Tipos sincronizados:** confirmar `src/lib/database.types.ts` regenerado se o schema mudou (NÃO `src/types/supabase.ts`).
 6. **🛑 GATE DE MIGRATION NO CLOUD (bloqueante).** Rodar `npx supabase migration list` e confirmar **zero migrations só-local** (toda linha com Remote preenchido). Se alguma migration do fluxo ficou só-local:
    - Normalmente já foi aplicada no passo 6c da Etapa 3. Se chegou aqui só-local, é porque o `verificar` da issue de schema foi pulado — **não feche o fluxo**. Pedir autorização e rodar `npx supabase db push` (com `migration repair` se desync) agora, depois regenerar os tipos.
    - Frontend não precisa de push manual aqui → Vercel faz CI/CD ao mergear em `main`.
    - **O fluxo não pode reportar "concluído" com migration só-local** — esse é exatamente o estado que gera `PGRST204` em runtime.
 7. Listar todos os commits criados durante o fluxo.
 8. Gerar relatório: total de issues; agentes usados por tipo; arquivos criados/modificados; **findings de auditoria por severidade e status (corrigida no mesmo ciclo / issue aberta)**; desvios registrados.
-9. **Aviso de merge:** informe que o fluxo terminou na branch `$(git branch --show-current)` e que o próximo passo é abrir PR para `main`. Não abra o PR automaticamente — mostre o comando sugerido com título e descrição preenchidos:
+9. **Aviso de merge:** informe que o fluxo terminou na branch `$(git branch --show-current)` e que o próximo passo é `/pr`, que reexecuta os gates e abre o PR para `main` com corpo padronizado (issues fechadas, migrations, findings). Não abra o PR automaticamente — se o usuário preferir fazer à mão, mostre o comando sugerido com título e descrição preenchidos:
    ```bash
    gh pr create --title "..." --body "..."
    ```
@@ -273,7 +275,7 @@ Quando todas as issues tiverem critérios `[x]`:
 O fluxo termina quando:
 - Todas as issues em `tasks/` têm todos os critérios `[x]`
 - Nenhuma issue do grafo ficou pendente
-- `pnpm build` e `npx vitest run` passam sem erro
+- `npm run build` e `npx vitest run` passam sem erro
 - Verificação final reporta tudo OK
 
 Ao concluir, exiba o resumo:

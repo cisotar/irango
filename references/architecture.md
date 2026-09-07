@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.21 | **Atualizado:** 2026-09-06
+**Versão:** 0.2.22 | **Atualizado:** 2026-09-07
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -123,6 +123,7 @@ irango/
 │   │       └── RegistrarSW.tsx           # Client Component que registra /serwist/sw.js; silencioso em dev e em erros
 │   │
 │   ├── lib/
+│   │   ├── database.types.ts             # GERADO: npx supabase gen types typescript > src/lib/database.types.ts — nunca editar à mão
 │   │   ├── pwa/
 │   │   │   └── runtimeCaching.ts         # regras de cache do SW em ordem; [0] NetworkOnly /painel* (nunca cacheia rota autenticada); módulo puro — testável no vitest sem globals de SW
 │   │   ├── supabase/
@@ -159,7 +160,7 @@ irango/
 │   │       └── tema.ts                   # montarTemaInicial(tema) → Tema; unifica lerCor/TEMA_PADRAO antes duplicado entre a page de tema do lojista e a page de tema do admin (issue 152; admin era página consolidada até a issue 154, hoje sub-rota própria `configuracoes/tema/`)
 │   │
 │   ├── types/
-│   │   ├── supabase.ts                   # gerado: pnpm supabase gen types typescript
+│   │   ├── supabase.ts                   # MORTO — zero importadores; o gerado real é lib/database.types.ts (candidato a remoção)
 │   │   └── dominio.ts                    # tipos de negócio extras (enums, unions)
 │   │
 │   └── hooks/

@@ -63,7 +63,7 @@ O stub é trivial e marcado. A lógica real é da fase verde.
 ```bash
 npx vitest run <arquivo-teste> --reporter=verbose          # lógica/util/componente
 ```
-Para RLS, rode contra o **Supabase local** (`supabase start`) com clientes em papéis distintos (anon, lojista A, lojista B) e asserte `PERMISSION`/linhas vazias no acesso indevido. Se o ambiente local não estiver disponível, registre: "Teste de RLS não executado — verificação manual antes do deploy".
+Para RLS, rode em **pglite** — não existe Supabase local no projeto. `createTestDb()` de `tests/helpers/pglite.ts` sobe um Postgres efêmero com todas as migrations aplicadas e expõe `asAnon`, `asUser(userId)` e `asService`. Escreva o teste em `tests/migrations/<slug>.test.ts` (dezenas de arquivos já seguem o padrão — `rls_lojas.test.ts` é o exemplo canônico) e asserte 0 linhas ou exceção no acesso indevido. Não há razão para pular o RED de RLS.
 
 Cole o trecho com `FAIL`. **Distinga seu RED novo de falhas pré-existentes da suite** (use `git stash` se houver dúvida).
 
@@ -71,14 +71,14 @@ Cole o trecho com `FAIL`. **Distinga seu RED novo de falhas pré-existentes da s
 A mesma regra de valor vive no preview do carrinho (cliente) e no recálculo (Server Action), ambos chamando `lib/utils/calcular*.ts`. Escreva um **caso-espelho idêntico**: mesmo input → mesmo resultado nas duas pontas. É o teste que pega o drift entre o que o cliente mostra e o que o servidor cobra.
 
 ## Padrões do projeto
-- Runner: **Vitest** (`vitest.config.ts`)
-- Util de React: `@testing-library/react`
-- Arquivo: mesmo nome do módulo + `.test.ts(x)`, em `src/__tests__/` ou ao lado do módulo
-- Mocks só para I/O externo (Supabase, fetch). RLS → Supabase local, nunca mock (mock ≠ auth real)
+- Runner: **Vitest** (`vitest.config.ts`), `environment: node`, sem jsdom — não há `@testing-library/react` no projeto
+- Componente com mecânica de browser: extraia a lógica para módulo neutro com o global (janela, timer) **injetado por parâmetro** e teste a função (`architecture.md` §8 — ex.: `criarControladorPolling`, `prepararAbaWhatsapp`)
+- Arquivo: mesmo nome do módulo + `.test.ts(x)` **ao lado do módulo** (não existe `src/__tests__/`); teste de migration/RLS em `tests/migrations/`
+- Mocks só para I/O externo (Supabase, fetch). RLS → pglite (`tests/helpers/pglite.ts`), nunca mock (mock ≠ auth real)
 
 ## Saída
 
 1. Arquivos de teste criados/modificados (e stub mínimo, se criado — marcado `STUB TDD`)
 2. **Output real do RED** (trecho com `FAIL` + nome do teste)
 3. **Contrato para a fase GREEN:** assinatura(s) esperada(s), arquivo onde implementar, lista de casos que precisam passar
-4. Casos descobertos e por quê (ex.: Supabase local indisponível)
+4. Casos descobertos e por quê (ex.: regra ambígua no plano, migration ausente)

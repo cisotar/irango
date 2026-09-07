@@ -73,4 +73,4 @@ Salve as issues em `tasks/` e exiba:
 - Lista ordenada de issues com selo de criticidade
 - Grafo de dependências (qual bloqueia qual)
 - Quantas são críticas (exigem TDD red-first)
-- Próximo passo: `/plan tasks/NNN-...` na primeira issue sem dependência
+- Próximo passo: agente `planejar` (ou `arquitetar`/`migrar`, conforme o roteamento do `/fluxo`) em `tasks/NNN-...` na primeira issue sem dependência

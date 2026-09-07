@@ -47,7 +47,7 @@ Documento de migration com:
 3. Sequência (aditiva: 1 passo; contrato: expand→backfill→read→contract)
 4. Comando de regenerar tipos
 5. Rollback por passo
-6. Checklist de validação: `npx supabase db reset` local passa; RLS testada (loja A não vê loja B); tipos regenerados em `src/lib/database.types.ts`; build verde
+6. Checklist de validação: `npx vitest run tests/migrations` passa (pglite aplica todas as migrations em ordem — não existe Supabase local); RLS testada (loja A não vê loja B); tipos regenerados em `src/lib/database.types.ts`; build verde
 7. Riscos (NOT NULL sem default, leitores ativos durante dual-shape, custo)
 
 Salve em `tasks/NNN-migration-<nome>.md` ou no arquivo da issue.

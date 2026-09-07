@@ -26,7 +26,7 @@ Você é code reviewer do iRango. Avalia qualidade, coerência e manutenibilidad
 
 ### Padrões do projeto
 - Domínio em português: variáveis, funções, componentes, campos de formulário (`architecture.md` §8)
-- Server Actions em `src/app/actions/` ou colocadas com o Server Component que as usa — nunca em `'use client'`
+- Server Actions em `src/lib/actions/` (lojista e público) ou em `src/app/admin/assinantes/actions/` (admin SaaS) — nunca em `'use client'`, nunca inline em componente
 - Queries em `src/lib/supabase/queries/` — não inline em componente
 - Utils puros em `src/lib/utils/` — não duplicar lógica já existente
 

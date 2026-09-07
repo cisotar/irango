@@ -50,13 +50,14 @@ Confirme olhando o diff que:
 - Nenhum import novo foi adicionado (exceto ícone/componente puramente visual)
 - Nenhum arquivo de lógica foi tocado
 
-### 4. Build
+### 4. Lint e build
 
 ```bash
+npm run lint
 npm run build
 ```
 
-Se quebrar por qualquer motivo, pare e escale para `/fix`.
+Mudança só visual também passa pelo eslint do CI (import sem uso, prop desestruturada e não lida). Se qualquer um dos dois quebrar, pare e escale para `/fix`.
 
 ### 5. Commit
 

@@ -46,7 +46,8 @@ O risco nº 1 do marketplace. Para a Server Action de criar pedido:
 - [ ] `console.log` de env, token ou dado pessoal em produção
 
 ### Auth (`seguranca.md` §4, §17)
-- [ ] Painel sem guard duplo (middleware + layout server-side) — só ocultar UI não basta
+- [ ] Painel sem guard server-side no layout — `decidirAcessoBase` em `painel/layout.tsx` e `decidirAssinatura` em `(bloqueavel)/layout.tsx`. **`middleware.ts` só refresha sessão e não decide acesso** (`architecture.md` §5); guard que dependa de header propagado pelo middleware é vuln (achado #3B do pentest, `seguranca.md` §4). Só ocultar UI não basta
+- [ ] Rota isenta do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) dentro de `(bloqueavel)/` — a isenção é posicional, nunca por flag ou header
 - [ ] Acesso ao painel sem checar `email_confirmed_at` (signup com email falso)
 - [ ] Sessão lida de fonte adulterável em vez de cookie HttpOnly do `@supabase/ssr`
 
@@ -69,6 +70,14 @@ O risco nº 1 do marketplace. Para a Server Action de criar pedido:
 - [ ] Erro interno/stack/mensagem do Postgres vazando pro cliente
 - [ ] Dado pessoal (email/telefone/Pix) hardcoded em código, comentário ou seed de produção
 - [ ] Query retornando campo interno ou linhas de múltiplas lojas
+
+### LGPD e PII (`seguranca.md` §8, §20, §21; `modelo-negocio.md` §7)
+O SaaS não processa pagamento, mas responde pelos dados pessoais que guarda (nome, telefone, endereço do comprador; email/telefone do lojista).
+- [ ] Feature cria campo/coluna com dado pessoal sem necessidade pra entregar o pedido (minimização — sem CPF, sem nascimento na v1) → MÉDIA
+- [ ] PII de comprador em `console.*`, em `metadados` de `admin_acessos`, ou em evento Sentry fora do alcance do `sentryBeforeSend` (campo novo que o scrubber não cobre) → MÉDIA
+- [ ] PII trafegando em loader/`select` que não precisa dela (`telefone_cliente`, `endereco_entrega`, `token_acesso` em listagem) ou em view pública → ALTA
+- [ ] Dado pessoal novo sem caminho de exclusão/anonimização (retenção §20) ou sem cascata no hard-delete da loja → registrar como issue, não fechar sem
+- [ ] Consentimento (`consentimento_em`/`consentimento_versao`) ignorado onde a feature depende dele → MÉDIA
 
 ## Formato de saída
 Para cada vulnerabilidade:

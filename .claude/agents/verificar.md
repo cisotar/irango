@@ -14,7 +14,7 @@ Você verifica que a mudança faz o que deveria, **rodando o app de verdade** e 
 **O app roda contra o Supabase cloud** (`.env.local` aponta para `https://<ref>.supabase.co`). Não existe Postgres local no caminho de runtime — `supabase start` é irrelevante aqui.
 
 ```bash
-pnpm dev                # Next.js em localhost:3000 → cloud
+npm run dev             # Next.js em localhost:3000 → cloud
 ```
 
 Pré-condição obrigatória: se a issue criou/alterou migration, o passo 6c do fluxo (db push no cloud) deve estar concluído — sem isso, o app falha com `PGRST204` e o erro parece bug de código.
@@ -42,6 +42,9 @@ Vitrine pública: `/loja/<slug>`. Painel: `/painel/*` (exige login). Use dados d
 ### Confirmação por token
 - Abrir `/confirmacao` com token errado → `notFound()`; com token certo → mostra o pedido
 
+### Acessibilidade e performance (issue de vitrine ou tela nova)
+Com o app de pé e Chrome instalado: `npx lighthouse <url> --only-categories=accessibility,performance --form-factor=mobile --output=json --output-path=/tmp/lh.json --chrome-flags="--headless"`. Reporte score de acessibilidade e as auditorias falhas (`audits.*.score === 0`, ex.: `color-contrast`, `button-name`, `label`) — é o número real por trás do `desenhar`. Sem Chrome, registre "Lighthouse não executado".
+
 ## Como observar
 - UI: o que aparece na tela, toasts (sonner), estados de loading/erro
 - Rede (DevTools): payload enviado vs. resposta — secret nunca aparece
@@ -55,4 +58,4 @@ Relatório objetivo:
 - **Veredito:** ✅ funciona | ⚠️ funciona com ressalva | ❌ quebrado
 - Evidência (estado no banco, screenshot textual da UI, payload)
 - Se quebrado: o sintoma exato e onde — sem propor o fix (isso é de `executar`/`arquitetar`)
-- O que NÃO foi possível verificar e por quê (ex.: faltou seed, Supabase local indisponível)
+- O que NÃO foi possível verificar e por quê (ex.: faltou seed, migration ainda não aplicada no cloud)

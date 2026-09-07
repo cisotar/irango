@@ -80,14 +80,15 @@ Regras durante a implementação:
 - Sem tratamento de erro para cenários impossíveis no contexto atual
 - `npm` (não `pnpm`) — o lockfile é `package-lock.json`
 
-### 3. Build obrigatório
+### 3. Tipos, lint e build obrigatórios
 
 ```bash
 npx tsc --noEmit
+npm run lint
 npm run build
 ```
 
-Zero erros, zero warnings novos. Se quebrar, corrija antes de continuar — não avance com build vermelho.
+Zero erros, zero warnings novos — nos três. Lint é passo do CI e derruba o PR sozinho; um fix pequeno que passa em build e testes mas cria um erro de eslint chega vermelho no GitHub. Se quebrar, corrija antes de continuar — não avance com nenhum dos três vermelho.
 
 ### 4. Testes
 
