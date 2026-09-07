@@ -94,11 +94,12 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     //     nem lá. Içá-la incondicionalmente daria um round trip a todo pedido de
     //     retirada, o oposto do objetivo da issue.
     //     `buscarOpcionaisPorCategoria` fica FORA da onda: depende de `produtos`.
-    //     Trade-off aceito e registrado em tasks/159: o `return` de forma de
-    //     pagamento inválida (logo abaixo) deixa de economizar as demais leituras.
-    //     Esse ramo é raro por construção — a UI só oferece as formas configuradas
-    //     pela loja, e quem forja payload já foi barrado pelo rate limit (:55) e
-    //     pelo zod `.strict()` (:61), ambos antes de qualquer I/O.
+    //     Trade-off aceito (decisão em performance/2026-09-07-159-*.md): o `return`
+    //     de forma de pagamento inválida (logo abaixo) deixa de economizar as demais
+    //     leituras. Esse ramo é raro por construção — a UI só oferece as formas
+    //     configuradas pela loja, e o teto de custo por requisição não muda: quem
+    //     forja payload já foi barrado pelo rate limit (:55) e pelo zod `.strict()`
+    //     (:61), ambos antes de qualquer I/O.
     //     Rejeição de qualquer leitura da onda rejeita o `Promise.all` → catch
     //     externo → MESMA mensagem genérica ao cliente (§14), sem vazar detalhe.
     const ids = [...new Set(dados.itens.map((i) => i.produto_id))];
