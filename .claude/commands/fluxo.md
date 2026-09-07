@@ -261,7 +261,7 @@ Quando todas as issues tiverem critérios `[x]`:
    - **O fluxo não pode reportar "concluído" com migration só-local** — esse é exatamente o estado que gera `PGRST204` em runtime.
 7. Listar todos os commits criados durante o fluxo.
 8. Gerar relatório: total de issues; agentes usados por tipo; arquivos criados/modificados; **findings de auditoria por severidade e status (corrigida no mesmo ciclo / issue aberta)**; desvios registrados.
-9. **Aviso de merge:** informe que o fluxo terminou na branch `$(git branch --show-current)` e que o próximo passo é abrir PR para `main`. Não abra o PR automaticamente — mostre o comando sugerido com título e descrição preenchidos:
+9. **Aviso de merge:** informe que o fluxo terminou na branch `$(git branch --show-current)` e que o próximo passo é `/pr`, que reexecuta os gates e abre o PR para `main` com corpo padronizado (issues fechadas, migrations, findings). Não abra o PR automaticamente — se o usuário preferir fazer à mão, mostre o comando sugerido com título e descrição preenchidos:
    ```bash
    gh pr create --title "..." --body "..."
    ```

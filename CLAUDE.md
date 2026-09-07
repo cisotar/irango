@@ -31,6 +31,15 @@ npx supabase migration list   # coluna Remote vazia = migration só-local
 
 Cada skill tem critérios de escalonamento no próprio arquivo em `.claude/commands/`. Na dúvida, `/fluxo`.
 
+Skills de manutenção (fora do ciclo de feature):
+
+| Skill | Faz |
+|---|---|
+| `/pr` | gates finais + abre o PR para `main`; nunca faz merge |
+| `/triar` | reconcilia `tasks/`, `specs/`, débitos do `architecture.md` §10 e GitHub com o código; só fecha com evidência |
+| `/sincronizar-agentes` | verifica se `.claude/` ainda descreve o repo (caminhos, comandos, libs, seções) e corrige o drift |
+| `/atualizar-deps` | `npm outdated` + `npm audit`, um bump por vez com build e suíte; major vira issue |
+
 ## Agentes
 
 17 agentes em `.claude/agents/`, descritos em `.claude/agents/README.md`. Ciclo por issue no `/fluxo`: planejar → `tdd` (só issue crítica) → `executar` → `revisar` ‖ `testar` ‖ `auditar` [‖ `acelerar`] → `verificar` → `escriba`. `pentester` é sob demanda.
