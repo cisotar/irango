@@ -146,12 +146,6 @@ function opEscrita(tabela: string): Op | undefined {
     (o) => o.tabela === tabela && (o.insert || o.update || o.deleted),
   );
 }
-function opsEscrita(tabela: string): Op[] {
-  return ops.filter(
-    (o) => o.tabela === tabela && (o.insert || o.update || o.deleted),
-  );
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   ops = [];

@@ -36,6 +36,10 @@ export type EtapaItensProps = {
   /** id = linhaCarrinhoId(produtoId, opcionais, observacao) — distingue linhas com opcionais OU observações diferentes (168). */
   onIncrementar: (linhaId: string) => void;
   onDecrementar: (linhaId: string) => void;
+  /**
+   * @deprecated Código morto — nunca é chamado. A remoção acontece decrementando até zero.
+   * Se implementar um botão de "remover rápido" no futuro, isso vai fazer sentido.
+   */
   onRemover: (linhaId: string) => void;
   /** Aplica/remove cupom: código + desconto preview confirmados pelo servidor. */
   onAplicarCupom: (codigo: string, descontoPreview: number) => void;
@@ -56,7 +60,7 @@ export function EtapaItens({
   codigoCupom,
   onIncrementar,
   onDecrementar,
-  onRemover,
+  // onRemover: a remoção acontece via decremento até zero nesta etapa (126)
   onAplicarCupom,
   onRemoverCupom,
   onContinuar,

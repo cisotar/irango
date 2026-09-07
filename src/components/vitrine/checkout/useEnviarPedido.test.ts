@@ -69,14 +69,7 @@ function estadoValido(): EstadoWizard {
   };
 }
 
-// Falha de lint PRÉ-EXISTENTE na main (o CI dela já estava vermelho por isto
-// antes desta branch existir) — desabilitada aqui para destravar o gate, sem
-// reescrever um teste que funciona. `montarHook` é chamado direto dentro dos
-// `it(...)`, então renomear para `use*` só moveria o erro para os 5 pontos de
-// chamada. A regra mira código de componente sob o compilador do React; este
-// arquivo é suíte do vitest e nunca passa por ele.
-function montarHook(preAbrirWhatsapp: boolean, estado: EstadoWizard = estadoValido()) {
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- helper de teste, ver bloco acima
+function useMontarHook(preAbrirWhatsapp: boolean, estado: EstadoWizard = estadoValido()) {
   return useEnviarPedido({
     lojaId: LOJA_ID,
     lojaSlug: "loja-teste",
@@ -113,7 +106,7 @@ describe("useEnviarPedido — ordem e efeitos da mecânica do WhatsApp (126)", (
       return { pedidoId: "p1", token_acesso: "t1", whatsappHref: null };
     });
 
-    const { enviar } = montarHook(true);
+    const { enviar } = useMontarHook(true);
     enviar();
     // Dá tempo pro microtask do criarPedido resolver.
     await new Promise((r) => setTimeout(r, 0));
@@ -122,7 +115,7 @@ describe("useEnviarPedido — ordem e efeitos da mecânica do WhatsApp (126)", (
   });
 
   it("payload inválido (schema falha): prepararAbaWhatsapp NUNCA é chamado — sem aba órfã", () => {
-    const { enviar } = montarHook(true, { ...estadoValido(), nome: "" }); // nome vazio falha o schema
+    const { enviar } = useMontarHook(true, { ...estadoValido(), nome: "" }); // nome vazio falha o schema
 
     enviar();
 
@@ -134,7 +127,7 @@ describe("useEnviarPedido — ordem e efeitos da mecânica do WhatsApp (126)", (
   it("erro do servidor: aba.concluir(null) fecha a aba e router.push NÃO roda", async () => {
     criarPedidoMock.mockResolvedValue({ erro: "Loja fechada no momento." });
 
-    const { enviar } = montarHook(true);
+    const { enviar } = useMontarHook(true);
     enviar();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -150,7 +143,7 @@ describe("useEnviarPedido — ordem e efeitos da mecânica do WhatsApp (126)", (
       whatsappHref: "https://api.whatsapp.com/send?phone=5511999999999",
     });
 
-    const { enviar } = montarHook(true);
+    const { enviar } = useMontarHook(true);
     enviar();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -169,7 +162,7 @@ describe("useEnviarPedido — ordem e efeitos da mecânica do WhatsApp (126)", (
       whatsappHref: null,
     });
 
-    const { enviar } = montarHook(false);
+    const { enviar } = useMontarHook(false);
     enviar();
     await new Promise((r) => setTimeout(r, 0));
 
