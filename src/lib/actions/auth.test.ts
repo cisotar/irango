@@ -251,10 +251,18 @@ describe("entrar — rate limit bloqueado (issue 052)", () => {
 });
 
 describe("entrar", () => {
-  it("login ok → { ok: true }", async () => {
+  it("login ok, lojista comum → destino /painel", async () => {
     const r = await entrar({ email: "joao@teste.com", senha: "senha1234" });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, destino: "/painel" });
     expect(signInWithPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("login ok, dono do SaaS (mesmo sendo também lojista) → destino /admin", async () => {
+    // Mesmo critério do callback OAuth: a identidade decide, não a intenção do
+    // usuário. Reproduz o cenário real — dono do SaaS que também tem loja própria.
+    vi.stubEnv("SAAS_ADMIN_USER_ID", USER_ID);
+    const r = await entrar({ email: "dono@teste.com", senha: "senha1234" });
+    expect(r).toEqual({ ok: true, destino: "/admin" });
   });
 
   it("ATAQUE anti-enumeração: credencial errada → erro GENÉRICO (não revela se email existe)", async () => {
