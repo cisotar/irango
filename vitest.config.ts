@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tsconfigPaths from "vite-tsconfig-paths";
@@ -12,7 +13,10 @@ export default defineConfig({
     alias: [
       {
         find: /^server-only$/,
-        replacement: new URL("./node_modules/server-only/empty.js", import.meta.url).pathname,
+        // fileURLToPath (nao `.pathname`): `.pathname` mantem o percent-encoding da
+        // URL, entao um diretorio com espaco no caminho vira "%20" e a resolucao
+        // do alias falha. fileURLToPath decodifica para o caminho real do disco.
+        replacement: fileURLToPath(new URL("./node_modules/server-only/empty.js", import.meta.url)),
       },
     ],
   },
