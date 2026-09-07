@@ -42,7 +42,7 @@ Skills de manutenção (fora do ciclo de feature):
 
 ## Agentes
 
-17 agentes em `.claude/agents/`, descritos em `.claude/agents/README.md`. Ciclo por issue no `/fluxo`: planejar → `tdd` (só issue crítica) → `executar` → `revisar` ‖ `testar` ‖ `auditar` [‖ `acelerar`] → `verificar` → `escriba`. `pentester` é sob demanda.
+18 agentes em `.claude/agents/`, descritos em `.claude/agents/README.md`. Antes de disparar vários agentes para uma tarefa fora do `/fluxo`, use `orquestrar`: ele devolve o plano mais barato e seguro com reuso do que já existe. Ciclo por issue no `/fluxo`: planejar → `tdd` (só issue crítica) → `executar` → `revisar` ‖ `testar` ‖ `auditar` [‖ `acelerar`] → `verificar` → `escriba`. `pentester` é sob demanda.
 
 ## Referências — leia antes de propor escopo
 

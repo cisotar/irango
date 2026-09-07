@@ -39,6 +39,7 @@ Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
 | `popular` | Atualiza `seed.sql` após issue de schema — pré-condição de verificar | sonnet |
 | `verificar` | Roda o app (contra cloud) e confirma comportamento real | sonnet |
 | `escriba` | Mantém `references/` sincronizado (conservador) | sonnet |
+| `orquestrar` | Projeta o loop mais barato/seguro para uma tarefa, reusando agentes, skills e primitivos do harness; devolve o plano em `plan/loop-*.md`, não executa | opus |
 
 ## Como invocar
 Pelo orquestrador (Task/Agent) passando o `subagent_type` (ex.: `auditar`) e o caminho do alvo (issue, arquivo, ou descrição). Issues críticas: `tdd` antes de `executar`.
