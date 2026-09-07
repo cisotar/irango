@@ -93,6 +93,15 @@ export function ReciboCliente({
               </div>
               {/* COM preço (comportamento default) — recibo do cliente é financeiro. */}
               <ListaOpcionaisItem opcionais={opcionais} />
+              {/* Observação do item (issue 171): texto do cliente via JSX,
+                  auto-escapado; NUNCA `dangerouslySetInnerHTML`. `null`/vazio ⇒
+                  fora do DOM. `whitespace-pre-line` preserva as quebras sem
+                  estourar a largura térmica. */}
+              {item.observacao && (
+                <p className="whitespace-pre-line text-xs">
+                  Obs: {item.observacao}
+                </p>
+              )}
             </li>
           );
         })}
