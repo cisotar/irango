@@ -39,10 +39,21 @@ const mapa = new Map<string, string>();
   removeEventListener: () => {},
 };
 
-/** Captura a API real do hook via render SSR (sem DOM). */
+/**
+ * Captura a API real do hook via render SSR (sem DOM).
+ *
+ * A regra `react-hooks/globals` existe para impedir efeito colateral durante o
+ * render — o risco real é UI stale quando o componente re-renderiza. Aqui nada
+ * disso se aplica: `renderToStaticMarkup` é um render ÚNICO e síncrono, o valor
+ * é lido na linha seguinte, e este arquivo de teste nunca passa pelo compilador
+ * do React (ele transforma o bundle do Next.js, não a suíte do vitest). Mutar
+ * propriedade de objeto em vez de reatribuir `let` não resolve — cai em
+ * `react-hooks/immutability`, que é a mesma regra por outro nome.
+ */
 function api(): UseCarrinhoReturn {
   let capturada: UseCarrinhoReturn | undefined;
   function Sonda() {
+    // eslint-disable-next-line react-hooks/globals -- captura de teste: render único, sem re-render (ver bloco acima)
     capturada = useCarrinho();
     return null;
   }
