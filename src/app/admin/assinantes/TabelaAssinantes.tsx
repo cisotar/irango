@@ -53,15 +53,19 @@ export function TabelaAssinantes({
 
   return (
     <div className="space-y-4">
-      {/* Filtros */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      {/* Filtros — em superfície própria (Card) para não flutuarem sobre o fundo
+          da página; alturas de campo alinhadas às do primitivo Input (h-8). */}
+      <Card
+        size="sm"
+        className="gap-3 px-(--card-spacing) sm:flex-row sm:items-end"
+      >
         <div className="flex flex-col gap-1.5 sm:w-56">
           <Label htmlFor="filtro-status">Status</Label>
           <select
             id="filtro-status"
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
           >
             <option value={TODOS}>Todos os status</option>
             {STATUS_ASSINATURA_CONHECIDOS.map((s) => (
@@ -89,7 +93,7 @@ export function TabelaAssinantes({
             />
           </div>
         </div>
-      </div>
+      </Card>
 
       {filtrados.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed py-12 text-center">
@@ -100,7 +104,9 @@ export function TabelaAssinantes({
       ) : (
         <>
           {/* Desktop: tabela densa */}
-          <div className="hidden overflow-hidden rounded-lg border bg-card lg:block">
+          {/* Mesma superfície do Card (rounded-xl + ring) para a tabela não
+              destoar do bloco de filtros logo acima. */}
+          <div className="hidden overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 lg:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50 text-left text-muted-foreground">
@@ -109,7 +115,11 @@ export function TabelaAssinantes({
                   <th className="px-4 py-2 font-medium">Plano</th>
                   <th className="px-4 py-2 font-medium">Vigente até</th>
                   <th className="px-4 py-2 font-medium">Cobrança</th>
-                  <th className="px-4 py-2 text-right font-medium">Ações</th>
+                  {/* w-px + whitespace-nowrap: a coluna encolhe até o conteúdo,
+                      ficando com a MESMA largura em todas as linhas. */}
+                  <th className="w-px px-4 py-2 text-right font-medium whitespace-nowrap">
+                    Ações
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -138,7 +148,7 @@ export function TabelaAssinantes({
                       <td className="px-4 py-3 text-muted-foreground">
                         {a.billingProvider ?? "—"}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="w-px px-4 py-3 whitespace-nowrap">
                         <AcoesAssinante assinante={a} />
                       </td>
                     </tr>

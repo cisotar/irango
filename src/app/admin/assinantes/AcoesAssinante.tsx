@@ -72,7 +72,9 @@ export function AcoesAssinante({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-3">
+    // No desktop (contexto <table>) NÃO pode quebrar linha: `flex-wrap` fazia
+    // umas linhas ocuparem 2 alturas e outras 1, desalinhando a coluna Ações.
+    <div className="flex flex-wrap items-center justify-end gap-3 lg:flex-nowrap">
       {/* Hub de gestão da loja-alvo (issue 099) — onboarding assistido. */}
       <Button
         variant="outline"
@@ -106,26 +108,32 @@ export function AcoesAssinante({
         </Label>
       </div>
 
-      {/* Suspender NÃO aparece em loja cortesia (RN-15). Suspensa → só Reativar. */}
-      {ehSuspensa ? (
-        <Button
-          size="sm"
-          disabled={pendente}
-          onClick={() => executar(reativarLoja, `"${nome}" reativada.`)}
-        >
-          {pendente && <Loader2 className="animate-spin" aria-hidden />}
-          Reativar
-        </Button>
-      ) : ehCortesia ? null : (
-        <Button
-          variant="destructive"
-          size="sm"
-          disabled={pendente}
-          onClick={() => setConfirmarSuspensao(true)}
-        >
-          Suspender
-        </Button>
-      )}
+      {/* Suspender NÃO aparece em loja cortesia (RN-15). Suspensa → só Reativar.
+          SLOT de largura fixa no desktop: como o botão desta posição muda (ou
+          some) conforme o status, sem largura reservada cada linha empurrava
+          "Gerenciar"/"Cortesia" para um x diferente. Vazio → some no mobile
+          (`empty:hidden`) para não deixar gap duplo no card. */}
+      <div className="flex justify-end empty:hidden lg:w-24 lg:empty:flex">
+        {ehSuspensa ? (
+          <Button
+            size="sm"
+            disabled={pendente}
+            onClick={() => executar(reativarLoja, `"${nome}" reativada.`)}
+          >
+            {pendente && <Loader2 className="animate-spin" aria-hidden />}
+            Reativar
+          </Button>
+        ) : ehCortesia ? null : (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pendente}
+            onClick={() => setConfirmarSuspensao(true)}
+          >
+            Suspender
+          </Button>
+        )}
+      </div>
 
       <AlertDialog.Root
         open={confirmarSuspensao}
