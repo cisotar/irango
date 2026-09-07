@@ -3,7 +3,8 @@ import { describe, it, expect } from "vitest";
 // src/lib/utils/normalizarObservacao.ts com a assinatura
 //   export function normalizarObservacao(texto: string): string
 // Enquanto ele não existir, este arquivo inteiro falha no load — esse é o RED.
-import { normalizarObservacao } from "./normalizarObservacao";
+import { normalizarObservacao, canonizarObservacao } from "./normalizarObservacao";
+import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
 
 // ---------------------------------------------------------------------------
 // Por que esta função existe (plan/167 §Decisão 2):
@@ -311,5 +312,86 @@ describe("normalizarObservacao — controle bidirecional completo (CVE-2021-4257
       expect(saida).not.toContain(char);
     }
     expect(saida).toBe("Pizza GRATIS sem queijo");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RED (issue 168) — `canonizarObservacao`: a função que define a IDENTIDADE da
+// linha do carrinho (chave de dedup de `linhaCarrinhoId`) e, por tabela, a
+// QUANTIDADE que sai no payload. Ainda não implementada: o STUB TDD em
+// normalizarObservacao.ts lança `TODO: GREEN`.
+//
+// Contrato (plan/168): normaliza → corta em LIMITE_OBSERVACAO SEM deixar high
+// surrogate solto (UTF-8 inválido; o Postgres recusa o INSERT) → normaliza de
+// novo. Idempotente e só encurta.
+// ═══════════════════════════════════════════════════════════════════════════
+
+
+// Entradas adversas reusadas pelos casos 14-16.
+const ADVERSAS = [
+  "",
+  "   ",
+  "sem cebola",
+  "sem  cebola",
+  ` sem${NBSP}cebola `,
+  `${ZWSP}sem cebola${BOM}`,
+  "linha1\r\nlinha2",
+  `${RLO}sem cebola`,
+  "a".repeat(LIMITE_OBSERVACAO),
+  "a".repeat(LIMITE_OBSERVACAO + 50),
+  "x ".repeat(LIMITE_OBSERVACAO),
+  "🍔".repeat(LIMITE_OBSERVACAO),
+];
+
+describe("canonizarObservacao (issue 168) — identidade da linha do carrinho", () => {
+  // [14] Idempotência é OBRIGATÓRIA: a chave é recalculada a cada render a
+  // partir do valor já guardado. Sem idempotência a linha "muda de identidade"
+  // entre dois renders e a quantidade se funde/cinde sozinha.
+  it("[14] é idempotente para toda entrada adversa", () => {
+    for (const entrada of ADVERSAS) {
+      const uma = canonizarObservacao(entrada);
+      expect(canonizarObservacao(uma)).toBe(uma);
+    }
+  });
+
+  // [15] Herda a invariante do módulo: só encurta, nunca expande.
+  it("[15] nunca expande o comprimento", () => {
+    for (const entrada of ADVERSAS) {
+      expect(canonizarObservacao(entrada).length).toBeLessThanOrEqual(entrada.length);
+    }
+  });
+
+  // [16] O corte só dispara com sessionStorage adulterado, mas sem ele o
+  // checkout INTEIRO cai com erro genérico (schemaObservacao rejeita, não trunca).
+  it("[16] corta em LIMITE_OBSERVACAO (constante, nunca o literal)", () => {
+    for (const entrada of ADVERSAS) {
+      expect(canonizarObservacao(entrada).length).toBeLessThanOrEqual(LIMITE_OBSERVACAO);
+    }
+    expect(canonizarObservacao("a".repeat(LIMITE_OBSERVACAO * 3)).length).toBe(
+      LIMITE_OBSERVACAO,
+    );
+  });
+
+  // [16b] Texto canônico dentro do teto passa intacto.
+  it("[16b] texto já canônico e dentro do teto sai idêntico", () => {
+    const texto = "sem cebola, ponto da carne bem passado";
+    expect(canonizarObservacao(texto)).toBe(texto);
+    const noLimite = "a".repeat(LIMITE_OBSERVACAO);
+    expect(canonizarObservacao(noLimite)).toBe(noLimite);
+  });
+
+  // [17] `.max()` do zod conta unidades UTF-16 (o corte precisa ser por unidade),
+  // mas um high surrogate solto é UTF-8 inválido e o Postgres recusa o INSERT.
+  it("[17] corte no meio de par substituto não deixa high surrogate solto", () => {
+    // Emoji ocupa 2 unidades UTF-16: com LIMITE ímpar o corte cai no meio do par.
+    for (const prefixo of ["", "a", "ab"]) {
+      const entrada = prefixo + "🍔".repeat(LIMITE_OBSERVACAO);
+      const saida = canonizarObservacao(entrada);
+      expect(saida.length).toBeLessThanOrEqual(LIMITE_OBSERVACAO);
+      expect(/[\uD800-\uDBFF]$/.test(saida)).toBe(false);
+      // Prova forte: o resultado é UTF-8 codificável sem substituição (U+FFFD).
+      const roundtrip = new TextDecoder().decode(new TextEncoder().encode(saida));
+      expect(roundtrip).toBe(saida);
+    }
   });
 });

@@ -46,6 +46,11 @@ type ProdutoModalProps = {
     produtoId: string,
     quantidade: number,
     opcionais: OpcionalCarrinho[],
+    /**
+     * Observação livre desta linha (issue 168). Só o CONTRATO existe aqui — o
+     * `<textarea>` que a preenche é a issue 169; por ora sai sempre `undefined`.
+     */
+    observacao?: string,
   ) => void;
 };
 

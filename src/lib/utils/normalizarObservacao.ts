@@ -1,3 +1,5 @@
+import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
+
 // Normalização canônica do texto livre de observação de pedido.
 //
 // Por que existe (plan/167 §Decisão 2): o `trim` do Postgres é `btrim()`, que
@@ -24,13 +26,43 @@ export function normalizarObservacao(texto: string): string {
       //    comanda impressa pode ser reordenada visualmente: o lojista lê algo
       //    diferente do que está gravado.
       .replace(/[\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\uFEFF]/g, "")
-      // 4. Tab → espaço (tab quebra alinhamento de comanda/recibo).
-      .replace(/\t/g, " ")
-      // 5. Colapsa espaço horizontal repetido (inclui NBSP) — anti-padding.
+      // 4. TODO espaço horizontal (tab, NBSP, U+2000-200A, U+202F, U+205F,
+      //    U+3000) → espaço ASCII. Length-preserving. Sem este passo um NBSP
+      //    ISOLADO sobrevivia (o colapso do passo 5 só pega runs de 2+): o tab
+      //    quebrava o alinhamento da comanda e, pior, `sem\u00A0cebola` e
+      //    `sem cebola` eram textos DIFERENTES — logo duas linhas distintas no
+      //    carrinho (issue 168) e dois itens visualmente idênticos na comanda.
+      .replace(/[^\S\n]/g, " ")
+      // 5. Colapsa espaço horizontal repetido — anti-padding.
       .replace(/[^\S\n]{2,}/g, " ")
       // 6. No máximo uma linha em branco entre parágrafos.
       .replace(/\n{3,}/g, "\n\n")
       // 7. Bordas: o trim() do JS remove \n, \r, \t e NBSP (o btrim do Postgres NÃO).
       .trim()
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canonização para uso como IDENTIDADE (issue 168).
+//
+// Dois consumidores — mudar `normalizarObservacao` mexe nos dois:
+//   1. `schemaObservacao` (src/lib/validacoes/pedido.ts) — gate AUTORITATIVO do
+//      servidor: normaliza e só então mede o teto;
+//   2. `linhaCarrinhoId` (src/hooks/useCarrinho.ts) — chave de dedup da linha do
+//      carrinho, que por tabela governa a QUANTIDADE enviada no payload.
+//
+// Contrato: normaliza → corta em LIMITE_OBSERVACAO sem deixar high surrogate
+// solto → normaliza de novo. É IDEMPOTENTE (a chave é rederivada a cada render
+// a partir do valor já guardado: sem idempotência a linha mudaria de identidade
+// entre dois renders) e só ENCURTA (herda a invariante do módulo).
+export function canonizarObservacao(texto: string): string {
+  const normalizado = normalizarObservacao(texto);
+  if (normalizado.length <= LIMITE_OBSERVACAO) return normalizado;
+  let corte = normalizado.slice(0, LIMITE_OBSERVACAO);
+  const ultimo = corte.charCodeAt(corte.length - 1);
+  // Não deixar metade de par substituto: o `.max()` do zod conta unidades UTF-16
+  // (então o corte precisa ser por unidade), mas um high surrogate solto é UTF-8
+  // inválido e o Postgres recusa o INSERT.
+  if (ultimo >= 0xd800 && ultimo <= 0xdbff) corte = corte.slice(0, -1);
+  return normalizarObservacao(corte);
 }

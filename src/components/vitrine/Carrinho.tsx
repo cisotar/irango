@@ -59,7 +59,11 @@ export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
             <div className="flex flex-col gap-4 overflow-y-auto p-4">
               <ul className="divide-y">
                 {itens.map((item) => {
-                  const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
+                  const linhaId = linhaCarrinhoId(
+                    item.produtoId,
+                    item.opcionais,
+                    item.observacao,
+                  );
                   const opcionais =
                     item.opcionais?.filter((o) => o.quantidade > 0) ?? [];
                   const subtotalItem = calcularSubtotal([
