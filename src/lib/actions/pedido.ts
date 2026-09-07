@@ -29,6 +29,7 @@ import {
   listarZonasComTaxas,
   listarFormasPagamento,
   buscarCupomPorCodigo,
+  type ZonaVitrine,
 } from "@/lib/supabase/queries/entregaPagamento";
 import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
@@ -111,7 +112,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       buscarProdutosPorIds(svc, ids),
       buscarOpcionaisPorIds(svc, opcionalIds),
       dados.tipo_entrega === "retirada"
-        ? Promise.resolve(null)
+        ? Promise.resolve<ZonaVitrine[]>([])
         : listarZonasComTaxas(svc, dados.loja_id),
     ]);
 
@@ -235,9 +236,8 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       frete = { atendido: true, taxa: 0, zonaId: null, gratis: false };
     } else {
       // [159] já lido na onda de leituras acima, sob esta MESMA condição (só o ramo
-      // `entrega` dispara a query). O `?? []` é só estreitamento de tipo: neste ramo
-      // `zonasPreCarregadas` nunca é null por construção.
-      const zonas = zonasPreCarregadas ?? [];
+      // `entrega` dispara a query).
+      const zonas = zonasPreCarregadas;
       // endereco_entrega é garantido pelo refine do schema quando tipo_entrega='entrega'.
       const endereco: EnderecoEntrega = dados.endereco_entrega ?? {};
 

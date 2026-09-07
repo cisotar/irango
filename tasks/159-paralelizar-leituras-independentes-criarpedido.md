@@ -49,9 +49,18 @@ pela UI legítima, que só oferece as formas configuradas pela loja. Chegar ali
 significa payload forjado ou bug — o caminho de ERRO é raro **por construção**,
 então a troca (perder a economia no erro, ganhar latência no sucesso) compensa.
 
-A economia perdida também é limitada: quem forja payload já é barrado antes pelo
-rate limit (`pedido.ts:54`) e pelo zod `.strict()` (`:61`), ambos anteriores a
-qualquer I/O.
+A economia perdida também é limitada. O argumento decisivo é o **teto de custo
+por requisição, que não muda**: quem quisesse custo máximo nunca usaria esse
+ramo, nem antes nem depois — um payload com forma válida e `produto_id`
+inexistente já custava 4 leituras, e um pedido de entrega bem-sucedido custa
+mais (zonas + ViaCEP + geocoding + cupom + RPC). O piso de um ramo sobe; a
+capacidade do atacante, não.
+
+O rate limit (`pedido.ts:54`) e o zod `.strict()` (`:61`) também são anteriores
+a qualquer I/O, mas são a perna mais fraca do argumento: o rate limit é
+**fail-open** por decisão explícita (`seguranca.md` §12) — sem Upstash ou com
+Redis fora, ele libera. A conclusão sobrevive mesmo nesse cenário justamente
+porque o teto não mudou.
 
 Contra-evidência que mudaria a decisão: volume relevante de `ERRO_GENERICO` em
 produção logo após a checagem de forma de pagamento. Não existe telemetria por
