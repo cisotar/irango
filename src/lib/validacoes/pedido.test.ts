@@ -570,3 +570,208 @@ describe("schemaPayloadPedido — [063] idempotency_key", () => {
     expect(r.success).toBe(false);
   });
 });
+
+// ===========================================================================
+// [167] Observação por item — o GATE AUTORITATIVO de tamanho é aqui.
+//
+// LIMITE_OBSERVACAO = 200 (src/lib/constants/pedido.ts, criado na fase GREEN).
+// O literal 200 aparece NESTE arquivo de propósito: o teste declara o número
+// esperado; a produção o importa da constante única.
+//
+// Contrato esperado (plan/167 §Decisão 2):
+//   observacao: z.string()
+//     .transform(normalizarObservacao)
+//     .pipe(z.string().max(LIMITE_OBSERVACAO))
+//     .optional()
+// PROIBIDO .min(1) (texto só de espaços normaliza para "" e derrubaria o pedido
+// INTEIRO). PROIBIDO afrouxar o .strict() do item.
+// ===========================================================================
+
+const NBSP = "\u00A0";
+const ZWSP = "\u200B";
+const RLO = "\u202E";
+
+/** Item do carrinho com a observação sob teste. */
+function itemComObs(observacao: unknown) {
+  return [{ produto_id: UUID2, quantidade: 2, observacao }];
+}
+
+/** Extrai `itens[0]` do parse bem-sucedido (falha o teste se não passou). */
+function item0(r: ReturnType<typeof schemaPayloadPedido.safeParse>) {
+  expect(r.success).toBe(true);
+  if (!r.success) throw new Error("parse falhou");
+  return (r.data as unknown as { itens: Record<string, unknown>[] }).itens[0];
+}
+
+describe("[167] schemaItemPedido.observacao — tamanho (gate autoritativo, §10)", () => {
+  it("aceita observação de exatamente 200 chars visíveis", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs("a".repeat(200)) }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("REJEITA observação de 201 chars visíveis", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs("a".repeat(201)) }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("aceita 210 chars com 15 de padding nas bordas → output com 195", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs(" ".repeat(15) + "a".repeat(195)) }),
+    );
+    expect(item0(r).observacao).toBe("a".repeat(195));
+  });
+
+  it("aceita 500 controles + 100 visíveis (prova a ordem transform → max)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs("\u001B".repeat(500) + "b".repeat(100)) }),
+    );
+    expect(item0(r).observacao).toBe("b".repeat(100));
+  });
+
+  it("REJEITA 201 chars visíveis mesmo com padding removível em volta", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs("   " + "a".repeat(201) + "   ") }),
+    );
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("[167] schemaItemPedido.observacao — opcionalidade e vazio (SEM .min(1))", () => {
+  it("aceita item SEM o campo e o output NÃO tem a chave observacao", () => {
+    const r = schemaPayloadPedido.safeParse(payload());
+    expect(item0(r)).not.toHaveProperty("observacao");
+  });
+
+  it.each([
+    ["string vazia", ""],
+    ["só espaços", "   "],
+    ["whitespace misto", "\n\t "],
+    ["só NBSP", NBSP.repeat(200)],
+    ["só invisíveis", ZWSP.repeat(50)],
+  ])(
+    'aceita observação %s e normaliza para "" (NÃO derruba o pedido inteiro)',
+    (_rotulo, entrada) => {
+      const r = schemaPayloadPedido.safeParse(payload({ itens: itemComObs(entrada) }));
+      expect(item0(r).observacao).toBe("");
+    },
+  );
+});
+
+describe("[167] schemaItemPedido.observacao — normalização", () => {
+  it("preserva \\n no meio (é textarea — sem regex de linha única)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs("sem cebola\ntrocar batata por salada") }),
+    );
+    expect(item0(r).observacao).toBe("sem cebola\ntrocar batata por salada");
+  });
+
+  it("converte \\r\\n em \\n", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs("linha1\r\nlinha2") }),
+    );
+    expect(item0(r).observacao).toBe("linha1\nlinha2");
+  });
+
+  it("colapsa 50 quebras seguidas em 2", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs(`a${"\n".repeat(50)}b`) }),
+    );
+    expect(item0(r).observacao).toBe("a\n\nb");
+  });
+
+  it("colapsa run de NBSP (o btrim do Postgres não faria isso)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs(`sem${NBSP}${NBSP}${NBSP}cebola`) }),
+    );
+    expect(item0(r).observacao).toBe("sem cebola");
+  });
+
+  it("remove bidi override e zero-width do output (anti-spoofing de comanda)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs(`sem${RLO}${ZWSP} cebola`) }),
+    );
+    expect(item0(r).observacao).toBe("sem cebola");
+  });
+
+  it("troca tab por espaço", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ itens: itemComObs("bem\tpassado") }),
+    );
+    expect(item0(r).observacao).toBe("bem passado");
+  });
+});
+
+describe("[167] schemaItemPedido.observacao — tipos inválidos", () => {
+  it.each([
+    ["número", 123],
+    ["null", null],
+    ["objeto", {}],
+    ["array", ["a"]],
+    ["booleano", true],
+  ])("rejeita observacao do tipo %s", (_rotulo, valor) => {
+    const r = schemaPayloadPedido.safeParse(payload({ itens: itemComObs(valor) }));
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("[167] ANTI-REGRESSÃO do .strict() do item (trava anti-injeção monetária)", () => {
+  it.each(["preco", "total", "subtotal", "desconto", "taxa_entrega", "observacoes"])(
+    "declarar 'observacao' NÃO afrouxa o item: campo desconhecido '%s' continua rejeitado",
+    (campo) => {
+      const r = schemaPayloadPedido.safeParse(
+        payload({
+          itens: [{ produto_id: UUID2, quantidade: 2, observacao: "ok", [campo]: 0.01 }],
+        }),
+      );
+      expect(r.success).toBe(false);
+    },
+  );
+
+  it("item com observacao válida + campo desconhecido arbitrário → rejeitado", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({
+        itens: [{ produto_id: UUID2, quantidade: 2, observacao: "ok", xpto: "x" }],
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("[167] schemaPayloadPedido.observacoes — teto cai de 500 para 200", () => {
+  it("aceita observacoes de exatamente 200 chars", () => {
+    const r = schemaPayloadPedido.safeParse(payload({ observacoes: "a".repeat(200) }));
+    expect(r.success).toBe(true);
+  });
+
+  it("REJEITA observacoes de 201 chars (hoje o teto ainda é 500)", () => {
+    const r = schemaPayloadPedido.safeParse(payload({ observacoes: "a".repeat(201) }));
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA observacoes de 500 chars (hoje passa — é o RED)", () => {
+    const r = schemaPayloadPedido.safeParse(payload({ observacoes: "a".repeat(500) }));
+    expect(r.success).toBe(false);
+  });
+
+  it('observacoes só com espaços normaliza para "" (não rejeita)', () => {
+    const r = schemaPayloadPedido.safeParse(payload({ observacoes: "   " }));
+    expect(r.success).toBe(true);
+    if (!r.success) throw new Error("parse falhou");
+    expect((r.data as unknown as { observacoes?: string }).observacoes).toBe("");
+  });
+
+  it("observacoes recebe a MESMA normalização do item (paridade de contrato)", () => {
+    const r = schemaPayloadPedido.safeParse(
+      payload({ observacoes: `  linha1\r\n\r\n\r\nlinha2${NBSP}${NBSP}fim  ` }),
+    );
+    expect(r.success).toBe(true);
+    if (!r.success) throw new Error("parse falhou");
+    expect((r.data as unknown as { observacoes?: string }).observacoes).toBe(
+      "linha1\n\nlinha2 fim",
+    );
+  });
+});
