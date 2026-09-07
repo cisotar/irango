@@ -75,18 +75,18 @@ uma query server-side por `ped.loja_id` — e montar a URL `api.whatsapp.com/sen
   `HeaderLoja.tsx` (`whatsapp.replace(/\D/g, "")`).
 
 **Behaviors:**
-- [ ] Ver o botão "Avisar a loja no WhatsApp" quando a loja tem WhatsApp
+- [x] Ver o botão "Avisar a loja no WhatsApp" quando a loja tem WhatsApp
   cadastrado. Garantido em: cliente (UX) — visibilidade condicional a partir de
   dado carregado server-side (`lojas.whatsapp`).
-- [ ] Tocar no botão → abre o WhatsApp (`api.whatsapp.com/send?phone=<numero>&text=<resumo>`) em nova
+- [x] Tocar no botão → abre o WhatsApp (`api.whatsapp.com/send?phone=<numero>&text=<resumo>`) em nova
   aba/app com a mensagem pré-preenchida. Garantido em: cliente (gesto do
   usuário; `target="_blank" rel="noopener noreferrer"`).
-- [ ] O conteúdo da mensagem reflete o pedido real (itens, opcionais, total,
+- [x] O conteúdo da mensagem reflete o pedido real (itens, opcionais, total,
   endereço, pagamento, nº do pedido). Garantido em: **Server Action / SSR** — o
   texto é montado a partir do pedido lido do banco por token, nunca de valores do
   carrinho do cliente. (A mensagem é notificação, não recálculo de dinheiro; a
   autoridade do valor já foi garantida no checkout — ver Segurança.)
-- [ ] Não ver o botão (ou ver um aviso alternativo) quando a loja **não** tem
+- [x] Não ver o botão (ou ver um aviso alternativo) quando a loja **não** tem
   WhatsApp. Garantido em: cliente (UX) — fallback descrito em Regras de Negócio.
 
 ## Modelos de Dados
@@ -212,3 +212,13 @@ não há dependência do envio para o pedido existir.
 - **Botão de WhatsApp no painel do lojista** (ex.: responder o cliente) — não faz
   parte desta feature de notificação de novo pedido.
 - **Personalizar o texto da mensagem pelo lojista** — mensagem fixa na v1.
+
+---
+
+## Status: implementado e arquivado (2026-09-06)
+
+Util `montarLinkWhatsappPedido` (`src/lib/utils/whatsappPedido.ts`) monta a
+mensagem conforme RN-W1/RN-W2 (sem `token_acesso`) e a página de confirmação
+(`src/app/(publica)/loja/[slug]/confirmacao/page.tsx`) já renderiza o botão
+"Avisar a loja no WhatsApp" condicionado a `lojas.whatsapp`. Todos os
+behaviors verificados no código.

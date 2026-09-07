@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.41 | **Atualizado:** 2026-07-10
+**Versão:** 0.2.42 | **Atualizado:** 2026-09-06
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -903,6 +903,16 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 - **Proibido `dangerouslySetInnerHTML`** sem sanitização explícita (DOMPurify). Conteúdo vem do banco preenchido por lojistas — tratar como não confiável.
 - Nunca montar HTML por concatenação de string com dado do banco.
 - URLs de imagem (`foto_url`): validar protocolo `https:` antes de renderizar — bloquear `javascript:`. Guard central: `src/lib/utils/urlHttpsSegura.ts` → `urlHttpsSegura(url?: string | null): string | null` (retorna `null` se não for `https:`). `fotoSegura` é especialização para imagens (adiciona fallback `/placeholder-produto.png`); `TabelaFaturas` e o render do QR Pix em `EtapaPagamento` usam `urlHttpsSegura` diretamente. Usar em todo lugar que renderiza `<img src>`, `<Image src>` ou `<a href>` com URL vinda do banco.
+
+### §15-A — Reverse tabnabbing: aba pré-aberta programaticamente (issue 126)
+
+`rel="noopener noreferrer"` resolve o caso declarativo (`<a target="_blank">`), mas não cobre abertura **programática** de aba via `window.open()` seguida de navegação assíncrona — padrão usado para pré-abrir a aba do WhatsApp dentro do gesto de clique (Safari invalida a user activation após `await`, então não dá pra esperar a Server Action responder antes de abrir).
+
+**Risco:** `window.open("", "_blank")` sem `noopener` devolve uma referência viva (`opener`) à página nova; se ela navegar para um domínio de terceiro (`api.whatsapp.com`), esse terceiro pode reescrever `opener.location` e clonar a página de origem para phishing. `window.open(url, "_blank", "noopener")` mataria a própria mecânica, pois nesse caso a URL final só é conhecida depois da resposta do servidor.
+
+**Padrão:** desapossar (`janela.opener = null`) enquanto a aba ainda é `about:blank` (same-origin, `opener` gravável) — **antes** de navegá-la para a URL de terceiro. **Fail-closed:** se o desapossamento lançar exceção, a aba não navega e é fechada. Implementação: `src/components/vitrine/checkout/aberturaWhatsapp.ts` (`desapossar`, chamada por `prepararAbaWhatsapp`).
+
+**Regra para devs e agentes:** toda abertura programática de aba (`window.open`) que depois navega para domínio externo com base numa resposta assíncrona segue este molde — desapossar o `opener` antes da navegação, fail-closed se não for possível.
 
 ---
 
