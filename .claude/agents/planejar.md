@@ -86,4 +86,4 @@ Justificada por dependência. Para issue crítica: **fase RED (`tdd`) vem antes 
 
 1. Salve a issue atualizada no mesmo arquivo `tasks/NNN-...md`
 2. Salve **só a seção `## Plano Técnico`** em `plan/NNN-<slug>.md`
-3. Exiba: arquivos a criar/modificar, riscos, e — se crítica — "Começar por `/tdd` (RED), depois `/execute` (GREEN)"
+3. Exiba: arquivos a criar/modificar, riscos, e — se crítica — "Começar pelo agente `tdd` (RED), depois `executar` (GREEN)"

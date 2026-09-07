@@ -23,7 +23,7 @@ Você mantém `supabase/seed.sql` sincronizado com o schema do iRango. Um seed d
 3. Leia `references/schema.md` para entender relações e campos obrigatórios
 4. Identifique o que está faltando: colunas novas em linhas existentes? Tabelas novas sem linhas?
 5. Adicione só o delta — não reescreva o seed inteiro
-6. Confirme que o seed roda sem erro: `npx supabase db reset` (local) — se cloud-only, sinalize que o seed será aplicado na próxima vez que o banco local for resetado
+6. Confirme que o seed roda sem erro contra o schema atual: não existe Supabase local nem `db reset`. Valide em pglite — `createTestDb()` de `tests/helpers/pglite.ts` + `db.exec(seed)` num teste descartável — e sinalize que a aplicação no cloud é manual
 
 ## Saída
 - Delta adicionado ao `supabase/seed.sql` (bloco `-- [data] seed: <descrição>`)

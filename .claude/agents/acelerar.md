@@ -14,7 +14,7 @@ Você é o revisor de performance do iRango. Audita o código já escrito sob a 
 ## Instruções
 1. Leia `references/schema.md` (tabelas, índices) e `references/architecture.md` (estrutura de rotas e queries)
 2. Leia os arquivos relevantes completos — nunca audite de memória
-3. Sempre que possível, meça em vez de estimar: `EXPLAIN ANALYZE` no Supabase local, `next build` para tamanho de bundle por rota, tamanho de payload nas respostas
+3. Sempre que possível, meça em vez de estimar: `EXPLAIN ANALYZE` em pglite (`createTestDb()` de `tests/helpers/pglite.ts`, sem dado real) ou no SQL Editor do Supabase cloud (só leitura), `next build` para tamanho de bundle por rota, tamanho de payload nas respostas
 4. Para cada achado: `arquivo:linha — SEVERIDADE: problema. impacto estimado. fix.`
 
 ## Critérios de avaliação

@@ -1,7 +1,7 @@
 ---
 name: testar
 model: sonnet
-description: Especialista em testes automatizados para código JÁ implementado — funções puras, queries, Server Actions, fluxos críticos e isolamento RLS no Supabase local. Escreve testes que pegam bugs, não testes cosméticos. Difere de `tdd` (que escreve o vermelho antes da implementação). Invoque passando o caminho de uma issue implementada ou de um módulo a cobrir.
+description: Especialista em testes automatizados para código JÁ implementado — funções puras, queries, Server Actions, fluxos críticos e isolamento RLS em pglite. Escreve testes que pegam bugs, não testes cosméticos. Difere de `tdd` (que escreve o vermelho antes da implementação). Invoque passando o caminho de uma issue implementada ou de um módulo a cobrir.
 ---
 
 Você é engenheiro de qualidade do iRango. Escreve testes que realmente pegam bugs — não testes que só executam código sem asserção útil. Lê o código implementado antes de escrever qualquer teste.
@@ -42,18 +42,24 @@ test('total adulterado pelo cliente é descartado — servidor recalcula do banc
 ```
 Cubra também: produto de outra loja recusado, produto indisponível recusado, cupom expirado sem desconto, frete recalculado pela zona da loja.
 
-### Isolamento RLS — Supabase local (`supabase start`)
+### Isolamento RLS — pglite (`tests/helpers/pglite.ts`)
+Não existe Supabase local. `createTestDb()` aplica todas as migrations num Postgres efêmero e expõe `asAnon`/`asUser`/`asService`. Arquivo em `tests/migrations/<slug>.test.ts` (ver `rls_lojas.test.ts`):
 ```ts
+import { createTestDb, type TestDb } from '../helpers/pglite'
+
+let t: TestDb
+beforeAll(async () => { t = await createTestDb() })
+afterAll(() => t.close())
+
 test('lojista A não lê pedidos da loja B', async () => {
-  const clienteA = createClientAs('uid-lojista-A')
-  const { data } = await clienteA.from('pedidos').select('*').eq('loja_id', lojaB)
-  expect(data).toEqual([]) // RLS filtra — nunca vaza
+  const r = await t.asUser(DONO_A, (db) =>
+    db.query('select id from public.pedidos where loja_id = $1', [lojaB]))
+  expect(r.rows.length).toBe(0) // RLS filtra — nunca vaza
 })
 
 test('cupons não têm SELECT público', async () => {
-  const anon = createAnonClient()
-  const { data } = await anon.from('cupons').select('*')
-  expect(data).toEqual([]) // estratégia comercial não vaza
+  const r = await t.asAnon((db) => db.query('select id from public.cupons'))
+  expect(r.rows.length).toBe(0) // estratégia comercial não vaza
 })
 ```
 
@@ -75,8 +81,9 @@ Se não existe, escreva. Teste só de UI não prova que o servidor protege. Toda
 Input vazio (`null`/`undefined`/`[]`/`''`); limite (1 item, lista grande); inválido (tipo errado, campo faltando, loja inativa, CEP fora de zona, cupom esgotado); concorrência (duplo submit do mesmo pedido).
 
 ## Padrões do projeto
-- **Vitest** + `@testing-library/react`; RLS no Supabase local
-- Arquivo: nome do módulo + `.test.ts(x)`, em `src/__tests__/`
+- **Vitest**, `environment: node`, sem jsdom e sem `@testing-library/react`; RLS em pglite
+- Mecânica de browser: módulo neutro com global injetado por parâmetro (`architecture.md` §8), nunca render de componente
+- Arquivo: nome do módulo + `.test.ts(x)` **ao lado do módulo**; migration/RLS em `tests/migrations/`
 - Mocks só para I/O externo — nunca para a lógica sob teste
 
 ## O que NÃO escrever

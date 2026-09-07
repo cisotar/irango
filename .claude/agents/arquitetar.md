@@ -106,7 +106,7 @@ O que o cliente envia vs. o que o servidor recalcula do zero.
 Estrita, com justificativa de dependência. Issue crítica: **fase RED (`tdd`) primeiro**, depois GREEN.
 
 ### Checklist de Validação Pós-Implementação
-- [ ] `pnpm build` sem warnings novos
+- [ ] `npm run build` sem warnings novos
 - [ ] Política RLS testada: perfil sem permissão recebe deny
 - [ ] Valor recalculado no servidor ignora payload adulterado
 - [ ] Sem secret no client / sem dado pessoal hardcoded

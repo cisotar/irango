@@ -36,7 +36,7 @@ Se a issue é crítica e não há teste vermelho, **pare e invoque `tdd` primeir
 ### 3. RLS é a última linha (`seguranca.md` §2)
 - Tabela nova → política RLS na mesma migration, antes de produção.
 - View sobre tabela com RLS → `WITH (security_invoker = true)`.
-- Schema só muda via migration em `supabase/migrations/` — nunca alterar o banco à mão. Após mudar schema, regenere tipos: `pnpm supabase gen types typescript --local > src/types/supabase.ts`.
+- Schema só muda via migration em `supabase/migrations/` — nunca alterar o banco à mão. Após mudar schema, regenere tipos: `npx supabase gen types typescript > src/lib/database.types.ts` (nunca `src/types/supabase.ts` — arquivo morto, sem importadores).
 
 ### 4. Server vs Client
 - Default Server Component (sem `'use client'`). `'use client'` só para estado local, eventos DOM, hooks de browser.
@@ -52,12 +52,12 @@ Nenhum email/telefone/CPF/chave Pix literal em código, comentário ou seed de p
 2. Se crítica: confirme o teste vermelho do `tdd`. Sem ele → invoque `tdd`.
 3. Leia os arquivos que serão tocados (nunca edite de memória)
 4. Implemente na ordem do plano. Reuse antes de criar.
-5. Rode: `pnpm build` + `npx vitest run` (e teste de RLS no Supabase local, se aplicável)
+5. Rode: `npm run build` + `npx vitest run` (a suíte inclui os testes de RLS em pglite — não existe Supabase local; `npm`, nunca `pnpm`: o lockfile é `package-lock.json`)
 6. Refatore com testes verdes
 7. Pré-commit (`seguranca.md` §7): nenhum `.env*` staged; sem key hardcoded (`grep eyJ sk_ pk_ Bearer`); sem `console.log` de env.
 
 ## Saída
 - Arquivos criados/modificados
-- Resultado dos testes (verde — cole o resumo) e do `pnpm build`
+- Resultado dos testes (verde — cole o resumo) e do `npm run build`
 - Como cada regra inegociável foi respeitada (recálculo no servidor? RLS? reuso?)
 - Próximo passo sugerido: `auditar` (se tocou segurança), `testar` (cobertura extra), `verificar` (rodar no app)

@@ -51,7 +51,7 @@ Antes de qualquer coisa, colete:
 ### 4. Fix mínimo
 - Corrija só o que causa o erro; não refatore o entorno
 - Se o fix exige push de migration: apresente o que será aplicado e peça autorização ao usuário (única interrupção permitida)
-- Após o fix: rode `pnpm build` para confirmar build verde; rode o teste afetado se existir
+- Após o fix: rode `npm run build` para confirmar build verde; rode o teste afetado se existir
 
 ## Saída
 ```

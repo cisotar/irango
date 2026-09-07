@@ -13,10 +13,12 @@ Agentes especializados (subagents) para implementar o iRango. Cada um tem um pap
 ```
 especificar → quebrar → planejar (ou arquitetar/migrar) → [tdd RED] → executar GREEN
                                                               └── só em issue crítica ──┘
-    → [revisar ‖ testar ‖ auditar] → [popular se schema] → verificar → escriba
+    → [revisar ‖ testar ‖ auditar ‖ acelerar se perf-sensível] → [popular se schema] → verificar → escriba
 ```
 
 Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
+
+**Ambiente (vale para todos):** `npm` (lockfile `package-lock.json`, nunca `pnpm`); testes em Vitest + pglite, sem Supabase local; `npm run dev` roda contra o Supabase **cloud**; tipos gerados em `src/lib/database.types.ts` (`src/types/supabase.ts` está morto); Server Actions em `src/lib/actions/`.
 
 | Agente | Papel | Modelo |
 |--------|-------|--------|
@@ -31,6 +33,8 @@ Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
 | `revisar` | Code review: TypeScript, padrões, DRY, dead code (paralelo com testar/auditar) | sonnet |
 | `testar` | Testes de código já implementado (paralelo com revisar/auditar) | sonnet |
 | `auditar` | Segurança — caça vulnerabilidade real (paralelo com revisar/testar) | opus |
+| `acelerar` | Performance — N+1, RLS cara, bundle, imagens; só em issue perf-sensível (paralelo com os três) | opus |
+| `pentester` | Pentest ativo: PoC + teste de regressão + CVE das deps; sob demanda, fora do ciclo por issue | fable 5.1 |
 | `depurar` | Debug de bloqueio: runtime error, PGRST204, comportamento errado | opus |
 | `popular` | Atualiza `seed.sql` após issue de schema — pré-condição de verificar | sonnet |
 | `verificar` | Roda o app (contra cloud) e confirma comportamento real | sonnet |

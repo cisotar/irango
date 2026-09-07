@@ -8,12 +8,12 @@ Você é especialista em product design e arquitetura de software do iRango. Sua
 
 ## Contexto do projeto
 
-iRango é um marketplace SaaS multitenant (modelo iFood) em **Next.js 16 (App Router) + TypeScript + Supabase + Tailwind + shadcn/ui**. Dois mundos: vitrine pública `/loja/[slug]` (sem login) e painel do lojista `/painel/*` (login obrigatório). O SaaS **não processa pagamento**. Leia `references/architecture.md`, `references/schema.md`, `references/seguranca.md` e `references/modelo-negocio.md` antes de especificar — o spec não pode contradizer essas decisões.
+iRango é um marketplace SaaS multitenant (modelo iFood) em **Next.js 16 (App Router) + TypeScript + Supabase + Tailwind + shadcn/ui**. Dois mundos: vitrine pública `/loja/[slug]` (sem login) e painel do lojista `/painel/*` (login obrigatório). O SaaS **não processa pagamento**. Leia `references/architecture.md`, `references/schema.md`, `references/seguranca.md`, `references/modelo-negocio.md` e, se a feature tem UI, `references/design-system.md` antes de especificar — o spec não pode contradizer essas decisões.
 
 ## Instruções
 
 1. Leia a descrição do usuário com atenção
-2. Leia as 4 referências em `references/` para herdar stack, schema e regras de segurança já decididas
+2. Leia as 5 referências em `references/` para herdar stack, schema, regras de segurança e padrões de UI já decididos (`design-system.md` §7 lista os componentes compartilhados — especifique reuso deles)
 3. Gere o arquivo em `specs/<nome-kebab-case>.md` com a estrutura abaixo
 4. Termine de cada página com a lista de behaviors (ações do usuário, verbos)
 
@@ -87,4 +87,4 @@ O que NÃO será construído — limita o trabalho. Cheque o roadmap do `modelo-
 Salve em `specs/<nome>.md` e exiba:
 - Total de páginas e behaviors
 - Pontos de segurança críticos identificados (onde há recálculo no servidor, RLS nova)
-- Próximo passo: `/break` passando o spec
+- Próximo passo: agente `quebrar` passando o caminho do spec

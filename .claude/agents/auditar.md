@@ -46,7 +46,8 @@ O risco nº 1 do marketplace. Para a Server Action de criar pedido:
 - [ ] `console.log` de env, token ou dado pessoal em produção
 
 ### Auth (`seguranca.md` §4, §17)
-- [ ] Painel sem guard duplo (middleware + layout server-side) — só ocultar UI não basta
+- [ ] Painel sem guard server-side no layout — `decidirAcessoBase` em `painel/layout.tsx` e `decidirAssinatura` em `(bloqueavel)/layout.tsx`. **`middleware.ts` só refresha sessão e não decide acesso** (`architecture.md` §5); guard que dependa de header propagado pelo middleware é vuln (achado #3B do pentest, `seguranca.md` §4). Só ocultar UI não basta
+- [ ] Rota isenta do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) dentro de `(bloqueavel)/` — a isenção é posicional, nunca por flag ou header
 - [ ] Acesso ao painel sem checar `email_confirmed_at` (signup com email falso)
 - [ ] Sessão lida de fonte adulterável em vez de cookie HttpOnly do `@supabase/ssr`
 
