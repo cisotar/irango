@@ -94,6 +94,9 @@ export function SecaoCatalogo({
     produtoId: string,
     quantidade: number,
     opcionais: OpcionalCarrinho[],
+    // Observação da linha (168): repassada crua — `adicionar` canoniza antes de
+    // guardar, e é o texto canônico que entra na chave de dedup da linha.
+    observacao?: string,
   ) => {
     if (!produtoSelecionado || produtoSelecionado.id !== produtoId) return;
     adicionar(
@@ -103,6 +106,7 @@ export function SecaoCatalogo({
         preco: produtoSelecionado.preco,
         fotoUrl: fotoSegura(produtoSelecionado.fotoUrl) ?? undefined,
         ...(opcionais.length > 0 ? { opcionais } : {}),
+        ...(observacao ? { observacao } : {}),
       },
       quantidade,
     );

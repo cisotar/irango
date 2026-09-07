@@ -215,6 +215,16 @@ export function DetalhePedido({
                       </span>
                     </div>
                     <ListaOpcionaisItem opcionais={opcionais} />
+                    {/* Observação do cliente (snapshot imutável, issue 171):
+                        texto do cliente renderizado via JSX — auto-escapado por
+                        React, NUNCA `dangerouslySetInnerHTML`. `null`/vazio ⇒
+                        nada no DOM (sem rótulo órfão). `whitespace-pre-line`
+                        preserva as quebras de linha gravadas. */}
+                    {item.observacao && (
+                      <p className="mt-0.5 text-xs whitespace-pre-line text-muted-foreground">
+                        Obs: {item.observacao}
+                      </p>
+                    )}
                   </li>
                 );
               })}

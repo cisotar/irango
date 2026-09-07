@@ -26,6 +26,7 @@ import { ResumoValores } from "./ResumoValores";
 import { useEnviarPedido } from "./useEnviarPedido";
 import {
   ESTADO_INICIAL,
+  itemCarrinhoParaPayload,
   lerEstadoWizard,
   podeConfirmar,
   salvarEstadoWizard,
@@ -120,22 +121,12 @@ export function CheckoutWizard({
     [itens],
   );
 
-  // Itens no shape do payload (produtoId+quantidade+opcionais) — reusado pela
-  // EtapaPagamento e pelo CTA da coluna sticky desktop. NUNCA carrega preço.
+  // Itens no shape do payload (produtoId+quantidade+opcionais+observacao) —
+  // reusado pela EtapaPagamento e pelo CTA da coluna sticky desktop. NUNCA
+  // carrega preço. O mapeamento vive em `itemCarrinhoParaPayload` (estado.ts,
+  // issue 168) para ser testável: aqui só se aplica a função.
   const itensPayload = useMemo<ItemPayload[]>(
-    () =>
-      itens.map((i) => ({
-        produtoId: i.produtoId,
-        quantidade: i.quantidade,
-        ...(i.opcionais && i.opcionais.length > 0
-          ? {
-              opcionais: i.opcionais.map((o) => ({
-                opcionalId: o.opcionalId,
-                quantidade: o.quantidade,
-              })),
-            }
-          : {}),
-      })),
+    () => itens.map(itemCarrinhoParaPayload),
     [itens],
   );
 

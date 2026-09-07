@@ -23,4 +23,12 @@ export type ItemCarrinho = {
   fotoUrl?: string;
   /** Opcionais escolhidos (preview). Ausente/[] = item sem opcionais. */
   opcionais?: OpcionalCarrinho[];
+  /**
+   * Observação livre do cliente para ESTA linha (issue 168). Guardada já
+   * CANONIZADA (`canonizarObservacao`) e ausente quando vazia — entra na chave
+   * de dedup de `linhaCarrinhoId`, então mesmo produto + mesmos opcionais +
+   * observações diferentes = linhas distintas. Preview: o servidor é a
+   * autoridade (schemaObservacao normaliza e mede o teto de novo).
+   */
+  observacao?: string;
 };

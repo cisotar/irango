@@ -205,3 +205,26 @@ describe("sentryBeforeSend — scrubber de PII e segredos", () => {
     spy.mockRestore();
   });
 });
+
+// Achado MÉDIA do `auditar` na issue 167: a observação é texto livre onde o
+// comprador escreve endereço e ponto de referência — que os PADROES_VALOR não
+// pegam, por não serem email nem telefone.
+describe("sentryBeforeSend — observação de pedido é PII", () => {
+  it("redige observacao por item vinda de payload de Server Action", () => {
+    const event = {
+      extra: { itens: [{ observacao: "portao azul da rua X, 400, falar com a Maria" }] },
+    } as unknown as ErrorEvent;
+
+    const out = sentryBeforeSend(event);
+    expect(JSON.stringify(out)).not.toContain("Maria");
+    expect(JSON.stringify(out)).not.toContain("rua X");
+  });
+
+  it("redige observacoes do pedido inteiro", () => {
+    const event = {
+      extra: { observacoes: "entregar no fundo, casa da esquina" },
+    } as unknown as ErrorEvent;
+
+    expect(JSON.stringify(sentryBeforeSend(event))).not.toContain("casa da esquina");
+  });
+});

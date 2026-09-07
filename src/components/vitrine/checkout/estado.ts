@@ -7,6 +7,8 @@
 // forma de pagamento, troco e identificação.
 
 import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
+import type { ItemCarrinho } from "@/types/dominio";
+import { canonizarObservacao } from "@/lib/utils/normalizarObservacao";
 
 export const CHAVE_WIZARD = "irango:checkout";
 
@@ -102,7 +104,43 @@ export type ItemPayload = {
   produtoId: string;
   quantidade: number;
   opcionais?: { opcionalId: string; quantidade: number }[];
+  /**
+   * Observação livre desta LINHA, já canonizada pelo carrinho (issue 168).
+   * Texto puro: o servidor normaliza e mede o teto de novo (schemaObservacao) e
+   * o recálculo de valor é estruturalmente cego a ela.
+   */
+  observacao?: string;
 };
+
+/**
+ * ItemCarrinho → ItemPayload: a fronteira entre o estado do carrinho e o que sai
+ * no payload. Copia SÓ intenção (produto, quantidade, opcionais, observação) e
+ * NUNCA preço/subtotal (seguranca.md §10).
+ *
+ * Existe como função pura porque é o ÚNICO mapeamento em produção
+ * (`CheckoutWizard.itensPayload`) e um campo esquecido nele deixaria os testes
+ * de `montarPayloadPedido` verdes com o checkout real enviando menos do que o
+ * cliente pediu (plan/168 §Riscos residuais).
+ */
+export function itemCarrinhoParaPayload(item: ItemCarrinho): ItemPayload {
+  return {
+    produtoId: item.produtoId,
+    quantidade: item.quantidade,
+    ...(item.opcionais && item.opcionais.length > 0
+      ? {
+          opcionais: item.opcionais.map((o) => ({
+            opcionalId: o.opcionalId,
+            quantidade: o.quantidade,
+          })),
+        }
+      : {}),
+    // Re-canoniza na fronteira: `adicionarItem` já canoniza, mas um carrinho
+    // restaurado do sessionStorage de uma versão anterior (ou adulterado no
+    // DevTools) traria texto cru e derrubaria o checkout INTEIRO no teto do
+    // servidor, com mensagem genérica. Idempotente, custo desprezível.
+    ...(item.observacao ? { observacao: canonizarObservacao(item.observacao) } : {}),
+  };
+}
 
 export type MontarPayloadArgs = {
   lojaId: string;
@@ -141,6 +179,9 @@ export function montarPayloadPedido({
             })),
           }
         : {}),
+      // Observação por item (168): texto puro, sem nada monetário. O servidor
+      // normaliza/mede de novo (schemaObservacao) e o recálculo é cego a ela.
+      ...(i.observacao ? { observacao: i.observacao } : {}),
     })),
     forma_pagamento: estado.formaPagamento,
     nome_cliente: estado.nome.trim(),

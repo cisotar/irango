@@ -17,6 +17,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { IMaskInput } from "react-imask";
+import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
+import {
+  ajudaObservacao,
+  derivarContadorObservacao,
+} from "@/lib/utils/contadorObservacao";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { ResumoValores } from "./ResumoValores";
 import { useEnviarPedido } from "./useEnviarPedido";
@@ -111,6 +116,11 @@ export function EtapaPagamento({
     }
   }
 
+  // Rascunho antigo do sessionStorage pode ter mais que o teto atual (o campo já
+  // teve 500): maxLength não trunca valor existente — o contador degrada para
+  // "limite atingido" e o servidor (167) é quem corta/rejeita.
+  const contadorObservacoes = derivarContadorObservacao(estado.observacoes);
+
   const podeEnviar =
     lojaAberta &&
     !enviando &&
@@ -157,9 +167,31 @@ export function EtapaPagamento({
               id="observacoes"
               value={estado.observacoes}
               placeholder="Ex.: sem cebola, ponto da carne…"
-              maxLength={500}
+              maxLength={LIMITE_OBSERVACAO}
+              aria-describedby="observacoes-ajuda observacoes-contador"
               onChange={(e) => onEstadoChange({ observacoes: e.target.value })}
             />
+            <div className="flex items-start justify-between gap-3">
+              <p id="observacoes-ajuda" className="text-xs text-texto-muted">
+                {ajudaObservacao()}
+              </p>
+              {/* Cor E peso no alerta (cor sozinha não é sinal acessível). Não é
+                  live region: está no aria-describedby. */}
+              <p
+                id="observacoes-contador"
+                className={`shrink-0 text-xs tabular-nums ${
+                  contadorObservacoes.proximoDoLimite
+                    ? "font-bold text-marrom-cafe"
+                    : "text-texto-muted"
+                }`}
+              >
+                {estado.observacoes.length}/{LIMITE_OBSERVACAO}
+              </p>
+            </div>
+            {/* Muda só nos dois limiares, nunca a cada tecla. */}
+            <p role="status" aria-live="polite" className="sr-only">
+              {contadorObservacoes.aviso}
+            </p>
           </div>
         </div>
       </div>

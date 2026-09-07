@@ -9,6 +9,26 @@
 
 import { z } from "zod";
 
+import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
+import { normalizarObservacao } from "@/lib/utils/normalizarObservacao";
+
+// [167] Observação de texto livre (item e pedido) — MESMO contrato nos dois.
+// Normaliza ANTES de medir (transform → pipe): controles, bidi, CRLF e padding
+// somem e só então o teto de LIMITE_OBSERVACAO é aplicado. Mesmo encadeamento
+// de `codigo_cupom` abaixo.
+// 🛑 PROIBIDO `.min(1)`: uma observação só de espaços normaliza para "" e, com
+// .min(1), derrubaria o PEDIDO INTEIRO por um campo cosmético. O "" é aceito
+// aqui e descartado na Server Action (a RPC grava NULL).
+// O teto bruto de 8× é defesa em profundidade: a normalização roda ANTES de
+// qualquer medição, então sem ele um payload de megabytes seria normalizado
+// antes de ser rejeitado. A folga de 8× nunca recusa texto legítimo — a
+// invariante da normalização é que ela só encurta.
+const schemaObservacao = z
+  .string()
+  .max(LIMITE_OBSERVACAO * 8)
+  .transform(normalizarObservacao)
+  .pipe(z.string().max(LIMITE_OBSERVACAO));
+
 const schemaItemPedido = z
   .object({
     // z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
@@ -16,6 +36,11 @@ const schemaItemPedido = z
     // os ids de teste). gen_random_uuid() continua produzindo v4 válido.
     produto_id: z.guid(),
     quantidade: z.number().int().min(1).max(99),
+    // [167] observacao: texto livre por item. DEVE estar declarada — sem ela o
+    // .strict() abaixo rejeitaria o PAYLOAD INTEIRO quando o cliente mandasse o
+    // campo. Declarar NÃO afrouxa o .strict(): qualquer outro campo (preco,
+    // total, ...) continua barrado.
+    observacao: schemaObservacao.optional(),
     // opcionais: [083] cliente envia apenas opcional_id + quantidade — NUNCA
     // preco/nome. .strict() no objeto bloqueia injeção de valores monetários (RN-O2).
     opcionais: z
@@ -83,7 +108,10 @@ export const schemaPayloadPedido = z
       .trim()
       .regex(/^\+?[\d\s()-]{8,20}$/)
       .optional(),
-    observacoes: z.string().trim().max(500).optional(),
+    // [167] mesma normalização e mesmo teto do `observacao` do item (paridade
+    // de contrato). Sem migration: a coluna pedidos.observacoes nunca teve
+    // CHECK — o teto novo vale só para pedidos novos.
+    observacoes: schemaObservacao.optional(),
   })
   // .strict() CRÍTICO (seguranca.md §10): rejeita qualquer campo não declarado.
   // Campos monetários (preco/subtotal/desconto/taxa_entrega/total) não existem

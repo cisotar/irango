@@ -33,7 +33,7 @@ export type EtapaItensProps = {
   subtotal: number;
   desconto: number;
   codigoCupom: string | null;
-  /** id = linhaCarrinhoId(produtoId, opcionais) — distingue linhas com opcionais diferentes. */
+  /** id = linhaCarrinhoId(produtoId, opcionais, observacao) — distingue linhas com opcionais OU observações diferentes (168). */
   onIncrementar: (linhaId: string) => void;
   onDecrementar: (linhaId: string) => void;
   onRemover: (linhaId: string) => void;
@@ -108,7 +108,11 @@ export function EtapaItens({
         <h2 className={SECAO_TITULO}>Itens do pedido</h2>
         <div className="divide-y divide-cinza-medio">
           {itens.map((item) => {
-            const linhaId = linhaCarrinhoId(item.produtoId, item.opcionais);
+            const linhaId = linhaCarrinhoId(
+              item.produtoId,
+              item.opcionais,
+              item.observacao,
+            );
             // 2ª barreira anti-XSS (defesa em profundidade, seguranca.md §15):
             // só `https://` vira <Image src>; qualquer outra coisa → placeholder.
             const fotoItem = fotoSegura(item.fotoUrl);

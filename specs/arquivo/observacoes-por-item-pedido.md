@@ -1,6 +1,18 @@
 # Spec: Observações por item do pedido
 
-**Versão:** 0.1.0 | **Atualizado:** 2026-07-09
+**Versão:** 0.2.0 | **Atualizado:** 2026-09-07
+
+## Status atual (2026-09-07)
+
+**Nada desta spec foi implementado ainda.** Verificado por grep no código: não existe
+`observacao` (singular) em nenhuma tabela, schema de validação, tipo ou componente —
+só a observação por pedido (`observacoes`, plural) já existente. Todos os behaviors
+abaixo seguem `[ ]`.
+
+**Nesta revisão (0.2.0):** o limite passou de 140 para **200** caracteres (a
+justificativa "iFood ~140" da v0.1.0 não pôde ser confirmada — ver seção de
+justificativa) e passou a incluir uma mudança na observação **por pedido** que já
+existe hoje (500 → 200), para os dois campos terem o mesmo teto.
 
 ## Visão Geral
 
@@ -11,8 +23,11 @@ de WhatsApp gerada no checkout e fica visível para o lojista onde ele vê o ped
 (painel, hub admin, comanda e recibo).
 
 Hoje já existe observação **por pedido inteiro** (`estado.observacoes` → coluna
-`pedidos.observacoes`, limite 500). Esta feature é ortogonal: cria observação **por
-item** — as duas coexistem.
+`pedidos.observacoes`). Esta feature é ortogonal — cria um campo novo por item, as
+duas coexistem — **mas** esta revisão também baixa o limite da observação por pedido
+de 500 para **200**, para os dois campos falarem a mesma língua (ver Regras de
+Negócio). É a única mudança no campo existente; todo o resto do comportamento dele
+(onde aparece, como é montado no WhatsApp, RLS) permanece igual.
 
 **Mundos:**
 - Escrita: **vitrine pública** (`/loja/[slug]`, sem auth) — cliente digita no modal.
@@ -42,17 +57,17 @@ livre para aquele item. Campo opcional, com contador de caracteres visível.
   após o card de Quantidade. Título de seção "Observações" segue `.card-titulo`
   (uppercase, `--marrom-cafe`). Não inventar estilo: usar os tokens da vitrine
   (`--cor-destaque` no foco, `--borda-nav` na borda, `--texto-muted` no contador/placeholder).
-- `textarea` — multi-linha (permite quebra de linha), `maxLength={140}` no cliente,
+- `textarea` — multi-linha (permite quebra de linha), `maxLength={200}` no cliente,
   `rows` ~3, placeholder de exemplo ("Ex: sem cebola, ponto da carne...").
-- Contador `n/140` visível abaixo do campo (`--texto-muted`; vira estado de alerta ao
+- Contador `n/200` visível abaixo do campo (`--texto-muted`; vira estado de alerta ao
   aproximar do limite).
 - shadcn/base-ui: se já existir primitivo `Textarea` em `components/ui/`, reusar; senão
   `<textarea>` estilizado com os tokens da vitrine (é UI da vitrine, tema da loja).
 
 **Behaviors:**
 - [ ] Digitar observação — cliente escreve texto livre no `<textarea>`. Garantido em: cliente (UX/estado local).
-- [ ] Ver contador de caracteres — contador `n/140` atualiza a cada tecla. Garantido em: cliente (UX).
-- [ ] Ser impedido de exceder o limite visualmente — `maxLength={140}` trava a digitação. Garantido em: cliente (UX); **limite real garantido em: Server Action (zod `.max(140)`)**.
+- [ ] Ver contador de caracteres — contador `n/200` atualiza a cada tecla. Garantido em: cliente (UX).
+- [ ] Ser impedido de exceder o limite visualmente — `maxLength={200}` trava a digitação. Garantido em: cliente (UX); **limite real garantido em: Server Action (zod `.max(200)`)**.
 - [ ] Quebrar linha — Enter insere `\n` (é textarea, não input). Garantido em: cliente (UX).
 - [ ] Adicionar ao carrinho com observação — o CTA do footer (`confirmar()`) passa a observação junto de quantidade/opcionais para `onAdicionar`. Garantido em: cliente (estado do carrinho); persistência em: Server Action.
 - [ ] Deixar em branco — campo é opcional; sem texto, o item entra no carrinho normalmente. Garantido em: cliente (UX) + Server Action (campo `.optional()`).
@@ -73,12 +88,19 @@ do snapshot do banco, `pedido.itens_pedido[i].observacao`, não do estado do cli
   (já aplicado à mensagem inteira) escapa o texto para a URL.
 - `src/components/vitrine/checkout/estado.ts` — `ItemPayload` ganha `observacao?`;
   `montarPayloadPedido` propaga o campo do `ItemCarrinho` para o payload.
+- `src/components/vitrine/checkout/EtapaPagamento.tsx` — campo **existente**
+  "Observações (opcional)" (linha ~157): `maxLength={500}` → `maxLength={200}`.
+- `src/lib/validacoes/pedido.ts` — `schemaPayloadPedido.observacoes`: `.max(500)` →
+  `.max(200)` (linha ~86). Sem migration — a coluna `pedidos.observacoes` nunca teve
+  CHECK (`20260614000129_schema_inicial.sql`); pedidos antigos com texto > 200
+  permanecem válidos e legíveis, o limite novo só vale para pedidos novos.
 - `src/components/vitrine/checkout/useEnviarPedido.ts` — sem mudança de lógica; passa o
   payload já com `observacao` para `criarPedido`.
 
 **Behaviors:**
 - [ ] Ver a observação de cada item na prévia do carrinho (opcional, se o carrinho listar) — exibe o texto que o cliente digitou. Garantido em: cliente (UX/preview — não autoritativo).
 - [ ] Enviar o pedido com observações por item — `montarPayloadPedido` inclui `observacao` por item no payload da Server Action. Garantido em: **Server Action + RLS** (recálculo de valor ignora a observação; observação persiste via RPC service_role).
+- [ ] Observação do pedido (campo existente) trava em 200 caracteres, não mais 500 — `EtapaPagamento.tsx` + `schemaPayloadPedido.observacoes`. Garantido em: cliente (`maxLength`) + Server Action (`zod .max(200)`).
 - [ ] Ver a observação de cada item na mensagem do WhatsApp — a linha `obs:` aparece por item na mensagem final. Garantido em: **Server Action** (o texto vem do snapshot no banco, não do estado do cliente) + cliente (montagem da string a partir do dado autoritativo lido por token).
 
 ---
@@ -117,12 +139,12 @@ Referência: `schema.md` §`itens_pedido`.
 -- supabase/migrations/<timestamp>_itens_pedido_observacao.sql
 ALTER TABLE itens_pedido
   ADD COLUMN observacao text
-    CHECK (observacao IS NULL OR char_length(observacao) <= 140);
+    CHECK (observacao IS NULL OR char_length(observacao) <= 200);
 ```
 
 - `text` nullable — `NULL` = item sem observação (padrão). Snapshot imutável junto do
   item, mesma família de `nome`/`preco` (§schema convenções).
-- `CHECK <= 140` — defesa em profundidade no banco (a autoridade real é a Server Action
+- `CHECK <= 200` — defesa em profundidade no banco (a autoridade real é a Server Action
   zod + a RPC). Espelha o padrão de CHECK de defesa dos demais campos do schema.
 - **Não** é campo de billing/identidade — fora de qualquer trigger de proteção.
 
@@ -134,7 +156,7 @@ A RPC (`CREATE OR REPLACE FUNCTION public.criar_pedido(...)`, última versão em
 de cada elemento de `p_itens` (mesmo padrão dos opcionais, migration
 `20260614008000`). O `INSERT` dentro do loop passa a ler
 `(v_item->>'observacao')` e gravar na coluna nova (com `NULLIF(trim(...), '')` para
-normalizar string vazia → `NULL`, e truncamento defensivo a 140 no SQL).
+normalizar string vazia → `NULL`, e truncamento defensivo a 200 no SQL).
 
 > ⚠️ INSERT em `itens_pedido` é **exclusivo da RPC sob `service_role`** (seguranca.md
 > §`itens_pedido` — INSERT público foi removido, achado #3A). A observação **não** abre
@@ -151,7 +173,7 @@ normalizar string vazia → `NULL`, e truncamento defensivo a 140 no SQL).
 - `src/types/dominio.ts` — `ItemCarrinho` ganha `observacao?: string`.
 - `src/components/vitrine/checkout/estado.ts` — `ItemPayload` ganha `observacao?: string`.
 - `src/lib/validacoes/pedido.ts` — `schemaItemPedido` (que é `.strict()`) **precisa**
-  declarar `observacao: z.string().trim().max(140).optional()`. Sem isso o `.strict()`
+  declarar `observacao: z.string().trim().max(200).optional()`. Sem isso o `.strict()`
   **rejeita** o payload inteiro. Este é o **gate obrigatório de tamanho no servidor**.
 - `src/lib/actions/pedido.ts` — o snapshot de item (`itensSnapshot`) propaga
   `observacao` (normalizada: `trim()`, vazio → `undefined`) para `p_itens`.
@@ -170,7 +192,8 @@ Nenhuma tabela nova. `itens_pedido` já tem RLS habilitada e políticas cobrindo
 
 | Regra | Camada que garante |
 |-------|-------------------|
-| **Limite de 140 caracteres** (ver justificativa abaixo) | Cliente `maxLength` (preview) + **Server Action `zod .max(140)`** (autoritativo) + CHECK no banco (defesa) + truncamento na RPC (defesa) |
+| **Limite de 200 caracteres** (ver justificativa abaixo) | Cliente `maxLength` (preview) + **Server Action `zod .max(200)`** (autoritativo) + CHECK no banco (defesa) + truncamento na RPC (defesa) |
+| **Observação por pedido também baixa para 200** (era 500) — mesmo teto dos dois campos | Cliente `maxLength` (`EtapaPagamento.tsx`) + Server Action `zod .max(200)` (`pedido.ts`); sem CHECK no banco (nunca teve) |
 | Campo **opcional** — item sem observação é válido | Cliente (UX) + zod `.optional()` + coluna nullable |
 | **Quebra de linha permitida** (`\n`) — é textarea | Cliente (textarea) + servidor (zod aceita `\n`; sem `.regex` de linha única) |
 | **String vazia/whitespace → `NULL`** (não gravar `""`) | Server Action (`trim()`, vazio → `undefined`) + RPC (`NULLIF(trim(...),'')`) |
@@ -178,28 +201,42 @@ Nenhuma tabela nova. `itens_pedido` já tem RLS habilitada e políticas cobrindo
 | Observação **não afeta preço** — é texto, nunca entra no cálculo de subtotal/total | Server Action (recálculo de valor ignora a observação — seguranca.md §10) |
 | Observação é **snapshot imutável** — não muda se o produto for editado | Coluna em `itens_pedido` (mesma semântica de `nome`/`preco`) |
 
-### Justificativa do limite: 140 caracteres
+### Justificativa do limite: 200 caracteres
 
-Padrão de mercado para **observação por item** (distinto da observação por pedido, que
-neste projeto já é 500). Apps de delivery limitam o campo de item a uma nota curta:
+**Não há fonte pública verificável para o limite do iFood.** A versão 0.1.0 desta spec
+afirmava "iFood ~140 caracteres"; ao tentar confirmar (blog de parceiros, documentação
+da API de pedidos, página de Order Details) não foi possível validar esse número — a
+única extensão de campo documentada publicamente é de outro contexto (`reason` de
+disputa, 250). **A alegação foi removida**: o limite aqui é decidido pelas restrições
+reais deste projeto, não por imitação de concorrente.
 
-- **iFood** — campo "Algum comentário?" por item historicamente limitado a ~140 caracteres.
-- **Rappi / apps similares** — nota por item na mesma ordem de grandeza (100–150), o
-  suficiente para "sem cebola, maionese à parte, ponto mal passado" e não para um texto
-  livre longo que polui a comanda.
+Critérios que sustentam **200**:
 
-Adotamos **140** (nota curta, mnemônico "tamanho de tweet clássico"): grande o bastante
-para instruções reais, pequeno o bastante para caber numa comanda de cozinha e limitar a
-superfície de abuso de payload. Deliberadamente **menor** que a observação por pedido
-(500), que é o campo para instruções gerais de entrega. O número vive em **um único
-lugar** reutilizado (constante compartilhada entre o zod e, idealmente, o `maxLength` do
-textarea) — não duplicar o literal.
+- **Cabe na comanda de cozinha.** A observação é impressa por item em
+  `ComandaCozinha.tsx`; um texto longo empurra itens para fora da página e atrapalha
+  quem produz o pedido.
+- **Teto de payload.** `schemaPayloadPedido` aceita até 50 itens
+  (`itens: z.array(...).max(50)`, `pedido.ts`). A 200 caracteres, o pior caso de
+  observações é ~10KB — proporcional; a 500 seriam ~25KB por pedido.
+- **Instrução real cabe.** 200 comporta "sem cebola, sem tomate, ponto mal passado,
+  molho à parte" com folga, que é o uso concreto do campo.
+
+**Paridade com a observação por pedido.** `pedidos.observacoes` era 500 e passa a ser
+**200 também** — um único limite de observação no sistema inteiro, mais simples de
+explicar ao lojista e ao cliente. Essa redução **não exige migration**: a coluna
+`pedidos.observacoes` é `text` **sem CHECK** (`20260614000129_schema_inicial.sql`), e o
+limite vive só no zod (`pedido.ts`) + `maxLength` do textarea
+(`EtapaPagamento.tsx`). Pedidos já gravados com texto maior continuam válidos e legíveis
+— a redução vale só para pedidos novos.
+
+O número vive em **um único lugar** reutilizado (constante compartilhada entre o zod e o
+`maxLength` do textarea, nos dois campos) — não duplicar o literal.
 
 ## Segurança (obrigatório)
 
 - **Dado sensível que entra:** texto livre do cliente (**input não-confiável**). Pode
   conter qualquer caractere, incluindo tentativa de injeção. Tratamento:
-  - **Tamanho:** validado no servidor por `zod .max(140)` (não confiar no `maxLength`
+  - **Tamanho:** validado no servidor por `zod .max(200)` (não confiar no `maxLength`
     do cliente) + CHECK no banco + truncamento na RPC. Três camadas.
   - **Sanitização/normalização:** `trim()` no servidor; string vazia → `NULL`.
     Recomenda-se remover caracteres de controle (exceto `\n`) e colapsar sequências
@@ -226,7 +263,7 @@ textarea) — não duplicar o literal.
 
 - **Editar/remover a observação depois de enviado o pedido** (nem cliente nem lojista) —
   snapshot imutável, como `nome`/`preco`.
-- **Observação por pedido** — já existe (`pedidos.observacoes`, limite 500); não é tocada.
+- ~~Observação por pedido — já existe (`pedidos.observacoes`, limite 500); não é tocada.~~ **Revisto:** o limite do pedido também baixa para 200 (paridade com o item — ver Regras de Negócio); é a única mudança nesse campo existente, o resto do comportamento dele não muda.
 - **Sugestões/atalhos de observação** (chips "sem cebola", "sem glúten") — fase futura.
 - **Observação em opcional individual** (`itens_pedido_opcionais`) — só no item, não no opcional.
 - **Notificação em tempo real ao lojista** — fora do escopo (roadmap fase 2, `modelo-negocio.md` §8).

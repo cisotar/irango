@@ -61,6 +61,17 @@ export function ComandaCozinha({ pedido }: { pedido: PedidoComItens }): ReactEle
               </div>
               {/* `ocultarPreco`: opcionais sem valor monetário no DOM (RN-P1). */}
               <ListaOpcionaisItem opcionais={opcionais} ocultarPreco />
+              {/* Observação do item (issue 171): a informação mais acionável da
+                  bancada ("sem cebola") — destacada com barra lateral e negrito,
+                  sem qualquer valor monetário (RN-P1). Texto do cliente via JSX,
+                  auto-escapado; NUNCA `dangerouslySetInnerHTML`. `null`/vazio ⇒
+                  fora do DOM. `whitespace-pre-line` mantém as quebras na térmica
+                  sem estourar a largura de 80mm. */}
+              {item.observacao && (
+                <p className="mt-1 border-l-4 border-black pl-2 text-sm font-bold whitespace-pre-line">
+                  Obs: {item.observacao}
+                </p>
+              )}
             </li>
           );
         })}

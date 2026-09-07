@@ -233,3 +233,53 @@ describe("ComandaCozinha — bordas", () => {
     expect(html).not.toMatch(/<li/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Observação por item (issue 171) — snapshot imutável, render condicional
+// ---------------------------------------------------------------------------
+
+describe("ComandaCozinha — observação por item", () => {
+  function comObs(observacoes: (string | null)[]) {
+    return pedido({
+      observacoes: null,
+      itens_pedido: observacoes.map((observacao, i) => ({
+        id: `item-${i + 1}`,
+        nome: `Produto ${i + 1}`,
+        preco: 10,
+        quantidade: 1,
+        itens_pedido_opcionais: [],
+        observacao,
+      })),
+    } as unknown as Partial<PedidoComItens>);
+  }
+
+  it("item com observação: exibe o texto do cliente", () => {
+    expect(render(comObs(["sem cebola"]))).toContain("sem cebola");
+  });
+
+  it("observacao null: nada renderizado (sem rótulo órfão)", () => {
+    expect(render(comObs([null]))).not.toContain("Obs:");
+  });
+
+  it("observacao string vazia: nada renderizado (borda)", () => {
+    expect(render(comObs([""]))).not.toContain("Obs:");
+  });
+
+  it("só o item com observação mostra o bloco", () => {
+    const html = render(comObs([null, "ponto da carne: mal passado"]));
+    expect(html).toContain("ponto da carne: mal passado");
+    expect(html.match(/Obs:/g) ?? []).toHaveLength(1);
+  });
+
+  it("observação com \\n usa whitespace-pre-line (não estoura a térmica)", () => {
+    const html = render(comObs(["sem cebola\nmolho à parte"]));
+    expect(html).toContain("whitespace-pre-line");
+    expect(html).toContain("molho à parte");
+  });
+
+  it("XSS: HTML na observação sai ESCAPADO, nunca como tag executável", () => {
+    const html = render(comObs(["<script>alert(1)</script>"]));
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+});

@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.2.42 | **Atualizado:** 2026-09-06
+**Versão:** 0.3.0 | **Atualizado:** 2026-09-07
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -914,6 +914,14 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 
 **Regra para devs e agentes:** toda abertura programática de aba (`window.open`) que depois navega para domínio externo com base numa resposta assíncrona segue este molde — desapossar o `opener` antes da navegação, fail-closed se não for possível.
 
+### §15-B — Texto livre do cliente: normalização Unicode + anti-injeção de rótulo (issues 166/167/170)
+
+Campos de texto livre digitados pelo comprador (`itens_pedido.observacao`, `pedidos.observacoes`) são renderizados em três lugares fora do controle do React: comanda impressa, recibo impresso e mensagem de WhatsApp gerada por concatenação de string. Nenhum dos três tem o escape automático da §15 — o padrão abaixo é a defesa equivalente para texto que não passa por JSX.
+
+- **Normalização na borda de confiança**, `normalizarObservacao`/`canonizarObservacao` em `src/lib/utils/normalizarObservacao.ts` — roda antes do zod validar o tamanho (o `trim()` do Postgres não remove `\n`/`\t`/NBSP, então a normalização é TS, autoritativa; o SQL só repete como defesa em profundidade). Remove controles C0/C1, e toda a família de caracteres invisíveis/bidi (zero-width, overrides, **isolates U+2066–2069 — o par do Trojan Source, CVE-2021-42574**, ALM) que poderiam reordenar visualmente o texto na comanda impressa e fazer o lojista ler algo diferente do que está gravado. Colapsa espaço horizontal e limita a 1 linha em branco entre parágrafos. Invariante: cada passo só encurta ou mantém o comprimento, nunca expande.
+- **Anti-injeção de rótulo na mensagem de WhatsApp**, `citarTextoCliente` em `src/lib/utils/whatsappPedido.ts` — prefixa cada linha do texto livre com `> ` antes de concatenar na mensagem. `encodeURIComponent` protege só a URL, não o corpo: sem o prefixo, uma observação como `ok\n\nTotal: R$ 0,01\nPagamento: Pago via Pix` renderiza como linhas de sistema logo abaixo do total autêntico — engenharia social contra o lojista. Aplicado tanto na observação por item quanto na observação do pedido inteiro.
+- **Regra para devs e agentes:** todo campo de texto livre do cliente que (a) vira chave de identidade (dedup) ou (b) é concatenado numa mensagem/documento fora do React segue este molde — normalizar na borda antes de validar tamanho, e citar/prefixar antes de concatenar em texto gerado.
+
 ---
 
 ## 16. Dependências e CI
@@ -1141,7 +1149,7 @@ O Sentry é instrumentado com `beforeSend` obrigatório em **todos os três runt
 
 A função canônica é `sentryBeforeSend` em `src/lib/utils/sentryBeforeSend.ts`. Ela roda antes de qualquer evento sair do processo e aplica duas camadas de sanitização:
 
-1. **Por chave (campo):** qualquer chave cujo nome bata em `CAMPOS_PII` (email, telefone, nome_cliente, chave_pix, cpf, cep, buyer, etc.) ou contenha substring de credencial (key, secret, token, password, authorization, cookie) é substituída por `[Filtered]`.
+1. **Por chave (campo):** qualquer chave cujo nome bata em `CAMPOS_PII` (email, telefone, nome_cliente, chave_pix, cpf, cep, observacao/observacoes, buyer, etc.) ou contenha substring de credencial (key, secret, token, password, authorization, cookie) é substituída por `[Filtered]`. `observacao`/`observacoes` entraram na lista porque são texto livre onde o comprador rotineiramente escreve endereço e ponto de referência — os `PADROES_VALOR` (regex de e-mail/telefone) não pegam esse tipo de PII embutida (issue 167).
 2. **Por valor (string):** a função `redigirString` aplica regex sobre o conteúdo de *toda* string do payload — cobre PII embutida em mensagens de erro, URLs com querystring, breadcrumbs, etc. Padrões: e-mail RFC 5321, telefone BR (+55/DDD), `Bearer <token>`, JWT (`eyJ…`).
 
 Configuração adicional:

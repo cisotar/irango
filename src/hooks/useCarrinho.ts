@@ -4,33 +4,54 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import type { ItemCarrinho, OpcionalCarrinho } from "@/types/dominio";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
+import { canonizarObservacao } from "@/lib/utils/normalizarObservacao";
 
 // Escopo por session (não por loja): o carrinho mantém uma loja por vez.
 const CHAVE_STORAGE = "irango:carrinho";
 
 /**
  * Assinatura estável de UMA linha do carrinho = produtoId + opcionais escolhidos
- * (id:qtd, ordenados). Duas adições do mesmo produto com opcionais DIFERENTES
- * geram assinaturas diferentes → linhas distintas; mesmo produto + mesmos
- * opcionais → soma a quantidade (dedup). A ordenação torna a chave estável
- * independente da ordem em que os opcionais foram escolhidos.
+ * (id:qtd, ordenados) + observação canônica. Duas adições do mesmo produto com
+ * opcionais OU observações DIFERENTES geram chaves diferentes → linhas
+ * distintas; mesmo produto + mesmos opcionais + mesma observação → soma a
+ * quantidade (dedup). A ordenação torna a chave estável independente da ordem
+ * em que os opcionais foram escolhidos.
+ *
+ * Três formas, nesta ordem (issue 168 — as duas primeiras são RETROCOMPAT byte
+ * a byte, há código de produção apoiado nelas):
+ *   1. sem opcionais e sem observação → `produtoId`
+ *   2. com opcionais e sem observação → `produtoId|assinatura`
+ *   3. com observação                 → `produtoId|assinatura|obs`
+ *
+ * Injetividade: `produtoId` (uuid) e `assinatura` (`uuid:int` separado por
+ * vírgula) NUNCA contêm `|`; só `obs` é texto livre e é o ÚLTIMO segmento,
+ * sempre após exatamente dois `|`. Logo nenhuma observação adversa forja a
+ * chave de outra linha — é o que impede fusão (cliente paga menos) ou cisão
+ * (cliente paga mais) indevida de quantidade.
+ *
+ * A chave usa o texto CANÔNICO (`canonizarObservacao`, a mesma normalização do
+ * `schemaObservacao` do servidor): a identidade da linha no cliente é exatamente
+ * a que a RPC vai persistir, e espaço/invisível repetido não vira linha nova.
  */
 export function linhaCarrinhoId(
   produtoId: string,
   opcionais?: OpcionalCarrinho[],
+  observacao?: string,
 ): string {
   const assinatura = (opcionais ?? [])
     .filter((o) => o.quantidade > 0)
     .map((o) => `${o.opcionalId}:${o.quantidade}`)
     .sort()
     .join(",");
-  return assinatura ? `${produtoId}|${assinatura}` : produtoId;
+  const obs = canonizarObservacao(observacao ?? "");
+  if (!obs) return assinatura ? `${produtoId}|${assinatura}` : produtoId;
+  return `${produtoId}|${assinatura}|${obs}`;
 }
 
 export type UseCarrinhoReturn = {
   itens: ItemCarrinho[];
   adicionar: (item: Omit<ItemCarrinho, "quantidade">, quantidade?: number) => void;
-  /** `id` = `linhaCarrinhoId(...)`. Retrocompat: aceita `produtoId` puro (linha sem opcionais). */
+  /** `id` = `linhaCarrinhoId(...)`. Retrocompat: aceita `produtoId` puro (linha sem opcionais e sem observação). */
   incrementar: (id: string) => void;
   decrementar: (id: string) => void; // remove ao chegar em 0
   remover: (id: string) => void;
@@ -102,27 +123,39 @@ function adicionarItem(
   quantidade = 1,
 ): void {
   const qtd = Math.max(1, Math.floor(quantidade));
-  const chave = linhaCarrinhoId(item.produtoId, item.opcionais);
+  // Fronteira: o estado guarda a observação JÁ canonizada, e OMITE o campo
+  // quando ela é vazia — assim `chave(item) === chave(canonizar(item))` para
+  // todo item guardado e a linha não muda de identidade entre dois renders.
+  const observacao = canonizarObservacao(item.observacao ?? "");
+  const normalizado: Omit<ItemCarrinho, "quantidade"> = { ...item };
+  if (observacao) normalizado.observacao = observacao;
+  else delete normalizado.observacao;
+
+  const chave = linhaCarrinhoId(
+    normalizado.produtoId,
+    normalizado.opcionais,
+    normalizado.observacao,
+  );
   const existe = estado.some(
-    (i) => linhaCarrinhoId(i.produtoId, i.opcionais) === chave,
+    (i) => linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === chave,
   );
   if (existe) {
     emitir(
       estado.map((i) =>
-        linhaCarrinhoId(i.produtoId, i.opcionais) === chave
+        linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === chave
           ? { ...i, quantidade: i.quantidade + qtd }
           : i,
       ),
     );
   } else {
-    emitir([...estado, { ...item, quantidade: qtd }]);
+    emitir([...estado, { ...normalizado, quantidade: qtd }]);
   }
 }
 
 function incrementarItem(id: string): void {
   emitir(
     estado.map((i) =>
-      linhaCarrinhoId(i.produtoId, i.opcionais) === id
+      linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === id
         ? { ...i, quantidade: i.quantidade + 1 }
         : i,
     ),
@@ -133,7 +166,7 @@ function decrementarItem(id: string): void {
   emitir(
     estado
       .map((i) =>
-        linhaCarrinhoId(i.produtoId, i.opcionais) === id
+        linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === id
           ? { ...i, quantidade: i.quantidade - 1 }
           : i,
       )
@@ -142,7 +175,11 @@ function decrementarItem(id: string): void {
 }
 
 function removerItem(id: string): void {
-  emitir(estado.filter((i) => linhaCarrinhoId(i.produtoId, i.opcionais) !== id));
+  emitir(
+    estado.filter(
+      (i) => linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) !== id,
+    ),
+  );
 }
 
 function limparItens(): void {

@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.14 | **Atualizado:** 2026-07-08
+**Versão:** 0.1.15 | **Atualizado:** 2026-09-07
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -296,7 +296,12 @@ CREATE TABLE itens_pedido (
   produto_id  uuid REFERENCES produtos(id) ON DELETE SET NULL,
   nome        text NOT NULL,    -- snapshot do nome no momento do pedido
   preco       numeric(10,2) NOT NULL,  -- snapshot do preço
-  quantidade  int NOT NULL CHECK (quantidade > 0)
+  quantidade  int NOT NULL CHECK (quantidade > 0),
+  -- Observação livre do cliente para ESTE item (ex.: "sem cebola"). NULL = sem
+  -- observação. Snapshot imutável, mesma família de nome/preco. Autoridade de
+  -- tamanho é o zod da Server Action; o CHECK é defesa em profundidade.
+  -- Migration: 20260907120000_itens_pedido_observacao.sql (issue 166).
+  observacao  text CHECK (observacao IS NULL OR char_length(observacao) <= 200)
 );
 ```
 
@@ -485,6 +490,6 @@ Valores válidos:
 - Campos de valor monetário: `numeric(10,2)` — nunca `float` (arredondamento)
 - `ON DELETE CASCADE` em dados filhos da loja — deletar loja limpa tudo
 - `ON DELETE SET NULL` em produto referenciado em pedido — histórico preservado
-- Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado
+- Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado (`itens_pedido.observacao` é da mesma família)
 - Tipos gerados automaticamente: `npx supabase gen types typescript > src/lib/database.types.ts`
 - **Operações multi-tabela atômicas com trava de concorrência** usam função Postgres `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon, authenticated` + `GRANT EXECUTE TO service_role`. Exemplo: `public.criar_pedido(...)` (migration `20260614003000_rpc_criar_pedido.sql`). Nunca INSERT direto da action quando atomicidade ou trava de linha for necessária.

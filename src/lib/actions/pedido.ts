@@ -127,6 +127,10 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       nome: string;
       preco: number;
       quantidade: number;
+      // [167] texto livre por item — PERSISTÊNCIA APENAS. Não existe em
+      // itensCalculo (abaixo): o recálculo de valor é estruturalmente cego a
+      // ela (seguranca.md §10).
+      observacao?: string;
       opcionais?: OpcionalSnapshot[];
     }[] = [];
     const itensCalculo: {
@@ -182,6 +186,9 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         nome: produto.nome,
         preco: produto.preco,
         quantidade: item.quantidade,
+        // [167] já normalizada pelo zod (ponto único de verdade); vazia ->
+        // chave omitida, para a RPC gravar NULL.
+        ...(item.observacao ? { observacao: item.observacao } : {}),
         ...(opcionaisSnapshot.length > 0 ? { opcionais: opcionaisSnapshot } : {}),
       });
       itensCalculo.push({
@@ -319,7 +326,8 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
               ...(typeof distanciaKm === "number" ? { distanciaKm } : {}),
             },
       p_forma_pagamento: dados.forma_pagamento,
-      p_observacoes: dados.observacoes ?? null,
+      // [167] `||` e não `??`: o zod normaliza " " para "" — vazio vira NULL.
+      p_observacoes: dados.observacoes || null,
       p_subtotal: subtotal,
       p_taxa_entrega: frete.taxa,
       p_desconto: desconto,

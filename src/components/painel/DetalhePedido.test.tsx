@@ -291,3 +291,76 @@ describe("DetalhePedido gate de módulos de impressão (RN-M1)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Observação por item (issue 171) — snapshot imutável, render condicional
+// ---------------------------------------------------------------------------
+
+describe("DetalhePedido observação por item", () => {
+  function itens(observacoes: (string | null)[]) {
+    return observacoes.map((observacao, i) => ({
+      id: `item-${i + 1}`,
+      nome: `Produto ${i + 1}`,
+      preco: 1000,
+      quantidade: 1,
+      observacao,
+    }));
+  }
+
+  it("item com observação: exibe o texto do cliente", () => {
+    const html = render({
+      pedido: pedido({
+        itens_pedido: itens(["sem cebola"]),
+      } as unknown as Partial<PedidoComItens>),
+    });
+    expect(html).toContain("sem cebola");
+  });
+
+  it("observacao null: não renderiza rótulo 'Obs:' nem bloco vazio", () => {
+    const html = render({
+      pedido: pedido({
+        itens_pedido: itens([null]),
+      } as unknown as Partial<PedidoComItens>),
+    });
+    expect(html).not.toContain("Obs:");
+  });
+
+  it("observacao string vazia: não renderiza rótulo (borda)", () => {
+    const html = render({
+      pedido: pedido({
+        itens_pedido: itens([""]),
+      } as unknown as Partial<PedidoComItens>),
+    });
+    expect(html).not.toContain("Obs:");
+  });
+
+  it("só o item que tem observação mostra o bloco", () => {
+    const html = render({
+      pedido: pedido({
+        itens_pedido: itens([null, "ponto da carne: mal passado"]),
+      } as unknown as Partial<PedidoComItens>),
+    });
+    expect(html).toContain("ponto da carne: mal passado");
+    expect(html.match(/Obs:/g) ?? []).toHaveLength(1);
+  });
+
+  it("observação com \\n é preservada por whitespace-pre-line (não quebra layout)", () => {
+    const html = render({
+      pedido: pedido({
+        itens_pedido: itens(["sem cebola\nmolho à parte"]),
+      } as unknown as Partial<PedidoComItens>),
+    });
+    expect(html).toContain("whitespace-pre-line");
+    expect(html).toContain("molho à parte");
+  });
+
+  it("XSS: HTML na observação sai ESCAPADO, nunca como tag executável", () => {
+    const html = render({
+      pedido: pedido({
+        itens_pedido: itens(["<script>alert(1)</script>"]),
+      } as unknown as Partial<PedidoComItens>),
+    });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+});

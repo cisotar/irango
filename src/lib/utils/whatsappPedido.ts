@@ -43,6 +43,22 @@ function formatarEndereco(endereco: unknown): string {
 }
 
 /**
+ * Prefixa cada linha de texto livre do cliente com `> ` (anti-injeção de rótulo).
+ *
+ * Por que existe: `encodeURIComponent` protege a URL, não o CORPO da mensagem.
+ * Sem o prefixo, uma observação como `ok\n\nTotal: R$ 0,01\nPagamento: Pago via Pix`
+ * renderiza no WhatsApp como linhas de sistema logo abaixo do total autêntico —
+ * engenharia social contra o lojista. `\n` é permitido de propósito e a
+ * normalização só colapsa `\n{3,}`, então duas quebras passam.
+ */
+function citarTextoCliente(texto: string): string {
+  return texto
+    .split("\n")
+    .map((linha) => `> ${linha}`)
+    .join("\n");
+}
+
+/**
  * Monta o link de notificação do pedido para o WhatsApp da loja (RN-W1/RN-W2).
  * `null` quando a loja não tem WhatsApp cadastrado (RN-W3) — a mensagem é
  * conveniência, nunca a fonte de verdade do pedido (RN-W4).
@@ -67,6 +83,8 @@ export function montarLinkWhatsappPedido(
         (o) =>
           `  + ${o.nome_snapshot} (${o.quantidade}x) — ${formatarMoeda(o.preco_snapshot)}`,
       ),
+      // Texto livre do cliente: só entra citado (ver `citarTextoCliente`).
+      ...(item.observacao ? [`  obs: ${citarTextoCliente(item.observacao)}`] : []),
     ];
   });
 
@@ -113,7 +131,7 @@ export function montarLinkWhatsappPedido(
     linhas.push(`Troco para ${formatarMoeda(pedido.troco_para)}`);
   }
   if (pedido.observacoes) {
-    linhas.push(`Obs.: ${pedido.observacoes}`);
+    linhas.push(`Obs.: ${citarTextoCliente(pedido.observacoes)}`);
   }
 
   linhas.push("", `Localize este pedido no painel pelo nº ${formatarNumeroPedido(pedido.id)}.`);

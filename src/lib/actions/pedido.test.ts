@@ -1386,3 +1386,291 @@ describe("criarPedido — whatsappHref autoritativo (125 / RN-A2·A4·A6)", () =
     spy.mockRestore();
   });
 });
+
+// ===========================================================================
+// [167] Observação por item — orquestração da Server Action.
+//
+// A observação é TEXTO E NADA MAIS: não entra em itensCalculo, não é lida por
+// nenhum ramo de valor. Estes testes provam (a) que ela chega normalizada ao
+// p_itens, (b) que ela NÃO existe quando vazia/ausente, e (c) o invariante de
+// seguranca.md §10: o MESMO carrinho com e sem observação produz exatamente os
+// mesmos p_subtotal / p_taxa_entrega / p_desconto / p_total.
+// ===========================================================================
+
+const NBSP_A = "\u00A0";
+const ZWSP_A = "\u200B";
+
+type ItemRpc = {
+  produto_id: string;
+  nome: string;
+  preco: number;
+  quantidade: number;
+  observacao?: string;
+};
+type ArgsRpc = {
+  p_itens: ItemRpc[];
+  p_subtotal: number;
+  p_taxa_entrega: number;
+  p_desconto: number;
+  p_total: number;
+  p_observacoes: string | null;
+};
+
+function argsDaChamada(indice = 0): ArgsRpc {
+  return fakeClient.rpc.mock.calls[indice][1] as ArgsRpc;
+}
+
+describe("[167] criarPedido — observação por item", () => {
+  it("[167-A1] propaga a observação NORMALIZADA para p_itens", async () => {
+    cenarioFeliz();
+    await criarPedido(
+      payloadBase({
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 2,
+            observacao: `  sem cebola\r\n\r\n\r\ntrocar${NBSP_A}${NBSP_A}batata${ZWSP_A}  `,
+          },
+        ],
+      }),
+    );
+
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    expect(argsDaChamada().p_itens[0].observacao).toBe("sem cebola\n\ntrocar batata");
+  });
+
+  it("[167-A2] observação com \\n legítimo chega intacta (é textarea)", async () => {
+    cenarioFeliz();
+    await criarPedido(
+      payloadBase({
+        itens: [
+          { produto_id: PROD_1, quantidade: 2, observacao: "sem cebola\nponto da carne: mal passado" },
+        ],
+      }),
+    );
+    expect(argsDaChamada().p_itens[0].observacao).toBe(
+      "sem cebola\nponto da carne: mal passado",
+    );
+  });
+
+  it("[167-A3] pedido SEM observação → p_itens[0] não tem a chave (anti-regressão do snapshot)", async () => {
+    cenarioFeliz();
+    await criarPedido(payloadBase());
+
+    const item = argsDaChamada().p_itens[0];
+    expect(item).not.toHaveProperty("observacao");
+    // contrato original preservado byte a byte
+    expect(item).toEqual({ produto_id: PROD_1, nome: "Pizza", preco: 25.0, quantidade: 2 });
+  });
+
+  it.each([
+    ["string vazia", ""],
+    ["só espaços", "   "],
+    ["whitespace misto", "\n\t "],
+    ["só NBSP", NBSP_A.repeat(200)],
+  ])(
+    "[167-A4] observação %s → chave OMITIDA no p_itens (a RPC grava NULL)",
+    async (_rotulo, entrada) => {
+      cenarioFeliz();
+      await criarPedido(
+        payloadBase({ itens: [{ produto_id: PROD_1, quantidade: 2, observacao: entrada }] }),
+      );
+      expect(argsDaChamada().p_itens[0]).not.toHaveProperty("observacao");
+    },
+  );
+
+  // ─────────────────────── seguranca.md §10: a observação NÃO move dinheiro
+  it("[167-A5] §10: o MESMO carrinho com e sem observação produz subtotal/frete/desconto/total IDÊNTICOS", async () => {
+    cenarioFeliz();
+
+    await criarPedido(payloadBase()); // sem observação
+    await criarPedido(
+      payloadBase({
+        itens: [
+          {
+            produto_id: PROD_1,
+            quantidade: 2,
+            observacao: "sem cebola, trocar batata por salada, capricha no molho",
+          },
+        ],
+      }),
+    );
+
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(2);
+    const sem = argsDaChamada(0);
+    const com = argsDaChamada(1);
+
+    expect(com.p_subtotal).toBe(sem.p_subtotal);
+    expect(com.p_taxa_entrega).toBe(sem.p_taxa_entrega);
+    expect(com.p_desconto).toBe(sem.p_desconto);
+    expect(com.p_total).toBe(sem.p_total);
+    // e os números continuam sendo os do BANCO (25,00 x 2 + 5,00 de frete)
+    expect(com.p_subtotal).toBe(50.0);
+    expect(com.p_taxa_entrega).toBe(5.0);
+    expect(com.p_desconto).toBe(0);
+    expect(com.p_total).toBe(55.0);
+  });
+
+  it("[167-A6] §10: observação com cupom aplicado não altera o desconto recalculado", async () => {
+    cenarioFeliz();
+    buscarCupomPorCodigo.mockResolvedValue(cupomRow()); // fixo R$ 5,00
+
+    await criarPedido(payloadBase({ codigo_cupom: "PROMO5" }));
+    await criarPedido(
+      payloadBase({
+        codigo_cupom: "PROMO5",
+        itens: [{ produto_id: PROD_1, quantidade: 2, observacao: "PROMO100 sem cebola" }],
+      }),
+    );
+
+    const sem = argsDaChamada(0);
+    const com = argsDaChamada(1);
+    expect(com.p_desconto).toBe(sem.p_desconto);
+    expect(com.p_total).toBe(sem.p_total);
+  });
+
+  // ─────────────────────── gate de tamanho: falha ANTES de qualquer I/O
+  it("[167-A7] observação de 201 chars → { erro } genérico e a RPC NUNCA é chamada", async () => {
+    cenarioFeliz();
+    const r = await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 2, observacao: "a".repeat(201) }],
+      }),
+    );
+
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+    expect(buscarLojaParaPedido).not.toHaveBeenCalled();
+    expect(buscarProdutosPorIds).not.toHaveBeenCalled();
+  });
+
+  it("[167-A8] observação de 200 chars → aceita e chega íntegra ao p_itens", async () => {
+    cenarioFeliz();
+    const obs = "a".repeat(200);
+    const r = await criarPedido(
+      payloadBase({ itens: [{ produto_id: PROD_1, quantidade: 2, observacao: obs }] }),
+    );
+
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(argsDaChamada().p_itens[0].observacao).toBe(obs);
+  });
+
+  it("[167-A9] o erro de tamanho é GENÉRICO — não vaza detalhe do zod (seguranca.md §14)", async () => {
+    cenarioFeliz();
+    const r = (await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 2, observacao: "a".repeat(500) }],
+      }),
+    )) as { erro: string };
+
+    expect(r.erro).not.toMatch(/observac/i);
+    expect(r.erro).not.toMatch(/200|zod|too_big|max/i);
+  });
+
+  // ─────────────────────── observacoes do PEDIDO (campo raiz)
+  it("[167-A10] observacoes do pedido só com espaços → p_observacoes === null", async () => {
+    cenarioFeliz();
+    await criarPedido(payloadBase({ observacoes: "   " }));
+    expect(argsDaChamada().p_observacoes).toBeNull();
+  });
+
+  it("[167-A11] observacoes do pedido com texto → chega normalizada à RPC", async () => {
+    cenarioFeliz();
+    await criarPedido(payloadBase({ observacoes: "  entregar   na portaria  " }));
+    expect(argsDaChamada().p_observacoes).toBe("entregar na portaria");
+  });
+
+  it("[167-A12] observacoes do pedido com 201 chars → { erro } e RPC não chamada", async () => {
+    cenarioFeliz();
+    const r = await criarPedido(payloadBase({ observacoes: "a".repeat(201) }));
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────── múltiplos itens: cada um com a SUA observação
+  it("[167-A13] dois itens: a observação de cada um vai para o índice certo", async () => {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([
+      produtoRow(),
+      produtoRow({ id: PROD_B, loja_id: LOJA_A, nome: "Refrigerante", preco: 8.0 }),
+    ]);
+
+    await criarPedido(
+      payloadBase({
+        itens: [
+          { produto_id: PROD_1, quantidade: 2, observacao: "sem cebola" },
+          { produto_id: PROD_B, quantidade: 1 },
+        ],
+      }),
+    );
+
+    const itens = argsDaChamada().p_itens;
+    expect(itens[0].observacao).toBe("sem cebola");
+    expect(itens[1]).not.toHaveProperty("observacao");
+  });
+
+  it("[167-A14] ATAQUE: observação NÃO abre brecha para campo monetário no item", async () => {
+    cenarioFeliz();
+    const r = await criarPedido(
+      payloadBase({
+        itens: [{ produto_id: PROD_1, quantidade: 2, observacao: "ok", preco: 0.01 }],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("[167-A15] 50 itens, cada um com observação de EXATAMENTE 200 chars → todos aceitos e propagados íntegros ao p_itens", async () => {
+    cenarioFeliz();
+    // teto de cardinalidade de `itens` é 50 (pedido.ts) — este é o caso limite
+    // combinado com o teto de 200 chars de cada observação (~10 KB de payload,
+    // dentro do bodySizeLimit de 2MB, plan/167 §Custo e quota).
+    const itens = Array.from({ length: 50 }, (_, i) => {
+      const sufixo = String(i).padStart(2, "0"); // 2 chars — diferencia o item
+      return {
+        produto_id: PROD_1,
+        quantidade: 1,
+        observacao: sufixo + "a".repeat(198), // 200 chars exatos
+      };
+    });
+    const r = await criarPedido(payloadBase({ itens }));
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    const pItens = argsDaChamada().p_itens;
+    expect(pItens).toHaveLength(50);
+    for (let i = 0; i < 50; i++) {
+      expect(pItens[i].observacao).toHaveLength(200);
+      expect(pItens[i].observacao).toBe(itens[i].observacao);
+    }
+  });
+
+  it("[167-A16] produto indisponível recusa o PEDIDO INTEIRO antes de tocar em observação — não existe caminho de 'item descartado' que preserve observações de outros itens parcialmente", async () => {
+    // [167] não introduz nenhum caminho de descarte parcial de item: a action
+    // é fail-closed (pedido.ts:141-146) — qualquer item com produto
+    // indisponível/oculto/cross-loja recusa o pedido INTEIRO, mesmo que outros
+    // itens (com observação válida) estivessem ok. Prova que observação não
+    // interfere nesse gate nem sobrevive parcialmente.
+    buscarLojaParaPedido.mockResolvedValue(lojaRow());
+    listarFormasPagamento.mockResolvedValue(formasComPix());
+    listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
+    buscarCupomPorCodigo.mockResolvedValue(null);
+    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Centro", reconciliado: true });
+    buscarOpcionaisPorIds.mockResolvedValue([]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+    buscarPedidoPorToken.mockResolvedValue(null);
+    const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000099";
+    buscarProdutosPorIds.mockResolvedValue([
+      produtoRow(), // PROD_1 disponível
+      produtoRow({ id: PROD_2, disponivel: false }), // PROD_2 indisponível
+    ]);
+    const r = await criarPedido(
+      payloadBase({
+        itens: [
+          { produto_id: PROD_1, quantidade: 1, observacao: "sem cebola" },
+          { produto_id: PROD_2, quantidade: 1, observacao: "bem passado" },
+        ],
+      }),
+    );
+    expect(r).toEqual({ erro: expect.any(String) });
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+});
