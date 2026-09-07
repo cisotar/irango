@@ -8,6 +8,7 @@
 
 import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
 import type { ItemCarrinho } from "@/types/dominio";
+import { canonizarObservacao } from "@/lib/utils/normalizarObservacao";
 
 export const CHAVE_WIZARD = "irango:checkout";
 
@@ -133,7 +134,11 @@ export function itemCarrinhoParaPayload(item: ItemCarrinho): ItemPayload {
           })),
         }
       : {}),
-    ...(item.observacao ? { observacao: item.observacao } : {}),
+    // Re-canoniza na fronteira: `adicionarItem` já canoniza, mas um carrinho
+    // restaurado do sessionStorage de uma versão anterior (ou adulterado no
+    // DevTools) traria texto cru e derrubaria o checkout INTEIRO no teto do
+    // servidor, com mensagem genérica. Idempotente, custo desprezível.
+    ...(item.observacao ? { observacao: canonizarObservacao(item.observacao) } : {}),
   };
 }
 

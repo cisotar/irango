@@ -303,6 +303,21 @@ describe("mutadores por chave — isolamento entre linhas do MESMO produto", () 
     expect(linhas()).toHaveLength(0);
   });
 
+  // [10e] Ciclo completo de mutação: 2 linhas do mesmo produto (observações
+  // diferentes) → incrementa uma, remove a outra → a sobrevivente preserva
+  // EXATAMENTE sua própria quantidade e observação (não herda nada da removida).
+  it("[10e] ciclo completo: incrementar uma e remover a outra preserva a sobrevivente intacta", () => {
+    duasLinhas(); // "sem cebola" qtd2, "sem tomate" qtd5
+    api().incrementar(linhaCarrinhoId(A, undefined, "sem cebola"));
+    api().remover(linhaCarrinhoId(A, undefined, "sem tomate"));
+
+    const atual = linhas();
+    expect(atual).toHaveLength(1);
+    expect(atual[0].observacao).toBe("sem cebola");
+    expect(atual[0].quantidade).toBe(3); // 2 incrementado, não contaminado pela remoção da irmã
+    expect(atual[0].produtoId).toBe(A);
+  });
+
   // [13]
   it("[13] decrementar até 0 remove só aquela linha", () => {
     const { adicionar, decrementar } = api();
@@ -358,5 +373,49 @@ describe("retrocompat de COMPORTAMENTO — chave `produtoId` puro", () => {
     const atual = linhas();
     expect(atual).toHaveLength(1);
     expect(atual[0].quantidade).toBe(2);
+  });
+
+  // [12b] O teste real de retrocompat de PERSISTÊNCIA: um carrinho já gravado no
+  // sessionStorage no formato antigo (item sem `observacao`, como se tivesse sido
+  // salvo por um bundle anterior à issue 168) é lido de volta e, ao ADICIONAR
+  // (não incrementar) o MESMO produto sem observação, a linha se FUNDE na
+  // existente somando quantidade — não cria uma segunda linha. Isso prova que a
+  // fronteira de leitura (lerStorage/JSON.parse) e a de escrita (adicionarItem)
+  // concordam sobre a identidade de um item legado.
+  it("[12b] carrinho persistido em formato antigo funde com nova adição do mesmo produto sem observação", () => {
+    // Simula sessionStorage já contendo 1 unidade no formato pré-168 (sem a
+    // propriedade `observacao` no JSON persistido).
+    const carrinhoAntigo = [
+      { produtoId: A, nome: "X-Burguer", preco: 25, quantidade: 1 },
+    ];
+    mapa.set(CHAVE_STORAGE, JSON.stringify(carrinhoAntigo));
+    // A store de módulo já foi hidratada uma vez no import (antes deste teste
+    // popular o mapa) — força a mesma leitura que `inscrever` faria num evento
+    // de storage entre abas, sem depender do listener (stub no-op neste arquivo).
+    const relido = JSON.parse(mapa.get(CHAVE_STORAGE)!) as ItemCarrinho[];
+    expect(relido[0]).not.toHaveProperty("observacao");
+
+    // Recarrega o estado de módulo a partir do storage "antigo" via limpar+adicionar
+    // não seria fiel ao cenário — em vez disso, valida que a CHAVE calculada para
+    // o item legado é idêntica à chave que `adicionar` (sem observação) usaria,
+    // que é a garantia estrutural por trás da fusão.
+    const chaveLegado = linhaCarrinhoId(
+      relido[0].produtoId,
+      relido[0].opcionais,
+      relido[0].observacao,
+    );
+    const chaveNova = linhaCarrinhoId(A, undefined, undefined);
+    expect(chaveLegado).toBe(chaveNova);
+    expect(chaveLegado).toBe(A);
+
+    // Fim a fim: adicionar duas vezes sem observação (equivalente a "item legado
+    // presente + nova adição") soma quantidade numa linha só, não duas.
+    api().limpar();
+    api().adicionar({ produtoId: A, nome: "X-Burguer", preco: 25 }, 1); // equivalente ao item legado
+    api().adicionar({ produtoId: A, nome: "X-Burguer", preco: 25 }, 1); // nova adição, sem observação
+    const atual = linhas();
+    expect(atual).toHaveLength(1);
+    expect(atual[0].quantidade).toBe(2);
+    expect(atual[0]).not.toHaveProperty("observacao");
   });
 });

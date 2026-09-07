@@ -395,3 +395,34 @@ describe("canonizarObservacao (issue 168) — identidade da linha do carrinho", 
     }
   });
 });
+
+// Achado BAIXA do `auditar` na issue 168: `p_itens` é jsonb e o Postgres recusa
+// UTF-8 malformado, derrubando o pedido inteiro. Um navegador não produz isso
+// pelo textarea, mas uma chamada forjada da Server Action produz.
+describe("normalizarObservacao — substituto desemparelhado (passo 8)", () => {
+  const ALTO = "\uD83D"; // metade alta de 😀, sozinha
+  const BAIXO = "\uDE00"; // metade baixa, sozinha
+
+  it("remove high surrogate solto", () => {
+    expect(normalizarObservacao(`sem cebola${ALTO}`)).toBe("sem cebola");
+  });
+
+  it("remove low surrogate solto", () => {
+    expect(normalizarObservacao(`${BAIXO}sem cebola`)).toBe("sem cebola");
+  });
+
+  it("PRESERVA par válido — o regex sem lookaround apagaria todo emoji astral", () => {
+    expect(normalizarObservacao("pizza 😀 sem queijo")).toBe("pizza 😀 sem queijo");
+    expect(normalizarObservacao("😀😀😀")).toBe("😀😀😀");
+  });
+
+  it("remove o solto e mantém o par no mesmo texto", () => {
+    expect(normalizarObservacao(`a😀b${ALTO}c`)).toBe("a😀bc");
+  });
+
+  it("a saída é sempre UTF-8 bem-formado", () => {
+    for (const entrada of [`x${ALTO}`, `${BAIXO}x`, `${ALTO}${ALTO}`, "😀", `😀${ALTO}`]) {
+      expect(normalizarObservacao(entrada).isWellFormed()).toBe(true);
+    }
+  });
+});

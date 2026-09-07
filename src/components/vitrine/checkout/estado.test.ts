@@ -439,6 +439,72 @@ describe("paridade preview ↔ servidor — canonização do texto (issue 168)",
       }
     }
   });
+
+  // [P2] Paridade sob texto NÃO pré-canonizado (payload adulterado / bypass do
+  // cliente): para texto DENTRO do teto, `canonizarObservacao(t)` precisa ser
+  // BYTE A BYTE o que `schemaObservacao` (via schemaPayloadPedido) produz a
+  // partir do MESMO `t` cru — senão o carrinho (que usa `canonizarObservacao`
+  // para decidir se duas linhas são a mesma) e o banco (que usa `schemaObservacao`
+  // para gravar) divergiriam sobre a identidade do texto.
+  it("[P2] para texto dentro do teto, canonizarObservacao(t) cru == o que o servidor grava a partir do MESMO t cru", () => {
+    const CRUAS = [
+      "sem cebola",
+      "sem  cebola",
+      " sem cebola ",
+      "sem\u00A0cebola",
+      "\u200Bsem cebola\uFEFF",
+      "linha1\r\nlinha2",
+      "\u202Esem cebola",
+      "sem cebola | sem tomate",
+      "café com açúcar",
+      "\u{1F354}".repeat(50),
+      "a\tb\tc",
+      "\n\n\n\na\n\n\n\nb\n\n\n\n",
+    ];
+    for (const cru of CRUAS) {
+      const doCliente = canonizarObservacao(cru);
+      const p = montarPayloadPedido({
+        lojaId: LOJA_ID,
+        // Envia o texto CRU (não canonizado) — simula um payload que veio de
+        // outro caminho que não passou por `adicionarItem`/`linhaCarrinhoId`.
+        itens: [{ produtoId: PRODUTO_ID, quantidade: 1, observacao: cru }],
+        estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
+        idempotencyKey: IDEMPOTENCY,
+      });
+      const r = schemaPayloadPedido.safeParse(p);
+      expect(r.success).toBe(true);
+      if (r.success) {
+        const doServidor = r.data.itens[0].observacao ?? "";
+        expect(doServidor).toBe(doCliente);
+      }
+    }
+  });
+
+  // [P3] Documenta (não é bug) a única divergência estrutural: texto CRU acima
+  // do teto. `canonizarObservacao` TRUNCA (defesa de UX — plan/168); o gate do
+  // servidor REJEITA sem truncar (`.max()` no `.pipe()`, não `.transform()`
+  // cortando). Isso só importa se algum caminho de produção pudesse enviar texto
+  // cru > LIMITE_OBSERVACAO direto ao payload SEM passar por `canonizarObservacao`
+  // antes — o que `adicionarItem` garante que não acontece (canoniza antes de
+  // guardar no estado). Teste de fronteira, não de regressão de fluxo real.
+  it("[P3] texto cru acima do teto: cliente TRUNCA, servidor REJEITA — divergência estrutural documentada", () => {
+    const cru = "x".repeat(LIMITE_OBSERVACAO + 50);
+    const doCliente = canonizarObservacao(cru);
+    expect(doCliente).toHaveLength(LIMITE_OBSERVACAO);
+
+    const p = montarPayloadPedido({
+      lojaId: LOJA_ID,
+      itens: [{ produtoId: PRODUTO_ID, quantidade: 1, observacao: cru }],
+      estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
+      idempotencyKey: IDEMPOTENCY,
+    });
+    const r = schemaPayloadPedido.safeParse(p);
+    // Servidor recusa o payload cru (não trunca) — por isso `adicionarItem`
+    // DEVE canonizar antes de guardar, para que este caminho nunca ocorra em
+    // produção. Se esta asserção virar `true`, o schema mudou para truncar e
+    // este teste-sentinela deve ser revisitado.
+    expect(r.success).toBe(false);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -533,5 +599,40 @@ describe("CheckoutWizard delega o mapeamento a itemCarrinhoParaPayload (168)", (
     expect(bloco).toContain("itemCarrinhoParaPayload");
     // Nenhuma cópia campo a campo sobrevivendo em paralelo à função pura.
     expect(bloco).not.toMatch(/i\.quantidade/);
+  });
+});
+
+// Achado BAIXA do `auditar` na issue 168: um carrinho restaurado do
+// sessionStorage de versão anterior (ou adulterado no DevTools) traria texto
+// cru e derrubaria o checkout INTEIRO no teto do servidor.
+describe("itemCarrinhoParaPayload — canoniza na fronteira do payload", () => {
+  it("trunca observação crua acima do limite em vez de deixar o servidor rejeitar", () => {
+    const cru = "a".repeat(2000);
+    const payload = itemCarrinhoParaPayload({
+      produtoId: "11111111-1111-1111-1111-111111111111",
+      quantidade: 1,
+      observacao: cru,
+    } as ItemCarrinho);
+
+    expect(payload.observacao).toHaveLength(LIMITE_OBSERVACAO);
+  });
+
+  it("normaliza texto cru vindo de storage antigo", () => {
+    const payload = itemCarrinhoParaPayload({
+      produtoId: "11111111-1111-1111-1111-111111111111",
+      quantidade: 1,
+      observacao: "  sem cebola  ",
+    } as ItemCarrinho);
+
+    expect(payload.observacao).toBe("sem cebola");
+  });
+
+  it("segue omitindo a chave quando não há observação", () => {
+    const payload = itemCarrinhoParaPayload({
+      produtoId: "11111111-1111-1111-1111-111111111111",
+      quantidade: 1,
+    } as ItemCarrinho);
+
+    expect("observacao" in payload).toBe(false);
   });
 });

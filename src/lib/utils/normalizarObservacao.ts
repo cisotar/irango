@@ -39,6 +39,14 @@ export function normalizarObservacao(texto: string): string {
       .replace(/\n{3,}/g, "\n\n")
       // 7. Bordas: o trim() do JS remove \n, \r, \t e NBSP (o btrim do Postgres NÃO).
       .trim()
+      // 8. Substituto DESEMPARELHADO: `p_itens` é jsonb e o Postgres RECUSA
+      //    UTF-8 malformado (`invalid input syntax for type json`), derrubando o
+      //    pedido inteiro. Um navegador não produz isso pelo textarea, mas uma
+      //    chamada forjada da Server Action produz. Só encurta.
+      //    ⚠️ Os lookarounds são obrigatórios: `[\uD800-\uDFFF]` sem eles casa
+      //    cada metade de um par VÁLIDO e apagaria todo emoji astral.
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+      .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
   );
 }
 
