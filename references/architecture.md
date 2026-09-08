@@ -176,7 +176,14 @@ irango/
 │   ├── architecture.md                   # este arquivo
 │   ├── schema.md                         # schema Postgres detalhado
 │   ├── seguranca.md                      # RLS, auth, isolamento multitenant
-│   └── modelo-negocio.md                 # modelo comercial, relação SaaS↔lojista
+│   ├── modelo-negocio.md                 # modelo comercial, relação SaaS↔lojista
+│   └── design-system.md                  # tokens, componentes e padrões de tela
+│
+├── specs/                                # o QUÊ — specs de feature (concluídas em specs/arquivo/)
+├── tasks/                                # a ISSUE — unidade de trabalho, numerada
+├── plan/                                 # o COMO — planos de execução (ver plan/README.md)
+│   └── arquivo/                          # planos concluídos; raiz = ação ainda pendente
+├── performance/                          # auditorias de latência
 │
 ├── middleware.ts                          # auth refresh — padrão @supabase/ssr
 ├── .env.local
@@ -382,4 +389,4 @@ const items = order.order_items
 | Tipo `Resultado` duplicado (`admin-opcionais.ts`/`admin-produtos.ts`) | mesmo shape `{ok:true}\|{ok:false;erro}` sem módulo neutro compartilhado (ao contrário de `cupom-erros.ts`/`status.ts`) | issue 135 |
 | DELETE+INSERT não transacional em `salvarAssociacaoOpcionaisAdmin` | falha de INSERT após DELETE commitado deixa associação parcialmente removida; não é vetor cross-tenant, mesmo padrão do CRUD do lojista | issue 135 |
 | `CAMINHO_PAINEL = "/painel/cardapio"` (`src/lib/actions/produto.ts:25`) aponta para rota que não existe | os 17 `revalidatePath` que o usam (9 em `produto.ts`, 8 em `opcional.ts`) são no-op silencioso; as telas só atualizam via `router.refresh()` do client. Corrigir muda o cache de 17 actions | achado na issue 175 — issue própria a abrir |
-| `atualizarCategoria`/`removerCategoria` (`produto.ts`) não escopam por `loja_id` explícito, confiam só na RLS | não é vulnerabilidade — PoC da auditoria da issue 175 provou `affectedRows: 0` em categoria alheia (o `USING` da RLS torna a linha invisível) — mas é defeito de qualidade: a UI mostra sucesso numa escrita que não ocorreu, e o `loja_id: loja.id` que `atualizarCategoria` grava vira sequestro de categoria alheia no dia em que a RLS for afrouxada | achado na issue 175 — issue própria a abrir |
+| `atualizarCategoria`/`removerCategoria` (`produto.ts`) não escopam por `loja_id` explícito, confiam só na RLS | não é vulnerabilidade — PoC da auditoria da issue 175 provou `affectedRows: 0` em categoria alheia (o `USING` da RLS torna a linha invisível) — mas é defeito de qualidade: a UI mostra sucesso numa escrita que não ocorreu, e o `loja_id: loja.id` que `atualizarCategoria` grava vira sequestro de categoria alheia no dia em que a RLS for afrouxada | issue 178 |
