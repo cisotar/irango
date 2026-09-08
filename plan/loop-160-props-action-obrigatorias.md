@@ -2,6 +2,13 @@
 
 > Plano gerado pelo agente `orquestrar`. Não implementa nada. A sessão principal executa.
 
+> **Ressalva — execução em outra máquina.** Este plano foi gerado numa máquina e será
+> executado noutra. Antes do Passo 0, na máquina de execução: `git pull` em `main`
+> (commit `a741b80`, `docs(160): plano de execução...`) para ter este arquivo e a issue
+> na versão corrente. A branch `fix/160-props-action-obrigatorias` nasce daí, não de um
+> `main` desatualizado. O working tree da máquina de origem ficou limpo — nenhum trabalho
+> de código da issue 160 foi iniciado lá, então não há nada a rebasear ou recuperar.
+
 ## 0. Achado que muda o dimensionamento (ler antes de tudo)
 
 A issue diz **"6 wrappers x 5 clients"**. A varredura do repo mostra **9 wrappers admin
