@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iRango — card de produto do painel (mobile)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          // Tokens SEMÂNTICOS do painel (globals.css :root).
+          // O painel NUNCA usa o tema da loja — só sistema.
+          background: "#ffffff",
+          foreground: "#252525",
+          card: "#ffffff",
+          muted: "#f7f7f7",
+          "muted-foreground": "#8e8e8e",
+          secondary: "#f7f7f7",
+          "secondary-foreground": "#343434",
+          border: "#e5e5e5",
+          destructive: "#dc2626",
+          ring: "#b5b5b5",
+        },
+        borderRadius: { DEFAULT: "0.625rem", xl: "0.75rem" },
+      },
+    },
+  };
+</script>
+<style>
+  /* Reproduz globals.css:212 — base rem = 19.2px. É o que torna o bug pior. */
+  html { font-size: 120%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+
+  /* ---- componentes shadcn recriados como classe ---- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem;
+    white-space: nowrap; font-weight: 500; cursor: pointer;
+    border-radius: min(0.5rem, 12px); transition: background-color .15s, color .15s;
+  }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #b5b5b5; }
+  .btn-sm { height: 1.75rem; padding: 0 0.625rem; font-size: 0.8rem; }
+  .btn-icon-sm { height: 1.75rem; width: 1.75rem; padding: 0; }
+  .btn-icon { height: 2rem; width: 2rem; padding: 0; }
+  .btn-ghost { background: transparent; color: #252525; }
+  .btn-ghost:hover { background: #f2f2f2; }
+  .btn-outline { background: #fff; color: #252525; border: 1px solid #e5e5e5; }
+  .btn-outline:hover { background: #f7f7f7; }
+  .btn-secondary { background: #f0f0f0; color: #343434; border: 1px solid transparent; }
+  .btn-secondary:hover { background: #e8e8e8; }
+  .btn-default { background: #252525; color: #fafafa; }
+
+  /* FEEDBACK 1 — alvo de toque no piso exato do guia (44px), não 2.75rem.
+     Com base rem = 19.2px, 2.75rem virava 52.8px: era isso que deixava o botão "alto demais". */
+  .touch44 { min-height: 44px; }
+  .touch44w { min-height: 44px; min-width: 44px; }
+
+  /* FEEDBACK 2 — nome do produto ganha peso e tamanho, virando a âncora visual do card. */
+  .nome-v1 { font-size: 1.05rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+  .nome-v2 { font-size: 1.12rem; font-weight: 650; line-height: 1.25; letter-spacing: -0.015em; }
+  .preco { font-size: 0.85rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .preco-v2 { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    border-radius: 9999px; padding: 0.125rem 0.5rem;
+    font-size: 0.75rem; font-weight: 500; line-height: 1.25; white-space: nowrap;
+  }
+  .badge-secondary { background: #f0f0f0; color: #343434; }
+  .badge-outline { background: transparent; border: 1px solid #e5e5e5; color: #8e8e8e; }
+
+  .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 0.75rem; }
+
+  .thumb {
+    width: 2.5rem; height: 2.5rem; flex-shrink: 0; border-radius: 0.375rem;
+    border: 1px solid #e5e5e5; background: #f0f0f0; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.875rem; font-weight: 600; color: #8e8e8e;
+  }
+  .thumb-lg { width: 3rem; height: 3rem; border-radius: 0.5rem; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+  .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* moldura de "celular" para conferir a largura real */
+  .viewport-360 { width: 360px; max-width: 100%; }
+
+  /* menu kebab só de demonstração */
+  details.kebab > summary { list-style: none; }
+  details.kebab > summary::-webkit-details-marker { display: none; }
+  .kebab-popup {
+    position: absolute; right: 0; top: 100%; z-index: 20; margin-top: 0.25rem;
+    min-width: 11rem; background: #fff; border: 1px solid #e5e5e5;
+    border-radius: 0.625rem; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 0.25rem;
+  }
+  .menu-item {
+    display: flex; width: 100%; align-items: center; gap: 0.5rem; cursor: pointer;
+    border-radius: 0.375rem; padding: 0.5rem 0.625rem; font-size: 0.875rem;
+    min-height: 44px; background: transparent; border: 0; text-align: left; color: #252525;
+  }
+  .menu-item:hover { background: #f5f5f5; }
+
+  /* FEEDBACK 3 — kebab com presença visual. v1: contorno; v2: chip preenchido circular. */
+  .kebab-v1 { border: 1px solid #e5e5e5; background: #fff; color: #343434; border-radius: 0.5rem; }
+  .kebab-v1:hover { background: #f7f7f7; border-color: #d4d4d4; }
+  .kebab-v2 { background: #f0f0f0; color: #252525; border-radius: 9999px; }
+  .kebab-v2:hover { background: #e2e2e2; }
+
+  /* v2 — barra de ações estilo action row: 44px de altura, sem "caixa dupla" */
+  .acoes-v2 { display: flex; width: 100%; border-top: 1px solid #ececec; margin-top: 0.5rem; }
+  .acoes-v2 > button { flex: 1; min-height: 44px; background: transparent; border: 0; cursor: pointer;
+    font-size: 0.85rem; font-weight: 550; color: #343434;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem; }
+  .acoes-v2 > button:first-child { border-right: 1px solid #ececec; }
+  .acoes-v2 > button:hover { background: #f7f7f7; }
+  .acoes-v2 > button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #b5b5b5; border-radius: 0.375rem; }
+
+  .tag-versao { display: inline-flex; align-items: center; border-radius: 9999px;
+    padding: 0.125rem 0.625rem; font-size: 0.7rem; font-weight: 600; letter-spacing: .02em; }
+</style>
+</head>
+<body class="bg-[#fafafa] text-foreground">
+
+<div class="mx-auto max-w-6xl px-4 py-6 space-y-10">
+
+  <header>
+    <h1 class="text-xl font-semibold">/painel/produtos — card de produto em mobile</h1>
+    <p class="mt-1 text-sm text-muted-foreground">
+      Mockup em 360px de largura. Painel do lojista: tokens de sistema, nunca o tema da loja.
+    </p>
+    <div class="mt-3 rounded-lg border border-border bg-white p-3 text-sm">
+      <p class="font-medium">Rodada de ajuste — 3 pontos do feedback</p>
+      <ol class="mt-1 list-decimal space-y-0.5 pl-5 text-muted-foreground">
+        <li>Botões "Ocultar" / "Marcar esgotado" mais baixos — de <code>2.75rem</code> (52,8px com o zoom base de 120%) para <strong>44px exatos</strong>, o piso do guia.</li>
+        <li>Nome do produto com mais peso e tamanho — vira a âncora visual, acima do preço e dos botões.</li>
+        <li>Kebab com presença — deixa de ser um glifo solto e ganha superfície clicável desenhada.</li>
+      </ol>
+      <p class="mt-2 text-muted-foreground">Duas respostas ao mesmo feedback abaixo: <strong>v1</strong> (evolução do que já estava) e <strong>v2</strong> (alternativa com hierarquia em blocos).</p>
+    </div>
+  </header>
+
+  <!-- ================= ANTES ================= -->
+  <section>
+    <h2 class="mb-1 text-base font-semibold text-destructive">Antes — como está hoje (bug)</h2>
+    <p class="mb-3 text-sm text-muted-foreground">
+      Um único <code class="rounded bg-muted px-1">flex … gap-3</code> sem quebra: 7 filhos, ~433px
+      de largura mínima em uma faixa de 360px. O bloco de texto é o único que encolhe, então o preço
+      colide com “Ocultar” e o ícone de remover fica cortado na borda.
+    </p>
+
+    <div class="viewport-360 overflow-hidden rounded-xl border-2 border-dashed border-destructive/40">
+      <div class="card rounded-none border-0">
+        <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <h3 class="text-lg font-semibold">Pães</h3>
+          <div class="flex items-center">
+            <button class="btn btn-ghost btn-sm">Opcionais</button>
+            <button class="btn btn-ghost btn-sm" aria-label="Novo produto em Pães">+</button>
+          </div>
+        </div>
+
+        <div class="divide-y divide-black/10">
+          <!-- linha quebrada: reproduz o estouro real -->
+          <div class="flex min-h-11 items-center gap-3 px-4 py-3" style="width: 360px;">
+            <div class="thumb">P</div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="block overflow-hidden text-ellipsis whitespace-nowrap font-medium">Pão de queijo assado</span>
+                <span class="badge badge-secondary">Disponível</span>
+              </div>
+              <span class="text-sm text-muted-foreground">R$ 30,00</span>
+            </div>
+            <button class="btn btn-ghost btn-sm shrink-0" style="min-height:2.75rem">Ocultar</button>
+            <button class="btn btn-ghost btn-sm shrink-0" style="min-height:2.75rem">Marcar esgotado</button>
+            <button class="btn btn-ghost btn-icon-sm shrink-0" aria-label="Editar">✎</button>
+            <button class="btn btn-ghost btn-icon-sm shrink-0" aria-label="Remover">
+              <span class="text-destructive">🗑</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="mt-2 text-xs text-muted-foreground">
+      ↑ o conteúdo real ultrapassa a moldura: o nome some, o preço encosta no botão e o último ícone é cortado.
+    </p>
+  </section>
+
+  <!-- ================= COMPARATIVO V1 x V2 ================= -->
+  <section>
+    <h2 class="mb-1 text-base font-semibold">Depois — duas versões para comparar</h2>
+    <p class="mb-4 text-sm text-muted-foreground">
+      As duas corrigem o estouro de largura da mesma forma (<code class="rounded bg-muted px-1">flex-wrap</code> +
+      <code class="rounded bg-muted px-1">items-start</code>, ações em linha própria, Editar/Remover no kebab).
+      Mudam na hierarquia interna e no peso das ações.
+    </p>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+
+      <!-- ---------------- VERSÃO 1 ---------------- -->
+      <div>
+        <div class="mb-2 flex items-center gap-2">
+          <span class="tag-versao bg-[#252525] text-white">VERSÃO 1</span>
+          <span class="text-sm font-medium">Evolução da proposta atual</span>
+        </div>
+        <ul class="mb-3 space-y-1 text-xs text-muted-foreground">
+          <li>• Botões de ação em <strong>44px</strong> (era 52,8px), <code>variant="outline"</code> lado a lado.</li>
+          <li>• Nome em <strong>1,05rem / 600</strong>; preço recuado para 0,85rem — hierarquia clara.</li>
+          <li>• Kebab com <strong>contorno</strong> (<code>variant="outline"</code>, 44×44) e ícone de 3 pontos sólidos.</li>
+          <li>• Mantém as duas ações de disponibilidade visíveis — nada some para dentro do menu.</li>
+        </ul>
+
+        <div class="viewport-360 overflow-hidden rounded-xl border border-border">
+          <div class="card rounded-none border-0">
+            <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <h3 class="text-lg font-semibold">Pães</h3>
+              <div class="flex items-center gap-1">
+                <button class="btn btn-ghost btn-sm touch44">Opcionais</button>
+                <button class="btn btn-ghost btn-sm touch44w" aria-label="Novo produto em Pães">+</button>
+              </div>
+            </div>
+
+            <div class="divide-y divide-black/10 overflow-hidden">
+
+              <!-- item 1: disponível, com opcionais -->
+              <div class="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+                <div class="thumb">P</div>
+
+                <div class="min-w-0 flex-1">
+                  <span class="clamp2 nome-v1">Pão de queijo assado</span>
+                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <span class="preco shrink-0">R$ 30,00</span>
+                    <span class="badge badge-secondary">Disponível</span>
+                  </div>
+                </div>
+
+                <div class="relative shrink-0">
+                  <details class="kebab">
+                    <summary class="btn kebab-v1 touch44w" role="button" aria-label="Mais ações de Pão de queijo assado" tabindex="0">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                    </summary>
+                    <div class="kebab-popup">
+                      <button class="menu-item">✎ Editar</button>
+                      <button class="menu-item"><span class="text-destructive">🗑</span> Remover</button>
+                    </div>
+                  </details>
+                </div>
+
+                <ul class="flex w-full flex-wrap gap-1.5 sm:w-auto">
+                  <li><span class="badge badge-secondary font-normal">Coloração</span></li>
+                  <li><span class="badge badge-secondary font-normal">Ponto do pão</span></li>
+                </ul>
+
+                <div class="flex w-full basis-full gap-2">
+                  <button class="btn btn-outline btn-sm touch44 flex-1" aria-label="Ocultar Pão de queijo assado da vitrine">Ocultar</button>
+                  <button class="btn btn-outline btn-sm touch44 flex-1" aria-label="Marcar Pão de queijo assado como esgotado">Marcar esgotado</button>
+                </div>
+              </div>
+
+              <!-- item 2: esgotado, nome longo (2 linhas) -->
+              <div class="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+                <div class="thumb">
+                  <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%23d9c3a5'/%3E%3Ccircle cx='20' cy='22' r='11' fill='%23a8763e'/%3E%3C/svg%3E" alt="Panini de frango com catupiry e orégano" />
+                </div>
+
+                <div class="min-w-0 flex-1">
+                  <span class="clamp2 nome-v1">Panini de frango com catupiry e orégano</span>
+                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <span class="preco shrink-0">R$ 42,90</span>
+                    <span class="badge badge-secondary">Esgotado</span>
+                  </div>
+                </div>
+
+                <div class="relative shrink-0">
+                  <details class="kebab">
+                    <summary class="btn kebab-v1 touch44w" role="button" aria-label="Mais ações de Panini de frango com catupiry e orégano" tabindex="0">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                    </summary>
+                    <div class="kebab-popup">
+                      <button class="menu-item">✎ Editar</button>
+                      <button class="menu-item"><span class="text-destructive">🗑</span> Remover</button>
+                    </div>
+                  </details>
+                </div>
+
+                <ul class="flex w-full flex-wrap gap-1.5 sm:w-auto">
+                  <li><span class="badge badge-secondary font-normal">Molhos</span></li>
+                  <li><span class="badge badge-secondary font-normal">Extras</span></li>
+                  <li><span class="badge badge-secondary font-normal">Ponto do pão</span></li>
+                </ul>
+
+                <div class="flex w-full basis-full gap-2">
+                  <button class="btn btn-outline btn-sm touch44 flex-1">Ocultar</button>
+                  <button class="btn btn-outline btn-sm touch44 flex-1">Disponibilizar</button>
+                </div>
+              </div>
+
+              <!-- item 3: oculto, sem opcionais -->
+              <div class="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+                <div class="thumb">C</div>
+
+                <div class="min-w-0 flex-1">
+                  <span class="clamp2 nome-v1">Croissant de amêndoas</span>
+                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <span class="preco shrink-0">R$ 18,50</span>
+                    <span class="badge badge-outline">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-.722-3.25"/><path d="M2 8a10.645 10.645 0 0 0 20 0"/><path d="m20 15-1.726-2.05"/><path d="m4 15 1.726-2.05"/><path d="m9 18 .722-3.25"/></svg>
+                      Oculto
+                    </span>
+                  </div>
+                </div>
+
+                <div class="relative shrink-0">
+                  <details class="kebab">
+                    <summary class="btn kebab-v1 touch44w" role="button" aria-label="Mais ações de Croissant de amêndoas" tabindex="0">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                    </summary>
+                    <div class="kebab-popup">
+                      <button class="menu-item">✎ Editar</button>
+                      <button class="menu-item"><span class="text-destructive">🗑</span> Remover</button>
+                    </div>
+                  </details>
+                </div>
+
+                <div class="flex w-full basis-full gap-2">
+                  <button class="btn btn-outline btn-sm touch44 flex-1">Exibir</button>
+                  <button class="btn btn-outline btn-sm touch44 flex-1">Marcar esgotado</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------------- VERSÃO 2 ---------------- -->
+      <div>
+        <div class="mb-2 flex items-center gap-2">
+          <span class="tag-versao bg-[#f0f0f0] text-[#343434] ring-1 ring-border">VERSÃO 2</span>
+          <span class="text-sm font-medium">Hierarquia em blocos + action row</span>
+        </div>
+        <ul class="mb-3 space-y-1 text-xs text-muted-foreground">
+          <li>• Nome ocupa a <strong>linha inteira</strong> (1,12rem / 650) — não disputa espaço com badge nem preço.</li>
+          <li>• Preço sobe para 0,95rem/600 e senta ao lado do status, formando a segunda linha de leitura.</li>
+          <li>• Ações viram <strong>action row</strong> de 44px sem contorno próprio: mesma área de toque, metade do peso visual.</li>
+          <li>• Kebab é um <strong>chip circular preenchido</strong> (44×44) — o elemento mais óbvio do canto direito.</li>
+          <li>• Thumb passa a 48px para equilibrar o nome maior.</li>
+        </ul>
+
+        <div class="viewport-360 overflow-hidden rounded-xl border border-border">
+          <div class="card rounded-none border-0">
+            <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <h3 class="text-lg font-semibold">Pães</h3>
+              <div class="flex items-center gap-1">
+                <button class="btn btn-ghost btn-sm touch44">Opcionais</button>
+                <button class="btn btn-secondary btn-sm touch44w" aria-label="Novo produto em Pães">+</button>
+              </div>
+            </div>
+
+            <div class="divide-y divide-black/10 overflow-hidden">
+
+              <!-- item 1 -->
+              <div class="px-4 py-3">
+                <div class="flex items-start gap-3">
+                  <div class="thumb thumb-lg">P</div>
+                  <div class="min-w-0 flex-1">
+                    <span class="clamp2 nome-v2">Pão de queijo assado</span>
+                    <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span class="preco-v2 shrink-0">R$ 30,00</span>
+                      <span class="badge badge-secondary">Disponível</span>
+                    </div>
+                  </div>
+                  <div class="relative shrink-0">
+                    <details class="kebab">
+                      <summary class="btn kebab-v2 touch44w" role="button" aria-label="Mais ações de Pão de queijo assado" tabindex="0">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="19" r="2.1"/></svg>
+                      </summary>
+                      <div class="kebab-popup">
+                        <button class="menu-item">✎ Editar</button>
+                        <button class="menu-item"><span class="text-destructive">🗑</span> Remover</button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+
+                <ul class="mt-2 flex flex-wrap gap-1.5">
+                  <li><span class="badge badge-secondary font-normal">Coloração</span></li>
+                  <li><span class="badge badge-secondary font-normal">Ponto do pão</span></li>
+                </ul>
+
+                <div class="acoes-v2">
+                  <button aria-label="Ocultar Pão de queijo assado da vitrine">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-.722-3.25"/><path d="M2 8a10.645 10.645 0 0 0 20 0"/><path d="m20 15-1.726-2.05"/><path d="m4 15 1.726-2.05"/><path d="m9 18 .722-3.25"/></svg>
+                    Ocultar
+                  </button>
+                  <button aria-label="Marcar Pão de queijo assado como esgotado">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>
+                    Marcar esgotado
+                  </button>
+                </div>
+              </div>
+
+              <!-- item 2 -->
+              <div class="px-4 py-3">
+                <div class="flex items-start gap-3">
+                  <div class="thumb thumb-lg">
+                    <img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Crect width='48' height='48' fill='%23d9c3a5'/%3E%3Ccircle cx='24' cy='27' r='13' fill='%23a8763e'/%3E%3C/svg%3E" alt="Panini de frango com catupiry e orégano" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <span class="clamp2 nome-v2">Panini de frango com catupiry e orégano</span>
+                    <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span class="preco-v2 shrink-0">R$ 42,90</span>
+                      <span class="badge badge-secondary">Esgotado</span>
+                    </div>
+                  </div>
+                  <div class="relative shrink-0">
+                    <details class="kebab">
+                      <summary class="btn kebab-v2 touch44w" role="button" aria-label="Mais ações de Panini de frango com catupiry e orégano" tabindex="0">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="19" r="2.1"/></svg>
+                      </summary>
+                      <div class="kebab-popup">
+                        <button class="menu-item">✎ Editar</button>
+                        <button class="menu-item"><span class="text-destructive">🗑</span> Remover</button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+
+                <ul class="mt-2 flex flex-wrap gap-1.5">
+                  <li><span class="badge badge-secondary font-normal">Molhos</span></li>
+                  <li><span class="badge badge-secondary font-normal">Extras</span></li>
+                  <li><span class="badge badge-secondary font-normal">Ponto do pão</span></li>
+                </ul>
+
+                <div class="acoes-v2">
+                  <button>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-.722-3.25"/><path d="M2 8a10.645 10.645 0 0 0 20 0"/><path d="m20 15-1.726-2.05"/><path d="m4 15 1.726-2.05"/><path d="m9 18 .722-3.25"/></svg>
+                    Ocultar
+                  </button>
+                  <button>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                    Disponibilizar
+                  </button>
+                </div>
+              </div>
+
+              <!-- item 3 -->
+              <div class="px-4 py-3">
+                <div class="flex items-start gap-3">
+                  <div class="thumb thumb-lg">C</div>
+                  <div class="min-w-0 flex-1">
+                    <span class="clamp2 nome-v2">Croissant de amêndoas</span>
+                    <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span class="preco-v2 shrink-0">R$ 18,50</span>
+                      <span class="badge badge-outline">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-.722-3.25"/><path d="M2 8a10.645 10.645 0 0 0 20 0"/><path d="m20 15-1.726-2.05"/><path d="m4 15 1.726-2.05"/><path d="m9 18 .722-3.25"/></svg>
+                        Oculto
+                      </span>
+                    </div>
+                  </div>
+                  <div class="relative shrink-0">
+                    <details class="kebab">
+                      <summary class="btn kebab-v2 touch44w" role="button" aria-label="Mais ações de Croissant de amêndoas" tabindex="0">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="19" r="2.1"/></svg>
+                      </summary>
+                      <div class="kebab-popup">
+                        <button class="menu-item">✎ Editar</button>
+                        <button class="menu-item"><span class="text-destructive">🗑</span> Remover</button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+
+                <div class="acoes-v2">
+                  <button>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Exibir
+                  </button>
+                  <button>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>
+                    Marcar esgotado
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================= COMPARATIVO DIRETO ================= -->
+  <section>
+    <h2 class="mb-3 text-base font-semibold">Como cada versão responde aos 3 pontos</h2>
+    <div class="overflow-x-auto rounded-xl border border-border bg-white">
+      <table class="w-full min-w-[560px] text-sm">
+        <thead class="bg-muted text-left">
+          <tr>
+            <th class="px-3 py-2 font-medium">Feedback</th>
+            <th class="px-3 py-2 font-medium">Versão 1</th>
+            <th class="px-3 py-2 font-medium">Versão 2</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border align-top">
+          <tr>
+            <td class="px-3 py-2">1. Botão alto demais</td>
+            <td class="px-3 py-2">44px, contorno mantido — segue lendo como botão.</td>
+            <td class="px-3 py-2">44px sem contorno próprio (action row) — mesma área, peso visual menor.</td>
+          </tr>
+          <tr>
+            <td class="px-3 py-2">2. Nome pequeno</td>
+            <td class="px-3 py-2">1,05rem / 600, ao lado da thumb de 40px.</td>
+            <td class="px-3 py-2">1,12rem / 650 em linha própria, thumb de 48px equilibrando.</td>
+          </tr>
+          <tr>
+            <td class="px-3 py-2">3. Kebab discreto</td>
+            <td class="px-3 py-2">Contorno (<code>outline</code>) + 3 círculos sólidos de 18px.</td>
+            <td class="px-3 py-2">Chip circular preenchido (<code>secondary</code>) + ícone de 20px.</td>
+          </tr>
+          <tr>
+            <td class="px-3 py-2">Custo de implementação</td>
+            <td class="px-3 py-2">Baixo — só props/classes no <code>ProdutosClient.tsx</code>.</td>
+            <td class="px-3 py-2">Médio — reordena a árvore do item e cria a action row.</td>
+          </tr>
+          <tr>
+            <td class="px-3 py-2">Risco</td>
+            <td class="px-3 py-2">Nenhum novo padrão; reusa <code>Button</code> shadcn direto.</td>
+            <td class="px-3 py-2">Action row é padrão novo no painel — vale só se for adotado em outras listas também.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= DESKTOP ================= -->
+  <section>
+    <h2 class="mb-1 text-base font-semibold">Mesmo markup em ≥ 640px (v1)</h2>
+    <p class="mb-3 text-sm text-muted-foreground">
+      Com espaço sobrando, o <code class="rounded bg-muted px-1">flex-wrap</code> não quebra e a linha volta ao formato atual.
+      Um layout só — sem <code class="rounded bg-muted px-1">useMediaQuery</code>, sem duas árvores.
+    </p>
+
+    <div class="card overflow-hidden">
+      <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <h3 class="text-lg font-semibold">Panini</h3>
+        <div class="flex items-center gap-1">
+          <button class="btn btn-ghost btn-sm touch44">Opcionais</button>
+          <button class="btn btn-ghost btn-sm touch44">+ Novo produto</button>
+        </div>
+      </div>
+      <div class="divide-y divide-black/10">
+        <div class="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+          <div class="thumb">P</div>
+          <div class="min-w-0 flex-1">
+            <span class="clamp2 nome-v1">Panini de frango com catupiry e orégano</span>
+            <div class="mt-1 flex flex-wrap items-center gap-2">
+              <span class="preco shrink-0">R$ 42,90</span>
+              <span class="badge badge-secondary">Disponível</span>
+              <span class="badge badge-secondary font-normal">Molhos</span>
+              <span class="badge badge-secondary font-normal">Extras</span>
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <button class="btn btn-outline btn-sm touch44">Ocultar</button>
+            <button class="btn btn-outline btn-sm touch44">Marcar esgotado</button>
+            <div class="relative">
+              <details class="kebab">
+                <summary class="btn kebab-v1 touch44w" role="button" aria-label="Mais ações" tabindex="0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                </summary>
+                <div class="kebab-popup">
+                  <button class="menu-item">✎ Editar</button>
+                  <button class="menu-item"><span class="text-destructive">🗑</span> Remover</button>
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="border-t border-border pt-4 text-xs text-muted-foreground">
+    Mockup estático. O kebab usa <code>&lt;details&gt;</code> só para demonstração — na implementação é
+    <code>ui/menu.tsx</code> (Base UI), que já entrega foco preso, ESC e <code>role="menu"</code>.
+    Ícones aqui são SVG inline/emoji; na implementação são <code>lucide-react</code> (<code>Pencil</code>, <code>Trash2</code>, <code>EyeOff</code>, <code>Eye</code>, <code>Ban</code>, <code>Check</code>, <code>MoreVertical</code>).
+    <br />
+    44px é o piso do guia (design-system.md §6, alvo de toque ≥ 44×44px) — não descer abaixo disso mesmo que os botões ainda pareçam altos: quem usa o painel na cozinha, com a mão ocupada, depende dessa área.
+  </footer>
+
+</div>
+</body>
+</html>
