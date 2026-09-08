@@ -55,6 +55,13 @@ let ops: Op[];
 // Default: SELECT em `categorias` devolve a categoria própria; escrita ok.
 let respostaPorTabela: Record<string, { data: unknown; error: unknown }>;
 
+// Issue 175: `rpc(...)` mora no CLIENT RAIZ, não na cadeia de `.from(...)` —
+// `reordenarCategorias` chama uma FUNÇÃO do banco, não uma tabela. Este ramo é
+// aditivo: nenhum teste anterior toca `rpc`, então nada existente muda.
+type ChamadaRpc = { nome: string; args: Record<string, unknown> };
+let chamadasRpc: ChamadaRpc[];
+let respostaRpc: { data: unknown; error: unknown };
+
 function makeChain() {
   // Cada `.from(tabela)` cria UMA cadeia thenável, ligada à sua Op.
   const client: Record<string, unknown> = {
@@ -92,6 +99,11 @@ function makeChain() {
         ).then(onF);
       return queryChain;
     },
+    // Terminador próprio: `rpc` resolve DIRETO numa Promise (não é cadeia).
+    rpc: (nome: string, args: Record<string, unknown>) => {
+      chamadasRpc.push({ nome, args });
+      return Promise.resolve(respostaRpc);
+    },
   };
   return client;
 }
@@ -126,6 +138,13 @@ import {
   atualizarCategoria,
   removerCategoria,
 } from "./produto";
+// Issue 175 (fase RED): `reordenarCategorias` AINDA NÃO é exportada. Importá-la
+// por nome mataria o MÓDULO inteiro no carregamento e derrubaria os ~60 testes
+// verdes acima — RED por acidente de import, não por asserção. O namespace
+// carrega o mesmo módulo e deixa a ausência virar uma falha POR TESTE, dentro
+// do corpo do `it`, com mensagem explícita. Some sozinho na fase GREEN.
+import * as acoesProduto from "./produto";
+import type { ResultadoGestaoCategoria } from "./produto";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
   return { id: LOJA_DONO, dono_id: "dono-1", slug: "minha-loja", ativo: true };
@@ -165,6 +184,8 @@ beforeEach(() => {
     categorias: { data: { id: CAT_PROPRIA, loja_id: LOJA_DONO }, error: null },
     produtos: { data: { id: "produto-novo" }, error: null },
   };
+  chamadasRpc = [];
+  respostaRpc = { data: 3, error: null };
   buscarLojaDoDono.mockResolvedValue(lojaDoDono());
 });
 
@@ -503,3 +524,184 @@ describe("removerCategoria (Server Action — gestão do lojista)", () => {
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Fase RED (TDD) da issue 175 — Server Action `reordenarCategorias`.
+ *
+ * A action AINDA NÃO EXISTE (fase GREEN = `executar`). Todo caso abaixo falha
+ * hoje em `acaoReordenar()` com a mensagem "ainda não é exportada".
+ *
+ * Por que esta action é CRÍTICA: ela recebe uma LISTA DE IDS ESCOLHIDA PELO
+ * CLIENTE e escreve em lote — isso é AUTORIZAÇÃO, não CRUD. O padrão vizinho
+ * `atualizarCategoria` busca a loja do dono mas NÃO filtra por ela; esta segue
+ * o padrão CERTO de `categoriaPertenceALoja` (escopo explícito por `loja_id`
+ * além da RLS), delegando a prova de posse à RPC atômica (sem TOCTOU).
+ *
+ * O isolamento entre lojas de verdade é provado em
+ * `tests/migrations/rpc_reordenar_categorias.test.ts` (pglite, RLS real) — um
+ * mock não tem linhas e não conseguiria afirmar "nada da loja B foi escrito".
+ * O que ESTE arquivo prova é o contrato da fronteira: o que é validado antes
+ * de qualquer I/O, o que é derivado no servidor e o que nunca vaza de volta.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+describe("reordenarCategorias (Server Action — issue 175, autorização em lote)", () => {
+  const CAT_1 = "11111111-2222-3333-4444-555555555551";
+  const CAT_2 = "11111111-2222-3333-4444-555555555552";
+  const CAT_3 = "11111111-2222-3333-4444-555555555553";
+
+  type AcaoReordenar = (payload: unknown) => Promise<ResultadoGestaoCategoria>;
+
+  /** Resolve a action do namespace; falha o TESTE (não o módulo) enquanto não existe. */
+  function acaoReordenar(): AcaoReordenar {
+    const fn = (acoesProduto as unknown as Record<string, unknown>)
+      .reordenarCategorias;
+    if (typeof fn !== "function") {
+      throw new Error(
+        "RED (issue 175): `reordenarCategorias` ainda não é exportada de " +
+          "src/lib/actions/produto.ts — implementação é da fase GREEN.",
+      );
+    }
+    return fn as AcaoReordenar;
+  }
+
+  /** A única chamada de RPC esperada, quando há uma. */
+  function rpcReordenar(): ChamadaRpc | undefined {
+    return chamadasRpc.find((c) => c.nome === "reordenar_categorias");
+  }
+
+  // ─────────────────────────────────────────────────────────── A1
+  it("[A1] caminho feliz: valida e chama UMA vez rpc('reordenar_categorias') → { ok:true }", async () => {
+    const r = await acaoReordenar()([CAT_1, CAT_2, CAT_3]);
+    expect(r).toEqual({ ok: true });
+    // "uma única ida ao banco por operação": exatamente 1 chamada, não N updates.
+    expect(chamadasRpc).toHaveLength(1);
+    expect(chamadasRpc[0].nome).toBe("reordenar_categorias");
+    expect(rpcReordenar()?.args.p_ids).toEqual([CAT_1, CAT_2, CAT_3]);
+    expect(createClient).toHaveBeenCalledTimes(1);
+  });
+
+  // ─────────────────────────────────────────────────────────── A2
+  it("[A2] p_loja_id é DERIVADO de buscarLojaDoDono (auth.uid()), nunca do payload", async () => {
+    await acaoReordenar()([CAT_1, CAT_2]);
+    expect(buscarLojaDoDono).toHaveBeenCalledWith(authClient);
+    expect(rpcReordenar()?.args.p_loja_id).toBe(LOJA_DONO);
+  });
+
+  // ─────────────────────────────────────────────────────────── A3
+  it("[A3] ATAQUE: chave `loja_id` pendurada no array é IGNORADA (p_loja_id continua o do dono)", async () => {
+    // Array com propriedade extra: a fronteira RSC entrega o que o cliente
+    // mandar. O schema zod (array puro) é o único portão — a chave hostil não
+    // pode sobreviver ao parse nem chegar aos argumentos da RPC.
+    const hostil: string[] & { loja_id?: string } = [CAT_1, CAT_2];
+    hostil.loja_id = LOJA_OUTRA;
+
+    await acaoReordenar()(hostil);
+
+    const args = rpcReordenar()?.args;
+    expect(args?.p_loja_id).toBe(LOJA_DONO);
+    expect(args?.p_loja_id).not.toBe(LOJA_OUTRA);
+    expect(JSON.stringify(args)).not.toContain(LOJA_OUTRA);
+  });
+
+  // ─────────────────────────────────────────────────────────── A4
+  it("[A4] payload que não é array ({} / 'abc' / null) → { ok:false } e ZERO rpc", async () => {
+    for (const lixo of [{}, "abc", null, 42, [CAT_1, 7]]) {
+      chamadasRpc = [];
+      const r = await acaoReordenar()(lixo);
+      expect(r.ok).toBe(false);
+      expect(chamadasRpc).toHaveLength(0);
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────── A5
+  it("[A5] id fora do formato uuid → { ok:false } e ZERO rpc (lixo nem chega ao banco)", async () => {
+    const r = await acaoReordenar()(["nao-e-uuid", CAT_2]);
+    expect(r.ok).toBe(false);
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  // ─────────────────────────────────────────────────────────── A6
+  it("[A6] ids duplicados → { ok:false } e ZERO rpc (defesa em profundidade antes do row_count)", async () => {
+    const r = await acaoReordenar()([CAT_1, CAT_1, CAT_3]);
+    expect(r.ok).toBe(false);
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  // ─────────────────────────────────────────────────────────── A7
+  it("[A7] array com 1 id → { ok:false } e ZERO rpc (lista de 1 não tem ordem)", async () => {
+    const r = await acaoReordenar()([CAT_1]);
+    expect(r.ok).toBe(false);
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  // ─────────────────────────────────────────────────────────── A8
+  it("[A8] array acima do teto (201 ids) → { ok:false } e ZERO rpc (CWE-770)", async () => {
+    const gigante = Array.from({ length: 201 }, () => crypto.randomUUID());
+    const r = await acaoReordenar()(gigante);
+    expect(r.ok).toBe(false);
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  // ─────────────────────────────────────────────────────────── A9
+  it("[A9] NÃO usa service_role (a escrita do lojista passa pela RLS autenticada)", async () => {
+    await acaoReordenar()([CAT_1, CAT_2, CAT_3]);
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────── A10
+  it("[A10] erro de banco → mensagem genérica, sem vazar error.message", async () => {
+    // Mensagem única para id alheio / lista incompleta / erro de banco: distinguir
+    // transformaria a action num oráculo de existência de id (seguranca.md §14).
+    respostaRpc = {
+      data: null,
+      error: { message: "senha postgres XYZ", code: "P0001" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await acaoReordenar()([CAT_1, CAT_2, CAT_3]);
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(JSON.stringify(r)).not.toContain("senha");
+    expect(JSON.stringify(r)).not.toContain("P0001");
+    // O detalhe existe — mas só no log do servidor.
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // ─────────────────────────────────────────────────────────── A11
+  it("[A11] buscarLojaDoDono → null → { ok:false, erro:'Loja não encontrada.' } e ZERO rpc", async () => {
+    buscarLojaDoDono.mockResolvedValue(null);
+    const r = await acaoReordenar()([CAT_1, CAT_2, CAT_3]);
+    expect(r).toEqual({ ok: false, erro: "Loja não encontrada." });
+    expect(chamadasRpc).toHaveLength(0);
+  });
+});
+
+/**
+ * CONTRATO PARA A FASE GREEN (executar) — issue 175, camada de aplicação:
+ *
+ *   src/lib/validacoes/produto.ts
+ *     export const schemaReordenacaoCategorias =
+ *       z.array(z.guid()).min(2).max(200)
+ *        .refine((ids) => new Set(ids).size === ids.length, ...)
+ *
+ *   src/lib/actions/produto.ts
+ *     export async function reordenarCategorias(
+ *       payload: unknown,                      // `unknown` de propósito: tipo é
+ *     ): Promise<ResultadoGestaoCategoria>     // apagado em runtime, o zod é o
+ *                                              // único portão real.
+ *
+ *   Sequência obrigatória (espelha as demais actions do arquivo):
+ *     1. safeParse ANTES de qualquer I/O        → falhou: "Não foi possível
+ *                                                  salvar a ordem." [A4..A8]
+ *     2. createClient() AUTENTICADO             → nunca service_role     [A9]
+ *     3. buscarLojaDoDono(supabase)             → null: "Loja não encontrada."
+ *                                                                       [A11]
+ *     4. supabase.rpc("reordenar_categorias", { p_loja_id: loja.id,
+ *                                               p_ids: parsed.data })   [A1..A3]
+ *     5. error → console.error + mensagem genérica única                 [A10]
+ *     6. revalidatePath("/painel/produtos") e revalidatePath("/loja/[slug]", "page")
+ *        (NÃO usar CAMINHO_PAINEL: "/painel/cardapio" não existe como rota)
+ *
+ *   Casos que precisam passar: [A1]..[A11] aqui e [R1]..[R7] em
+ *   tests/migrations/rpc_reordenar_categorias.test.ts.
+ */
