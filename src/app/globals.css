@@ -199,6 +199,11 @@ body {
   * {
     @apply border-border outline-ring/50;
   }
+  /* Tailwind v4 zera o cursor:pointer que o v3 dava a elementos clicáveis. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
   body {
     @apply bg-background text-foreground;
   }
