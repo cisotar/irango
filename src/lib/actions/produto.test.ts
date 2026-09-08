@@ -137,13 +137,10 @@ import {
   criarCategoria,
   atualizarCategoria,
   removerCategoria,
+  // Issue 175 (fase GREEN): a action existe, então o resolvedor por namespace
+  // que o RED usava vira import direto — a ausência agora seria erro de tipo.
+  reordenarCategorias,
 } from "./produto";
-// Issue 175 (fase RED): `reordenarCategorias` AINDA NÃO é exportada. Importá-la
-// por nome mataria o MÓDULO inteiro no carregamento e derrubaria os ~60 testes
-// verdes acima — RED por acidente de import, não por asserção. O namespace
-// carrega o mesmo módulo e deixa a ausência virar uma falha POR TESTE, dentro
-// do corpo do `it`, com mensagem explícita. Some sozinho na fase GREEN.
-import * as acoesProduto from "./produto";
 import type { ResultadoGestaoCategoria } from "./produto";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
@@ -552,17 +549,9 @@ describe("reordenarCategorias (Server Action — issue 175, autorização em lot
 
   type AcaoReordenar = (payload: unknown) => Promise<ResultadoGestaoCategoria>;
 
-  /** Resolve a action do namespace; falha o TESTE (não o módulo) enquanto não existe. */
+  /** A action sob teste (fase GREEN: import direto, sem resolução por namespace). */
   function acaoReordenar(): AcaoReordenar {
-    const fn = (acoesProduto as unknown as Record<string, unknown>)
-      .reordenarCategorias;
-    if (typeof fn !== "function") {
-      throw new Error(
-        "RED (issue 175): `reordenarCategorias` ainda não é exportada de " +
-          "src/lib/actions/produto.ts — implementação é da fase GREEN.",
-      );
-    }
-    return fn as AcaoReordenar;
+    return reordenarCategorias;
   }
 
   /** A única chamada de RPC esperada, quando há uma. */

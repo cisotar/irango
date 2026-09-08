@@ -24,7 +24,11 @@ export async function buscarCategorias(
     .from("categorias")
     .select("*")
     .eq("loja_id", lojaId)
-    .order("ordem", { ascending: true });
+    .order("ordem", { ascending: true })
+    // Desempate determinístico (issue 175): `ordem` não tem UNIQUE e
+    // `ordem: categorias.length` na criação empata depois de uma remoção. Sem
+    // este segundo critério, a ordem exibida varia entre requisições.
+    .order("id", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }

@@ -44,3 +44,23 @@ export const schemaCategoria = z.object({
   nome: z.string().trim().min(1),
   ordem: z.number().int().min(0),
 });
+
+/**
+ * Reordenação de categorias (issue 175). O cliente manda APENAS a sequência de
+ * ids — nunca valores de `ordem`, que são derivados do índice no servidor, e
+ * nunca `nome`/`loja_id`. Por isso NÃO reusa `schemaCategoria`, que exige
+ * justamente `nome` e `ordem`.
+ *
+ * `.min(2)`: lista de 1 não tem ordem (o botão nem renderiza).
+ * `.max(200)`: teto de cardinalidade (CWE-770, mesmo motivo do `.max()` de
+ * `pedido.ts`) — sem ele um array de 100k ids vira amplificação de payload.
+ * O refine de unicidade é defesa em profundidade: a RPC também rejeita
+ * duplicata pelo `row_count`, mas duplicata nem deve chegar ao banco.
+ */
+export const schemaReordenacaoCategorias = z
+  .array(z.guid())
+  .min(2)
+  .max(200)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "Ids repetidos na reordenação",
+  });
