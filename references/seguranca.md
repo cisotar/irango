@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.3.0 | **Atualizado:** 2026-09-07
+**Versão:** 0.3.1 | **Atualizado:** 2026-09-08
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -372,6 +372,18 @@ CREATE POLICY "zonas_escrita_propria" ON zonas_entrega FOR ALL
 
 -- (idem taxas_entrega via zona → loja, bairros_zona via zona → loja, formas_pagamento via loja)
 ```
+
+### RPC de escrita em lote do lojista — segunda variante do padrão RPC (issue 175)
+
+`public.reordenar_categorias(p_loja_id uuid, p_ids uuid[])` (migration `20260908120000_rpc_reordenar_categorias.sql`) é a primeira RPC de escrita do lado do **lojista** — as RPCs anteriores (`criar_pedido`, §10; `garantir_loja_do_dono`, §17) são do lado público/auto-cura, chamadas sob `service_role`. Ela existe porque PostgREST não faz `update-many` com valor diferente por linha (aqui, `ordem = ordinalidade - 1` para todas as categorias da loja numa só instrução).
+
+**Diferença do padrão de `criar_pedido`:** `GRANT EXECUTE` vai para `authenticated`, não `service_role`. A escrita é feita pelo próprio lojista autenticado, autorizada pela RLS `categorias_escrita_propria` avaliada sob o invoker — não por bypass de service_role.
+
+- **`SECURITY INVOKER`, nunca `DEFINER`, é carga estrutural aqui, não estilo.** PoC diferencial da auditoria: trocar para `DEFINER` permitiria a um lojista reescrever as categorias de OUTRA loja — `p_loja_id` é um parâmetro escolhido pelo próprio chamador, e o `where loja_id = p_loja_id` sozinho não segura nada. Quem segura é a RLS `categorias_escrita_propria`, e ela só é avaliada sob o invoker.
+- **`GRANT EXECUTE` explícito é obrigatório em toda função nova, não só nas que usam `service_role`.** O Postgres concede `EXECUTE` a `PUBLIC` por padrão em função nova, e o projeto **não** tem `ALTER DEFAULT PRIVILEGES ... ON FUNCTIONS` (só em tabelas/sequences — ver §19 "Default privileges do schema public"). Sem `REVOKE ALL ... FROM PUBLIC, anon` explícito, `anon` executaria.
+- **Validar cardinalidade de array vindo do cliente com `cardinality()`, nunca `array_length(arr, 1)`.** Achado BAIXA corrigido por `20260908130000_cardinality_reordenar_categorias.sql`: `array_length` conta só a primeira dimensão — um array multidimensional passa pela checagem `v_enviadas = v_na_loja` declarando menos elementos do que o `unnest` de fato entrega, corrompendo a `ordinality` usada para derivar `ordem`. `cardinality()` conta todos os elementos, em todas as dimensões.
+
+**Regra para devs e agentes:** RPC de escrita em lote autorizada pela RLS do próprio chamador (não por `service_role`) segue `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon` + `GRANT EXECUTE TO authenticated`. Se a função validar array vindo do cliente, usar `cardinality()`.
 
 ---
 

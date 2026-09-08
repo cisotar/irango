@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.2.1 | **Atualizado:** 2026-07-09
+**Versão:** 0.2.2 | **Atualizado:** 2026-09-08
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -127,7 +127,8 @@ O lojista escolhe as cores; elas **podem falhar contraste**. Caso clássico: `pr
 
 Critério de aceite de toda tela. Referência: spec (forms com label, validação) e princípios de usabilidade do produto.
 
-- **Alvo de toque ≥ 44×44px** em todo elemento interativo da vitrine mobile (botões "Adicionar", controles de quantidade, "Finalizar pedido").
+- **Alvo de toque ≥ 44×44px** em todo elemento interativo da vitrine mobile (botões "Adicionar", controles de quantidade, "Finalizar pedido"). Mesma régua vale no painel quando o controle depende de gesto de toque (ex.: alça de arrasto e setas de reordenar categoria, `LinhaCategoriaReordenavel.tsx`, issues 159/175).
+  - **Valor literal, não a classe semântica do Tailwind.** A base de fonte do projeto é 120% (`html { font-size: 120% }`, §9), então `min-h-11` vira 52,8px (não é 44px, ainda que inofensivo) e `size="icon-sm"` do shadcn vira 33,6px (abaixo do mínimo — **proibido** em alvo de toque). Use `min-h-[44px] min-w-[44px]` literal.
 - **Contraste mínimo 4.5:1** para texto normal, 3:1 para texto grande. Atenção redobrada ao tema custom da loja — ver §4 ("Contraste do tema custom").
 - **Foco visível** em todo interativo: `focus-visible:ring-2` (**proposta** de padrão consistente, alinhado ao default do shadcn).
 - **Label em todo input.** Forms usam o componente `Form` do shadcn (react-hook-form), que já vincula `<label>` ao campo. Erro de validação com `aria-invalid` + `aria-describedby` apontando para a mensagem.

@@ -82,6 +82,27 @@ describe("024 queries de categorias — contrato TS (camada 2, mock)", () => {
     expect(calls.order).toHaveBeenCalledWith("ordem", { ascending: true });
   });
 
+  // Issue 175 — desempate determinístico. `ordem` não tem UNIQUE e
+  // `ordem: categorias.length` empata depois de uma remoção (cenário 4): duas
+  // categorias podem ter o MESMO `ordem`, e sem um segundo critério a ordem
+  // relativa entre elas varia entre requisições (o Postgres não garante ordem
+  // estável para valores empatados). Este teste falharia se alguém remover o
+  // `.order("id")` — a asserção de cima ("ordena por ordem") continuaria verde
+  // sozinha, mascarando a regressão.
+  it("[C4] desempata por `id` ascendente APÓS `ordem` (ordem = [ordem, id], nessa sequência)", async () => {
+    const { client, calls } = makeClient({ data: [], error: null });
+
+    await buscarCategorias(client, "loja-1");
+
+    expect(calls.order).toHaveBeenCalledWith("id", { ascending: true });
+    // A sequência importa: `.order("id")` sozinho não desempataria nada — tem
+    // que vir DEPOIS de `.order("ordem")` na mesma cadeia.
+    expect(calls.order.mock.calls).toEqual([
+      ["ordem", { ascending: true }],
+      ["id", { ascending: true }],
+    ]);
+  });
+
   it("buscarCategorias retorna [] quando a loja não tem categorias (sem lançar)", async () => {
     const { client } = makeClient({ data: [], error: null });
     const out = await buscarCategorias(client, "loja-vazia");

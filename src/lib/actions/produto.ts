@@ -12,7 +12,11 @@
 //   - erro de banco → genérico, sem vazar e.message.
 //   - remover categoria deixa produtos com categoria_id NULL (FK ON DELETE SET NULL).
 
-import { schemaProduto, schemaCategoria } from "@/lib/validacoes/produto";
+import {
+  schemaProduto,
+  schemaCategoria,
+  schemaReordenacaoCategorias,
+} from "@/lib/validacoes/produto";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
@@ -303,5 +307,71 @@ export async function removerCategoria(
   } catch (e) {
     console.error("[removerCategoria]", e);
     return { ok: false, erro: "Não foi possível remover a categoria." };
+  }
+}
+
+/**
+ * Reordena TODAS as categorias da loja do dono, gravando `ordem` normalizada
+ * 0..n-1 numa única instrução atômica (issue 175).
+ *
+ * Isto é AUTORIZAÇÃO, não CRUD: o payload é uma lista de ids escolhida pelo
+ * cliente e a escrita é em lote. Segue o princípio de `categoriaPertenceALoja`
+ * (escopo explícito por `loja_id` ALÉM da RLS) e NÃO o de `atualizarCategoria`,
+ * que busca a loja do dono mas não filtra por ela.
+ *
+ * Onde a posse é provada: a RPC exige que `p_ids` seja a PERMUTAÇÃO COMPLETA de
+ * `categorias where loja_id = p_loja_id` e confere o `row_count` do UPDATE.
+ * Um id de outra loja derruba a transação inteira — nada é escrito em nenhuma
+ * das duas lojas. Isso substitui um SELECT de posse prévio em JS de propósito:
+ * o pre-check em JS seria TOCTOU (a lista pode mudar entre o SELECT e o UPDATE),
+ * a checagem dentro da transação não é.
+ *
+ * `p_loja_id` vem SEMPRE de `buscarLojaDoDono` (auth.uid()), NUNCA do payload.
+ */
+export async function reordenarCategorias(
+  payload: unknown,
+): Promise<ResultadoGestaoCategoria> {
+  // 1) Forma ANTES de qualquer I/O: array de uuid, sem duplicata, 2..200.
+  //    O parse devolve um array NOVO — propriedade hostil pendurada no array do
+  //    cliente (ex.: `loja_id`) não sobrevive e nunca chega aos args da RPC.
+  const parsed = schemaReordenacaoCategorias.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: "Não foi possível salvar a ordem." };
+  }
+
+  try {
+    // 2) Client AUTENTICADO — a RLS categorias_escrita_propria isola por dono.
+    //    `security invoker` na RPC mantém essa RLS valendo lá dentro.
+    const supabase = await createClient();
+    // 3) loja_id DERIVADO do auth.uid(), NUNCA do payload.
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+
+    // 4) UMA ida ao banco, UMA instrução, atômica.
+    const { error } = await supabase.rpc("reordenar_categorias", {
+      p_loja_id: loja.id,
+      p_ids: parsed.data,
+    });
+    if (error) {
+      // Mensagem única para id alheio / lista incompleta / erro de banco:
+      // mensagens distintas virariam oráculo de existência de id (§14).
+      console.error("[reordenarCategorias]", error);
+      return { ok: false, erro: "Não foi possível salvar a ordem." };
+    }
+
+    // NÃO usa CAMINHO_PAINEL: "/painel/cardapio" não existe como rota (achado
+    // pré-existente — os revalidatePath que o usam são no-op). Aqui vão os
+    // caminhos REAIS, incluindo o da vitrine, que herda a ordem de
+    // `buscarCategorias`. A vitrine vai pelo slug da PRÓPRIA loja, não pela
+    // forma coringa `("/loja/[slug]", "page")`: aquela invalida o Router Cache
+    // da vitrine de TODAS as lojas do marketplace a cada reordenação.
+    revalidatePath("/painel/produtos");
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[reordenarCategorias]", e);
+    return { ok: false, erro: "Não foi possível salvar a ordem." };
   }
 }

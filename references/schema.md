@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.15 | **Atualizado:** 2026-09-07
+**Versão:** 0.1.16 | **Atualizado:** 2026-09-08
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -493,3 +493,4 @@ Valores válidos:
 - Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado (`itens_pedido.observacao` é da mesma família)
 - Tipos gerados automaticamente: `npx supabase gen types typescript > src/lib/database.types.ts`
 - **Operações multi-tabela atômicas com trava de concorrência** usam função Postgres `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon, authenticated` + `GRANT EXECUTE TO service_role`. Exemplo: `public.criar_pedido(...)` (migration `20260614003000_rpc_criar_pedido.sql`). Nunca INSERT direto da action quando atomicidade ou trava de linha for necessária.
+- **Escrita em lote com valor diferente por linha** (PostgREST não faz `update-many` heterogêneo) usa a mesma base — `SECURITY INVOKER` + `SET search_path = public` — mas `GRANT EXECUTE TO authenticated`, não `service_role`: a escrita é do lojista autenticado, autorizada pela RLS avaliada sob o invoker. Exemplo: `public.reordenar_categorias(...)` (migration `20260908120000_rpc_reordenar_categorias.sql`). Racional completo em `seguranca.md` §2.

@@ -1171,6 +1171,10 @@ export type Database = {
         }
       }
       pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
+      reordenar_categorias: {
+        Args: { p_ids: string[]; p_loja_id: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

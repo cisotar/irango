@@ -262,3 +262,100 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
     expect(html).toContain(">Novo produto<");
   });
 });
+
+/**
+ * Cenário 11 da issue 175 — GATE do botão "Reordenar categorias".
+ *
+ * O gate é sobre `categorias.length` (TODAS), nunca sobre os grupos
+ * renderizados: `agruparPorCategoria` descarta categoria vazia, então contar
+ * grupos faria o botão sumir justamente para a loja que acabou de criar
+ * categorias e ainda não cadastrou produto — o momento em que ela mais quer
+ * ordenar o cardápio.
+ */
+describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () => {
+  function renderComNCategorias(
+    categorias: Array<{ id: string; nome: string }>,
+    produtos: Produto[] = [],
+  ): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={categorias.map((c) => ({ ...c, exibir_imagens: true }))}
+        opcionaisPorCategoria={{}}
+        categoriasOpcional={[]}
+      />,
+    );
+  }
+
+  it("0 categorias → botão NÃO renderiza (nada a ordenar)", () => {
+    expect(renderComNCategorias([])).not.toContain("Reordenar categorias");
+  });
+
+  it("1 categoria → botão NÃO renderiza (lista de 1 não tem ordem)", () => {
+    // Um botão desabilitado aqui só produziria "por que não funciona?" sem
+    // resposta na tela; ausência de controle para operação impossível não
+    // precisa de explicação.
+    const html = renderComNCategorias([{ id: "c1", nome: "Lanches" }]);
+    expect(html).not.toContain("Reordenar categorias");
+  });
+
+  it("2 categorias → botão RENDERIZA", () => {
+    const html = renderComNCategorias([
+      { id: "c1", nome: "Lanches" },
+      { id: "c2", nome: "Bebidas" },
+    ]);
+    expect(html).toContain("Reordenar categorias");
+  });
+
+  it("2 categorias SEM NENHUM produto → botão RENDERIZA (gate não olha grupos)", () => {
+    // Se o gate usasse `grupos.length`, aqui daria 0 e o botão sumiria — mas
+    // ordenar antes de cadastrar é legítimo e é quando o lojista monta o cardápio.
+    const html = renderComNCategorias(
+      [
+        { id: "c1", nome: "Lanches" },
+        { id: "c2", nome: "Bebidas" },
+      ],
+      [],
+    );
+    expect(html).toContain("Reordenar categorias");
+  });
+
+  it("só produtos soltos, 0 categorias → botão NÃO renderiza", () => {
+    // O grupo sintético "Sem categoria" não é ordenável.
+    const html = renderComNCategorias([], [produtoBase({ categoria_id: null })]);
+    expect(html).toContain("Sem categoria");
+    expect(html).not.toContain("Reordenar categorias");
+  });
+});
+
+/**
+ * Metade "listagem normal" do cenário 10 da issue 175 — a outra metade
+ * ("aparece no modo com 0 produtos") é provada em ReordenarCategorias.test.tsx
+ * ([C10]), o único lugar onde o modo reordenar é observável sem simular clique
+ * (ele está SEMPRE ligado nesse componente). Aqui o modo está sempre DESLIGADO
+ * (render inicial estático), então é o lugar certo para provar a outra metade:
+ * a categoria sem produto não pode aparecer como card na tela normal.
+ */
+describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 10)", () => {
+  it("categoria sem nenhum produto não vira card (agruparPorCategoria descarta grupo vazio)", () => {
+    const html = renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={[produtoBase({ categoria_id: "c1" })]}
+        categorias={[
+          { id: "c1", nome: "Lanches", exibir_imagens: true },
+          { id: "c2", nome: "Bebidas", exibir_imagens: true }, // sem produto
+        ]}
+        opcionaisPorCategoria={{}}
+        categoriasOpcional={[]}
+      />,
+    );
+    expect(html).toContain("Lanches");
+    // "Bebidas" não pode aparecer em lugar NENHUM do HTML: nem como card, nem
+    // vazando por engano do modo reordenar (que aqui está desligado).
+    expect(html).not.toContain("Bebidas");
+  });
+});
