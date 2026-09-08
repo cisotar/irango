@@ -364,9 +364,11 @@ export async function reordenarCategorias(
     // NÃO usa CAMINHO_PAINEL: "/painel/cardapio" não existe como rota (achado
     // pré-existente — os revalidatePath que o usam são no-op). Aqui vão os
     // caminhos REAIS, incluindo o da vitrine, que herda a ordem de
-    // `buscarCategorias`.
+    // `buscarCategorias`. A vitrine vai pelo slug da PRÓPRIA loja, não pela
+    // forma coringa `("/loja/[slug]", "page")`: aquela invalida o Router Cache
+    // da vitrine de TODAS as lojas do marketplace a cada reordenação.
     revalidatePath("/painel/produtos");
-    revalidatePath("/loja/[slug]", "page");
+    revalidatePath(`/loja/${loja.slug}`);
     return { ok: true };
   } catch (e) {
     console.error("[reordenarCategorias]", e);

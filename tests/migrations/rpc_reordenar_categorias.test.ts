@@ -116,6 +116,29 @@ function chamarRpc(
   );
 }
 
+/**
+ * Chama a RPC com um array MULTIDIMENSIONAL — `array[[a,b],[c,d],...]`.
+ *
+ * Cada elemento é castado individualmente (`$n::uuid`) porque o Postgres não
+ * infere o tipo de um literal de array aninhado montado só com parâmetros
+ * textuais. O que está sob teste é a checagem de cardinalidade da função, não o
+ * binding do driver.
+ */
+function chamarRpcMatriz(
+  db: PGlite,
+  lojaId: string,
+  linhas: readonly (readonly string[])[],
+): Promise<{ rows: Array<{ afetadas: number }> }> {
+  let n = 1;
+  const literal = linhas
+    .map((linha) => `[${linha.map(() => `$${++n}::uuid`).join(", ")}]`)
+    .join(", ");
+  return db.query<{ afetadas: number }>(
+    `select public.reordenar_categorias($1::uuid, array[${literal}]) as afetadas`,
+    [lojaId, ...linhas.flat()],
+  );
+}
+
 /** SQLSTATE da exceção lançada por `fn`, ou `null` se não lançou. */
 async function sqlstateDaFalha(fn: () => Promise<unknown>): Promise<string | null> {
   try {
@@ -291,6 +314,126 @@ describe("175 RPC reordenar_categorias — RLS real (pglite)", () => {
       ORDEM_INICIAL_A.a2,
       ORDEM_INICIAL_A.a3,
     ]);
+  });
+
+  // ───────────────────────────────────────────── R8 — não sobrescreve `nome`
+  it("[R8] a RPC escreve SÓ `ordem` — uma renomeação concorrente (GerenciarCategorias) sobrevive intacta", async () => {
+    // É o motivo documentado no cabeçalho da migration para escolher RPC em vez
+    // de `.upsert(...)`: upsert reescreveria a LINHA INTEIRA (nome e loja_id são
+    // not null sem default) e uma renomeação em voo seria silenciosamente
+    // revertida. Este teste prova a garantia oposta: nome e exibir_imagens
+    // sobrevivem a uma reordenação, não importa a ordem de chegada das duas
+    // escritas.
+    await t.asService(async (db) => {
+      await db.query(
+        `update public.categorias set nome = 'Pizzas Renomeada', exibir_imagens = false where id = $1`,
+        [c.a1],
+      );
+    });
+
+    await t.asUser(DONO_A, (db) => chamarRpc(db, c.lojaA, [c.a3, c.a1, c.a2]));
+
+    const r = await t.asService((db) =>
+      db.query<{ nome: string; exibir_imagens: boolean; ordem: number }>(
+        `select nome, exibir_imagens, ordem from public.categorias where id = $1`,
+        [c.a1],
+      ),
+    );
+    // `ordem` foi normalizada pela RPC (a1 é o 2º id enviado → ordem 1)...
+    expect(r.rows[0].ordem).toBe(1);
+    // ...mas nome e exibir_imagens, escritos por uma operação DIFERENTE
+    // (edição de categoria), não foram tocados pelo UPDATE da RPC.
+    expect(r.rows[0].nome).toBe("Pizzas Renomeada");
+    expect(r.rows[0].exibir_imagens).toBe(false);
+
+    // Isolamento entre testes: `beforeEach` só restaura `ordem` (o baseline
+    // documentado no topo do arquivo); sem isto, a renomeação vazaria para os
+    // casos seguintes do describe.
+    await t.asService((db) =>
+      db.query(
+        `update public.categorias set nome = 'Pizzas', exibir_imagens = true where id = $1`,
+        [c.a1],
+      ),
+    );
+  });
+
+  // ───────────────────────────────────────────── R9 — a vitrine herda a ordem
+  it("[R9] critério de aceite: lida como ANON, a ordem gravada pela RPC (com desempate) é a mesma", async () => {
+    // Prova o round-trip completo do critério "a vitrine pública mostra a mesma
+    // ordem, lida como anon": grava via RPC (autenticado, dono) e lê como anon
+    // (RLS categorias_leitura_publica), reproduzindo o `.order("ordem").order("id")`
+    // de `buscarCategorias` (src/lib/supabase/queries/categorias.ts). R1..R7 só
+    // conferem a coluna `ordem` via BYPASSRLS — nenhum comprova que o papel que
+    // a vitrine de fato usa (anon) enxerga o resultado.
+    await t.asUser(DONO_A, (db) => chamarRpc(db, c.lojaA, [c.a2, c.a3, c.a1]));
+
+    const r = await t.asAnon((db) =>
+      db.query<{ id: string }>(
+        `select id from public.categorias where loja_id = $1
+         order by ordem asc, id asc`,
+        [c.lojaA],
+      ),
+    );
+    expect(r.rows.map((row) => row.id)).toEqual([c.a2, c.a3, c.a1]);
+  });
+
+  // ─────────────────────────── R10 — array multidimensional (achado da auditoria)
+  it("[R10] array MULTIDIMENSIONAL → P0001, e as ordens da loja ficam intactas", async () => {
+    // Regressão de `20260908130000_cardinality_reordenar_categorias.sql`.
+    //
+    // `array_length(p_ids, 1)` conta SÓ a primeira dimensão: em
+    // `array[[a1,b1],[a2,b2],[a3,b1]]` ela vale 3, enquanto o `unnest` entrega 6
+    // elementos. Com 3 categorias na loja, `3 = 3` passava a checagem de
+    // permutação, o UPDATE casava exatamente as 3 categorias de A (as de B caem
+    // no `where loja_id = p_loja_id`), `row_count = 3` passava a segunda
+    // checagem — e `ordem` saía de `ordinality` sobre 6 posições: [0, 2, 4],
+    // quebrando a invariante 0..n−1 que esta feature existe para garantir.
+    //
+    // `cardinality(p_ids)` conta TODOS os elementos: 6 <> 3 → raise, rollback.
+    // Sem vazamento entre lojas nos dois casos (o `where loja_id` + RLS seguram);
+    // o dano era só na integridade da PRÓPRIA loja. Vetor real: chamada direta a
+    // /rest/v1/rpc/ com a anon key — o zod da Server Action (`z.array(z.guid())`)
+    // rejeita array aninhado antes de qualquer I/O.
+    const code = await sqlstateDaFalha(() =>
+      t.asUser(DONO_A, (db) =>
+        chamarRpcMatriz(db, c.lojaA, [
+          [c.a1, c.b1],
+          [c.a2, c.b2],
+          [c.a3, c.b1],
+        ]),
+      ),
+    );
+    expect(code).toBe("P0001");
+
+    // Bloco SEPARADO (o de cima sofreu rollback do harness): nem a invariante da
+    // loja A foi quebrada, nem a loja B foi tocada.
+    const ordensA = await ordemAtual(t, [c.a1, c.a2, c.a3]);
+    expect(ordensA).toEqual([
+      ORDEM_INICIAL_A.a1,
+      ORDEM_INICIAL_A.a2,
+      ORDEM_INICIAL_A.a3,
+    ]);
+    // O sintoma exato do bug era esta sequência — ela não pode reaparecer.
+    expect(ordensA).not.toEqual([0, 2, 4]);
+    expect(await ordemAtual(t, [c.b1, c.b2])).toEqual([
+      ORDEM_INICIAL_B.b1,
+      ORDEM_INICIAL_B.b2,
+    ]);
+  });
+
+  it("[R10] array aninhado que É a permutação completa mantém a invariante 0..n−1", async () => {
+    // Contraprova do caso acima: o fix não passou a recusar array aninhado por
+    // aninhamento — ele passou a contar os elementos REAIS. `[[a3],[a1],[a2]]`
+    // tem cardinality 3 (= as 3 categorias da loja) e o `unnest` os entrega em
+    // ordem row-major, então a normalização sai íntegra. Sem esta asserção, um
+    // "fix" que só rejeitasse `array_ndims > 1` também passaria no R10.
+    await t.asUser(DONO_A, (db) =>
+      chamarRpcMatriz(db, c.lojaA, [[c.a3], [c.a1], [c.a2]]),
+    );
+
+    const ordens = await ordemAtual(t, [c.a3, c.a1, c.a2]);
+    expect(ordens).toEqual([0, 1, 2]);
+    expect(new Set(ordens).size).toBe(3);
   });
 });
 
