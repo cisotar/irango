@@ -329,3 +329,33 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
     expect(html).not.toContain("Reordenar categorias");
   });
 });
+
+/**
+ * Metade "listagem normal" do cenário 10 da issue 175 — a outra metade
+ * ("aparece no modo com 0 produtos") é provada em ReordenarCategorias.test.tsx
+ * ([C10]), o único lugar onde o modo reordenar é observável sem simular clique
+ * (ele está SEMPRE ligado nesse componente). Aqui o modo está sempre DESLIGADO
+ * (render inicial estático), então é o lugar certo para provar a outra metade:
+ * a categoria sem produto não pode aparecer como card na tela normal.
+ */
+describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 10)", () => {
+  it("categoria sem nenhum produto não vira card (agruparPorCategoria descarta grupo vazio)", () => {
+    const html = renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={[produtoBase({ categoria_id: "c1" })]}
+        categorias={[
+          { id: "c1", nome: "Lanches", exibir_imagens: true },
+          { id: "c2", nome: "Bebidas", exibir_imagens: true }, // sem produto
+        ]}
+        opcionaisPorCategoria={{}}
+        categoriasOpcional={[]}
+      />,
+    );
+    expect(html).toContain("Lanches");
+    // "Bebidas" não pode aparecer em lugar NENHUM do HTML: nem como card, nem
+    // vazando por engano do modo reordenar (que aqui está desligado).
+    expect(html).not.toContain("Bebidas");
+  });
+});

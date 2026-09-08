@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -28,6 +36,11 @@ import { LinhaCategoriaReordenavel } from "@/components/painel/LinhaCategoriaReo
 import type { Categoria } from "@/components/painel/FormProduto";
 import { reordenarCategorias as reordenarCategoriasLojista } from "@/lib/actions/produto";
 import { moverPorDeslocamento, mensagemPosicao } from "@/lib/utils/reordenar";
+import {
+  criarSalvamentoCoalescido,
+  type SalvamentoCoalescido,
+  type StatusSalvamento,
+} from "@/lib/utils/salvamento-coalescido";
 
 /**
  * Modo "Reordenar categorias" (issue 175).
@@ -41,17 +54,25 @@ import { moverPorDeslocamento, mensagemPosicao } from "@/lib/utils/reordenar";
  * que a feature existe para matar, e o "posição X de N" mentiria.
  *
  * ─────────────────────────────────────────── Otimismo e coalescência
- * O estado local reordena ANTES da rede. A referência para reverter é a última
- * ordem CONFIRMADA PELO SERVIDOR, não a do passo anterior: senão 4 toques com
- * falha no 4º voltariam só um passo e deixariam a lista num estado que nunca
- * existiu no banco.
+ * O estado local reordena ANTES da rede. Debounce, ordem confirmada, fila e
+ * flush moram em `criarSalvamentoCoalescido` (`lib/utils/salvamento-coalescido`),
+ * fora da árvore React — é o que torna essas regras testáveis em
+ * `environment: node`, já que `renderToStaticMarkup` não executa efeitos, não
+ * dispara handlers e não avança timers. Este componente só liga a máquina ao
+ * estado da tela.
  *
- * Toques rápidos são coalescidos por debounce e cada chamada leva a SEQUÊNCIA
- * COMPLETA de ids (nunca um delta) — é isso que cumpre "uma única ida ao banco
- * por operação". A coalescência é otimização, não invariante: como a RPC é
- * idempotente, N chamadas convergem para a mesma ordem. O que É invariante é o
- * guard de resposta obsoleta (`sequenciaRef`): sem ele uma resposta atrasada
- * reverteria a lista para um estado velho.
+ * Cada chamada leva a SEQUÊNCIA COMPLETA de ids (nunca um delta) — é isso que
+ * cumpre "uma única ida ao banco por operação" e o que permite à máquina
+ * substituir o valor enfileirado pelo mais recente sem perda.
+ *
+ * ─────────────────────────────────────────── Saída do modo sem perder o último
+ * movimento
+ * Sair do modo (Concluir/ESC) precisa AGUARDAR o flush: o pai chama
+ * `finalizar()` pelo `ref` e só então desmonta e faz `router.refresh()`. A ordem
+ * importa — um flush disparado "para o ar" na desmontagem correria com o refresh
+ * e o refresh venceria, trazendo a ordem antiga por cima do movimento recém-feito.
+ * O flush na desmontagem continua existindo como ÚLTIMO RECURSO, para saídas que
+ * não passam pelos botões do modo (navegação, por exemplo).
  *
  * ─────────────────────────────────────────── Sempre em modo reordenar
  * O componente não tem um `useState` de "ligado/desligado": quem o monta é o
@@ -69,6 +90,15 @@ const INSTRUCOES_LEITOR: ScreenReaderInstructions = {
     "espaço para soltar e Escape para cancelar.",
 };
 
+/**
+ * Handle imperativo do modo. Existe por um motivo só: o pai precisa AGUARDAR o
+ * salvamento pendente antes de desmontar a lista e chamar `router.refresh()`.
+ */
+export type ManipuladorReordenarCategorias = {
+  /** Resolve quando não há mais nada em voo nem na fila de salvamento. */
+  finalizar: () => Promise<void>;
+};
+
 export type ReordenarCategoriasProps = {
   /** TODAS as categorias da loja, na ordem atual. Inclui as vazias. */
   categorias: Categoria[];
@@ -78,6 +108,7 @@ export type ReordenarCategoriasProps = {
   temSemCategoria: boolean;
   /** Action injetável (a via admin passa a variante escopada). */
   onReordenar?: typeof reordenarCategoriasLojista;
+  ref?: Ref<ManipuladorReordenarCategorias>;
 };
 
 export function ReordenarCategorias({
@@ -85,73 +116,74 @@ export function ReordenarCategorias({
   contagemPorCategoria,
   temSemCategoria,
   onReordenar,
+  ref,
 }: ReordenarCategoriasProps) {
   const reordenar = onReordenar ?? reordenarCategoriasLojista;
 
-  const [ordem, setOrdem] = useState<Categoria[]>(categorias);
+  const [ordem, setOrdem] = useState<readonly Categoria[]>(categorias);
   const [mensagemViva, setMensagemViva] = useState(
     `Modo reordenar ativado. ${categorias.length} categorias. ` +
       "Use os botões mover para cima e mover para baixo.",
   );
-  const [status, setStatus] = useState<"" | "salvando" | "salvo">("");
+  const [status, setStatus] = useState<StatusSalvamento>("");
   const [idArrastando, setIdArrastando] = useState<string | null>(null);
 
-  // Última ordem CONFIRMADA pelo servidor — o alvo da reversão em falha.
-  const confirmadaRef = useRef<Categoria[]>(categorias);
-  // Número de série do disparo: resposta cujo número não é o mais recente é
-  // descartada (guard de resposta obsoleta).
-  const sequenciaRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Lido pelos `announcements` do dnd-kit e pelos handlers, que capturariam um
   // `ordem` velho. Sincronizado em efeito (escrever ref durante o render é
   // proibido): o efeito passivo é liberado antes do próximo evento discreto,
   // então todo handler de clique/arrasto já lê o valor recém-commitado.
-  const ordemRef = useRef<Categoria[]>(categorias);
+  const ordemRef = useRef<readonly Categoria[]>(categorias);
   useEffect(() => {
     ordemRef.current = ordem;
   }, [ordem]);
 
-  // Timer pendente ao desmontar (ex.: "Concluir") não pode disparar depois.
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
+  /*
+    Criada UMA vez, pelo inicializador preguiçoso de `useState`: recriá-la a cada
+    render perderia o timer, a fila e a ordem confirmada. `useState` e não
+    `useRef` de propósito — ler `ref.current` durante o render é proibido
+    (react-hooks/refs), e aqui a máquina precisa estar disponível já no primeiro.
+    Toda a regra está testada em `salvamento-coalescido.test.ts`; o que sobra
+    aqui são só os efeitos de tela.
 
-  const salvar = useCallback(
-    async (proxima: Categoria[], seq: number) => {
-      const anterior = confirmadaRef.current;
-      const resultado = await reordenar(proxima.map((c) => c.id));
-      // Resposta obsoleta: um disparo mais novo já está em voo.
-      if (seq !== sequenciaRef.current) return;
-
-      if (!resultado.ok) {
-        setOrdem(anterior);
-        setStatus("");
+    `reordenar` e `categorias` são capturados no primeiro render de propósito: o
+    componente é montado ao ENTRAR no modo e desmontado ao sair, e os dois pontos
+    de chamada passam uma Server Action de módulo (identidade estável). A ordem
+    inicial confirmada é, por definição, a que o servidor acabou de entregar.
+  */
+  const [salvamento] = useState<SalvamentoCoalescido<readonly Categoria[]>>(() =>
+    criarSalvamentoCoalescido<readonly Categoria[]>({
+      confirmada: categorias,
+      atrasoMs: DEBOUNCE_MS,
+      // O cliente manda SÓ a sequência de ids; `ordem` é derivada no servidor.
+      salvar: (proxima) => reordenar(proxima.map((c) => c.id)),
+      aoStatus: setStatus,
+      // A reversão vai para a última ordem CONFIRMADA pelo servidor, não para a
+      // do passo anterior: senão 4 toques com falha no 4º voltariam só um passo
+      // e deixariam a lista num estado que nunca existiu no banco.
+      aoFalhar: (confirmada, erro) => {
+        setOrdem(confirmada);
         setMensagemViva(
           "Não foi possível salvar a ordem. A lista voltou à ordem anterior.",
         );
-        // Mensagem genérica vinda do servidor; o detalhe fica no log do servidor.
-        toast.error(resultado.erro);
-        return;
-      }
-      confirmadaRef.current = proxima;
-      setStatus("salvo");
-    },
-    [reordenar],
+        // Mensagem genérica vinda da action; o detalhe fica no log do servidor.
+        toast.error(erro);
+      },
+    }),
   );
 
-  const agendarSalvamento = useCallback(
-    (proxima: Categoria[]) => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      setStatus("salvando");
-      timerRef.current = setTimeout(() => {
-        const seq = ++sequenciaRef.current;
-        void salvar(proxima, seq);
-      }, DEBOUNCE_MS);
-    },
-    [salvar],
-  );
+  // O pai aguarda isto antes de desmontar e de chamar `router.refresh()`.
+  useImperativeHandle(ref, () => ({ finalizar: () => salvamento.finalizar() }), [
+    salvamento,
+  ]);
+
+  // ÚLTIMO RECURSO para saídas que não passam por Concluir/ESC (navegação, por
+  // exemplo): dispara o pendente em vez de descartá-lo. Nos caminhos normais
+  // isto já é no-op, porque o pai aguardou `finalizar()` antes de desmontar.
+  useEffect(() => {
+    return () => {
+      void salvamento.finalizar();
+    };
+  }, [salvamento]);
 
   /**
    * Único caminho de escrita: ↑, ↓, "topo", "fim" e soltar o arrasto viram
@@ -165,7 +197,9 @@ export function ReordenarCategorias({
     (de: number, para: number, anunciar = true) => {
       const atual = ordemRef.current;
       const categoria = atual[de];
-      const proxima = moverPorDeslocamento(atual, de, para) as Categoria[];
+      // moverPorDeslocamento já devolve readonly Categoria[] (T inferido de
+      // `atual`); nenhum cast é necessário — ver tipos de estado acima.
+      const proxima = moverPorDeslocamento(atual, de, para);
 
       // Mesma referência = no-op: NÃO escreve no banco (cenário 3) e a seta no
       // limite fica inerte (cenário 8). Uma regra só, sem `if` espalhado.
@@ -186,9 +220,9 @@ export function ReordenarCategorias({
           mensagemPosicao(categoria.nome, proxima.indexOf(categoria), proxima.length),
         );
       }
-      agendarSalvamento(proxima);
+      salvamento.agendar(proxima);
     },
-    [agendarSalvamento],
+    [salvamento],
   );
 
   // Com alça dedicada, `distance: 8` basta — não é preciso um TouchSensor com

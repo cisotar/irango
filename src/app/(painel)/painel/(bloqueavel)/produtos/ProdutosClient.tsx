@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import {
@@ -52,7 +59,10 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
 import { ThumbProduto } from "@/components/painel/ThumbProduto";
 import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
-import { ReordenarCategorias } from "@/components/painel/ReordenarCategorias";
+import {
+  ReordenarCategorias,
+  type ManipuladorReordenarCategorias,
+} from "@/components/painel/ReordenarCategorias";
 import {
   removerProduto as removerProdutoLojista,
   alternarDisponibilidade as alternarDisponibilidadeLojista,
@@ -217,6 +227,12 @@ export function ProdutosClient({
   // Modo "Reordenar categorias" (issue 175). Fica no pai porque é ele que troca
   // a barra de ações; a LISTA do modo mora em `ReordenarCategorias`.
   const [modoReordenar, setModoReordenar] = useState(false);
+  // Handle da lista: o pai precisa AGUARDAR o salvamento pendente antes de
+  // desmontá-la e de chamar `router.refresh()` (ver `sairDoModoReordenar`).
+  const reordenarRef = useRef<ManipuladorReordenarCategorias>(null);
+  // Guard de reentrância enquanto o flush está em voo (ESC repetido, duplo
+  // clique em Concluir). Ref, não estado: não deve provocar render.
+  const saindoDoModoRef = useRef(false);
 
   const grupos = useMemo(
     () => agruparPorCategoria(produtos, categorias),
@@ -249,20 +265,37 @@ export function ProdutosClient({
    */
   const podeReordenar = categorias.length >= 2;
 
+  /**
+   * Saída do modo — Concluir e ESC passam os dois por aqui.
+   *
+   * O `await finalizar()` NÃO é decorativo: o modo salva com debounce de 500ms,
+   * e mover uma categoria + sair antes disso descartava o movimento em silêncio
+   * (o `router.refresh()` abaixo trazia a ordem ANTIGA). O contrato de interação
+   * §5 promete o contrário: "sem risco de perda — cada movimento já foi
+   * persistido". Daí a ORDEM: flush → desmonta → refresh. Fazer o flush no
+   * cleanup da desmontagem correria com o refresh, e o refresh venceria.
+   */
+  const sairDoModoReordenar = useCallback(async () => {
+    if (saindoDoModoRef.current) return; // ESC repetido / duplo clique
+    saindoDoModoRef.current = true;
+    try {
+      await reordenarRef.current?.finalizar();
+    } finally {
+      saindoDoModoRef.current = false;
+      setModoReordenar(false);
+      router.refresh();
+    }
+  }, [router]);
+
   // ESC também sai do modo (expectativa de qualquer modo contextual).
   useEffect(() => {
     if (!modoReordenar) return;
     function aoTeclar(e: KeyboardEvent) {
-      if (e.key === "Escape") setModoReordenar(false);
+      if (e.key === "Escape") void sairDoModoReordenar();
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [modoReordenar]);
-
-  function sairDoModoReordenar() {
-    setModoReordenar(false);
-    router.refresh();
-  }
+  }, [modoReordenar, sairDoModoReordenar]);
 
   function abrirCriar() {
     abrirCriarNaCategoria(null);
@@ -373,7 +406,7 @@ export function ProdutosClient({
           desabilitado sai da tabulação e não explica por que está inerte.
         */}
         {modoReordenar ? (
-          <Button onClick={sairDoModoReordenar}>Concluir</Button>
+          <Button onClick={() => void sairDoModoReordenar()}>Concluir</Button>
         ) : (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="outline" onClick={() => setCategoriasAbertas(true)}>
@@ -405,6 +438,7 @@ export function ProdutosClient({
             Ordene as categorias. Categorias sem produtos aparecem só aqui.
           </p>
           <ReordenarCategorias
+            ref={reordenarRef}
             categorias={categorias}
             contagemPorCategoria={contagemPorCategoria}
             temSemCategoria={temSemCategoria}
