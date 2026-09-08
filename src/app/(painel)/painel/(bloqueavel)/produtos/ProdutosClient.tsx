@@ -10,6 +10,7 @@ import {
   Loader2,
   SlidersHorizontal,
   EyeOff,
+  MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,6 +33,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuPortal,
+  MenuPositioner,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
 import { ThumbProduto } from "@/components/painel/ThumbProduto";
@@ -356,89 +365,132 @@ export function ProdutosClient({
               </CardHeader>
               <CardContent className="divide-y divide-foreground/10 p-0">
                 {grupo.produtos.map((p) => (
+                  // `flex-wrap` + `items-start` é o coração do fix de layout
+                  // mobile: em 360px os 7 filhos somavam ~433px de largura
+                  // mínima e o bloco de texto (único flex-1) era esmagado.
+                  // As classes `order-*` mantêm UMA árvore só: no mobile as
+                  // ações quebram para a última linha; a partir de `sm` a
+                  // ordem visual volta a ser thumb → texto → opcionais →
+                  // ações → kebab numa linha só.
                   <div
                     key={p.id}
-                    className="flex min-h-11 items-center gap-3 px-4 py-3"
+                    className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
                   >
                     <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-medium text-foreground">
-                          {p.nome}
+                      {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
+                          cabe em duas linhas em vez de sumir. */}
+                      <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
+                        {p.nome}
+                      </span>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+                          {formatarMoeda(p.preco)}
                         </span>
                         {badgeStatus(p)}
                       </div>
-                      <span className="text-sm text-muted-foreground">
-                        {formatarMoeda(p.preco)}
-                      </span>
-                      {(() => {
-                        const gruposOpcionais =
-                          opcionaisPorCategoria[p.categoria_id ?? ""] ?? [];
-                        if (gruposOpcionais.length === 0) return null;
-                        return (
-                          <ul className="mt-2 flex flex-wrap gap-1.5">
-                            {gruposOpcionais
-                              .slice()
-                              .sort((a, b) => a.ordem - b.ordem)
-                              .map((g) => (
-                                <li key={g.categoriaOpcionalId}>
-                                  <Badge
-                                    variant="secondary"
-                                    className="font-normal"
-                                  >
-                                    {g.categoriaOpcionalNome}
-                                  </Badge>
-                                </li>
-                              ))}
-                          </ul>
-                        );
-                      })()}
                     </div>
 
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="min-h-11"
-                      disabled={alternandoOculto && idAlternandoOculto === p.id}
-                      aria-label={
-                        p.oculto
-                          ? `Exibir ${p.nome} na vitrine`
-                          : `Ocultar ${p.nome} da vitrine`
-                      }
-                      onClick={() => alternarVisibilidade(p)}
-                    >
-                      {p.oculto ? "Exibir" : "Ocultar"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="min-h-11"
-                      disabled={alternandoDisp && idAlternandoDisp === p.id}
-                      aria-label={
-                        p.disponivel
-                          ? `Marcar ${p.nome} como esgotado`
-                          : `Disponibilizar ${p.nome}`
-                      }
-                      onClick={() => alternarDispon(p)}
-                    >
-                      {p.disponivel ? "Marcar esgotado" : "Disponibilizar"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Editar ${p.nome}`}
-                      onClick={() => abrirEditar(p)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Remover ${p.nome}`}
-                      onClick={() => setARemover(p)}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
+                    {/* Editar/Remover consolidados no kebab: elimina os dois
+                        ícones cortados na borda e afasta a ação destrutiva do
+                        alvo de toque de "Marcar esgotado". */}
+                    <Menu>
+                      <MenuTrigger
+                        render={
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="order-3 min-h-[44px] min-w-[44px] sm:order-last"
+                            aria-label={`Mais ações de ${p.nome}`}
+                          />
+                        }
+                      >
+                        <MoreVertical aria-hidden className="size-4" />
+                      </MenuTrigger>
+                      <MenuPortal>
+                        <MenuPositioner align="end">
+                          <MenuPopup>
+                            <MenuItem
+                              className="min-h-[44px]"
+                              aria-label={`Editar ${p.nome}`}
+                              onClick={() => abrirEditar(p)}
+                            >
+                              <Pencil aria-hidden className="size-4" />
+                              Editar
+                            </MenuItem>
+                            <MenuItem
+                              className="min-h-[44px]"
+                              aria-label={`Remover ${p.nome}`}
+                              onClick={() => setARemover(p)}
+                            >
+                              <Trash2
+                                aria-hidden
+                                className="size-4 text-destructive"
+                              />
+                              Remover
+                            </MenuItem>
+                          </MenuPopup>
+                        </MenuPositioner>
+                      </MenuPortal>
+                    </Menu>
+
+                    {(() => {
+                      const gruposOpcionais =
+                        opcionaisPorCategoria[p.categoria_id ?? ""] ?? [];
+                      if (gruposOpcionais.length === 0) return null;
+                      return (
+                        <ul className="order-4 flex w-full flex-wrap gap-1.5 sm:order-3 sm:w-auto">
+                          {gruposOpcionais
+                            .slice()
+                            .sort((a, b) => a.ordem - b.ordem)
+                            .map((g) => (
+                              <li key={g.categoriaOpcionalId}>
+                                <Badge
+                                  variant="secondary"
+                                  className="font-normal"
+                                >
+                                  {g.categoriaOpcionalNome}
+                                </Badge>
+                              </li>
+                            ))}
+                        </ul>
+                      );
+                    })()}
+
+                    {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
+                        52.8px na base de 120% do projeto (globals.css). */}
+                    <div className="order-last flex w-full basis-full gap-2 sm:order-4 sm:w-auto sm:basis-auto">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-[44px] flex-1 sm:flex-none"
+                        disabled={
+                          alternandoOculto && idAlternandoOculto === p.id
+                        }
+                        aria-label={
+                          p.oculto
+                            ? `Exibir ${p.nome} na vitrine`
+                            : `Ocultar ${p.nome} da vitrine`
+                        }
+                        onClick={() => alternarVisibilidade(p)}
+                      >
+                        {p.oculto ? "Exibir" : "Ocultar"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-[44px] flex-1 sm:flex-none"
+                        disabled={alternandoDisp && idAlternandoDisp === p.id}
+                        aria-label={
+                          p.disponivel
+                            ? `Marcar ${p.nome} como esgotado`
+                            : `Disponibilizar ${p.nome}`
+                        }
+                        onClick={() => alternarDispon(p)}
+                      >
+                        {p.disponivel ? "Marcar esgotado" : "Disponibilizar"}
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </CardContent>

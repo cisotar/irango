@@ -42,10 +42,11 @@ Skills de manutenção (fora do ciclo de feature):
 | `/triar` | reconcilia `tasks/`, `specs/`, débitos do `architecture.md` §10 e GitHub com o código; só fecha com evidência |
 | `/sincronizar-agentes` | verifica se `.claude/` ainda descreve o repo (caminhos, comandos, libs, seções) e corrige o drift |
 | `/atualizar-deps` | `npm outdated` + `npm audit`, um bump por vez com build e suíte; major vira issue |
+| `/orquestrar` | atalho para o agente `orquestrar`: devolve o plano de execução mais barato e seguro; não implementa |
 
 ## Agentes
 
-18 agentes em `.claude/agents/`, descritos em `.claude/agents/README.md`. Antes de disparar vários agentes para uma tarefa fora do `/fluxo`, use `orquestrar`: ele devolve o plano mais barato e seguro com reuso do que já existe. Ciclo por issue no `/fluxo`: planejar → `tdd` (só issue crítica) → `executar` → `revisar` ‖ `testar` ‖ `auditar` [‖ `acelerar`] → `verificar` → `escriba`. `pentester` é sob demanda.
+18 agentes em `.claude/agents/`, descritos em `.claude/agents/README.md`. Antes de disparar vários agentes para uma tarefa fora do `/fluxo`, use `/orquestrar`: ele devolve o plano mais barato e seguro com reuso do que já existe. Ciclo por issue no `/fluxo`: planejar → `tdd` (só issue crítica) → `executar` → `revisar` ‖ `testar` ‖ `auditar` [‖ `acelerar`] → `verificar` → `escriba`. `pentester` é sob demanda.
 
 ## Referências — leia antes de propor escopo
 
