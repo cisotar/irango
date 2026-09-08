@@ -29,6 +29,7 @@ import {
   listarZonasComTaxas,
   listarFormasPagamento,
   buscarCupomPorCodigo,
+  type ZonaVitrine,
 } from "@/lib/supabase/queries/entregaPagamento";
 import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
@@ -85,26 +86,49 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       return { erro: "Loja fechada no momento." };
     }
 
-    // (3) Forma de pagamento ∈ formas configuradas pela loja.
-    const formas = await listarFormasPagamento(svc, dados.loja_id);
-    if (!formas.some((f) => f.tipo === dados.forma_pagamento)) {
-      return { erro: ERRO_GENERICO };
-    }
-
-    // (4) Produtos: existem? disponíveis? não-ocultos? da loja correta? (subtotal do PREÇO REAL)
+    // (3/4/4b/5-zonas) [159] ONDA ÚNICA de leituras independentes — antes eram
+    //     round trips em série. Nenhuma depende do resultado da outra: as chaves de
+    //     busca (`ids`, `opcionalIds`) saem do payload JÁ validado pelo zod, sem I/O.
+    //     `listarZonasComTaxas` entra na onda sob a MESMA condição do ramo de frete
+    //     (§5, abaixo): em `retirada` ela continua NÃO sendo chamada — nem aqui,
+    //     nem lá. Içá-la incondicionalmente daria um round trip a todo pedido de
+    //     retirada, o oposto do objetivo da issue.
+    //     `buscarOpcionaisPorCategoria` fica FORA da onda: depende de `produtos`.
+    //     Trade-off aceito (decisão em performance/2026-09-07-159-*.md): o `return`
+    //     de forma de pagamento inválida (logo abaixo) deixa de economizar as demais
+    //     leituras. Esse ramo é raro por construção — a UI só oferece as formas
+    //     configuradas pela loja, e o teto de custo por requisição não muda: quem
+    //     forja payload já foi barrado pelo rate limit (:55) e pelo zod `.strict()`
+    //     (:61), ambos antes de qualquer I/O.
+    //     Rejeição de qualquer leitura da onda rejeita o `Promise.all` → catch
+    //     externo → MESMA mensagem genérica ao cliente (§14), sem vazar detalhe.
     const ids = [...new Set(dados.itens.map((i) => i.produto_id))];
-    const produtos = await buscarProdutosPorIds(svc, ids);
-    const porId = new Map(produtos.map((p) => [p.id, p]));
-
-    // (4b) Opcionais (085): preço/loja/categoria/ativo vêm SEMPRE do banco
-    //      (RN-O1/O2). Lê todos os opcional_id escolhidos e a allowlist por
-    //      categoria de produto (RN-O4). `[]`/`{}` quando não há opcionais.
     const opcionalIds = [
       ...new Set(
         dados.itens.flatMap((i) => (i.opcionais ?? []).map((o) => o.opcional_id)),
       ),
     ];
-    const opcionaisBanco = await buscarOpcionaisPorIds(svc, opcionalIds);
+    const [formas, produtos, opcionaisBanco, zonasPreCarregadas] = await Promise.all([
+      listarFormasPagamento(svc, dados.loja_id),
+      buscarProdutosPorIds(svc, ids),
+      buscarOpcionaisPorIds(svc, opcionalIds),
+      dados.tipo_entrega === "retirada"
+        ? Promise.resolve<ZonaVitrine[]>([])
+        : listarZonasComTaxas(svc, dados.loja_id),
+    ]);
+
+    // (3) Forma de pagamento ∈ formas configuradas pela loja.
+    if (!formas.some((f) => f.tipo === dados.forma_pagamento)) {
+      return { erro: ERRO_GENERICO };
+    }
+
+    // (4) Produtos: existem? disponíveis? não-ocultos? da loja correta? (subtotal do PREÇO REAL)
+    const porId = new Map(produtos.map((p) => [p.id, p]));
+
+    // (4b) Opcionais (085): preço/loja/categoria/ativo vêm SEMPRE do banco
+    //      (RN-O1/O2). A onda acima leu todos os opcional_id escolhidos; a allowlist
+    //      por categoria de produto (RN-O4) depende de `produtos` e por isso fica na
+    //      onda seguinte. `[]`/`{}` quando não há opcionais.
     const opcionalPorId = new Map(opcionaisBanco.map((o) => [o.id, o]));
 
     const categoriaIds = [
@@ -212,7 +236,9 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // RN-C2: servidor força frete zero e ignora qualquer endereço enviado.
       frete = { atendido: true, taxa: 0, zonaId: null, gratis: false };
     } else {
-      const zonas = await listarZonasComTaxas(svc, dados.loja_id);
+      // [159] já lido na onda de leituras acima, sob esta MESMA condição (só o ramo
+      // `entrega` dispara a query).
+      const zonas = zonasPreCarregadas;
       // endereco_entrega é garantido pelo refine do schema quando tipo_entrega='entrega'.
       const endereco: EnderecoEntrega = dados.endereco_entrega ?? {};
 
