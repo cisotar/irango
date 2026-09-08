@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import {
+  ArrowUpDown,
   Pencil,
   Plus,
   Trash2,
@@ -16,7 +17,13 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -45,6 +52,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
 import { ThumbProduto } from "@/components/painel/ThumbProduto";
 import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
+import { ReordenarCategorias } from "@/components/painel/ReordenarCategorias";
 import {
   removerProduto as removerProdutoLojista,
   alternarDisponibilidade as alternarDisponibilidadeLojista,
@@ -55,6 +63,7 @@ import {
   atualizarCategoria as atualizarCategoriaLojista,
   removerCategoria as removerCategoriaLojista,
   alternarExibirImagens as alternarExibirImagensLojista,
+  reordenarCategorias as reordenarCategoriasLojista,
 } from "@/lib/actions/produto";
 import { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
@@ -94,6 +103,7 @@ export type ProdutosClientProps = {
     atualizarCategoria?: typeof atualizarCategoriaLojista;
     removerCategoria?: typeof removerCategoriaLojista;
     alternarExibirImagens?: typeof alternarExibirImagensLojista;
+    reordenarCategorias?: typeof reordenarCategoriasLojista;
     salvarAssociacaoOpcionais?: typeof salvarAssociacaoOpcionais;
   };
 };
@@ -204,10 +214,55 @@ export function ProdutosClient({
     null,
   );
 
+  // Modo "Reordenar categorias" (issue 175). Fica no pai porque é ele que troca
+  // a barra de ações; a LISTA do modo mora em `ReordenarCategorias`.
+  const [modoReordenar, setModoReordenar] = useState(false);
+
   const grupos = useMemo(
     () => agruparPorCategoria(produtos, categorias),
     [produtos, categorias],
   );
+
+  /**
+   * `categoria_id → nº de produtos`. Contado sobre TODOS os produtos, não sobre
+   * `grupos`: `agruparPorCategoria` descarta as categorias vazias, e o modo
+   * reordenar precisa mostrar "0 produtos" para elas.
+   */
+  const contagemPorCategoria = useMemo(() => {
+    const contagem: Record<string, number> = {};
+    for (const p of produtos) {
+      if (p.categoria_id == null) continue;
+      contagem[p.categoria_id] = (contagem[p.categoria_id] ?? 0) + 1;
+    }
+    return contagem;
+  }, [produtos]);
+
+  const temSemCategoria = useMemo(
+    () => produtos.some((p) => p.categoria_id == null),
+    [produtos],
+  );
+
+  /**
+   * Gate do botão: sobre `categorias.length` (TODAS), nunca `grupos.length`
+   * (que esconde as vazias). 0 ou 1 categoria não tem ordem — e um botão
+   * desabilitado ali só produziria "por que não funciona?" sem resposta na tela.
+   */
+  const podeReordenar = categorias.length >= 2;
+
+  // ESC também sai do modo (expectativa de qualquer modo contextual).
+  useEffect(() => {
+    if (!modoReordenar) return;
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === "Escape") setModoReordenar(false);
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [modoReordenar]);
+
+  function sairDoModoReordenar() {
+    setModoReordenar(false);
+    router.refresh();
+  }
 
   function abrirCriar() {
     abrirCriarNaCategoria(null);
@@ -312,192 +367,245 @@ export function ProdutosClient({
         <h1 className="font-heading text-xl font-semibold text-foreground">
           Produtos
         </h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setCategoriasAbertas(true)}>
-            Categorias
-          </Button>
-          <Button onClick={abrirCriar}>
-            <Plus className="size-4" />
-            Novo produto
-          </Button>
-        </div>
+        {/*
+          Troca de BARRA, não toggle no mesmo botão: "+ Novo produto" e as ações
+          de produto DESAPARECEM no modo, não ficam `disabled` — botão
+          desabilitado sai da tabulação e não explica por que está inerte.
+        */}
+        {modoReordenar ? (
+          <Button onClick={sairDoModoReordenar}>Concluir</Button>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="outline" onClick={() => setCategoriasAbertas(true)}>
+              Categorias
+            </Button>
+            <Button onClick={abrirCriar}>
+              <Plus className="size-4" />
+              Novo produto
+            </Button>
+            {podeReordenar && (
+              <Button
+                variant="outline"
+                onClick={() => setModoReordenar(true)}
+              >
+                <ArrowUpDown className="size-4" />
+                Reordenar categorias
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      {produtos.length === 0 && (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Nenhum produto ainda. Crie o primeiro com &ldquo;Novo produto&rdquo;.
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="space-y-6">
-        {grupos.map((grupo) => (
-          <section key={grupo.id ?? "sem-categoria"}>
+      {/* No modo reordenar a listagem normal dá lugar à lista de reordenação:
+          é o que colapsa tudo e faz a tela ler de `categorias` (todas), e não de
+          `grupos` (que esconde categoria vazia). */}
+      {modoReordenar ? (
+        <>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Ordene as categorias. Categorias sem produtos aparecem só aqui.
+          </p>
+          <ReordenarCategorias
+            categorias={categorias}
+            contagemPorCategoria={contagemPorCategoria}
+            temSemCategoria={temSemCategoria}
+            onReordenar={acoes?.reordenarCategorias}
+          />
+        </>
+      ) : (
+        <>
+          {produtos.length === 0 && (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 border-b">
-                <CardTitle className="font-heading text-lg font-semibold text-foreground">
-                  {grupo.nome}
-                </CardTitle>
-                {grupo.id != null && (
-                  <div className="flex items-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCategoriaOpcionaisAberta(grupo)}
-                    >
-                      <SlidersHorizontal className="size-4" />
-                      Opcionais
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Novo produto em ${grupo.nome}`}
-                      onClick={() => abrirCriarNaCategoria(grupo.id)}
-                    >
-                      <Plus className="size-4" />
-                      {/* Ícone-only no mobile para o header não estourar (RN-5);
-                          o aria-label mantém o nome acessível. */}
-                      <span className="hidden sm:inline">Novo produto</span>
-                    </Button>
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent className="divide-y divide-foreground/10 p-0">
-                {grupo.produtos.map((p) => (
-                  // `flex-wrap` + `items-start` é o coração do fix de layout
-                  // mobile: em 360px os 7 filhos somavam ~433px de largura
-                  // mínima e o bloco de texto (único flex-1) era esmagado.
-                  // As classes `order-*` mantêm UMA árvore só: no mobile as
-                  // ações quebram para a última linha; a partir de `sm` a
-                  // ordem visual volta a ser thumb → texto → opcionais →
-                  // ações → kebab numa linha só.
-                  <div
-                    key={p.id}
-                    className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
-                  >
-                    <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
-                    <div className="min-w-0 flex-1">
-                      {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
-                          cabe em duas linhas em vez de sumir. */}
-                      <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
-                        {p.nome}
-                      </span>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
-                          {formatarMoeda(p.preco)}
-                        </span>
-                        {badgeStatus(p)}
-                      </div>
-                    </div>
-
-                    {/* Editar/Remover consolidados no kebab: elimina os dois
-                        ícones cortados na borda e afasta a ação destrutiva do
-                        alvo de toque de "Marcar esgotado". */}
-                    <Menu>
-                      <MenuTrigger
-                        render={
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="order-3 min-h-[44px] min-w-[44px] sm:order-last"
-                            aria-label={`Mais ações de ${p.nome}`}
-                          />
-                        }
-                      >
-                        <MoreVertical aria-hidden className="size-4" />
-                      </MenuTrigger>
-                      <MenuPortal>
-                        <MenuPositioner align="end">
-                          <MenuPopup>
-                            <MenuItem
-                              className="min-h-[44px]"
-                              aria-label={`Editar ${p.nome}`}
-                              onClick={() => abrirEditar(p)}
-                            >
-                              <Pencil aria-hidden className="size-4" />
-                              Editar
-                            </MenuItem>
-                            <MenuItem
-                              className="min-h-[44px]"
-                              aria-label={`Remover ${p.nome}`}
-                              onClick={() => setARemover(p)}
-                            >
-                              <Trash2
-                                aria-hidden
-                                className="size-4 text-destructive"
-                              />
-                              Remover
-                            </MenuItem>
-                          </MenuPopup>
-                        </MenuPositioner>
-                      </MenuPortal>
-                    </Menu>
-
-                    {(() => {
-                      const gruposOpcionais =
-                        opcionaisPorCategoria[p.categoria_id ?? ""] ?? [];
-                      if (gruposOpcionais.length === 0) return null;
-                      return (
-                        <ul className="order-4 flex w-full flex-wrap gap-1.5 sm:order-3 sm:w-auto">
-                          {gruposOpcionais
-                            .slice()
-                            .sort((a, b) => a.ordem - b.ordem)
-                            .map((g) => (
-                              <li key={g.categoriaOpcionalId}>
-                                <Badge
-                                  variant="secondary"
-                                  className="font-normal"
-                                >
-                                  {g.categoriaOpcionalNome}
-                                </Badge>
-                              </li>
-                            ))}
-                        </ul>
-                      );
-                    })()}
-
-                    {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
-                        52.8px na base de 120% do projeto (globals.css). */}
-                    <div className="order-last flex w-full basis-full gap-2 sm:order-4 sm:w-auto sm:basis-auto">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="min-h-[44px] flex-1 sm:flex-none"
-                        disabled={
-                          alternandoOculto && idAlternandoOculto === p.id
-                        }
-                        aria-label={
-                          p.oculto
-                            ? `Exibir ${p.nome} na vitrine`
-                            : `Ocultar ${p.nome} da vitrine`
-                        }
-                        onClick={() => alternarVisibilidade(p)}
-                      >
-                        {p.oculto ? "Exibir" : "Ocultar"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="min-h-[44px] flex-1 sm:flex-none"
-                        disabled={alternandoDisp && idAlternandoDisp === p.id}
-                        aria-label={
-                          p.disponivel
-                            ? `Marcar ${p.nome} como esgotado`
-                            : `Disponibilizar ${p.nome}`
-                        }
-                        onClick={() => alternarDispon(p)}
-                      >
-                        {p.disponivel ? "Marcar esgotado" : "Disponibilizar"}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                Nenhum produto ainda. Crie o primeiro com &ldquo;Novo
+                produto&rdquo;.
               </CardContent>
             </Card>
-          </section>
-        ))}
-      </div>
+          )}
+
+          {/* Sanfona na listagem NORMAL, todas ABERTAS por padrão: a tela não
+              pode mudar de comportamento para quem nunca vai reordenar nada. */}
+          <Accordion
+            multiple
+            defaultValue={grupos.map((g) => g.id ?? "sem-categoria")}
+            className="gap-6"
+          >
+            {grupos.map((grupo) => (
+              <AccordionItem
+                key={grupo.id ?? "sem-categoria"}
+                value={grupo.id ?? "sem-categoria"}
+                className="not-last:border-b-0"
+              >
+                <Card>
+                  {/* O gatilho da sanfona é um <button>; as ações da categoria
+                      ficam FORA dele (button aninhado é HTML inválido). O <h3>
+                      do AccordionHeader é quem cresce. */}
+                  <div className="flex items-center justify-between gap-2 border-b px-4 [&>h3]:min-w-0 [&>h3]:flex-1">
+                    <AccordionTrigger className="min-h-[44px] font-heading text-lg font-semibold text-foreground">
+                      {grupo.nome}
+                    </AccordionTrigger>
+                    {grupo.id != null && (
+                      <div className="flex shrink-0 items-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setCategoriaOpcionaisAberta(grupo)}
+                        >
+                          <SlidersHorizontal className="size-4" />
+                          Opcionais
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Novo produto em ${grupo.nome}`}
+                          onClick={() => abrirCriarNaCategoria(grupo.id)}
+                        >
+                          <Plus className="size-4" />
+                          {/* Ícone-only no mobile para o header não estourar
+                              (RN-5); o aria-label mantém o nome acessível. */}
+                          <span className="hidden sm:inline">Novo produto</span>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <AccordionContent className="pt-0 pb-0">
+                    <CardContent className="divide-y divide-foreground/10 p-0">
+                      {grupo.produtos.map((p) => (
+                        // `flex-wrap` + `items-start` é o coração do fix de layout
+                        // mobile: em 360px os 7 filhos somavam ~433px de largura
+                        // mínima e o bloco de texto (único flex-1) era esmagado.
+                        // As classes `order-*` mantêm UMA árvore só: no mobile as
+                        // ações quebram para a última linha; a partir de `sm` a
+                        // ordem visual volta a ser thumb → texto → opcionais →
+                        // ações → kebab numa linha só.
+                        <div
+                          key={p.id}
+                          className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
+                        >
+                          <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
+                          <div className="min-w-0 flex-1">
+                            {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
+                                cabe em duas linhas em vez de sumir. */}
+                            <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
+                              {p.nome}
+                            </span>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+                                {formatarMoeda(p.preco)}
+                              </span>
+                              {badgeStatus(p)}
+                            </div>
+                          </div>
+
+                          {/* Editar/Remover consolidados no kebab: elimina os dois
+                              ícones cortados na borda e afasta a ação destrutiva do
+                              alvo de toque de "Marcar esgotado". */}
+                          <Menu>
+                            <MenuTrigger
+                              render={
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="order-3 min-h-[44px] min-w-[44px] sm:order-last"
+                                  aria-label={`Mais ações de ${p.nome}`}
+                                />
+                              }
+                            >
+                              <MoreVertical aria-hidden className="size-4" />
+                            </MenuTrigger>
+                            <MenuPortal>
+                              <MenuPositioner align="end">
+                                <MenuPopup>
+                                  <MenuItem
+                                    className="min-h-[44px]"
+                                    aria-label={`Editar ${p.nome}`}
+                                    onClick={() => abrirEditar(p)}
+                                  >
+                                    <Pencil aria-hidden className="size-4" />
+                                    Editar
+                                  </MenuItem>
+                                  <MenuItem
+                                    className="min-h-[44px]"
+                                    aria-label={`Remover ${p.nome}`}
+                                    onClick={() => setARemover(p)}
+                                  >
+                                    <Trash2
+                                      aria-hidden
+                                      className="size-4 text-destructive"
+                                    />
+                                    Remover
+                                  </MenuItem>
+                                </MenuPopup>
+                              </MenuPositioner>
+                            </MenuPortal>
+                          </Menu>
+
+                          {(() => {
+                            const gruposOpcionais =
+                              opcionaisPorCategoria[p.categoria_id ?? ""] ?? [];
+                            if (gruposOpcionais.length === 0) return null;
+                            return (
+                              <ul className="order-4 flex w-full flex-wrap gap-1.5 sm:order-3 sm:w-auto">
+                                {gruposOpcionais
+                                  .slice()
+                                  .sort((a, b) => a.ordem - b.ordem)
+                                  .map((g) => (
+                                    <li key={g.categoriaOpcionalId}>
+                                      <Badge
+                                        variant="secondary"
+                                        className="font-normal"
+                                      >
+                                        {g.categoriaOpcionalNome}
+                                      </Badge>
+                                    </li>
+                                  ))}
+                              </ul>
+                            );
+                          })()}
+
+                          {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
+                              52.8px na base de 120% do projeto (globals.css). */}
+                          <div className="order-last flex w-full basis-full gap-2 sm:order-4 sm:w-auto sm:basis-auto">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="min-h-[44px] flex-1 sm:flex-none"
+                              disabled={
+                                alternandoOculto && idAlternandoOculto === p.id
+                              }
+                              aria-label={
+                                p.oculto
+                                  ? `Exibir ${p.nome} na vitrine`
+                                  : `Ocultar ${p.nome} da vitrine`
+                              }
+                              onClick={() => alternarVisibilidade(p)}
+                            >
+                              {p.oculto ? "Exibir" : "Ocultar"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="min-h-[44px] flex-1 sm:flex-none"
+                              disabled={alternandoDisp && idAlternandoDisp === p.id}
+                              aria-label={
+                                p.disponivel
+                                  ? `Marcar ${p.nome} como esgotado`
+                                  : `Disponibilizar ${p.nome}`
+                              }
+                              onClick={() => alternarDispon(p)}
+                            >
+                              {p.disponivel ? "Marcar esgotado" : "Disponibilizar"}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </AccordionContent>
+                </Card>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </>
+      )}
 
       {/* Gestão de categorias de produto */}
       <GerenciarCategorias
