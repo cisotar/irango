@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iRango — reordenar categorias (painel)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          // Tokens SEMÂNTICOS do painel (globals.css :root).
+          // O painel NUNCA usa o tema da loja — só cores de sistema.
+          background: "#ffffff",
+          foreground: "#252525",
+          card: "#ffffff",
+          muted: "#f7f7f7",
+          "muted-foreground": "#8e8e8e",
+          secondary: "#f0f0f0",
+          "secondary-foreground": "#343434",
+          border: "#e5e5e5",
+          primary: "#252525",
+          destructive: "#dc2626",
+          ring: "#b5b5b5",
+        },
+        borderRadius: { DEFAULT: "0.625rem", xl: "0.75rem" },
+      },
+    },
+  };
+</script>
+<style>
+  /* Reproduz globals.css:212 — base rem = 19.2px. É por isso que min-h-11
+     (2.75rem = 52.8px) NÃO é 44px e size-7 (icon-sm) é só 33.6px. */
+  html { font-size: 120%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+
+  /* ---------- componentes shadcn recriados como classe ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
+    white-space: nowrap; font-weight: 500; cursor: pointer;
+    border-radius: min(0.5rem, 12px); transition: background-color .15s, color .15s, box-shadow .15s;
+    border: 1px solid transparent;
+  }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #b5b5b5; }
+  .btn-default { height: 2rem; padding: 0 .8rem; font-size: .82rem; }
+  .btn-sm { height: 1.75rem; padding: 0 .625rem; font-size: .8rem; }
+  .btn-outline { background: #fff; color: #252525; border-color: #e5e5e5; }
+  .btn-outline:hover { background: #f7f7f7; }
+  .btn-ghost { background: transparent; color: #252525; }
+  .btn-ghost:hover { background: #f2f2f2; }
+  .btn-primary { background: #252525; color: #fafafa; }
+  .btn-primary:hover { background: #3a3a3a; }
+
+  /* Alvo de toque: 44px LITERAL, mesma régua do fix de chore/higiene-pos-159. */
+  .touch44 { min-height: 44px; min-width: 44px; }
+
+  /* Controle no limite da lista: aria-disabled, NÃO disabled — o botão continua
+     focável, senão o foco se perde no <body> ao mover um item para o topo. */
+  .btn[aria-disabled="true"] { opacity: .38; cursor: default; }
+  .btn[aria-disabled="true"]:hover { background: #fff; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: .25rem;
+    border-radius: 9999px; padding: .125rem .5rem;
+    font-size: .72rem; font-weight: 500; line-height: 1.25; white-space: nowrap;
+  }
+  .badge-secondary { background: #f0f0f0; color: #343434; }
+
+  .card { background: #fff; border: 1px solid #e5e5e5; border-radius: .75rem; overflow: hidden; }
+
+  .nome-cat { font-size: 1.02rem; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
+  .preco { font-size: .85rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  /* ---------- reordenação ---------- */
+  .li-reorder { transition: transform 180ms ease-out, background-color 180ms; }
+  .pousou { animation: pouso 600ms ease-out; }
+  @keyframes pouso {
+    0%, 60% { box-shadow: inset 0 0 0 1px rgba(37,37,37,.4); background: #fafafa; }
+    100%    { box-shadow: inset 0 0 0 1px transparent; background: transparent; }
+  }
+
+  /* Alça: touch-action none SÓ NELA — é isto que preserva o scroll da página. */
+  .alca { touch-action: none; cursor: grab; }
+  .alca:active { cursor: grabbing; }
+
+  /* Estados do arrasto (variante B — só se @dnd-kit for adotado) */
+  .drag-overlay {
+    box-shadow: 0 10px 24px rgba(0,0,0,.18);
+    transform: scale(1.02) rotate(.5deg);
+    background: #fff; border: 1px solid #e5e5e5; border-radius: .75rem;
+  }
+  .placeholder {
+    border: 2px dashed #e5e5e5; background: rgba(247,247,247,.6);
+    border-radius: .5rem;
+  }
+  .placeholder > * { opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .li-reorder { transition: none; }
+    .pousou { animation: none; background: #fafafa; }
+  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  /* moldura de demonstração */
+  .frame { width: 360px; border: 1px solid #d4d4d4; border-radius: 1rem; overflow: hidden; background: #fff; }
+  .rotulo { font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #8e8e8e; }
+</style>
+</head>
+<body class="bg-[#efefef] text-foreground">
+
+<div class="mx-auto max-w-6xl px-4 py-8 space-y-10">
+
+  <header class="space-y-2">
+    <h1 class="text-2xl font-semibold tracking-tight">Reordenar categorias de produtos</h1>
+    <p class="text-sm text-muted-foreground max-w-2xl">
+      Contrato de interação para <code class="bg-white px-1 rounded border border-border">/painel/produtos</code>.
+      Recomendação: <strong>v1 sem biblioteca de arrasto</strong> (estados A e B abaixo);
+      o estado C existe só para especificar o feedback caso o gate humano adote <code>@dnd-kit</code>.
+      Contexto completo em <code class="bg-white px-1 rounded border border-border">mockups/reordenar-categorias-painel.md</code>.
+    </p>
+    <p class="text-xs text-muted-foreground">
+      Base rem = 19.2px (<code>html{font-size:120%}</code>), como em produção. Larguras a 360px.
+    </p>
+  </header>
+
+  <div class="grid gap-8 lg:grid-cols-3">
+
+    <!-- ============ A — MODO NORMAL ============ -->
+    <section class="space-y-3">
+      <p class="rotulo">A · Modo normal (padrão)</p>
+      <div class="frame">
+        <div class="px-4 py-6 space-y-6">
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-xl font-semibold">Produtos</h2>
+            <div class="flex items-center gap-2">
+              <button class="btn btn-outline btn-default">Categorias</button>
+              <button class="btn btn-primary btn-default">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg>
+                Novo produto
+              </button>
+            </div>
+            <!-- Só aparece com >= 2 categorias (contadas em `categorias`, não em `grupos`) -->
+            <button class="btn btn-outline btn-default w-full">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16"/></svg>
+              Reordenar categorias
+            </button>
+          </div>
+
+          <div class="space-y-4">
+            <div class="card">
+              <!-- CardHeader vira Accordion.Trigger; alvo 44px -->
+              <button class="touch44 flex w-full items-center justify-between gap-2 border-b border-border px-4 py-2 text-left" aria-expanded="true">
+                <span class="flex items-center gap-2 min-w-0">
+                  <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  <span class="nome-cat truncate">Pizzas doces</span>
+                </span>
+                <span class="flex items-center gap-1 shrink-0">
+                  <span class="btn btn-ghost btn-sm">Opcionais</span>
+                  <span class="btn btn-ghost btn-sm" aria-hidden="true">+</span>
+                </span>
+              </button>
+              <div class="divide-y divide-black/10">
+                <div class="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+                  <div class="size-10 shrink-0 rounded bg-secondary grid place-items-center text-sm font-semibold text-muted-foreground">B</div>
+                  <div class="min-w-0 flex-1">
+                    <span class="block text-base font-semibold leading-snug">Brigadeirão</span>
+                    <span class="mt-1 flex flex-wrap items-center gap-2">
+                      <span class="preco">R$ 30,00</span>
+                      <span class="badge badge-secondary">Disponível</span>
+                    </span>
+                  </div>
+                  <button class="btn btn-outline touch44 order-3" aria-label="Mais ações de Brigadeirão">⋮</button>
+                  <div class="order-last flex w-full basis-full gap-2">
+                    <button class="btn btn-outline btn-sm touch44 flex-1">Ocultar</button>
+                    <button class="btn btn-outline btn-sm touch44 flex-1">Marcar esgotado</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <button class="touch44 flex w-full items-center justify-between gap-2 px-4 py-2 text-left" aria-expanded="true">
+                <span class="flex items-center gap-2 min-w-0">
+                  <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  <span class="nome-cat truncate">Pizzas salgadas</span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <p class="text-xs text-muted-foreground">
+        Accordions <strong>abertos por padrão</strong> — quem nunca vai reordenar não sente mudança.
+        A linha do produto fica <strong>intocada</strong> (fix de <code>chore/higiene-pos-159</code>).
+      </p>
+    </section>
+
+    <!-- ============ B — MODO REORDENAR (v1, sem lib) ============ -->
+    <section class="space-y-3">
+      <p class="rotulo">B · Modo reordenar — v1 recomendada</p>
+      <div class="frame">
+        <div class="px-4 py-6 space-y-4">
+
+          <!-- barra de modo: TROCA a barra normal, não desabilita botões -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-xl font-semibold">Produtos</h2>
+              <button class="btn btn-primary btn-default touch44">Concluir</button>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Ordene as categorias. Categorias sem produtos aparecem só aqui.
+            </p>
+          </div>
+
+          <!-- região viva única, FORA da <ol>, imóvel -->
+          <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            Pizzas salgadas movida para a posição 2 de 3.
+          </p>
+
+          <ol class="card divide-y divide-black/10">
+            <li class="li-reorder flex items-center gap-2 px-3 py-2">
+              <span class="min-w-0 flex-1">
+                <span class="flex items-baseline gap-1.5">
+                  <span class="text-sm font-semibold tabular-nums text-muted-foreground">1.</span>
+                  <span class="nome-cat truncate">Pizzas doces</span>
+                </span>
+                <span class="block text-xs text-muted-foreground">4 produtos</span>
+              </span>
+              <!-- aria-disabled, nunca disabled: preserva o foco no limite -->
+              <button class="btn btn-outline touch44" aria-disabled="true" aria-label="Mover Pizzas doces para cima">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+              </button>
+              <button class="btn btn-outline touch44" aria-label="Mover Pizzas doces para baixo">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </li>
+
+            <li class="li-reorder pousou flex items-center gap-2 px-3 py-2">
+              <span class="min-w-0 flex-1">
+                <span class="flex items-baseline gap-1.5">
+                  <span class="text-sm font-semibold tabular-nums text-muted-foreground">2.</span>
+                  <span class="nome-cat truncate">Pizzas salgadas</span>
+                </span>
+                <span class="block text-xs text-muted-foreground">11 produtos</span>
+              </span>
+              <button class="btn btn-outline touch44" aria-label="Mover Pizzas salgadas para cima">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+              </button>
+              <button class="btn btn-outline touch44" aria-label="Mover Pizzas salgadas para baixo">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </li>
+
+            <li class="li-reorder flex items-center gap-2 px-3 py-2">
+              <span class="min-w-0 flex-1">
+                <span class="flex items-baseline gap-1.5">
+                  <span class="text-sm font-semibold tabular-nums text-muted-foreground">3.</span>
+                  <span class="nome-cat truncate">Bebidas</span>
+                </span>
+                <!-- categoria vazia: invisível na tela normal (ProdutosClient.tsx:130) -->
+                <span class="block text-xs text-muted-foreground">0 produtos</span>
+              </span>
+              <button class="btn btn-outline touch44" aria-label="Mover Bebidas para cima">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+              </button>
+              <button class="btn btn-outline touch44" aria-disabled="true" aria-label="Mover Bebidas para baixo">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </li>
+
+            <!-- grupo sintético: sem alça, sem setas — nunca um controle inerte -->
+            <li class="flex items-center gap-2 bg-muted px-3 py-2">
+              <svg class="shrink-0 text-muted-foreground" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span class="min-w-0 flex-1">
+                <span class="nome-cat truncate text-muted-foreground">Sem categoria</span>
+                <span class="block text-xs text-muted-foreground">Sempre por último</span>
+              </span>
+            </li>
+          </ol>
+
+          <p class="text-xs text-muted-foreground" aria-hidden="true">Ordem salva</p>
+        </div>
+      </div>
+      <p class="text-xs text-muted-foreground">
+        Sem alça, sem lib, sem <code>touch-action</code>: o scroll da página nunca é disputado.
+        Movimentos rápidos são <strong>coalescidos</strong> em uma única escrita (debounce ~500ms,
+        payload = sequência completa de ids).
+      </p>
+    </section>
+
+    <!-- ============ C — ARRASTO (só se o gate humano adotar) ============ -->
+    <section class="space-y-3">
+      <p class="rotulo">C · Arrasto em curso — se @dnd-kit for adotado</p>
+      <div class="frame">
+        <div class="px-4 py-6 space-y-4">
+
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-xl font-semibold">Produtos</h2>
+            <button class="btn btn-primary btn-default touch44">Concluir</button>
+          </div>
+
+          <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            Bebidas será colocada na posição 1 de 3.
+          </p>
+
+          <!-- DragOverlay em portal: sem ele o overflow do Card clipa o item -->
+          <div class="drag-overlay flex items-center gap-2 px-3 py-2">
+            <span class="alca touch44 grid place-items-center text-muted-foreground" aria-label="Reordenar Bebidas">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="nome-cat truncate">Bebidas</span>
+              <span class="block text-xs text-muted-foreground">0 produtos</span>
+            </span>
+            <span class="btn btn-outline touch44" aria-hidden="true">↑</span>
+            <span class="btn btn-outline touch44" aria-hidden="true">↓</span>
+          </div>
+
+          <ol class="card divide-y divide-black/10">
+            <!-- vizinhos deslocam UM passo cada — é a animação que prova
+                 "deslocamento", não "troca de pares" -->
+            <li class="li-reorder flex items-center gap-2 px-3 py-2 translate-y-[0px]">
+              <span class="alca touch44 grid place-items-center text-muted-foreground">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="flex items-baseline gap-1.5">
+                  <span class="text-sm font-semibold tabular-nums text-muted-foreground">2.</span>
+                  <span class="nome-cat truncate">Pizzas doces</span>
+                </span>
+                <span class="block text-xs text-muted-foreground">4 produtos · desloca ↓ 1</span>
+              </span>
+            </li>
+            <li class="li-reorder flex items-center gap-2 px-3 py-2">
+              <span class="alca touch44 grid place-items-center text-muted-foreground">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="flex items-baseline gap-1.5">
+                  <span class="text-sm font-semibold tabular-nums text-muted-foreground">3.</span>
+                  <span class="nome-cat truncate">Pizzas salgadas</span>
+                </span>
+                <span class="block text-xs text-muted-foreground">11 produtos · desloca ↓ 1</span>
+              </span>
+            </li>
+            <!-- slot de origem: MESMA ALTURA, tracejado. Nunca colapsar a 0 -->
+            <li class="placeholder mx-2 my-1 flex items-center gap-2 px-3 py-2">
+              <span class="touch44"></span>
+              <span class="min-w-0 flex-1"><span class="nome-cat">Bebidas</span><span class="block text-xs">0 produtos</span></span>
+            </li>
+          </ol>
+
+          <p class="text-xs text-muted-foreground" aria-hidden="true">Salvando ordem…</p>
+        </div>
+      </div>
+      <p class="text-xs text-muted-foreground">
+        Alça dedicada (44×44, <code>touch-action:none</code> <strong>só nela</strong>).
+        Card inteiro arrastável mataria o scroll da página. Se adotado,
+        <code>announcements</code> e <code>screenReaderInstructions</code> do dnd-kit
+        <strong>têm que ser traduzidos</strong> — o default é inglês.
+      </p>
+    </section>
+
+  </div>
+
+  <!-- ---------- por que a lib é dispensável ---------- -->
+  <section class="card p-5 space-y-3">
+    <h2 class="text-lg font-semibold">Por que os botões ↑/↓ dispensam a biblioteca</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse min-w-[560px]">
+        <thead>
+          <tr class="border-b border-border text-left">
+            <th class="py-2 pr-4 font-semibold">Critério</th>
+            <th class="py-2 pr-4 font-semibold">Só botões ↑/↓</th>
+            <th class="py-2 font-semibold">+ @dnd-kit</th>
+          </tr>
+        </thead>
+        <tbody class="align-top">
+          <tr class="border-b border-border/60"><td class="py-2 pr-4">WCAG 2.2 SC 2.5.7</td><td class="py-2 pr-4">Atendido</td><td class="py-2">Atendido — <strong>pelos mesmos botões</strong>, que continuam obrigatórios</td></tr>
+          <tr class="border-b border-border/60"><td class="py-2 pr-4">Desktop + mobile por toque</td><td class="py-2 pr-4">Sim, mesmo controle nos dois</td><td class="py-2">Sim</td></tr>
+          <tr class="border-b border-border/60"><td class="py-2 pr-4">Semântica de deslocamento</td><td class="py-2 pr-4">Sim — mesma função pura</td><td class="py-2">Sim — mesma função pura</td></tr>
+          <tr class="border-b border-border/60"><td class="py-2 pr-4">Coberto pelo CI</td><td class="py-2 pr-4"><strong>100%</strong> (função pura + <code>renderToStaticMarkup</code>)</td><td class="py-2"><strong>0%</strong> do gesto — vitest é <code>environment:node</code>, sem jsdom</td></tr>
+          <tr class="border-b border-border/60"><td class="py-2 pr-4">Dependência de runtime</td><td class="py-2 pr-4">Nenhuma</td><td class="py-2">2 pacotes, ~13–15 KB gz, gate humano</td></tr>
+          <tr class="border-b border-border/60"><td class="py-2 pr-4">Custo extra de a11y</td><td class="py-2 pr-4">Nenhum</td><td class="py-2">Traduzir anúncios do dnd-kit para pt-BR</td></tr>
+          <tr class="border-b border-border/60"><td class="py-2 pr-4">Pior caso de esforço</td><td class="py-2 pr-4">n−1 toques — mitigado por “Mover para o topo/fim” no kebab</td><td class="py-2">1 gesto</td></tr>
+          <tr><td class="py-2 pr-4">Mudança no servidor para adotar depois</td><td class="py-2 pr-4" colspan="2"><strong>Nenhuma.</strong> Mesma action <code>reordenarCategorias(ids)</code>, mesma função pura, mesma região viva — trocar de caminho é só camada de apresentação.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm">
+      <strong>Recomendação:</strong> v1 com botões. Reabrir a decisão só se o lojista
+      rejeitar o caminho na verificação manual, ou se surgir loja com mais de 12 categorias.
+    </p>
+  </section>
+
+</div>
+</body>
+</html>
