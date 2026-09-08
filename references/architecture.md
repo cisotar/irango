@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.22 | **Atualizado:** 2026-09-07
+**Versão:** 0.2.23 | **Atualizado:** 2026-09-08
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -305,6 +305,7 @@ O `lojinhaonline` é **JavaScript vanilla** (sem framework, sem tipos). O iRango
 | Toast | sonner | https://sonner.emilkowal.ski |
 | Testes de DB/RLS | @electric-sql/pglite | https://pglite.dev — Postgres in-process, sem Docker; emula `auth.uid()` e roles do Supabase; migrations aplicadas via `tests/helpers/pglite.ts`; testes rodam no vitest |
 | Service Worker | serwist + @serwist/turbopack | https://serwist.pages.dev — SW compilado via esbuild, servido em `/serwist/sw.js` same-origin pelo Route Handler; runtimeCaching ordenada: [0] NetworkOnly `/painel*` (invariante de segurança — testável no vitest porque `lib/pwa/runtimeCaching.ts` é módulo puro sem globals de SW) |
+| Arrasto (drag-and-drop) | @dnd-kit/core + @dnd-kit/sortable | https://docs.dndkit.com — issue 175 (reordenar categorias). 100% client-side, zero chamada de rede/quota; bundle cai só em `/painel/produtos`, atrás do guard de auth — a vitrine pública não carrega nada disso |
 
 ---
 
@@ -333,6 +334,7 @@ const items = order.order_items
 - Queries → `lib/supabase/queries/` — nunca escrever `.from('produtos').select(...)` inline
 - Helper de I/O compartilhado entre actions → `lib/actions/` — módulo neutro (sem `'use server'`); exporta só funções puras de validação/transformação; o I/O em si (upload, DB) fica em cada action. Exemplo: `upload-imagem.ts` reutilizado por `upload.ts` e `logo.ts`
 - Mecânica de browser que precisa ser testada sem jsdom (repo não usa jsdom) → módulo neutro (sem `'use client'`/`'use server'`) com o objeto global (janela, timer) **injetado por parâmetro**, nunca lido direto de `window`/`document` dentro da função — permite cobrir em `environment: node` com fake injetado. Padrão usado 2x: `criarControladorPolling`/`DepsPolling` (`confirmacao/StatusPedidoLive.tsx`, polling de status) e `prepararAbaWhatsapp`/`AbrirJanela` (`checkout/aberturaWhatsapp.ts`, issue 126)
+- Operação assíncrona com **debounce + coalescência + revert** (ex.: salvar uma reordenação sem disparar uma request por toque, sem perder o último movimento, sem reverter para um estado que nunca existiu no banco quando respostas chegam fora de ordem) → máquina de estado pura em `lib/utils/`, a Server Action **injetada por parâmetro** (nunca importada dentro do módulo), usando só `setTimeout`/`clearTimeout` globais — o vitest troca por timers falsos, cobre em `environment: node` sem jsdom. Primeira instância: `criarSalvamentoCoalescido` (`lib/utils/salvamento-coalescido.ts`, issue 175)
 
 ### Componentes
 
@@ -379,3 +381,5 @@ const items = order.order_items
 | `pertenceALoja` triplicada | mesma fórmula de prova de posse (`escopo.buscarPorId(tabela, id, "id")` + `data != null`) reimplementada em `admin-produtos.ts` e 2x em `admin-opcionais.ts` | issue 135 |
 | Tipo `Resultado` duplicado (`admin-opcionais.ts`/`admin-produtos.ts`) | mesmo shape `{ok:true}\|{ok:false;erro}` sem módulo neutro compartilhado (ao contrário de `cupom-erros.ts`/`status.ts`) | issue 135 |
 | DELETE+INSERT não transacional em `salvarAssociacaoOpcionaisAdmin` | falha de INSERT após DELETE commitado deixa associação parcialmente removida; não é vetor cross-tenant, mesmo padrão do CRUD do lojista | issue 135 |
+| `CAMINHO_PAINEL = "/painel/cardapio"` (`src/lib/actions/produto.ts:25`) aponta para rota que não existe | os 17 `revalidatePath` que o usam (9 em `produto.ts`, 8 em `opcional.ts`) são no-op silencioso; as telas só atualizam via `router.refresh()` do client. Corrigir muda o cache de 17 actions | achado na issue 175 — issue própria a abrir |
+| `atualizarCategoria`/`removerCategoria` (`produto.ts`) não escopam por `loja_id` explícito, confiam só na RLS | não é vulnerabilidade — PoC da auditoria da issue 175 provou `affectedRows: 0` em categoria alheia (o `USING` da RLS torna a linha invisível) — mas é defeito de qualidade: a UI mostra sucesso numa escrita que não ocorreu, e o `loja_id: loja.id` que `atualizarCategoria` grava vira sequestro de categoria alheia no dia em que a RLS for afrouxada | achado na issue 175 — issue própria a abrir |
