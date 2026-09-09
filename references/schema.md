@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.16 | **Atualizado:** 2026-09-08
+**Versão:** 0.1.17 | **Atualizado:** 2026-09-09
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -402,6 +402,29 @@ CREATE TABLE admin_acessos (
 );
 ```
 
+### `taxas_entrega_duplicadas_182`
+
+```sql
+-- Arquivo das duplicatas de taxas_entrega removidas ao criar o índice único em
+-- zona_id (issue 182). Por zona_id, sobreviveu a linha de menor ctid (a que a
+-- vitrine já lia via taxa[0]); as demais foram arquivadas aqui antes do DELETE.
+-- RLS: deny-all permanente — acesso exclusivo via service_role (BYPASSRLS).
+-- SEM FK em taxa_id/zona_id (deliberado): o arquivo sobrevive ao delete da linha
+-- original e ao delete da própria zona.
+-- Migration: 20260909120000_taxas_entrega_zona_id_unique.sql (issue 182)
+CREATE TABLE taxas_entrega_duplicadas_182 (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  taxa_id               uuid NOT NULL,   -- id original em taxas_entrega
+  zona_id               uuid NOT NULL,
+  taxa                  numeric(10,2) NOT NULL,
+  pedido_minimo_gratis  numeric(10,2),
+  raio_max_km           numeric(5,2),
+  cep_inicio            integer,
+  cep_fim               integer,
+  arquivado_em          timestamptz NOT NULL DEFAULT now()
+);
+```
+
 ---
 
 ## 3. Indexes
@@ -436,6 +459,13 @@ CREATE INDEX ON zonas_entrega(loja_id);
 -- Bairros por zona
 CREATE INDEX ON bairros_zona(zona_id);
 
+-- taxas_entrega: cardinalidade 1:1 zona→taxa, agora imposta pelo schema (era só
+-- convenção do código). Sem isso, `.upsert(..., { onConflict: "zona_id" })` em
+-- src/lib/actions/entrega.ts e src/app/admin/assinantes/actions/admin-entrega.ts
+-- falha com 42P10 ao EDITAR (não ao criar) zona.
+-- Migration: 20260909120000_taxas_entrega_zona_id_unique.sql (issue 182)
+CREATE UNIQUE INDEX taxas_entrega_zona_id_key ON taxas_entrega(zona_id);
+
 -- Opcionais por loja/categoria (vitrine e painel)
 CREATE INDEX ON opcionais_categorias(loja_id, ordem);
 CREATE INDEX ON opcionais(loja_id, categoria_opcional_id, ativo, ordem);
@@ -464,6 +494,7 @@ Regra geral:
 - **INSERT de pedido** → público (cliente não precisa de login)
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`
 - **`admin_acessos`** → deny-all permanente; acesso exclusivo via `service_role` (trilha de auditoria de acesso admin, issues 146/147)
+- **`taxas_entrega_duplicadas_182`** → deny-all permanente; acesso exclusivo via `service_role` (arquivo de dedup do índice único de `taxas_entrega.zona_id`, issue 182)
 
 ---
 
