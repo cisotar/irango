@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { schemaProduto } from "@/lib/validacoes/produto";
-import {
+import type {
   criarProduto as criarProdutoLojista,
   atualizarProduto as atualizarProdutoLojista,
 } from "@/lib/actions/produto";
@@ -49,17 +49,15 @@ export type FormProdutoProps = {
   lojaId: string;
   onSucesso?: () => void;
   /**
-   * Action de criação. Default: action do lojista (loja derivada do auth).
-   * A via admin injeta a variante escopada por `lojaId`.
+   * Actions injetadas. OBRIGATÓRIAS (issue 160): o `ProdutosClient` repassa as
+   * do seu `acoes`, que a page do painel preenche com as do lojista (loja
+   * derivada do auth) e a via admin com as variantes escopadas por `lojaId`.
+   * Sem default — omitir uma quebra o build em vez de gravar na loja errada.
    */
-  onCriar?: typeof criarProdutoLojista;
-  /** Action de edição. Default: action do lojista. */
-  onAtualizar?: typeof atualizarProdutoLojista;
-  /**
-   * Action de upload de foto injetada para o `UploadFotoProduto` (variante admin
-   * escopa o path por `lojaId`). Default: action do lojista.
-   */
-  onEnviarFoto?: EnviarFotoProduto;
+  onCriar: typeof criarProdutoLojista;
+  onAtualizar: typeof atualizarProdutoLojista;
+  /** Repassada ao `UploadFotoProduto` (a variante admin escopa o path por `lojaId`). */
+  onEnviarFoto: EnviarFotoProduto;
 };
 
 /**
@@ -78,8 +76,8 @@ export function FormProduto({
   lojaSlug,
   lojaId,
   onSucesso,
-  onCriar = criarProdutoLojista,
-  onAtualizar = atualizarProdutoLojista,
+  onCriar,
+  onAtualizar,
   onEnviarFoto,
 }: FormProdutoProps) {
   const router = useRouter();

@@ -34,7 +34,7 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { LinhaCategoriaReordenavel } from "@/components/painel/LinhaCategoriaReordenavel";
 import type { Categoria } from "@/components/painel/FormProduto";
-import { reordenarCategorias as reordenarCategoriasLojista } from "@/lib/actions/produto";
+import type { reordenarCategorias as reordenarCategoriasLojista } from "@/lib/actions/produto";
 import { moverPorDeslocamento, mensagemPosicao } from "@/lib/utils/reordenar";
 import {
   criarSalvamentoCoalescido,
@@ -106,8 +106,12 @@ export type ReordenarCategoriasProps = {
   contagemPorCategoria: Record<string, number>;
   /** Existem produtos sem categoria? Se sim, o grupo sintético aparece no fim. */
   temSemCategoria: boolean;
-  /** Action injetável (a via admin passa a variante escopada). */
-  onReordenar?: typeof reordenarCategoriasLojista;
+  /**
+   * Action injetada. OBRIGATÓRIA (issue 160): o `ProdutosClient` repassa
+   * `acoes.reordenarCategorias` — do lojista na page do painel, escopada por
+   * `lojaId` na via admin. Sem default.
+   */
+  onReordenar: typeof reordenarCategoriasLojista;
   ref?: Ref<ManipuladorReordenarCategorias>;
 };
 
@@ -118,8 +122,6 @@ export function ReordenarCategorias({
   onReordenar,
   ref,
 }: ReordenarCategoriasProps) {
-  const reordenar = onReordenar ?? reordenarCategoriasLojista;
-
   const [ordem, setOrdem] = useState<readonly Categoria[]>(categorias);
   const [mensagemViva, setMensagemViva] = useState(
     `Modo reordenar ativado. ${categorias.length} categorias. ` +
@@ -145,7 +147,7 @@ export function ReordenarCategorias({
     Toda a regra está testada em `salvamento-coalescido.test.ts`; o que sobra
     aqui são só os efeitos de tela.
 
-    `reordenar` e `categorias` são capturados no primeiro render de propósito: o
+    `onReordenar` e `categorias` são capturados no primeiro render de propósito: o
     componente é montado ao ENTRAR no modo e desmontado ao sair, e os dois pontos
     de chamada passam uma Server Action de módulo (identidade estável). A ordem
     inicial confirmada é, por definição, a que o servidor acabou de entregar.
@@ -155,7 +157,7 @@ export function ReordenarCategorias({
       confirmada: categorias,
       atrasoMs: DEBOUNCE_MS,
       // O cliente manda SÓ a sequência de ids; `ordem` é derivada no servidor.
-      salvar: (proxima) => reordenar(proxima.map((c) => c.id)),
+      salvar: (proxima) => onReordenar(proxima.map((c) => c.id)),
       aoStatus: setStatus,
       // A reversão vai para a última ordem CONFIRMADA pelo servidor, não para a
       // do passo anterior: senão 4 toques com falha no 4º voltariam só um passo

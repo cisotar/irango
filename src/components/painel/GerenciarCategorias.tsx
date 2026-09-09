@@ -17,11 +17,10 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import type { Categoria } from "@/components/painel/FormProduto";
-import {
+import type {
   criarCategoria as criarCategoriaLojista,
   atualizarCategoria as atualizarCategoriaLojista,
   removerCategoria as removerCategoriaLojista,
-  alternarExibirImagens as alternarExibirImagensLojista,
 } from "@/lib/actions/produto";
 
 /**
@@ -37,22 +36,24 @@ export function GerenciarCategorias({
   categorias,
   open,
   onOpenChange,
-  onCriar = criarCategoriaLojista,
-  onAtualizar = atualizarCategoriaLojista,
-  onRemover = removerCategoriaLojista,
-  onAlternarExibirImagens = alternarExibirImagensLojista,
+  onCriar,
+  onAtualizar,
+  onRemover,
+  onAlternarExibirImagens,
 }: {
   categorias: Categoria[];
   open: boolean;
   onOpenChange: (aberto: boolean) => void;
-  /** Action de criação. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
-  onCriar?: typeof criarCategoriaLojista;
-  /** Action de edição. Default: action do lojista. */
-  onAtualizar?: typeof atualizarCategoriaLojista;
-  /** Action de remoção. Default: action do lojista. */
-  onRemover?: typeof removerCategoriaLojista;
-  /** Action do toggle "exibir imagens". Default: action do lojista. A via admin injeta a variante por `lojaId`. */
-  onAlternarExibirImagens?: (
+  /**
+   * Actions injetadas. OBRIGATÓRIAS (issue 160): o `ProdutosClient` repassa as
+   * do seu `acoes`, que a page do painel preenche com as do lojista e a via
+   * admin com as variantes escopadas por `lojaId`. Sem default — omitir uma
+   * quebra o build em vez de gravar na loja errada.
+   */
+  onCriar: typeof criarCategoriaLojista;
+  onAtualizar: typeof atualizarCategoriaLojista;
+  onRemover: typeof removerCategoriaLojista;
+  onAlternarExibirImagens: (
     id: string,
     exibirImagens: boolean,
   ) => Promise<{ ok: boolean; erro?: string }>;

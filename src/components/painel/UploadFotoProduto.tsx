@@ -41,13 +41,13 @@ import {
   TAMANHO_MAXIMO_BYTES,
 } from "@/lib/utils/validarImagem";
 import { exportarCrop, ASPECT_FOTO } from "@/lib/utils/exportarCrop";
-import { enviarFotoProduto } from "@/lib/actions/upload";
+import type { enviarFotoProduto } from "@/lib/actions/upload";
 import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
 
 /**
- * Assinatura da Server Action de upload de foto. Default: `enviarFotoProduto`
- * (lojista, loja derivada do auth). A via admin injeta a variante que escopa o
- * path do bucket por `lojaId` validado server-side.
+ * Assinatura da Server Action de upload de foto: `enviarFotoProduto` (lojista,
+ * loja derivada do auth) ou a variante admin, que escopa o path do bucket por
+ * `lojaId` validado server-side.
  */
 export type EnviarFotoProduto = typeof enviarFotoProduto;
 
@@ -57,8 +57,12 @@ export type UploadFotoProdutoProps = {
   /** Chamado com a `foto_url` pública após upload OK; "" ao remover. */
   onUploadConcluido: (url: string) => void;
   disabled?: boolean;
-  /** Server Action de upload. Default: action do lojista. */
-  onEnviar?: EnviarFotoProduto;
+  /**
+   * Server Action de upload. OBRIGATÓRIA (issue 160): chega pelo `onEnviarFoto`
+   * do `FormProduto`. Sem default — omiti-la quebra o build em vez de gravar no
+   * path da loja errada.
+   */
+  onEnviar: EnviarFotoProduto;
 };
 
 const ZOOM_MIN = 1;
@@ -70,7 +74,7 @@ export function UploadFotoProduto({
   urlAtual,
   onUploadConcluido,
   disabled = false,
-  onEnviar = enviarFotoProduto,
+  onEnviar,
 }: UploadFotoProdutoProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(urlAtual ?? null);

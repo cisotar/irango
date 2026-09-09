@@ -63,7 +63,7 @@ import {
   ReordenarCategorias,
   type ManipuladorReordenarCategorias,
 } from "@/components/painel/ReordenarCategorias";
-import {
+import type {
   removerProduto as removerProdutoLojista,
   alternarDisponibilidade as alternarDisponibilidadeLojista,
   alternarOculto as alternarOcultoLojista,
@@ -75,7 +75,7 @@ import {
   alternarExibirImagens as alternarExibirImagensLojista,
   reordenarCategorias as reordenarCategoriasLojista,
 } from "@/lib/actions/produto";
-import { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
+import type { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type {
@@ -99,23 +99,28 @@ export type ProdutosClientProps = {
   /** Todas as categorias de opcional da loja, para o seletor por categoria. */
   categoriasOpcional: CategoriaOpcional[];
   /**
-   * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults =
-   * comportamento atual). A via admin passa as variantes escopadas por `lojaId`.
+   * Actions injetadas. Todas OBRIGATÓRIAS (issue 160): a page do painel passa
+   * as 12 do lojista, a via admin passa as 12 variantes escopadas por `lojaId`.
+   * Sem default — omitir uma chave aqui quebra o build em vez de cair na action
+   * do lojista (que resolve a loja por `auth.uid()`) e gravar na loja errada.
    */
-  acoes?: {
-    removerProduto?: typeof removerProdutoLojista;
-    alternarDisponibilidade?: typeof alternarDisponibilidadeLojista;
-    alternarOculto?: typeof alternarOcultoLojista;
-    criarProduto?: typeof criarProdutoLojista;
-    atualizarProduto?: typeof atualizarProdutoLojista;
-    enviarFotoProduto?: EnviarFotoProduto;
-    criarCategoria?: typeof criarCategoriaLojista;
-    atualizarCategoria?: typeof atualizarCategoriaLojista;
-    removerCategoria?: typeof removerCategoriaLojista;
-    alternarExibirImagens?: typeof alternarExibirImagensLojista;
-    reordenarCategorias?: typeof reordenarCategoriasLojista;
-    salvarAssociacaoOpcionais?: typeof salvarAssociacaoOpcionais;
-  };
+  acoes: AcoesProdutosClient;
+};
+
+/** Contrato das 12 actions do cardápio. Fonte única do conjunto exigido. */
+export type AcoesProdutosClient = {
+  removerProduto: typeof removerProdutoLojista;
+  alternarDisponibilidade: typeof alternarDisponibilidadeLojista;
+  alternarOculto: typeof alternarOcultoLojista;
+  criarProduto: typeof criarProdutoLojista;
+  atualizarProduto: typeof atualizarProdutoLojista;
+  enviarFotoProduto: EnviarFotoProduto;
+  criarCategoria: typeof criarCategoriaLojista;
+  atualizarCategoria: typeof atualizarCategoriaLojista;
+  removerCategoria: typeof removerCategoriaLojista;
+  alternarExibirImagens: typeof alternarExibirImagensLojista;
+  reordenarCategorias: typeof reordenarCategoriasLojista;
+  salvarAssociacaoOpcionais: typeof salvarAssociacaoOpcionais;
 };
 
 type GrupoProdutos = {
@@ -185,12 +190,12 @@ export function ProdutosClient({
 }: ProdutosClientProps) {
   const router = useRouter();
 
-  const removerProduto = acoes?.removerProduto ?? removerProdutoLojista;
-  const alternarDisponibilidade =
-    acoes?.alternarDisponibilidade ?? alternarDisponibilidadeLojista;
-  const alternarOculto = acoes?.alternarOculto ?? alternarOcultoLojista;
-  const salvarAssociacao =
-    acoes?.salvarAssociacaoOpcionais ?? salvarAssociacaoOpcionais;
+  const {
+    removerProduto,
+    alternarDisponibilidade,
+    alternarOculto,
+    salvarAssociacaoOpcionais: salvarAssociacao,
+  } = acoes;
 
   // null => criar; Produto => editar. `formAberto` controla a abertura do
   // Sheet (mobile) ou Dialog (desktop) — uma árvore por vez, sem duplicar
@@ -370,9 +375,9 @@ export function ProdutosClient({
       lojaSlug={lojaSlug}
       lojaId={lojaId}
       onSucesso={aoSalvar}
-      onCriar={acoes?.criarProduto}
-      onAtualizar={acoes?.atualizarProduto}
-      onEnviarFoto={acoes?.enviarFotoProduto}
+      onCriar={acoes.criarProduto}
+      onAtualizar={acoes.atualizarProduto}
+      onEnviarFoto={acoes.enviarFotoProduto}
       inicial={
         emEdicao
           ? {
@@ -442,7 +447,7 @@ export function ProdutosClient({
             categorias={categorias}
             contagemPorCategoria={contagemPorCategoria}
             temSemCategoria={temSemCategoria}
-            onReordenar={acoes?.reordenarCategorias}
+            onReordenar={acoes.reordenarCategorias}
           />
         </>
       ) : (
@@ -646,10 +651,10 @@ export function ProdutosClient({
         categorias={categorias}
         open={categoriasAbertas}
         onOpenChange={setCategoriasAbertas}
-        onCriar={acoes?.criarCategoria}
-        onAtualizar={acoes?.atualizarCategoria}
-        onRemover={acoes?.removerCategoria}
-        onAlternarExibirImagens={acoes?.alternarExibirImagens}
+        onCriar={acoes.criarCategoria}
+        onAtualizar={acoes.atualizarCategoria}
+        onRemover={acoes.removerCategoria}
+        onAlternarExibirImagens={acoes.alternarExibirImagens}
       />
 
       {/* Criar/editar: Dialog centralizado no desktop (aproveita a largura da

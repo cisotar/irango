@@ -26,7 +26,7 @@ import {
   schemaCategoriaOpcional,
   schemaOpcional,
 } from "@/lib/validacoes/opcional";
-import {
+import type {
   criarCategoriaOpcional,
   atualizarCategoriaOpcional,
   removerCategoriaOpcional,
@@ -45,20 +45,22 @@ type CategoriaProduto = { id: string; nome: string };
 type Associacao = { categoria_id: string; categoria_opcional_id: string };
 
 /**
- * Actions injetáveis das 8 operações de opcionais. Omitidas no painel do
- * lojista (caem nos defaults = imports de `lib/actions/opcional`,
- * comportamento atual). A via admin (137) passa as variantes escopadas por
- * `lojaId`. Tipadas via `typeof` (single-source, espelha `ProdutosClient`).
+ * Actions injetadas das 8 operações de opcionais. Todas OBRIGATÓRIAS (issue
+ * 160): a page do painel passa as 8 do lojista, a via admin (137) passa as 8
+ * variantes escopadas por `lojaId`. Sem default — omitir uma chave aqui quebra
+ * o build em vez de cair na action do lojista (que resolve a loja por
+ * `auth.uid()`) e gravar na loja errada. Tipadas via `typeof` (single-source,
+ * espelha `ProdutosClient`).
  */
 export type OpcionaisClientAcoes = {
-  criarCategoriaOpcional?: typeof criarCategoriaOpcional;
-  atualizarCategoriaOpcional?: typeof atualizarCategoriaOpcional;
-  removerCategoriaOpcional?: typeof removerCategoriaOpcional;
-  criarOpcional?: typeof criarOpcional;
-  atualizarOpcional?: typeof atualizarOpcional;
-  alternarOpcionalAtivo?: typeof alternarOpcionalAtivo;
-  removerOpcional?: typeof removerOpcional;
-  salvarAssociacaoOpcionais?: typeof salvarAssociacaoOpcionais;
+  criarCategoriaOpcional: typeof criarCategoriaOpcional;
+  atualizarCategoriaOpcional: typeof atualizarCategoriaOpcional;
+  removerCategoriaOpcional: typeof removerCategoriaOpcional;
+  criarOpcional: typeof criarOpcional;
+  atualizarOpcional: typeof atualizarOpcional;
+  alternarOpcionalAtivo: typeof alternarOpcionalAtivo;
+  removerOpcional: typeof removerOpcional;
+  salvarAssociacaoOpcionais: typeof salvarAssociacaoOpcionais;
 };
 
 export type OpcionaisClientProps = {
@@ -66,7 +68,7 @@ export type OpcionaisClientProps = {
   opcionais: Opcional[];
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
-  acoes?: OpcionaisClientAcoes;
+  acoes: OpcionaisClientAcoes;
 };
 
 export function OpcionaisClient({
@@ -103,7 +105,7 @@ function BibliotecaOpcionais({
 }: {
   categoriasOpcional: CategoriaOpcional[];
   opcionais: Opcional[];
-  acoes?: OpcionaisClientAcoes;
+  acoes: OpcionaisClientAcoes;
 }) {
   const router = useRouter();
   const [busca, setBusca] = useState("");
@@ -150,8 +152,7 @@ function BibliotecaOpcionais({
     if (!catARemover) return;
     const id = catARemover.id;
     startRemoverCat(async () => {
-      const r = await (acoes?.removerCategoriaOpcional ??
-        removerCategoriaOpcional)(id);
+      const r = await acoes.removerCategoriaOpcional(id);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -166,7 +167,7 @@ function BibliotecaOpcionais({
     if (!opcARemover) return;
     const id = opcARemover.id;
     startRemoverOpc(async () => {
-      const r = await (acoes?.removerOpcional ?? removerOpcional)(id);
+      const r = await acoes.removerOpcional(id);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -179,10 +180,7 @@ function BibliotecaOpcionais({
 
   function alternar(o: Opcional) {
     startAlternar(async () => {
-      const r = await (acoes?.alternarOpcionalAtivo ?? alternarOpcionalAtivo)(
-        o.id,
-        !o.ativo,
-      );
+      const r = await acoes.alternarOpcionalAtivo(o.id, !o.ativo);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -416,7 +414,7 @@ function FormCategoriaOpcional({
 }: {
   inicial: CategoriaOpcional | null;
   onSucesso: () => void;
-  acoes?: OpcionaisClientAcoes;
+  acoes: OpcionaisClientAcoes;
 }) {
   const ehEdicao = inicial != null;
   const [nome, setNome] = useState(inicial?.nome ?? "");
@@ -433,11 +431,8 @@ function FormCategoriaOpcional({
     startEnvio(async () => {
       const r =
         ehEdicao && inicial
-          ? await (acoes?.atualizarCategoriaOpcional ??
-              atualizarCategoriaOpcional)(inicial.id, parsed.data)
-          : await (acoes?.criarCategoriaOpcional ?? criarCategoriaOpcional)(
-              parsed.data,
-            );
+          ? await acoes.atualizarCategoriaOpcional(inicial.id, parsed.data)
+          : await acoes.criarCategoriaOpcional(parsed.data);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -494,7 +489,7 @@ function FormOpcional({
   categoriasOpcional: CategoriaOpcional[];
   categoriaOpcionalIdPadrao: string | null;
   onSucesso: () => void;
-  acoes?: OpcionaisClientAcoes;
+  acoes: OpcionaisClientAcoes;
 }) {
   const ehEdicao = inicial != null;
   const [nome, setNome] = useState(inicial?.nome ?? "");
@@ -526,11 +521,8 @@ function FormOpcional({
     startEnvio(async () => {
       const r =
         ehEdicao && inicial
-          ? await (acoes?.atualizarOpcional ?? atualizarOpcional)(
-              inicial.id,
-              parsed.data,
-            )
-          : await (acoes?.criarOpcional ?? criarOpcional)(parsed.data);
+          ? await acoes.atualizarOpcional(inicial.id, parsed.data)
+          : await acoes.criarOpcional(parsed.data);
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -619,7 +611,7 @@ function AssociacaoOpcionais({
   categoriasOpcional: CategoriaOpcional[];
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
-  acoes?: OpcionaisClientAcoes;
+  acoes: OpcionaisClientAcoes;
 }) {
   const router = useRouter();
 
@@ -680,7 +672,7 @@ function CartaoAssociacao({
   categoriasOpcional: CategoriaOpcional[];
   selecionadosIniciais: Set<string>;
   onSalvo: () => void;
-  acoes?: OpcionaisClientAcoes;
+  acoes: OpcionaisClientAcoes;
 }) {
   const [selecionados, setSelecionados] =
     useState<Set<string>>(selecionadosIniciais);
@@ -700,8 +692,7 @@ function CartaoAssociacao({
 
   function salvar() {
     startSalvar(async () => {
-      const r = await (acoes?.salvarAssociacaoOpcionais ??
-        salvarAssociacaoOpcionais)({
+      const r = await acoes.salvarAssociacaoOpcionais({
         categoria_id: categoriaProduto.id,
         categoria_opcional_id: Array.from(selecionados),
       });

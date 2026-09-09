@@ -9,6 +9,20 @@ import {
 } from "@/lib/supabase/queries/produtos";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { buscarCategoriasOpcional } from "@/lib/supabase/queries/opcionais";
+import {
+  removerProduto,
+  alternarDisponibilidade,
+  alternarOculto,
+  criarProduto,
+  atualizarProduto,
+  criarCategoria,
+  atualizarCategoria,
+  removerCategoria,
+  alternarExibirImagens,
+  reordenarCategorias,
+} from "@/lib/actions/produto";
+import { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
+import { enviarFotoProduto } from "@/lib/actions/upload";
 import { ProdutosClient } from "./ProdutosClient";
 
 /**
@@ -59,6 +73,22 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         id: c.id,
         nome: c.nome,
       }))}
+      // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
+      // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
+      acoes={{
+        removerProduto,
+        alternarDisponibilidade,
+        alternarOculto,
+        criarProduto,
+        atualizarProduto,
+        enviarFotoProduto,
+        criarCategoria,
+        atualizarCategoria,
+        removerCategoria,
+        alternarExibirImagens,
+        reordenarCategorias,
+        salvarAssociacaoOpcionais,
+      }}
     />
   );
 }

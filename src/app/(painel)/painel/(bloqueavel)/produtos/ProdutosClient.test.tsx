@@ -31,7 +31,31 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { ProdutosClient } from "./ProdutosClient";
+import type { AcoesProdutosClient } from "./ProdutosClient";
 import type { Produto } from "@/lib/supabase/queries/produtos";
+
+/**
+ * Injeção mínima e COMPLETA das actions (issue 160: as 12 chaves de `acoes`
+ * são obrigatórias — não há mais default apontando para a action do lojista).
+ * Cada chamada devolve stubs novos, para que dois renders possam ser comparados
+ * por identidade de função quando o teste precisa disso.
+ */
+function acoesBase(): AcoesProdutosClient {
+  return {
+    removerProduto: vi.fn(async () => ({ ok: true }) as const),
+    alternarDisponibilidade: vi.fn(async () => ({ ok: true }) as const),
+    alternarOculto: vi.fn(async () => ({ ok: true }) as const),
+    criarProduto: vi.fn(async () => ({ ok: true }) as const),
+    atualizarProduto: vi.fn(async () => ({ ok: true }) as const),
+    enviarFotoProduto: vi.fn(async () => ({ ok: true, url: "" }) as never),
+    criarCategoria: vi.fn(async () => ({ ok: true }) as const),
+    atualizarCategoria: vi.fn(async () => ({ ok: true }) as const),
+    removerCategoria: vi.fn(async () => ({ ok: true }) as const),
+    alternarExibirImagens: vi.fn(async () => ({ ok: true }) as const),
+    reordenarCategorias: vi.fn(async () => ({ ok: true }) as const),
+    salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
+  } as unknown as AcoesProdutosClient;
+}
 
 function produtoBase(overrides: Partial<Produto> = {}): Produto {
   return {
@@ -60,6 +84,7 @@ function renderLista(produtos: Produto[]): string {
       categorias={[]}
       opcionaisPorCategoria={{}}
       categoriasOpcional={[]}
+      acoes={acoesBase()}
     />,
   );
 }
@@ -149,67 +174,54 @@ describe("múltiplos produtos com estados distintos não vazam rótulo entre lin
 });
 
 /**
- * Testes do slot `acoes.salvarAssociacaoOpcionais` (issue 129).
+ * Testes da injeção de `acoes` (issue 129 — slot
+ * `salvarAssociacaoOpcionais`; issue 160 — a prop e suas 12 chaves passaram a
+ * ser OBRIGATÓRIAS, sem default apontando para a action do lojista).
  *
- * A resolução `const salvarAssociacao = acoes?.salvarAssociacaoOpcionais ??
- * salvarAssociacaoOpcionais` roda no CORPO de `ProdutosClient` — a cada
- * render, incondicionalmente (não dentro de um handler de clique). Ou seja,
- * ao contrário da maioria das actions deste arquivo (resolvidas dentro de
- * handlers), um bug aqui — por exemplo trocar `acoes?.salvarAssociacaoOpcionais`
- * por `acoes!.salvarAssociacaoOpcionais` — lançaria em TODO render do painel
- * do lojista (que sempre renderiza sem `acoes`), o mesmo padrão de regressão
+ * A desestruturação `const { removerProduto, …, salvarAssociacaoOpcionais }
+ * = acoes` roda no CORPO de `ProdutosClient` — a cada render,
+ * incondicionalmente (não dentro de um handler de clique). Ou seja, ao
+ * contrário da maioria das actions deste arquivo (resolvidas dentro de
+ * handlers), um bug aqui lançaria em TODO render, o mesmo padrão de regressão
  * do commit 0bb5864 ("escopo admin perdia o binding do client — toda escrita
- * admin quebrava em prod"). Os testes existentes acima já renderizam sem
- * `acoes` e cobrem isso incidentalmente; os dois abaixo tornam essa garantia
- * explícita para o 10º slot acrescentado por esta issue.
+ * admin quebrava em prod").
+ *
+ * Com o default removido, as duas vias (page do lojista e wrapper admin) são
+ * estruturalmente idênticas: ambas passam as 12 chaves, mudando só QUAIS
+ * funções. O teste abaixo prova que a origem da injeção não altera o HTML —
+ * se o markup dependesse da identidade de uma action, o wrapper admin
+ * renderizaria uma tela diferente da do lojista.
  */
-describe("slot acoes.salvarAssociacaoOpcionais (issue 129)", () => {
-  it("sem acoes: painel do lojista renderiza normalmente (a resolução no corpo do componente não lança)", () => {
+describe("injeção de acoes (issues 129 e 160)", () => {
+  it("a via do lojista renderiza a tela normalmente (a desestruturação no corpo do componente não lança)", () => {
     const html = renderLista([produtoBase()]);
     expect(html).toContain("Produtos");
   });
 
-  it("com as 10 actions de acoes injetadas (incluindo salvarAssociacaoOpcionais): HTML idêntico ao sem acoes, nenhuma é chamada", () => {
-    const acoesMock = {
-      removerProduto: vi.fn(async () => ({ ok: true }) as const),
-      alternarDisponibilidade: vi.fn(async () => ({ ok: true }) as const),
-      alternarOculto: vi.fn(async () => ({ ok: true }) as const),
-      criarProduto: vi.fn(async () => ({ ok: true }) as const),
-      atualizarProduto: vi.fn(async () => ({ ok: true }) as const),
-      enviarFotoProduto: vi.fn(async () => ({ ok: true, url: "" }) as never),
-      criarCategoria: vi.fn(async () => ({ ok: true }) as const),
-      atualizarCategoria: vi.fn(async () => ({ ok: true }) as const),
-      removerCategoria: vi.fn(async () => ({ ok: true }) as const),
-      salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
-    } as unknown as NonNullable<
-      Parameters<typeof ProdutosClient>[0]["acoes"]
-    >;
-
+  it("duas injeções distintas das 12 actions produzem HTML idêntico e nenhuma é chamada no render", () => {
+    const acoesLojista = acoesBase();
+    const acoesAdmin = acoesBase();
     const produtos = [produtoBase()];
-    const semAcoes = renderToStaticMarkup(
-      <ProdutosClient
-        lojaSlug="loja-teste"
-        lojaId="loja-1"
-        produtos={produtos}
-        categorias={[]}
-        opcionaisPorCategoria={{}}
-        categoriasOpcional={[]}
-      />,
-    );
-    const comAcoes = renderToStaticMarkup(
-      <ProdutosClient
-        lojaSlug="loja-teste"
-        lojaId="loja-1"
-        produtos={produtos}
-        categorias={[]}
-        opcionaisPorCategoria={{}}
-        categoriasOpcional={[]}
-        acoes={acoesMock}
-      />,
-    );
 
-    expect(comAcoes).toBe(semAcoes);
-    for (const fn of Object.values(acoesMock)) {
+    function render(acoes: AcoesProdutosClient): string {
+      return renderToStaticMarkup(
+        <ProdutosClient
+          lojaSlug="loja-teste"
+          lojaId="loja-1"
+          produtos={produtos}
+          categorias={[]}
+          opcionaisPorCategoria={{}}
+          categoriasOpcional={[]}
+          acoes={acoes}
+        />,
+      );
+    }
+
+    expect(render(acoesAdmin)).toBe(render(acoesLojista));
+    for (const fn of [
+      ...Object.values(acoesLojista),
+      ...Object.values(acoesAdmin),
+    ]) {
       expect(fn).not.toHaveBeenCalled();
     }
   });
@@ -230,6 +242,7 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
         categorias={CATEGORIAS}
         opcionaisPorCategoria={{}}
         categoriasOpcional={[]}
+        acoes={acoesBase()}
       />,
     );
   }
@@ -285,6 +298,7 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
         categorias={categorias.map((c) => ({ ...c, exibir_imagens: true }))}
         opcionaisPorCategoria={{}}
         categoriasOpcional={[]}
+        acoes={acoesBase()}
       />,
     );
   }
@@ -349,6 +363,7 @@ describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 1
           { id: "c1", nome: "Lanches", exibir_imagens: true },
           { id: "c2", nome: "Bebidas", exibir_imagens: true }, // sem produto
         ]}
+        acoes={acoesBase()}
         opcionaisPorCategoria={{}}
         categoriasOpcional={[]}
       />,

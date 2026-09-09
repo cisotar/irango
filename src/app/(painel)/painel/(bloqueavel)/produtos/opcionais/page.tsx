@@ -9,6 +9,16 @@ import {
   buscarOpcionaisDoLojista,
   buscarAssociacoesOpcional,
 } from "@/lib/supabase/queries/opcionais";
+import {
+  criarCategoriaOpcional,
+  atualizarCategoriaOpcional,
+  removerCategoriaOpcional,
+  criarOpcional,
+  atualizarOpcional,
+  alternarOpcionalAtivo,
+  removerOpcional,
+  salvarAssociacaoOpcionais,
+} from "@/lib/actions/opcional";
 import { OpcionaisClient } from "./OpcionaisClient";
 
 /**
@@ -47,6 +57,18 @@ export default async function OpcionaisPage(): Promise<ReactElement> {
         categoria_id: a.categoria_id,
         categoria_opcional_id: a.categoria_opcional_id,
       }))}
+      // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
+      // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
+      acoes={{
+        criarCategoriaOpcional,
+        atualizarCategoriaOpcional,
+        removerCategoriaOpcional,
+        criarOpcional,
+        atualizarOpcional,
+        alternarOpcionalAtivo,
+        removerOpcional,
+        salvarAssociacaoOpcionais,
+      }}
     />
   );
 }
