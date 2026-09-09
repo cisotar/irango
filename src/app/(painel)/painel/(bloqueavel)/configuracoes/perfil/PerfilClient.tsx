@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { schemaPerfil, sanitizarSlug } from "@/lib/validacoes/loja";
-import {
+import type {
   salvarPerfil as salvarPerfilLojista,
   definirPublicacao as definirPublicacaoLojista,
 } from "@/lib/actions/loja";
@@ -71,8 +71,8 @@ export function PerfilClient({
   publicado,
   podePublicar,
   logoUrlInicial,
-  onSalvar = salvarPerfilLojista,
-  onDefinirPublicacao = definirPublicacaoLojista,
+  onSalvar,
+  onDefinirPublicacao,
   onSalvarLogo,
   onRemoverLogo,
 }: {
@@ -80,14 +80,14 @@ export function PerfilClient({
   publicado: boolean;
   podePublicar: boolean;
   logoUrlInicial: string | null;
-  /** Action de salvar perfil. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
-  onSalvar?: typeof salvarPerfilLojista;
-  /** Action de publicar/despublicar. Default: action do lojista. */
-  onDefinirPublicacao?: typeof definirPublicacaoLojista;
-  /** Action de salvar a logo. Default (ausente): action do lojista via UploadLogoLoja. */
-  onSalvarLogo?: UploadLogoLojaProps["onSalvar"];
-  /** Action de remover a logo. Default (ausente): action do lojista via UploadLogoLoja. */
-  onRemoverLogo?: UploadLogoLojaProps["onRemover"];
+  /** Action de salvar perfil. Obrigatória: a page do painel passa a do lojista, a via admin a variante por `lojaId`. */
+  onSalvar: typeof salvarPerfilLojista;
+  /** Action de publicar/despublicar. Obrigatória (issue 160). */
+  onDefinirPublicacao: typeof definirPublicacaoLojista;
+  /** Action de salvar a logo. Obrigatória (issue 160). */
+  onSalvarLogo: UploadLogoLojaProps["onSalvar"];
+  /** Action de remover a logo. Obrigatória (issue 160). */
+  onRemoverLogo: UploadLogoLojaProps["onRemover"];
 }) {
   const router = useRouter();
 

@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaTema } from "@/lib/validacoes/loja";
-import { salvarTema as salvarTemaLojista } from "@/lib/actions/loja";
+import type { salvarTema as salvarTemaLojista } from "@/lib/actions/loja";
 
 export type Tema = {
   primaria: string;
@@ -39,12 +39,12 @@ const CAMPOS: { chave: keyof Tema; rotulo: string }[] = [
 export function TemaClient({
   inicial,
   nomeLoja,
-  onSalvar = salvarTemaLojista,
+  onSalvar,
 }: {
   inicial: Tema;
   nomeLoja: string;
-  /** Action de salvar tema. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
-  onSalvar?: typeof salvarTemaLojista;
+  /** Action de salvar tema. Obrigatória: a page do painel passa a do lojista, a via admin a variante por `lojaId`. */
+  onSalvar: typeof salvarTemaLojista;
 }) {
   const router = useRouter();
   const [tema, setTema] = useState<Tema>(inicial);

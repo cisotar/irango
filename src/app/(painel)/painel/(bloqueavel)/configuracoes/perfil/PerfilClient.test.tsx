@@ -1,8 +1,15 @@
 /**
  * Teste de FIAÇÃO do `PerfilClient` — cenário 3 da spec
  * (specs/fix-logo-admin-cross-tenant.md §Cenários de Teste): "Lojista
- * inalterado: `UploadLogoLoja` sem props usa os defaults; lojista salva/remove
- * a própria logo sob RLS como antes."
+ * inalterado: lojista salva/remove a própria logo sob RLS como antes."
+ *
+ * Desde a issue 160 as quatro props de action do `PerfilClient` são
+ * OBRIGATÓRIAS e não têm mais default apontando para a action do lojista: quem
+ * renderiza injeta. A page do painel passa `salvarLogoLoja`/`removerLogoLoja`;
+ * o `PerfilAdminClient` passa os adapters admin com o `lojaId` da URL fixado em
+ * closure. O invariante testado aqui deixou de ser "repassa undefined no
+ * caminho do lojista" e passou a ser o mais forte: **repassa exatamente o que
+ * recebeu, nos dois caminhos**.
  *
  * Lacuna que este arquivo fecha: nenhum teste existente prova o REPASSE de
  * `onSalvarLogo`/`onRemoverLogo` dentro do próprio `PerfilClient`.
@@ -11,20 +18,18 @@
  * real do `PerfilClient`. `logo.test.ts` (issue 003) testa `salvarLogoLoja`/
  * `removerLogoLoja` isoladas, sem passar pelo `PerfilClient`. Faltava provar
  * que o `PerfilClient`:
- *   (a) no fluxo do LOJISTA (`/painel/configuracoes/perfil/page.tsx`, que NÃO
- *       passa `onSalvarLogo`/`onRemoverLogo` — ver page.tsx:24), repassa
- *       `undefined` ao `UploadLogoLoja` — nunca substitui por outra função —
- *       para que os defaults REAIS do componente (`salvarLogoLoja`/
- *       `removerLogoLoja`, ver UploadLogoLoja.tsx:65-66) sejam o que executa;
- *   (b) no fluxo ADMIN (`PerfilAdminClient`, que passa as duas props),
- *       repassa exatamente as MESMAS referências recebidas — sem trocar
- *       `onSalvarLogo` por `onRemoverLogo` nem inventar um wrapper que perca
- *       a identidade da closure fixada pelo `lojaId` da URL.
+ *   (a) no fluxo do LOJISTA (`/painel/configuracoes/perfil/page.tsx`, que passa
+ *       as actions do lojista), repassa ao `UploadLogoLoja` as MESMAS
+ *       referências recebidas — nunca substitui por outra função;
+ *   (b) no fluxo ADMIN (`PerfilAdminClient`, que passa os adapters por
+ *       `lojaId`), idem — sem trocar `onSalvarLogo` por `onRemoverLogo` nem
+ *       inventar um wrapper que perca a identidade da closure fixada pelo
+ *       `lojaId` da URL.
  *
- * Por que é invariante de SEGURANÇA: se o `PerfilClient` grudasse um valor
- * não-undefined no caminho do lojista (ex.: por engano herdasse uma action
- * admin), a loja errada seria escrita. Se trocasse salvar↔remover no repasse
- * admin, o botão de salvar removeria a logo (ou vice-versa) na loja-alvo.
+ * Por que é invariante de SEGURANÇA: se o `PerfilClient` grudasse outra função
+ * no caminho admin (ex.: por engano caísse numa action do lojista), a loja
+ * errada seria escrita. Se trocasse salvar↔remover no repasse, o botão de
+ * salvar removeria a logo (ou vice-versa) na loja-alvo.
  *
  * Ambiente: node (padrão do projeto — nem jsdom nem @testing-library/react
  * estão instalados, ver ProdutosClient.test.tsx). `UploadLogoLoja` é
@@ -33,13 +38,11 @@
  * PerfilAdminClient.test.tsx.
  *
  * Lacuna que PERMANECE (fora do alcance deste arquivo, documentada como em
- * ProdutosClient.test.tsx): provar que os defaults internos do
- * `UploadLogoLoja` (`onSalvar = salvarLogoLoja`, `onRemover = removerLogoLoja`)
- * de fato EXECUTAM ao clicar "Confirmar e salvar"/"Remover logo" exige
- * simular um clique DOM real — infraestrutura (jsdom/@testing-library/react)
- * que o projeto não tem hoje. A correção do binding do default em si é
- * verificável por leitura de código (UploadLogoLoja.tsx:65-66) e por
- * `verificar` manual no painel do lojista.
+ * ProdutosClient.test.tsx): provar que a action recebida de fato EXECUTA ao
+ * clicar "Confirmar e salvar"/"Remover logo" exige simular um clique DOM real —
+ * infraestrutura (jsdom/@testing-library/react) que o projeto não tem hoje.
+ * Isso segue verificável por leitura de código e por `verificar` manual no
+ * painel do lojista.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -51,8 +54,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-// Actions do lojista importadas por PerfilClient para nome/publicação — não é
-// o alvo deste teste; mock para não arrastar `server-only`/Supabase.
+// Actions do lojista de nome/publicação — não são o alvo deste teste; mock
+// defensivo para não arrastar `server-only`/Supabase por algum import
+// transitivo (o `PerfilClient` só as referencia em type-space desde a 160).
 vi.mock("@/lib/actions/loja", () => ({
   salvarPerfil: vi.fn(),
   definirPublicacao: vi.fn(),
@@ -93,6 +97,20 @@ const INICIAL: PerfilInicial = {
   endereco_estado: null,
 };
 
+/** Actions de logo "do lojista" (stubs) — o que a page do painel injeta. */
+function acoesLogoLojista(): {
+  onSalvarLogo: UploadLogoLojaProps["onSalvar"];
+  onRemoverLogo: UploadLogoLojaProps["onRemover"];
+} {
+  return {
+    onSalvarLogo: vi.fn(async (_fd: FormData) => ({
+      ok: true as const,
+      logo_url: "https://storage.local/loja-do-lojista/logo/x.webp",
+    })),
+    onRemoverLogo: vi.fn(async () => ({ ok: true as const })),
+  };
+}
+
 function renderizar(
   extra: {
     onSalvarLogo?: UploadLogoLojaProps["onSalvar"];
@@ -101,12 +119,18 @@ function renderizar(
   } = {},
 ): string {
   const { inicial, ...props } = extra;
+  // Todas as props de action são obrigatórias (issue 160); os casos que só
+  // olham o MARKUP recebem stubs, os de fiação passam a referência que querem
+  // rastrear.
   return renderToStaticMarkup(
     <PerfilClient
       inicial={{ ...INICIAL, ...inicial }}
       publicado={false}
       podePublicar
       logoUrlInicial={null}
+      onSalvar={vi.fn(async () => ({ ok: true as const, geocodificado: false }))}
+      onDefinirPublicacao={vi.fn(async () => ({ ok: true as const }))}
+      {...acoesLogoLojista()}
       {...props}
     />,
   );
@@ -119,11 +143,15 @@ beforeEach(() => {
 });
 
 describe("PerfilClient — repasse das actions de logo ao UploadLogoLoja (cenário 3, spec fix-logo-admin-cross-tenant)", () => {
-  it("fluxo do LOJISTA (sem onSalvarLogo/onRemoverLogo, como em page.tsx): repassa undefined — nunca inventa uma função — para que os defaults REAIS do UploadLogoLoja (ações do lojista) sejam o que executa", () => {
-    renderizar(); // exatamente como PerfilPage usa: sem props de logo
+  it("fluxo do LOJISTA (page.tsx injeta salvarLogoLoja/removerLogoLoja): repassa a MESMA referência ao UploadLogoLoja — nunca inventa nem troca uma função", () => {
+    const { onSalvarLogo, onRemoverLogo } = acoesLogoLojista();
 
-    expect(capturado.onSalvar).toBeUndefined();
-    expect(capturado.onRemover).toBeUndefined();
+    renderizar({ onSalvarLogo, onRemoverLogo }); // como PerfilPage usa
+
+    expect(capturado.onSalvar).toBe(onSalvarLogo);
+    expect(capturado.onRemover).toBe(onRemoverLogo);
+    expect(capturado.onSalvar).not.toBe(onRemoverLogo);
+    expect(capturado.onRemover).not.toBe(onSalvarLogo);
   });
 
   it("fluxo ADMIN (com onSalvarLogo/onRemoverLogo): repassa a MESMA referência recebida ao UploadLogoLoja — sem trocar salvar↔remover", () => {

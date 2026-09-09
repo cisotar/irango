@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { podePublicarLoja } from "@/lib/utils/publicacao";
+import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
+import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
 import { PerfilClient } from "./PerfilClient";
 
 /**
@@ -40,6 +42,13 @@ export default async function PerfilPage(): Promise<ReactElement> {
       // Perfil mínimo para publicar (mesma regra do servidor em definirPublicacao).
       podePublicar={podePublicarLoja(loja.nome, loja.whatsapp)}
       logoUrlInicial={loja.logo_url}
+      // Actions do LOJISTA passadas explicitamente (issue 160): as props do
+      // `PerfilClient` são obrigatórias, sem default — a via admin injeta as
+      // variantes escopadas por `lojaId`.
+      onSalvar={salvarPerfil}
+      onDefinirPublicacao={definirPublicacao}
+      onSalvarLogo={salvarLogoLoja}
+      onRemoverLogo={removerLogoLoja}
     />
   );
 }

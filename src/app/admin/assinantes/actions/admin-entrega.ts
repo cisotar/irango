@@ -185,3 +185,32 @@ export async function removerZonaAdmin(
     return { ok: false, erro: ERRO_GENERICO };
   }
 }
+
+export async function alternarZonaAtivaAdmin(
+  lojaId: string,
+  id: string,
+  ativo: boolean,
+): Promise<ResultadoEntregaAdmin> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // UPDATE escopado pelo wrapper (loja_id + id): zona de outra loja não é
+    // afetada. Só a coluna `ativo` é escrita — nada do payload do client.
+    const { error } = await escopo.atualizar("zonas_entrega", id, { ativo });
+    if (error) return { ok: false, erro: ERRO_GENERICO };
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "alternar_zona_ativa",
+      entidadeId: id,
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[alternarZonaAtivaAdmin]", e);
+    return { ok: false, erro: ERRO_GENERICO };
+  }
+}

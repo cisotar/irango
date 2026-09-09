@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { schemaHorarios } from "@/lib/validacoes/loja";
-import { salvarHorarios as salvarHorariosLojista } from "@/lib/actions/loja";
+import type { salvarHorarios as salvarHorariosLojista } from "@/lib/actions/loja";
 import { lojaAberta, type DiaHorario, type Horarios } from "@/lib/utils/lojaAberta";
 
 type DiaKey = keyof Horarios;
@@ -56,12 +56,12 @@ function normalizar(inicial: Horarios | null): Horarios {
 export function HorariosClient({
   inicial,
   timezone,
-  onSalvar = salvarHorariosLojista,
+  onSalvar,
 }: {
   inicial: Horarios | null;
   timezone: string;
-  /** Action de salvar horários. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
-  onSalvar?: typeof salvarHorariosLojista;
+  /** Action de salvar horários. Obrigatória: a page do painel passa a do lojista, a via admin a variante por `lojaId`. */
+  onSalvar: typeof salvarHorariosLojista;
 }) {
   const router = useRouter();
   const [horarios, setHorarios] = useState<Horarios>(() => normalizar(inicial));
