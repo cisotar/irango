@@ -43,9 +43,16 @@ referência a `createServiceClient`, que wrapper `'use client'` nunca tem.
 
 ## Escopo (ordem invertida pela auditoria da 124)
 
+> **Correção de dimensionamento (plano `orquestrar`, ver `plan/loop-160-props-action-obrigatorias.md` §0):**
+> a varredura completa do repo mostra **9 wrappers admin reusando 8 clients do
+> painel**, não 6x5. Os três que faltavam acima:
+> - `CardapioAdminClient.tsx` → `produtos/ProdutosClient.tsx` (`acoes?`)
+> - `OpcionaisAdminClient.tsx` → `produtos/opcionais/OpcionaisClient.tsx` (`acoes?`, cascata em 3 níveis)
+> - `AssinaturaAdminClient.tsx` → `components/painel/GerenciarAssinaturaClient.tsx` (`acoes`)
+
 - [ ] **PRIMÁRIO — teste-guarda estático**: assertar que todo `*AdminClient.tsx`
       sob `assinantes/**` que renderize um componente do painel injeta TODAS as
-      props de action. Fecha os 6 wrappers x 5 clients de uma vez, sem tocar
+      props de action. Fecha os 9 wrappers x 8 clients de uma vez, sem tocar
       arquivo de produção.
 - [ ] **SECUNDÁRIO** — tornar as props obrigatórias e passar as actions do
       lojista explicitamente nas pages do painel.
