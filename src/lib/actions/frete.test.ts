@@ -75,11 +75,13 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarCoordsLoja: (...a: unknown[]) => buscarCoordsLoja(...a),
 }));
 
-// [067] reconciliarBairroCep é I/O (chama ViaCEP). Mockada — NÃO bater na rede.
-// Mesmo padrão de pedido.test.ts (linhas 70-72). Por padrão, reconcilia "Centro".
-const reconciliarBairroCep = vi.fn();
-vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
-  reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
+// [067/185] resolverCepServidor é I/O (chama ViaCEP). Mockada — NÃO bater na
+// rede. Mesmo padrão de pedido.test.ts. RED (185): substitui reconciliarBairroCep
+// — UMA ida ao ViaCEP passa a servir o bairro canônico (§10-A) E a consulta de
+// geocoding (D2c). Por padrão resolve o CEP para o bairro "Centro".
+const resolverCepServidor = vi.fn();
+vi.mock("@/lib/utils/resolverCepServidor", () => ({
+  resolverCepServidor: (...a: unknown[]) => resolverCepServidor(...a),
 }));
 
 // [007] Helper NEUTRO distanciaDaLojaAoCep (lib/actions/distanciaFrete.ts):
@@ -142,11 +144,13 @@ beforeEach(() => {
   // [005] Por padrão a loja TEM coords (par presente) — só os casos de
   // misconfiguração (coords NULL) sobrescrevem para null.
   buscarCoordsLoja.mockResolvedValue({ latitude: -22.96, longitude: -46.54 });
-  // [067] Por padrão o ViaCEP reconcilia o CEP para o bairro canônico "Centro".
+  // [067/185] Por padrão o ViaCEP resolve o CEP para o bairro canônico "Centro".
   // Espelha o autoritativo (064): com CEP+bairro, o canônico do CEP vence.
-  reconciliarBairroCep.mockResolvedValue({
-    bairroCanonico: "Centro",
-    reconciliado: true,
+  resolverCepServidor.mockResolvedValue({
+    bairro: "Centro",
+    logradouro: "Praça da Sé",
+    cidade: "São Paulo",
+    uf: "SP",
   });
 });
 
@@ -177,9 +181,11 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
   });
 
   it("bairro canônico FORA das zonas + taxa_entrega_fora_zona fixa → 'fora_zona' + taxa fixa", async () => {
-    reconciliarBairroCep.mockResolvedValue({
-      bairroCanonico: "Subúrbio Distante",
-      reconciliado: true,
+    resolverCepServidor.mockResolvedValue({
+      bairro: "Subúrbio Distante",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
     });
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -190,9 +196,11 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
   });
 
   it("bairro canônico FORA + taxa_entrega_fora_zona null → 'indisponivel' + taxa 0", async () => {
-    reconciliarBairroCep.mockResolvedValue({
-      bairroCanonico: "Subúrbio Distante",
-      reconciliado: true,
+    resolverCepServidor.mockResolvedValue({
+      bairro: "Subúrbio Distante",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
     });
     buscarLojaPublicaPorId.mockResolvedValue({
       id: LOJA_ID,
@@ -208,9 +216,11 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
 
   it("acento e CAIXA no bairro canônico não impedem o match (normalizarBairro)", async () => {
     // O ViaCEP devolve "CÉNTRO " — normalizarBairro casa com a zona de "Centro".
-    reconciliarBairroCep.mockResolvedValue({
-      bairroCanonico: "  CÉNTRO ",
-      reconciliado: true,
+    resolverCepServidor.mockResolvedValue({
+      bairro: "  CÉNTRO ",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
     });
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -250,10 +260,8 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
     // Cliente declara o bairro BARATO "Centro" mas o ViaCEP está fora do ar.
     // Fail-closed: descarta o declarado → nenhuma zona casa → fallback R$ 15
     // (idêntico ao que criarPedido cobraria).
-    reconciliarBairroCep.mockResolvedValue({
-      bairroCanonico: null,
-      reconciliado: false,
-    });
+    // ViaCEP fora do ar → resolução null (fail-closed): nada é aproveitado.
+    resolverCepServidor.mockResolvedValue(null);
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
       cep: CEP_CENTRO,
@@ -277,9 +285,11 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
         bairros: [{ nome: "Jardins" }],
       } as ZonaVitrine,
     ]);
-    reconciliarBairroCep.mockResolvedValue({
-      bairroCanonico: "Jardins",
-      reconciliado: true,
+    resolverCepServidor.mockResolvedValue({
+      bairro: "Jardins",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
     });
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -308,13 +318,13 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
         bairros: [],
       } as unknown as ZonaVitrine,
     ]);
-    // Sem bairro: faixa_cep casa só pelo CEP. reconciliarBairroCep não é chamada.
+    // Sem bairro: faixa_cep casa só pelo CEP. Nenhuma resolução EAGER do CEP.
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
       cep: "01001-000",
     });
     expect(r).toEqual({ ok: true, taxa_preview: 9.9, zona_nome: "Zona Faixa CEP" });
-    expect(reconciliarBairroCep).not.toHaveBeenCalled();
+    expect(resolverCepServidor).not.toHaveBeenCalled();
   });
 
   it("PARIDADE: sem CEP (só bairro declarado) → bairro DESCARTADO, reconciliação não roda", async () => {
@@ -322,7 +332,7 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
     // o bairro declarado → nenhuma zona tipo='bairro' casa → fallback R$ 15.
     const r = await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
     expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
-    expect(reconciliarBairroCep).not.toHaveBeenCalled();
+    expect(resolverCepServidor).not.toHaveBeenCalled();
   });
 
   it("payload inválido (sem bairro) → { ok:false } SEM tocar no banco", async () => {
@@ -364,7 +374,12 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
     await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_CENTRO, bairro: "Centro" });
     // service_role instanciado e repassado ao helper de coords:
     expect(createServiceClient).toHaveBeenCalledTimes(1);
-    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(serviceClient, LOJA_ID, CEP_CENTRO);
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(
+      serviceClient,
+      LOJA_ID,
+      CEP_CENTRO,
+      expect.any(Function),
+    );
     // ...mas as queries de zonas/loja recebem o client ANON, não o service_role:
     expect(listarZonasComTaxas).toHaveBeenCalledWith(anonClient, LOJA_ID);
     expect(buscarLojaPublicaPorId).toHaveBeenCalledWith(anonClient, LOJA_ID);
@@ -406,7 +421,12 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
 
     expect(r).toEqual({ ok: true, taxa_preview: 3.0, zona_nome: "Zona Raio 5km" });
     // O helper recebeu o client service_role + loja + cep (RN-7, escopo §19).
-    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(serviceClient, LOJA_ID, CEP_CENTRO);
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(
+      serviceClient,
+      LOJA_ID,
+      CEP_CENTRO,
+      expect.any(Function),
+    );
   });
 
   // 2) Geocoding null (helper undefined) → zona raio não casa → fallback fora-de-zona,
@@ -458,7 +478,12 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
     expect(r).toEqual({ ok: true, taxa_preview: 3.0, zona_nome: "Zona Raio 5km" });
     // Mesma assinatura de chamada do autoritativo: (clientServiceRole, lojaId, cep).
     expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
-    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(serviceClient, LOJA_ID, CEP_CENTRO);
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(
+      serviceClient,
+      LOJA_ID,
+      CEP_CENTRO,
+      expect.any(Function),
+    );
   });
 });
 
@@ -504,11 +529,141 @@ describe("calcularFreteAction — degradação coords ausentes (issue 005)", () 
   it("[005-4] bairro fora (loja COM coords, sem raio) → 'indisponivel' genérico inalterado", async () => {
     // Só zona bairro; bairro reconciliado fora; sem fallback. Não há raio → nunca
     // é 'indisponivel_loja' mesmo que coords faltassem.
-    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Longe", reconciliado: true });
+    resolverCepServidor.mockResolvedValue({
+      bairro: "Longe",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
+    });
     buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: null });
 
     const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: "99999-999", bairro: "Longe" });
 
     expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel" });
+  });
+});
+
+// =============================================================================
+// [185] Geocoding do CEP — o preview resolve o CEP no SERVIDOR e repassa o
+// resolvedor MEMOIZADO ao helper de distância. Espelho EXATO do autoritativo
+// (pedido.test.ts, describe "[185] ..."): mesmo CEP + mesma loja ⇒ mesmos args
+// ao MESMO helper ⇒ mesma distância. É a invariante de paridade que fez o bug
+// passar despercebido nos dois lados ao mesmo tempo.
+// =============================================================================
+
+// Fixture ESPELHO — precisa ser byte a byte igual em pedido.test.ts.
+const CEP_BRAGANCA = "12914-190";
+const ENDERECO_BRAGANCA = {
+  bairro: "Jardim Europa",
+  logradouro: "Avenida Ladislau Osório de Vasconcellos Leme",
+  cidade: "Bragança Paulista",
+  uf: "SP",
+};
+const DISTANCIA_BRAGANCA = 1.0132; // haversine(Pão do Ciso, par do Nominatim)
+
+describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
+  it("[185-P1] passa um RESOLVEDOR (4º arg) ao helper de distância, não só o CEP", async () => {
+    await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
+
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
+    const args = distanciaDaLojaAoCep.mock.calls[0]!;
+    expect(args[0]).toBe(serviceClient);
+    expect(args[1]).toBe(LOJA_ID);
+    expect(args[2]).toBe(CEP_BRAGANCA);
+    expect(typeof args[3]).toBe("function");
+  });
+
+  it("[185-P2] MEMOIZAÇÃO: resolverCepServidor é chamada no MÁXIMO 1 vez por invocação", async () => {
+    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+
+    await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_BRAGANCA,
+      bairro: "Jardim Europa",
+    });
+
+    // O bairro canônico JÁ consumiu a resolução; invocar o thunk do helper não
+    // pode disparar uma segunda ida ao ViaCEP (teto do §Teto do plano).
+    const resolver = distanciaDaLojaAoCep.mock.calls[0]![3] as () => Promise<unknown>;
+    await resolver();
+    await resolver();
+
+    expect(resolverCepServidor).toHaveBeenCalledTimes(1);
+    expect(resolverCepServidor).toHaveBeenCalledWith(CEP_BRAGANCA);
+  });
+
+  it("[185-P3] só CEP (sem bairro): nada é resolvido EAGER; o thunk resolve 1 vez quando invocado", async () => {
+    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+
+    await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
+
+    // Cache hit no geocoder ⇒ thunk nunca invocado ⇒ 0 chamadas ao ViaCEP.
+    expect(resolverCepServidor).not.toHaveBeenCalled();
+
+    const resolver = distanciaDaLojaAoCep.mock.calls[0]![3] as () => Promise<unknown>;
+    await expect(resolver()).resolves.toEqual(ENDERECO_BRAGANCA);
+    await resolver();
+    expect(resolverCepServidor).toHaveBeenCalledTimes(1);
+  });
+
+  it("[185-P4] sem CEP: o resolvedor devolve null SEM tocar no ViaCEP", async () => {
+    await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
+
+    const resolver = distanciaDaLojaAoCep.mock.calls[0]![3] as () => Promise<unknown>;
+    await expect(resolver()).resolves.toBeNull();
+    expect(resolverCepServidor).not.toHaveBeenCalled();
+  });
+
+  it("[185-P5] ESPELHO: CEP 12914-190 + Pão do Ciso → taxa da zona de raio (mesma do autoritativo)", async () => {
+    // Zona raio de 5 km; a distância real é ~1 km → casa. Antes do fix, o CEP
+    // cru geocodificava na República Tcheca → nenhuma zona casava.
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 3.0, zona_nome: "Zona Raio 5km" });
+  });
+
+  it("[185-P6] ViaCEP indisponível → fail-closed: bairro descartado e taxa NÃO fica mais barata", async () => {
+    resolverCepServidor.mockResolvedValue(null);
+    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_BRAGANCA,
+      bairro: "Centro", // bairro BARATO declarado pelo cliente
+    });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  it("[185-P7] ATAQUE: cidade/uf no payload são rejeitados pelo .strict() (issue 064)", async () => {
+    // Promover cidade/uf do cliente a insumo do geocoding reabriria o vetor de
+    // subpagamento. O schema segue byte a byte igual: campo extra = rejeitado.
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_BRAGANCA,
+      cidade: "Bragança Paulista",
+      uf: "SP",
+    });
+
+    expect(r.ok).toBe(false);
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(distanciaDaLojaAoCep).not.toHaveBeenCalled();
+  });
+
+  it("[185-P8] §19/§21: a resposta do preview nunca contém coordenadas", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
+
+    const json = JSON.stringify(r);
+    expect(json).not.toContain("latitude");
+    expect(json).not.toContain("longitude");
+    expect(json).not.toContain("distanciaKm");
+    expect(json).not.toContain("22.9");
   });
 });

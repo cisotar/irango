@@ -84,12 +84,14 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
   buscarCupomPorCodigo: (...a: unknown[]) => buscarCupomPorCodigo(...a),
 }));
 
-// [064] reconciliarBairroCep é I/O (chama ViaCEP). Mockada — NÃO bater na rede
-// nos testes de orquestração. Default (cenarioFeliz): reconcilia para o bairro
-// declarado, isolando o teste do frete da política de fail-closed (testada à parte).
-const reconciliarBairroCep = vi.fn();
-vi.mock("@/lib/utils/reconciliarBairroCep", () => ({
-  reconciliarBairroCep: (...a: unknown[]) => reconciliarBairroCep(...a),
+// [064/185] resolverCepServidor é I/O (chama ViaCEP). Mockada — NÃO bater na
+// rede nos testes de orquestração. RED (185): substitui reconciliarBairroCep —
+// UMA ida ao ViaCEP passa a servir o bairro canônico (§10-A) E a consulta de
+// geocoding (D2c). Default (cenarioFeliz): resolve para o bairro declarado,
+// isolando o teste do frete da política de fail-closed (testada à parte).
+const resolverCepServidor = vi.fn();
+vi.mock("@/lib/utils/resolverCepServidor", () => ({
+  resolverCepServidor: (...a: unknown[]) => resolverCepServidor(...a),
 }));
 
 // [006] Helper neutro distanciaDaLojaAoCep (lib/actions/distanciaFrete.ts):
@@ -317,9 +319,14 @@ function cenarioFeliz() {
   buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
   listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
   buscarCupomPorCodigo.mockResolvedValue(null);
-  // [064] por padrão a reconciliação SUCEDE devolvendo o bairro declarado
+  // [064/185] por padrão a resolução SUCEDE devolvendo o bairro declarado
   // (CEP↔bairro coerentes) — assim o frete dos testes felizes é determinístico.
-  reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Centro", reconciliado: true });
+  resolverCepServidor.mockResolvedValue({
+    bairro: "Centro",
+    logradouro: "Praça da Sé",
+    cidade: "São Paulo",
+    uf: "SP",
+  });
   // [085] sem opcionais por padrão: nenhuma leitura de opcional retorna nada.
   buscarOpcionaisPorIds.mockResolvedValue([]);
   buscarOpcionaisPorCategoria.mockResolvedValue({});
@@ -673,8 +680,8 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     buscarCupomPorCodigo.mockResolvedValue(null);
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
-    // ViaCEP down → fail-closed.
-    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: null, reconciliado: false });
+    // ViaCEP down → fail-closed (resolução null).
+    resolverCepServidor.mockResolvedValue(null);
     fakeClient.rpc.mockResolvedValue({
       data: [{ pedido_id: PEDIDO_ID, token_acesso: TOKEN }],
       error: null,
@@ -694,7 +701,7 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     buscarCupomPorCodigo.mockResolvedValue(null);
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
-    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: null, reconciliado: false });
+    resolverCepServidor.mockResolvedValue(null);
 
     const r = await criarPedido(payloadBase());
     expect(r).toEqual({ erro: expect.any(String) });
@@ -722,7 +729,12 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     buscarCupomPorCodigo.mockResolvedValue(null);
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
-    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Jardins", reconciliado: true });
+    resolverCepServidor.mockResolvedValue({
+      bairro: "Jardins",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
+    });
     fakeClient.rpc.mockResolvedValue({
       data: [{ pedido_id: PEDIDO_ID, token_acesso: TOKEN }],
       error: null,
@@ -1046,7 +1058,13 @@ describe("criarPedido — frete por raio (distanciaKm autoritativo + snapshot) [
 
     // O helper foi consultado com o service client, a loja e o CEP cru do cliente.
     expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
-    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(fakeClient, LOJA_A, "01000-000");
+    // [185] 4º arg OBRIGATÓRIO: o RESOLVEDOR memoizado do CEP (não mais só o CEP).
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledWith(
+      fakeClient,
+      LOJA_A,
+      "01000-000",
+      expect.any(Function),
+    );
 
     expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
     const args = fakeClient.rpc.mock.calls[0][1] as {
@@ -1653,7 +1671,12 @@ describe("[167] criarPedido — observação por item", () => {
     listarFormasPagamento.mockResolvedValue(formasComPix());
     listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
     buscarCupomPorCodigo.mockResolvedValue(null);
-    reconciliarBairroCep.mockResolvedValue({ bairroCanonico: "Centro", reconciliado: true });
+    resolverCepServidor.mockResolvedValue({
+      bairro: "Centro",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
+    });
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
     buscarPedidoPorToken.mockResolvedValue(null);
@@ -2019,5 +2042,143 @@ describe("[159] criarPedido — caracterização pré-paralelização", () => {
     expect(args.p_total).toBe(65.0); // 70 − 5, sem frete
     expect(args.p_endereco_entrega).toBeNull();
     expect(args.p_tipo_entrega).toBe("retirada");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [185] Geocoding do CEP — o autoritativo resolve o CEP no SERVIDOR e repassa o
+// resolvedor MEMOIZADO ao helper de distância. Espelho EXATO do preview
+// (frete.test.ts, describe "[185] ..."): mesmo CEP + mesma loja ⇒ mesmos args ao
+// MESMO helper ⇒ mesma distância. É a invariante de paridade que fez o bug
+// passar despercebido nos dois lados ao mesmo tempo.
+//
+// RED hoje: a action chama distanciaDaLojaAoCep(svc, loja_id, cep) com 3 args e
+// não constrói resolvedor nenhum.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Fixture ESPELHO — precisa ser byte a byte igual em frete.test.ts.
+const CEP_BRAGANCA = "12914-190";
+const ENDERECO_BRAGANCA = {
+  bairro: "Jardim Europa",
+  logradouro: "Avenida Ladislau Osório de Vasconcellos Leme",
+  cidade: "Bragança Paulista",
+  uf: "SP",
+};
+const DISTANCIA_BRAGANCA = 1.0132; // haversine(Pão do Ciso, par do Nominatim)
+
+describe("criarPedido — [185] resolução do CEP no servidor", () => {
+  function payloadBraganca(over: Record<string, unknown> = {}) {
+    return payloadBase({
+      endereco_entrega: {
+        cep: CEP_BRAGANCA,
+        rua: "Avenida Ladislau Osório de Vasconcellos Leme",
+        numero: "10",
+        bairro: "Jardim Europa",
+      },
+      ...over,
+    });
+  }
+
+  it("[185-A1] passa um RESOLVEDOR (4º arg) ao helper de distância, não só o CEP", async () => {
+    cenarioFeliz();
+    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+
+    await criarPedido(payloadBraganca());
+
+    expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
+    const args = distanciaDaLojaAoCep.mock.calls[0]!;
+    expect(args[0]).toBe(fakeClient);
+    expect(args[1]).toBe(LOJA_A);
+    expect(args[2]).toBe(CEP_BRAGANCA);
+    expect(typeof args[3]).toBe("function");
+  });
+
+  it("[185-A2] MEMOIZAÇÃO: resolverCepServidor é chamada no MÁXIMO 1 vez por pedido", async () => {
+    cenarioFeliz();
+    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+
+    await criarPedido(payloadBraganca());
+
+    const resolver = distanciaDaLojaAoCep.mock.calls[0]![3] as () => Promise<unknown>;
+    await resolver();
+    await resolver();
+
+    expect(resolverCepServidor).toHaveBeenCalledTimes(1);
+    expect(resolverCepServidor).toHaveBeenCalledWith(CEP_BRAGANCA);
+  });
+
+  it("[185-A3] ESPELHO: CEP 12914-190 + Pão do Ciso → cobra a taxa da zona de raio", async () => {
+    // Espelho de [185-P5] em frete.test.ts: mesma distância, mesma zona, mesma taxa.
+    cenarioFeliz();
+    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+
+    await criarPedido(payloadBraganca());
+
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_endereco_entrega: { distanciaKm?: number };
+    };
+    expect(args.p_taxa_entrega).toBe(3.0);
+    expect(args.p_endereco_entrega.distanciaKm).toBe(DISTANCIA_BRAGANCA);
+  });
+
+  it("[185-A4] ViaCEP indisponível → fail-closed: bairro descartado E distância ausente", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
+    resolverCepServidor.mockResolvedValue(null);
+    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+
+    await criarPedido(payloadBraganca({
+      endereco_entrega: {
+        cep: CEP_BRAGANCA,
+        rua: "R",
+        numero: "1",
+        bairro: "Centro", // bairro BARATO declarado pelo cliente
+      },
+    }));
+
+    const args = fakeClient.rpc.mock.calls[0][1] as {
+      p_taxa_entrega: number;
+      p_endereco_entrega: Record<string, unknown>;
+    };
+    // Nunca a zona barata declarada (5,00): fallback mais caro.
+    expect(args.p_taxa_entrega).toBe(8.0);
+    expect(args.p_endereco_entrega).not.toHaveProperty("distanciaKm");
+  });
+
+  it("[185-A5] cidade/uf declarados pelo cliente NÃO alteram taxa nem distância (issue 064)", async () => {
+    cenarioFeliz();
+    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+
+    await criarPedido(payloadBraganca({
+      endereco_entrega: {
+        cep: CEP_BRAGANCA,
+        rua: "R",
+        numero: "1",
+        bairro: "Jardim Europa",
+        cidade: "Cidade Inventada", // payload adulterado
+        uf: "RS",
+      },
+    }));
+
+    // O resolvedor é chamado só com o CEP — cidade/uf do payload não são lidos.
+    expect(resolverCepServidor).toHaveBeenCalledWith(CEP_BRAGANCA);
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number };
+    expect(args.p_taxa_entrega).toBe(3.0);
+  });
+
+  it("[185-A6] retirada → nenhum resolvedor é construído e o ViaCEP não é tocado", async () => {
+    cenarioFeliz();
+
+    await criarPedido(
+      payloadBase({ tipo_entrega: "retirada", endereco_entrega: undefined }),
+    );
+
+    expect(distanciaDaLojaAoCep).not.toHaveBeenCalled();
+    expect(resolverCepServidor).not.toHaveBeenCalled();
   });
 });

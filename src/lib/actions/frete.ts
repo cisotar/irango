@@ -37,7 +37,10 @@ import {
   lojaTemRaioSemCoords,
   VEREDITO_LOJA_SEM_COORDS,
 } from "@/lib/utils/freteDegradado";
-import { reconciliarBairroCep } from "@/lib/utils/reconciliarBairroCep";
+import {
+  resolverCepServidor,
+  type EnderecoCepResolvido,
+} from "@/lib/utils/resolverCepServidor";
 
 // Schema zod .strict(): rejeita qualquer campo que não seja loja_id + bairro +
 // cep — impede injeção de taxa_preview, subtotal, etc. pelo cliente.
@@ -45,7 +48,7 @@ import { reconciliarBairroCep } from "@/lib/utils/reconciliarBairroCep";
 // RFC-4122 — alinhado com schemaCheckout e schemaPayloadPedido do projeto.
 // (067) cep é OPCIONAL (espelha o autoritativo, onde endereco.cep pode faltar):
 // usado para reconciliar o bairro CANÔNICO (ViaCEP) e para casar zonas
-// tipo='faixa_cep'. reconciliarBairroCep já normaliza dígitos internamente, então
+// tipo='faixa_cep'. resolverCepServidor já normaliza dígitos internamente, então
 // a máscara do CEP é tolerada aqui — sem reimplementar limpeza.
 const schemaFretePreview = z
   .object({
@@ -113,13 +116,18 @@ export async function calcularFreteAction(
     //     (bairro:null), caindo no fallback fora-de-zona. O CEP numérico permanece
     //     no endereço para zonas tipo='faixa_cep' (faixa numérica, não forjável).
     //     Continua NÃO-VINCULANTE: a autoridade de cobrança é `criarPedido`.
+    //     (185) A resolução do CEP é MEMOIZADA e serve dois consumidores: o
+    //     bairro canônico aqui e a consulta de geocoding em 3c. É um thunk, não
+    //     uma chamada eager — sem bairro declarado e com cache de coords quente,
+    //     o ViaCEP não é tocado nenhuma vez.
+    let promessaCep: Promise<EnderecoCepResolvido | null> | undefined;
+    const resolverCep = (): Promise<EnderecoCepResolvido | null> =>
+      cep ? (promessaCep ??= resolverCepServidor(cep)) : Promise.resolve(null);
+
     const endereco: EnderecoEntrega = { cep };
     if (bairro) {
-      const rec = cep ? await reconciliarBairroCep(cep, bairro) : null;
-      endereco.bairro =
-        rec?.reconciliado && rec.bairroCanonico != null
-          ? rec.bairroCanonico
-          : null;
+      const resolvido = await resolverCep();
+      endereco.bairro = resolvido?.bairro ?? null;
     }
 
     // 3c) (007) Distância por raio — paridade EXATA com o autoritativo (criarPedido,
@@ -128,7 +136,7 @@ export async function calcularFreteAction(
     //     o helper é fail-closed (undefined em qualquer falha/pré-condição ausente).
     //     distanciaKm jamais vem do cliente — derivado 100% no servidor (RN-4).
     const svc = createServiceClient();
-    const distanciaKm = await distanciaDaLojaAoCep(svc, loja_id, cep);
+    const distanciaKm = await distanciaDaLojaAoCep(svc, loja_id, cep, resolverCep);
     if (typeof distanciaKm === "number") endereco.distanciaKm = distanciaKm;
 
     // 4) Reusa a MESMA lib do recálculo autoritativo (RN-C4 + paridade preview↔real).
