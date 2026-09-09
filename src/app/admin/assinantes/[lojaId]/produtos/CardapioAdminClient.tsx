@@ -68,8 +68,8 @@ export function CardapioAdminClient({
       categorias={categorias}
       // Opcionais reais da loja-alvo (loader 132). Guard 122-129: habilitar
       // `categoriasOpcional` reais EXIGE injetar `salvarAssociacaoOpcionais`
-      // admin no `acoes` (abaixo) na MESMA mudança — sem isso o fallback cai na
-      // action do lojista (resolve loja por auth.uid() = admin → cross-tenant).
+      // admin no `acoes` (abaixo) na MESMA mudança — a prop é OBRIGATÓRIA
+      // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
       categoriasOpcional={categoriasOpcional}
       acoes={{

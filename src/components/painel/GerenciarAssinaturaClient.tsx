@@ -47,9 +47,10 @@ export type PlanoView = {
 };
 
 /**
- * Objeto de ações injetáveis (issue 148). Os 4 campos são OBRIGATÓRIOS: as
- * actions de assinatura andam sempre juntas — o lojista usa as 4 do default,
- * o admin injeta as 4 variantes escopadas por lojaId. `typeof` reaproveita a
+ * Objeto de ações injetáveis (issue 148). Os 4 campos são OBRIGATÓRIOS (issue
+ * 160): as actions de assinatura andam sempre juntas — sem default, a page do
+ * painel injeta as 4 do lojista explicitamente, o admin as 4 variantes
+ * escopadas por lojaId. `typeof` reaproveita a
  * assinatura exata de cada action (retorno { ok:true } | { ok:true; url } |
  * { ok:false; erro } é inferido, não re-escrito). Arquivo é `'use client'`,
  * então exportar tipo aqui é permitido (a restrição "só async" é dos módulos
