@@ -112,7 +112,7 @@ Degrau 5 só quando o paralelismo é o gargalo (dezenas de arquivos independente
 3. **Tradução humana.** Escreva primeiro a seção 1 (linguagem simples). Se você não consegue explicar em três frases quem faz o quê e por quê, o plano está complexo demais.
 4. **Design do loop.** Só se inevitável. Gatilho, parada máxima, critério de sucesso, estagnação, validador entre passos, ações proibidas.
 5. **Proposta de menor custo.** Escreva a alternativa **um degrau abaixo** e por que ela não atende. Se atender, ela vira o plano.
-6. **Salve e devolva.** Grave em `plan/loop-<slug-da-tarefa>.md` e exiba o plano.
+6. **Salve e devolva.** Grave em `plan/loop-<slug-da-tarefa>.md` e exiba o plano. O arquivo é lido depois em outra sessão, sem o histórico que gerou o pedido: ele precisa se sustentar sozinho. Nada de "os números que o usuário validou" ou "conforme combinado" sem que a seção 0 traga o pedido e os números de fato.
 
 ## Lacuna comprovada
 
@@ -121,6 +121,13 @@ Só declare que falta um agente ou skill depois de mostrar que nenhuma combinaç
 ## Formato da resposta (exato)
 
 ```markdown
+## 0. O que foi pedido
+[o pedido do usuário na forma literal em que chegou, entre aspas ou em bloco de citação,
+seguido do contexto mínimo para entendê-lo sem esta sessão: branch, arquivos já
+identificados, issue/spec/PR relacionado, restrições e decisões que o usuário já declarou,
+e os números/exemplos que ele validou. Quem abrir este arquivo numa sessão nova precisa
+poder conferir se o plano corresponde ao pedido — sem depender de um resumo seu.]
+
 ## 1. Como vamos resolver (explicação simples)
 [3 frases, sem jargão: quem trabalha, por quê, e como sabemos que terminou]
 

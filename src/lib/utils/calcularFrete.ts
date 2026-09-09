@@ -99,6 +99,23 @@ function zonaAtende(zona: ZonaComTaxa, endereco: EnderecoEntrega): boolean {
 }
 
 /**
+ * Verdadeiro se a faixa de raio `a` deve vencer a faixa `b` (ambas já atendem
+ * o endereço). Menor `raio_max_km` = a faixa exclusiva à qual a distância
+ * pertence (#181). Desempates são totalmente determinísticos e NÃO dependem da
+ * ordem recebida do banco: teto igual → maior taxa (RN-C8), taxa igual → id
+ * crescente.
+ */
+function faixaVence(a: ZonaComTaxa, b: ZonaComTaxa): boolean {
+  const tetoA = a.taxa!.raio_max_km!;
+  const tetoB = b.taxa!.raio_max_km!;
+  if (tetoA !== tetoB) return tetoA < tetoB;
+  const taxaA = a.taxa!.taxa;
+  const taxaB = b.taxa!.taxa;
+  if (taxaA !== taxaB) return taxaA > taxaB;
+  return a.id.localeCompare(b.id) < 0;
+}
+
+/**
  * Calcula a taxa de entrega a partir das zonas da loja e do endereço.
  * Função PURA, sem I/O — fonte única de verdade do frete: preview na vitrine
  * (UX) e valor autoritativo recalculado na Server Action de criar pedido
@@ -107,8 +124,18 @@ function zonaAtende(zona: ZonaComTaxa, endereco: EnderecoEntrega): boolean {
  *
  * Resolução (RN-C4):
  * 1. Ignora zonas inativas e sem taxa.
- * 2. Entre as que atendem, escolhe a de MENOR taxa (melhor p/ o cliente);
- *    empate → primeira na ordem recebida.
+ * 2. Entre as que atendem:
+ *    a. Zonas 'raio_km' são FAIXAS EXCLUSIVAS (anel), não discos concorrentes:
+ *       cada distância pertence a exatamente uma faixa, cujo piso é o teto da
+ *       faixa anterior. Como toda candidata já satisfaz `dist <= raio_max_km`,
+ *       a faixa correta é a de MENOR `raio_max_km` — nunca a de menor taxa
+ *       (issue #181). Empate de teto (misconfiguração) → MAIOR taxa (RN-C8:
+ *       ambiguidade nunca reduz o frete) → `id` crescente (determinismo, já
+ *       que a query das zonas não tem ORDER BY).
+ *    b. A faixa eleita (0 ou 1) disputa com as candidatas 'bairro'/'faixa_cep'
+ *       pela MENOR taxa (melhor p/ o cliente); empate → primeira na ordem
+ *       recebida. A regra de menor taxa segue valendo para esses tipos, que
+ *       não têm noção de anel.
  * 3. Frete grátis avaliado na zona escolhida (subtotal >= pedido_minimo_gratis;
  *    null = nunca grátis).
  * 4. Se nenhuma zona atender → usa `taxaForaZona` (RN-C4 passo 4):
@@ -126,13 +153,22 @@ export function calcularFrete(
    * null | undefined = entrega indisponível fora de zona. */
   taxaForaZona?: number | null,
 ): ResultadoFrete {
-  let escolhida: ZonaComTaxa | null = null;
+  // Etapa 1 — candidatas: ativas, com taxa e que cobrem o endereço.
+  const candidatas = zonas.filter(
+    (zona) => zona.ativo && zona.taxa != null && zonaAtende(zona, endereco),
+  );
 
-  for (const zona of zonas) {
-    if (!zona.ativo || zona.taxa == null) continue;
-    if (!zonaAtende(zona, endereco)) continue;
-    // menor taxa vence; empate mantém a primeira (estável).
-    if (escolhida == null || zona.taxa.taxa < escolhida.taxa!.taxa) {
+  // Etapa 2a — a faixa de raio exclusiva (0 ou 1) entre as candidatas.
+  let escolhida: ZonaComTaxa | null = null;
+  for (const zona of candidatas) {
+    if (zona.tipo !== "raio_km") continue;
+    if (escolhida == null || faixaVence(zona, escolhida)) escolhida = zona;
+  }
+
+  // Etapa 2b — a faixa eleita disputa por MENOR taxa com bairro/faixa_cep.
+  for (const zona of candidatas) {
+    if (zona.tipo === "raio_km") continue;
+    if (escolhida == null || zona.taxa!.taxa < escolhida.taxa!.taxa) {
       escolhida = zona;
     }
   }
