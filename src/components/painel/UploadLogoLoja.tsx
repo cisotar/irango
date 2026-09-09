@@ -8,10 +8,11 @@
  *
  *   1. aspect = 1 + `cropShape="round"` (máscara circular no cropper);
  *   2. preview circular (`size-32 rounded-full`), dropzone com alvo redondo;
- *   3. actions de salvar/remover injetáveis via props `onSalvar` / `onRemover`,
- *      com default = actions do lojista `salvarLogoLoja` / `removerLogoLoja`
- *      (lê `resultado.logo_url`). Permite reuso pelo admin sem acoplar o
- *      componente ao dono da action;
+ *   3. actions de salvar/remover injetadas via props `onSalvar` / `onRemover`,
+ *      OBRIGATÓRIAS desde a issue 160 — sem default (lê `resultado.logo_url`).
+ *      A page do painel injeta `salvarLogoLoja` / `removerLogoLoja`; o
+ *      `PerfilAdminClient` injeta os adapters escopados por `lojaId`. Permite
+ *      reuso pelo admin sem acoplar o componente ao dono da action;
  *   4. copy de logo.
  *
  * Segurança (seguranca.md §10, §14):
@@ -38,7 +39,6 @@ import {
   TAMANHO_MAXIMO_BYTES,
 } from "@/lib/utils/validarImagem";
 import { exportarCrop } from "@/lib/utils/exportarCrop";
-import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
 import type { ResultadoSalvarLogo, ResultadoLogo } from "@/lib/actions/logo-contrato";
 import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
 
@@ -47,10 +47,10 @@ export type UploadLogoLojaProps = {
   logoUrlInicial?: string | null;
   /** Chamado com a `logo_url` pública após upload OK; "" ao remover. */
   onUploadConcluido?: (url: string) => void;
-  /** Action de salvar a logo. Default = action do lojista `salvarLogoLoja`. */
-  onSalvar?: (formData: FormData) => Promise<ResultadoSalvarLogo>;
-  /** Action de remover a logo. Default = action do lojista `removerLogoLoja`. */
-  onRemover?: () => Promise<ResultadoLogo>;
+  /** Action de salvar a logo. Obrigatória (issue 160): sem default, quem renderiza injeta. */
+  onSalvar: (formData: FormData) => Promise<ResultadoSalvarLogo>;
+  /** Action de remover a logo. Obrigatória (issue 160). */
+  onRemover: () => Promise<ResultadoLogo>;
   disabled?: boolean;
 };
 
@@ -62,8 +62,8 @@ const ZOOM_PASSO_BOTAO = 0.1;
 export function UploadLogoLoja({
   logoUrlInicial,
   onUploadConcluido,
-  onSalvar = salvarLogoLoja,
-  onRemover = removerLogoLoja,
+  onSalvar,
+  onRemover,
   disabled = false,
 }: UploadLogoLojaProps) {
   const inputRef = useRef<HTMLInputElement>(null);

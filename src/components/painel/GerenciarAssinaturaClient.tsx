@@ -19,7 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
+import type {
   iniciarAssinatura,
   trocarPlano,
   atualizarMeioPagamentoAssinatura,
@@ -47,9 +47,10 @@ export type PlanoView = {
 };
 
 /**
- * Objeto de ações injetáveis (issue 148). Os 4 campos são OBRIGATÓRIOS: as
- * actions de assinatura andam sempre juntas — o lojista usa as 4 do default,
- * o admin injeta as 4 variantes escopadas por lojaId. `typeof` reaproveita a
+ * Objeto de ações injetáveis (issue 148). Os 4 campos são OBRIGATÓRIOS (issue
+ * 160): as actions de assinatura andam sempre juntas — sem default, a page do
+ * painel injeta as 4 do lojista explicitamente, o admin as 4 variantes
+ * escopadas por lojaId. `typeof` reaproveita a
  * assinatura exata de cada action (retorno { ok:true } | { ok:true; url } |
  * { ok:false; erro } é inferido, não re-escrito). Arquivo é `'use client'`,
  * então exportar tipo aqui é permitido (a restrição "só async" é dos módulos
@@ -62,15 +63,6 @@ export type AcoesAssinatura = {
   cancelarAssinatura: typeof cancelarAssinatura;
 };
 
-// Default = as 4 actions do lojista, agrupadas. Const de módulo em client
-// component é seguro (mesma natureza dos defaults de PerfilClient).
-const ACOES_LOJISTA: AcoesAssinatura = {
-  iniciarAssinatura,
-  trocarPlano,
-  atualizarMeioPagamentoAssinatura,
-  cancelarAssinatura,
-};
-
 export type GerenciarAssinaturaClientProps = {
   planos: PlanoView[];
   /** id do plano atual da loja (ou null se nunca assinou). */
@@ -78,17 +70,19 @@ export type GerenciarAssinaturaClientProps = {
   /** Há assinatura em vigor? (define assinar vs. trocar / mostra cancelar). */
   temAssinatura: boolean;
   /**
-   * Actions injetáveis. Omitido no lojista (default = as 4 do lojista,
-   * comportamento atual). Admin injeta as 4 variantes escopadas por lojaId.
+   * Actions injetadas. OBRIGATÓRIAS (issue 160): a page do painel passa as 4 do
+   * lojista, a via admin passa as 4 variantes escopadas por `lojaId`. Sem
+   * default — omitir uma prop aqui quebra o build em vez de gravar na loja
+   * errada.
    */
-  acoes?: AcoesAssinatura;
+  acoes: AcoesAssinatura;
 };
 
 export function GerenciarAssinaturaClient({
   planos,
   planoAtualId,
   temAssinatura,
-  acoes = ACOES_LOJISTA,
+  acoes,
 }: GerenciarAssinaturaClientProps) {
   const router = useRouter();
   const [selecionado, setSelecionado] = useState<string>(

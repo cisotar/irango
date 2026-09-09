@@ -1,6 +1,8 @@
 /**
- * Testes de fiação para `GerenciarAssinaturaClient` (issue 148 — prop `acoes?`
- * injetável; default = as 4 actions do lojista).
+ * Testes de fiação para `GerenciarAssinaturaClient` (issue 148 — prop `acoes`
+ * injetável; issue 160 — a prop passou a ser OBRIGATÓRIA, sem default: a page
+ * do painel passa as 4 actions do lojista explicitamente, o wrapper admin passa
+ * as 4 variantes escopadas por `lojaId`).
  *
  * Ambiente: vitest environment=node — SEM jsdom (decisão consciente: disco
  * quase cheio + preserva o precedente "environment node" do projeto; ver
@@ -10,11 +12,11 @@
  * injetada" não é observável aqui.
  *
  * O que este arquivo prova (viável em node):
- *   (a) sem `acoes`, o componente usa o default (ACOES_LOJISTA) e renderiza sem
- *       lançar — o painel do lojista não regride;
- *   (b) aceitar `acoes` não altera o HTML renderizado (zero regressão, nos dois
- *       ramos temAssinatura=true/false) e nenhuma action — injetada OU do
- *       lojista — é chamada durante o render;
+ *   (a) com a injeção do LOJISTA (a que a page do painel monta), o componente
+ *       renderiza sem lançar — o painel do lojista não regride;
+ *   (b) trocar a injeção do lojista pela do admin não altera o HTML renderizado
+ *       (zero regressão, nos dois ramos temAssinatura=true/false) e nenhuma
+ *       action — injetada OU do lojista — é chamada durante o render;
  *   (c) os controles que despacham cada action estão presentes na superfície
  *       (Assinar / Trocar plano / Atualizar forma de pagamento / Cancelar);
  *   (d) `planos=[]` (borda de input vazio) cai no early-return dedicado: nenhum
@@ -44,7 +46,7 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
-// Mock do módulo `'use server'`: assim o default ACOES_LOJISTA é composto por
+// Mock do módulo `'use server'`: assim a injeção do lojista é composta por
 // estes mocks e podemos afirmar o negativo (nenhuma action do lojista é chamada
 // durante o render). Evita também importar o módulo real (que sobe clientes
 // Supabase / service_role) sob node.
@@ -79,10 +81,25 @@ function acoesMock(): AcoesAssinatura {
   } as unknown as AcoesAssinatura;
 }
 
+/**
+ * Injeção do LOJISTA — o mesmo objeto que a page do painel monta desde a issue
+ * 160 (a prop `acoes` deixou de ter default). Aponta para o módulo mockado, o
+ * que mantém possível afirmar que nenhuma action do lojista roda no render.
+ */
+function acoesLojista(): AcoesAssinatura {
+  return {
+    iniciarAssinatura: actionsLojista.iniciarAssinatura,
+    trocarPlano: actionsLojista.trocarPlano,
+    atualizarMeioPagamentoAssinatura:
+      actionsLojista.atualizarMeioPagamentoAssinatura,
+    cancelarAssinatura: actionsLojista.cancelarAssinatura,
+  };
+}
+
 function render(
   temAssinatura: boolean,
   planoAtualId: string | null,
-  acoes?: AcoesAssinatura,
+  acoes: AcoesAssinatura = acoesLojista(),
 ): string {
   return renderToStaticMarkup(
     <GerenciarAssinaturaClient
@@ -98,14 +115,14 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("default `acoes = ACOES_LOJISTA` (sem prop)", () => {
-  it("renderiza sem lançar quando `acoes` é omitido — painel do lojista não regride", () => {
+describe("injeção do painel do lojista", () => {
+  it("renderiza sem lançar com as 4 actions do lojista — painel não regride", () => {
     const html = render(false, null);
     expect(html).toContain("Escolha seu plano");
     expect(html).toContain("Assinar");
   });
 
-  it("com assinatura e sem `acoes`, renderiza os controles do lojista sem lançar", () => {
+  it("com assinatura, renderiza os controles do lojista sem lançar", () => {
     const html = render(true, "plano-a");
     expect(html).toContain("Trocar plano");
     expect(html).toContain("Atualizar forma de pagamento");
@@ -113,11 +130,11 @@ describe("default `acoes = ACOES_LOJISTA` (sem prop)", () => {
   });
 });
 
-describe("aceitar `acoes` é zero-regressão de markup", () => {
-  it("HTML com `acoes` injetadas é idêntico ao HTML sem `acoes`", () => {
-    const semAcoes = render(true, "plano-a");
-    const comAcoes = render(true, "plano-a", acoesMock());
-    expect(comAcoes).toBe(semAcoes);
+describe("trocar a injeção é zero-regressão de markup", () => {
+  it("HTML com a injeção admin é idêntico ao da injeção do lojista", () => {
+    const comLojista = render(true, "plano-a");
+    const comAdmin = render(true, "plano-a", acoesMock());
+    expect(comAdmin).toBe(comLojista);
   });
 
   it("nenhuma action — injetada OU do lojista — é chamada durante o render", () => {
@@ -138,10 +155,10 @@ describe("aceitar `acoes` é zero-regressão de markup", () => {
   // renderiza pagamento/cancelar). Sem este segundo caso, uma regressão que só
   // aparecesse no ramo "sem assinatura ainda" (ex.: `acoes` influenciando o
   // botão "Assinar") passaria despercebida.
-  it("HTML com `acoes` injetadas é idêntico ao HTML sem `acoes` (sem assinatura)", () => {
-    const semAcoes = render(false, null);
-    const comAcoes = render(false, null, acoesMock());
-    expect(comAcoes).toBe(semAcoes);
+  it("HTML com a injeção admin é idêntico ao da injeção do lojista (sem assinatura)", () => {
+    const comLojista = render(false, null);
+    const comAdmin = render(false, null, acoesMock());
+    expect(comAdmin).toBe(comLojista);
   });
 });
 

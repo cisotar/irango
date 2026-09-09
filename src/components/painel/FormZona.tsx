@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { schemaZonaCompleta } from "@/lib/validacoes/entrega";
-import {
+import type {
   criarZona as criarZonaLojista,
   atualizarZona as atualizarZonaLojista,
 } from "@/lib/actions/entrega";
@@ -30,10 +30,10 @@ export type FormZonaProps = {
   /** Se presente (com `id`), o form opera em modo edição. */
   inicial?: ZonaInicial;
   onSucesso?: () => void;
-  /** Action de criação. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
-  onCriar?: typeof criarZonaLojista;
-  /** Action de edição. Default: action do lojista. */
-  onAtualizar?: typeof atualizarZonaLojista;
+  /** Action de criação. Obrigatória (issue 160): sem default, quem renderiza injeta. */
+  onCriar: typeof criarZonaLojista;
+  /** Action de edição. Obrigatória (issue 160). */
+  onAtualizar: typeof atualizarZonaLojista;
 };
 
 type TipoZona = "bairro" | "raio_km" | "faixa_cep";
@@ -58,8 +58,8 @@ function paraNumero(valor: string): number | null {
 export function FormZona({
   inicial,
   onSucesso,
-  onCriar = criarZonaLojista,
-  onAtualizar = atualizarZonaLojista,
+  onCriar,
+  onAtualizar,
 }: FormZonaProps) {
   const ehEdicao = inicial?.id != null;
 

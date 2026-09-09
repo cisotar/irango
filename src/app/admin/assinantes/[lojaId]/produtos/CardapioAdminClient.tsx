@@ -5,11 +5,13 @@ import { useCallback } from "react";
 import { ProdutosClient } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import type { Categoria } from "@/components/painel/FormProduto";
 import type { Produto, OpcionaisPorCategoria } from "@/lib/supabase/queries/produtos";
+import { schemaReordenacaoCategorias } from "@/lib/validacoes/produto";
 import {
   criarCategoriaAdmin,
   atualizarCategoriaAdmin,
   removerCategoriaAdmin,
   alternarExibirImagensAdmin,
+  reordenarCategoriasAdmin,
 } from "@/app/admin/assinantes/actions/admin-categorias";
 import {
   criarProdutoAdmin,
@@ -66,8 +68,8 @@ export function CardapioAdminClient({
       categorias={categorias}
       // Opcionais reais da loja-alvo (loader 132). Guard 122-129: habilitar
       // `categoriasOpcional` reais EXIGE injetar `salvarAssociacaoOpcionais`
-      // admin no `acoes` (abaixo) na MESMA mudança — sem isso o fallback cai na
-      // action do lojista (resolve loja por auth.uid() = admin → cross-tenant).
+      // admin no `acoes` (abaixo) na MESMA mudança — a prop é OBRIGATÓRIA
+      // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
       categoriasOpcional={categoriasOpcional}
       acoes={{
@@ -77,6 +79,22 @@ export function CardapioAdminClient({
         removerCategoria: (id) => removerCategoriaAdmin(lojaId, id),
         alternarExibirImagens: (id, exibirImagens) =>
           alternarExibirImagensAdmin(lojaId, id, exibirImagens),
+        // A action do lojista recebe `payload: unknown` (a sequência de ids) e
+        // deriva `ordem` numa RPC; a admin recebe os pares `{ id, ordem }` já
+        // formados. Só ADAPTAÇÃO DE FORMA: o `safeParse` reusa o mesmo schema do
+        // servidor e existe apenas para tipar o `unknown` sem cast — a
+        // autoridade (admin, escopo por `lojaId`, posse das categorias) continua
+        // inteira na `reordenarCategoriasAdmin`.
+        reordenarCategorias: async (payload) => {
+          const parsed = schemaReordenacaoCategorias.safeParse(payload);
+          if (!parsed.success) {
+            return { ok: false, erro: "Não foi possível salvar a ordem." };
+          }
+          return reordenarCategoriasAdmin(
+            lojaId,
+            parsed.data.map((id, indice) => ({ id, ordem: indice })),
+          );
+        },
         criarProduto: (payload) => criarProdutoAdmin(lojaId, payload),
         atualizarProduto: (id, payload) =>
           atualizarProdutoAdmin(lojaId, id, payload),

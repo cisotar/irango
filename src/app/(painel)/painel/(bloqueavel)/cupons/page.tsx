@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { listarCuponsDoDono } from "@/lib/supabase/queries/entregaPagamento";
+import { criarCupom, atualizarCupom, removerCupom } from "@/lib/actions/cupom";
 import { CuponsClient } from "./CuponsClient";
 
 /**
@@ -23,5 +24,16 @@ export default async function CuponsPage(): Promise<ReactElement> {
 
   const cupons = await listarCuponsDoDono(supabase);
 
-  return <CuponsClient cupons={cupons} />;
+  return (
+    <CuponsClient
+      cupons={cupons}
+      // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
+      // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
+      acoes={{
+        criar: criarCupom,
+        atualizar: atualizarCupom,
+        remover: removerCupom,
+      }}
+    />
+  );
 }

@@ -142,6 +142,7 @@ import {
   criarZonaAdmin,
   atualizarZonaAdmin,
   removerZonaAdmin,
+  alternarZonaAtivaAdmin,
 } from "./admin-entrega";
 
 beforeEach(() => {
@@ -234,6 +235,23 @@ describe("atualizarZonaAdmin / removerZonaAdmin — zona escopada por loja-alvo 
     expect(opDel!.filtros).toContainEqual(["id", ZONA_ID]);
     expect(opDel!.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
   });
+
+  it("alternarZonaAtivaAdmin escopa a zona por eq('id') + eq('loja_id', lojaAlvo)", async () => {
+    freshClient();
+
+    await alternarZonaAtivaAdmin(LOJA_ALVO, ZONA_ID, false);
+
+    const opZona = ops.find(
+      (o) => o.tabela === "zonas_entrega" && o.acao === "update",
+    );
+    expect(opZona).toBeDefined();
+    expect(opZona!.filtros).toContainEqual(["id", ZONA_ID]);
+    expect(opZona!.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
+    // Nunca escopa por loja de outra.
+    expect(opZona!.filtros).not.toContainEqual(["loja_id", LOJA_OUTRA]);
+    // Só a coluna `ativo` é escrita — nada mais do payload do client.
+    expect(opZona!.payload).toEqual({ ativo: false });
+  });
 });
 
 // ──────────── Caso 4: admin não provado → exceção, zero efeito (D-4) ─────────
@@ -245,6 +263,19 @@ describe("criarZonaAdmin — fail-closed quando admin é negado (D-4)", () => {
     await expect(criarZonaAdmin(LOJA_ALVO, payloadValido)).rejects.toThrow(
       "acesso negado",
     );
+
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(ops).toHaveLength(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("alternarZonaAtivaAdmin: verificarAdminSaaS lança → action REJEITA (propaga), service NUNCA criado, ZERO update", async () => {
+    freshClient();
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(
+      alternarZonaAtivaAdmin(LOJA_ALVO, ZONA_ID, false),
+    ).rejects.toThrow("acesso negado");
 
     expect(createServiceClient).not.toHaveBeenCalled();
     expect(ops).toHaveLength(0);

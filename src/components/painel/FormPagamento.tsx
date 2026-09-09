@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { schemaFormaPagamento } from "@/lib/validacoes/pagamento";
-import {
+import type {
   salvarFormaPagamento as salvarFormaPagamentoLojista,
   atualizarFormaPagamento as atualizarFormaPagamentoLojista,
   salvarQrPix as salvarQrPixLojista,
@@ -34,15 +34,19 @@ export type FormPagamentoProps = {
    */
   lojaId?: string;
   onSucesso?: () => void;
-  /** Action de criação. Default: action do lojista. A via admin injeta a variante por `lojaId`. */
-  onSalvar?: typeof salvarFormaPagamentoLojista;
-  /** Action de edição. Default: action do lojista. */
-  onAtualizar?: typeof atualizarFormaPagamentoLojista;
-  /** Action que persiste a URL do QR Pix. Default: action do lojista. */
-  onSalvarQr?: typeof salvarQrPixLojista;
+  /** Action de criação. Obrigatória (issue 160): sem default, quem renderiza injeta. */
+  onSalvar: typeof salvarFormaPagamentoLojista;
+  /** Action de edição. Obrigatória (issue 160). */
+  onAtualizar: typeof atualizarFormaPagamentoLojista;
+  /** Action que persiste a URL do QR Pix. Obrigatória (issue 160). */
+  onSalvarQr: typeof salvarQrPixLojista;
   /**
    * Função de upload do QR injetada para o `UploadQrPix` (variante admin escopa o
-   * path do bucket por `lojaId`). Default: upload do lojista via client Supabase.
+   * path do bucket por `lojaId`). Segue OPCIONAL (issue 160): o default do lojista
+   * é upload NO BROWSER (client Supabase + RLS do bucket), não uma Server Action —
+   * não atravessa a fronteira Server Component → Client Component, então a page do
+   * painel não teria como passá-la. Também não é vetor cross-tenant: o path vem do
+   * `lojaId` derivado no servidor e a RLS do bucket escopa a escrita ao dono.
    */
   onEnviarQr?: EnviarQrPix;
 };
@@ -75,9 +79,9 @@ export function FormPagamento({
   inicial,
   lojaId,
   onSucesso,
-  onSalvar = salvarFormaPagamentoLojista,
-  onAtualizar = atualizarFormaPagamentoLojista,
-  onSalvarQr = salvarQrPixLojista,
+  onSalvar,
+  onAtualizar,
+  onSalvarQr,
   onEnviarQr,
 }: FormPagamentoProps) {
   const router = useRouter();

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { FormZona } from "@/components/painel/FormZona";
-import {
+import type {
   alternarZonaAtiva as alternarZonaAtivaLojista,
   removerZona as removerZonaLojista,
   criarZona as criarZonaLojista,
@@ -31,14 +31,15 @@ import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 export type EntregasClientProps = {
   zonas: ZonaVitrine[];
   /**
-   * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults). A via
-   * admin passa as variantes escopadas por `lojaId`.
+   * Actions injetadas. OBRIGATÓRIAS (issue 160): a page do painel passa as do
+   * lojista, a via admin passa as variantes escopadas por `lojaId`. Sem default —
+   * omitir uma prop aqui quebra o build em vez de gravar na loja errada.
    */
-  acoes?: {
-    alternarZonaAtiva?: typeof alternarZonaAtivaLojista;
-    removerZona?: typeof removerZonaLojista;
-    criarZona?: typeof criarZonaLojista;
-    atualizarZona?: typeof atualizarZonaLojista;
+  acoes: {
+    alternarZonaAtiva: typeof alternarZonaAtivaLojista;
+    removerZona: typeof removerZonaLojista;
+    criarZona: typeof criarZonaLojista;
+    atualizarZona: typeof atualizarZonaLojista;
   };
 };
 
@@ -51,8 +52,7 @@ const ROTULO_TIPO: Record<string, string> = {
 export function EntregasClient({ zonas, acoes }: EntregasClientProps) {
   const router = useRouter();
 
-  const alternarZonaAtiva = acoes?.alternarZonaAtiva ?? alternarZonaAtivaLojista;
-  const removerZona = acoes?.removerZona ?? removerZonaLojista;
+  const { alternarZonaAtiva, removerZona } = acoes;
 
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<ZonaVitrine | null>(null);
@@ -194,8 +194,8 @@ export function EntregasClient({ zonas, acoes }: EntregasClientProps) {
             <FormZona
               key={emEdicao?.id ?? "novo"}
               onSucesso={aoSalvar}
-              onCriar={acoes?.criarZona}
-              onAtualizar={acoes?.atualizarZona}
+              onCriar={acoes.criarZona}
+              onAtualizar={acoes.atualizarZona}
               inicial={
                 emEdicao
                   ? {

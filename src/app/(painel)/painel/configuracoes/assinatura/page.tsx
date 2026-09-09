@@ -15,6 +15,12 @@ import {
   GerenciarAssinaturaClient,
   type PlanoView,
 } from "@/components/painel/GerenciarAssinaturaClient";
+import {
+  iniciarAssinatura,
+  trocarPlano,
+  atualizarMeioPagamentoAssinatura,
+  cancelarAssinatura,
+} from "@/lib/actions/assinatura";
 import { temAssinaturaAtiva } from "@/components/painel/rotulosAssinatura";
 
 /**
@@ -79,6 +85,14 @@ export default async function AssinaturaPage(): Promise<ReactElement> {
         planos={planosView}
         planoAtualId={loja.plano_id}
         temAssinatura={temAssinatura}
+        // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
+        // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
+        acoes={{
+          iniciarAssinatura,
+          trocarPlano,
+          atualizarMeioPagamentoAssinatura,
+          cancelarAssinatura,
+        }}
       />
 
       <TabelaFaturas faturas={faturas} />

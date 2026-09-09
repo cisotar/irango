@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/sheet";
 import { FormCupom } from "@/components/painel/FormCupom";
 import type { AcoesFormCupom } from "@/components/painel/FormCupom";
-import { removerCupom } from "@/lib/actions/cupom";
+import type { removerCupom } from "@/lib/actions/cupom";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { Cupom } from "@/lib/supabase/queries/entregaPagamento";
 
@@ -29,12 +29,17 @@ import type { Cupom } from "@/lib/supabase/queries/entregaPagamento";
  * `AcoesFormCupom` mantém uma fonte única do contrato criar/atualizar.
  */
 export type AcoesCuponsClient = AcoesFormCupom & {
-  remover?: typeof removerCupom;
+  remover: typeof removerCupom;
 };
 
 export type CuponsClientProps = {
   cupons: Cupom[];
-  acoes?: AcoesCuponsClient;
+  /**
+   * Actions injetadas. OBRIGATÓRIAS (issue 160): a page do painel passa as do
+   * lojista, a via admin passa as variantes escopadas por `lojaId`. Sem default —
+   * omitir uma prop aqui quebra o build em vez de gravar na loja errada.
+   */
+  acoes: AcoesCuponsClient;
 };
 
 /** Cupom expirado se tem data de expiração no passado. */
@@ -56,8 +61,7 @@ function formatarData(iso: string | null): string {
 export function CuponsClient({ cupons, acoes }: CuponsClientProps) {
   const router = useRouter();
 
-  // Fallback: sem `acoes`, usa a action do lojista (zero regressão no painel).
-  const remover = acoes?.remover ?? removerCupom;
+  const { remover } = acoes;
 
   const [formAberto, setFormAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Cupom | null>(null);

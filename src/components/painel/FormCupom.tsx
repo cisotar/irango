@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cupomSchema } from "@/lib/validacoes/cupom";
-import { criarCupom, atualizarCupom } from "@/lib/actions/cupom";
+import type { criarCupom, atualizarCupom } from "@/lib/actions/cupom";
 import type { Cupom } from "@/lib/supabase/queries/entregaPagamento";
 
 export type CupomInicial = Pick<
@@ -25,22 +25,23 @@ export type CupomInicial = Pick<
 >;
 
 /**
- * Actions de persistência injetáveis (issue 126). Tipadas via `typeof` das
+ * Actions de persistência injetadas (issue 126). Tipadas via `typeof` das
  * actions do lojista — `payload: unknown` no 2º parâmetro deixa a injeção
- * type-safe sem acoplar o form ao shape do parse. Default = actions do lojista.
- * O wrapper admin (136) fixa `lojaId` em closure para casar estas assinaturas.
+ * type-safe sem acoplar o form ao shape do parse. OBRIGATÓRIAS desde a issue
+ * 160: sem default, quem renderiza injeta. O wrapper admin (136) fixa `lojaId`
+ * em closure para casar estas assinaturas.
  */
 export type AcoesFormCupom = {
-  criar?: typeof criarCupom;
-  atualizar?: typeof atualizarCupom;
+  criar: typeof criarCupom;
+  atualizar: typeof atualizarCupom;
 };
 
 export type FormCupomProps = {
   /** Se presente (com `id`), o form opera em modo edição. */
   inicial?: CupomInicial;
   onSucesso?: () => void;
-  /** Actions de persistência. Ausente → actions do lojista (default). */
-  acoes?: AcoesFormCupom;
+  /** Actions de persistência. Obrigatórias (issue 160). */
+  acoes: AcoesFormCupom;
 };
 
 const selectClassName =
@@ -65,10 +66,7 @@ function isoParaDatetimeLocal(iso: string | null): string {
 export function FormCupom({ inicial, onSucesso, acoes }: FormCupomProps) {
   const ehEdicao = inicial?.id != null;
 
-  // Fallback POR FUNÇÃO: `acoes` parcial ({ criar } sem { atualizar }) ainda
-  // cai no default do lojista para o buraco individual (não por-objeto).
-  const criar = acoes?.criar ?? criarCupom;
-  const atualizar = acoes?.atualizar ?? atualizarCupom;
+  const { criar, atualizar } = acoes;
 
   const [codigo, setCodigo] = useState(inicial?.codigo ?? "");
   const [tipo, setTipo] = useState<"percentual" | "fixo">(

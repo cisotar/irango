@@ -18,7 +18,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { FormPagamento } from "@/components/painel/FormPagamento";
-import {
+import type {
   salvarFormaPagamento as salvarFormaPagamentoLojista,
   removerFormaPagamento as removerFormaPagamentoLojista,
   atualizarFormaPagamento as atualizarFormaPagamentoLojista,
@@ -32,14 +32,21 @@ export type PagamentosClientProps = {
   /** ID da loja (derivado do servidor) — repassado ao FormPagamento para o upload de QR Pix. */
   lojaId: string;
   /**
-   * Actions injetáveis. Omitidas no painel do lojista (caem nos defaults). A via
-   * admin passa as variantes escopadas por `lojaId`.
+   * Actions injetadas. OBRIGATÓRIAS (issue 160): a page do painel passa as do
+   * lojista, a via admin passa as variantes escopadas por `lojaId`. Sem default —
+   * omitir uma prop aqui quebra o build em vez de gravar na loja errada.
    */
-  acoes?: {
-    salvarFormaPagamento?: typeof salvarFormaPagamentoLojista;
-    removerFormaPagamento?: typeof removerFormaPagamentoLojista;
-    atualizarFormaPagamento?: typeof atualizarFormaPagamentoLojista;
-    salvarQrPix?: typeof salvarQrPixLojista;
+  acoes: {
+    salvarFormaPagamento: typeof salvarFormaPagamentoLojista;
+    removerFormaPagamento: typeof removerFormaPagamentoLojista;
+    atualizarFormaPagamento: typeof atualizarFormaPagamentoLojista;
+    salvarQrPix: typeof salvarQrPixLojista;
+    /**
+     * Única action que segue OPCIONAL: o default do lojista é upload NO BROWSER
+     * (`UploadQrPix`), não uma Server Action, e por isso não atravessa a fronteira
+     * Server Component → Client Component da page do painel. Não é vetor
+     * cross-tenant (path derivado do `lojaId` do servidor + RLS do bucket).
+     */
     enviarQrPix?: EnviarQrPix;
   };
 };
@@ -86,10 +93,7 @@ export function PagamentosClient({
 }: PagamentosClientProps) {
   const router = useRouter();
 
-  const salvarFormaPagamento =
-    acoes?.salvarFormaPagamento ?? salvarFormaPagamentoLojista;
-  const removerFormaPagamento =
-    acoes?.removerFormaPagamento ?? removerFormaPagamentoLojista;
+  const { salvarFormaPagamento, removerFormaPagamento } = acoes;
 
   const [formAberto, setFormAberto] = useState(false);
   // Só tipos com config (pix/link) abrem o Sheet de configuração.
@@ -224,10 +228,10 @@ export function PagamentosClient({
                 tipo={tipoEmEdicao}
                 lojaId={lojaId}
                 onSucesso={aoSalvar}
-                onSalvar={acoes?.salvarFormaPagamento}
-                onAtualizar={acoes?.atualizarFormaPagamento}
-                onSalvarQr={acoes?.salvarQrPix}
-                onEnviarQr={acoes?.enviarQrPix}
+                onSalvar={acoes.salvarFormaPagamento}
+                onAtualizar={acoes.atualizarFormaPagamento}
+                onSalvarQr={acoes.salvarQrPix}
+                onEnviarQr={acoes.enviarQrPix}
                 inicial={
                   formaEmEdicao
                     ? { id: formaEmEdicao.id, config: formaEmEdicao.config }

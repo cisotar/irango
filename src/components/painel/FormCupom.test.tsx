@@ -1,22 +1,22 @@
 /**
- * Testes do FormCupom (issue 126 — prop `acoes?` injetável para criar/atualizar).
+ * Testes do FormCupom (issue 126 — prop `acoes` injetável para criar/atualizar;
+ * issue 160 — a prop e suas chaves passaram a ser OBRIGATÓRIAS, sem default
+ * apontando para a action do lojista).
  *
  * Ambiente: vitest environment=node — sem jsdom.
  * Estratégia: renderToStaticMarkup (react-dom/server), mesmo padrão do projeto
  * (AcoesStatus.test.tsx, ProdutosClient.test.tsx).
  *
  * Por que este arquivo é diferente do de AcoesStatus/ProdutosClient: em
- * FormCupom a resolução `const criar = acoes?.criar ?? criarCupom` roda no
- * CORPO do componente (a cada render), não dentro de um handler de clique. Ou
- * seja, ao contrário do clique em si (não observável sem jsdom), um bug real
- * nessa linha — por exemplo trocar `acoes?.criar` por `acoes!.criar` ou por
- * `acoes.criar` sem optional chaining — LANÇA já no mount, exatamente o
- * cenário que quebrou em produção no commit 0bb5864 ("escopo admin perdia o
- * binding do client — toda escrita admin quebrava em prod"). Por isso os
- * testes abaixo renderizam sem `acoes` (o caminho do painel do lojista, que é
- * sempre executado sem a prop) e com `acoes` parcial — não só "não lança",
- * mas também conferem que o conteúdo renderizado (modo criar/editar, valores
- * de `inicial`) continua correto.
+ * FormCupom a resolução das actions (`const { criar, atualizar } = acoes`) roda
+ * no CORPO do componente (a cada render), não dentro de um handler de clique.
+ * Ou seja, ao contrário do clique em si (não observável sem jsdom), um bug real
+ * nessa linha LANÇA já no mount — exatamente o cenário que quebrou em produção
+ * no commit 0bb5864 ("escopo admin perdia o binding do client — toda escrita
+ * admin quebrava em prod"). Por isso os testes abaixo montam o form nos dois
+ * caminhos (injeção do lojista e injeção admin) e não só verificam "não lança",
+ * mas também que o conteúdo renderizado (modo criar/editar, valores de
+ * `inicial`) continua correto e IDÊNTICO entre eles.
  *
  * Fora do escopo: qual das duas actions é de fato invocada ao submeter — isso
  * está atrás de um evento DOM (`onSubmit`), não observável em
@@ -26,7 +26,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { FormCupom, type CupomInicial } from "./FormCupom";
+import { FormCupom, type AcoesFormCupom, type CupomInicial } from "./FormCupom";
+
+/** Injeção mínima e completa das actions (o contrato exige as duas chaves). */
+function acoesBase(): AcoesFormCupom {
+  return {
+    criar: vi.fn(async () => ({ ok: true }) as const),
+    atualizar: vi.fn(async () => ({ ok: true }) as const),
+  };
+}
 
 function inicialBase(overrides: Partial<CupomInicial> = {}): CupomInicial {
   return {
@@ -47,9 +55,9 @@ function valorDoInput(html: string, id: string): string | null {
   return m ? m[1] : null;
 }
 
-describe("modo criação (sem inicial, sem acoes) — caminho default do painel", () => {
+describe("modo criação (sem inicial) — caminho do painel do lojista", () => {
   it("botão 'Criar cupom' e todos os campos em branco/default", () => {
-    const html = renderToStaticMarkup(<FormCupom />);
+    const html = renderToStaticMarkup(<FormCupom acoes={acoesBase()} />);
     expect(html).toContain(">Criar cupom<");
     expect(html).not.toContain("Salvar alterações");
     expect(valorDoInput(html, "cupom-codigo")).toBe("");
@@ -63,10 +71,10 @@ describe("modo criação (sem inicial, sem acoes) — caminho default do painel"
   });
 });
 
-describe("modo edição (com inicial, sem acoes) — reflete os dados do cupom", () => {
+describe("modo edição (com inicial) — reflete os dados do cupom", () => {
   it("botão 'Salvar alterações' e campos preenchidos a partir de `inicial`", () => {
     const html = renderToStaticMarkup(
-      <FormCupom inicial={inicialBase({ ativo: false })} />,
+      <FormCupom inicial={inicialBase({ ativo: false })} acoes={acoesBase()} />,
     );
     expect(html).toContain(">Salvar alterações<");
     expect(html).not.toContain(">Criar cupom<");
@@ -80,42 +88,39 @@ describe("modo edição (com inicial, sem acoes) — reflete os dados do cupom",
 
   it("cupom sem expiração (expira_em=null) não gera data inválida no input", () => {
     const html = renderToStaticMarkup(
-      <FormCupom inicial={inicialBase({ expira_em: null })} />,
+      <FormCupom inicial={inicialBase({ expira_em: null })} acoes={acoesBase()} />,
     );
     expect(valorDoInput(html, "cupom-data-fim")).toBe("");
   });
 });
 
-describe("prop `acoes` injetada não altera o que é renderizado (zero regressão)", () => {
-  it("modo criação: render com `acoes` completa é idêntico ao render sem `acoes`", () => {
-    const criar = vi.fn(async () => ({ ok: true }) as const);
-    const atualizar = vi.fn(async () => ({ ok: true }) as const);
+describe("qual `acoes` é injetada não altera o que é renderizado (zero regressão)", () => {
+  it("modo criação: render com a injeção admin é idêntico ao render com a do lojista", () => {
+    const acoesLojista = acoesBase();
+    const acoesAdmin = acoesBase();
 
-    const semAcoes = renderToStaticMarkup(<FormCupom />);
-    const comAcoes = renderToStaticMarkup(
-      <FormCupom acoes={{ criar, atualizar }} />,
-    );
+    const comLojista = renderToStaticMarkup(<FormCupom acoes={acoesLojista} />);
+    const comAdmin = renderToStaticMarkup(<FormCupom acoes={acoesAdmin} />);
 
-    expect(comAcoes).toBe(semAcoes);
+    expect(comAdmin).toBe(comLojista);
     // Render estático não dispara submit; as actions injetadas não são chamadas aqui.
-    expect(criar).not.toHaveBeenCalled();
-    expect(atualizar).not.toHaveBeenCalled();
+    expect(acoesAdmin.criar).not.toHaveBeenCalled();
+    expect(acoesAdmin.atualizar).not.toHaveBeenCalled();
   });
 
-  it("modo edição: `acoes` PARCIAL (só `criar`, sem `atualizar`) não quebra o render nem muda o conteúdo", () => {
-    // Prova o comentário do código-fonte: o fallback é por-função (`??`
-    // individual), não por-objeto — um buraco em `atualizar` não deve
-    // impedir o form de montar corretamente em modo edição, que é justamente
-    // o modo que chamaria `atualizar` no submit.
-    const criar = vi.fn(async () => ({ ok: true }) as const);
+  it("modo edição: monta sem lançar e mantém o conteúdo com a injeção admin", () => {
+    // A resolução das actions roda no CORPO do componente: se alguém trocar a
+    // desestruturação por algo que assuma `acoes` ausente, o mount quebra aqui.
     const inicial = inicialBase();
 
-    const semAcoes = renderToStaticMarkup(<FormCupom inicial={inicial} />);
-    const comAcoesParcial = renderToStaticMarkup(
-      <FormCupom inicial={inicial} acoes={{ criar } as never} />,
+    const comLojista = renderToStaticMarkup(
+      <FormCupom inicial={inicial} acoes={acoesBase()} />,
+    );
+    const comAdmin = renderToStaticMarkup(
+      <FormCupom inicial={inicial} acoes={acoesBase()} />,
     );
 
-    expect(comAcoesParcial).toBe(semAcoes);
-    expect(comAcoesParcial).toContain(">Salvar alterações<");
+    expect(comAdmin).toBe(comLojista);
+    expect(comAdmin).toContain(">Salvar alterações<");
   });
 });

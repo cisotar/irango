@@ -7,6 +7,7 @@ import {
   criarZonaAdmin,
   atualizarZonaAdmin,
   removerZonaAdmin,
+  alternarZonaAtivaAdmin,
 } from "@/app/admin/assinantes/actions/admin-entrega";
 
 /**
@@ -32,6 +33,8 @@ export function EntregasAdminClient({
         criarZona: (payload) => criarZonaAdmin(lojaId, payload),
         atualizarZona: (id, payload) => atualizarZonaAdmin(lojaId, id, payload),
         removerZona: (id) => removerZonaAdmin(lojaId, id),
+        alternarZonaAtiva: (id, ativo) =>
+          alternarZonaAtivaAdmin(lojaId, id, ativo),
       }}
     />
   );

@@ -1,32 +1,34 @@
 /**
- * Testes do OpcionaisClient (issue 128 — prop `acoes?` com 8 actions,
- * threadada por 4 subcomponentes: BibliotecaOpcionais, FormCategoriaOpcional,
- * FormOpcional, AssociacaoOpcionais/CartaoAssociacao).
+ * Testes do OpcionaisClient (issue 128 — prop `acoes` com 8 actions, threadada
+ * por 4 subcomponentes: BibliotecaOpcionais, FormCategoriaOpcional,
+ * FormOpcional, AssociacaoOpcionais/CartaoAssociacao; issue 160 — a prop e suas
+ * 8 chaves passaram a ser OBRIGATÓRIAS, sem default apontando para a action do
+ * lojista).
  *
  * Ambiente: vitest environment=node — sem jsdom.
  * Estratégia: renderToStaticMarkup (react-dom/server), mesmo padrão do
  * projeto (AcoesStatus.test.tsx, FormCupom.test.tsx).
  *
- * Limitação honesta e por que ela muda o que é testável aqui: nas 8 actions
- * deste componente, a resolução `acoes?.X ?? Xlojista` roda DENTRO dos
- * handlers de clique (`confirmarRemoverCat`, `alternar`, `salvar()` de cada
- * form/cartão) — não no corpo do componente como em FormCupom/ProdutosClient.
- * Isso significa que nenhum desses `acoes?.X` é sequer avaliado durante um
- * `renderToStaticMarkup` (a função só é criada, não chamada). Um teste que só
- * afirma "não lançou" não prova nada sobre o threading — é exatamente o
- * padrão vazio proibido. Por isso os testes abaixo têm dois focos honestos:
+ * Limitação honesta e por que ela muda o que é testável aqui: as 8 actions
+ * deste componente são chamadas DENTRO dos handlers de clique
+ * (`confirmarRemoverCat`, `alternar`, `salvar()` de cada form/cartão) — não no
+ * corpo do componente como em FormCupom/ProdutosClient. Isso significa que
+ * nenhuma delas é sequer avaliada durante um `renderToStaticMarkup` (a função
+ * só é criada, não chamada). Um teste que só afirma "não lançou" não prova nada
+ * sobre o threading — é exatamente o padrão vazio proibido. Por isso os testes
+ * abaixo têm dois focos honestos:
  *
- *  1. O caminho DEFAULT do painel (sem `acoes`, o único caminho que roda em
- *     produção hoje) continua renderizando o conteúdo real derivado das
- *     props de dados (categoria, item, preço, badge "Inativo") — isso trava
- *     regressão se a extração/threading do prop `acoes` pelos 4
- *     subcomponentes acidentalmente alterar props de DADOS na mesma
- *     assinatura (ex.: trocar a ordem dos parâmetros ao acrescentar `acoes`).
- *  2. Passar um objeto `acoes` totalmente preenchido não pode vazar para o
- *     HTML nem alterar QUALQUER ramo condicional de render — comparação
- *     byte-a-byte contra o render sem `acoes`. Se algum subcomponente um dia
- *     passar a decidir o que mostrar com base na PRESENÇA de `acoes` (ex.:
- *     `{acoes && <BadgeAdmin/>}`), este teste quebra.
+ *  1. A injeção do LOJISTA (a que a page do painel monta) continua renderizando
+ *     o conteúdo real derivado das props de dados (categoria, item, preço,
+ *     badge "Inativo") — isso trava regressão se a extração/threading do prop
+ *     `acoes` pelos 4 subcomponentes acidentalmente alterar props de DADOS na
+ *     mesma assinatura (ex.: trocar a ordem dos parâmetros ao acrescentar
+ *     `acoes`).
+ *  2. Trocar a injeção do lojista por outra igualmente completa (a via admin)
+ *     não pode vazar para o HTML nem alterar QUALQUER ramo condicional de
+ *     render — comparação byte-a-byte. Se algum subcomponente um dia passar a
+ *     decidir o que mostrar com base na IDENTIDADE de uma action, este teste
+ *     quebra.
  *
  * Fora do escopo (não testável sem jsdom): qual das 8 actions é de fato
  * chamada ao clicar em salvar/remover/alternar — está atrás de eventos DOM.
@@ -80,6 +82,23 @@ function opcional(overrides: Partial<Opcional> = {}): Opcional {
 
 const CATEGORIA_PRODUTO = [{ id: "cp-1", nome: "Pizzas" }];
 
+/**
+ * Injeção mínima e COMPLETA das 8 actions (issue 160: todas obrigatórias — não
+ * há mais default apontando para a action do lojista).
+ */
+function acoesBase(): OpcionaisClientAcoes {
+  return {
+    criarCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
+    atualizarCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
+    removerCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
+    criarOpcional: vi.fn(async () => ({ ok: true }) as const),
+    atualizarOpcional: vi.fn(async () => ({ ok: true }) as const),
+    alternarOpcionalAtivo: vi.fn(async () => ({ ok: true }) as const),
+    removerOpcional: vi.fn(async () => ({ ok: true }) as const),
+    salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
+  };
+}
+
 function render(props: {
   categoriasOpcional?: CategoriaOpcional[];
   opcionais?: Opcional[];
@@ -91,12 +110,12 @@ function render(props: {
       opcionais={props.opcionais ?? [opcional()]}
       categoriasProduto={CATEGORIA_PRODUTO}
       associacoes={[]}
-      acoes={props.acoes}
+      acoes={props.acoes ?? acoesBase()}
     />,
   );
 }
 
-describe("caminho default do painel (sem acoes) — critério de aceite da 128", () => {
+describe("injeção do painel do lojista — critério de aceite da 128", () => {
   it("renderiza categoria, item, preço e checkbox de associação com os dados reais", () => {
     const html = render();
     expect(html).toContain("Laticínios");
@@ -114,24 +133,19 @@ describe("caminho default do painel (sem acoes) — critério de aceite da 128",
   });
 });
 
-describe("prop `acoes` injetada não vaza para o render nem muda ramos condicionais", () => {
-  it("as 8 actions mockadas: HTML idêntico ao render sem `acoes`, nenhuma é chamada", () => {
-    const acoes: OpcionaisClientAcoes = {
-      criarCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
-      atualizarCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
-      removerCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
-      criarOpcional: vi.fn(async () => ({ ok: true }) as const),
-      atualizarOpcional: vi.fn(async () => ({ ok: true }) as const),
-      alternarOpcionalAtivo: vi.fn(async () => ({ ok: true }) as const),
-      removerOpcional: vi.fn(async () => ({ ok: true }) as const),
-      salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
-    };
+describe("trocar a injeção de `acoes` não vaza para o render nem muda ramos condicionais", () => {
+  it("duas injeções distintas das 8 actions: HTML idêntico, nenhuma é chamada", () => {
+    const acoesLojista = acoesBase();
+    const acoesAdmin = acoesBase();
 
-    const semAcoes = render();
-    const comAcoes = render({ acoes });
+    const comLojista = render({ acoes: acoesLojista });
+    const comAdmin = render({ acoes: acoesAdmin });
 
-    expect(comAcoes).toBe(semAcoes);
-    for (const fn of Object.values(acoes)) {
+    expect(comAdmin).toBe(comLojista);
+    for (const fn of [
+      ...Object.values(acoesLojista),
+      ...Object.values(acoesAdmin),
+    ]) {
       expect(fn).not.toHaveBeenCalled();
     }
   });

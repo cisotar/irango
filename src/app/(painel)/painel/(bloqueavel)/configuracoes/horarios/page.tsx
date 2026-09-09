@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import type { Horarios } from "@/lib/utils/lojaAberta";
+import { salvarHorarios } from "@/lib/actions/loja";
 import { HorariosClient } from "./HorariosClient";
 
 /**
@@ -25,6 +26,7 @@ export default async function HorariosPage(): Promise<ReactElement> {
     <HorariosClient
       inicial={loja.horarios as unknown as Horarios}
       timezone={loja.timezone}
+      onSalvar={salvarHorarios}
     />
   );
 }

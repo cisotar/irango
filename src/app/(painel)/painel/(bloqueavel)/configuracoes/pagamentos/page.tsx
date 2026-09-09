@@ -4,6 +4,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { listarFormasPagamento } from "@/lib/supabase/queries/entregaPagamento";
+import {
+  salvarFormaPagamento,
+  atualizarFormaPagamento,
+  removerFormaPagamento,
+  salvarQrPix,
+} from "@/lib/actions/pagamento";
 import { PagamentosClient } from "./PagamentosClient";
 
 /**
@@ -24,5 +30,20 @@ export default async function PagamentosPage(): Promise<ReactElement> {
 
   const formas = await listarFormasPagamento(supabase, loja.id);
 
-  return <PagamentosClient formas={formas} lojaId={loja.id} />;
+  return (
+    <PagamentosClient
+      formas={formas}
+      lojaId={loja.id}
+      // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
+      // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
+      // `enviarQrPix` fica de fora: o upload do lojista roda NO BROWSER
+      // (`UploadQrPix`), não é Server Action e não cruza a fronteira daqui.
+      acoes={{
+        salvarFormaPagamento,
+        atualizarFormaPagamento,
+        removerFormaPagamento,
+        salvarQrPix,
+      }}
+    />
+  );
 }

@@ -184,6 +184,7 @@ import {
   criarZonaAdmin,
   atualizarZonaAdmin,
   removerZonaAdmin,
+  alternarZonaAtivaAdmin,
 } from "./actions/admin-entrega";
 import { salvarHorariosAdmin, salvarTemaAdmin } from "./actions/admin-horarios-tema";
 import {
@@ -469,6 +470,21 @@ describe("§2 Escopo cross-loja (RN-2/3): eq(loja_id) é a única amarra sob ser
     expect(del, "esperava DELETE em zonas_entrega").toBeDefined();
     expect(del!.eqs).toContainEqual({ coluna: "loja_id", valor: LOJA_A });
     expect(del!.eqs).toContainEqual({ coluna: "id", valor: RECURSO_ID });
+  });
+
+  it("[160] alternarZonaAtivaAdmin com recurso de LOJA_B → UPDATE tem eq(loja_id, LOJA_A) → zona de B inalterada", async () => {
+    // terminalPadrao padrão = count:1 (1 linha afetada). O ponto de prova aqui é
+    // o eq(loja_id) no UPDATE, não count=0 — igual a removerZonaAdmin acima,
+    // alternarZonaAtivaAdmin não tem checagem de posse prévia (buscarPorId):
+    // eq("loja_id", lojaId) é a ÚNICA amarra sob service_role. Se removido, o
+    // UPDATE alcançaria uma zona de LOJA_B ao operar sob LOJA_A.
+    await alternarZonaAtivaAdmin(LOJA_A, RECURSO_ID, false);
+
+    const update = ops.find((o) => o.tipo === "update" && o.tabela === "zonas_entrega");
+    expect(update, "esperava UPDATE em zonas_entrega").toBeDefined();
+    expect(update!.eqs).toContainEqual({ coluna: "loja_id", valor: LOJA_A });
+    expect(update!.eqs).toContainEqual({ coluna: "id", valor: RECURSO_ID });
+    expect(update!.eqs).not.toContainEqual({ coluna: "loja_id", valor: LOJA_B });
   });
 
   it("[094] removerFormaPagamentoAdmin → DELETE inclui eq(loja_id, LOJA_A) E eq(id, RECURSO_ID)", async () => {

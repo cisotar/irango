@@ -31,6 +31,11 @@ import { FormProduto, type ProdutoInicial } from "@/components/painel/FormProdut
 
 const CATEGORIAS = [{ id: "c1", nome: "Lanches", exibir_imagens: true }];
 
+/**
+ * Injeção das 3 actions do form. OBRIGATÓRIAS desde a issue 160 (não há mais
+ * default apontando para a action do lojista): o `ProdutosClient` repassa as do
+ * seu `acoes`, preenchido pela page do painel ou pelo wrapper admin.
+ */
 function renderForm(inicial?: ProdutoInicial): string {
   return renderToStaticMarkup(
     <FormProduto
@@ -38,6 +43,9 @@ function renderForm(inicial?: ProdutoInicial): string {
       inicial={inicial}
       lojaSlug="loja-teste"
       lojaId="loja-1"
+      onCriar={vi.fn(async () => ({ ok: true }) as const)}
+      onAtualizar={vi.fn(async () => ({ ok: true }) as const)}
+      onEnviarFoto={vi.fn(async () => ({ ok: true, url: "" }) as never)}
     />,
   );
 }

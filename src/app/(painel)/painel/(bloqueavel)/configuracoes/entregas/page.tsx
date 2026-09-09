@@ -4,6 +4,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { listarZonasComTaxas } from "@/lib/supabase/queries/entregaPagamento";
+import {
+  criarZona,
+  atualizarZona,
+  removerZona,
+  alternarZonaAtiva,
+} from "@/lib/actions/entrega";
 import { EntregasClient } from "./EntregasClient";
 
 /**
@@ -23,5 +29,12 @@ export default async function EntregasPage(): Promise<ReactElement> {
 
   const zonas = await listarZonasComTaxas(supabase, loja.id);
 
-  return <EntregasClient zonas={zonas} />;
+  return (
+    <EntregasClient
+      zonas={zonas}
+      // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
+      // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
+      acoes={{ criarZona, atualizarZona, removerZona, alternarZonaAtiva }}
+    />
+  );
 }
