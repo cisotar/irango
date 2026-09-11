@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.3.2 | **Atualizado:** 2026-09-09
+**Versão:** 0.3.3 | **Atualizado:** 2026-09-09
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -765,7 +765,7 @@ O bairro declarado pelo cliente no checkout seleciona a zona de frete — é um 
 
 **Política fail-closed:** qualquer falha (rede, timeout, CEP inexistente, ViaCEP fora do ar) → `reconciliado: false`, bairro declarado descartado. O caller cai no fallback mais caro ou marca a entrega como indisponível — **nunca aceita o bairro declarado como substituto do canônico.** Isso garante que uma indisponibilidade de ViaCEP não reabre o vetor de subpagamento.
 
-Implementação: `src/lib/utils/reconciliarBairroCep.ts` — I/O isolada, sem estado, fail-closed total (try/catch engole toda exceção). Separada de `calcularFrete` (que permanece pura/sem I/O).
+Implementação: `src/lib/utils/resolverCepServidor.ts` (renomeado de `reconciliarBairroCep.ts` na issue 185 — a mesma resolução do ViaCEP passou a servir também a consulta de geocoding do frete por raio, ver §12-A) — I/O isolada, sem estado, fail-closed total (try/catch engole toda exceção). Separada de `calcularFrete` (que permanece pura/sem I/O).
 
 **Escopo da política (issue 067):** o preview de frete (`calcularFreteAction` em `src/lib/actions/frete.ts`) aplica a mesma reconciliação fail-closed. CEP é opcional no schema do preview — quando ausente, não reconcilia e usa o bairro declarado; quando presente, segue a mesma política do autoritativo. Isso fecha o vetor de oráculo parcial: o preview não revela zonas baratas que o autoritativo rejeitaria.
 
@@ -857,7 +857,7 @@ Quando o iRango chama uma API externa que pode banir o IP da conta por excesso d
 
 **Invariante:** toda chamada a API externa sujeita a ban só é feita se a trava global foi efetivamente verificada e concedida. Qualquer estado em que a trava não pode ser verificada (sem credenciais, Redis down, exceção) → não chama → retorna `null`.
 
-**Implementação (issue 003 + issue 001):** `src/lib/utils/geocodificarEndereco.ts`
+**Implementação (issue 003 + issue 001, cache revisado na issue 185):** `src/lib/utils/geocodificarEndereco.ts`
 
 - Trava Upstash `fixedWindow(1, "1 s")`, prefixo `irango:rl:nominatim` (não colide com `irango:rl:<ip>`)
 - `NOMINATIM_USER_AGENT` obrigatório via env (sem prefixo público — não vaza ao bundle)
@@ -866,14 +866,17 @@ Quando o iRango chama uma API externa que pode banir o IP da conta por excesso d
 - Portão 2–3: limite excedido → `null` sem fetch
 - `import "server-only"` no topo — build quebra se importado de Client Component
 
-**Cache CEP→coords (issue 001):** camada acima dos portões, executada antes da trava.
+**Cache CEP→coords (issue 001, versionado e com TTL na issue 185):** camada acima dos portões, executada antes da trava. Função pública: `geocodificarCepResolvido(cep, montarConsulta)` — a chave é **sempre o CEP**, desacoplada do texto da consulta (`geocodificarEndereco(consulta)`, que inferia CEP pelo formato da string, foi removido — causa raiz do bug da issue 185: o servidor mandava o CEP cru como busca livre ao Nominatim).
 
-- Chave `irango:geocode:<digitos_cep>` (8 dígitos, sem hífen), valor `{latitude, longitude}`, sem TTL. Namespace distinto de `irango:rl:nominatim` e `irango:rl:<ip>` — sem colisão.
+- Chave `irango:geocode:<digitos_cep>` (8 dígitos, sem hífen), valor `{latitude, longitude, v: 2}` (`VERSAO_CACHE_GEOCODE`). Namespace distinto de `irango:rl:nominatim` e `irango:rl:<ip>` — sem colisão.
+- **TTL de 180 dias** (`TTL_CACHE_GEOCODE_SEGUNDOS`) — antes era permanente/sem TTL; um erro de resolução não vira mais defeito perene por CEP.
+- **Versionado**: valor lido sem `v === VERSAO_CACHE_GEOCODE` (formato legado ou ausente) é tratado como miss e a chave é sobrescrita no próximo acerto — mecanismo de auto-correção sem `DEL` manual em produção quando o formato do cache mudar de novo.
+- **Consulta ao Nominatim nunca inclui bairro** (`montarConsultaCepCliente`, formato `"<cidade> - <UF>, Brasil"`) — bairro resolvido pelo ViaCEP às vezes não existe no OpenStreetMap e fazia a busca voltar vazia; a consulta usa só cidade/UF resolvidos no servidor via ViaCEP (`resolverCepServidor`, §10-A). `dentroDoBrasil(lat, lng)` guarda a coordenada retornada com um bounding box antes de aceitá-la.
 - **Cache hit pula trava E Nominatim** — elimina a canibalização da trava de 1 req/s quando o mesmo CEP é geocodificado múltiplas vezes (re-renders do checkout, preview→autoritativo).
 - **Cache fail-open**: exceção ou JSON inválido no cache → ignora e executa os portões normalmente. O cache nunca impede o caminho de fallback.
 - **A trava fail-closed permanece intacta para cache misses** (RN-F5 do spec): CEP nunca visto passa pelos portões 0–3 sem atalho. O cache reduz misses; não afrouxa a política anti-ban.
-- **Sem cache negativo**: só grava em retorno com par numérico válido. Falha do Nominatim não é persistida — evita envenenar permanentemente um CEP geocodificável (sem TTL para auto-corrigir).
-- **Escopo do cache = CEP do cliente**: a consulta do `salvarPerfil` (endereço completo da loja) não casa a chave de 8 dígitos e não participa do cache.
+- **Sem cache negativo**: só grava em retorno com par numérico válido. Falha do Nominatim não é persistida — evita envenenar permanentemente um CEP geocodificável.
+- **Escopo do cache = CEP do cliente.** No lado da loja (`geocodificarEnderecoComMotivo`, usado por `loja.ts`/`admin-perfil.ts`) não cacheia mais nada — só `geocodificarCepResolvido` cacheia.
 
 **Quando aplicar este padrão:** qualquer nova integração com API externa que tenha política de ban por volume (geocoding, enriquecimento de dados, SMS, etc.) deve seguir este molde, não o de `rateLimit.ts`.
 

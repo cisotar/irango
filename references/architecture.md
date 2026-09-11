@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.23 | **Atualizado:** 2026-09-08
+**Versão:** 0.2.24 | **Atualizado:** 2026-09-09
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -142,8 +142,10 @@ irango/
 │   │   ├── actions/                      # helpers neutros sem 'use server' compartilhados por Server Actions
 │   │   │   ├── upload-imagem.ts          # validarBlobImagem + tipoRealPorConteudo + EXTENSAO_POR_TIPO
 │   │   │   │                             # reutilizado por upload.ts e logo.ts — ver §13 seguranca.md
-│   │   │   └── distanciaFrete.ts         # distanciaDaLojaAoCep(svc, lojaId, cep) → km | undefined
-│   │   │                                 # buscarCoordsLoja(svc) → geocodificarEndereco → haversine
+│   │   │   └── distanciaFrete.ts         # distanciaDaLojaAoCep(svc, lojaId, cep, resolverEndereco) → km | undefined
+│   │   │                                 # buscarCoordsLoja(svc) → geocodificarCepResolvido → haversine
+│   │   │                                 # resolverEndereco: thunk obrigatório (ViaCEP, issue 160) — chave de cache é
+│   │   │                                 # sempre o CEP, consulta ao Nominatim vem do endereço resolvido (issue 185)
 │   │   │                                 # fail-closed: undefined em qualquer falha — ver §12-A seguranca.md
 │   │   │                                 # reutilizado por criarPedido (006) e calcularFreteAction (007)
 │   │   └── utils/

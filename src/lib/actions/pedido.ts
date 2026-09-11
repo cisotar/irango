@@ -33,7 +33,10 @@ import {
 } from "@/lib/supabase/queries/entregaPagamento";
 import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
-import { reconciliarBairroCep } from "@/lib/utils/reconciliarBairroCep";
+import {
+  resolverCepServidor,
+  type EnderecoCepResolvido,
+} from "@/lib/utils/resolverCepServidor";
 import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
@@ -258,17 +261,23 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // reconciliar server-side (ao contrário do bairro, que é validado contra o
       // CEP via ViaCEP). Risco residual inerente, mitigável só operacionalmente
       // (seguranca.md §10-A).
+      //
+      // (185) A resolução do CEP é MEMOIZADA e serve dois consumidores: o bairro
+      // canônico aqui e a consulta de geocoding logo abaixo. É um thunk, não uma
+      // chamada eager — o helper de distância só o invoca no miss de cache.
+      const cepCliente = endereco.cep;
+      let promessaCep: Promise<EnderecoCepResolvido | null> | undefined;
+      const resolverCep = (): Promise<EnderecoCepResolvido | null> =>
+        cepCliente
+          ? (promessaCep ??= resolverCepServidor(cepCliente))
+          : Promise.resolve(null);
+
       let enderecoAutoritativo = endereco;
       if (endereco.bairro) {
-        const rec = endereco.cep
-          ? await reconciliarBairroCep(endereco.cep, endereco.bairro)
-          : null;
-        enderecoAutoritativo =
-          rec?.reconciliado && rec.bairroCanonico != null
-            ? { ...endereco, bairro: rec.bairroCanonico }
-            : // não reconciliável (sem CEP, ViaCEP down ou CEP inexistente):
-              // bairro declarado não é confiável para seleção de zona → descarta.
-              { ...endereco, bairro: null };
+        const resolvido = await resolverCep();
+        // Não resolvível (sem CEP, ViaCEP down ou CEP inexistente): bairro
+        // declarado não é confiável para seleção de zona → descarta.
+        enderecoAutoritativo = { ...endereco, bairro: resolvido?.bairro ?? null };
       }
 
       // (006/RN-7) Distância loja→CEP para zonas tipo='raio_km'. MESMA sequência do
@@ -278,7 +287,12 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // distanciaKm vindo do cliente (RN-4). endereco.cep = CEP cru do cliente
       // (a reconciliação só mexe em bairro). Roda sempre que há CEP, independente
       // de existir zona raio_km (paridade com o preview; custo protegido §12-A).
-      distanciaKm = await distanciaDaLojaAoCep(svc, dados.loja_id, endereco.cep);
+      distanciaKm = await distanciaDaLojaAoCep(
+        svc,
+        dados.loja_id,
+        endereco.cep,
+        resolverCep,
+      );
       if (typeof distanciaKm === "number") {
         enderecoAutoritativo = { ...enderecoAutoritativo, distanciaKm };
       }
