@@ -6,10 +6,15 @@
 // next build). Aqui, server-only por transitividade (geocodificarCepResolvido é
 // "server-only" e buscarCoordsLoja exige service_role).
 //
-// (185) O CEP é CHAVE de cache, NUNCA a consulta enviada ao Nominatim: o OSM não
-// indexa CEP brasileiro e o CEP cru resolvia em qualquer lugar do mundo. A
-// consulta vem do endereço resolvido no SERVIDOR (ViaCEP), entregue por um
-// thunk memoizado que o geocoder só invoca depois do miss de cache.
+// (185) O CEP é CHAVE de cache, NUNCA a consulta enviada ao provedor: o CEP
+// cru resolvia em qualquer lugar do mundo. A consulta vem do endereço
+// resolvido no SERVIDOR (ViaCEP), entregue por um thunk memoizado que o
+// geocoder só invoca depois do miss de cache.
+//
+// (190) `resolverEndereco` é passado DIRETO para `geocodificarCepResolvido` —
+// a cascata de consultas passou a ser responsabilidade do módulo de
+// geocoding, não deste caller (plan/tecnico-geocoding-google.md,
+// simplificação de contrato).
 //
 // FAIL-CLOSED (RN-5, seguranca.md §12-A): retorna `undefined` em QUALQUER falha
 // ou pré-condição ausente — loja sem coords (RN-3), CEP ausente, geocoding null.
@@ -20,7 +25,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { buscarCoordsLoja } from "@/lib/supabase/queries/lojas";
 import { geocodificarCepResolvido } from "@/lib/utils/geocodificarEndereco";
-import { montarConsultaCepCliente } from "@/lib/utils/geocodingCepCliente";
 import type { EnderecoCepResolvido } from "@/lib/utils/resolverCepServidor";
 import { haversine } from "@/lib/utils/haversine";
 
@@ -33,12 +37,21 @@ import { haversine } from "@/lib/utils/haversine";
  * opcional deixaria um caller esquecer e cair silenciosamente no caminho
  * quebrado. É um THUNK memoizado pelo caller — só é invocado no miss de cache do
  * geocoder, então cache hit não paga ViaCEP.
+ *
+ * `ip` também é OBRIGATÓRIO (190/auditoria, achado MÉDIO): repassado direto
+ * para `geocodificarCepResolvido`, que o usa como identificador do teto
+ * diário SECUNDÁRIO por IP (defesa em profundidade além do teto global —
+ * `calcularFreteAction`/`criarPedido` são alcançáveis por cliente anônimo).
+ * Os callers (`frete.ts`, `pedido.ts`) já extraem o IP da requisição via
+ * `extrairIp(await headers())` para o rate limit existente — é a MESMA
+ * string, sem I/O adicional.
  */
 export async function distanciaDaLojaAoCep(
   svc: SupabaseClient<Database>,
   lojaId: string,
   cep: string | null | undefined,
   resolverEndereco: () => Promise<EnderecoCepResolvido | null>,
+  ip: string,
 ): Promise<number | undefined> {
   // CEP ausente/vazio → nada a geocodificar (não chama coords nem geocode).
   if (!cep) return undefined;
@@ -49,13 +62,11 @@ export async function distanciaDaLojaAoCep(
     const loja = await buscarCoordsLoja(svc, lojaId);
     if (loja == null) return undefined;
 
-    // O CEP é a CHAVE; a CONSULTA sai do endereço resolvido no servidor. Se o
-    // ViaCEP falhar, o thunk devolve null e o geocoder é fail-closed — jamais
-    // cai no CEP cru como consulta de consolo (causa raiz da 185).
-    const cliente = await geocodificarCepResolvido(cep, async () => {
-      const resolvido = await resolverEndereco();
-      return resolvido ? montarConsultaCepCliente(resolvido) : null;
-    });
+    // O CEP é a CHAVE; a CONSULTA (cascata) é montada dentro do geocoder a
+    // partir do endereço resolvido no servidor. Se o ViaCEP falhar,
+    // `resolverEndereco` devolve null e o geocoder é fail-closed — jamais cai
+    // no CEP cru como consulta de consolo (causa raiz da 185).
+    const cliente = await geocodificarCepResolvido(cep, resolverEndereco, ip);
     if (cliente.coords == null) return undefined;
 
     return haversine(

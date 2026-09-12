@@ -1,34 +1,39 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// RED (issue 185, crítica — TDD red-first): `geocodificarCepResolvido`,
-// `VERSAO_CACHE_GEOCODE` e `TTL_CACHE_GEOCODE_SEGUNDOS` ainda NÃO existem em
-// src/lib/utils/geocodificarEndereco.ts. A fase GREEN (executar) os cria
-// conforme as Decisões D1/D3/D4 do Plano Técnico da issue 185.
-//
-// Por que um ARQUIVO SEPARADO de geocodificarEndereco.test.ts: a nova função é
-// um contrato novo do mesmo módulo. Importar um símbolo inexistente derruba o
-// arquivo inteiro no carregamento — misturar aqui apagaria o sinal dos testes de
-// portão anti-ban que seguem valendo para `geocodificarEnderecoComMotivo`.
-// Depois do GREEN os dois arquivos convivem: este cobre o caminho do CEP do
-// cliente (com cache), aquele cobre o caminho da loja (sem cache).
+// RED (issue 190, crítica — TDD red-first): a ASSINATURA de
+// `geocodificarCepResolvido` MUDA (recebe `resolverEndereco: () =>
+// Promise<EnderecoCepResolvido | null>`, não mais um thunk de string), a
+// cascata de consultas passa a viver DENTRO desta função, `VERSAO_CACHE_GEOCODE`
+// sobe de 2 para 3 e `TTL_CACHE_GEOCODE_SEGUNDOS` cai de 180 para 25 dias.
+// Nada disso existe ainda em src/lib/utils/geocodificarEndereco.ts — a fase
+// GREEN (executar) implementa conforme plan/tecnico-geocoding-google.md.
 //
 // CONTRATO SOB TESTE
-//   geocodificarCepResolvido(cep: string, montarConsulta: () => Promise<string|null>)
-//     : Promise<ResultadoGeocoding>
+//   geocodificarCepResolvido(
+//     cep: string,
+//     resolverEndereco: () => Promise<EnderecoCepResolvido | null>,
+//   ): Promise<ResultadoGeocoding>
 //
-//   Ordem OBRIGATÓRIA dos portões (§Teto do plano; §12-A de seguranca.md):
-//     UA → credenciais Upstash → GET cache → thunk (ViaCEP) → trava 1 req/s →
-//     fetch Nominatim → guard dentroDoBrasil → SET cache
+//   Ordem OBRIGATÓRIA dos portões:
+//     chave Google → credenciais Upstash → GET cache → resolverEndereco
+//     (ViaCEP) → montarConsultasCepCliente (cascata) → para cada candidato:
+//       burst 10/s → teto diário N/dia → fetch Google → ZERO_RESULTS? próximo
+//       candidato : outro status/erro? retorna transitorio IMEDIATO (não
+//       cascateia em falha de canal) : OK? dentroDoBrasil → SET cache com
+//       v:3 e ex:2_160_000 → retorna.
 //
-//   - a CHAVE do cache é o CEP (8 dígitos), NUNCA o texto da consulta (D3);
-//   - o CEP NUNCA entra na consulta enviada ao Nominatim (D1 — causa raiz);
-//   - thunk devolvendo null (ViaCEP falhou) ⇒ `transitorio` SEM fetch e SEM
-//     consulta de consolo com o CEP cru;
-//   - valor de cache sem `v === VERSAO_CACHE_GEOCODE` ⇒ MISS (D4/V3);
-//   - gravação com `{ ex: TTL_CACHE_GEOCODE_SEGUNDOS }`;
-//   - TETO: no máximo 1 chamada ao Nominatim por resolução; 0 em cache hit.
+//   - a CHAVE do cache é o CEP (8 dígitos), NUNCA o texto da consulta;
+//   - valor de cache sem `v === 3` (incluindo o v:2 antigo) ⇒ MISS;
+//   - a cascata SÓ avança em ZERO_RESULTS; falha transitória interrompe;
+//   - teto diário excedido ⇒ transitorio, fetch NUNCA chamado (fail-closed).
 //
-// @upstash/ratelimit, @upstash/redis e `fetch` global são mockados — sem rede.
+// Critério de sucesso da issue 190: os CEPs 12914-190 (Jardim Sevilha) e
+// 12900-430 (Centro), mesma cidade (Bragança Paulista/SP), geocodificam para
+// coordenadas DIFERENTES porque suas consultas mais específicas (com
+// logradouro/bairro) são diferentes.
+//
+// @upstash/ratelimit, @upstash/redis e `fetch` global são mockados — sem rede
+// real, nunca a API do Google de verdade.
 
 const limitMock = vi.fn();
 const getMock = vi.fn();
@@ -56,44 +61,67 @@ import {
   VERSAO_CACHE_GEOCODE,
   TTL_CACHE_GEOCODE_SEGUNDOS,
 } from "./geocodificarEndereco";
+import type { EnderecoCepResolvido } from "./resolverCepServidor";
 
 const ENV_BACKUP = { ...process.env };
-const UA = "iRango/1.0 (+https://irango.app; contato@irango.app)";
+const CHAVE_GOOGLE = "chave-google-fake-de-teste";
+// IP de teste genérico (RFC 5737 TEST-NET-2 — reservado para documentação,
+// nunca roteável de verdade). Usado em todas as chamadas que não testam o
+// teto por IP em si — só o 3º parâmetro OBRIGATÓRIO da nova assinatura
+// (achado MÉDIO do `auditar`, issue 190: teto por IP secundário).
+const IP_CLIENTE = "198.51.100.20";
 
-// Caso reproduzido na issue 185.
-const CEP = "12914-190";
-const CHAVE = "irango:geocode:12914190";
-// Consulta que o ViaCEP + montarConsultaCepCliente produzem (bairro fictício).
-const CONSULTA = "Jardim Europa, Bragança Paulista - SP, Brasil";
-// Par devolvido pelo Nominatim para essa consulta (evidência da issue).
-const PAR = { latitude: -22.9520235, longitude: -46.5418586 };
+// ── Os dois CEPs do critério de sucesso da issue 190 ────────────────────────
+const CEP_A = "12914-190";
+const CHAVE_A = "irango:geocode:12914190";
+const ENDERECO_A: EnderecoCepResolvido = {
+  logradouro: "Rua Antônio Carlos Ribeiro",
+  bairro: "Jardim Sevilha",
+  cidade: "Bragança Paulista",
+  uf: "SP",
+};
+const COORDS_A = { latitude: -22.961, longitude: -46.5422 }; // ~1km da loja
 
-function nominatimOk(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
+const CEP_B = "12900-430";
+const CHAVE_B = "irango:geocode:12900430";
+const ENDERECO_B: EnderecoCepResolvido = {
+  logradouro: "Rua Coronel Luiz Antônio",
+  bairro: "Centro",
+  cidade: "Bragança Paulista",
+  uf: "SP",
+};
+const COORDS_B = { latitude: -22.9525, longitude: -46.5427 }; // <1km, mas diferente de A
+
+function googleOk(lat: number, lng: number): Response {
+  return new Response(
+    JSON.stringify({
+      status: "OK",
+      results: [{ geometry: { location: { lat, lng } } }],
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+function googleStatus(status: string): Response {
+  return new Response(JSON.stringify({ status, results: [] }), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
 }
 
-function nominatimComPar(): Response {
-  return nominatimOk([{ lat: String(PAR.latitude), lon: String(PAR.longitude) }]);
+/** Thunk memoizado de sucesso — devolve o endereço resolvido pelo ViaCEP. */
+function resolverOk(e: EnderecoCepResolvido = ENDERECO_A) {
+  return vi.fn(async () => e);
 }
 
-/** Thunk memoizado de sucesso — devolve a consulta resolvida pelo ViaCEP. */
-function thunkOk(consulta: string = CONSULTA) {
-  return vi.fn(async () => consulta);
-}
-
-/** Thunk fail-closed — o ViaCEP falhou (rede/timeout/{erro:true}/sem cidade). */
-function thunkNulo() {
+/** Thunk fail-closed — o ViaCEP falhou (rede/timeout/sem cidade). */
+function resolverNulo() {
   return vi.fn(async () => null);
 }
 
 /** Concatena todas as URLs passadas ao fetch, já decodificadas. */
-function urlsChamadas(spy: { mock: { calls: unknown[][] } }): string {
-  return spy.mock.calls
-    .map((c) => decodeURIComponent(String(c[0])))
-    .join(" | ");
+function urlsChamadas(spy: { mock: { calls: unknown[][] } }): string[] {
+  return spy.mock.calls.map((c) => decodeURIComponent(String(c[0])));
 }
 
 beforeEach(() => {
@@ -105,8 +133,9 @@ beforeEach(() => {
   setMock.mockResolvedValue("OK");
   process.env.UPSTASH_REDIS_REST_URL = "https://exemplo.upstash.io";
   process.env.UPSTASH_REDIS_REST_TOKEN = "token-fake";
-  process.env.NOMINATIM_USER_AGENT = UA;
-  limitMock.mockResolvedValue({ success: true });
+  process.env.GOOGLE_GEOCODING_API_KEY = CHAVE_GOOGLE;
+  delete process.env.GEOCODE_GOOGLE_DAILY_LIMIT;
+  limitMock.mockResolvedValue({ success: true }); // burst e diário concedem
 });
 
 afterEach(() => {
@@ -114,97 +143,242 @@ afterEach(() => {
 });
 
 // =============================================================================
-// 1) O CASO REPRODUZIDO — a consulta deixa de ser o CEP cru
+// 18) O CRITÉRIO DE SUCESSO DA ISSUE 190
 // =============================================================================
-describe("[185-1] geocodificarCepResolvido — CEP 12914-190 (caso reproduzido)", () => {
-  it("envia ao Nominatim o TEXTO resolvido, e NUNCA o CEP cru", async () => {
+describe("[190-18] critério de sucesso: 12914-190 ≠ 12900-430 (mesma cidade)", () => {
+  it("os dois CEPs geram consultas DIFERENTES e coordenadas DIFERENTES", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimComPar());
+      .mockImplementation(async (input) => {
+        const url = decodeURIComponent(String(input));
+        if (url.includes("Jardim Sevilha")) return googleOk(COORDS_A.latitude, COORDS_A.longitude);
+        if (url.includes("Centro")) return googleOk(COORDS_B.latitude, COORDS_B.longitude);
+        throw new Error("URL inesperada: " + url);
+      });
 
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
+    const resultadoA = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+    const resultadoB = await geocodificarCepResolvido(CEP_B, resolverOk(ENDERECO_B), IP_CLIENTE);
 
-    expect(r).toEqual({ coords: PAR });
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const url = urlsChamadas(fetchSpy);
-    // A consulta contém a cidade/UF resolvidos pelo ViaCEP...
-    expect(url).toContain("Bragança Paulista");
-    expect(url).toContain("SP");
-    // ...e NÃO contém o CEP em nenhuma forma (o token envenenador).
-    expect(url).not.toContain("12914");
-    expect(url).not.toContain("12914-190");
-  });
+    expect(resultadoA).toEqual({ coords: COORDS_A });
+    expect(resultadoB).toEqual({ coords: COORDS_B });
+    expect(resultadoA).not.toEqual(resultadoB);
 
-  it("acrescenta countrycodes=br no caminho do CEP (defesa em profundidade D1)", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimComPar());
-
-    await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(urlsChamadas(fetchSpy)).toContain("countrycodes=br");
-  });
-
-  it("envia o header User-Agent identificado (§12-A)", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimComPar());
-
-    await geocodificarCepResolvido(CEP, thunkOk());
-
-    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
-    expect(new Headers(init?.headers).get("User-Agent")).toBe(UA);
-    expect(init?.signal).toBeDefined();
+    const urls = urlsChamadas(fetchSpy);
+    expect(urls.some((u) => u.includes("Jardim Sevilha"))).toBe(true);
+    expect(urls.some((u) => u.includes("Centro"))).toBe(true);
   });
 });
 
 // =============================================================================
-// 2) ViaCEP falhou → FAIL-CLOSED, sem consulta de consolo com o CEP cru
-//    (a regressão mais fácil de reintroduzir por acidente)
+// 19) Cache hit → nem ViaCEP nem fetch são chamados
 // =============================================================================
-describe("[185-2] thunk null (ViaCEP falhou) → transitorio, sem fetch", () => {
-  it("thunk devolve null → { coords:null, motivo:'transitorio' } e fetch NUNCA chamado", async () => {
+describe("[190-19] cache hit (v:3) → zero I/O externo", () => {
+  it("HIT no formato v:3 → coords SEM resolverEndereco, SEM trava e SEM Google", async () => {
+    getMock.mockResolvedValue({ ...COORDS_A, v: VERSAO_CACHE_GEOCODE });
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const thunk = thunkNulo();
+    const resolver = resolverOk();
 
-    const r = await geocodificarCepResolvido(CEP, thunk);
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-    expect(thunk).toHaveBeenCalledTimes(1);
+    expect(r).toEqual({ coords: COORDS_A });
+    expect(getMock).toHaveBeenCalledWith(CHAVE_A);
+    expect(resolver).not.toHaveBeenCalled();
+    expect(limitMock).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(setMock).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// 20) Cache com v:2 (formato antigo) → MISS, refaz
+// =============================================================================
+describe("[190-20] versão antiga do cache (v:2 ou sem v) → MISS", () => {
+  it("valor com v:2 (centroide antigo) → tratado como MISS, refaz a resolução", async () => {
+    getMock.mockResolvedValue({ latitude: -22.9610457, longitude: -46.5422615, v: 2 });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+    const resolver = resolverOk();
+
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
+
+    expect(r).toEqual({ coords: COORDS_A });
+    expect(resolver).toHaveBeenCalledTimes(1);
   });
 
-  it("REGRESSÃO: nenhuma requisição contém o CEP como consulta de consolo", async () => {
+  it("valor SEM `v` nenhum → MISS, refaz", async () => {
+    getMock.mockResolvedValue({ latitude: -22.9610457, longitude: -46.5422615 });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: COORDS_A });
+  });
+});
+
+// =============================================================================
+// 21/22) Cascata: só avança em ZERO_RESULTS
+// =============================================================================
+describe("[190-21/22] cascata de consultas — avança só em ZERO_RESULTS", () => {
+  it("21) 1ª consulta (logradouro+bairro+cidade-UF) ZERO_RESULTS, 2ª (bairro+cidade-UF) OK → 2 fetches", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(nominatimComPar());
+      .mockResolvedValueOnce(googleStatus("ZERO_RESULTS"))
+      .mockResolvedValueOnce(googleOk(COORDS_A.latitude, COORDS_A.longitude));
 
-    await geocodificarCepResolvido(CEP, thunkNulo());
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    // Se alguém "salvar" o caminho caindo em geocodificar(cep), isto pega.
-    expect(urlsChamadas(fetchSpy)).not.toContain("12914");
+    expect(r).toEqual({ coords: COORDS_A });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it("thunk null NÃO consome a trava de 1 req/s (nem chega ao portão 2)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(nominatimComPar());
+  it("22) logradouro E bairro dão ZERO_RESULTS → cai na 3ª (só cidade-UF) → 3 fetches", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(googleStatus("ZERO_RESULTS"))
+      .mockResolvedValueOnce(googleStatus("ZERO_RESULTS"))
+      .mockResolvedValueOnce(googleOk(COORDS_A.latitude, COORDS_A.longitude));
 
-    await geocodificarCepResolvido(CEP, thunkNulo());
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    expect(limitMock).not.toHaveBeenCalled();
+    expect(r).toEqual({ coords: COORDS_A });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
-  it("thunk null NÃO grava cache (sem cache negativo, RN-F10)", async () => {
-    await geocodificarCepResolvido(CEP, thunkNulo());
+  it("todos os candidatos exauridos em ZERO_RESULTS → nao_encontrado", async () => {
+    // mockResolvedValueOnce x3 (não mockResolvedValue): cada fetch real devolve
+    // uma Response NOVA; reusar a mesma instância faria a 2ª/3ª leitura de
+    // .json() lançar "Body has already been read" nesse ambiente de teste.
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(googleStatus("ZERO_RESULTS"))
+      .mockResolvedValueOnce(googleStatus("ZERO_RESULTS"))
+      .mockResolvedValueOnce(googleStatus("ZERO_RESULTS"));
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
     expect(setMock).not.toHaveBeenCalled();
   });
 
-  it("thunk lança → transitorio, sem propagar exceção e sem fetch", async () => {
+  it("23) 1ª consulta retorna transitorio (OVER_QUERY_LIMIT) → retorna IMEDIATO, exatamente 1 fetch", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(googleStatus("OVER_QUERY_LIMIT"))
+      .mockResolvedValueOnce(googleOk(COORDS_A.latitude, COORDS_A.longitude)); // não deveria ser chamada
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("1ª consulta dá timeout (fetch rejeita) → transitorio IMEDIATO, sem tentar a 2ª", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(Object.assign(new Error("aborted"), { name: "AbortError" }))
+      .mockResolvedValueOnce(googleOk(COORDS_A.latitude, COORDS_A.longitude));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// 24) dentroDoBrasil continua sendo aplicado como guard
+// =============================================================================
+describe("[190-24] guard dentroDoBrasil aplicado ao resultado do Google", () => {
+  it("par fora do Brasil → nao_encontrado, set NÃO é chamado (sem cache negativo)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(49.8, 15.5), // República Tcheca
+    );
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
+    expect(setMock).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// 25/26) TTL e versão gravados
+// =============================================================================
+describe("[190-25/26] cache gravado com TTL de 25 dias e v:3", () => {
+  it("25) set é chamado com ex igual a 2_160_000 (TTL de 25 dias)", async () => {
+    expect(TTL_CACHE_GEOCODE_SEGUNDOS).toBe(2_160_000);
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(setMock).toHaveBeenCalledTimes(1);
+    const opts = setMock.mock.calls[0]![2];
+    expect(opts).toMatchObject({ ex: 2_160_000 });
+  });
+
+  it("26) valor gravado no set tem v: 3", async () => {
+    expect(VERSAO_CACHE_GEOCODE).toBe(3);
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    const [chave, valor] = setMock.mock.calls[0]!;
+    expect(chave).toBe(CHAVE_A);
+    const gravado = typeof valor === "string" ? JSON.parse(valor) : valor;
+    expect(gravado).toEqual({ ...COORDS_A, v: 3 });
+  });
+});
+
+// =============================================================================
+// 27) CEP malformado → transitorio, zero I/O
+// =============================================================================
+describe("[190-27] CEP malformado → transitorio, zero I/O", () => {
+  it("CEP com menos de 8 dígitos → transitorio, sem cache, sem resolverEndereco, sem fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const resolver = resolverOk();
+
+    const r = await geocodificarCepResolvido("123", resolver, IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(getMock).not.toHaveBeenCalled();
+    expect(resolver).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// 28) resolverEndereco() retorna null → transitorio, zero chamadas ao Google
+// =============================================================================
+describe("[190-28] resolverEndereco null (ViaCEP fora do ar) → transitorio", () => {
+  it("resolverEndereco() → null ⇒ transitorio, fetch NUNCA chamado", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const resolver = resolverNulo();
+
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("resolverEndereco() lança → transitorio, sem propagar exceção, sem fetch", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const r = await geocodificarCepResolvido(CEP, async () => {
-      throw new Error("ECONNREFUSED viacep");
-    });
+    const r = await geocodificarCepResolvido(
+      CEP_A,
+      async () => {
+        throw new Error("ECONNREFUSED viacep");
+      },
+      IP_CLIENTE,
+    );
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -212,466 +386,432 @@ describe("[185-2] thunk null (ViaCEP falhou) → transitorio, sem fetch", () => 
 });
 
 // =============================================================================
-// 3) Portões da política anti-ban — ordem de HOJE preservada (§12-A)
+// 29) Teto diário excedido → fail-closed, zero fetch
 // =============================================================================
-describe("[185-3] portões anti-ban na ordem original", () => {
-  it("portão 0: sem NOMINATIM_USER_AGENT → transitorio, sem cache, sem ViaCEP, sem fetch", async () => {
-    delete process.env.NOMINATIM_USER_AGENT;
+describe("[190-29] teto diário GLOBAL excedido → transitorio, fail-closed", () => {
+  it("limitador diário nega (success:false) → transitorio, ZERO fetch, mesmo com cache miss e ViaCEP disponível", async () => {
+    // 1ª chamada de limit() é o burst (concede), a 2ª é o teto diário (nega).
+    limitMock
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false });
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const thunk = thunkOk();
+    const resolver = resolverOk();
 
-    const r = await geocodificarCepResolvido(CEP, thunk);
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // ViaCEP FOI consultado (o teto é verificado só depois de montar a
+    // cascata) — mas nenhuma chamada paga ao Google aconteceu.
+    expect(resolver).toHaveBeenCalledTimes(1);
+  });
+
+  it("respeita GEOCODE_GOOGLE_DAILY_LIMIT customizado via env (default 500)", async () => {
+    process.env.GEOCODE_GOOGLE_DAILY_LIMIT = "10";
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: COORDS_A });
+  });
+});
+
+// =============================================================================
+// Burst 10/s ainda funciona (guarda de custo, não mais anti-ban)
+// =============================================================================
+describe("guarda de custo — burst 10/s", () => {
+  it("burst nega (1ª chamada de limit) → transitorio, fetch NUNCA chamado", async () => {
+    limitMock.mockResolvedValueOnce({ success: false }); // burst nega
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Portões 0/1 (chave Google / credenciais Upstash) preservados
+// =============================================================================
+describe("[190] portões de pré-condição preservados", () => {
+  it("sem GOOGLE_GEOCODING_API_KEY → transitorio, sem cache, sem resolverEndereco, sem fetch", async () => {
+    delete process.env.GOOGLE_GEOCODING_API_KEY;
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const resolver = resolverOk();
+
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
     expect(getMock).not.toHaveBeenCalled();
-    expect(thunk).not.toHaveBeenCalled();
+    expect(resolver).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("portão 1: sem credenciais Upstash → transitorio, sem tocar Redis nem ViaCEP", async () => {
+  it("sem credenciais Upstash → transitorio, sem tocar Redis nem ViaCEP", async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const thunk = thunkOk();
+    const resolver = resolverOk();
 
-    const r = await geocodificarCepResolvido(CEP, thunk);
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
     expect(getMock).not.toHaveBeenCalled();
     expect(limitMock).not.toHaveBeenCalled();
-    expect(thunk).not.toHaveBeenCalled();
+    expect(resolver).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("portão 3: trava nega (success:false) → transitorio, sem fetch e sem gravar", async () => {
-    limitMock.mockResolvedValue({ success: false });
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(setMock).not.toHaveBeenCalled();
-  });
-
-  it("trava lança (Redis down) → transitorio, sem fetch", async () => {
-    limitMock.mockRejectedValue(new Error("ECONNREFUSED upstash"));
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("usa o identificador global fixo 'nominatim-global'", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimComPar());
-    await geocodificarCepResolvido(CEP, thunkOk());
-    expect(limitMock).toHaveBeenCalledWith("nominatim-global");
-  });
-
-  it("Nominatim 200 com lista vazia → nao_encontrado e NADA gravado", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimOk([]));
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
-    expect(setMock).not.toHaveBeenCalled();
-  });
-
-  it("Nominatim 429 → transitorio (canal indisponível), nada gravado", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response("rate limited", { status: 429 }),
-    );
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-    expect(setMock).not.toHaveBeenCalled();
-  });
-
-  it("timeout/abort do Nominatim → transitorio", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
-      Object.assign(new Error("aborted"), { name: "AbortError" }),
-    );
-    vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-  });
-
-  it("lat/lon não-finitos → nao_encontrado, nada gravado", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "abc", lon: "xyz" }]),
-    );
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
-    expect(setMock).not.toHaveBeenCalled();
-  });
-
-  it("CEP malformado (≠ 8 dígitos) → transitorio, sem NENHUMA I/O externa", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const thunk = thunkOk();
-
-    const r = await geocodificarCepResolvido("123", thunk);
-
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-    expect(getMock).not.toHaveBeenCalled();
-    expect(thunk).not.toHaveBeenCalled();
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  // Guard do bounding box: "estrada na República Tcheca" vira fail-closed, não
-  // distância astronômica (D1 — defesa em profundidade).
-  it("par FORA do bounding box do Brasil → nao_encontrado e NÃO grava cache", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "49.8", lon: "15.5" }]), // República Tcheca
-    );
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
-    expect(setMock).not.toHaveBeenCalled();
   });
 });
 
 // =============================================================================
-// 4) Cache versionado (D4/V3) — legado sem `v` é MISS e é sobrescrito
+// Chave de cache é o CEP, não o texto da consulta (inalterado da 185)
 // =============================================================================
-describe("[185-4] cache versionado + TTL", () => {
-  it("constantes do contrato: v = 2 e TTL = 180 dias", async () => {
-    expect(VERSAO_CACHE_GEOCODE).toBe(2);
-    expect(TTL_CACHE_GEOCODE_SEGUNDOS).toBe(15_552_000);
-  });
-
-  it("HIT no formato novo → coords SEM ViaCEP, SEM trava e SEM Nominatim", async () => {
-    getMock.mockResolvedValue({ ...PAR, v: VERSAO_CACHE_GEOCODE });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(nominatimOk([{ lat: "-99", lon: "-99" }]));
-    const thunk = thunkOk();
-
-    const r = await geocodificarCepResolvido(CEP, thunk);
-
-    expect(r).toEqual({ coords: PAR });
-    expect(getMock).toHaveBeenCalledWith(CHAVE);
-    // TETO: 0 chamadas externas em cache hit.
-    expect(thunk).not.toHaveBeenCalled();
-    expect(limitMock).not.toHaveBeenCalled();
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(setMock).not.toHaveBeenCalled();
-  });
-
-  it("HIT como JSON-string versionada também é aceito", async () => {
-    getMock.mockResolvedValue(JSON.stringify({ ...PAR, v: VERSAO_CACHE_GEOCODE }));
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: PAR });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("valor LEGADO sem `v` (cache envenenado) → MISS: refaz e sobrescreve", async () => {
-    // O par legado é o ENVENENADO (estrada na Tcheca) gravado antes do fix.
-    getMock.mockResolvedValue({ latitude: 49.8, longitude: 15.5 });
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimComPar());
-    const thunk = thunkOk();
-
-    const r = await geocodificarCepResolvido(CEP, thunk);
-
-    // O valor legado NÃO foi devolvido: foi tratado como miss e refeito.
-    expect(r).toEqual({ coords: PAR });
-    expect(thunk).toHaveBeenCalledTimes(1);
-    expect(setMock).toHaveBeenCalledTimes(1);
-    const [chave, valor, opts] = setMock.mock.calls[0]!;
-    expect(chave).toBe(CHAVE); // mesma chave: sobrescreve, sem órfãos
-    const gravado = typeof valor === "string" ? JSON.parse(valor) : valor;
-    expect(gravado).toEqual({ ...PAR, v: VERSAO_CACHE_GEOCODE });
-    expect(opts).toMatchObject({ ex: TTL_CACHE_GEOCODE_SEGUNDOS });
-  });
-
-  it("valor v:2 (versão certa) mas lat/lng NÃO-FINITOS (cache corrompido) → MISS, refaz", async () => {
-    // Corrupção não é só "sem v": pode ser a versão certa com payload quebrado
-    // (ex.: escrita concorrente truncada, bug de serialização). O guard
-    // Number.isFinite tem que pegar isso mesmo com v === VERSAO_CACHE_GEOCODE.
-    getMock.mockResolvedValue({ latitude: Number.NaN, longitude: -46.5, v: VERSAO_CACHE_GEOCODE });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimComPar());
-    const thunk = thunkOk();
-
-    const r = await geocodificarCepResolvido(CEP, thunk);
-
-    expect(r).toEqual({ coords: PAR });
-    expect(thunk).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    // Sobrescreve a MESMA chave com o valor bom, sem exigir DEL manual.
-    expect(setMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("valor v:2 com latitude AUSENTE (shape incompleto) → MISS, refaz", async () => {
-    getMock.mockResolvedValue({ longitude: -46.5, v: VERSAO_CACHE_GEOCODE });
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimComPar());
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: PAR });
-  });
-
-  it("valor com versão ANTIGA (v:1) → MISS", async () => {
-    getMock.mockResolvedValue({ latitude: 49.8, longitude: 15.5, v: 1 });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimComPar());
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: PAR });
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("grava sempre com TTL (nenhuma chave nova sem prazo de validade)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimComPar());
-
-    await geocodificarCepResolvido(CEP, thunkOk());
-
-    const opts = setMock.mock.calls[0]![2];
-    expect(opts).toBeDefined();
-    expect(opts).toMatchObject({ ex: TTL_CACHE_GEOCODE_SEGUNDOS });
-  });
-
-  it("get lança (Redis down) → fail-OPEN na leitura: segue thunk+trava+fetch", async () => {
-    getMock.mockRejectedValue(new Error("ECONNREFUSED upstash"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimComPar());
-
-    const r = await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(r).toEqual({ coords: PAR });
-    expect(limitMock).toHaveBeenCalledWith("nominatim-global");
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("get devolve lixo não-parseável → MISS, segue o fluxo", async () => {
-    getMock.mockResolvedValue("}{ não é json");
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimComPar());
-
-    await expect(geocodificarCepResolvido(CEP, thunkOk())).resolves.toEqual({
-      coords: PAR,
-    });
-  });
-
-  it("set lança → coords ainda retornadas (fail-open de escrita)", async () => {
-    setMock.mockRejectedValue(new Error("ECONNREFUSED upstash"));
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimComPar());
-
-    await expect(geocodificarCepResolvido(CEP, thunkOk())).resolves.toEqual({
-      coords: PAR,
-    });
-  });
-
-  it("CEP com e sem máscara resolvem a MESMA chave", async () => {
-    getMock.mockResolvedValue({ ...PAR, v: VERSAO_CACHE_GEOCODE });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(nominatimComPar());
-
-    await geocodificarCepResolvido("12914-190", thunkOk());
-    await geocodificarCepResolvido("12914190", thunkOk());
-
-    expect(getMock).toHaveBeenNthCalledWith(1, CHAVE);
-    expect(getMock).toHaveBeenNthCalledWith(2, CHAVE);
-  });
-});
-
-// =============================================================================
-// 5) Chave de cache DESACOPLADA do texto da consulta (D3)
-//    Trocar ingenuamente o argumento (cacheabilidade decidida pelo FORMATO da
-//    consulta) desligaria o cache em silêncio → toda resolução disputaria a
-//    trava de 1 req/s → frete indisponível sob concorrência.
-// =============================================================================
-describe("[185-5] cache indexado pelo CEP, não pelo texto da consulta", () => {
-  it("mesmo CEP com TEXTO diferente entre chamadas → 1 só chamada ao Nominatim", async () => {
-    // Redis de brinquedo: prova o comportamento real de hit/miss.
+describe("[190] cache indexado pelo CEP, não pelo texto da consulta", () => {
+  it("CEPs DIFERENTES não compartilham chave (uma resolução cada)", async () => {
     const armazem = new Map<string, unknown>();
     getMock.mockImplementation(async (k: string) => armazem.get(k) ?? null);
     setMock.mockImplementation(async (k: string, v: unknown) => {
       armazem.set(k, v);
       return "OK";
     });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(nominatimComPar());
-
-    // 1ª: ViaCEP devolveu o bairro → consulta com bairro.
-    await geocodificarCepResolvido(CEP, thunkOk(CONSULTA));
-    // 2ª: mesmo CEP, mas o texto mudou (ViaCEP sem bairro desta vez).
-    const thunk2 = thunkOk("Bragança Paulista - SP, Brasil");
-    const r2 = await geocodificarCepResolvido(CEP, thunk2);
-
-    expect(r2).toEqual({ coords: PAR });
-    // O texto mudou, mas a CHAVE é o CEP → hit: nem ViaCEP nem Nominatim de novo.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(thunk2).not.toHaveBeenCalled();
-    expect(setMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("CEPs DIFERENTES não compartilham chave (uma chamada cada)", async () => {
-    const armazem = new Map<string, unknown>();
-    getMock.mockImplementation(async (k: string) => armazem.get(k) ?? null);
-    setMock.mockImplementation(async (k: string, v: unknown) => {
-      armazem.set(k, v);
-      return "OK";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes("Jardim Sevilha")) return googleOk(COORDS_A.latitude, COORDS_A.longitude);
+      if (url.includes("Centro")) return googleOk(COORDS_B.latitude, COORDS_B.longitude);
+      throw new Error("URL inesperada");
     });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(nominatimComPar());
 
-    await geocodificarCepResolvido("12914-190", thunkOk());
-    await geocodificarCepResolvido("13000-000", thunkOk("Campinas - SP, Brasil"));
+    await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+    await geocodificarCepResolvido(CEP_B, resolverOk(ENDERECO_B), IP_CLIENTE);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(armazem.has(CHAVE_A)).toBe(true);
+    expect(armazem.has(CHAVE_B)).toBe(true);
   });
 });
 
 // =============================================================================
-// 6) TETO: ≤ 1 chamada ao Nominatim por resolução, em TODOS os ramos
+// Concorrência: duas resoluções simultâneas do MESMO CEP não-cacheado
+// (issue 188, fora de escopo desta troca — aqui só CONFIRMAMOS que o
+// comportamento atual, sem request-coalescing, não piorou com o novo
+// provedor: cada chamada concorrente ainda faz sua própria ida ao ViaCEP e
+// ao Google, gastando 2x em vez de 1x. Isso é o débito conhecido da 188,
+// mais caro agora que o provedor é pago — mas não é resolvido aqui.)
 // =============================================================================
-describe("[185-6] teto de 1 chamada ao Nominatim por resolução", () => {
-  it("miss → exatamente 1 fetch (sem cadeia de tentativas, sem retry)", async () => {
+describe("[190] concorrência — duas chamadas simultâneas do MESMO CEP (sem coalescing, débito #188)", () => {
+  it("cache sempre MISS (sem write-through entre as duas) → 2 idas ao ViaCEP e 2 ao Google, ambas com sucesso", async () => {
+    // getMock nunca reflete o que setMock grava (cada chamada concorrente lê
+    // o cache ANTES de qualquer uma delas escrever) — é exatamente o cenário
+    // real de duas abas do mesmo cliente clicando "calcular frete" ao mesmo
+    // tempo, ambas com cache miss.
+    getMock.mockResolvedValue(null);
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(nominatimComPar());
+      .mockImplementation(async (input) => {
+        const url = decodeURIComponent(String(input));
+        if (url.includes("Jardim Sevilha")) return googleOk(COORDS_A.latitude, COORDS_A.longitude);
+        throw new Error("URL inesperada: " + url);
+      });
+    const resolverX = resolverOk(ENDERECO_A);
+    const resolverY = resolverOk(ENDERECO_A);
 
-    await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("Nominatim 200 [] NÃO dispara uma segunda tentativa mais genérica", async () => {
-    // Cadeia de tentativas foi REJEITADA (D1): a trava fixedWindow(1,'1 s')
-    // negaria a segunda chamada, e um sleep no caminho quente é inaceitável.
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(nominatimOk([]));
-
-    await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(limitMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("cache hit → 0 chamadas ao Nominatim", async () => {
-    getMock.mockResolvedValue({ ...PAR, v: VERSAO_CACHE_GEOCODE });
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    await geocodificarCepResolvido(CEP, thunkOk());
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("o thunk (ViaCEP) é invocado no MÁXIMO 1 vez por resolução", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(nominatimComPar());
-    const thunk = thunkOk();
-
-    await geocodificarCepResolvido(CEP, thunk);
-
-    expect(thunk).toHaveBeenCalledTimes(1);
-  });
-});
-
-// =============================================================================
-// 8) CONCORRÊNCIA — achado, não conserto (ver relatório do agente `testar`)
-//    Duas resoluções SIMULTÂNEAS do MESMO CEP com cache miss nas duas: não
-//    existe request-coalescing/single-flight neste módulo. Cada chamada faz
-//    seu próprio GET (ambas veem miss, pois nenhuma delas gravou ainda) e
-//    ambas disputam a MESMA janela da trava fixedWindow(1,"1s") do
-//    @upstash/ratelimit. A trava real do Upstash é atômica entre processos,
-//    então em produção o pior caso é: 1 das duas ganha e busca o Nominatim,
-//    a OUTRA perde a janela e volta 'transitorio' (sem frete por raio_km
-//    nesse pedido) — não um estouro de 2 chamadas ao Nominatim. Mas o teste
-//    abaixo prova que ESTE MÓDULO, sozinho, não impede 2 fetches: se a trava
-//    mockada permite `success:true` para as duas (o que pode acontecer de
-//    verdade se caírem em janelas de 1s adjacentes, ou se o limitador falhar
-//    aberto por race no próprio Upstash), o Nominatim leva 2 requisições para
-//    o MESMO CEP na mesma resolução concorrente — sem dedup em memória.
-// =============================================================================
-describe("[185-8] concorrência — duas resoluções simultâneas do MESMO CEP", () => {
-  it("ACHADO: sem single-flight — 2 chamadas concorrentes com cache miss disputam a trava mas NÃO são deduplicadas em memória; se ambas passam a trava, saem 2 fetches ao Nominatim para o mesmo CEP", async () => {
-    // Cache real (Map) para as duas chamadas verem o mesmo estado de fato.
-    const armazem = new Map<string, unknown>();
-    getMock.mockImplementation(async (k: string) => armazem.get(k) ?? null);
-    setMock.mockImplementation(async (k: string, v: unknown) => {
-      armazem.set(k, v);
-      return "OK";
-    });
-    // Cenário adversarial: a trava concede às DUAS (ex.: janelas adjacentes,
-    // ou concorrência real do fixedWindow sob rajada — não é impossível).
-    limitMock.mockResolvedValue({ success: true });
-    // mockImplementation (não mockResolvedValue): cada chamada precisa de um
-    // Response NOVO — o corpo de um Response só pode ser lido (.json()) uma
-    // vez; reusar a mesma instância entre as duas chamadas concorrentes
-    // quebraria a 2ª leitura por um motivo alheio à race sob teste.
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async () => nominatimComPar());
-    const thunkA = thunkOk();
-    const thunkB = thunkOk();
-
-    const [ra, rb] = await Promise.all([
-      geocodificarCepResolvido(CEP, thunkA),
-      geocodificarCepResolvido(CEP, thunkB),
+    const [r1, r2] = await Promise.all([
+      geocodificarCepResolvido(CEP_A, resolverX, IP_CLIENTE),
+      geocodificarCepResolvido(CEP_A, resolverY, IP_CLIENTE),
     ]);
 
-    expect(ra).toEqual({ coords: PAR });
-    expect(rb).toEqual({ coords: PAR });
-    // GAP REAL: nenhuma coalescência em memória — as duas resoluções
-    // concorrentes do MESMO CEP, ambas em cache miss, geraram 2 idas ao
-    // ViaCEP (via thunk) e 2 ao Nominatim. Um in-flight dedup (ex.: Map de
-    // Promises pendentes por CEP) eliminaria isso; não existe hoje.
-    expect(thunkA).toHaveBeenCalledTimes(1);
-    expect(thunkB).toHaveBeenCalledTimes(1);
+    // Comportamento atual (não piorou, não melhorou): as DUAS chamadas
+    // concorrentes pagam o custo total, cada uma com seu próprio
+    // resolverEndereco (ViaCEP) e sua própria chamada ao Google — sem
+    // deduplicação. Resolver a #188 mudaria estes números para 1; até lá,
+    // este teste é a rede de segurança contra uma regressão que piorasse
+    // ainda mais (ex.: cada chamada disparando N tentativas de cascata em
+    // vez de 1 cada).
+    expect(r1).toEqual({ coords: COORDS_A });
+    expect(r2).toEqual({ coords: COORDS_A });
+    expect(resolverX).toHaveBeenCalledTimes(1);
+    expect(resolverY).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });
 
 // =============================================================================
-// 7) §19/§21 — o par (lat,lng) e o endereço do cliente nunca vão para o log
+// Cascata continua em `nao_encontrado` mesmo quando causado por geometria
+// malformada (200/OK sem geometry/location), não só por ZERO_RESULTS —
+// consultarGoogle trata os dois como o mesmo `motivo`.
 // =============================================================================
-describe("[185-7] nenhum log carrega coordenada ou endereço do cliente", () => {
-  it("caminho de erro não loga o par nem a consulta", async () => {
-    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    setMock.mockRejectedValue(new Error("ECONNREFUSED upstash"));
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimComPar());
+describe("[190] cascata avança também quando o motivo é geometria malformada (não só ZERO_RESULTS)", () => {
+  it("1º candidato: 200/OK sem `results[0].geometry` (nao_encontrado) → cascata tenta o 2º, que sucede", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "OK", results: [{}] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(googleOk(COORDS_A.latitude, COORDS_A.longitude));
 
-    await geocodificarCepResolvido(CEP, thunkOk());
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    const logado = erroSpy.mock.calls
-      .map((c) => c.map((a) => String(a)).join(" "))
-      .join(" | ");
-    expect(logado).not.toContain("22.95");
-    expect(logado).not.toContain("46.54");
-    expect(logado).not.toContain("Bragança");
-    expect(logado).not.toContain("12914");
+    expect(r).toEqual({ coords: COORDS_A });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+// =============================================================================
+// Resposta 200/OK com `status` ausente/malformado no MEIO da cascata: para
+// IMEDIATO (transitorio), igual a qualquer outro status de erro — não é
+// tratado como "tenta o próximo candidato".
+// =============================================================================
+describe("[190] status ausente/malformado no corpo da Google → transitorio IMEDIATO, cascata não avança", () => {
+  it("1º candidato sem campo `status` nenhum → transitorio, exatamente 1 fetch (não tenta o 2º)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
+      .mockResolvedValueOnce(googleOk(COORDS_A.latitude, COORDS_A.longitude));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("par fora do Brasil: o log (se houver) não carrega o par recusado", async () => {
-    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("1º candidato com corpo não-JSON → transitorio, exatamente 1 fetch, sem propagar exceção", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("não é json", { status: 200 }))
+      .mockResolvedValueOnce(googleOk(COORDS_A.latitude, COORDS_A.longitude));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// Teto diário: negação NO MEIO de uma sequência de chamadas (CEPs distintos)
+// não contamina as chamadas vizinhas — a próxima chamada com o mock de limit
+// concedendo de novo (simulando reset em nova janela) resolve normalmente.
+// Isto NÃO testa o algoritmo real do fixedWindow do Upstash (mockado por
+// completo, sem Redis real neste ambiente de teste — CLAUDE.md), só que o
+// código do iRango reage corretamente a cada resposta de `.limit()`, chamada
+// a chamada, sem estado espúrio entre CEPs diferentes.
+// =============================================================================
+describe("[190] teto diário — negação no meio de uma sequência não contamina chamadas vizinhas", () => {
+  it("CEP1 concede, CEP2 nega (teto atingido), CEP3 concede de novo (nova janela) → só CEP2 fica transitorio", async () => {
+    const CEP_C = "01310-100";
+    const ENDERECO_C: EnderecoCepResolvido = {
+      logradouro: "Avenida Paulista",
+      bairro: "Bela Vista",
+      cidade: "São Paulo",
+      uf: "SP",
+    };
+    const COORDS_C = { latitude: -23.5613, longitude: -46.6558 };
+
+    limitMock
+      .mockResolvedValueOnce({ success: true }) // CEP1 burst
+      .mockResolvedValueOnce({ success: true }) // CEP1 diário → concede
+      .mockResolvedValueOnce({ success: true }) // CEP2 burst
+      .mockResolvedValueOnce({ success: false }) // CEP2 diário → teto atingido
+      .mockResolvedValueOnce({ success: true }) // CEP3 burst
+      .mockResolvedValueOnce({ success: true }); // CEP3 diário → concede (nova janela)
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) => {
+        const url = decodeURIComponent(String(input));
+        if (url.includes("Jardim Sevilha")) return googleOk(COORDS_A.latitude, COORDS_A.longitude);
+        if (url.includes("Paulista")) return googleOk(COORDS_C.latitude, COORDS_C.longitude);
+        throw new Error("URL inesperada: " + url);
+      });
+
+    const r1 = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+    const r2 = await geocodificarCepResolvido(CEP_B, resolverOk(ENDERECO_B), IP_CLIENTE);
+    const r3 = await geocodificarCepResolvido(CEP_C, resolverOk(ENDERECO_C), IP_CLIENTE);
+
+    expect(r1).toEqual({ coords: COORDS_A });
+    expect(r2).toEqual({ coords: null, motivo: "transitorio" });
+    expect(r3).toEqual({ coords: COORDS_C });
+    // CEP2 negado: nenhum fetch pago por ele. CEP1 e CEP3 usam 1 fetch cada
+    // (1º candidato já sucede) → 2 fetches no total.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+// =============================================================================
+// A configuração de GEOCODE_GOOGLE_DAILY_LIMIT precisa realmente chegar ao
+// Ratelimit.fixedWindow — os testes anteriores só verificam que o CAMINHO
+// FELIZ continua funcionando com a env customizada, o que passaria mesmo se
+// o valor nunca fosse lido (o `limit()` mockado sempre concede,
+// independentemente do N configurado). Isolamos com vi.resetModules() +
+// import dinâmico porque limitadorDiario é um singleton em nível de módulo
+// (obterLimitadorDiario só constrói UMA vez por instância do módulo) — sem
+// isolar, um teste anterior no mesmo arquivo já teria fixado o singleton com
+// o default 500 antes deste teste mudar a env.
+// =============================================================================
+describe("[190] GEOCODE_GOOGLE_DAILY_LIMIT realmente chega a Ratelimit.fixedWindow(N, \"1 d\")", () => {
+  it("valor customizado da env é passado a fixedWindow (não fica preso no default do singleton)", async () => {
+    process.env.GEOCODE_GOOGLE_DAILY_LIMIT = "7";
+    vi.resetModules();
+
+    const { Ratelimit } = await import("@upstash/ratelimit");
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "49.8", lon: "15.5" }]),
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
     );
 
-    await geocodificarCepResolvido(CEP, thunkOk());
+    const mod = await import("./geocodificarEndereco");
+    await mod.geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    const chamadas = (
+      Ratelimit.fixedWindow as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls;
+    expect(chamadas).toContainEqual([7, "1 d"]);
+  });
+
+  it("sem env (default) → fixedWindow é chamado com 500 para o teto diário", async () => {
+    delete process.env.GEOCODE_GOOGLE_DAILY_LIMIT;
+    vi.resetModules();
+
+    const { Ratelimit } = await import("@upstash/ratelimit");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    const mod = await import("./geocodificarEndereco");
+    await mod.geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    const chamadas = (
+      Ratelimit.fixedWindow as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls;
+    expect(chamadas).toContainEqual([500, "1 d"]);
+    expect(chamadas).toContainEqual([10, "1 s"]);
+  });
+});
+
+// ── Nenhum log carrega coordenada ou endereço do cliente ────────────────────
+describe("[190] nenhum log carrega coordenada, endereço ou chave", () => {
+  it("caminho de erro não loga o par, a consulta nem a chave", async () => {
+    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    setMock.mockRejectedValue(new Error("ECONNREFUSED upstash"));
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
     const logado = erroSpy.mock.calls
       .map((c) => c.map((a) => String(a)).join(" "))
       .join(" | ");
-    expect(logado).not.toContain("49.8");
-    expect(logado).not.toContain("15.5");
+    expect(logado).not.toContain("22.9");
+    expect(logado).not.toContain("46.5");
+    expect(logado).not.toContain("Jardim Sevilha");
+    expect(logado).not.toContain(CHAVE_GOOGLE);
+  });
+});
+
+// =============================================================================
+// 31-33) Teto diário SECUNDÁRIO por IP (auditoria 190, achado MÉDIO)
+// =============================================================================
+// O teto diário GLOBAL (fixedWindow(N,"1 d")) protege o ORÇAMENTO agregado,
+// mas um único atacante não-autenticado (calcularFreteAction é endpoint
+// PÚBLICO) pode esgotá-lo sozinho variando CEPs cedo no dia, negando o
+// cálculo de frete-por-raio a clientes legítimos pelo resto do dia. A
+// mitigação é um teto diário SECUNDÁRIO, por IP, MAIS BAIXO que o global —
+// nenhum IP sozinho deveria conseguir consumir uma fatia desproporcional do
+// orçamento agregado. `geocodificarCepResolvido` passa a receber `ip` como
+// 3º parâmetro OBRIGATÓRIO (convenção da issue 160 — opcional deixaria um
+// caller esquecer e reabrir o vetor silenciosamente).
+describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () => {
+  it("31) IP com teto por IP já esgotado é bloqueado (transitorio, zero fetch) mesmo com teto GLOBAL livre; outro IP não é afetado", async () => {
+    const IP_ABUSIVO = "203.0.113.9";
+    const IP_LEGITIMO = "203.0.113.55";
+    // burst e teto diário GLOBAL sempre concedem; só o teto por IP do
+    // IP_ABUSIVO nega — simula exatamente o cenário do achado: o global
+    // ainda tem orçamento, mas ESTE IP já estourou a fatia dele.
+    limitMock.mockImplementation(async (id: unknown) => {
+      if (id === IP_ABUSIVO) return { success: false };
+      return { success: true };
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) => {
+        const url = decodeURIComponent(String(input));
+        if (url.includes("Jardim Sevilha")) return googleOk(COORDS_A.latitude, COORDS_A.longitude);
+        if (url.includes("Centro")) return googleOk(COORDS_B.latitude, COORDS_B.longitude);
+        throw new Error("URL inesperada: " + url);
+      });
+
+    const bloqueado = await geocodificarCepResolvido(
+      CEP_A,
+      resolverOk(ENDERECO_A),
+      IP_ABUSIVO,
+    );
+    expect(bloqueado).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    const liberado = await geocodificarCepResolvido(
+      CEP_B,
+      resolverOk(ENDERECO_B),
+      IP_LEGITIMO,
+    );
+    expect(liberado).toEqual({ coords: COORDS_B });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // Prova que o identificador usado na trava por IP é o PRÓPRIO ip
+    // recebido (isolamento real por IP, não uma chave global disfarçada).
+    const identificadores = limitMock.mock.calls.map((c) => c[0]);
+    expect(identificadores).toContain(IP_ABUSIVO);
+  });
+
+  it("32) teto por IP é configurável via GEOCODE_GOOGLE_DAILY_LIMIT_IP e chega a Ratelimit.fixedWindow", async () => {
+    process.env.GEOCODE_GOOGLE_DAILY_LIMIT_IP = "3";
+    vi.resetModules();
+
+    const { Ratelimit } = await import("@upstash/ratelimit");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    const mod = await import("./geocodificarEndereco");
+    await mod.geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    const chamadas = (
+      Ratelimit.fixedWindow as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls;
+    expect(chamadas).toContainEqual([3, "1 d"]);
+  });
+
+  it("33) default do teto por IP (sem env) é MENOR que o default do teto global (500) — defesa em profundidade fora da caixa", async () => {
+    delete process.env.GEOCODE_GOOGLE_DAILY_LIMIT_IP;
+    vi.resetModules();
+
+    const { Ratelimit } = await import("@upstash/ratelimit");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    const mod = await import("./geocodificarEndereco");
+    await mod.geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    const chamadas = (
+      Ratelimit.fixedWindow as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls as Array<[number, string]>;
+    // Só as janelas DIÁRIAS ("1 d") — o burst ("1 s") não é o teto sob teste
+    // aqui. Precisam existir DUAS janelas diárias distintas (global + por
+    // IP): se só existir uma, o teto por IP simplesmente não foi
+    // implementado (a asserção de tamanho falha antes mesmo do valor).
+    const limitesDiarios = chamadas
+      .filter(([, janela]) => janela === "1 d")
+      .map(([n]) => n);
+    expect(limitesDiarios.length).toBeGreaterThanOrEqual(2);
+    // O default do teto por IP precisa ser estritamente menor que o default
+    // do teto global (500) — senão um único IP poderia esgotar o global
+    // sozinho de novo, e a "defesa em profundidade" seria só decorativa.
+    const menorLimiteDiario = Math.min(...limitesDiarios);
+    expect(menorLimiteDiario).toBeLessThan(500);
+    expect(menorLimiteDiario).toBeGreaterThan(0);
   });
 });

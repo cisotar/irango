@@ -1064,6 +1064,7 @@ describe("criarPedido — frete por raio (distanciaKm autoritativo + snapshot) [
       LOJA_A,
       "01000-000",
       expect.any(Function),
+      "203.0.113.7",
     );
 
     expect(fakeClient.rpc).toHaveBeenCalledTimes(1);

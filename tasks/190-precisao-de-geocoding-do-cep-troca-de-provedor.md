@@ -110,7 +110,28 @@ decide sozinha se isso entra no escopo — é para o `arquitetar` responder expl
    orçamento, gravar em `.env.local` sem prefixo `NEXT_PUBLIC_`. Ação exclusiva do usuário — nenhum
    agente deve tentar, assumir ou pedir credenciais da Google Cloud. Todo teste usa `fetch` mockado.
 
-## Critério de sucesso
+## Plano técnico (arquitetar)
+
+Plano técnico completo — arquivos, pseudocódigo, schema de request/response da Google Geocoding API,
+ordem de implementação e casos de teste — em `plan/tecnico-geocoding-google.md`. As 6 decisões
+resolvidas lá:
+
+1. **Query**: cascata de endereço completo montado só com dados do ViaCEP (logradouro+bairro →
+   bairro → cidade-UF), nunca com o `numero` declarado pelo cliente (evita novo vetor de manipulação
+   de frete).
+2. **Rate limit → guarda de custo**: burst `fixedWindow(10,"1s")` (sanidade, não anti-ban) + teto
+   diário GLOBAL `fixedWindow(500,"1d")` (`GEOCODE_GOOGLE_DAILY_LIMIT`), fail-closed — 500/dia bate
+   com o próprio orçamento de ~$25/mês já aprovado.
+3. **TTL**: 25 dias (`2_160_000`s), com margem sobre o teto de 30 dias da Google.
+4. **`VERSAO_CACHE_GEOCODE`**: `2` → `3` (invalida centroides de cidade cacheados).
+5. **Escopo #186 (geocoding da loja)**: ENTRA no escopo — `geocodificarEnderecoComMotivo` (loja) e
+   `geocodificarCepResolvido` (cliente) compartilham a mesma função de provedor; `loja.test.ts` já
+   mocka o módulo inteiro (não o `fetch`), então incluir custa zero teste novo e evita manter dois
+   provedores simultâneos.
+6. **Fronteira**: uma função interna só (`consultarGoogle` no lugar de `consultarNominatim`), sem
+   interface/abstração — YAGNI com um provedor só em produção.
+
+
 
 Dois CEPs distintos da mesma cidade da loja "Pão do Ciso" (`12914-190` e `12900-430`, Bragança
 Paulista/SP) produzem **distâncias diferentes** no app rodando de verdade (não só no teste), com

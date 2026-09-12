@@ -379,6 +379,7 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
       LOJA_ID,
       CEP_CENTRO,
       expect.any(Function),
+      "203.0.113.7",
     );
     // ...mas as queries de zonas/loja recebem o client ANON, não o service_role:
     expect(listarZonasComTaxas).toHaveBeenCalledWith(anonClient, LOJA_ID);
@@ -426,6 +427,7 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
       LOJA_ID,
       CEP_CENTRO,
       expect.any(Function),
+      "203.0.113.7",
     );
   });
 
@@ -483,6 +485,7 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
       LOJA_ID,
       CEP_CENTRO,
       expect.any(Function),
+      "203.0.113.7",
     );
   });
 });

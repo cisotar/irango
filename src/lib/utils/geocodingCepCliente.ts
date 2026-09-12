@@ -1,20 +1,25 @@
-// Issue 185 — construção da consulta de geocoding do CEP do CLIENTE e guard
-// geográfico. Funções PURAS (sem I/O, sem server-only) para serem testáveis
-// isoladamente e reusáveis pelo caminho da loja (issue 186).
+// Issue 185 (origem) / 190 (troca de provedor) — construção da(s) consulta(s)
+// de geocoding do CEP do CLIENTE e guard geográfico. Funções PURAS (sem I/O,
+// sem server-only) para serem testáveis isoladamente e reusáveis pelo caminho
+// da loja (issue 186).
 //
-// D1c do Plano Técnico (revisto): a consulta é SEMPRE "<cidade> - <uf>, Brasil".
-// O CEP NUNCA entra na consulta — é o token comprovadamente envenenador
-// (q=12914-190 resolveu para uma estrada na República Tcheca). O logradouro
-// também fica de fora: é o token com maior chance de não existir no OSM, e sua
-// ausência derrubaria a resolução inteira.
+// Decisão 1 do plano técnico da 190 (plan/tecnico-geocoding-google.md):
+// `montarConsultaCepCliente` (1 string, só "<cidade> - <uf>, Brasil") vira
+// `montarConsultasCepCliente` (cascata de `string[]`, do mais específico ao
+// mais genérico):
+//   1. "<logradouro>, <bairro>, <cidade> - <uf>, Brasil" (quando há logradouro)
+//   2. "<bairro>, <cidade> - <uf>, Brasil" (quando há bairro)
+//   3. "<cidade> - <uf>, Brasil" (sempre presente — nunca fica pior que hoje)
 //
-// O BAIRRO saiu da consulta pelo mesmo motivo: o CEP real que motivou a issue
-// (12914-190) resolve no ViaCEP para "Jardim Sevilha", bairro que NÃO existe no
-// OSM/Nominatim para Bragança Paulista — a consulta com bairro volta VAZIA
-// mesmo com a cidade existindo, e o frete por raio vira "indisponível". Para
-// DISTÂNCIA, o centroide da cidade basta. O bairro segue chegando ao lojista
-// pelo outro caminho (exibição em FormEndereco/buscarCep e mensagem de
-// WhatsApp), intocado por esta função.
+// Motivo: a consulta anterior (só cidade-UF) é byte-a-byte idêntica para
+// quaisquer dois CEPs da mesma cidade, então o provedor devolvia a MESMA
+// coordenada para os dois (causa raiz da 190). O Google tem cobertura de
+// endereço BR muito melhor que o OSM — incluir logradouro/bairro discrimina
+// ruas diferentes sem precisar do `numero` declarado pelo cliente, que NUNCA
+// entra em nenhum candidato (mandato 1 do CLAUDE.md — cliente não influencia
+// valor cobrado). A cascata só avança em `ZERO_RESULTS` (ver
+// geocodificarEndereco.ts) — é defesa em profundidade para bairro/logradouro
+// que não exista no índice do provedor.
 import type { EnderecoCepResolvido } from "./resolverCepServidor";
 
 // Bounding box do Brasil (bordas inclusivas), defesa em profundidade da D1.
@@ -24,16 +29,29 @@ const LONGITUDE_MIN = -74;
 const LONGITUDE_MAX = -34;
 
 /**
- * Monta a consulta textual do Nominatim a partir do endereço resolvido pelo
- * servidor. `null` quando falta cidade ou UF: sem âncora geográfica NÃO se monta
- * consulta de consolo (fail-closed). O bairro NÃO é lido — ver cabeçalho.
+ * Monta a cascata de consultas textuais para o Google Geocoding a partir do
+ * endereço resolvido pelo servidor (ViaCEP), do mais específico ao mais
+ * genérico. `[]` quando falta cidade ou UF: sem âncora geográfica NÃO se monta
+ * consulta de consolo (fail-closed). O `numero` do cliente NUNCA é lido (não
+ * existe no tipo `EnderecoCepResolvido` — ver cabeçalho).
  */
-export function montarConsultaCepCliente(e: EnderecoCepResolvido): string | null {
+export function montarConsultasCepCliente(e: EnderecoCepResolvido): string[] {
   const cidade = e.cidade?.trim() ?? "";
   const uf = e.uf?.trim() ?? "";
-  if (!cidade || !uf) return null;
+  if (!cidade || !uf) return [];
 
-  return `${cidade} - ${uf}, Brasil`;
+  const logradouro = e.logradouro?.trim();
+  const bairro = e.bairro?.trim();
+  const sufixo = `${cidade} - ${uf}, Brasil`;
+
+  const candidatos: string[] = [];
+  if (logradouro) {
+    candidatos.push(bairro ? `${logradouro}, ${bairro}, ${sufixo}` : `${logradouro}, ${sufixo}`);
+  }
+  if (bairro) candidatos.push(`${bairro}, ${sufixo}`);
+  candidatos.push(sufixo); // sempre presente — nunca fica pior que o comportamento atual
+
+  return [...new Set(candidatos)]; // dedupe preservando ordem (mais específico → mais genérico)
 }
 
 /**

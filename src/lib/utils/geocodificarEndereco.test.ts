@@ -1,22 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-// Portões anti-ban do Nominatim (issue 003) + motivo discriminado (issue 004).
+// Guarda de custo do Google Geocoding API (issue 190) + motivo discriminado
+// (issue 004).
 //
-// MIGRAÇÃO (issue 185, fase RED): este arquivo cobre agora SÓ
-// `geocodificarEnderecoComMotivo` — a consulta textual LIVRE, usada pelo lado da
-// LOJA (salvarPerfil/admin). Duas mudanças de contrato do Plano Técnico da 185:
+// MIGRAÇÃO (issue 190, fase RED): Nominatim → Google Geocoding API
+// (plan/tecnico-geocoding-google.md). Este arquivo cobre
+// `geocodificarEnderecoComMotivo` — a consulta textual LIVRE, usada pelo lado
+// da LOJA (salvarPerfil/admin, issue #186 — entra no escopo por decisão 5 do
+// plano: mesma função de provedor serve loja e cliente).
 //
-//   1. o wrapper `geocodificarEndereco` (Coordenadas | null) é REMOVIDO — sem
-//      callers depois que distanciaFrete.ts passa a usar geocodificarCepResolvido;
-//   2. `cepCacheavel` é REMOVIDO e `geocodificarEnderecoComMotivo` deixa de ler
-//      e gravar cache (D3): a cacheabilidade deixa de ser decidida pelo FORMATO
-//      da consulta e passa a ser explícita, em `geocodificarCepResolvido(cep, …)`.
-//      Em runtime isso não muda nada para a loja (endereço completo nunca casou
-//      os 8 dígitos), mas trava a regressão de o predicado voltar a existir.
+// Mudanças de contrato desta migração:
+//   1. `consultarNominatim` vira `consultarGoogle` — REST puro contra
+//      https://maps.googleapis.com/maps/api/geocode/json, sem SDK novo.
+//   2. A trava ANTI-BAN de 1 req/s vira GUARDA DE CUSTO de duas camadas:
+//      burst fixedWindow(10,"1s") + teto diário GLOBAL fixedWindow(N,"1d")
+//      (N = GEOCODE_GOOGLE_DAILY_LIMIT, default 500), AMBAS fail-closed.
+//   3. NOMINATIM_USER_AGENT vira GOOGLE_GEOCODING_API_KEY (a chave entra na
+//      URL como query param `key=`, nunca em header nem em log).
+//   4. Nenhum log (`console.error`) pode conter a chave, a consulta ou o par
+//      (lat,lng) — só o `status` do corpo do Google.
 //
-// O caminho do CEP do cliente (com cache versionado + TTL) é coberto em
+// O caminho do CEP do cliente (cache + cascata) é coberto em
 // ./geocodificarCepResolvido.test.ts.
 //
-// @upstash/ratelimit, @upstash/redis e `fetch` global são mockados — sem rede.
+// @upstash/ratelimit, @upstash/redis e `fetch` global são mockados — sem rede
+// real, nunca a API do Google de verdade (pré-condição humana da issue 190).
 // ---------------------------------------------------------------------------
 
 const limitMock = vi.fn();
@@ -44,12 +51,22 @@ import { geocodificarEnderecoComMotivo } from "./geocodificarEndereco";
 
 const ENV_BACKUP = { ...process.env };
 
-const UA = "iRango/1.0 (+https://irango.app; contato@irango.app)";
+const CHAVE_GOOGLE = "chave-google-fake-de-teste";
 
 const ENDERECO_LOJA = "Rua das Flores, 100, São Paulo, SP";
 
-function nominatimOk(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
+function googleOk(lat: number, lng: number): Response {
+  return new Response(
+    JSON.stringify({
+      status: "OK",
+      results: [{ geometry: { location: { lat, lng } } }],
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+function googleStatus(status: string): Response {
+  return new Response(JSON.stringify({ status, results: [] }), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
@@ -62,11 +79,12 @@ beforeEach(() => {
   vi.restoreAllMocks();
   getMock.mockResolvedValue(null);
   setMock.mockResolvedValue("OK");
-  // Estado feliz por padrão: credenciais Upstash + User-Agent presentes.
+  // Estado feliz por padrão: credenciais Upstash + chave Google presentes.
   process.env.UPSTASH_REDIS_REST_URL = "https://exemplo.upstash.io";
   process.env.UPSTASH_REDIS_REST_TOKEN = "token-fake";
-  process.env.NOMINATIM_USER_AGENT = UA;
-  // Por padrão, a trava global concede (success:true).
+  process.env.GOOGLE_GEOCODING_API_KEY = CHAVE_GOOGLE;
+  delete process.env.GEOCODE_GOOGLE_DAILY_LIMIT;
+  // Por padrão, as duas travas (burst e diária) concedem (success:true).
   limitMock.mockResolvedValue({ success: true });
 });
 
@@ -74,12 +92,10 @@ afterEach(() => {
   process.env = { ...ENV_BACKUP };
 });
 
-// ── FAIL-CLOSED: sem User-Agent ──────────────────────────────────────────────
-// Nominatim bane requisições sem User-Agent identificado. Ausência da env =
-// pré-condição da trava anti-ban falhou → não chama (D7).
-describe("geocodificarEnderecoComMotivo — fail-closed: User-Agent ausente", () => {
-  it("sem NOMINATIM_USER_AGENT → transitorio e fetch NUNCA chamado", async () => {
-    delete process.env.NOMINATIM_USER_AGENT;
+// ── 12: sem GOOGLE_GEOCODING_API_KEY → transitorio, fetch NUNCA chamado ─────
+describe("geocodificarEnderecoComMotivo — fail-closed: chave Google ausente", () => {
+  it("sem GOOGLE_GEOCODING_API_KEY → transitorio e fetch NUNCA chamado", async () => {
+    delete process.env.GOOGLE_GEOCODING_API_KEY;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
@@ -88,8 +104,8 @@ describe("geocodificarEnderecoComMotivo — fail-closed: User-Agent ausente", ()
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("NOMINATIM_USER_AGENT vazio/só-espaços → transitorio e fetch NUNCA chamado", async () => {
-    process.env.NOMINATIM_USER_AGENT = "   ";
+  it("GOOGLE_GEOCODING_API_KEY vazia/só-espaços → transitorio e fetch NUNCA chamado", async () => {
+    process.env.GOOGLE_GEOCODING_API_KEY = "   ";
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
@@ -99,9 +115,7 @@ describe("geocodificarEnderecoComMotivo — fail-closed: User-Agent ausente", ()
   });
 });
 
-// ── FAIL-CLOSED: credenciais Upstash ausentes ────────────────────────────────
-// Oposto de rateLimit.ts (que retorna permitido:true). Sem Redis não há trava
-// global → não pode chamar (D5 portão 1). Nem o Redis é tocado.
+// ── 13: sem credenciais Upstash ──────────────────────────────────────────────
 describe("geocodificarEnderecoComMotivo — fail-closed: credenciais Upstash ausentes", () => {
   it("sem UPSTASH_* → transitorio, fetch NÃO chamado, limit NÃO chamado", async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
@@ -116,9 +130,31 @@ describe("geocodificarEnderecoComMotivo — fail-closed: credenciais Upstash aus
   });
 });
 
-// ── FAIL-CLOSED: Redis indisponível (limit lança) ────────────────────────────
-// D5 portão 2: a trava global não pôde ser verificada → não chama fetch.
-describe("geocodificarEnderecoComMotivo — fail-closed: Redis caiu", () => {
+// ── 14/15: guarda de custo — burst e teto diário ─────────────────────────────
+describe("geocodificarEnderecoComMotivo — guarda de custo: burst e teto diário", () => {
+  it("14) burst nega (1ª chamada de limit) → transitorio, fetch NUNCA chamado", async () => {
+    limitMock.mockResolvedValueOnce({ success: false }); // burst
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("15) burst ok, diário nega (2ª chamada de limit) → transitorio, fetch NUNCA chamado", async () => {
+    limitMock
+      .mockResolvedValueOnce({ success: true }) // burst
+      .mockResolvedValueOnce({ success: false }); // diário
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledTimes(2);
+  });
+
   it("limit() rejeita (Redis down) → transitorio, fetch NÃO chamado, console.error chamado", async () => {
     limitMock.mockRejectedValue(new Error("ECONNREFUSED upstash"));
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -130,40 +166,13 @@ describe("geocodificarEnderecoComMotivo — fail-closed: Redis caiu", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(erroSpy).toHaveBeenCalled();
   });
-
-  it("limit() lança síncrono (TypeError) → transitorio, sem propagar exceção", async () => {
-    limitMock.mockImplementation(() => {
-      throw new TypeError("payload inesperado");
-    });
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
-
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
 });
 
-// ── FAIL-CLOSED: limite global excedido ──────────────────────────────────────
-// D5 portão 3: success:false → transitorio imediato, sem fetch, sem latência.
-describe("geocodificarEnderecoComMotivo — fail-closed: limite global excedido", () => {
-  it("limit() success:false → transitorio e fetch NÃO chamado", async () => {
-    limitMock.mockResolvedValue({ success: false });
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
-
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-});
-
-// ── Caminho de sucesso + User-Agent + identificador global ───────────────────
-describe("geocodificarEnderecoComMotivo — sucesso", () => {
-  it("200 com [{lat,lon}] → { coords } numéricas", async () => {
+// ── 6/16: caminho de sucesso ──────────────────────────────────────────────────
+describe("geocodificarEnderecoComMotivo — sucesso (Google)", () => {
+  it("6) status:'OK' com results[0] válido → { coords } com lat/lng corretos", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "-23.5", lon: "-46.6" }]),
+      googleOk(-23.5, -46.6),
     );
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
@@ -171,35 +180,35 @@ describe("geocodificarEnderecoComMotivo — sucesso", () => {
     expect(r).toEqual({ coords: { latitude: -23.5, longitude: -46.6 } });
   });
 
-  it("envia header User-Agent igual à env na requisição fetch", async () => {
+  it("a chave Google vai na URL (query param `key=`), nunca em header", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimOk([{ lat: "-23.5", lon: "-46.6" }]));
+      .mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
     await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
-    const headers = new Headers(init?.headers);
-    expect(headers.get("User-Agent")).toBe(UA);
+    const url = String(fetchSpy.mock.calls[0]?.[0]);
+    expect(url).toContain("maps.googleapis.com/maps/api/geocode/json");
+    expect(url).toContain(`key=${CHAVE_GOOGLE}`);
   });
 
-  it("usa o identificador global fixo 'nominatim-global' na trava", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "-23.5", lon: "-46.6" }]),
-    );
+  it("16) URL chamada NÃO contém components=country:BR (loja passa restringirBrasil:false)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
     await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(limitMock).toHaveBeenCalledWith("nominatim-global");
+    expect(String(fetchSpy.mock.calls[0]?.[0])).not.toContain(
+      "components=country:BR",
+    );
   });
 
   it("AbortSignal.timeout é passado ao fetch (timeout configurado)", async () => {
-    // Prova que a implementação não usa fetch sem AbortSignal — sem isso, uma
-    // chamada lenta ao Nominatim travaria a lambda indefinidamente.
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimOk([{ lat: "-23.5", lon: "-46.6" }]));
+      .mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
     await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
@@ -208,140 +217,254 @@ describe("geocodificarEnderecoComMotivo — sucesso", () => {
   });
 });
 
-// ── Falhas de I/O: nunca lança ───────────────────────────────────────────────
-describe("geocodificarEnderecoComMotivo — falhas de I/O (nunca exceção)", () => {
-  it("HTTP não-ok (500) → transitorio sem lançar", async () => {
+// ── 7/8/9/10/11: falhas de I/O e status do Google ────────────────────────────
+describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nunca exceção)", () => {
+  it("7) status:'ZERO_RESULTS' → nao_encontrado", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleStatus("ZERO_RESULTS"),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
+  });
+
+  it("8) status:'OVER_QUERY_LIMIT' → transitorio", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleStatus("OVER_QUERY_LIMIT"),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "transitorio" },
+    );
+  });
+
+  it("9) status:'REQUEST_DENIED' → transitorio, e o log NUNCA contém a chave nem a consulta", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleStatus("REQUEST_DENIED"),
+    );
+    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    const logado = erroSpy.mock.calls
+      .map((c) => c.map((a) => String(a)).join(" "))
+      .join(" | ");
+    expect(logado).not.toContain(CHAVE_GOOGLE);
+    expect(logado).not.toContain(ENDERECO_LOJA);
+  });
+
+  it("10) HTTP 500 → transitorio sem lançar", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("erro", { status: 500 }),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual({
-      coords: null,
-      motivo: "transitorio",
-    });
-  });
-
-  it("HTTP 429 (já limitado pelo OSM) → transitorio sem lançar", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response("rate limited", { status: 429 }),
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "transitorio" },
     );
-
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual({
-      coords: null,
-      motivo: "transitorio",
-    });
   });
 
-  it("timeout/abort do fetch → transitorio sem lançar", async () => {
+  it("11) fetch rejeita (timeout simulado) → transitorio, sem propagar exceção", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
       Object.assign(new Error("aborted"), { name: "AbortError" }),
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual({
-      coords: null,
-      motivo: "transitorio",
-    });
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "transitorio" },
+    );
   });
 
-  it("JSON array vazio [] → nao_encontrado", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nominatimOk([]));
-
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual({
-      coords: null,
-      motivo: "nao_encontrado",
-    });
-  });
-
-  it("lat/lon não-numéricos (NaN) → nao_encontrado", async () => {
+  it("UNKNOWN_ERROR → transitorio", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "abc", lon: "xyz" }]),
+      googleStatus("UNKNOWN_ERROR"),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual({
-      coords: null,
-      motivo: "nao_encontrado",
-    });
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "transitorio" },
+    );
   });
 
-  it("lat/lon string '0'/'0' → coordenadas válidas (Gulf of Guinea, não nulo)", async () => {
-    // Number('0') = 0, Number.isFinite(0) = true. lat=0 lon=0 é um ponto real.
-    // Esse caso garante que a verificação isFinite não rejeita zero por engano.
-    // (O guard `dentroDoBrasil` vale SÓ para o caminho do CEP do cliente — a
-    //  loja pode, em tese, ser geocodificada em qualquer lugar.)
+  it("status:'OK' mas results vazio (defensivo) → nao_encontrado", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "0", lon: "0" }]),
+      new Response(JSON.stringify({ status: "OK", results: [] }), {
+        status: 200,
+      }),
     );
 
-    const r = await geocodificarEnderecoComMotivo("Gulf of Guinea");
-
-    expect(r).toEqual({ coords: { latitude: 0, longitude: 0 } });
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
   });
 
-  it("resposta JSON não é array (objeto) → nao_encontrado sem lançar", async () => {
-    // Nominatim às vezes retorna { error: '...' } em vez de []. O código usa
-    // Array.isArray() — se isso for removido por acidente, este caso falha.
+  it("lat/lng não-finitos em status OK → nao_encontrado", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk({ error: "Unable to geocode" }),
+      new Response(
+        JSON.stringify({
+          status: "OK",
+          results: [{ geometry: { location: { lat: "abc", lng: "xyz" } } }],
+        }),
+        { status: 200 },
+      ),
     );
 
-    await expect(
-      geocodificarEnderecoComMotivo("endereço inválido"),
-    ).resolves.toEqual({ coords: null, motivo: "nao_encontrado" });
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
+  });
+
+  it("status AUSENTE no corpo (sem campo `status`) → transitorio, nunca lança", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [] }), { status: 200 }),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "transitorio" },
+    );
+  });
+
+  it("status `null` (JSON malformado além do esperado) → transitorio, nunca lança", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: null, results: [] }), {
+        status: 200,
+      }),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "transitorio" },
+    );
+  });
+
+  it("corpo 200 OK que não é JSON válido → transitorio, sem propagar exceção de parse", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("isto não é JSON", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "transitorio" },
+    );
+  });
+
+  it("status:'OK' com results[0] SEM `geometry` nenhuma → nao_encontrado", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: "OK", results: [{}] }), {
+        status: 200,
+      }),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
+  });
+
+  it("status:'OK' com `geometry` SEM `location` → nao_encontrado", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ status: "OK", results: [{ geometry: {} }] }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
+  });
+
+  it("lat presente e lng AUSENTE (chave inexistente, não só undefined) → nao_encontrado", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: "OK",
+          results: [{ geometry: { location: { lat: -23.5 } } }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
+  });
+
+  // Bug real encontrado ao reforçar a cobertura da issue 190: `Number(null)`
+  // e `Number(false)` são 0, que É finito — sem a guarda `typeof === "number"`
+  // (geocodificarEndereco.ts, consultarGoogle), lat/lng `null`/`false` seriam
+  // aceitos como a coordenada (0,0) (Golfo da Guiné) em vez de `nao_encontrado`.
+  // Especialmente grave no caminho da LOJA: aqui NÃO há guard `dentroDoBrasil`
+  // (só o caminho do CEP do cliente tem essa defesa em profundidade) — um
+  // endereço de loja mal geocodificado viraria silenciosamente (0,0).
+  it("lat/lng explicitamente `null` → nao_encontrado, NUNCA coords (0,0) (Number(null)===0 é finito)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: "OK",
+          results: [{ geometry: { location: { lat: null, lng: null } } }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
+  });
+
+  it("lat/lng booleanos (`false`) → nao_encontrado, NUNCA coords (0,0) (Number(false)===0 é finito)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: "OK",
+          results: [{ geometry: { location: { lat: false, lng: false } } }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+      { coords: null, motivo: "nao_encontrado" },
+    );
   });
 });
 
-// =============================================================================
-// [185/D3] A consulta LIVRE não decide mais cacheabilidade — nem lê, nem grava.
-// RED: hoje `cepCacheavel(consulta)` faz este caminho tocar o Redis sempre que a
-// string tem exatamente 8 dígitos. Depois do GREEN, o cache é responsabilidade
-// exclusiva de `geocodificarCepResolvido(cep, …)`, que recebe a chave explícita.
-// =============================================================================
-describe("[185] geocodificarEnderecoComMotivo NÃO toca o cache de coordenadas", () => {
+// ── 17: nenhum log carrega (lat,lng) ou a consulta ──────────────────────────
+describe("geocodificarEnderecoComMotivo — 17) não-vazamento de coords/consulta/chave em log", () => {
+  const cenarios: Array<[string, () => Promise<Response> | Response]> = [
+    ["OVER_QUERY_LIMIT", () => googleStatus("OVER_QUERY_LIMIT")],
+    ["REQUEST_DENIED", () => googleStatus("REQUEST_DENIED")],
+    ["INVALID_REQUEST", () => googleStatus("INVALID_REQUEST")],
+    ["UNKNOWN_ERROR", () => googleStatus("UNKNOWN_ERROR")],
+  ];
+
+  it.each(cenarios)("status %s → log não contém coords/consulta/chave", async (_status, resp) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(await resp());
+    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    const logado = erroSpy.mock.calls
+      .map((c) => c.map((a) => String(a)).join(" "))
+      .join(" | ");
+    expect(logado).not.toContain(CHAVE_GOOGLE);
+    expect(logado).not.toContain(ENDERECO_LOJA);
+    expect(logado).not.toMatch(/-?\d{1,3}\.\d{4,}/); // padrão de lat/lng
+  });
+});
+
+// ── Cache continua fora do caminho da loja (185/D3, inalterado pela 190) ────
+describe("[190] geocodificarEnderecoComMotivo NÃO toca o cache de coordenadas", () => {
   it("endereço completo da loja → get e set NUNCA chamados", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "-23.5", lon: "-46.6" }]),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
     expect(r).toEqual({ coords: { latitude: -23.5, longitude: -46.6 } });
     expect(getMock).not.toHaveBeenCalled();
     expect(setMock).not.toHaveBeenCalled();
-  });
-
-  it("consulta que POR ACASO tem 8 dígitos → segue sem cache (predicado removido)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "-23.5", lon: "-46.6" }]),
-    );
-
-    await geocodificarEnderecoComMotivo("12900-000");
-
-    expect(getMock).not.toHaveBeenCalled();
-    expect(setMock).not.toHaveBeenCalled();
-  });
-
-  it("um valor cacheado NÃO é devolvido por esta função (cache não é lido aqui)", async () => {
-    // Se o predicado por formato voltar, este par cacheado sequestraria o
-    // resultado da consulta livre — exatamente o acoplamento que a D3 remove.
-    getMock.mockResolvedValue({ latitude: -1, longitude: -1, v: 2 });
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      nominatimOk([{ lat: "-23.5", lon: "-46.6" }]),
-    );
-
-    const r = await geocodificarEnderecoComMotivo("12900-000");
-
-    expect(r).toEqual({ coords: { latitude: -23.5, longitude: -46.6 } });
-  });
-
-  it("o caminho da loja NÃO restringe por país (escopo da issue 186, não desta)", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(nominatimOk([{ lat: "-23.5", lon: "-46.6" }]));
-
-    await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
-
-    expect(String(fetchSpy.mock.calls[0]?.[0])).not.toContain("countrycodes");
   });
 });
 

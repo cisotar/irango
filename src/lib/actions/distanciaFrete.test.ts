@@ -3,21 +3,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 /**
  * Testes do helper neutro distanciaDaLojaAoCep (src/lib/actions/distanciaFrete.ts).
  *
- * RED (issue 185, crítica): a assinatura MUDA — ganha um 4º parâmetro
- * OBRIGATÓRIO `resolverEndereco: () => Promise<EnderecoCepResolvido | null>`
- * (convenção da issue 160: parâmetro obrigatório impede que um caller esqueça e
- * caia silenciosamente no caminho quebrado) — e o CEP deixa de ser a consulta
- * enviada ao Nominatim:
+ * RED (issue 190, crítica): plan/tecnico-geocoding-google.md simplifica o
+ * CONTRATO — `distanciaFrete.ts` PARA de importar/chamar
+ * `montarConsultaCepCliente` (ou a versão em cascata, `montarConsultasCepCliente`)
+ * e passa `resolverEndereco` DIRETO para `geocodificarCepResolvido`, que já
+ * orquestra a cascata internamente (decisão 1 do plano):
  *
- *   antes:  geocodificarEndereco(cep)                    ← CEP cru = causa raiz
- *   depois: geocodificarCepResolvido(cep, thunk)         ← CEP só como CHAVE
- *           thunk = resolverEndereco() → montarConsultaCepCliente(e) | null
+ *   antes (185): geocodificarCepResolvido(cep, async () => {
+ *                  const resolvido = await resolverEndereco();
+ *                  return resolvido ? montarConsultaCepCliente(resolvido) : null;
+ *                })
+ *   depois (190): geocodificarCepResolvido(cep, resolverEndereco)
  *
- * Contrato fail-closed preservado (RN-5): undefined em qualquer falha ou
- * pré-condição ausente; NUNCA lança; NUNCA arredonda.
+ * `resolverEndereco` já tem o shape certo (`() => Promise<EnderecoCepResolvido
+ * | null>`) — o thunk deixa de existir neste módulo. Ajuste de CONTRATO, não de
+ * comportamento observável (paridade preview↔autoritativo permanece igual).
  *
  * Mocks só de I/O externo e dos módulos vizinhos — a orquestração é o que está
- * sob teste. Nenhum teste bate na rede (nem ViaCEP nem Nominatim).
+ * sob teste. Nenhum teste bate na rede (nem ViaCEP nem Google).
  */
 
 const buscarCoordsLoja = vi.fn();
@@ -25,16 +28,10 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarCoordsLoja: (...a: unknown[]) => buscarCoordsLoja(...a),
 }));
 
-// Novo colaborador: dona única do cache CEP→coords + portões anti-ban.
+// Novo colaborador: dona única do cache CEP→coords + guarda de custo.
 const geocodificarCepResolvido = vi.fn();
 vi.mock("@/lib/utils/geocodificarEndereco", () => ({
   geocodificarCepResolvido: (...a: unknown[]) => geocodificarCepResolvido(...a),
-}));
-
-// Construtor puro da consulta textual (D1c).
-const montarConsultaCepCliente = vi.fn();
-vi.mock("@/lib/utils/geocodingCepCliente", () => ({
-  montarConsultaCepCliente: (...a: unknown[]) => montarConsultaCepCliente(...a),
 }));
 
 const haversine = vi.fn();
@@ -46,6 +43,10 @@ import { distanciaDaLojaAoCep } from "./distanciaFrete";
 
 const svc = { __role: "service" } as never;
 const LOJA_ID = "11111111-1111-1111-1111-111111111111";
+// IP de teste (RFC 5737 TEST-NET-3 — reservado para documentação). 190/auditoria:
+// `distanciaDaLojaAoCep` ganhou `ip` como 5º parâmetro OBRIGATÓRIO, repassado
+// direto a `geocodificarCepResolvido` (teto diário secundário por IP).
+const IP_TESTE = "203.0.113.42";
 
 // Caso reproduzido na issue 185.
 const CEP = "12914-190";
@@ -55,10 +56,9 @@ const ENDERECO_RESOLVIDO = {
   cidade: "Bragança Paulista",
   uf: "SP",
 };
-const CONSULTA = "Jardim Europa, Bragança Paulista - SP, Brasil";
 // Coords cadastradas de "Pão do Ciso" (issue 185).
 const LOJA_COORDS = { latitude: -22.9610457, longitude: -46.5422615 };
-// Par que o Nominatim devolve para a consulta acima (evidência da issue).
+// Par que o Google devolve para o CEP acima (evidência da issue 190).
 const CLIENTE_COORDS = { latitude: -22.9520235, longitude: -46.5418586 };
 
 /** Resolvedor memoizado de sucesso, como frete.ts/pedido.ts o constroem. */
@@ -66,29 +66,17 @@ function resolvedorOk() {
   return vi.fn(async () => ENDERECO_RESOLVIDO);
 }
 
-/** Resolvedor fail-closed: ViaCEP indisponível / CEP inexistente. */
-function resolvedorNulo() {
-  return vi.fn(async () => null);
-}
-
-/** Extrai o thunk (2º argumento) passado a geocodificarCepResolvido. */
-function thunkCapturado(): () => Promise<string | null> {
-  const args = geocodificarCepResolvido.mock.calls[0];
-  return args?.[1] as () => Promise<string | null>;
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   buscarCoordsLoja.mockResolvedValue(LOJA_COORDS);
   geocodificarCepResolvido.mockResolvedValue({ coords: CLIENTE_COORDS });
-  montarConsultaCepCliente.mockReturnValue(CONSULTA);
   haversine.mockReturnValue(7.42);
 });
 
 describe("distanciaDaLojaAoCep — pré-condições (fail-closed, sem I/O à toa)", () => {
   it("CEP null → undefined SEM tocar em coords, ViaCEP ou geocoding", async () => {
     const resolver = resolvedorOk();
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, null, resolver);
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, null, resolver, IP_TESTE);
     expect(r).toBeUndefined();
     expect(buscarCoordsLoja).not.toHaveBeenCalled();
     expect(geocodificarCepResolvido).not.toHaveBeenCalled();
@@ -97,7 +85,7 @@ describe("distanciaDaLojaAoCep — pré-condições (fail-closed, sem I/O à toa
 
   it("CEP undefined → undefined SEM I/O", async () => {
     const resolver = resolvedorOk();
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, undefined, resolver);
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, undefined, resolver, IP_TESTE);
     expect(r).toBeUndefined();
     expect(geocodificarCepResolvido).not.toHaveBeenCalled();
     expect(resolver).not.toHaveBeenCalled();
@@ -105,7 +93,7 @@ describe("distanciaDaLojaAoCep — pré-condições (fail-closed, sem I/O à toa
 
   it("CEP string vazia → undefined SEM I/O", async () => {
     const resolver = resolvedorOk();
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, "", resolver);
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, "", resolver, IP_TESTE);
     expect(r).toBeUndefined();
     expect(geocodificarCepResolvido).not.toHaveBeenCalled();
     expect(resolver).not.toHaveBeenCalled();
@@ -115,7 +103,7 @@ describe("distanciaDaLojaAoCep — pré-condições (fail-closed, sem I/O à toa
     buscarCoordsLoja.mockResolvedValue(null);
     const resolver = resolvedorOk();
 
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver);
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver, IP_TESTE);
 
     expect(r).toBeUndefined();
     expect(geocodificarCepResolvido).not.toHaveBeenCalled();
@@ -125,57 +113,43 @@ describe("distanciaDaLojaAoCep — pré-condições (fail-closed, sem I/O à toa
   });
 
   it("buscarCoordsLoja recebe o client service_role e o lojaId (§19)", async () => {
-    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
+    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
     expect(buscarCoordsLoja).toHaveBeenCalledWith(svc, LOJA_ID);
   });
 });
 
-describe("distanciaDaLojaAoCep — [185] o CEP é CHAVE, não consulta", () => {
-  it("chama geocodificarCepResolvido(cep, thunk) — NUNCA geocodifica o CEP cru", async () => {
-    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
+describe("distanciaDaLojaAoCep — [190] resolverEndereco é passado DIRETO, sem thunk local", () => {
+  it("30) chama geocodificarCepResolvido(cep, resolverEndereco) — o mesmo resolver, sem embrulho", async () => {
+    const resolver = resolvedorOk();
+    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver, IP_TESTE);
 
     expect(geocodificarCepResolvido).toHaveBeenCalledTimes(1);
-    const [primeiro, segundo] = geocodificarCepResolvido.mock.calls[0]!;
+    const [primeiro, segundo, terceiro] = geocodificarCepResolvido.mock.calls[0]!;
     expect(primeiro).toBe(CEP); // chave de cache
-    expect(typeof segundo).toBe("function"); // consulta = thunk, não string
+    // Contrato 190: o 2º argumento é o PRÓPRIO `resolverEndereco` recebido —
+    // não mais um thunk local que embrulha `montarConsultaCepCliente`. A
+    // cascata de consultas passou a ser responsabilidade do módulo de
+    // geocoding, não deste caller.
+    expect(segundo).toBe(resolver);
+    // 190/auditoria (achado MÉDIO): o 3º argumento é o `ip` recebido, repassado
+    // sem transformação — é o identificador do teto diário secundário por IP.
+    expect(terceiro).toBe(IP_TESTE);
   });
 
-  it("o thunk resolve o CEP no servidor e devolve a consulta textual", async () => {
-    const resolver = resolvedorOk();
-    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver);
-
-    const consulta = await thunkCapturado()();
-
-    expect(resolver).toHaveBeenCalledTimes(1);
-    expect(montarConsultaCepCliente).toHaveBeenCalledWith(ENDERECO_RESOLVIDO);
-    expect(consulta).toBe(CONSULTA);
-    // O CEP não vaza para a consulta (causa raiz da 185).
-    expect(consulta).not.toContain("12914");
-  });
-
-  it("ViaCEP falhou (resolvedor null) → thunk devolve null, SEM consulta de consolo", async () => {
-    const resolver = resolvedorNulo();
-    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver);
-
-    const consulta = await thunkCapturado()();
-
-    expect(consulta).toBeNull();
-    // Nem tenta montar consulta a partir de nada — e jamais cai no CEP cru.
-    expect(montarConsultaCepCliente).not.toHaveBeenCalled();
-  });
-
-  it("montarConsultaCepCliente devolve null (sem cidade/uf) → thunk devolve null", async () => {
-    montarConsultaCepCliente.mockReturnValue(null);
-    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
-
-    await expect(thunkCapturado()()).resolves.toBeNull();
-  });
-
-  it("o thunk NÃO é invocado pelo helper — quem decide é o geocoder (após o cache)", async () => {
+  it("o helper NÃO invoca o resolvedor — quem decide é o geocoder (após o cache)", async () => {
     // Memoização + cache: em cache hit, nenhuma ida ao ViaCEP acontece.
     const resolver = resolvedorOk();
-    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver);
+    await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver, IP_TESTE);
     expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it("nenhum import de montarConsultaCepCliente/montarConsultasCepCliente no código-fonte", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("./distanciaFrete.ts", import.meta.url),
+      "utf8",
+    );
+    expect(src).not.toMatch(/montarConsultas?CepCliente/);
   });
 });
 
@@ -185,7 +159,7 @@ describe("distanciaDaLojaAoCep — resultado do geocoding", () => {
       coords: null,
       motivo: "transitorio",
     });
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
     expect(r).toBeUndefined();
     expect(haversine).not.toHaveBeenCalled();
   });
@@ -195,13 +169,13 @@ describe("distanciaDaLojaAoCep — resultado do geocoding", () => {
       coords: null,
       motivo: "nao_encontrado",
     });
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
     expect(r).toBeUndefined();
     expect(haversine).not.toHaveBeenCalled();
   });
 
   it("sucesso → haversine(lojaLat, lojaLng, cliLat, cliLng) e retorno EXATO (sem arredondar)", async () => {
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
 
     expect(haversine).toHaveBeenCalledTimes(1);
     expect(haversine).toHaveBeenCalledWith(
@@ -215,7 +189,7 @@ describe("distanciaDaLojaAoCep — resultado do geocoding", () => {
 
   it("haversine retorna 0 (loja = cliente) → 0, não undefined", async () => {
     haversine.mockReturnValue(0);
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
     expect(r).toBe(0);
   });
 });
@@ -228,7 +202,7 @@ describe("distanciaDaLojaAoCep — [185] caso numérico 12914-190 × Pão do Cis
     );
     haversine.mockImplementation(real.haversine);
 
-    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk());
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
 
     expect(typeof r).toBe("number");
     // Hoje o CEP cru resolvia para uma estrada na República Tcheca (~9.700 km).
@@ -241,21 +215,24 @@ describe("distanciaDaLojaAoCep — fail-closed total (nunca propaga exceção)",
   it("buscarCoordsLoja lança → undefined", async () => {
     buscarCoordsLoja.mockRejectedValue(new Error("connection refused"));
     await expect(
-      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk()),
+      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE),
     ).resolves.toBeUndefined();
   });
 
   it("geocodificarCepResolvido lança → undefined", async () => {
     geocodificarCepResolvido.mockRejectedValue(new Error("timeout nominatim"));
     await expect(
-      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk()),
+      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE),
     ).resolves.toBeUndefined();
   });
 
-  it("resolvedor lança dentro do thunk → undefined (não propaga)", async () => {
+  it("resolvedor lança quando invocado pelo geocoder → undefined (não propaga)", async () => {
     geocodificarCepResolvido.mockImplementation(
-      async (_cep: string, thunk: () => Promise<string | null>) => {
-        await thunk();
+      async (
+        _cep: string,
+        resolverEndereco: () => Promise<unknown>,
+      ) => {
+        await resolverEndereco();
         return { coords: null, motivo: "transitorio" };
       },
     );
@@ -264,7 +241,7 @@ describe("distanciaDaLojaAoCep — fail-closed total (nunca propaga exceção)",
     });
 
     await expect(
-      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver),
+      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolver, IP_TESTE),
     ).resolves.toBeUndefined();
   });
 
@@ -273,7 +250,7 @@ describe("distanciaDaLojaAoCep — fail-closed total (nunca propaga exceção)",
       throw new Error("NaN coords");
     });
     await expect(
-      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk()),
+      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE),
     ).resolves.toBeUndefined();
   });
 });

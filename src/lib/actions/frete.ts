@@ -136,7 +136,7 @@ export async function calcularFreteAction(
     //     o helper é fail-closed (undefined em qualquer falha/pré-condição ausente).
     //     distanciaKm jamais vem do cliente — derivado 100% no servidor (RN-4).
     const svc = createServiceClient();
-    const distanciaKm = await distanciaDaLojaAoCep(svc, loja_id, cep, resolverCep);
+    const distanciaKm = await distanciaDaLojaAoCep(svc, loja_id, cep, resolverCep, ip);
     if (typeof distanciaKm === "number") endereco.distanciaKm = distanciaKm;
 
     // 4) Reusa a MESMA lib do recálculo autoritativo (RN-C4 + paridade preview↔real).

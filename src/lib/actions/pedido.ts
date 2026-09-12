@@ -292,6 +292,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         dados.loja_id,
         endereco.cep,
         resolverCep,
+        ip,
       );
       if (typeof distanciaKm === "number") {
         enderecoAutoritativo = { ...enderecoAutoritativo, distanciaKm };
