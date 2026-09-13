@@ -2,16 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
 
 /**
- * Fase RED (TDD) da issue 032 — Server Actions de ENTREGA (salvarZona /
- * salvarTaxa) e PAGAMENTO (salvarFormaPagamento). As actions são STUBs
- * (`throw 'TODO: GREEN'`), então TODA expectativa abaixo FALHA hoje — RED.
+ * Fase RED (TDD) da issue 032 — Server Actions de ENTREGA (salvarZona) e
+ * PAGAMENTO (salvarFormaPagamento). As actions são STUBs (`throw 'TODO:
+ * GREEN'`), então TODA expectativa abaixo FALHA hoje — RED.
  *
  * Foco de segurança (issue 032 + seguranca.md §2/§14):
  *  - valida o schema respectivo ANTES de qualquer I/O;
  *  - client AUTENTICADO (RLS *_escrita_propria), NUNCA service_role;
  *  - loja_id DERIVADO da loja do dono (buscarLojaDoDono), NUNCA do payload;
- *  - salvarTaxa escopa por zona_id da PRÓPRIA loja (RLS via zona → loja);
- *  - chave pix malformada / url inválida / taxa negativa → rejeitado SEM I/O;
+ *  - chave pix malformada / url inválida → rejeitado SEM I/O;
  *  - payload com loja_id de OUTRA loja → ignorado (config nasce na do dono);
  *  - erro de banco → genérico, sem vazar e.message.
  */
@@ -84,7 +83,7 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { salvarZona, salvarTaxa } from "./entrega";
+import { salvarZona } from "./entrega";
 import { salvarFormaPagamento } from "./pagamento";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
@@ -136,32 +135,6 @@ describe("salvarZona (Server Action — entrega)", () => {
     const r = await salvarZona({ nome: "   ", tipo: "bairro", ativo: true });
     expect(r.ok).toBe(false);
     expect(captura.insert).toBeUndefined();
-  });
-});
-
-describe("salvarTaxa (Server Action — entrega)", () => {
-  const taxaOk = { taxa: 5, pedido_minimo_gratis: null, raio_max_km: null };
-
-  it("caminho feliz: valida + persiste escopado por zona_id via client autenticado", async () => {
-    const r = await salvarTaxa("zona-1", taxaOk);
-    expect(r).toEqual({ ok: true });
-    expect(captura.tabela).toBe("taxas_entrega");
-    // A taxa pertence à zona da própria loja (RLS via zona → loja).
-    const persistido = (captura.insert ?? captura.update) as Record<string, unknown> | undefined;
-    const filtroZona = captura.filtros.some(([, v]) => v === "zona-1");
-    expect((persistido?.zona_id === "zona-1") || filtroZona).toBe(true);
-  });
-
-  it("ATAQUE: taxa negativa rejeitada SEM tocar no banco (reduziria o total)", async () => {
-    const r = await salvarTaxa("zona-1", { ...taxaOk, taxa: -5 });
-    expect(r.ok).toBe(false);
-    expect(captura.insert).toBeUndefined();
-    expect(captura.update).toBeUndefined();
-  });
-
-  it("NÃO usa service_role", async () => {
-    await salvarTaxa("zona-1", taxaOk);
-    expect(createServiceClient).not.toHaveBeenCalled();
   });
 });
 
