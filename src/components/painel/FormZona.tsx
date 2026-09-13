@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Loader2, Plus, X } from "lucide-react";
+import { IMaskInput } from "react-imask";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { schemaZonaCompleta } from "@/lib/validacoes/entrega";
+import {
+  cepInteiroParaMascara,
+  montarPayloadZona,
+} from "@/components/painel/payloadZona";
 import type {
   criarZona as criarZonaLojista,
   atualizarZona as atualizarZonaLojista,
@@ -23,6 +28,9 @@ export type ZonaInicial = {
   taxa: number | null;
   pedido_minimo_gratis: number | null;
   raio_max_km: number | null;
+  /** Faixa de CEP como inteiro, igual ao banco (issue 183); a máscara é da UI. */
+  cep_inicio: number | null;
+  cep_fim: number | null;
   bairros: string[];
 };
 
@@ -41,13 +49,9 @@ type TipoZona = "bairro" | "raio_km" | "faixa_cep";
 const selectClassName =
   "flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
-/** Converte string de moeda BR (vírgula) para número; vazio → null. */
-function paraNumero(valor: string): number | null {
-  const limpo = valor.replace(",", ".").trim();
-  if (limpo === "") return null;
-  const n = Number(limpo);
-  return Number.isNaN(n) ? null : n;
-}
+/** Mesmo visual dos `Input` do shadcn, aplicado ao `IMaskInput` (não é shadcn). */
+const inputMascaraClassName =
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm";
 
 /**
  * Form de zona de entrega (issue 046). Client component.
@@ -78,6 +82,12 @@ export function FormZona({
   const [raioMaxKm, setRaioMaxKm] = useState(
     inicial?.raio_max_km != null ? String(inicial.raio_max_km) : "",
   );
+  const [cepInicio, setCepInicio] = useState(
+    cepInteiroParaMascara(inicial?.cep_inicio ?? null),
+  );
+  const [cepFim, setCepFim] = useState(
+    cepInteiroParaMascara(inicial?.cep_fim ?? null),
+  );
   const [ativo, setAtivo] = useState(inicial?.ativo ?? true);
 
   const [bairros, setBairros] = useState<string[]>(inicial?.bairros ?? []);
@@ -100,22 +110,20 @@ export function FormZona({
     setBairros((atual) => atual.filter((b) => b !== nomeBairro));
   }
 
-  function montarPayload() {
-    return {
-      nome: nome.trim(),
-      tipo,
-      ativo,
-      taxa: {
-        taxa: paraNumero(taxa) ?? 0,
-        pedido_minimo_gratis: paraNumero(pedidoMinimoGratis),
-        raio_max_km: tipo === "raio_km" ? paraNumero(raioMaxKm) : null,
-      },
-      bairros: tipo === "bairro" ? bairros : [],
-    };
-  }
-
   function salvar() {
-    const parsed = schemaZonaCompleta.safeParse(montarPayload());
+    const parsed = schemaZonaCompleta.safeParse(
+      montarPayloadZona({
+        nome,
+        tipo,
+        ativo,
+        taxa,
+        pedidoMinimoGratis,
+        raioMaxKm,
+        cepInicio,
+        cepFim,
+        bairros,
+      }),
+    );
     if (!parsed.success) {
       toast.error(
         parsed.error.issues[0]?.message ?? "Confira os dados da zona.",
@@ -209,6 +217,39 @@ export function FormZona({
             Configure com margem: CEPs brasileiros podem cair no centro do
             bairro ou da cidade, não no endereço exato. Para atender 5 km reais,
             configure 7-8 km.
+          </p>
+        </div>
+      )}
+
+      {tipo === "faixa_cep" && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="zona-cep-inicio">CEP inicial</Label>
+            <IMaskInput
+              id="zona-cep-inicio"
+              mask="00000-000"
+              value={cepInicio}
+              onAccept={(valor: string) => setCepInicio(valor)}
+              inputMode="numeric"
+              placeholder="00000-000"
+              className={inputMascaraClassName}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="zona-cep-fim">CEP final</Label>
+            <IMaskInput
+              id="zona-cep-fim"
+              mask="00000-000"
+              value={cepFim}
+              onAccept={(valor: string) => setCepFim(valor)}
+              inputMode="numeric"
+              placeholder="00000-000"
+              className={inputMascaraClassName}
+            />
+          </div>
+          <p className="col-span-2 text-xs text-muted-foreground">
+            A faixa é inclusiva: pedidos com CEP entre o inicial e o final são
+            atendidos por esta zona.
           </p>
         </div>
       )}
