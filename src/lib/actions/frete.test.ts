@@ -657,6 +657,18 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
     expect(distanciaDaLojaAoCep).not.toHaveBeenCalled();
   });
 
+  it("ATAQUE: CEP malformado é rejeitado sem tocar no banco (achado BAIXA auditoria 183 — paridade preview↔autoritativo)", async () => {
+    // Sem o regex, "1" viraria cepDigitos="1" em zonaAtende (faixa_cep) e
+    // poderia casar uma faixa que o autoritativo (schemaEnderecoEntrega,
+    // pedido.ts) rejeitaria de cara — preview mostraria taxa que a cobrança
+    // nunca cobraria.
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: "1" });
+
+    expect(r.ok).toBe(false);
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(distanciaDaLojaAoCep).not.toHaveBeenCalled();
+  });
+
   it("[185-P8] §19/§21: a resposta do preview nunca contém coordenadas", async () => {
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
     distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);

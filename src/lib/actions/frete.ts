@@ -48,13 +48,15 @@ import {
 // RFC-4122 — alinhado com schemaCheckout e schemaPayloadPedido do projeto.
 // (067) cep é OPCIONAL (espelha o autoritativo, onde endereco.cep pode faltar):
 // usado para reconciliar o bairro CANÔNICO (ViaCEP) e para casar zonas
-// tipo='faixa_cep'. resolverCepServidor já normaliza dígitos internamente, então
-// a máscara do CEP é tolerada aqui — sem reimplementar limpeza.
+// tipo='faixa_cep'. Regex tolera com/sem máscara (mesma de pedido.ts:64) — CEP
+// malformado (ex.: "1") não pode alcançar zonaAtende/faixa_cep sem passar pelo
+// ViaCEP, senão o preview casaria uma faixa que o autoritativo rejeitaria
+// (achado BAIXA auditoria 183: quebra de paridade preview↔cobrança).
 const schemaFretePreview = z
   .object({
     loja_id: z.guid(),
     bairro: z.string().trim().min(1).optional(),
-    cep: z.string().trim().optional(),
+    cep: z.string().trim().regex(/^\d{5}-?\d{3}$/).optional(),
   })
   .strict()
   // Pelo menos um critério de endereço (bairro p/ zona tipo='bairro' OU cep p/

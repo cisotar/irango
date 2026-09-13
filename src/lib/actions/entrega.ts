@@ -12,11 +12,7 @@
 //   - erro genérico no catch (sem vazar e.message).
 
 import { revalidatePath } from "next/cache";
-import {
-  schemaZona,
-  schemaTaxa,
-  schemaZonaCompleta,
-} from "@/lib/validacoes/entrega";
+import { schemaZona, schemaZonaCompleta } from "@/lib/validacoes/entrega";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 
@@ -25,8 +21,8 @@ export type ResultadoEntrega = { ok: true } | { ok: false; erro: string };
 const ROTA = "/painel/configuracoes/entregas";
 
 // ──────────────────────────────────────────────────────────────────────────
-// Primitivas de baixo nível (issue 032) — usadas pelos testes e reutilizáveis.
-// salvarZona insere SÓ a zona; salvarTaxa insere SÓ a taxa escopada por zona.
+// Primitiva de baixo nível (issue 032) — usada pelos testes e reutilizável.
+// salvarZona insere SÓ a zona; taxa entra via criarZona/atualizarZona (1:1).
 
 export async function salvarZona(payload: unknown): Promise<ResultadoEntrega> {
   const parsed = schemaZona.safeParse(payload);
@@ -50,30 +46,6 @@ export async function salvarZona(payload: unknown): Promise<ResultadoEntrega> {
   } catch (e) {
     console.error("[salvarZona]", e);
     return { ok: false, erro: "Não foi possível salvar a zona." };
-  }
-}
-
-export async function salvarTaxa(
-  zonaId: string,
-  payload: unknown,
-): Promise<ResultadoEntrega> {
-  const parsed = schemaTaxa.safeParse(payload);
-  if (!parsed.success) {
-    return { ok: false, erro: "Taxa inválida." };
-  }
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("taxas_entrega")
-      .insert({ ...parsed.data, zona_id: zonaId });
-    if (error) {
-      console.error("[salvarTaxa]", error);
-      return { ok: false, erro: "Não foi possível salvar a taxa." };
-    }
-    return { ok: true };
-  } catch (e) {
-    console.error("[salvarTaxa]", e);
-    return { ok: false, erro: "Não foi possível salvar a taxa." };
   }
 }
 

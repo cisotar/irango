@@ -207,6 +207,9 @@ export function EntregasClient({ zonas, acoes }: EntregasClientProps) {
                       pedido_minimo_gratis:
                         emEdicao.taxa?.pedido_minimo_gratis ?? null,
                       raio_max_km: emEdicao.taxa?.raio_max_km ?? null,
+                      // Sem a faixa aqui, reabrir e salvar zeraria o CEP (183).
+                      cep_inicio: emEdicao.taxa?.cep_inicio ?? null,
+                      cep_fim: emEdicao.taxa?.cep_fim ?? null,
                       bairros: emEdicao.bairros.map((b) => b.nome),
                     }
                   : undefined
