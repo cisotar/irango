@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.24 | **Atualizado:** 2026-09-09
+**Versão:** 0.2.25 | **Atualizado:** 2026-09-13
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -380,9 +380,9 @@ const items = order.order_items
 | Integração Correios/frete calculado | não implementado — fase 1 só frete fixo | fase 2 |
 | Painel admin do SaaS (`/admin/assinantes`) | implementado (issues 083–102): criação de loja e gestão completa em nome do lojista via service_role + verificarAdminSaaS() | — |
 | Idempotência em `criarPedido` | `idempotency_key uuid` em `pedidos` + índice UNIQUE PARCIAL; client gera via `crypto.randomUUID()` por carrinho/sessão; RPC faz dedupe antes da trava de cupom | implementado (issue 063) |
-| Reconciliação CEP↔bairro no frete | bairro vem do form; não validado contra CEP real — cliente pode forçar zona mais barata | issue 064 |
-| Guard `email_confirmed_at` no painel | loja nasce `ativo=false`; acesso ao painel deve checar confirmação de email antes de liberar operações | issue 016 |
-| Reconciliação de user órfão | signUp pode criar `auth.user` sem loja se a action falhar após o signUp; limpeza não implementada | issue 065 |
+| Reconciliação CEP↔bairro no frete | implementado (issue 064): `resolverCepServidor` (`src/lib/utils/resolverCepServidor.ts`) resolve o bairro canônico via ViaCEP no servidor; usado em `frete.ts:127` e `pedido.ts:272`, fail-closed | — |
+| Guard `email_confirmed_at` no painel | implementado (issue 016): `decidirAcessoBase` (`src/lib/utils/acessoPainel.ts:79-81`) redireciona para `/confirmar-email` — ver §5 | — |
+| Reconciliação de user órfão | implementado (issue 065): `garantirLojaDoDono` (`src/lib/supabase/queries/lojas.ts:218-239`), chamado em todo acesso ao painel (`app/(painel)/painel/layout.tsx:68`) — auto-cura, não limpeza — ver §5 | — |
 | Log de auditoria de acesso admin a PII | implementado (issues 146/147): tabela `admin_acessos` (RLS deny-all, só `service_role` — migration `20260707122000`) + `registrarAcessoAdmin` (`admin-loja.ts`) faz INSERT best-effort fire-and-forget; log quebrado nunca derruba a action chamadora — ver `seguranca.md` §Padrão admin | resíduo — fase futura: policy de SELECT admin + retenção/consulta do log |
 | TOCTOU sem lock otimista em `atualizarStatusPedidoAdmin` | UPDATE filtra só por `loja_id`+`id`, sem condicionar pelo status lido; dois admins concorrentes podem gerar last-write-wins silencioso. Prioridade baixa — herdado do padrão do lojista | issue 133 |
 | `isolamento-admin.test.ts` sem `atualizarStatusPedidoAdmin` na lista manual de imports | cobertura por invocação já existe em arquivo dedicado; falta paridade de auto-cobertura | issue 133 |
