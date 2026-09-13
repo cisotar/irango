@@ -251,6 +251,10 @@ export function FormZona({
             A faixa é inclusiva: pedidos com CEP entre o inicial e o final são
             atendidos por esta zona.
           </p>
+          <p className="col-span-2 text-xs text-muted-foreground">
+            O CEP é informado pelo cliente; evite faixas de preço muito
+            diferentes cobrindo a mesma região.
+          </p>
         </div>
       )}
 
