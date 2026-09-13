@@ -33,7 +33,14 @@ cep: z.string().trim().regex(/^\d{5}-?\d{3}$/).optional(),
 **Verificar após:** `calcularFreteAction({loja_id, cep: "1".repeat(1000)})` retorna
 `{ok:false, erro:"Dados de frete inválidos."}` sem nenhum fetch (spy em `global.fetch` com 0 chamadas).
 
-## Achado 2 — guard `dentroDoBrasil` não é reaplicado na leitura do cache
+## Achado 2 — guard `dentroDoBrasil` não é reaplicado na leitura do cache [x] RESOLVIDO 2026-09-13
+
+Corrigido em `src/lib/utils/geocodificarEndereco.ts` (`lerCacheCoordenadas`): o
+guard `dentroDoBrasil` roda na leitura, logo após a checagem de
+`Number.isFinite`. Testes em `src/lib/utils/geocodificarCepResolvido.test.ts`
+("[187] valor de cache na versão corrente mas FORA do Brasil → MISS"): par em
+Praga (50.1, 14.4) com `v:3` é descartado e a resolução é refeita; par válido no
+Brasil segue HIT. Os dois achados desta issue estão fechados.
 
 **Arquivo:** `src/lib/utils/geocodificarEndereco.ts` (`lerCacheCoordenadas`) — valida
 `Number.isFinite` e `v === 2`, mas não a bounding box do Brasil. Hoje não é explorável pelo cliente (só
