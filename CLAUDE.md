@@ -71,3 +71,11 @@ Specs em `specs/` (concluídas em `specs/arquivo/`), issues em `tasks/`, planos 
 - Nunca `git add -A`. Nunca commitar `.env*`. Nenhum email, telefone, chave Pix ou CPF real em código, comentário ou seed.
 - Erro interno não vaza pro cliente: mensagem genérica na UI, detalhe no log do servidor.
 - Commits na branch ativa; nunca trocar de branch no meio de um fluxo.
+- **Nem tudo precisa de PR.** Mudança de código vai por branch + PR (`/pr`). Higiene
+  que não toca código — remover issue entregue de `tasks/`, arquivar issue engavetada,
+  atualizar `references/`, `plan/`, `performance/` — commita direto no `main` e dá push.
+- `main` local e remoto andam juntos: **dê push antes de abrir branch de trabalho.**
+  `main` à frente do `origin/main` faz o squash do PR engolir o commit local (aconteceu
+  no PR #126, que absorveu um `docs(188)` não relacionado).
+- Issue entregue é **removida** de `tasks/`. `tasks/arquivo/` é só para issue engavetada
+  SEM implementação, com nota no topo dizendo por quê (ver 157, 158).
