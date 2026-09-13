@@ -221,6 +221,11 @@ export async function atualizarMeioPagamentoAssinaturaAdmin(
     const { url } = await providerBillingAtivo().urlMeioPagamento(
       loja.provider_subscription_id,
     );
+
+    registrarAcessoAdmin(svc, {
+      lojaId: validacao.lojaId,
+      acao: "atualizar_meio_pagamento",
+    });
     return { ok: true, url };
   } catch (e) {
     console.error("[atualizarMeioPagamentoAssinaturaAdmin]", e);

@@ -92,9 +92,13 @@ vi.mock("@/lib/supabase/service", () => ({
 // ── admin-loja REAL (validarLojaIdAdmin/prepararContextoAdmin/revalidarLojaAdmin):
 //    o z.guid() e o fail-closed de verdade são exercitados. Só `registrarAcessoAdmin`
 //    vira no-op (fire-and-forget, não é o sob-teste). ─────────────────────────
+const registrarAcessoAdmin = vi.fn();
 vi.mock("@/lib/actions/admin-loja", async (orig) => {
   const real = (await orig()) as Record<string, unknown>;
-  return { ...real, registrarAcessoAdmin: vi.fn() };
+  return {
+    ...real,
+    registrarAcessoAdmin: (...a: unknown[]) => registrarAcessoAdmin(...a),
+  };
 });
 
 // ── Queries (I/O de banco): mockadas — testamos ORQUESTRAÇÃO, não o banco.
@@ -366,6 +370,18 @@ describe("(c) assinatura_status nunca escrito — só o webhook 077 é autoridad
     expect(r).toEqual({ ok: true, url: "https://provider/x" });
     expect(urlMeioPagamento).toHaveBeenCalledWith(SUB_ID);
     expect(persistirAssinaturaLoja).not.toHaveBeenCalled();
+  });
+
+  it("atualizarMeioPagamentoAssinaturaAdmin happy → registra a trilha de auditoria (155)", async () => {
+    buscarLojaAdminPorId.mockResolvedValue(lojaRow({ provider_subscription_id: SUB_ID }));
+
+    await atualizarMeioPagamentoAssinaturaAdmin(LOJA_A);
+
+    expect(registrarAcessoAdmin).toHaveBeenCalledTimes(1);
+    expect(registrarAcessoAdmin).toHaveBeenCalledWith(clientServico, {
+      lojaId: LOJA_A,
+      acao: "atualizar_meio_pagamento",
+    });
   });
 });
 
