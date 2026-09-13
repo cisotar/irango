@@ -191,8 +191,10 @@ export function ProdutoModal({
     if (!disponivel) return;
     onAdicionar(produto.id, quantidade, opcionaisEscolhidos, observacao);
     // O `key` do SecaoCatalogo não remonta o modal ao reabrir o MESMO produto:
-    // sem este reset a observação anterior vazaria para a próxima adição.
+    // sem este reset a escolha anterior vazaria para a próxima adição.
     setObservacao("");
+    setQuantidade(0);
+    setQtdOpcionais({});
     onOpenChange(false);
   };
 
