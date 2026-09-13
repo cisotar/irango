@@ -55,9 +55,12 @@ export function precarregarSchemaPedido(): Promise<void> {
 if (typeof window !== "undefined") {
   // Fora do caminho crítico de hidratação: idle, ou o próximo tick onde
   // requestIdleCallback não existe (Safari < 16.4).
+  // .bind(window): chamada desvinculada de Web API já rendeu "Illegal
+  // invocation" em engines no passado, e aqui não há browser automatizável
+  // para pegar isso em runtime (issue 176).
   const agendar =
     typeof window.requestIdleCallback === "function"
-      ? window.requestIdleCallback
+      ? window.requestIdleCallback.bind(window)
       : (cb: () => void) => window.setTimeout(cb, 0);
   agendar(() => {
     void precarregarSchemaPedido();
