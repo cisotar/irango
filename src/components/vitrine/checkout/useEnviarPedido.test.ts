@@ -19,7 +19,7 @@
  * entre `prepararAbaWhatsapp` e `criarPedido`, não a semântica de concorrência
  * do React.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ESTADO_INICIAL, type EstadoWizard } from "./estado";
 
@@ -55,7 +55,7 @@ vi.mock("./aberturaWhatsapp", () => ({
 }));
 
 // Import DEPOIS dos vi.mock (hoisted) — precisa vir após as declarações acima.
-const { useEnviarPedido } = await import("./useEnviarPedido");
+const { useEnviarPedido, precarregarSchemaPedido } = await import("./useEnviarPedido");
 
 const LOJA_ID = "0d1e2f30-0000-4000-8000-000000000001";
 const PRODUTO_ID = "0d1e2f30-0000-4000-8000-000000000002";
@@ -83,6 +83,15 @@ function useMontarHook(preAbrirWhatsapp: boolean, estado: EstadoWizard = estadoV
 describe("useEnviarPedido — ordem e efeitos da mecânica do WhatsApp (126)", () => {
   const ordem: string[] = [];
   const abaConcluir = vi.fn();
+
+  // [163] O schema do preview chega por import() em idle, e a pré-carga
+  // automática é guardada por `typeof window` — que não existe em
+  // `environment: node`. Estes 6 casos descrevem o comportamento COM o preview
+  // ativo, então carregamos o schema explicitamente. O comportamento sem ele
+  // (schema ainda não chegou) é coberto em useEnviarPedido.semSchema.test.ts.
+  beforeAll(async () => {
+    await precarregarSchemaPedido();
+  });
 
   beforeEach(() => {
     ordem.length = 0;
