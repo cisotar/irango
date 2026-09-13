@@ -1,3 +1,8 @@
+**Arquivada em 2026-09-13:** decisão de produto — usuário considerou o impacto
+irrelevante na prática (não incomoda o entregador o suficiente pra justificar o
+fix). Bug em si não foi corrigido; `formatarEndereco` ainda lê `e.estado` em vez
+de `e.uf` (ver Problema abaixo). Reabrir se a percepção mudar.
+
 # [157] UF nunca aparece no endereço da mensagem de WhatsApp
 
 **crítica:** NÃO
