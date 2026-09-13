@@ -292,6 +292,22 @@ describe("schemaTaxa — faixa de CEP (par tudo-ou-nada e coerência)", () => {
     );
     expect(r.success).toBe(false);
   });
+
+  it("aceita CEP no limite inferior (0) e superior (99999999)", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: 0, cep_fim: 99999999 }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("descarta campo desconhecido do payload de taxa (strip, não passthrough — a issue 183 nasceu de um strip que ninguém testava)", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ coluna_inventada: "malicioso" } as Record<string, unknown>),
+    );
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data).not.toHaveProperty("coluna_inventada");
+  });
 });
 
 describe("schemaZonaCompleta — faixa condicional ao tipo da zona", () => {

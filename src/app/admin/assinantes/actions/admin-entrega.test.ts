@@ -319,6 +319,33 @@ describe("criarZonaAdmin — sucesso grava zona+taxa+bairros na loja-alvo", () =
     expect(insBairros).toBeDefined();
   });
 
+  it("INSERT taxa grava cep_inicio/cep_fim quando tipo é faixa_cep (issue 183)", async () => {
+    freshClient();
+    const payloadFaixaCep = {
+      ...payloadValido,
+      tipo: "faixa_cep" as const,
+      taxa: {
+        taxa: 7.5,
+        pedido_minimo_gratis: null,
+        raio_max_km: null,
+        cep_inicio: 1000000,
+        cep_fim: 1099999,
+      },
+      bairros: [],
+    };
+
+    const r = await criarZonaAdmin(LOJA_ALVO, payloadFaixaCep);
+
+    expect(r).toEqual({ ok: true });
+    const insTaxa = ops.find(
+      (o) => o.tabela === "taxas_entrega" && o.acao === "insert",
+    );
+    expect(insTaxa).toBeDefined();
+    expect(insTaxa!.payload).toEqual(
+      expect.objectContaining({ cep_inicio: 1000000, cep_fim: 1099999 }),
+    );
+  });
+
   it("loja_id do PAYLOAD é ignorado — gravação usa sempre a loja-alvo da URL", async () => {
     freshClient();
     const payloadComLojaForjada = { ...payloadValido, loja_id: LOJA_OUTRA };
