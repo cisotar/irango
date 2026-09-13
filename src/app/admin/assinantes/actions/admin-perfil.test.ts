@@ -65,8 +65,10 @@ const ordemChamadas: string[] = [];
 const verificarAdminSaaS = vi.fn(async () => {
   ordemChamadas.push("verificarAdminSaaS");
 });
+const obterAdminUserId = vi.fn(() => "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 vi.mock("@/lib/auth/admin", () => ({
   verificarAdminSaaS: () => verificarAdminSaaS(),
+  obterAdminUserId: () => obterAdminUserId(),
 }));
 
 // ── createServiceClient (server-only) → mock. Client `lojas` chainable que
@@ -80,6 +82,8 @@ type UpdateRegistro = {
 const updates: UpdateRegistro[] = [];
 // erro injetável por índice de UPDATE (default: nenhum erro).
 let erroUpdatePorIndice: (idx: number) => unknown = () => null;
+// count injetável por índice de UPDATE (default: 1 — linha encontrada e gravada).
+let countUpdatePorIndice: (idx: number) => number | null = () => 1;
 
 function builderLojas() {
   return {
@@ -91,18 +95,34 @@ function builderLojas() {
         eq(col: string, val: unknown) {
           reg.eqCol = col;
           reg.eqVal = val;
-          // Awaitable: PostgREST devolve { error }. Sem encadear .eq extra aqui
-          // (os UPDATEs do alvo escopam por uma única coluna id).
-          return Promise.resolve({ error: erroUpdatePorIndice(idx) });
+          // Awaitable: PostgREST devolve { error, count }. Sem encadear .eq extra
+          // aqui (os UPDATEs do alvo escopam por uma única coluna id).
+          return Promise.resolve({
+            error: erroUpdatePorIndice(idx),
+            count: countUpdatePorIndice(idx),
+          });
         },
       };
     },
   };
 }
 
+// ── admin_acessos (trilha de auditoria): captura os INSERTs do fire-and-forget
+//    registrarAcessoAdmin (REAL, não mockado — só o wiring com svc é fake). ────
+type InsertAcesso = { admin_user_id: string; loja_id: string; acao: string; metadados: unknown };
+const insertsAcesso: InsertAcesso[] = [];
+
 const clientServico = {
   marker: "svc-fake",
   from(tabela: string) {
+    if (tabela === "admin_acessos") {
+      return {
+        insert(dados: InsertAcesso) {
+          insertsAcesso.push(dados);
+          return Promise.resolve({ error: null });
+        },
+      };
+    }
     if (tabela !== "lojas") {
       throw new Error(`from() inesperado para tabela: ${tabela}`);
     }
@@ -160,10 +180,13 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   ordemChamadas.length = 0;
   updates.length = 0;
+  insertsAcesso.length = 0;
   erroUpdatePorIndice = () => null;
+  countUpdatePorIndice = () => 1;
   verificarAdminSaaS.mockImplementation(async () => {
     ordemChamadas.push("verificarAdminSaaS");
   });
+  obterAdminUserId.mockReturnValue("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   slugExiste.mockResolvedValue(false);
   geocodificarEnderecoComMotivo.mockResolvedValue({
     coords: { latitude: -23.55, longitude: -46.63 },
@@ -333,5 +356,47 @@ describe("salvarPerfilAdmin — whatsapp_envio_automatico (issue 122)", () => {
 
     expect(r).toMatchObject({ ok: false });
     expect(updates).toHaveLength(0);
+  });
+});
+
+// ───────── Caso 6 (issue 164): trilha registra QUAIS campos, nunca valores ────
+describe("salvarPerfilAdmin — trilha de auditoria com campos alterados (164)", () => {
+  it("happy path → registrarAcessoAdmin grava metadados.campos com as CHAVES do patch, sem nenhum valor", async () => {
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toMatchObject({ ok: true });
+    expect(insertsAcesso).toHaveLength(1);
+    const acesso = insertsAcesso[0];
+    expect(acesso.loja_id).toBe(LOJA_ID);
+    expect(acesso.acao).toBe("salvar_perfil_loja");
+
+    const metadados = acesso.metadados as { campos: string[] };
+    expect(metadados.campos).toEqual(Object.keys(updates[0].patch));
+    // Nenhum valor de PII (whatsapp/endereço) vaza para a trilha — só as chaves.
+    expect(JSON.stringify(metadados)).not.toContain("5511999998888");
+    expect(JSON.stringify(metadados)).not.toContain("Praça da Sé");
+  });
+});
+
+// ───────── Caso 7 (issue 164): loja inexistente/excluída entre load e submit ──
+describe("salvarPerfilAdmin — loja inexistente não deve devolver ok:true (164)", () => {
+  it("1º UPDATE com count 0 → { ok:false, erro:'Loja não encontrada.' }, sem 2º UPDATE nem trilha", async () => {
+    countUpdatePorIndice = (idx) => (idx === 0 ? 0 : 1);
+
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toMatchObject({ ok: false, erro: "Loja não encontrada." });
+    expect(updates).toHaveLength(1);
+    expect(insertsAcesso).toHaveLength(0);
+  });
+
+  it("2º UPDATE (coords) com count 0 → { ok:false, erro:'Loja não encontrada.' }, sem trilha", async () => {
+    countUpdatePorIndice = (idx) => (idx === 1 ? 0 : 1);
+
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toMatchObject({ ok: false, erro: "Loja não encontrada." });
+    expect(updates).toHaveLength(2);
+    expect(insertsAcesso).toHaveLength(0);
   });
 });

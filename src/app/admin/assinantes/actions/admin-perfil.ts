@@ -94,8 +94,9 @@ export async function salvarPerfilAdmin(
     // montarPatchPerfil devolve só chaves da allowlist (RN-7); o cast estreita do
     // Record genérico para o tipo do row `lojas` (service client é tipado Database).
     const patch = montarPatchPerfil(dados) as TablesUpdate<"lojas">;
-    const { error } = await escopo.atualizarLoja(patch);
+    const { error, count } = await escopo.atualizarLoja(patch);
     if (error) throw error;
+    if (count === 0) return { ok: false, erro: "Loja não encontrada." };
 
     // 2º UPDATE: par de coords derivado no servidor (RN-1/RN-2), best-effort.
     // Endereço incompleto ou geocoding falho → par NULL (tudo-ou-nada, sem
@@ -110,13 +111,17 @@ export async function salvarPerfilAdmin(
         ? { latitude: null, longitude: null }
         : { latitude: coords.latitude, longitude: coords.longitude };
 
-    const { error: erroCoords } = await escopo.atualizarLoja(coordsPatch);
+    const { error: erroCoords, count: countCoords } =
+      await escopo.atualizarLoja(coordsPatch);
     if (erroCoords) throw erroCoords;
+    if (countCoords === 0) return { ok: false, erro: "Loja não encontrada." };
 
     revalidarLojaAdmin(validacao.lojaId);
     registrarAcessoAdmin(svc, {
       lojaId: validacao.lojaId,
       acao: "salvar_perfil_loja",
+      // Só chaves alteradas, NUNCA valores (PII: telefone/whatsapp/endereço — §8).
+      metadados: { campos: Object.keys(patch) },
     });
 
     return { ok: true, geocodificado: coords !== null };
