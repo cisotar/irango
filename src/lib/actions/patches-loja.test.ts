@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   montarPatchPerfil,
   montarConsultaGeocoding,
+  deveRegeocodificar,
   type DadosPerfil,
 } from "./patches-loja";
 
@@ -214,5 +215,109 @@ describe("montarConsultaGeocoding — gate cidade+estado", () => {
     expect(
       montarConsultaGeocoding({ endereco_cidade: "  ", endereco_estado: "SP" }),
     ).toBeNull();
+  });
+});
+
+// ── Issue 180-A: deveRegeocodificar — o 2º UPDATE deixa de ser incondicional ──
+// O bug: salvar só o nome da loja com o geocoder fora do ar apagava uma
+// localização válida. A comparação sai da MESMA montarConsultaGeocoding dos dois
+// lados (D-180A-1) — nenhuma segunda lista de campos de endereço.
+describe("deveRegeocodificar — só regeocodifica quando o endereço mudou (180-A)", () => {
+  const ENDERECO_LOJA = {
+    endereco_cep: "01310-100",
+    endereco_rua: "Av. Paulista",
+    endereco_numero: "1000",
+    endereco_bairro: "Bela Vista",
+    endereco_cidade: "São Paulo",
+    endereco_estado: "SP",
+  };
+  const LOJA_COM_COORDS = {
+    ...ENDERECO_LOJA,
+    latitude: -23.56,
+    longitude: -46.65,
+  };
+
+  it("endereço idêntico → false (preserva as coords, é o bug da issue)", () => {
+    expect(deveRegeocodificar({ ...ENDERECO_LOJA }, LOJA_COM_COORDS)).toBe(false);
+  });
+
+  it("idêntico a menos de espaços em volta → false (trim da consulta absorve)", () => {
+    expect(
+      deveRegeocodificar(
+        {
+          ...ENDERECO_LOJA,
+          endereco_cidade: "  São Paulo ",
+          endereco_estado: " SP  ",
+          endereco_rua: " Av. Paulista ",
+        },
+        LOJA_COM_COORDS,
+      ),
+    ).toBe(false);
+  });
+
+  it("[D-180A-1] só o CEP mudou → false: o CEP está fora da consulta (186), o ponto seria o mesmo", () => {
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA, endereco_cep: "99999-999" },
+        LOJA_COM_COORDS,
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["endereco_rua", "Rua Augusta"],
+    ["endereco_numero", "2000"],
+    ["endereco_bairro", "Consolação"],
+    ["endereco_cidade", "Campinas"],
+    ["endereco_estado", "RJ"],
+  ])("%s alterado → true (endereço mudou de fato)", (campo, valor) => {
+    expect(
+      deveRegeocodificar({ ...ENDERECO_LOJA, [campo]: valor }, LOJA_COM_COORDS),
+    ).toBe(true);
+  });
+
+  it("endereço completo → incompleto (apagou a cidade) → true; o par vai a NULL (D3)", () => {
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA, endereco_cidade: null },
+        LOJA_COM_COORDS,
+      ),
+    ).toBe(true);
+  });
+
+  it("consultas iguais e NULAS, mas a loja tem coords órfãs → true (limpa o par, D3)", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: -23.56, longitude: -46.65 },
+      ),
+    ).toBe(true);
+  });
+
+  it("consultas iguais e NULAS, loja SEM coords → false (nada a limpar, nada a buscar)", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: null, longitude: null },
+      ),
+    ).toBe(false);
+  });
+
+  it("coord órfã pela METADE (só latitude) não conta como par → false", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: -23.56, longitude: null },
+      ),
+    ).toBe(false);
+  });
+
+  it("endereço igual e loja SEM coords (nunca geocodificada) → false", () => {
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA },
+        { ...ENDERECO_LOJA, latitude: null, longitude: null },
+      ),
+    ).toBe(false);
   });
 });

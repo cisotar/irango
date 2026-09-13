@@ -193,7 +193,15 @@ beforeEach(() => {
   // Reseta a fila de erros injetados no eq do authedClient.
   _eqErros.length = 0;
   // Caminho feliz: já existe loja do dono, slug livre.
-  buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, dono_id: USER_ID, slug: "slug-antigo" });
+  buscarLojaDoDono.mockResolvedValue({
+    id: LOJA_ID,
+    dono_id: USER_ID,
+    slug: "slug-antigo",
+    // (180-A) A row real de `lojas` sempre traz o par (NOT NULL-able, default null).
+    // Loja sem endereço gravado e sem coords: qualquer endereço no payload MUDA.
+    latitude: null,
+    longitude: null,
+  });
   slugExiste.mockResolvedValue(false);
   // Default: geocoding bem-sucedido. Casos de borda sobrescrevem por teste.
   geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
@@ -274,15 +282,15 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     expect(patchCoords).toEqual({ latitude: null, longitude: null });
   });
 
-  it("endereço incompleto (sem cidade/UF) → NÃO chama Nominatim; par NULL; geocodificado:false", async () => {
+  it("endereço incompleto (sem cidade/UF) e loja SEM coords → NÃO chama Nominatim; geocodificado:false", async () => {
     // Só nome/slug: sem âncora geográfica mínima → não geocodifica (economiza a trava global).
+    // (180-A) A loja mockada também não tem coords gravadas: nada a limpar, então
+    // o 2º UPDATE é pulado — antes ele rodava incondicionalmente gravando o par NULL.
     const r = await salvarPerfil(PERFIL_OK);
 
     expect(r).toEqual({ ok: true, geocodificado: false });
     expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    expect(updatePatch).toHaveBeenCalledTimes(2);
-    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
-    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+    expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 
   it("ATAQUE RN-1: payload com latitude/longitude → rejeitado por .strict() ANTES de qualquer I/O", async () => {
@@ -325,6 +333,104 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     for (const id of idsEscritos) {
       expect(id).toBe(LOJA_ID); // jamais um id de terceiro
     }
+  });
+});
+
+// ── (180-A) O 2º UPDATE deixa de ser INCONDICIONAL ───────────────────────────
+// Bug: salvar só o nome da loja com o geocoder fora do ar apagava uma
+// localização válida (par NULL) — a loja sumia da busca por proximidade e as
+// zonas por raio ficavam inativas. O gate `deveRegeocodificar` compara a
+// CONSULTA do payload com a da loja gravada (mesma montarConsultaGeocoding).
+describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)", () => {
+  // Loja JÁ gravada com o mesmo endereço de PERFIL_COM_ENDERECO e coords válidas.
+  const LOJA_GEOCODIFICADA = {
+    id: LOJA_ID,
+    dono_id: USER_ID,
+    slug: PERFIL_COM_ENDERECO.slug,
+    endereco_cep: PERFIL_COM_ENDERECO.endereco_cep,
+    endereco_rua: PERFIL_COM_ENDERECO.endereco_rua,
+    endereco_numero: PERFIL_COM_ENDERECO.endereco_numero,
+    endereco_bairro: PERFIL_COM_ENDERECO.endereco_bairro,
+    endereco_cidade: PERFIL_COM_ENDERECO.endereco_cidade,
+    endereco_estado: PERFIL_COM_ENDERECO.endereco_estado,
+    latitude: COORDS_SP.latitude,
+    longitude: COORDS_SP.longitude,
+  };
+
+  it("CRITÉRIO 1: endereço IGUAL + geocoder fora do ar → geocoder NÃO é chamado, só 1 UPDATE, coords intactas", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_GEOCODIFICADA);
+    // Serviço indisponível: se o 2º UPDATE rodasse, gravaria o par NULL.
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" });
+
+    const r = await salvarPerfil({ ...PERFIL_COM_ENDERECO, nome: "Nome Novo" });
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+    const patch = updatePatch.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch).not.toHaveProperty("latitude");
+    expect(patch).not.toHaveProperty("longitude");
+    expect(patch).toMatchObject({ nome: "Nome Novo" });
+  });
+
+  it("só o CEP mudou → não regeocodifica (CEP está fora da consulta, 186), mas é gravado no 1º UPDATE", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_GEOCODIFICADA);
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" });
+
+    const r = await salvarPerfil({ ...PERFIL_COM_ENDERECO, endereco_cep: "04538-133" });
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+    expect(updatePatch.mock.calls[0][0]).toMatchObject({ endereco_cep: "04538-133" });
+  });
+
+  it("CRITÉRIO 3: endereço ALTERADO + geocoder fora do ar → geocoder chamado, 2º UPDATE com par NULL, motivo transitorio", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_GEOCODIFICADA);
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" });
+
+    const r = await salvarPerfil({ ...PERFIL_COM_ENDERECO, endereco_rua: "Rua Augusta" });
+
+    expect(r).toEqual({ ok: true, geocodificado: false, motivo: "transitorio" });
+    // transitório → 1ª tentativa + 1 retry.
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(2);
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    expect(updatePatch.mock.calls[1][0]).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("endereço igual, loja SEM coords → pula o 2º UPDATE e reporta geocodificado:false (sem motivo)", async () => {
+    buscarLojaDoDono.mockResolvedValue({
+      ...LOJA_GEOCODIFICADA,
+      latitude: null,
+      longitude: null,
+    });
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("coord ÓRFÃ (loja com coords e endereço incompleto) → 2º UPDATE limpa o par (D3 preservada)", async () => {
+    buscarLojaDoDono.mockResolvedValue({
+      id: LOJA_ID,
+      dono_id: USER_ID,
+      slug: PERFIL_OK.slug,
+      endereco_cidade: null,
+      endereco_estado: null,
+      latitude: COORDS_SP.latitude,
+      longitude: COORDS_SP.longitude,
+    });
+
+    const r = await salvarPerfil(PERFIL_OK);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    // Consulta nula: não há o que consultar, mas o par órfão É limpo.
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    expect(updatePatch.mock.calls[1][0]).toEqual({ latitude: null, longitude: null });
   });
 });
 
@@ -629,10 +735,9 @@ describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)",
 
     expect(r).toEqual({ ok: true, geocodificado: false });
     expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    // 2º UPDATE: par NULL (coords zeradas, nunca ímpares)
-    expect(updatePatch).toHaveBeenCalledTimes(2);
-    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
-    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+    // (180-A) A loja mockada também está sem coords: nada a limpar → 2º UPDATE
+    // pulado. O par continua NULL no banco, que é o invariante que importa.
+    expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 
   it("só UF, sem cidade → gate retorna null → Nominatim não chamado; par NULL gravado", async () => {
@@ -645,9 +750,8 @@ describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)",
 
     expect(r).toEqual({ ok: true, geocodificado: false });
     expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    expect(updatePatch).toHaveBeenCalledTimes(2);
-    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
-    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+    // (180-A) Loja sem coords gravadas: nada a limpar → 2º UPDATE pulado.
+    expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 
   it("cidade + UF presentes → Nominatim chamado; consulta contém ambos", async () => {
@@ -710,6 +814,15 @@ describe("salvarPerfil — zeragem de coords ao salvar endereço incompleto", ()
   it("endereço previamente completo agora salvo sem cidade → coords zeradas (par NULL), não fica lixo antigo", async () => {
     // Cenário: loja tinha coords; dono salva perfil sem cidade (sem âncora).
     // A action DEVE gravar { latitude: null, longitude: null } — não pular o 2º UPDATE.
+    // (180-A) O mock explicita o par gravado: é ele que obriga o 2º UPDATE a
+    // rodar (coord órfã de endereço incompleto → limpa; D3 preservada).
+    buscarLojaDoDono.mockResolvedValue({
+      id: LOJA_ID,
+      dono_id: USER_ID,
+      slug: "slug-antigo",
+      latitude: COORDS_SP.latitude,
+      longitude: COORDS_SP.longitude,
+    });
     const r = await salvarPerfil({
       ...PERFIL_OK,
       endereco_rua: "Rua X",
@@ -726,13 +839,11 @@ describe("salvarPerfil — zeragem de coords ao salvar endereço incompleto", ()
     expect(geocodificarComMotivo).not.toHaveBeenCalled();
   });
 
-  it("endereço sem nenhum campo → coords zeradas (par NULL); 2º UPDATE acontece", async () => {
+  it("endereço sem nenhum campo e loja sem coords → par segue NULL; 2º UPDATE pulado (180-A)", async () => {
     // Perfil mínimo (nome + slug) sem nenhum campo de endereço.
     const r = await salvarPerfil(PERFIL_OK);
 
     expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(updatePatch).toHaveBeenCalledTimes(2);
-    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
-    expect(patchCoords).toEqual({ latitude: null, longitude: null });
+    expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 });

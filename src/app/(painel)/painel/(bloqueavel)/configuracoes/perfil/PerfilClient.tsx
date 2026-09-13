@@ -24,6 +24,8 @@ import {
   type UploadLogoLojaProps,
 } from "@/components/painel/UploadLogoLoja";
 import { apenasDigitos, montarPayloadPerfil } from "./montarPayloadPerfil";
+import { AvisoGeocodingDialog } from "./AvisoGeocodingDialog";
+import type { MotivoGeocoding } from "@/lib/utils/geocodificarEndereco";
 
 export type PerfilInicial = {
   nome: string;
@@ -126,6 +128,10 @@ export function PerfilClient({
   const [buscandoCep, setBuscandoCep] = useState(false);
   const numeroRef = useRef<HTMLInputElement>(null);
 
+  // (180-A) Motivo da falha de geocoding do último save; `null` = modal fechado.
+  const [avisoGeocoding, setAvisoGeocoding] = useState<MotivoGeocoding | null>(
+    null,
+  );
   const [enviando, startEnvio] = useTransition();
   const [publicando, startPublicacao] = useTransition();
 
@@ -221,15 +227,10 @@ export function PerfilClient({
         // (008) Aviso acionável conforme o motivo (issue 007): transitório =
         // re-salvar resolve; não-encontrado = corrigir o dado. Sem motivo
         // (compat) mantém o texto antigo.
-        if (resultado.motivo === "transitorio") {
-          toast.warning(
-            "Não conseguimos localizar seu endereço agora. Tente salvar novamente em instantes para ativar as zonas por raio.",
-          );
-        } else {
-          toast.warning(
-            "Não localizamos seu endereço no mapa — confira rua, número e CEP. Zonas por raio ficam inativas até corrigir.",
-          );
-        }
+        // (180-A) O veículo passou de toast a MODAL: loja sem coordenada some da
+        // busca por proximidade e desativa as zonas por raio — sério demais para
+        // um aviso que some sozinho. Os dois textos seguem os mesmos.
+        setAvisoGeocoding(resultado.motivo ?? "nao_encontrado");
       }
       router.refresh();
     });
@@ -246,6 +247,11 @@ export function PerfilClient({
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
+      <AvisoGeocodingDialog
+        motivo={avisoGeocoding ?? undefined}
+        aberto={avisoGeocoding !== null}
+        onFechar={() => setAvisoGeocoding(null)}
+      />
       <h1 className="mb-6 font-heading text-xl font-semibold text-foreground">
         Perfil da loja
       </h1>
