@@ -44,7 +44,8 @@ export function abrirAbaEmBranco(): JanelaWhatsapp | null {
   if (typeof window === "undefined") return null;
   try {
     return window.open("", "_blank");
-  } catch {
+  } catch (e) {
+    console.error("[aberturaWhatsapp:abrir]", e);
     return null;
   }
 }
@@ -65,7 +66,8 @@ function desapossar(janela: JanelaWhatsapp): boolean {
   try {
     janela.opener = null;
     return true;
-  } catch {
+  } catch (e) {
+    console.error("[aberturaWhatsapp:desapossar]", e);
     return false;
   }
 }
@@ -96,14 +98,18 @@ export function prepararAbaWhatsapp(
         try {
           janela.location.href = destino;
           return;
-        } catch {
+        } catch (e) {
           // atribuição pode lançar (COOP, aba já fechada) — cai no close.
+          // [161] NUNCA logar `destino`/`href`: carrega nome, telefone e
+          // endereço do comprador na query string.
+          console.error("[aberturaWhatsapp:navegar]", e);
         }
       }
       try {
         janela.close();
-      } catch {
+      } catch (e) {
         // best-effort: close pode lançar (aba já fechada pelo usuário).
+        console.error("[aberturaWhatsapp:fechar]", e);
       }
     },
   };
