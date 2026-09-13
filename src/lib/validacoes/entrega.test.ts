@@ -14,7 +14,12 @@ import { describe, it, expect } from "vitest";
 //
 // FORA DA RESPONSABILIDADE: cálculo de frete (calcularFrete), match de zona
 // por endereço, RLS/unicidade no banco. Aqui validamos só a forma do dado.
-import { schemaZona, schemaTaxa, schemaBairro } from "./entrega";
+import {
+  schemaZona,
+  schemaTaxa,
+  schemaBairro,
+  schemaZonaCompleta,
+} from "./entrega";
 
 function zonaValida(over: Record<string, unknown> = {}) {
   return {
@@ -160,5 +165,172 @@ describe("schemaBairro — nome", () => {
   it("rejeita nome só de espaços", () => {
     const r = schemaBairro.safeParse({ nome: "   " });
     expect(r.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue 183 — faixa de CEP (RED)
+//
+// schemaTaxa é z.object (strip por padrão) e NÃO declara cep_inicio/cep_fim:
+// toda faixa enviada por uma zona tipo 'faixa_cep' é descartada em silêncio no
+// parse, as colunas gravam NULL e calcularFrete.ts:88 faz a zona nunca atender
+// ninguém. Os casos abaixo espelham o CHECK `taxas_faixa_cep_coerente` da
+// migration 20260615011000_taxas_faixa_cep.sql — o banco é a última linha de
+// defesa, o schema tem que ser a primeira.
+// ---------------------------------------------------------------------------
+
+function zonaCompletaValida(over: Record<string, unknown> = {}) {
+  return {
+    nome: "Centro",
+    tipo: "bairro",
+    ativo: true,
+    taxa: taxaValida(),
+    bairros: [],
+    ...over,
+  };
+}
+
+// A faixa ainda não existe no tipo inferido de schemaTaxa; esta view mantém o
+// type-check compilando para que o RED caia por ASSERÇÃO, não por import.
+type FaixaParseada = {
+  cep_inicio?: number | null;
+  cep_fim?: number | null;
+};
+
+describe("schemaZonaCompleta — faixa de CEP preservada no parse (prova do bug)", () => {
+  it("preserva taxa.cep_inicio/cep_fim em zona tipo faixa_cep", () => {
+    const r = schemaZonaCompleta.safeParse(
+      zonaCompletaValida({
+        tipo: "faixa_cep",
+        taxa: taxaValida({ cep_inicio: 1000000, cep_fim: 1099999 }),
+      }),
+    );
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    const faixa = r.data.taxa as FaixaParseada;
+    expect(faixa.cep_inicio).toBe(1000000);
+    expect(faixa.cep_fim).toBe(1099999);
+  });
+});
+
+describe("schemaTaxa — compat com payload legado (sem faixa)", () => {
+  it("aceita taxa de zona bairro/raio_km sem as chaves de CEP", () => {
+    const r = schemaTaxa.safeParse(taxaValida());
+    expect(r.success).toBe(true);
+  });
+
+  it("resolve o par ausente em null (default), não em undefined", () => {
+    const r = schemaTaxa.safeParse(taxaValida());
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    const faixa = r.data as FaixaParseada;
+    expect(faixa.cep_inicio).toBeNull();
+    expect(faixa.cep_fim).toBeNull();
+  });
+});
+
+describe("schemaTaxa — faixa de CEP (par tudo-ou-nada e coerência)", () => {
+  it("aceita o par completo e coerente", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: 1000000, cep_fim: 1099999 }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita meio-par: cep_inicio sem cep_fim", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: 1000000, cep_fim: null }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita meio-par: cep_fim sem cep_inicio", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: null, cep_fim: 1099999 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita faixa invertida (cep_inicio > cep_fim)", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: 2000000, cep_fim: 1000000 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("aceita faixa de um CEP só (cep_inicio === cep_fim)", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: 1050000, cep_fim: 1050000 }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita CEP negativo", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: -1, cep_fim: 1099999 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita CEP acima de 99999999", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: 1000000, cep_fim: 100000000 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita CEP não-inteiro", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: 1000000.5, cep_fim: 1099999 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita CEP como string mascarada (conversão é do form, não do schema)", () => {
+    const r = schemaTaxa.safeParse(
+      taxaValida({ cep_inicio: "01000-000", cep_fim: "01099-999" }),
+    );
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("schemaZonaCompleta — faixa condicional ao tipo da zona", () => {
+  it("rejeita zona faixa_cep sem faixa (colunas gravariam NULL e a zona não atenderia ninguém)", () => {
+    const r = schemaZonaCompleta.safeParse(
+      zonaCompletaValida({ tipo: "faixa_cep", taxa: taxaValida() }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita zona bairro COM faixa (faixa órfã)", () => {
+    const r = schemaZonaCompleta.safeParse(
+      zonaCompletaValida({
+        tipo: "bairro",
+        taxa: taxaValida({ cep_inicio: 1000000, cep_fim: 1099999 }),
+        bairros: ["Centro"],
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita zona raio_km COM faixa (faixa órfã)", () => {
+    const r = schemaZonaCompleta.safeParse(
+      zonaCompletaValida({
+        tipo: "raio_km",
+        taxa: taxaValida({
+          raio_max_km: 8,
+          cep_inicio: 1000000,
+          cep_fim: 1099999,
+        }),
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("continua aceitando zona bairro sem faixa (sem regressão)", () => {
+    const r = schemaZonaCompleta.safeParse(
+      zonaCompletaValida({ bairros: ["Centro"] }),
+    );
+    expect(r.success).toBe(true);
   });
 });
