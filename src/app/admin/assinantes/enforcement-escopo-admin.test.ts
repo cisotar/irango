@@ -171,7 +171,25 @@ describe("enforcement CAMADA 2 — GUARD de admin por export async", () => {
 
 // Statement de escrita: .from("tabela") ... .update(  ou  .delete(  ou  .insert(
 const ESCRITA = /\.from\s*\(\s*["'`]([^"'`]+)["'`]\s*\)[\s\S]*?\.(update|delete|insert)\s*\(/;
-const TEM_EQ = /\.eq\s*\(/;
+
+/**
+ * [179] Escopo de tenant = `.eq("loja_id", ...)` NOMEANDO A COLUNA — não um
+ * `.eq(` qualquer.
+ *
+ * A versão anterior (`/\.eq\s*\(/`) aceitava qualquer filtro: provado por
+ * mutação, plantar `svc.from("zonas_entrega").update({ativo}).eq("id", id)` —
+ * sem `loja_id`, que é EXATAMENTE o vetor cross-tenant real — deixava a suíte
+ * admin inteira verde. O guard só pegava a ausência total de `.eq(`.
+ *
+ * As três formas de aspas são aceitas porque as três compilam igual; o que o
+ * guard exige é o NOME da coluna.
+ */
+const TEM_EQ_LOJA_ID = /\.eq\s*\(\s*["'`]loja_id["'`]/;
+
+/** Constrói o matcher de `.eq("<coluna>"` de uma entrada da allowlist. */
+function temEqDaColuna(statement: string, coluna: string): boolean {
+  return new RegExp(`\\.eq\\s*\\(\\s*["'\`]${coluna}["'\`]`).test(statement);
+}
 
 /**
  * Inserts-filho ANCORADOS POR POSSE em `admin-entrega.ts` (lido linha a linha
@@ -192,6 +210,57 @@ function eInsertAllowlistado(rotulo: string, tabela: string): boolean {
   return ALLOWLIST_INSERT.some((a) => a.rotulo === rotulo && a.tabela === tabela);
 }
 
+/**
+ * [179] Escritas que escopam LEGITIMAMENTE por uma coluna que não é `loja_id`.
+ * Cada entrada foi lida linha a linha; a entrada NÃO isenta a escrita de filtro
+ * — ela troca qual coluna o guard exige. Uma escrita allowlistada que perca o
+ * `.eq` da SUA coluna continua falhando.
+ *
+ * Manter esta lista curta é o ponto: qualquer tabela nova escopada por algo que
+ * não seja `loja_id` exige revisão humana e uma linha aqui, com o motivo.
+ */
+const ALLOWLIST_ESCOPO: {
+  rotulo: string;
+  tabela: string;
+  verbo: "update" | "delete";
+  coluna: string;
+  motivo: string;
+}[] = [
+  {
+    rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts",
+    tabela: "bairros_zona",
+    verbo: "delete",
+    coluna: "zona_id",
+    motivo:
+      "bairros_zona não tem loja_id próprio (FK só via zona_id). O delete roda " +
+      "depois de escopo.buscarPorId('zonas_entrega', id), que já bloqueia zona " +
+      "de outra loja — mesma posse ancorada dos inserts da ALLOWLIST_INSERT.",
+  },
+  {
+    rotulo: "src/app/admin/assinantes/actions/admin-modulos-impressao.ts",
+    tabela: "lojas",
+    verbo: "update",
+    coluna: "id",
+    motivo:
+      "Em `lojas` o `id` É a chave de tenant — não existe coluna loja_id. " +
+      "Exigir loja_id aqui seria exigir uma coluna inexistente.",
+  },
+];
+
+function escopoAllowlistado(
+  rotulo: string,
+  tabela: string,
+  verbo: string,
+  statement: string,
+): boolean {
+  const entrada = ALLOWLIST_ESCOPO.find(
+    (a) => a.rotulo === rotulo && a.tabela === tabela && a.verbo === verbo,
+  );
+  if (!entrada) return false;
+  // A allowlist troca a coluna exigida, NUNCA dispensa o filtro.
+  return temEqDaColuna(statement, entrada.coluna);
+}
+
 /** Quebra a fonte em statements aproximados por `;` para isolar cada cadeia PostgREST. */
 function statements(fonte: string): string[] {
   return fonte.split(";");
@@ -202,15 +271,16 @@ describe("enforcement CAMADA 3 — ESCOPO .eq (ou posse ancorada) em toda escrit
     const escritasSemEscopo = statements(mod.fonte).filter((st) => {
       const casamento = ESCRITA.exec(st);
       if (!casamento) return false;
-      if (TEM_EQ.test(st)) return false; // escopado direto por .eq
+      if (TEM_EQ_LOJA_ID.test(st)) return false; // escopado pelo tenant, o caso normal
       const [, tabela, verbo] = casamento;
       if (verbo === "insert" && eInsertAllowlistado(mod.rotulo, tabela)) return false; // posse ancorada, revisada
+      if (escopoAllowlistado(mod.rotulo, tabela, verbo, st)) return false; // outra coluna de escopo, revisada
       return true;
     });
-    it(`${mod.rotulo} — todo .from().update/.delete/.insert carrega .eq(escopo) ou está na allowlist de posse`, () => {
+    it(`${mod.rotulo} — todo .from().update/.delete/.insert carrega .eq("loja_id") ou está na allowlist revisada`, () => {
       expect(
         escritasSemEscopo,
-        `escrita service_role sem .eq de escopo (nem allowlist de posse) em ${mod.rotulo} — ` +
+        `escrita service_role sem .eq("loja_id") (nem allowlist revisada) em ${mod.rotulo} — ` +
           `UPDATE/DELETE sem filtro afeta cross-tenant, INSERT cru cria dado hostil:\n${escritasSemEscopo.join("\n---\n")}`,
       ).toHaveLength(0);
     });
