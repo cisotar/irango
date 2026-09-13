@@ -63,3 +63,6 @@ Verificação: [como confirmar que está resolvido]
 
 Se a causa raiz for design (o plano técnico está errado, não só a implementação): reporte "bloqueio arquitetural" e sinalize para invocar `arquitetar`.
 Se for schema em tabela populada: reporte "bloqueio de schema" e sinalize para invocar `migrar`.
+
+## Achado colateral fora de escopo
+Se durante a investigação você encontrar um problema fora do escopo do erro pedido, registre-o como issue em `tasks/` (não implemente). No `## Origem`, carimbe o commit em que o achado foi confirmado (`git rev-parse --short HEAD`) — sem isso, uma revisão futura não sabe se o diagnóstico ainda vale contra o código atual.

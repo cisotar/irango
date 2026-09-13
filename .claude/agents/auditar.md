@@ -101,3 +101,5 @@ Para cada vulnerabilidade:
 
 ## Encerramento
 Reporte: total por severidade; o que foi corrigido na sessão; o que precisa de issue separada (sugira título em `tasks/`); se é preciso rodar nova migration de RLS antes do deploy.
+
+Ao abrir a issue separada em `tasks/`, carimbe no `## Origem` o commit em que o achado foi confirmado (`git rev-parse --short HEAD`) — sem isso, uma revisão futura não sabe se o diagnóstico ainda vale contra o código atual.
