@@ -5,7 +5,9 @@ crítica: NÃO (dead code contido por RLS, não é vulnerabilidade ativa — mas
 ## Origem
 
 Achado do `auditar` durante a revisão da migration da issue #182
-(`supabase/migrations/20260909120000_taxas_entrega_zona_id_unique.sql`), 2026-09-09.
+(`supabase/migrations/20260909120000_taxas_entrega_zona_id_unique.sql`), 2026-09-09. Revisado em
+2026-09-13 (commit `c008935`, `main`) via `/orquestrar` + `Explore`: diagnóstico confirmado contra o
+código atual, classificação mantida (`crítica: NÃO`).
 
 ## Problema
 

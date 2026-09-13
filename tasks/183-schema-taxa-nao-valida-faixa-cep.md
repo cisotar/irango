@@ -1,12 +1,18 @@
 # 183 — `schemaTaxa` não valida `cep_inicio`/`cep_fim`, zona `faixa_cep` perde a faixa ao salvar
 
-crítica: NÃO (nenhuma loja em produção usa frete por CEP hoje — sem impacto monetário atual)
+crítica: SIM (feature de valor de entrega inteira morta ponta a ponta — exige TDD red-first)
 
 ## Origem
 
 Achado colateral do `depurar` na Fase 0 do loop de `plan/loop-frete-faixas-e-edicao-de-zona.md`
 (2026-09-09), durante a investigação do #182. Fora de escopo daquele loop, registrado aqui para não
-se perder.
+se perder. Reclassificado em 2026-09-13 (commit `c008935`, `main`): revisão via `/orquestrar` +
+agente `Explore` confirmou todas as afirmações A1-A6 contra o código atual, sem mudança de
+diagnóstico. A classificação original (`crítica: NÃO`) confundia exposição atual ("nenhuma loja usa
+CEP hoje") com gravidade do defeito (zona `faixa_cep` nunca atende nenhum cliente, em qualquer
+loja, incluindo hub admin — `src/app/admin/assinantes/actions/admin-entrega.ts` reusa o mesmo
+`schemaTaxa`). Ausência de uso hoje não muda o fato de que o mandato 3 (TDD red-first em código
+crítico) se aplica: a correção toca a camada que decide se um endereço paga frete.
 
 ## Problema
 
@@ -21,10 +27,14 @@ se perder.
 - A migration `20260615011000_taxas_faixa_cep.sql` adicionou as colunas e o CHECK de coerência no
   banco, mas a camada de aplicação (validação zod + formulário) nunca foi ligada a elas.
 
-## Por que não é crítica agora
+## Por que crítica (revisado)
 
-Nenhuma loja em produção usa frete por CEP hoje (confirmado pelo usuário no pedido original do loop de
-frete por faixas). O defeito existe mas não afeta cobrança real em nenhuma loja ativa.
+Nenhuma loja em produção usa frete por CEP hoje (confirmado pelo usuário no pedido original do loop
+de frete por faixas), então não há impacto monetário retroativo a corrigir. Mas a feature está
+inteiramente morta — não é um edge case, é um caminho de valor que nunca funcionou desde a migration
+`20260615011000`. Qualquer loja que ligue `faixa_cep` hoje é enganada silenciosamente (a UI deixa
+cadastrar, o preview nunca cobra). Mandato 3 do projeto (TDD red-first para código que decide valor
+monetário) se aplica ao fix.
 
 ## Arquivos prováveis
 
