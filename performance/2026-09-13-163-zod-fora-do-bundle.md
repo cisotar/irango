@@ -133,3 +133,35 @@ iniciais, 298.008 B raw / 87.610 B gzip, mais um chunk assíncrono de 283.469 B 
 
 **Cópias de build preservadas** (não removidas — remoção só com confirmação):
 `/home/lenovo/github/.perf163/bA` e `/home/lenovo/github/.perf163/bB`.
+
+## Verificação manual em produção (2026-09-13, `npx next start`)
+
+Sem Playwright/MCP de browser (issue 176), o caminho degradado foi provado à mão
+contra o build de produção, não contra o `next dev`. Método: DevTools → Network →
+Request conditions → bloquear a URL exata do chunk, com `Disable cache` marcado.
+
+**Padrão que funciona:** `http://localhost:<porta>/_next/static/chunks/2-3f1p4geboky.js`
+
+**Armadilha (custou várias tentativas):** o painel novo do Chrome exige um
+URLPattern válido — `*validacoes*` não parseia. E, pior, `*validacoes*` NUNCA
+casa em produção: os nomes de chunk são hasheados e não contêm o caminho do
+módulo. Em `next dev` o chunk se chama `src_lib_validacoes_pedido_ts_189eati._.js`,
+em produção `2-3f1p4geboky.js`. Bloquear por nome legível só funciona em dev.
+
+**Resultado com o chunk bloqueado (`1 affected`, status `(blocked:devtools)`,
+initiator `turbopack-2-…`, 0.0 kB):** a página do checkout carregou normalmente,
+o pedido `8D67E906` foi criado, a aba do WhatsApp abriu no gesto do clique e a
+confirmação renderizou. A degradação funciona: o cliente perde o preview, o
+servidor segue barrando.
+
+**ATENÇÃO — falso positivo em `next dev`:** o MESMO bloqueio em `npm run dev`
+derruba a página com `ChunkLoadError` em `pedido/page.tsx:105` (`<CheckoutWizard>`),
+levantado pelo cliente RSC (`react-server-dom-turbopack-client.browser.development.js`),
+NÃO pelo `import()` do hook — por isso o `.catch(() => {})` não o segura. Causa: em
+dev o Turbopack registra o chunk dinâmico no grafo da página e o React o preloada.
+Em produção o chunk está ausente do `page_client-reference-manifest.js` da rota
+(verificado no build A/B acima), então ninguém o preloada. **É artefato de dev.**
+Quem repetir este teste no `next dev` vai ver a página quebrar e concluir errado.
+
+O initiator do chunk em produção é o runtime do Turbopack, não o documento —
+confirmação no browser do que o A/B já mostrava: o chunk saiu do caminho inicial.

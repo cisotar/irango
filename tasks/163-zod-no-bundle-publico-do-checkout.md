@@ -30,15 +30,28 @@ outros importadores sao painel/auth, atras de login.
 
 ## Escopo (em ordem de preferencia)
 
-- [ ] **Opcao A (menor risco):** migrar `validacoes/pedido.ts` para `zod/mini` —
-      mesmo pacote ja instalado, API funcional e tree-shakable.
-- [ ] **Opcao B:** carregar o schema por `import()` dinamico dentro do `enviar()`,
-      tirando-o do bundle inicial.
-- [ ] **Opcao C (mais radical):** eliminar o gate no cliente e deixar o veredito
-      so com o servidor, mantendo a validacao de campo que o wizard ja faz.
-- [ ] O schema permanece INTACTO como fronteira de seguranca no servidor.
-- [ ] Build A/B de confirmacao (o registro em `performance/` tem o metodo, reuse)
-      e teste de paridade das mensagens de erro.
+**Resolvida pela variante B'' — B com pre-carga fora do React.** Justificativa da
+escolha em `plan/loop-163-zod-fora-do-bundle-do-checkout.md` §2.
+
+- [x] ~~**Opcao A (`zod/mini`)**~~ — REJEITADA. Reescreveria o gate autoritativo do
+      servidor (`.transform().pipe()`, `.trim().toUpperCase()`, `.strict()`,
+      `.refine()`), exigindo TDD red-first + auditoria, para economia MENOR que B''
+      (mini ainda entrega chunk no bundle inicial; B'' entrega zero).
+- [x] **Opcao B, na variante B''** — schema em escopo de modulo, carregado por
+      `import()` unico agendado em idle FORA de componente/hook.
+      `src/components/vitrine/checkout/useEnviarPedido.ts:44-65`.
+      B literal (o `import()` dentro do `enviar()`) foi rejeitada: poria um `await`
+      antes de `prepararAbaWhatsapp`, invalidando a user activation e matando o
+      popup do WhatsApp (RN-A5 da issue 126). `enviar()` permanece SINCRONO.
+- [x] ~~**Opcao C**~~ — REJEITADA: fere o criterio de aceite 3 e duplicaria no
+      cliente regras que hoje tem fonte unica.
+- [x] O schema permanece INTACTO como fronteira de seguranca no servidor.
+      Gate G0 do plano: `git diff main -- src/lib/validacoes/pedido.ts
+      src/lib/actions/pedido.ts` VAZIO em todo passo. `criarPedido(payload: unknown)`
+      roda o proprio `safeParse` em `src/lib/actions/pedido.ts:65`, antes de qualquer I/O.
+- [x] Build A/B de confirmacao + teste de paridade.
+      Registro: `performance/2026-09-13-163-zod-fora-do-bundle.md`.
+      Paridade: `useEnviarPedido.semSchema.test.ts:186` (describe "paridade (163)").
 
 ## 🛑 Cuidado
 
@@ -48,6 +61,34 @@ manter verdes os testes de adulteração de payload de `criarPedido`.
 
 ## Critério de aceite
 
-- [ ] Redução medida do JS da rota `/loja/[slug]/pedido`.
-- [ ] Nenhuma validação do servidor removida ou enfraquecida.
-- [ ] UX de erro de formulário preservada (o cliente ainda vê o que corrigir).
+- [x] **Redução medida do JS da rota `/loja/[slug]/pedido`.**
+      Build A/B real (metodo da auditoria da 126, duas copias fora do repo):
+      JS inicial cai de **151.775 B para 87.610 B gzip — −64.165 B (−42,3%)**,
+      de 10 para 9 chunks. Raw: 582.376 B → 298.008 B.
+      Prova de que zod saiu: `grep -c 'cuid2|toJSONSchema|base64url'` = **0** nos
+      9 chunks iniciais, e o chunk `2-3f1p4geboky.js` sumiu do
+      `page_client-reference-manifest.js` da rota.
+      **Limite honesto:** somando o chunk diferido, o total baixado cai so 240 B
+      (−0,16%). O ganho e de caminho critico de parse/hidratacao, NAO de trafego.
+- [x] **Nenhuma validação do servidor removida ou enfraquecida.**
+      Gate G0 vazio (os dois arquivos de fronteira sem diff). O describe
+      "paridade (163)" em `useEnviarPedido.semSchema.test.ts:186` bate o payload
+      CRU direto contra `schemaPayloadPedido`: valido aceito; nome vazio, forma de
+      pagamento ausente e entrega sem endereco rejeitados. O que o cliente barrava,
+      o servidor barra.
+- [x] **UX de erro de formulário preservada.**
+      Com o schema carregado (caso normal), o toast local continua igual:
+      `useEnviarPedido.test.ts:126`. Sem o schema (janela de idle ou falha de rede),
+      o veredito vem do servidor e a aba pre-aberta e fechada por `aba.concluir(null)`
+      — flash de aba, nao aba orfa: `useEnviarPedido.semSchema.test.ts:120` e `:134`.
+
+## Verificação manual (Passo 5 do plano — sem browser automatizável, issue 176)
+
+Contra o build de **produção** (`npx next start`), com o chunk do zod bloqueado na
+marra no DevTools (`1 affected`, `(blocked:devtools)`, 0.0 kB): checkout carregou,
+pedido `8D67E906` criado, aba do WhatsApp aberta NO GESTO do clique, confirmacao
+renderizada. Caminho feliz tambem validado.
+
+**Cuidado registrado:** o mesmo bloqueio em `next dev` derruba a pagina com
+`ChunkLoadError` — artefato do preload do Turbopack em dev, ausente em producao.
+Detalhes e o padrao de bloqueio que funciona estao no registro em `performance/`.
