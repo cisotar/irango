@@ -3,13 +3,14 @@
 // Etapa 2 do wizard (issue 077): tipo de entrega + endereço + frete preview.
 //
 // Retirada → oculta endereço, frete preview = 0, avança direto.
-// Entrega → FormEndereco (CEP + ViaCEP) e, ao ter bairro, calcularFreteAction
-// (072) para estimar o frete. Fora de área → bloqueia o avanço.
+// Entrega → FormEndereco (CEP + ViaCEP) e, por AÇÃO EXPLÍCITA do cliente,
+// calcularFreteAction (072) para estimar o frete. Fora de área → bloqueia o
+// avanço.
 //
 // CRÍTICO (seguranca.md §10): o frete exibido é PREVIEW. O servidor (071)
 // recalcula do banco e, em retirada, FORÇA frete 0 ignorando endereço (RN-C2).
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import { calcularFreteAction } from "@/lib/actions/frete";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ResumoValores } from "./ResumoValores";
 import { VEREDITO_LOJA_SEM_COORDS } from "@/lib/utils/freteDegradado";
-import { chaveFrete, type TipoEntrega } from "./estado";
+import { chaveFrete, precisaCalcularFrete, type TipoEntrega } from "./estado";
 
 const SECAO =
   "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
@@ -77,35 +78,37 @@ export function EtapaEntrega({
 }: EtapaEntregaProps) {
   const [frete, setFrete] = useState<EstadoFrete>({ status: "ocioso" });
   const [calculando, startCalculo] = useTransition();
-  // (067) Dedupe por chave composta `cep|bairro`: o CEP reconcilia o bairro
-  // canônico e casa zonas tipo='faixa_cep', então recalcular quando SÓ o CEP
-  // muda (mesmo bairro autocompletado) é necessário p/ paridade com a cobrança.
-  const ultimaChave = useRef<string | null>(null);
+  // Chave `cep|bairro` do último cálculo concluído com SUCESSO. É estado (não
+  // ref) porque o botão de calcular precisa re-renderizar quando ela muda.
+  const [chaveCalculada, setChaveCalculada] = useState<string | null>(null);
 
   const ehEntrega = tipoEntrega === "entrega";
   const tipoSelecionado = tipoEntrega !== null;
+  // (002) Gate único: só há o que calcular quando o endereço que o cliente VÊ
+  // está completo. Retirada, sem endereço ou sem bairro ⇒ null.
+  const chaveAtual = chaveFrete(ehEntrega, endereco);
+  const podeCalcular = precisaCalcularFrete(chaveAtual, chaveCalculada);
 
-  // Calcula frete preview quando o bairro está disponível (entrega).
-  // sessionStorage/Server Action só rodam no client — disparado por mudança de
-  // endereço/tipo, não por render espúrio.
+  // Descarta o frete exibido assim que ele deixa de corresponder ao endereço na
+  // tela — endereço editado após o cálculo, troca para retirada, ou endereço
+  // ainda incompleto. Sem isso o cliente confirmaria vendo a taxa de OUTRO
+  // endereço: o servidor cobraria a correta, mas o preview teria mentido.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // (002) Gate único: só calcula quando o endereço que o cliente VÊ está
-    // completo (chaveFrete != null). Retirada, sem endereço, ou endereço sem
-    // bairro ⇒ ocioso, zero, e NENHUMA chamada/mensagem — sem bairro fantasma.
-    const chave = chaveFrete(ehEntrega, endereco);
-    if (chave === null) {
-      ultimaChave.current = null;
-      setFrete({ status: "ocioso" });
-      onFreteChange(0);
-      onFreteStatusChange?.("ocioso");
-      return;
-    }
-    if (chave === ultimaChave.current) return;
-    ultimaChave.current = chave;
-    // chave != null garante bairro presente; o CEP é opcional (zonas faixa_cep).
+    if (chaveAtual !== null && chaveAtual === chaveCalculada) return;
+    setFrete({ status: "ocioso" });
+    onFreteChange(0);
+    onFreteStatusChange?.("ocioso");
+  }, [chaveAtual, chaveCalculada, onFreteChange, onFreteStatusChange]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Cálculo MANUAL: a chamada à Server Action sai só por clique do cliente.
+  const calcularFrete = useCallback(() => {
+    if (chaveAtual === null) return;
+    // chaveAtual != null garante bairro presente; o CEP é opcional (faixa_cep).
     const bairro = endereco?.bairro?.trim() ?? "";
     const cep = endereco?.cep?.trim();
+    const chaveDestaChamada = chaveAtual;
 
     startCalculo(async () => {
       setFrete({ status: "calculando" });
@@ -141,12 +144,12 @@ export function EtapaEntrega({
       setFrete({ status: "ok", taxa: r.taxa_preview, zonaNome: rotulo });
       onFreteChange(r.taxa_preview);
       onFreteStatusChange?.("ok");
+      // Só o sucesso fixa a chave: erro e indisponibilidade (que podem ser
+      // transitórios, já que o geocoding é fail-closed) mantêm o botão
+      // habilitado para nova tentativa com o MESMO endereço.
+      setChaveCalculada(chaveDestaChamada);
     });
-    // `endereco` inteiro nas deps: chaveFrete deriva tudo dele. Re-render com
-    // mesmo cep|bairro é absorvido pelo dedupe (ultimaChave) antes de qualquer
-    // setState — sem recálculo nem loop.
-  }, [ehEntrega, endereco, lojaId, onFreteChange, onFreteStatusChange]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [chaveAtual, endereco, lojaId, onFreteChange, onFreteStatusChange]);
 
   const fretePreview = frete.status === "ok" ? frete.taxa : 0;
   const totalPreview = Math.max(0, subtotal - desconto) + fretePreview;
@@ -225,12 +228,23 @@ export function EtapaEntrega({
               onEnderecoChange={onEnderecoChange}
             />
 
-            {frete.status === "calculando" && (
-              <p className="flex items-center gap-2 text-xs text-texto-muted">
-                <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                Calculando frete…
-              </p>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={calcularFrete}
+              disabled={!podeCalcular || calculando}
+              className="min-h-11 w-full border-amber-300 bg-amber-50 font-bold text-amber-800 hover:bg-amber-100"
+            >
+              {calculando ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  Calculando…
+                </>
+              ) : (
+                "Calcular frete"
+              )}
+            </Button>
+
             {frete.status === "ok" && (
               <p className="text-xs text-texto-muted">
                 Frete estimado para <strong>{frete.zonaNome}</strong>:{" "}
