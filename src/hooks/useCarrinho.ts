@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import type { ItemCarrinho, OpcionalCarrinho } from "@/types/dominio";
+import { MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { canonizarObservacao } from "@/lib/utils/normalizarObservacao";
 
@@ -148,6 +149,13 @@ function adicionarItem(
       ),
     );
   } else {
+    // Teto de LINHAS (172): `schemaPayloadPedido.itens` rejeita o pedido inteiro
+    // acima de MAX_ITENS_PEDIDO, então criar a linha excedente deixaria o
+    // carrinho não-submetível sem nada explicando no checkout. Incrementar linha
+    // existente (ramo acima) não cria linha e não é afetado. Descarta em
+    // silêncio de propósito: quem chama (ProdutoModal) checa o teto ANTES pelo
+    // `itens` do hook e avisa o cliente; esta é a trava de último recurso.
+    if (estado.length >= MAX_ITENS_PEDIDO) return;
     emitir([...estado, { ...normalizado, quantidade: qtd }]);
   }
 }

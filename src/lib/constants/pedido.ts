@@ -15,3 +15,15 @@
 // reabriria silenciosamente a issue 163 (63,8 KB gzip de zod no checkout).
 // Mesma disciplina de src/lib/constants/termos.ts.
 export const LIMITE_OBSERVACAO = 200;
+
+// MAX_ITENS_PEDIDO é a FONTE ÚNICA do teto de LINHAS do carrinho/pedido:
+//   - `schemaPayloadPedido.itens` (src/lib/validacoes/pedido.ts) — gate
+//     AUTORITATIVO do servidor, teto de cardinalidade do array raiz (CWE-770);
+//   - `adicionarItem` do useCarrinho (issue 172) — trava a criação da linha
+//     excedente no cliente, para o carrinho nunca chegar não-submetível ao
+//     checkout. Incrementar linha EXISTENTE não cria linha e segue livre;
+//   - o CTA do ProdutoModal avisa o cliente ao atingir o teto — preview de UX,
+//     nunca autoridade.
+//
+// Vale a MESMA proibição de import declarada acima.
+export const MAX_ITENS_PEDIDO = 50;

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
+import { LIMITE_OBSERVACAO, MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import {
   ajudaObservacao,
   derivarContadorObservacao,
@@ -21,6 +21,7 @@ import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { OpcionalCarrinho } from "@/types/dominio";
+import { linhaCarrinhoId, useCarrinho } from "@/hooks/useCarrinho";
 
 // Emoji fixo e único do fallback do campo de imagem (RN-9, spec
 // toggle-imagens-por-categoria.md) — sem customização, sem campo novo.
@@ -87,6 +88,9 @@ export function ProdutoModal({
   onOpenChange,
   onAdicionar,
 }: ProdutoModalProps) {
+  // Só o teto de linhas (172) é lido daqui — a adição em si continua subindo
+  // pelo `onAdicionar`, que é quem chama `adicionar` no componente pai.
+  const { itens } = useCarrinho();
   const [quantidade, setQuantidade] = useState(0);
   // Quantidade escolhida por opcional: opcionalId → qtd (0 = não escolhido).
   const [qtdOpcionais, setQtdOpcionais] = useState<Record<string, number>>({});
@@ -169,6 +173,22 @@ export function ProdutoModal({
 
   const contadorObservacao = derivarContadorObservacao(observacao);
 
+  // Teto de LINHAS do carrinho (172). Esta adição só é barrada quando criaria
+  // uma linha NOVA com o carrinho já cheio — somar quantidade a uma linha que já
+  // existe (mesmo produto + mesmos opcionais + mesma observação) não cria linha
+  // e segue permitido. O gate autoritativo é o zod do servidor; aqui o CTA só
+  // avisa em vez de deixar `adicionarItem` descartar em silêncio.
+  const chaveDestaLinha = linhaCarrinhoId(
+    produto.id,
+    opcionaisEscolhidos,
+    observacao,
+  );
+  const linhaJaExiste = itens.some(
+    (i) => linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === chaveDestaLinha,
+  );
+  const bloqueadoPeloTeto =
+    !linhaJaExiste && itens.length >= MAX_ITENS_PEDIDO;
+
   // No mobile o teclado virtual cobre metade da tela e o campo é o último do
   // corpo: sem isso o cliente digita às cegas. Espera-se a animação do teclado
   // (~300ms) e rola-se o CORPO ROLÁVEL — nunca scrollIntoView, que rolaria o
@@ -188,7 +208,7 @@ export function ProdutoModal({
   };
 
   const confirmar = () => {
-    if (!disponivel) return;
+    if (!disponivel || bloqueadoPeloTeto) return;
     onAdicionar(produto.id, quantidade, opcionaisEscolhidos, observacao);
     // O `key` do SecaoCatalogo não remonta o modal ao reabrir o MESMO produto:
     // sem este reset a escolha anterior vazaria para a próxima adição.
@@ -534,7 +554,24 @@ export function ProdutoModal({
           <div className="shrink-0 border-t border-[#eeeeee]">
             {/* CTA + ação secundária */}
             <div className="flex flex-col gap-2 p-4 pb-5">
-              {disponivel && quantidade > 0 ? (
+              {disponivel && quantidade > 0 && bloqueadoPeloTeto ? (
+                <>
+                  <Button
+                    type="button"
+                    disabled
+                    aria-label={`Carrinho cheio — o pedido aceita no máximo ${MAX_ITENS_PEDIDO} itens diferentes`}
+                    className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white disabled:bg-[#9a9a9a]"
+                  >
+                    Carrinho cheio
+                  </Button>
+                  <p className="text-center text-xs text-[#6b6b6b]">
+                    Seu pedido já tem {MAX_ITENS_PEDIDO} itens diferentes, o
+                    máximo por pedido. Finalize este pedido ou remova um item do
+                    carrinho para adicionar outro.
+                  </p>
+                </>
+              ) : null}
+              {disponivel && quantidade > 0 && !bloqueadoPeloTeto ? (
                 <Button
                   type="button"
                   onClick={confirmar}

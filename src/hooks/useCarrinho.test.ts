@@ -23,6 +23,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ItemCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId, useCarrinho, type UseCarrinhoReturn } from "./useCarrinho";
+import { MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
+import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
 
 // ── window/sessionStorage falsos ────────────────────────────────────────────
 // O módulo só consulta `typeof window` em tempo de CHAMADA (`emitir`/`lerStorage`),
@@ -428,5 +430,92 @@ describe("retrocompat de COMPORTAMENTO — chave `produtoId` puro", () => {
     expect(atual).toHaveLength(1);
     expect(atual[0].quantidade).toBe(2);
     expect(atual[0]).not.toHaveProperty("observacao");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+//  [172] teto de LINHAS do carrinho — MAX_ITENS_PEDIDO
+// ────────────────────────────────────────────────────────────────────────────
+//
+// Com a observação na chave de dedup (168), um único produto gera linhas
+// ilimitadas: 51 observações distintas viravam 51 linhas e o servidor rejeitava
+// o pedido INTEIRO no `schemaPayloadPedido` (`.max(MAX_ITENS_PEDIDO)`). O teto
+// no cliente existe para o carrinho nunca chegar não-submetível ao checkout.
+
+describe("adicionar — teto de linhas (MAX_ITENS_PEDIDO)", () => {
+  /** Enche o carrinho com `n` linhas distintas do MESMO produto (observações únicas). */
+  function encher(n: number): void {
+    for (let i = 0; i < n; i++) {
+      api().adicionar(item({ observacao: `obs ${i}` }), 1);
+    }
+  }
+
+  it("para de criar linha nova ao atingir o teto", () => {
+    encher(MAX_ITENS_PEDIDO);
+    expect(linhas()).toHaveLength(MAX_ITENS_PEDIDO);
+
+    api().adicionar(item({ observacao: "linha 51 — excedente" }), 1);
+
+    const atual = linhas();
+    expect(atual).toHaveLength(MAX_ITENS_PEDIDO);
+    expect(
+      atual.some((i) => i.observacao === "linha 51 — excedente"),
+    ).toBe(false);
+  });
+
+  it("no teto, incrementar linha EXISTENTE continua permitido (não cria linha)", () => {
+    encher(MAX_ITENS_PEDIDO);
+
+    // Mesma chave da 1ª linha (mesmo produto, sem opcionais, mesma observação).
+    api().adicionar(item({ observacao: "obs 0" }), 2);
+
+    const atual = linhas();
+    expect(atual).toHaveLength(MAX_ITENS_PEDIDO);
+    const alvo = atual.find((i) => i.observacao === "obs 0");
+    expect(alvo?.quantidade).toBe(3);
+
+    // E pelo caminho de `incrementar`, que casa a linha pela chave.
+    api().incrementar(linhaCarrinhoId(A, undefined, "obs 0"));
+    expect(linhas()).toHaveLength(MAX_ITENS_PEDIDO);
+    expect(linhas().find((i) => i.observacao === "obs 0")?.quantidade).toBe(4);
+  });
+
+  it("liberar uma linha volta a permitir uma nova", () => {
+    encher(MAX_ITENS_PEDIDO);
+    api().remover(linhaCarrinhoId(A, undefined, "obs 0"));
+    expect(linhas()).toHaveLength(MAX_ITENS_PEDIDO - 1);
+
+    api().adicionar(item({ observacao: "agora cabe" }), 1);
+
+    const atual = linhas();
+    expect(atual).toHaveLength(MAX_ITENS_PEDIDO);
+    expect(atual.some((i) => i.observacao === "agora cabe")).toBe(true);
+  });
+
+  it("um carrinho CHEIO (no teto) passa no gate autoritativo do servidor", () => {
+    encher(MAX_ITENS_PEDIDO);
+
+    const payload = {
+      loja_id: "44444444-4444-4444-8444-444444444444",
+      tipo_entrega: "retirada" as const,
+      itens: linhas().map((i) => ({
+        produto_id: i.produtoId,
+        quantidade: i.quantidade,
+        observacao: i.observacao,
+      })),
+      forma_pagamento: "pix" as const,
+      nome_cliente: "Cliente Teste",
+      telefone_cliente: "11999990000",
+    };
+
+    const resultado = schemaPayloadPedido.safeParse(payload);
+    expect(resultado.success).toBe(true);
+
+    // E uma linha a mais é exatamente o que o cliente é impedido de montar.
+    const excedente = {
+      ...payload,
+      itens: [...payload.itens, { produto_id: A, quantidade: 1 }],
+    };
+    expect(schemaPayloadPedido.safeParse(excedente).success).toBe(false);
   });
 });

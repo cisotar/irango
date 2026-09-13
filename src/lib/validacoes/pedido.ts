@@ -9,7 +9,7 @@
 
 import { z } from "zod";
 
-import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
+import { LIMITE_OBSERVACAO, MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import { normalizarObservacao } from "@/lib/utils/normalizarObservacao";
 
 // [167] Observação de texto livre (item e pedido) — MESMO contrato nos dois.
@@ -79,7 +79,8 @@ export const schemaPayloadPedido = z
     tipo_entrega: z.enum(["retirada", "entrega"]),
     // teto de cardinalidade do array raiz (CWE-770 — anti DoS/amplificação de
     // recurso). Espelha o .max(50) dos opcionais (linha ~32). .min(1) preservado.
-    itens: z.array(schemaItemPedido).min(1).max(50),
+    // MAX_ITENS_PEDIDO é a fonte única — o carrinho trava na mesma constante (172).
+    itens: z.array(schemaItemPedido).min(1).max(MAX_ITENS_PEDIDO),
     // endereco_entrega: opcional na raiz — o refine abaixo impõe a obrigatoriedade
     // condicional: obrigatório quando tipo_entrega='entrega', ignorado em 'retirada'.
     endereco_entrega: schemaEnderecoEntrega.optional(),
