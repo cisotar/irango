@@ -74,14 +74,20 @@ export function montarConsultaGeocoding(dados: {
   const rua = dados.endereco_rua?.trim();
   const numero = dados.endereco_numero?.trim();
   const bairro = dados.endereco_bairro?.trim();
-  const cep = dados.endereco_cep?.trim();
 
+  // 🛑 O CEP NÃO ENTRA NA CONSULTA (issue 186). A evidência da 185 provou que o
+  // CEP cru é token ENVENENADOR na busca livre: o geocoder não indexa CEP
+  // brasileiro e a pontuação da busca degrada com o token solto — `q=12914-190`
+  // chegou a resolver para uma estrada na República Tcheca. A loja é o CENTRO do
+  // raio: um ponto errado aqui desloca TODAS as zonas `raio_km` de uma vez, e as
+  // coords ficam gravadas em `lojas.latitude/longitude` (falha silenciosa e
+  // persistente). O parâmetro `endereco_cep` segue aceito na assinatura de
+  // propósito — os callers passam o objeto de endereço inteiro.
   const ruaNumero = [rua, numero].filter(Boolean).join(", ");
   const partes = [
     ruaNumero || null,
     bairro || null,
     `${cidade} - ${estado}`,
-    cep || null,
     "Brasil",
   ].filter(Boolean);
 

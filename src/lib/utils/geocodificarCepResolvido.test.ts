@@ -219,6 +219,42 @@ describe("[190-20] versão antiga do cache (v:2 ou sem v) → MISS", () => {
 });
 
 // =============================================================================
+// [187/achado 2] guard dentroDoBrasil também na LEITURA do cache
+// =============================================================================
+describe("[187] valor de cache na versão corrente mas FORA do Brasil → MISS", () => {
+  it("par na República Tcheca com v:3 é descartado e a resolução é refeita", async () => {
+    // Praga (50.1, 14.4) — o par que a evidência da 185 mostrou o geocoder
+    // devolvendo para um CEP brasileiro. Hoje nenhum caminho de escrita grava
+    // isso (o guard roda antes do SET), mas escrita manual, backfill ou reuso da
+    // VERSAO_CACHE_GEOCODE por outro módulo colocariam o par aqui — e ele viraria
+    // distância válida, logo frete errado por raio.
+    getMock.mockResolvedValue({ latitude: 50.1, longitude: 14.4, v: VERSAO_CACHE_GEOCODE });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+    const resolver = resolverOk();
+
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
+
+    // MISS de verdade: refaz TODO o caminho (ViaCEP + Google), não devolve o
+    // par envenenado, e sobrescreve a MESMA chave com o par válido.
+    expect(r).toEqual({ coords: COORDS_A });
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(setMock).toHaveBeenCalled();
+  });
+
+  it("par válido no Brasil com v:3 segue HIT (o guard não derruba o caso bom)", async () => {
+    getMock.mockResolvedValue({ ...COORDS_A, v: VERSAO_CACHE_GEOCODE });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: COORDS_A });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
 // 21/22) Cascata: só avança em ZERO_RESULTS
 // =============================================================================
 describe("[190-21/22] cascata de consultas — avança só em ZERO_RESULTS", () => {

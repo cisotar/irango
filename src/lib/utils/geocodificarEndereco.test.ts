@@ -193,14 +193,17 @@ describe("geocodificarEnderecoComMotivo — sucesso (Google)", () => {
     expect(url).toContain(`key=${CHAVE_GOOGLE}`);
   });
 
-  it("16) URL chamada NÃO contém components=country:BR (loja passa restringirBrasil:false)", async () => {
+  it("[186] URL chamada CONTÉM components=country:BR (loja passa restringirBrasil:true)", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
     await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(String(fetchSpy.mock.calls[0]?.[0])).not.toContain(
+    // Toda loja do iRango é brasileira: restringir a busca ao país é o primeiro
+    // filtro contra um endereço digitado resolver para fora do Brasil. O caller
+    // ainda checa `dentroDoBrasil` no par devolvido.
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain(
       "components=country:BR",
     );
   });

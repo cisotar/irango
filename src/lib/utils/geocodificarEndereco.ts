@@ -179,6 +179,12 @@ async function lerCacheCoordenadas(cep: string): Promise<Coordenadas | null> {
     if (v !== VERSAO_CACHE_GEOCODE) return null;
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
     // Number.isFinite não estreita `unknown` → cast seguro após a guarda acima.
+    // Mesmo guard de bounding box aplicado ao par vindo do provedor (187/achado
+    // 2): hoje só o caminho pós-guard grava esta versão, mas qualquer par fora
+    // do Brasil que chegue à chave por outro caminho (escrita manual, backfill,
+    // reuso de VERSAO_CACHE_GEOCODE) viraria distância válida e frete errado por
+    // raio. Fora da caixa = MISS: refaz e sobrescreve a MESMA chave.
+    if (!dentroDoBrasil(latitude as number, longitude as number)) return null;
     return { latitude: latitude as number, longitude: longitude as number };
   } catch {
     // fail-open: cache indisponível/corrompido → miss; segue travas+fetch.
@@ -330,7 +336,11 @@ export async function geocodificarEnderecoComMotivo(
   // permitido:true).
   if (!credenciaisUpstash()) return { coords: null, motivo: "transitorio" };
 
-  return consultarGoogle(chave, consulta, { restringirBrasil: false });
+  // `restringirBrasil: true` (issue 186): toda loja do iRango é brasileira, e
+  // sem a restrição nada impedia o endereço digitado pelo lojista de resolver
+  // para um ponto fora do país. O caller ainda checa `dentroDoBrasil` no par
+  // devolvido — restringir a busca é o primeiro filtro, não o único.
+  return consultarGoogle(chave, consulta, { restringirBrasil: true });
 }
 
 /**

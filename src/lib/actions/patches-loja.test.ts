@@ -161,7 +161,7 @@ describe("montarPatchPerfil — allowlist RN-7", () => {
 });
 
 describe("montarConsultaGeocoding — gate cidade+estado", () => {
-  it("monta string rica (específico → genérico) com Brasil ancorado no fim", () => {
+  it("monta string rica (específico → genérico) com Brasil ancorado no fim, SEM o CEP", () => {
     const consulta = montarConsultaGeocoding({
       endereco_rua: "Rua das Flores",
       endereco_numero: "123",
@@ -171,9 +171,22 @@ describe("montarConsultaGeocoding — gate cidade+estado", () => {
       endereco_cep: "01001000",
     });
 
-    expect(consulta).toBe(
-      "Rua das Flores, 123, Centro, São Paulo - SP, 01001000, Brasil",
-    );
+    // [186] O CEP é token ENVENENADOR na busca livre (evidência da 185) e não
+    // entra na consulta, mesmo quando presente no endereço da loja.
+    expect(consulta).toBe("Rua das Flores, 123, Centro, São Paulo - SP, Brasil");
+    expect(consulta).not.toContain("01001000");
+  });
+
+  it("[186] CEP em qualquer formato NUNCA aparece na consulta", () => {
+    for (const cep of ["01001000", "01001-000", " 12914-190 "]) {
+      const consulta = montarConsultaGeocoding({
+        endereco_cidade: "Campinas",
+        endereco_estado: "SP",
+        endereco_cep: cep,
+      });
+
+      expect(consulta).toBe("Campinas - SP, Brasil");
+    }
   });
 
   it("monta com o mínimo (cidade+estado) quando rua/numero/bairro/cep faltam", () => {
