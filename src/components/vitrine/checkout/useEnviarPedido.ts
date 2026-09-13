@@ -6,17 +6,66 @@
 // lugares (mandato "não reinventar a roda").
 //
 // CRÍTICO (seguranca.md §10): o payload é montado por montarPayloadPedido —
-// SÓ intenção, NUNCA valor monetário — e validado por schemaPayloadPedido
-// (.strict()) ANTES do envio. O servidor (criarPedido — 071) recalcula tudo.
+// SÓ intenção, NUNCA valor monetário. O servidor (criarPedido — 071) revalida
+// com schemaPayloadPedido (.strict()) e recalcula tudo: ele é a fronteira.
+//
+// [163] O gate de schema AQUI é preview de UX best-effort. zod era 42% do JS
+// desta rota (63,8 KB gzip de 151 KB) e é o comprador no celular quem pagava
+// — então o schema sai do bundle inicial e chega por import() em idle. Se o
+// clique acontecer antes de ele chegar, o payload CRU vai para o servidor, que
+// o valida como sempre fez (actions/pedido.ts:65, antes de qualquer I/O).
+// O caminho do clique permanece SÍNCRONO: nenhum await/then antes da RN-A5.
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { criarPedido } from "@/lib/actions/pedido";
-import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
 import { montarPayloadPedido, type EstadoWizard, type ItemPayload } from "./estado";
 import { prepararAbaWhatsapp } from "./aberturaWhatsapp";
+
+// [163] Type-only: `typeof import(...)` é apagado na compilação, não puxa zod
+// para o bundle. O valor chega só pelo import() dinâmico abaixo.
+type SchemaPedido = typeof import("@/lib/validacoes/pedido").schemaPayloadPedido;
+
+// Escopo de MÓDULO, de propósito — não é useRef/useEffect. Um hook novo aqui
+// quebraria o harness de useEnviarPedido.test.ts, que chama este hook como
+// função comum fora de componente (environment: node, sem jsdom) e é o único
+// guarda da ordem da RN-A5 neste ambiente.
+let schemaPedido: SchemaPedido | null = null;
+let precarga: Promise<void> | null = null;
+
+/**
+ * [163] Busca o schema de preview uma única vez. Idempotente. Falha é
+ * silenciosa de propósito: sem schema o cliente só perde o preview, e o
+ * servidor segue barrando tudo. Exportada para que o teste alcance o estado
+ * "schema carregado" — em `environment: node` a pré-carga automática não roda.
+ */
+export function precarregarSchemaPedido(): Promise<void> {
+  precarga ??= import("@/lib/validacoes/pedido")
+    .then((m) => {
+      schemaPedido = m.schemaPayloadPedido;
+    })
+    .catch(() => {
+      // Sem preview; o servidor é o gate.
+    });
+  return precarga;
+}
+
+if (typeof window !== "undefined") {
+  // Fora do caminho crítico de hidratação: idle, ou o próximo tick onde
+  // requestIdleCallback não existe (Safari < 16.4).
+  // .bind(window): chamada desvinculada de Web API já rendeu "Illegal
+  // invocation" em engines no passado, e aqui não há browser automatizável
+  // para pegar isso em runtime (issue 176).
+  const agendar =
+    typeof window.requestIdleCallback === "function"
+      ? window.requestIdleCallback.bind(window)
+      : (cb: () => void) => window.setTimeout(cb, 0);
+  agendar(() => {
+    void precarregarSchemaPedido();
+  });
+}
 
 export type UsarEnviarPedidoArgs = {
   lojaId: string;
@@ -67,9 +116,11 @@ export function useEnviarPedido({
       idempotencyKey,
     });
 
-    // Gate de validação no cliente ANTES da Server Action (o servidor revalida).
-    const parsed = schemaPayloadPedido.safeParse(payload);
-    if (!parsed.success) {
+    // [163] Preview best-effort: só barra se o schema JÁ chegou. Ausente, o
+    // payload cru segue para o servidor — criarPedido(payload: unknown) roda o
+    // próprio safeParse antes de qualquer I/O, então nada é enfraquecido.
+    const parsed = schemaPedido?.safeParse(payload);
+    if (parsed && !parsed.success) {
       toast.error("Confira os dados do pedido (nome, endereço e itens).");
       return;
     }
@@ -83,7 +134,7 @@ export function useEnviarPedido({
     startEnvio(async () => {
       let resultado;
       try {
-        resultado = await criarPedido(parsed.data);
+        resultado = await criarPedido(parsed?.success ? parsed.data : payload);
       } catch (e) {
         // [162] Server Action REJEITOU (queda de rede, 500 do RSC) — sem isso a
         // aba pré-aberta ficava órfã em about:blank e o cliente sem aviso.
