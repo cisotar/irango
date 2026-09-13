@@ -1,3 +1,13 @@
+**Arquivada em 2026-09-13:** premissa invalidada pelo redesign da issue 185. A
+consulta de geocoding passou a ser montada A PARTIR do endereço resolvido pelo
+ViaCEP (`src/lib/actions/distanciaFrete.ts:65-68`: "O CEP é a CHAVE; a CONSULTA
+é montada dentro do geocoder a partir do endereço resolvido no servidor...
+jamais cai no CEP cru como consulta de consolo (causa raiz da 185)."). As duas
+chamadas deixaram de ser independentes — `distanciaDaLojaAoCep` agora depende
+do resultado de `resolverEndereco` para montar a query. `Promise.all` reabriria
+a causa raiz da 185 (geocoding por CEP cru). Se o p95 do checkout voltar a
+incomodar, o caminho é outro (cache mais agressivo, não paralelismo).
+
 # [158] Paralelizar ViaCEP + Nominatim no checkout (dono real do p95)
 
 **crítica:** SIM (toca cálculo de frete — caminho monetário)

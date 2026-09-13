@@ -7,7 +7,13 @@ crítica: NÃO (sem caminho de exploração concreto — amplificação limitada
 Dois achados BAIXA do `auditar` durante a revisão da issue #185 (fix de geocoding de CEP),
 2026-09-09. Nenhum bloqueou o deploy — registrados aqui por justificativa explícita do fan-out.
 
-## Achado 1 — `cep` do preview aceita string arbitrária sem teto de tamanho
+## Achado 1 — `cep` do preview aceita string arbitrária sem teto de tamanho [x] RESOLVIDO 2026-09-13
+
+Corrigido: `src/lib/actions/frete.ts:59` já usa
+`cep: z.string().trim().regex(/^\d{5}-?\d{3}$/).optional()`, exatamente a
+correção sugerida abaixo. Teste que verifica o critério de aceite:
+`src/lib/actions/frete.test.ts:660-668` ("ATAQUE: CEP malformado é rejeitado
+sem tocar no banco"). Achado 2 (bounding box no cache) segue aberto.
 
 **Arquivo:** `src/lib/actions/frete.ts` (`schemaFretePreview`) — `cep: z.string().trim().optional()`, sem
 regex de formato e sem `.max()`. Um cliente pode mandar um `cep` com ~1MB de dígitos (limite default de
