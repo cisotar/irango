@@ -99,6 +99,26 @@ export function chaveFrete(
   return `${cep ?? ""}|${bairro}`;
 }
 
+/**
+ * Gate do botão "Calcular frete": `true` quando há endereço calculável cujo
+ * frete ainda não foi obtido. `chaveCalculada` é a chave do último cálculo
+ * CONCLUÍDO COM SUCESSO.
+ *
+ * Existe porque o cálculo deixou de ser automático: sem este predicado, o
+ * cliente poderia calcular o frete de um endereço, trocar o CEP e confirmar
+ * vendo a taxa do endereço ANTERIOR. O servidor recalcula do banco e cobraria o
+ * valor certo (seguranca.md §10), mas o preview teria mentido — quebra da
+ * paridade preview↔cobrança (RN-7). Divergiu ⇒ resultado anterior é descartado
+ * e um novo cálculo volta a ser exigido antes de confirmar.
+ */
+export function precisaCalcularFrete(
+  chaveAtual: string | null,
+  chaveCalculada: string | null,
+): boolean {
+  if (chaveAtual === null) return false;
+  return chaveAtual !== chaveCalculada;
+}
+
 /** Item do carrinho na fronteira do builder — só intenção, NUNCA preço. */
 export type ItemPayload = {
   produtoId: string;

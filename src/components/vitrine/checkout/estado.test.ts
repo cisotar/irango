@@ -17,6 +17,7 @@ import {
   podeConfirmar,
   montarPayloadPedido,
   chaveFrete,
+  precisaCalcularFrete,
   ESTADO_INICIAL,
   itemCarrinhoParaPayload,
   type EstadoWizard,
@@ -88,6 +89,45 @@ describe("chaveFrete (issue 002)", () => {
     const a = chaveFrete(true, ENDERECO_VALIDO);
     const b = chaveFrete(true, { ...ENDERECO_VALIDO, cep: "01310-200" });
     expect(a).not.toBe(b);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+//  precisaCalcularFrete — invalidação do preview quando o endereço muda
+//
+//  O cálculo passou a ser MANUAL (botão). O risco que este predicado fecha:
+//  calcular o frete de um endereço, editar o CEP e confirmar vendo a taxa do
+//  endereço anterior. O servidor cobraria o valor certo, mas o preview teria
+//  mentido ao cliente (quebra de RN-7).
+// ────────────────────────────────────────────────────────────────────────────
+describe("precisaCalcularFrete", () => {
+  const CHAVE_A = "01310-100|Bela Vista";
+  const CHAVE_B = "12914-190|Jardim Sevilha";
+
+  it("endereço completo nunca calculado → true (botão habilitado)", () => {
+    expect(precisaCalcularFrete(CHAVE_A, null)).toBe(true);
+  });
+
+  it("frete já calculado para ESTE endereço → false (nada a refazer)", () => {
+    expect(precisaCalcularFrete(CHAVE_A, CHAVE_A)).toBe(false);
+  });
+
+  it("endereço MUDOU depois do cálculo → true (preview obsoleto, exige recálculo)", () => {
+    expect(precisaCalcularFrete(CHAVE_B, CHAVE_A)).toBe(true);
+  });
+
+  it("sem endereço calculável (retirada/incompleto) → false mesmo com cálculo anterior", () => {
+    expect(precisaCalcularFrete(null, CHAVE_A)).toBe(false);
+  });
+
+  it("sem endereço e sem cálculo anterior → false", () => {
+    expect(precisaCalcularFrete(null, null)).toBe(false);
+  });
+
+  it("integra com chaveFrete: trocar só o CEP invalida o cálculo anterior", () => {
+    const antes = chaveFrete(true, ENDERECO_VALIDO);
+    const depois = chaveFrete(true, { ...ENDERECO_VALIDO, cep: "12914-190" });
+    expect(precisaCalcularFrete(depois, antes)).toBe(true);
   });
 });
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IMaskInput } from "react-imask";
-import { Loader2, Search } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,9 @@ export function FormEndereco({
   const [erro, setErro] = useState<string | null>(null);
 
   const numeroRef = useRef<HTMLInputElement>(null);
+  // Último CEP (8 dígitos) que já disparou consulta. Sem isso, qualquer
+  // re-render com o CEP completo refaria a chamada ao ViaCEP.
+  const cepConsultado = useRef<string | null>(null);
 
   // Notifica o pai: endereço completo só quando todos obrigatórios estão
   // preenchidos. Reusa montarEnderecoCompleto (fonte única, RN-1-B). Roda também
@@ -112,6 +115,23 @@ export function FormEndereco({
     numeroRef.current?.focus();
   }, [cep]);
 
+  // Consulta o ViaCEP assim que o 8º dígito é digitado, sem exigir clique. O CEP
+  // completo é o único gatilho possível: com menos dígitos não há o que
+  // consultar, e esperar por um botão deixava os campos vazios enquanto o
+  // cliente já tinha fornecido tudo que a consulta precisa.
+  useEffect(() => {
+    const digitos = limparCep(cep);
+    if (digitos.length !== 8) {
+      // Voltou a ficar incompleto: libera a próxima consulta, inclusive se o
+      // cliente apagar e redigitar exatamente o mesmo CEP.
+      cepConsultado.current = null;
+      return;
+    }
+    if (digitos === cepConsultado.current) return;
+    cepConsultado.current = digitos;
+    void buscarCep();
+  }, [cep, buscarCep]);
+
   return (
     // Formulário isolado para quebrar o escopo de autofill do browser:
     // impede que autocomplete do campo "nome" (fora deste form) sobrescreva endereço.
@@ -122,37 +142,39 @@ export function FormEndereco({
         <label htmlFor="endereco-cep" className="text-xs text-muted-foreground">
           CEP
         </label>
-        <div className="flex gap-2">
-          <IMaskInput
-            id="endereco-cep"
-            mask="00000-000"
-            value={cep}
-            onAccept={(value: string) => setCep(value)}
-            inputMode="numeric"
-            placeholder="00000-000"
-            aria-invalid={erro != null}
-            aria-describedby={erro != null ? "endereco-cep-erro" : undefined}
-            className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={buscarCep}
-            disabled={buscando}
-            className="min-h-11 shrink-0"
-          >
-            {buscando ? (
-              <Loader2 className="animate-spin" aria-hidden />
-            ) : (
-              <Search aria-hidden />
-            )}
-            {buscando ? "Buscando…" : "Buscar"}
-          </Button>
-        </div>
-        {erro != null && (
-          <p id="endereco-cep-erro" className="text-xs text-destructive">
-            {erro} Confira e tente de novo, ou preencha manualmente.
+        <IMaskInput
+          id="endereco-cep"
+          mask="00000-000"
+          value={cep}
+          onAccept={(value: string) => setCep(value)}
+          inputMode="numeric"
+          placeholder="00000-000"
+          aria-invalid={erro != null}
+          aria-describedby={erro != null ? "endereco-cep-erro" : undefined}
+          aria-busy={buscando}
+          className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm"
+        />
+        {buscando && (
+          <p className="flex items-center gap-1.5 text-xs text-texto-muted">
+            <Loader2 className="size-3 animate-spin" aria-hidden />
+            Buscando endereço…
           </p>
+        )}
+        {erro != null && (
+          <div className="flex flex-wrap items-center gap-2">
+            <p id="endereco-cep-erro" className="text-xs text-destructive">
+              {erro} Confira e tente de novo, ou preencha manualmente.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={buscarCep}
+              disabled={buscando}
+            >
+              Tentar de novo
+            </Button>
+          </div>
         )}
       </div>
 
