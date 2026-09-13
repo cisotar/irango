@@ -514,4 +514,36 @@ describe("055 E2E criarPedido — recálculo no servidor (action real + RPC real
     );
     expect(Number(errado.rows[0].n)).toBe(0);
   });
+
+  // ─────────────────────────────────── [7] forma de pagamento não cadastrada
+  // [174] Ponta a ponta: a loja A só tem 'pix' cadastrada (semear, acima).
+  // 'dinheiro' passa o zod (enum válido) mas não está entre as formas da loja
+  // — mesmo caminho que um bug de query/cache serviria uma forma velha à UI.
+  it("[7][174] forma de pagamento não cadastrada na loja → recusa genérica, sem RPC, sem persistir", async () => {
+    const rpcSpy = vi.spyOn(clientePglite, "rpc");
+    const antes = await t.asService((db) =>
+      db.query<{ n: string }>(`select count(*)::int n from public.pedidos where loja_id=$1`, [
+        c.lojaA,
+      ]),
+    );
+
+    const r = await criarPedido({
+      loja_id: c.lojaA,
+      nome_cliente: "Atacante",
+      forma_pagamento: "dinheiro", // válido no zod, NÃO cadastrado na loja A (só 'pix')
+      tipo_entrega: "retirada",
+      itens: [{ produto_id: c.prodDisp, quantidade: 1 }],
+    });
+
+    expect(r).toEqual({ erro: "Não foi possível criar o pedido. Tente novamente." });
+    expect(rpcSpy).not.toHaveBeenCalled();
+
+    const depois = await t.asService((db) =>
+      db.query<{ n: string }>(`select count(*)::int n from public.pedidos where loja_id=$1`, [
+        c.lojaA,
+      ]),
+    );
+    expect(depois.rows[0].n).toBe(antes.rows[0].n); // nenhum pedido criado
+    rpcSpy.mockRestore();
+  });
 });
