@@ -155,6 +155,22 @@ describe("useEnviarPedido — ordem e efeitos da mecânica do WhatsApp (126)", (
     );
   });
 
+  it("[162] Server Action REJEITA (não retorna erro): fecha a aba e avisa o cliente", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    criarPedidoMock.mockRejectedValue(new Error("fetch failed"));
+
+    const { enviar } = useMontarHook(true);
+    enviar();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(abaConcluir).toHaveBeenCalledWith(null);
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith(
+      "Não foi possível enviar seu pedido. Tente novamente.",
+    );
+    consoleError.mockRestore();
+  });
+
   it("preAbrirWhatsapp=false: prepararAbaWhatsapp é chamado com false (nunca abre janela)", async () => {
     criarPedidoMock.mockResolvedValue({
       pedidoId: "p1",

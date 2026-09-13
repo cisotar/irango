@@ -81,7 +81,17 @@ export function useEnviarPedido({
     const aba = prepararAbaWhatsapp(preAbrirWhatsapp);
 
     startEnvio(async () => {
-      const resultado = await criarPedido(parsed.data);
+      let resultado;
+      try {
+        resultado = await criarPedido(parsed.data);
+      } catch (e) {
+        // [162] Server Action REJEITOU (queda de rede, 500 do RSC) — sem isso a
+        // aba pré-aberta ficava órfã em about:blank e o cliente sem aviso.
+        console.error("[useEnviarPedido:criarPedido]", e);
+        aba.concluir(null);
+        toast.error("Não foi possível enviar seu pedido. Tente novamente.");
+        return;
+      }
       if ("erro" in resultado) {
         aba.concluir(null);
         toast.error(resultado.erro);
