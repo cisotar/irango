@@ -233,7 +233,7 @@ export function EtapaEntrega({
               variant="outline"
               onClick={calcularFrete}
               disabled={!podeCalcular || calculando}
-              className="min-h-11 w-full border-cinza-medio font-bold"
+              className="min-h-11 w-full border-amber-300 bg-amber-50 font-bold text-amber-800 hover:bg-amber-100"
             >
               {calculando ? (
                 <>
