@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iRango — entregas por faixa de km (painel)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          // Tokens SEMÂNTICOS do painel (globals.css :root).
+          // O painel NUNCA usa o tema da loja — só cores de sistema.
+          background: "#ffffff",
+          foreground: "#252525",
+          card: "#ffffff",
+          muted: "#f7f7f7",
+          "muted-foreground": "#8e8e8e",
+          secondary: "#f0f0f0",
+          "secondary-foreground": "#343434",
+          border: "#e5e5e5",
+          input: "#e5e5e5",
+          primary: "#252525",
+          destructive: "#dc2626",
+          ring: "#b5b5b5",
+        },
+        borderRadius: { DEFAULT: "0.625rem", xl: "0.75rem" },
+      },
+    },
+  };
+</script>
+<style>
+  /* globals.css:212 — base rem = 19.2px. Por isso min-h-11 (2.75rem) = 52.8px
+     e size-7 (icon-sm do shadcn) = 33.6px, ABAIXO do mínimo de toque. */
+  html { font-size: 120%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif; background: #fafafa; color: #252525; }
+
+  /* ---------- primitivos shadcn recriados como classe ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    white-space: nowrap; font-weight: 500; cursor: pointer;
+    border-radius: min(0.5rem, 12px); transition: background-color .15s, box-shadow .15s;
+    border: 1px solid transparent; font-size: .82rem;
+  }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #b5b5b5; }
+  .btn-default { height: 2rem; padding: 0 .8rem; }
+  .btn-outline { background: #fff; color: #252525; border-color: #e5e5e5; }
+  .btn-outline:hover { background: #f7f7f7; }
+  .btn-ghost { background: transparent; color: #252525; }
+  .btn-ghost:hover { background: #f2f2f2; }
+  .btn-primary { background: #252525; color: #fafafa; }
+  .btn-primary:hover { background: #3a3a3a; }
+  .btn-primary[disabled] { opacity: .5; cursor: default; }
+
+  /* Alvo de toque: 44px LITERAL (design-system §5), nunca a classe semântica. */
+  .touch44 { min-height: 44px; min-width: 44px; }
+
+  .card { background: #fff; border: 1px solid #e5e5e5; border-radius: .75rem; }
+  .badge { display: inline-flex; align-items: center; gap: .25rem; border-radius: 9999px;
+           padding: .1rem .5rem; font-size: .7rem; font-weight: 500; white-space: nowrap; }
+  .badge-secondary { background: #f0f0f0; color: #343434; }
+
+  .input {
+    height: 2rem; width: 100%; border: 1px solid #e5e5e5; border-radius: .5rem;
+    background: #fff; padding: 0 .55rem; font-size: .85rem; color: #252525; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .input:focus-visible { border-color: #b5b5b5; box-shadow: 0 0 0 3px rgba(181,181,181,.5); }
+  .input[aria-invalid="true"] { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,.18); }
+  .input:disabled { background: #f7f7f7; color: #8e8e8e; cursor: not-allowed; }
+
+  .lbl { font-size: .78rem; font-weight: 500; color: #343434; display: block; }
+
+  /* Switch (ui/switch) — trilho 34x20, alvo real de 44px via wrapper. */
+  .sw { position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 44px; height: 44px; cursor: pointer; background: none; border: 0; padding: 0; }
+  .sw:focus-visible { outline: none; border-radius: .5rem; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #b5b5b5; }
+  .sw i { display: block; width: 34px; height: 20px; border-radius: 9999px; background: #d4d4d4;
+          transition: background-color .15s; position: relative; }
+  .sw i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+          border-radius: 9999px; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .sw[aria-checked="true"] i { background: #252525; }
+  .sw[aria-checked="true"] i::after { transform: translateX(14px); }
+
+  /* Radio segmentado (ui/radio-group) */
+  .radio-op { display: flex; align-items: center; gap: .5rem; cursor: pointer;
+              border: 1px solid #e5e5e5; border-radius: .625rem; padding: 0 .9rem;
+              min-height: 44px; background: #fff; font-size: .85rem; flex: 1; }
+  .radio-op:has(input:checked) { border-color: #252525; background: #f7f7f7; }
+  .radio-op:has(input:focus-visible) { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #b5b5b5; }
+  .radio-dot { width: 16px; height: 16px; border-radius: 9999px; border: 1px solid #b5b5b5;
+               display: grid; place-items: center; flex: none; }
+  .radio-op:has(input:checked) .radio-dot { border-color: #252525; }
+  .radio-op:has(input:checked) .radio-dot::after { content: ""; width: 8px; height: 8px;
+               border-radius: 9999px; background: #252525; }
+  .radio-op input { position: absolute; opacity: 0; pointer-events: none; }
+
+  /* Aviso — ADAPTA o padrão de AvisoEstadoBloqueado.tsx (border-X/30 bg-X/5) */
+  .aviso { display: flex; align-items: flex-start; gap: .75rem; border-radius: .625rem;
+           border: 1px solid #e5e5e5; background: #f7f7f7; padding: 1rem; font-size: .84rem; }
+  .aviso-atencao { border-color: rgba(217,119,6,.35); background: rgba(217,119,6,.06); }
+
+  .barra-mock { border: 1px dashed #cbd5e1; background: #f8fafc; }
+
+  /* Simulação de 360px: as media queries do Tailwind olham a JANELA, não o
+     container, então o toggle força o layout mobile por CSS. */
+  .forcar-mobile .md\:grid, .forcar-mobile .md\:flex, .forcar-mobile .md\:inline-flex { display: none !important; }
+  .forcar-mobile .md\:block { display: block !important; }
+  .forcar-mobile [class*="md:grid-cols"] { display: block !important; }
+  .forcar-mobile .md\:hidden { display: flex !important; }
+  .forcar-mobile .md\:w-auto { width: 100% !important; }
+  .forcar-mobile .md\:flex-row { flex-direction: column !important; }
+  .forcar-mobile .md\:sr-only { position: static !important; width: auto; height: auto; clip: auto; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ====== barra de controle DO MOCKUP (não faz parte da tela) ====== -->
+<div class="barra-mock sticky top-0 z-20 px-4 py-2 text-[.72rem] text-slate-600">
+  <div class="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
+    <strong class="text-slate-700">Mockup:</strong>
+    <button class="btn btn-outline btn-default" data-cena="vazio">Estado vazio</button>
+    <button class="btn btn-outline btn-default" data-cena="cheio">Com faixas</button>
+    <button class="btn btn-outline btn-default" data-cena="erro">Preço fora de ordem</button>
+    <label class="ml-auto flex cursor-pointer items-center gap-1.5">
+      <input type="checkbox" id="mockMobile" /> simular 360&nbsp;px
+    </label>
+  </div>
+</div>
+
+<div id="viewport" class="transition-all">
+<main class="mx-auto w-full max-w-3xl px-4 py-6">
+
+  <div class="mb-4 flex items-center justify-between gap-2">
+    <h1 class="text-xl font-semibold text-foreground">Zonas de entrega</h1>
+  </div>
+
+  <!-- ====== 1. FRAME DE AVISO ====== -->
+  <div role="note" class="aviso mb-5">
+    <svg class="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <div class="space-y-1">
+      <p class="font-medium text-foreground">Cobre sua área por distância, não por CEP ou bairro</p>
+      <p class="text-muted-foreground">
+        Com faixas de km você define <strong class="font-medium text-foreground">só até onde entrega e o preço de cada faixa</strong> —
+        o sistema calcula a distância de cada pedido sozinho.
+        Por CEP ou por bairro, cada CEP e cada bairro precisa ser cadastrado
+        um por um, e o que ficar de fora vira pedido perdido.
+      </p>
+    </div>
+  </div>
+
+  <!-- ====== 2. CARD DE FAIXAS ====== -->
+  <section class="card overflow-hidden">
+    <div class="border-b border-border px-4 py-3">
+      <h2 class="text-base font-medium text-foreground">Faixas de distância</h2>
+      <p class="mt-0.5 text-[.78rem] text-muted-foreground">Comece pela faixa mais perto da loja e vá somando até onde você entrega.</p>
+    </div>
+
+    <!-- seletor de incremento (RadioGroup) -->
+    <fieldset class="border-b border-border px-4 py-3">
+      <legend class="lbl mb-2">Tamanho de cada faixa</legend>
+      <div class="flex gap-2">
+        <label class="radio-op">
+          <input type="radio" name="incremento" value="1" checked />
+          <span class="radio-dot" aria-hidden="true"></span>
+          <span>1 em 1&nbsp;km</span>
+        </label>
+        <label class="radio-op">
+          <input type="radio" name="incremento" value="2" />
+          <span class="radio-dot" aria-hidden="true"></span>
+          <span>2 em 2&nbsp;km</span>
+        </label>
+      </div>
+      <p class="mt-2 text-[.75rem] text-muted-foreground">
+        Faixas menores = preço mais justo. Faixas maiores = menos linhas para manter.
+      </p>
+    </fieldset>
+
+    <!-- cabeçalho da "tabela" — só no desktop -->
+    <div class="hidden border-b border-border bg-muted px-4 py-2 text-[.72rem] font-medium uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[5.5rem_7.5rem_1fr_44px_44px] md:items-center md:gap-3">
+      <span>Faixa</span><span>Preço</span><span>Frete grátis a partir de</span>
+      <span class="text-center" title="Faixa ativa">Ativa</span><span></span>
+    </div>
+
+    <div id="listaFaixas"></div>
+
+    <!-- estado vazio -->
+    <div id="vazio" class="hidden px-4 py-10 text-center">
+      <p class="text-sm text-muted-foreground">Nenhuma faixa cadastrada ainda.</p>
+      <p class="mx-auto mt-1 max-w-xs text-[.78rem] text-muted-foreground">
+        Sem faixa, a vitrine mostra só a opção de retirada.
+      </p>
+    </div>
+
+    <!-- adicionar -->
+    <div class="border-t border-border px-4 py-3">
+      <button id="btnAdicionar" class="btn btn-outline touch44 w-full md:w-auto">
+        <svg class="size-4" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg>
+        <span id="rotuloAdicionar">Adicionar faixa 0–1 km</span>
+      </button>
+    </div>
+
+    <!-- rodapé: limite derivado + salvar -->
+    <div class="flex flex-col gap-3 border-t border-border bg-muted px-4 py-3 md:flex-row md:items-center md:justify-between">
+      <p id="limite" aria-live="polite" class="text-[.8rem] text-muted-foreground"></p>
+      <button class="btn btn-primary touch44 w-full md:w-auto">Salvar faixas</button>
+    </div>
+  </section>
+
+  <!-- rodapé de ajuda: migra a nota de FormZona.tsx:208-212 -->
+  <p class="mt-4 text-[.75rem] leading-relaxed text-muted-foreground">
+    <strong class="font-medium text-foreground">Configure com margem.</strong>
+    O CEP do cliente costuma cair no centro do bairro ou da cidade, não no endereço exato.
+    Para atender 5&nbsp;km reais, cadastre faixas até 7–8&nbsp;km.
+    O valor cobrado no pedido é sempre o recalculado pelo servidor.
+  </p>
+
+</main>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Estado do mockup. Cada faixa guarda só a BORDA SUPERIOR (ateKm) — é ela que
+// vira taxas_entrega.raio_max_km. A borda inferior é rótulo derivado da faixa
+// anterior, então calcularFrete.ts NÃO muda.
+// ---------------------------------------------------------------------------
+let incremento = 1;
+let faixas = [];
+
+const CENAS = {
+  vazio: () => { incremento = 1; faixas = []; },
+  cheio: () => { incremento = 1; faixas = [
+    { preco: "4,00",  gratis: null,     ativo: true  },
+    { preco: "6,00",  gratis: "60,00",  ativo: true  },
+    { preco: "8,00",  gratis: "80,00",  ativo: true  },
+    { preco: "12,00", gratis: null,     ativo: false },
+  ]; },
+  erro: () => { incremento = 1; faixas = [
+    { preco: "4,00",  gratis: null,     ativo: true },
+    { preco: "6,00",  gratis: "60,00",  ativo: true },
+    { preco: "5,00",  gratis: null,     ativo: true },
+  ]; },
+};
+
+const brl = (s) => Number(String(s).replace(",", ".")) || 0;
+const de   = (i) => i * incremento;
+const ate  = (i) => (i + 1) * incremento;
+const rotulo = (i) => `${de(i)}–${ate(i)} km`;
+
+function limiteKm() {
+  let max = 0;
+  faixas.forEach((f, i) => { if (f.ativo) max = Math.max(max, ate(i)); });
+  return max;
+}
+
+function render() {
+  const lista = document.getElementById("listaFaixas");
+  lista.innerHTML = "";
+  document.getElementById("vazio").classList.toggle("hidden", faixas.length > 0);
+
+  faixas.forEach((f, i) => {
+    // Aviso: calcularFrete escolhe a MENOR taxa entre as zonas que atendem.
+    // Preço menor que o de uma faixa anterior "vaza" para os clientes de perto.
+    let conflito = null;
+    for (let j = 0; j < i; j++) {
+      if (faixas[j].ativo && f.ativo && brl(f.preco) < brl(faixas[j].preco)) { conflito = j; break; }
+    }
+
+    const row = document.createElement("div");
+    row.className = "border-b border-border px-4 py-3 md:grid md:grid-cols-[5.5rem_7.5rem_1fr_44px_44px] md:items-center md:gap-3"
+      + (f.ativo ? "" : " bg-muted/50");
+
+    row.innerHTML = `
+      <!-- MOBILE: título da faixa + controles de linha no topo do card -->
+      <div class="flex items-center justify-between gap-2 md:block">
+        <span class="text-sm font-medium text-foreground">${rotulo(i)}</span>
+        ${f.ativo ? "" : '<span class="badge badge-secondary md:mt-1 md:inline-flex">Desativada</span>'}
+        <span class="flex items-center md:hidden">
+          <button class="sw" role="switch" aria-checked="${f.ativo}" aria-label="${f.ativo ? "Desativar" : "Ativar"} faixa ${rotulo(i)}" data-ativo="${i}"><i></i></button>
+          <button class="btn btn-ghost touch44" aria-label="Remover faixa ${rotulo(i)}" data-remover="${i}">
+            <svg class="size-4 text-destructive" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+          </button>
+        </span>
+      </div>
+
+      <div class="mt-2 md:mt-0">
+        <label class="lbl mb-1 md:hidden" for="preco-${i}">Preço do frete</label>
+        <div class="flex items-center gap-1.5">
+          <span class="text-[.8rem] text-muted-foreground">R$</span>
+          <input class="input" id="preco-${i}" inputmode="decimal" value="${f.preco}"
+                 aria-label="Preço do frete da faixa ${rotulo(i)}"
+                 ${conflito !== null ? `aria-describedby="alerta-${i}"` : ""}
+                 data-preco="${i}" />
+        </div>
+      </div>
+
+      <div class="mt-3 md:mt-0">
+        <div class="flex items-center gap-2">
+          <button class="sw" role="switch" aria-checked="${f.gratis !== null}"
+                  aria-label="Frete grátis na faixa ${rotulo(i)}" aria-controls="gratis-${i}" data-toggle-gratis="${i}"><i></i></button>
+          <label class="lbl md:sr-only" for="gratis-${i}">Frete grátis a partir de</label>
+          ${f.gratis === null
+            ? '<span class="text-[.8rem] text-muted-foreground">Sem frete grátis</span>'
+            : `<span class="text-[.8rem] text-muted-foreground">R$</span>
+               <input class="input max-w-[7rem]" id="gratis-${i}" inputmode="decimal" value="${f.gratis}"
+                      aria-label="Frete grátis a partir de, na faixa ${rotulo(i)}" data-gratis="${i}" />`}
+        </div>
+      </div>
+
+      <!-- DESKTOP: switch de ativa + remover nas colunas finais -->
+      <div class="hidden md:flex md:justify-center">
+        <button class="sw" role="switch" aria-checked="${f.ativo}" aria-label="${f.ativo ? "Desativar" : "Ativar"} faixa ${rotulo(i)}" data-ativo="${i}"><i></i></button>
+      </div>
+      <div class="hidden md:flex md:justify-center">
+        <button class="btn btn-ghost touch44" aria-label="Remover faixa ${rotulo(i)}" data-remover="${i}">
+          <svg class="size-4 text-destructive" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        </button>
+      </div>
+
+      ${conflito !== null ? `
+      <div id="alerta-${i}" role="status" class="aviso aviso-atencao mt-3 md:col-span-5">
+        <svg class="mt-0.5 size-4 shrink-0 text-amber-700" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+        <p class="text-[.78rem] text-foreground">
+          Mais barato que a faixa de <strong class="font-medium">${rotulo(conflito)}</strong> (R$&nbsp;${faixas[conflito].preco}).
+          Quem estiver a ${de(conflito) + 0.5}&nbsp;km vai pagar R$&nbsp;${f.preco} — o sistema sempre aplica o menor preço entre as faixas que alcançam o cliente.
+        </p>
+      </div>` : ""}
+    `;
+    lista.appendChild(row);
+  });
+
+  document.getElementById("rotuloAdicionar").textContent =
+    `Adicionar faixa ${de(faixas.length)}–${ate(faixas.length)} km`;
+
+  const lim = limiteKm();
+  document.getElementById("limite").innerHTML = faixas.length === 0
+    ? 'Sem faixa cadastrada, a vitrine mostra <strong class="font-medium text-foreground">entrega indisponível</strong> — só retirada.'
+    : (lim === 0
+      ? 'Todas as faixas estão desativadas: a vitrine mostra <strong class="font-medium text-foreground">entrega indisponível</strong>.'
+      : `Você entrega até <strong class="font-medium text-foreground">${lim} km</strong>. Acima disso, a vitrine mostra “fora da área de entrega”.`);
+}
+
+document.addEventListener("click", (e) => {
+  const alvo = e.target.closest("[data-remover],[data-ativo],[data-toggle-gratis],[data-cena],#btnAdicionar");
+  if (!alvo) return;
+
+  if (alvo.id === "btnAdicionar") {
+    faixas.push({ preco: "", gratis: null, ativo: true });
+    render();
+    // Foco vai para o preço da faixa recém-criada: o próximo passo do lojista.
+    document.getElementById(`preco-${faixas.length - 1}`)?.focus();
+    return;
+  }
+  if (alvo.dataset.cena)          { CENAS[alvo.dataset.cena](); document.querySelector('input[name=incremento][value="1"]').checked = true; render(); return; }
+  if (alvo.dataset.remover)       { faixas.splice(Number(alvo.dataset.remover), 1); render(); return; } // no real: AlertDialog antes
+  if (alvo.dataset.ativo !== undefined && alvo.dataset.ativo !== "") {
+    const i = Number(alvo.dataset.ativo); faixas[i].ativo = !faixas[i].ativo; render(); return;
+  }
+  if (alvo.dataset.toggleGratis !== undefined && alvo.dataset.toggleGratis !== "") {
+    const i = Number(alvo.dataset.toggleGratis);
+    faixas[i].gratis = faixas[i].gratis === null ? "50,00" : null;
+    render();
+    if (faixas[i].gratis !== null) document.getElementById(`gratis-${i}`)?.focus();
+  }
+});
+
+document.addEventListener("input", (e) => {
+  const i = e.target.dataset.preco ?? e.target.dataset.gratis;
+  if (i === undefined) return;
+  const idx = Number(i);
+  const campo = e.target.dataset.preco !== undefined ? "preco" : "gratis";
+  faixas[idx][campo] = e.target.value;
+  const pos = e.target.selectionStart;
+  render();
+  const novo = document.getElementById(`${campo}-${idx}`);
+  if (novo) { novo.focus(); try { novo.setSelectionRange(pos, pos); } catch (_) {} }
+});
+
+document.querySelectorAll('input[name="incremento"]').forEach((r) => {
+  r.addEventListener("change", () => {
+    // No real: trocar o incremento com faixas já criadas é destrutivo e pede
+    // confirmação (AlertDialog) antes de remapear os preços.
+    incremento = Number(r.value);
+    render();
+  });
+});
+
+document.getElementById("mockMobile").addEventListener("change", (e) => {
+  const vp = document.getElementById("viewport");
+  vp.className = e.target.checked
+    ? "forcar-mobile mx-auto w-[360px] border-x border-dashed border-slate-300 bg-background"
+    : "transition-all";
+});
+
+CENAS.cheio();
+render();
+</script>
+</body>
+</html>

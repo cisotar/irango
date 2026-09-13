@@ -55,6 +55,7 @@ type Cenario = {
   zonaAAtiva: string; // zona ativa da loja A → pública
   zonaAInativa: string; // zona inativa da loja A → não pública
   zonaB: string; // zona ativa da loja B
+  zonaASemTaxa: string; // zona ativa da loja A SEM taxa (182: taxas_entrega é 1:1 por zona_id)
   // taxas
   taxaAAtiva: string; // taxa em zona ativa de A → pública
   taxaAInativa: string; // taxa em zona inativa de A → não pública
@@ -139,6 +140,13 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
       `insert into public.zonas_entrega (loja_id, nome, tipo, ativo) values ($1,'Zona B','bairro',true) returning id`,
       [lojaB],
     );
+    // 182: com o índice único taxas_entrega(zona_id), os testes de INSERT de taxa
+    // precisam de uma zona ainda SEM taxa — senão o unique violation mascara o
+    // que eles medem (a RLS de escrita herdada de zona→loja→dono).
+    const zonaASemTaxa = await ins(
+      `insert into public.zonas_entrega (loja_id, nome, tipo, ativo) values ($1,'Zona Sem Taxa','bairro',true) returning id`,
+      [lojaA],
+    );
 
     // taxas (herdam loja via zona)
     const taxaAAtiva = await ins(
@@ -188,6 +196,7 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
       zonaAAtiva,
       zonaAInativa,
       zonaB,
+      zonaASemTaxa,
       taxaAAtiva,
       taxaAInativa,
       bairroAAtivo,
@@ -501,7 +510,7 @@ describe("005 RLS de catálogo, entrega e pagamento", () => {
       novoId = await t.asUser(DONO_A, async (db) => {
         const r = await db.query<{ id: string }>(
           `insert into public.taxas_entrega (zona_id, taxa) values ($1, 3.50) returning id`,
-          [ids.zonaAAtiva],
+          [ids.zonaASemTaxa], // 182: zona ainda sem taxa (1:1 imposto por índice único)
         );
         return r.rows[0].id;
       });
@@ -514,12 +523,19 @@ describe("005 RLS de catálogo, entrega e pagamento", () => {
   });
 
   it("[24] dono B NÃO insere taxa numa zona de A (herança via zona→loja→dono; nada persiste)", async () => {
+    // 182: alvo é uma zona de A criada AGORA e ainda sem taxa — assim a rejeição
+    // só pode vir da RLS, nunca do índice único taxas_entrega(zona_id).
+    const zonaAlvo = await t.asService(async (db) => {
+      const r = await db.query<{ id: string }>(
+        `insert into public.zonas_entrega (loja_id, nome, tipo, ativo) values ($1,'Zona Alvo 24','bairro',true) returning id`,
+        [ids.lojaA],
+      );
+      return r.rows[0].id;
+    });
     let rejeitou = false;
     try {
       await t.asUser(DONO_B, (db) =>
-        db.query(`insert into public.taxas_entrega (zona_id, taxa) values ($1, 99.00)`, [
-          ids.zonaAAtiva, // zona de A
-        ]),
+        db.query(`insert into public.taxas_entrega (zona_id, taxa) values ($1, 99.00)`, [zonaAlvo]),
       );
     } catch {
       rejeitou = true;
@@ -527,9 +543,7 @@ describe("005 RLS de catálogo, entrega e pagamento", () => {
     expect(rejeitou).toBe(true);
     // nenhuma taxa de 99.00 deve existir na zona de A
     const r = await t.asService((db) =>
-      db.query(`select 1 from public.taxas_entrega where zona_id = $1 and taxa = 99.00`, [
-        ids.zonaAAtiva,
-      ]),
+      db.query(`select 1 from public.taxas_entrega where zona_id = $1 and taxa = 99.00`, [zonaAlvo]),
     );
     expect(r.rows.length).toBe(0);
   });

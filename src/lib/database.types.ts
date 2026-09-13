@@ -856,6 +856,42 @@ export type Database = {
           },
         ]
       }
+      taxas_entrega_duplicadas_182: {
+        Row: {
+          arquivado_em: string
+          cep_fim: number | null
+          cep_inicio: number | null
+          id: string
+          pedido_minimo_gratis: number | null
+          raio_max_km: number | null
+          taxa: number
+          taxa_id: string
+          zona_id: string
+        }
+        Insert: {
+          arquivado_em?: string
+          cep_fim?: number | null
+          cep_inicio?: number | null
+          id?: string
+          pedido_minimo_gratis?: number | null
+          raio_max_km?: number | null
+          taxa: number
+          taxa_id: string
+          zona_id: string
+        }
+        Update: {
+          arquivado_em?: string
+          cep_fim?: number | null
+          cep_inicio?: number | null
+          id?: string
+          pedido_minimo_gratis?: number | null
+          raio_max_km?: number | null
+          taxa?: number
+          taxa_id?: string
+          zona_id?: string
+        }
+        Relationships: []
+      }
       webhook_eventos_billing: {
         Row: {
           criado_em: string
