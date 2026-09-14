@@ -788,3 +788,44 @@ browser (débito 176):**
 - [ ] Nenhuma PII na query string do link de WhatsApp do modal
 - [ ] `migration list` conferido; `db push` só com autorização explícita; issue de CONTRACT
       aberta em `tasks/`
+
+---
+
+## Ambiguidades do plano — RESOLVIDAS antes do GREEN
+
+O agente `tdd` encontrou dois pontos em que o plano técnico não fechava. Ambos decididos;
+os testes RED já refletem estas decisões e **não devem ser alterados** pelo `executar`.
+
+### 1. `loja_sem_coords` NÃO vira "a combinar"
+
+O predicado formal de §D3 incluía `loja_sem_coords` no conjunto a-combinar, mas a prosa
+de §D3 e a seção Cenários diziam o oposto, duas vezes. **Vale a prosa:** segue
+`VEREDITO_LOJA_SEM_COORDS` / `indisponivel_loja`, sem retry e sem WhatsApp.
+
+**Motivo (decisão do usuário, via issue 193):** a 193 passou a exigir **coordenada**, não
+só endereço, para publicar a loja. Isso define loja sem coordenada como **estado a ser
+prevenido**, não tolerado. Tratá-la como "a combinar" no checkout contradiria essa
+direção: o lojista conviveria indefinidamente com a loja mal configurada, porque os
+pedidos continuariam entrando e o incentivo de corrigir sumiria.
+
+A contrapartida está registrada na 193, item 5 do escopo: loja publicada que PERDE a
+coordenada (consequência deliberada da decisão D3 da 180-A) precisa de tratamento no
+painel — não no checkout.
+
+### 2. Causa `erro` produz veredito `a_combinar_retriavel`
+
+O plano listou `erro` (exceção interna, falha de PostgREST/banco) no conjunto a-combinar
+mas não mapeou o veredito. **Fica `a_combinar_retriavel`**, seguindo a semântica de §D2:
+a pergunta que a UI faz é *"retentar agora adianta?"*, não *"é permanente?"*. Exceção
+interna é transitória por natureza — um blip de banco se resolve em segundos, e é
+exatamente o caso em que as 2 tentativas extras pagam.
+
+### Nota de acoplamento entre as issues
+
+O remapeamento para `esgotado` vive em `consultarGoogle`, que é **compartilhado** com o
+caminho da loja (`geocodificarEnderecoComMotivo`). A assinatura não muda, mas o motivo
+devolvido no caminho da loja muda junto — é inevitável, e a 180-A não tem opinião
+conflitante (ela consome `motivo` só para escolher o texto do modal, e `esgotado` é
+semanticamente um caso de `transitorio` do ponto de vista dela: a loja não tem o que
+corrigir no endereço). O `executar` deve confirmar que o painel continua exibindo o texto
+correto para o motivo novo.
