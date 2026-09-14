@@ -55,6 +55,10 @@ export type GrupoCatalogo = {
  * O filtro `.eq("oculto", false)` é defesa em profundidade sobre a RLS 083 (§9.4),
  * não a substitui. Produtos sem categoria caem no grupo "Outros", que fica POR ÚLTIMO.
  * `categorias` é a lista já buscada (buscarCategorias) usada para ordenar/nomear os grupos.
+ * Grupo sem nenhum produto visível NÃO é devolvido (issue 177): a vitrine não pode
+ * renderizar cabeçalho de categoria que não leva a lugar nenhum. Categoria só com
+ * produto esgotado CONTINUA aparecendo — `disponivel` não filtra, só `oculto`.
+ * O painel enxerga as categorias vazias por `buscarCategorias`, não por aqui.
  */
 export async function buscarCatalogoPublico(
   client: Client,
@@ -95,7 +99,7 @@ export async function buscarCatalogoPublico(
   }
 
   if (outros) grupos.push(outros);
-  return grupos;
+  return grupos.filter((grupo) => grupo.produtos.length > 0);
 }
 
 /**
