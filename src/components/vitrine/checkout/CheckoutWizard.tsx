@@ -49,6 +49,12 @@ export type CheckoutWizardProps = {
    * de WhatsApp preenchido. Pré-abre a aba no clique de confirmar (RN-A5).
    */
   preAbrirWhatsapp?: boolean;
+  /**
+   * [180-B] WhatsApp PÚBLICO da loja (já exposto na vitrine). INDEPENDENTE de
+   * `whatsapp_envio_automatico`: aqui a decisão depende só de TER canal para
+   * combinar a entrega. `null` ⇒ o modal de frete indisponível oferece retirada.
+   */
+  whatsappLoja?: string | null;
 };
 
 export function CheckoutWizard({
@@ -59,6 +65,7 @@ export function CheckoutWizard({
   aceitaEntrega,
   formasPagamento,
   preAbrirWhatsapp = false,
+  whatsappLoja = null,
 }: CheckoutWizardProps) {
   const router = useRouter();
   const { itens, incrementar, decrementar, remover } = useCarrinho();
@@ -166,8 +173,14 @@ export function CheckoutWizard({
   }, [etapa, lojaSlug, router]);
 
   // Frete preview efetivo: retirada força 0 (servidor também — RN-C2).
+  // [180-B] Quando o frete não pôde ser calculado, o resumo exibe RÓTULO em vez
+  // de número — R$ 0,00 seria lido como frete grátis.
   const fretePreviewEfetivo =
     estado.tipoEntrega === "retirada" ? 0 : fretePreview;
+  const freteResumo: number | "a_combinar" =
+    estado.tipoEntrega !== "retirada" && freteStatusPreview === "a_combinar"
+      ? "a_combinar"
+      : fretePreviewEfetivo;
   const totalPreview =
     Math.max(0, subtotalPreview - descontoPreview) + fretePreviewEfetivo;
 
@@ -228,6 +241,8 @@ export function CheckoutWizard({
           onEnderecoChange={handleEnderecoChange}
           onFreteChange={setFretePreview}
           onFreteStatusChange={setFreteStatusPreview}
+          whatsappLoja={whatsappLoja}
+          lojaNome={lojaNome}
           onVoltar={() => setEtapa(1)}
           onContinuar={() => setEtapa(3)}
         />
@@ -292,6 +307,8 @@ export function CheckoutWizard({
             onEnderecoChange={handleEnderecoChange}
             onFreteChange={setFretePreview}
             onFreteStatusChange={setFreteStatusPreview}
+            whatsappLoja={whatsappLoja}
+            lojaNome={lojaNome}
             onVoltar={() => {}}
             onContinuar={() => {}}
           />
@@ -325,7 +342,7 @@ export function CheckoutWizard({
               <ResumoValores
                 subtotal={subtotalPreview}
                 desconto={descontoPreview}
-                frete={fretePreviewEfetivo}
+                frete={freteResumo}
                 total={totalPreview}
                 mostrarFrete={estado.tipoEntrega === "entrega"}
               />

@@ -909,3 +909,76 @@ describe("salvarPerfil — zeragem de coords ao salvar endereço incompleto", ()
     expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 });
+
+// =============================================================================
+// RED — re-auditoria de segurança da 180-B, achado MÉDIA A
+//
+// A correção do achado 2 (commit 7897c25) reclassificou "burst negado" de
+// `transitorio` para `throttle_interno`. O retry de `salvarPerfil` só dispara em
+// `transitorio` — então o motivo NOVO passou a cair direto no `coordsPatch`
+// NULL: um throttle NOSSO apaga latitude/longitude da loja e desliga as zonas
+// por raio do lojista. É o mesmo erro de atribuição de culpa que a 180-B
+// eliminou do lado do comprador, agora do lado do lojista.
+//
+// `indisponivel_config` NÃO ganha retry (env var não reaparece em 1,1s), mas
+// também não pode apagar as coords — coberto no teste de preservação abaixo.
+//
+// O balde de burst do caminho da loja era `burst:loja`: 10/s dividido por TODOS
+// os lojistas E pelo admin. Operação em lote do admin derrubava as coords de
+// lojas alheias (impacto cross-tenant). O identificador precisa isolar por loja.
+// =============================================================================
+describe("[re-auditoria 180-B / MÉDIA A] throttle NOSSO não pode apagar as coords do lojista", () => {
+  it("throttle_interno → RETRY sob a trava; retry OK → geocodificado:true e coords PERSISTIDAS", async () => {
+    geocodificarComMotivo
+      .mockResolvedValueOnce({ coords: null, motivo: "throttle_interno" })
+      .mockResolvedValueOnce({ coords: COORDS_SP });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(2);
+    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
+    expect(patchCoords).toEqual({ latitude: -23.56, longitude: -46.65 });
+  });
+
+  it("throttle_interno nas DUAS tentativas → motivo repassado ao lojista (nunca 'confira o endereço')", async () => {
+    geocodificarComMotivo.mockResolvedValue({
+      coords: null,
+      motivo: "throttle_interno",
+    });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({
+      ok: true,
+      geocodificado: false,
+      motivo: "throttle_interno",
+    });
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(2);
+  });
+
+  it("indisponivel_config → SEM retry (env var não volta em 1,1s), motivo repassado", async () => {
+    geocodificarComMotivo.mockResolvedValue({
+      coords: null,
+      motivo: "indisponivel_config",
+    });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({
+      ok: true,
+      geocodificado: false,
+      motivo: "indisponivel_config",
+    });
+    expect(geocodificarComMotivo).toHaveBeenCalledTimes(1);
+  });
+
+  it("o geocoder recebe o ID DA LOJA (balde de burst isolado por loja, não compartilhado)", async () => {
+    await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    // 2º argumento = identificador de isolamento do balde interno. Sem ele, o
+    // caminho da loja compartilha um único balde de 10/s com todos os lojistas
+    // e com o admin (impacto cross-tenant do achado MÉDIA A).
+    expect(geocodificarComMotivo.mock.calls[0]?.[1]).toBe(LOJA_ID);
+  });
+});

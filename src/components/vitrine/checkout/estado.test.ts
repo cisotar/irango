@@ -676,3 +676,52 @@ describe("itemCarrinhoParaPayload — canoniza na fronteira do payload", () => {
     expect("observacao" in payload).toBe(false);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// RED (TDD red-first) — issue 180-B: o gate de conclusão do checkout.
+//
+// Um pedido "a combinar" É um pedido válido: o comprador conclui normalmente e
+// o frete é definido no chat com a loja. Se `podeConfirmar` continuar exigindo
+// `freteStatus === "ok"`, o modal libera a saída e o botão segue travado — o
+// cliente fica preso exatamente no cenário que a issue existe para destravar.
+//
+// Segue sendo só GATE DE UI: quem decide o valor é `criarPedido`, que
+// reclassifica do zero e não recebe nenhuma flag do cliente (mandato 1).
+// ────────────────────────────────────────────────────────────────────────────
+describe("[180-B] podeConfirmar — frete a combinar libera a conclusão", () => {
+  it('entrega + endereço + pagamento + frete "a_combinar" → true', () => {
+    const e = estado({
+      tipoEntrega: "entrega",
+      endereco: ENDERECO_VALIDO,
+      formaPagamento: "pix",
+    });
+    expect(podeConfirmar(e, "entrega", "a_combinar")).toBe(true);
+  });
+
+  it('entrega + frete "a_combinar" SEM endereço → false (endereço segue obrigatório)', () => {
+    const e = estado({
+      tipoEntrega: "entrega",
+      endereco: null,
+      formaPagamento: "pix",
+    });
+    expect(podeConfirmar(e, "entrega", "a_combinar")).toBe(false);
+  });
+
+  it('entrega + frete "a_combinar" SEM forma de pagamento → false', () => {
+    const e = estado({
+      tipoEntrega: "entrega",
+      endereco: ENDERECO_VALIDO,
+      formaPagamento: null,
+    });
+    expect(podeConfirmar(e, "entrega", "a_combinar")).toBe(false);
+  });
+
+  it('"indisponivel" continua travando (endereço genuinamente fora de área)', () => {
+    const e = estado({
+      tipoEntrega: "entrega",
+      endereco: ENDERECO_VALIDO,
+      formaPagamento: "pix",
+    });
+    expect(podeConfirmar(e, "entrega", "indisponivel")).toBe(false);
+  });
+});

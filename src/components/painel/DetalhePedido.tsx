@@ -6,6 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import {
+  freteConhecido,
+  ROTULO_FRETE_A_COMBINAR,
+} from "@/lib/utils/rotuloFrete";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import {
   ROTULO_FORMA_PAGAMENTO,
@@ -248,7 +252,13 @@ export function DetalhePedido({
               )}
               <div className="flex justify-between text-muted-foreground">
                 <span>Taxa de entrega</span>
-                <span>{formatarMoeda(pedido.taxa_entrega)}</span>
+                {/* [180-B] Nunca R$ 0,00 num pedido a combinar: a etiqueta vem
+                    de `frete_a_combinar`, e zero é frete grátis legítimo. */}
+                <span>
+                  {freteConhecido(pedido)
+                    ? formatarMoeda(pedido.taxa_entrega)
+                    : ROTULO_FRETE_A_COMBINAR}
+                </span>
               </div>
               <div className="flex justify-between pt-1 text-base font-semibold text-foreground">
                 <span>Total</span>

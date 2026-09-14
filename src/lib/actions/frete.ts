@@ -34,12 +34,12 @@ import { listarZonasComTaxas } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarCoordsLoja, buscarLojaPublicaPorId } from "@/lib/supabase/queries/lojas";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
 import {
-  lojaTemRaioSemCoords,
-  VEREDITO_LOJA_SEM_COORDS,
+  classificarFrete,
+  type VereditoACombinar,
 } from "@/lib/utils/freteDegradado";
 import {
   resolverCepServidor,
-  type EnderecoCepResolvido,
+  type ResolucaoCep,
 } from "@/lib/utils/resolverCepServidor";
 
 // Schema zod .strict(): rejeita qualquer campo que não seja loja_id + bairro +
@@ -65,8 +65,16 @@ const schemaFretePreview = z
     message: "Informe bairro ou CEP.",
   });
 
+/**
+ * (180-B/D5) A variante `a_combinar` é uma TERCEIRA VARIANTE DO UNION, não mais
+ * um literal em `zona_nome`: um consumidor que esqueça o caso quebra no
+ * type-check em vez de exibir um rótulo cru (ou, pior, um valor de frete que a
+ * loja nunca vai cobrar). `veredito` é só um ENUM — nenhum par (lat,lng),
+ * nenhum km e nenhum detalhe técnico da causa atravessa (§19/§14).
+ */
 export type ResultadoFretePreview =
   | { ok: true; taxa_preview: number; zona_nome: string }
+  | { ok: true; a_combinar: true; veredito: VereditoACombinar }
   | { ok: false; erro: string };
 
 /**
@@ -77,6 +85,14 @@ export type ResultadoFretePreview =
  *   - bairro em zona  → { ok:true, taxa_preview, zona_nome: <nome da zona> }
  *   - fora + fallback → { ok:true, taxa_preview, zona_nome: 'fora_zona' }
  *   - fora + sem fal  → { ok:true, taxa_preview: 0, zona_nome: 'indisponivel' }
+ *   - CEP INEXISTENTE (ViaCEP afirmou) + sem fallback → { ok:true,
+ *     taxa_preview: 0, zona_nome: 'indisponivel_cep' } — a causa é o CEP, não o
+ *     bairro; dizer "não atendemos seu bairro" aqui seria mentir (auditoria
+ *     180-B, achado 1)
+ *   - distância necessária e DESCONHECIDA (geocoding caído/esgotado/CEP não
+ *     localizado) → { ok:true, a_combinar:true, veredito } — NUNCA um número
+ *     (180-B): cobrar o fallback fora-de-zona aqui seria cobrar o cliente por
+ *     uma falha de infraestrutura nossa
  *   - payload inválid → { ok:false, erro }  (sem I/O)
  *   - erro interno    → { ok:false, erro }  (genérico)
  */
@@ -122,14 +138,23 @@ export async function calcularFreteAction(
     //     bairro canônico aqui e a consulta de geocoding em 3c. É um thunk, não
     //     uma chamada eager — sem bairro declarado e com cache de coords quente,
     //     o ViaCEP não é tocado nenhuma vez.
-    let promessaCep: Promise<EnderecoCepResolvido | null> | undefined;
-    const resolverCep = (): Promise<EnderecoCepResolvido | null> =>
-      cep ? (promessaCep ??= resolverCepServidor(cep)) : Promise.resolve(null);
+    //     (180-B/achado 1) O thunk repassa a `ResolucaoCep` INTEIRA: é por
+    //     dentro dela que "o CEP não existe" chega ao geocoder distinto de "o
+    //     ViaCEP caiu". Sem CEP o thunk nem vai ao ViaCEP — o motivo é
+    //     irrelevante nesse ramo (`distanciaDaLojaAoCep` curto-circuita em
+    //     `sem_cep` antes de invocá-lo) e a reconciliação só lê `endereco`.
+    let promessaCep: Promise<ResolucaoCep> | undefined;
+    const resolverCep = (): Promise<ResolucaoCep> =>
+      cep
+        ? (promessaCep ??= resolverCepServidor(cep))
+        : Promise.resolve({ endereco: null, motivo: "transitorio" });
 
     const endereco: EnderecoEntrega = { cep };
     if (bairro) {
-      const resolvido = await resolverCep();
-      endereco.bairro = resolvido?.bairro ?? null;
+      const resolucao = await resolverCep();
+      // Fail-closed da 064 INTACTO: sem endereço canônico (qualquer motivo), o
+      // bairro declarado pelo cliente é descartado.
+      endereco.bairro = resolucao.endereco?.bairro ?? null;
     }
 
     // 3c) (007) Distância por raio — paridade EXATA com o autoritativo (criarPedido,
@@ -137,9 +162,12 @@ export async function calcularFreteAction(
     //     service_role é usado SÓ para as 2 colunas de coords (sem SELECT anon, §19);
     //     o helper é fail-closed (undefined em qualquer falha/pré-condição ausente).
     //     distanciaKm jamais vem do cliente — derivado 100% no servidor (RN-4).
+    //     (180-B) O retorno é discriminado: a CAUSA da ausência de distância é
+    //     o que impede o fallback fora-de-zona de ser cobrado por uma falha de
+    //     infraestrutura nossa. `km` só é number quando a distância é REAL.
     const svc = createServiceClient();
-    const distanciaKm = await distanciaDaLojaAoCep(svc, loja_id, cep, resolverCep, ip);
-    if (typeof distanciaKm === "number") endereco.distanciaKm = distanciaKm;
+    const distancia = await distanciaDaLojaAoCep(svc, loja_id, cep, resolverCep, ip);
+    if (distancia.causa === "ok") endereco.distanciaKm = distancia.km;
 
     // 4) Reusa a MESMA lib do recálculo autoritativo (RN-C4 + paridade preview↔real).
     //    subtotal = 0: preview não tem itens confirmados ainda; nunca grátis por subtotal.
@@ -150,18 +178,35 @@ export async function calcularFreteAction(
       loja?.taxa_entrega_fora_zona,
     );
 
-    // 5) Mapeia ResultadoFrete → shape de preview para o cliente.
-    if (!resultado.atendido) {
-      // (005, RN-2-C) Distingue MISCONFIGURAÇÃO (loja com zona raio ativa mas sem
-      // coords → distanciaKm nunca casa, nenhum endereço resolve) de endereço
-      // genuinamente fora de área. Só consulta coords aqui (ramo indisponível),
-      // não no caminho feliz. service_role: coords não têm SELECT anon (§19); só
-      // o BOOLEANO de presença é usado, o par (lat,lng) nunca chega à UX.
-      const coords = await buscarCoordsLoja(svc, loja_id);
-      const zona_nome = lojaTemRaioSemCoords(zonas, coords !== null)
-        ? VEREDITO_LOJA_SEM_COORDS
-        : "indisponivel";
-      return { ok: true, taxa_preview: 0, zona_nome };
+    // 5) (180-B) Classificação ÚNICA, a MESMA consumida pelo autoritativo
+    //    (`criarPedido`) — é o que impede preview e cobrança de divergirem
+    //    (RN-7). O veredito a-combinar PRECEDE o fallback fora-de-zona.
+    //
+    //    (005, RN-2-C) `temCoordsLoja` só importa no ramo `sem_cep`, para
+    //    distinguir MISCONFIGURAÇÃO (loja com zona raio ativa mas sem coords —
+    //    nenhum endereço resolveria) de endereço genuinamente fora de área.
+    //    Consultado SÓ nesse ramo: service_role, e apenas o BOOLEANO de
+    //    presença — o par (lat,lng) nunca chega à UX (§19).
+    const temCoordsLoja =
+      distancia.causa === "sem_cep"
+        ? (await buscarCoordsLoja(svc, loja_id)) !== null
+        : null;
+
+    const veredito = classificarFrete({
+      resultado,
+      zonas,
+      causaDistancia: distancia.causa,
+      temCoordsLoja,
+    });
+
+    if (veredito.tipo === "a_combinar") {
+      // Nenhum valor é exibido: "a combinar" não é R$ 0,00 nem frete grátis.
+      return { ok: true, a_combinar: true, veredito: veredito.veredito };
+    }
+
+    // 6) Mapeia ResultadoFrete → shape de preview para o cliente.
+    if (veredito.tipo === "indisponivel") {
+      return { ok: true, taxa_preview: 0, zona_nome: veredito.veredito };
     }
 
     if (resultado.zonaId == null) {

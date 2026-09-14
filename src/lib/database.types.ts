@@ -650,6 +650,7 @@ export type Database = {
           desconto: number
           endereco_entrega: Json | null
           forma_pagamento: string | null
+          frete_a_combinar: boolean
           id: string
           idempotency_key: string | null
           loja_id: string
@@ -657,7 +658,7 @@ export type Database = {
           observacoes: string | null
           status: string
           subtotal: number
-          taxa_entrega: number
+          taxa_entrega: number | null
           telefone_cliente: string | null
           tipo_entrega: string
           token_acesso: string
@@ -670,6 +671,7 @@ export type Database = {
           desconto?: number
           endereco_entrega?: Json | null
           forma_pagamento?: string | null
+          frete_a_combinar?: boolean
           id?: string
           idempotency_key?: string | null
           loja_id: string
@@ -677,7 +679,7 @@ export type Database = {
           observacoes?: string | null
           status?: string
           subtotal: number
-          taxa_entrega?: number
+          taxa_entrega?: number | null
           telefone_cliente?: string | null
           tipo_entrega?: string
           token_acesso?: string
@@ -690,6 +692,7 @@ export type Database = {
           desconto?: number
           endereco_entrega?: Json | null
           forma_pagamento?: string | null
+          frete_a_combinar?: boolean
           id?: string
           idempotency_key?: string | null
           loja_id?: string
@@ -697,7 +700,7 @@ export type Database = {
           observacoes?: string | null
           status?: string
           subtotal?: number
-          taxa_entrega?: number
+          taxa_entrega?: number | null
           telefone_cliente?: string | null
           tipo_entrega?: string
           token_acesso?: string
@@ -1079,30 +1082,56 @@ export type Database = {
       }
     }
     Functions: {
-      criar_pedido: {
-        Args: {
-          p_cupom_codigo: string
-          p_cupom_id: string
-          p_desconto: number
-          p_endereco_entrega: Json
-          p_forma_pagamento: string
-          p_idempotency_key?: string
-          p_itens: Json
-          p_loja_id: string
-          p_nome_cliente: string
-          p_observacoes: string
-          p_subtotal: number
-          p_taxa_entrega: number
-          p_telefone_cliente: string
-          p_tipo_entrega: string
-          p_total: number
-          p_troco_para: number
-        }
-        Returns: {
-          pedido_id: string
-          token_acesso: string
-        }[]
-      }
+      criar_pedido:
+        | {
+            Args: {
+              p_cupom_codigo: string
+              p_cupom_id: string
+              p_desconto: number
+              p_endereco_entrega: Json
+              p_forma_pagamento: string
+              p_idempotency_key?: string
+              p_itens: Json
+              p_loja_id: string
+              p_nome_cliente: string
+              p_observacoes: string
+              p_subtotal: number
+              p_taxa_entrega: number
+              p_telefone_cliente: string
+              p_tipo_entrega: string
+              p_total: number
+              p_troco_para: number
+            }
+            Returns: {
+              pedido_id: string
+              token_acesso: string
+            }[]
+          }
+        | {
+            Args: {
+              p_cupom_codigo: string
+              p_cupom_id: string
+              p_desconto: number
+              p_endereco_entrega: Json
+              p_forma_pagamento: string
+              p_frete_a_combinar: boolean
+              p_idempotency_key: string
+              p_itens: Json
+              p_loja_id: string
+              p_nome_cliente: string
+              p_observacoes: string
+              p_subtotal: number
+              p_taxa_entrega: number
+              p_telefone_cliente: string
+              p_tipo_entrega: string
+              p_total: number
+              p_troco_para: number
+            }
+            Returns: {
+              pedido_id: string
+              token_acesso: string
+            }[]
+          }
       garantir_loja_do_dono: {
         Args: { p_dono_id: string; p_email: string; p_versao_termos?: string }
         Returns: string

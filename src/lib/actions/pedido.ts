@@ -35,9 +35,10 @@ import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
 import {
   resolverCepServidor,
-  type EnderecoCepResolvido,
+  type ResolucaoCep,
 } from "@/lib/utils/resolverCepServidor";
 import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
+import { classificarFrete } from "@/lib/utils/freteDegradado";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
@@ -230,6 +231,11 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     // (5) Frete autoritativo (RN-C2): retirada → frete 0, servidor ignora endereço.
     //     Entrega → calcularFrete com zonas do banco. Fora de área → recusa.
     let frete: { atendido: boolean; taxa: number; zonaId: string | null; gratis: boolean };
+    // (180-B) `true` quando a distância ERA necessária e ficou DESCONHECIDA: o
+    // frete não pode ser inventado nem herdado do fallback fora-de-zona, então
+    // o pedido nasce SEM taxa e a loja combina a entrega no chat. NUNCA vem do
+    // cliente — é derivado aqui, do zero, a cada submit (mandato 1 / D10).
+    let freteACombinar = false;
     // (006) Distância loja→CEP (linha reta) para zonas tipo='raio_km'. Derivada
     // server-side; só é number no ramo entrega quando há coords+geocoding. Usada
     // tanto em calcularFrete quanto na persistência do snapshot (RN-9). Em retirada
@@ -265,19 +271,29 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // (185) A resolução do CEP é MEMOIZADA e serve dois consumidores: o bairro
       // canônico aqui e a consulta de geocoding logo abaixo. É um thunk, não uma
       // chamada eager — o helper de distância só o invoca no miss de cache.
+      //
+      // (180-B/achado 1) O thunk repassa a `ResolucaoCep` INTEIRA — é por dentro
+      // dela que o motivo "este CEP não existe" chega ao geocoder distinto de
+      // "o ViaCEP caiu". Sem CEP o thunk nem vai ao ViaCEP; o motivo desse ramo
+      // é irrelevante (`distanciaDaLojaAoCep` curto-circuita em `sem_cep`) e a
+      // reconciliação abaixo só lê `endereco`.
       const cepCliente = endereco.cep;
-      let promessaCep: Promise<EnderecoCepResolvido | null> | undefined;
-      const resolverCep = (): Promise<EnderecoCepResolvido | null> =>
+      let promessaCep: Promise<ResolucaoCep> | undefined;
+      const resolverCep = (): Promise<ResolucaoCep> =>
         cepCliente
           ? (promessaCep ??= resolverCepServidor(cepCliente))
-          : Promise.resolve(null);
+          : Promise.resolve({ endereco: null, motivo: "transitorio" });
 
       let enderecoAutoritativo = endereco;
       if (endereco.bairro) {
-        const resolvido = await resolverCep();
+        const resolucao = await resolverCep();
         // Não resolvível (sem CEP, ViaCEP down ou CEP inexistente): bairro
-        // declarado não é confiável para seleção de zona → descarta.
-        enderecoAutoritativo = { ...endereco, bairro: resolvido?.bairro ?? null };
+        // declarado não é confiável para seleção de zona → descarta. O
+        // fail-closed da 064 NÃO muda com o contrato novo.
+        enderecoAutoritativo = {
+          ...endereco,
+          bairro: resolucao.endereco?.bairro ?? null,
+        };
       }
 
       // (006/RN-7) Distância loja→CEP para zonas tipo='raio_km'. MESMA sequência do
@@ -287,14 +303,17 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // distanciaKm vindo do cliente (RN-4). endereco.cep = CEP cru do cliente
       // (a reconciliação só mexe em bairro). Roda sempre que há CEP, independente
       // de existir zona raio_km (paridade com o preview; custo protegido §12-A).
-      distanciaKm = await distanciaDaLojaAoCep(
+      // (180-B) O retorno é discriminado: a CAUSA da ausência é o que separa
+      // "a distância não se aplica" de "a distância não pôde ser calculada".
+      const distancia = await distanciaDaLojaAoCep(
         svc,
         dados.loja_id,
         endereco.cep,
         resolverCep,
         ip,
       );
-      if (typeof distanciaKm === "number") {
+      if (distancia.causa === "ok") {
+        distanciaKm = distancia.km;
         enderecoAutoritativo = { ...enderecoAutoritativo, distanciaKm };
       }
 
@@ -306,7 +325,27 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         subtotal,
         loja.taxa_entrega_fora_zona,
       );
-      if (!frete.atendido) {
+      // (180-B) MESMA classificação do preview (`calcularFreteAction`) — fonte
+      // única, para que o que o cliente viu e o que é gravado não divirjam
+      // (RN-7). O veredito a-combinar PRECEDE o fallback fora-de-zona: aplicar
+      // uma regra de negócio sobre o ENDEREÇO a uma falha de INFRAESTRUTURA
+      // nossa é cobrar o cliente pelo nosso problema.
+      //
+      // `temCoordsLoja` só é consultado no ramo `sem_cep`; aqui o schema exige
+      // CEP em toda entrega, então nunca é necessário (null = não consultado).
+      const veredito = classificarFrete({
+        resultado: frete,
+        zonas,
+        causaDistancia: distancia.causa,
+        temCoordsLoja: null,
+      });
+
+      if (veredito.tipo === "a_combinar") {
+        // O pedido É criado: mandar o cliente embora por uma falha nossa é o
+        // dano que a issue corrige. A taxa fica NULL e o total sai sem frete.
+        freteACombinar = true;
+      } else if (!frete.atendido) {
+        // Só aqui o endereço está genuinamente fora de área (geocoding OK).
         return { erro: "Entrega não disponível para o seu bairro." };
       }
     }
@@ -333,7 +372,15 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
 
     // (7) Total autoritativo. troco_para é INFORMATIVO (RN-C3): só persiste
     //     quando o pagamento é dinheiro; caso contrário null. Nunca entra no total.
-    const { total } = calcularTotal({ subtotal, desconto, taxaEntrega: frete.taxa });
+    // (180-B) A combinar ⇒ o frete ainda não existe: `total = subtotal −
+    // desconto`, sem frete. Zero NÃO é "frete grátis" aqui — a etiqueta vem de
+    // `frete_a_combinar`, nunca de `taxa_entrega == 0`.
+    const taxaEntregaGravada = freteACombinar ? null : frete.taxa;
+    const { total } = calcularTotal({
+      subtotal,
+      desconto,
+      taxaEntrega: taxaEntregaGravada ?? 0,
+    });
     const trocoPara =
       dados.forma_pagamento === "dinheiro" ? dados.troco_para ?? null : null;
 
@@ -370,7 +417,10 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // [167] `||` e não `??`: o zod normaliza " " para "" — vazio vira NULL.
       p_observacoes: dados.observacoes || null,
       p_subtotal: subtotal,
-      p_taxa_entrega: frete.taxa,
+      p_taxa_entrega: taxaEntregaGravada,
+      // (180-B) Derivado 100% no servidor. O CHECK do banco amarra o par
+      // (frete_a_combinar ⟺ taxa_entrega IS NULL) como última linha.
+      p_frete_a_combinar: freteACombinar,
       p_desconto: desconto,
       p_total: total,
       p_cupom_id: cupomId,

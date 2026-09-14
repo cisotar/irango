@@ -11,12 +11,17 @@ import { Info } from "lucide-react";
 
 import { Separator } from "@/components/ui/separator";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { ROTULO_FRETE_A_COMBINAR_CURTO } from "@/lib/utils/rotuloFrete";
 
 export type ResumoValoresProps = {
   subtotal: number;
   desconto: number;
-  /** frete preview; em retirada é sempre 0. */
-  frete: number;
+  /**
+   * Frete preview; em retirada é sempre 0. (180-B) `"a_combinar"` quando o
+   * frete não pôde ser calculado — exibe RÓTULO, nunca R$ 0,00 (que o cliente
+   * leria como frete grátis).
+   */
+  frete: number | "a_combinar";
   total: number;
   /** false na Etapa 1 (frete ainda não escolhido) — oculta a linha de frete. */
   mostrarFrete?: boolean;
@@ -48,7 +53,11 @@ export function ResumoValores({
       {mostrarFrete && (
         <div className="flex justify-between">
           <span className="text-texto-muted">Entrega</span>
-          <span className="text-texto">{formatarMoeda(frete)}</span>
+          <span className="text-texto">
+            {frete === "a_combinar"
+              ? ROTULO_FRETE_A_COMBINAR_CURTO
+              : formatarMoeda(frete)}
+          </span>
         </div>
       )}
 

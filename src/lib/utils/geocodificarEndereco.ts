@@ -14,7 +14,13 @@
 //   (burst 10/s + teto diário GLOBAL + teto diário POR IP, quando há IP) foram
 //   efetivamente verificadas e concedidas. Qualquer estado em que as travas
 //   não podem ser verificadas (sem chave, sem credenciais, Redis down,
-//   exceção) ⇒ NÃO chamar ⇒ transitorio.
+//   exceção) ⇒ NÃO chamar. O MOTIVO devolvido responde "retentar agora
+//   adianta?" (180-B) E "de quem é a falha?" (auditoria da 180-B): tetos
+//   diários negados ⇒ esgotado_global (teto da plataforma) ou esgotado_ip
+//   (fatia do chamador — throttle nosso, fora do a_combinar); chave/credenciais ausentes ⇒
+//   indisponivel_config; burst negado ⇒ throttle_interno; Redis down e falhas
+//   do canal externo ⇒ transitorio. Só os motivos de falha GENUÍNA do serviço
+//   externo podem virar "frete a combinar" a jusante.
 //
 //   TETO POR IP (achado MÉDIO do `auditar`, issue 190): o teto diário global
 //   sozinho protege o ORÇAMENTO agregado, mas `calcularFreteAction` é um
@@ -46,7 +52,7 @@ import { Redis } from "@upstash/redis";
 
 import { limparCep } from "./buscarCep";
 import { dentroDoBrasil, montarConsultasCepCliente } from "./geocodingCepCliente";
-import type { EnderecoCepResolvido } from "./resolverCepServidor";
+import type { EnderecoCepResolvido, ResolucaoCep } from "./resolverCepServidor";
 
 export type Coordenadas = { latitude: number; longitude: number };
 
@@ -213,12 +219,54 @@ async function gravarCacheCoordenadas(
 }
 
 /**
- * Motivo da ausência de coords (issue 004). Discrimina falha **transitória**
- * (re-tentar resolve: guarda de custo excedida, timeout, 5xx, Redis/chave
- * indisponíveis, status de erro da Google) de **endereço não localizável**
- * (`ZERO_RESULTS` ou coords não-finitas — problema do dado, não do canal).
+ * Motivo da ausência de coords (issue 004; "esgotado" na 180-B). A pergunta
+ * que o consumidor precisa responder NÃO é "a falha é permanente?" e sim
+ * **"retentar AGORA adianta?"** — 20s de spinner por uma env var faltando é
+ * desperdício da atenção do comprador (plan/180-B §D2):
+ *   - `transitorio`    — o canal EXTERNO pode voltar em segundos: timeout,
+ *                        5xx, status de erro da Google, ViaCEP fora do ar.
+ *                        Retentar FAZ sentido.
+ *   - `esgotado_global` — o TETO DIÁRIO GLOBAL negou: o orçamento da
+ *                        PLATAFORMA acabou. Retentar agora NÃO adianta. Falha
+ *                        NOSSA de capacidade, que um comprador sozinho não
+ *                        consegue acionar ⇒ segue a_combinar legítimo.
+ *   - `esgotado_ip`    — o TETO DIÁRIO POR IP negou: a fatia DESTE chamador
+ *                        acabou. Retentar agora NÃO adianta. (re-auditoria
+ *                        180-B / MÉDIA B) É throttle NOSSO e, ao contrário do
+ *                        global, é ACIONÁVEL pelo próprio comprador: 51 CEPs
+ *                        distintos (cache miss forçado) em ~3 minutos e ele se
+ *                        auto-concedia `taxa_entrega` NULL. Por isso está FORA
+ *                        da lista branca `CAUSAS_A_COMBINAR` — cobra o fallback
+ *                        fora-de-zona, como antes da 180-B. A mensagem ao
+ *                        cliente segue NEUTRA: CGNAT móvel e NAT corporativo
+ *                        estouram esse teto sem culpa nenhuma dele.
+ *   - `nao_encontrado` — o problema é o DADO, não o canal: `ZERO_RESULTS` da
+ *                        Google (endereço REAL que ela não indexa), coords
+ *                        não-finitas/fora do Brasil, CEP malformado.
+ *
+ * (180-B / auditoria de segurança) Os TRÊS motivos abaixo existem porque os
+ * quatro acima classificam como `a_combinar` a jusante (taxa_entrega NULL), e
+ * a invariante da 180-B é que **o caminho "a combinar" só pode ser alcançado
+ * por falha GENUÍNA do serviço externo** — nunca por input do cliente, nunca
+ * pelo nosso throttle, nunca por config quebrada nossa:
+ *   - `cep_inexistente`     — achado 1: o ViaCEP AFIRMOU que o CEP não existe.
+ *                        É o INPUT DO CLIENTE que está errado. NÃO se funde com
+ *                        `nao_encontrado`, que significa ZERO_RESULTS da Google
+ *                        (endereço real, cliente sem culpa) e segue a_combinar.
+ *   - `throttle_interno` — achado 2: o NOSSO balde de burst negou. Throttle
+ *                        nosso não é outage do canal externo.
+ *   - `indisponivel_config` — achado 3: falta env var NOSSA (chave da Google ou
+ *                        credenciais Upstash). Defeito nosso não vira desconto
+ *                        para o cliente — e é BARULHENTO (console.error).
  */
-export type MotivoGeocoding = "nao_encontrado" | "transitorio";
+export type MotivoGeocoding =
+  | "nao_encontrado"
+  | "transitorio"
+  | "esgotado_global"
+  | "esgotado_ip"
+  | "cep_inexistente"
+  | "throttle_interno"
+  | "indisponivel_config";
 
 /** Resultado discriminado do geocoding com motivo (issue 004). */
 export type ResultadoGeocoding =
@@ -237,6 +285,24 @@ type RespostaGoogleGeocoding = {
   results?: Array<{ geometry?: { location?: { lat?: unknown; lng?: unknown } } }>;
 };
 
+/**
+ * Portão 0/1 negado: falta env var NOSSA (180-B/achado 3).
+ *
+ * Era `esgotado`, que classifica como `a_combinar` — perder UMA variável de
+ * ambiente fazia TODO pedido de entrega de TODA loja nascer com frete ZERO, sem
+ * erro na UI e sem alarme nenhum; a loja só descobriria no fim do mês.
+ * `esgotado` fica reservado ao orçamento que REALMENTE acabou (teto diário).
+ *
+ * BARULHENTO de propósito: silêncio é o que tornava o achado 3 caro. Loga só o
+ * NOME da variável — nunca o valor (§7/§14): a chave não pode aparecer em log.
+ */
+function configAusente(variavel: string): ResultadoGeocoding {
+  console.error(
+    `[geocodificarEndereco] configuração ausente: ${variavel} — geocoding desativado`,
+  );
+  return { coords: null, motivo: "indisponivel_config" };
+}
+
 // Portões de guarda de custo + fetch + parse, SEM cache (a decisão de
 // cachear é do caller, que é quem tem a chave — 185/D3). `restringirBrasil`
 // acrescenta `components=country:BR`; só o caminho do CEP do cliente passa
@@ -247,12 +313,29 @@ type RespostaGoogleGeocoding = {
 async function consultarGoogle(
   chave: string,
   consulta: string,
-  opcoes: { restringirBrasil: boolean; ip?: string },
+  opcoes: { restringirBrasil: boolean; ip?: string; idBurst: string },
 ): Promise<ResultadoGeocoding> {
   try {
     // Burst: cautela de sanidade contra picos degenerados.
-    const burst = await obterLimitadorBurst().limit("geocode-burst");
-    if (!burst.success) return { coords: null, motivo: "transitorio" };
+    // (180-B/achado 2) O identificador era a constante "geocode-burst": um
+    // ÚNICO balde fixedWindow(10,"1 s") para a PLATAFORMA INTEIRA. O rate limit
+    // da action é 20/min em sliding window, então um só IP cabe 20 chamadas no
+    // mesmo segundo — 2 ou 3 IPs mantinham a janela saturada e TODA loja com
+    // zona raio_km parava de cobrar frete. Agora o balde é POR IP, igual ao
+    // teto diário por IP. O caminho da LOJA (sem `ip`) usa um identificador
+    // estável próprio: é um lojista AUTENTICADO no painel, fora do vetor
+    // anônimo-em-escala, e seu balde fica isolado do dos compradores.
+    // (re-auditoria 180-B / MÉDIA A) `burst:loja` — chave CONSTANTE — reabria o
+    // MESMO defeito do lado do lojista: um balde de 10/s dividido por TODOS os
+    // lojistas E pelo admin. Operação em lote do admin saturava a janela, o
+    // `salvarPerfil` de lojistas ALHEIOS voltava `throttle_interno` e o 2º
+    // UPDATE gravava latitude/longitude NULL — throttle NOSSO apagando dado do
+    // lojista, com alcance cross-tenant. Agora o identificador vem do caller
+    // (`idBurst`) e isola por LOJA, simétrico ao isolamento por IP.
+    const burst = await obterLimitadorBurst().limit(opcoes.idBurst);
+    // (180-B/achado 2) `throttle_interno`, não `transitorio`: quem negou fomos
+    // NÓS, e o comprador não tem culpa nem controle sobre isso.
+    if (!burst.success) return { coords: null, motivo: "throttle_interno" };
     // Teto por IP ANTES do global (quando há `ip`): um IP que já esgotou a
     // própria fatia é barrado sem sequer tocar o contador GLOBAL — o que
     // preserva o orçamento agregado para os outros IPs por mais tempo do que
@@ -261,11 +344,22 @@ async function consultarGoogle(
     // orçamento coletivo).
     if (opcoes.ip) {
       const diarioIp = await obterLimitadorDiarioIp().limit(opcoes.ip);
-      if (!diarioIp.success) return { coords: null, motivo: "transitorio" };
+      // (180-B) `esgotado`, não `transitorio`: a fatia diária deste IP acabou
+      // e só volta na virada do dia. Retentar em 10s/20s só queimaria a
+      // atenção do comprador. NÃO culpa o cliente na UI — o teto por IP pode
+      // ter sido estourado por NAT corporativo/CGNAT móvel (rateLimit.ts).
+      // (re-auditoria 180-B / MÉDIA B) `esgotado_ip`, DISTINTO de
+      // `esgotado_global`: só o global é falha de capacidade nossa inacionável
+      // pelo comprador. Este aqui o comprador aciona sozinho, então não pode
+      // valer "frete a combinar".
+      if (!diarioIp.success) return { coords: null, motivo: "esgotado_ip" };
     }
     // Teto diário: a guarda de custo real, GLOBAL.
     const diario = await obterLimitadorDiario().limit("geocode-daily");
-    if (!diario.success) return { coords: null, motivo: "transitorio" };
+    // (180-B) `esgotado_global`: o orçamento diário da PLATAFORMA acabou;
+    // retentar agora não adianta. Segue a_combinar legítimo — é falha nossa de
+    // capacidade, fora do alcance de um comprador sozinho.
+    if (!diario.success) return { coords: null, motivo: "esgotado_global" };
 
     const pais = opcoes.restringirBrasil ? "&components=country:BR" : "";
     const url = `https://maps.googleapis.com/maps/api/geocode/json?key=${chave}&address=${encodeURIComponent(consulta)}${pais}`;
@@ -315,32 +409,43 @@ async function consultarGoogle(
  * NÃO lê nem grava cache (185/D3): cacheabilidade deixou de ser inferida do
  * formato da consulta.
  *
+ * `lojaId` é OBRIGATÓRIO (re-auditoria 180-B / MÉDIA A, convenção da issue
+ * 160): é o identificador do balde de burst, que passa a ser isolado POR LOJA.
+ * Antes era a constante `burst:loja` — um único balde de 10/s para todos os
+ * lojistas e para o admin, de modo que uma operação em lote do admin derrubava
+ * o geocoding de lojas alheias e o 2º UPDATE do caller apagava as coordenadas
+ * delas. Parâmetro opcional deixaria um caller esquecer e reabrir o vetor em
+ * silêncio. Nunca é logado; serve só de chave no Redis (a própria lib Upstash
+ * trata isso internamente).
+ *
  * Guarda de custo fail-closed (seguranca.md, 190): qualquer estado em que as
  * travas (burst/diária) não puderam ser verificadas/concedidas ⇒ NÃO chama a
- * Google. Esses estados (sem chave/credenciais, travas negadas/indisponíveis,
- * timeout, HTTP não-ok, status de erro) são `transitorio`; só `ZERO_RESULTS`
- * é `nao_encontrado`. Nunca propaga exceção; nunca loga o par (lat,lng), a
+ * Google. Esses estados são classificados por "retentar agora adianta?"
+ * (180-B): teto diário global negado ⇒ `esgotado_global`; chave/credenciais ausentes ⇒
+ * `indisponivel_config` (achado 3); burst negado ⇒ `throttle_interno`
+ * (achado 2); timeout, HTTP não-ok e status de erro ⇒ `transitorio`; só
+ * `ZERO_RESULTS` é `nao_encontrado`. Nunca propaga exceção; nunca loga o par (lat,lng), a
  * consulta nem a chave (§14/§21).
  */
 export async function geocodificarEnderecoComMotivo(
   consulta: string,
+  lojaId: string,
 ): Promise<ResultadoGeocoding> {
-  // Portão 0: chave da Google é pré-condição — sem ela não há como chamar a
-  // API paga. Ausente/vazia → não chama (transitório: re-tentar com a env
-  // corrigida resolve).
+  // Portões 0 e 1: chave da Google e credenciais Upstash são pré-condições.
+  // (180-B/achado 3) `indisponivel_config` + console.error — ver
+  // `configAusente`.
   const chave = chaveGoogle();
-  if (!chave) return { coords: null, motivo: "transitorio" };
-
-  // Portão 1: sem credenciais Upstash não há como verificar a guarda de custo
-  // → fail-closed. NÃO toca o Redis (oposto de rateLimit.ts, que retornaria
-  // permitido:true).
-  if (!credenciaisUpstash()) return { coords: null, motivo: "transitorio" };
+  if (!chave) return configAusente("GOOGLE_GEOCODING_API_KEY");
+  if (!credenciaisUpstash()) return configAusente("UPSTASH_REDIS_REST_*");
 
   // `restringirBrasil: true` (issue 186): toda loja do iRango é brasileira, e
   // sem a restrição nada impedia o endereço digitado pelo lojista de resolver
   // para um ponto fora do país. O caller ainda checa `dentroDoBrasil` no par
   // devolvido — restringir a busca é o primeiro filtro, não o único.
-  return consultarGoogle(chave, consulta, { restringirBrasil: true });
+  return consultarGoogle(chave, consulta, {
+    restringirBrasil: true,
+    idBurst: `burst:loja:${lojaId}`,
+  });
 }
 
 /**
@@ -362,15 +467,16 @@ export async function geocodificarEnderecoComMotivo(
  *   chave Google → credenciais Upstash → GET cache → resolverEndereco
  *   (ViaCEP) → montarConsultasCepCliente (cascata) → para cada candidato:
  *     burst 10/s → teto diário N/dia → fetch Google → ZERO_RESULTS? próximo
- *     candidato : outro status/erro? transitorio IMEDIATO (não cascateia em
+ *     candidato : outro status/erro? transitorio/esgotado IMEDIATO (não cascateia em
  *     falha de canal/orçamento) : OK? dentroDoBrasil → SET cache com v:3 e
  *     ex:2_160_000 → retorna.
  *
- * FAIL-CLOSED: `resolverEndereco` retornando `null` (ViaCEP fora do ar, CEP
- * inexistente, resposta sem cidade/UF) ⇒ `transitorio` SEM chamar a Google —
- * jamais cai no CEP cru como consulta de consolo. A cascata só avança em
- * `nao_encontrado` (ZERO_RESULTS); qualquer falha transitória de canal/
- * orçamento interrompe a cascata imediatamente (retry num canal já degradado
+ * FAIL-CLOSED: `resolverEndereco` sem endereço ⇒ SEM chamar a Google — jamais
+ * cai no CEP cru como consulta de consolo. O motivo do ViaCEP é repassado
+ * (180-B/achado 1): `nao_encontrado` (o CEP não existe) ⇒ `cep_inexistente`;
+ * canal caído/resposta malformada ⇒ `transitorio`. A cascata só avança em
+ * `nao_encontrado` (ZERO_RESULTS); qualquer falha de canal/orçamento
+ * (`transitorio` ou `esgotado`) interrompe a cascata imediatamente (retry num canal já degradado
  * dobraria o gasto sem chance real de sucesso).
  *
  * `ip` é OBRIGATÓRIO (convenção da issue 160 — parâmetro opcional deixaria um
@@ -386,27 +492,29 @@ export async function geocodificarEnderecoComMotivo(
  */
 export async function geocodificarCepResolvido(
   cep: string,
-  resolverEndereco: () => Promise<EnderecoCepResolvido | null>,
+  resolverEndereco: () => Promise<ResolucaoCep>,
   ip: string,
 ): Promise<ResultadoGeocoding> {
   // Portões 0 e 1: idênticos ao caminho da loja.
   const chave = chaveGoogle();
-  if (!chave) return { coords: null, motivo: "transitorio" };
-  if (!credenciaisUpstash()) return { coords: null, motivo: "transitorio" };
+  if (!chave) return configAusente("GOOGLE_GEOCODING_API_KEY");
+  if (!credenciaisUpstash()) return configAusente("UPSTASH_REDIS_REST_*");
 
   // A chave é o CEP normalizado: com e sem máscara resolvem a MESMA entrada.
   // CEP malformado → nada a resolver, sem NENHUMA I/O externa.
   const digitos = limparCep(cep);
-  if (!/^\d{8}$/.test(digitos)) return { coords: null, motivo: "transitorio" };
+  // (180-B) `nao_encontrado`, não `transitorio`: retentar um CEP inválido NUNCA
+  // resolve — o que a UI precisa pedir é conferir o número digitado.
+  if (!/^\d{8}$/.test(digitos)) return { coords: null, motivo: "nao_encontrado" };
 
   // Portão de cache (leitura) ANTES do ViaCEP: é o que sustenta o teto de
   // chamadas. Miss/lixo/Redis down → fail-open, segue (RN-F4/F5 preservados).
   const cacheado = await lerCacheCoordenadas(digitos);
   if (cacheado) return { coords: cacheado };
 
-  let resolvido: EnderecoCepResolvido | null;
+  let resolucao: ResolucaoCep;
   try {
-    resolvido = await resolverEndereco();
+    resolucao = await resolverEndereco();
   } catch (e) {
     // ViaCEP lançou: canal indisponível → transitório, sem propagar exceção.
     console.error("[geocodificarCepResolvido]", e);
@@ -414,7 +522,20 @@ export async function geocodificarCepResolvido(
   }
   // Sem endereço resolvido no servidor não há o que geocodificar. NUNCA cair
   // no CEP cru aqui — é exatamente a regressão que a issue 185 corrige.
-  if (!resolvido) return { coords: null, motivo: "transitorio" };
+  // (180-B/achado 1) A CAUSA importa: o ViaCEP AFIRMANDO que o CEP não existe é
+  // fato sobre o input do CLIENTE (`cep_inexistente`, jamais a_combinar); canal
+  // caído/malformado continua `transitorio` (a_combinar legítimo). Em nenhum
+  // dos dois a Google é chamada, e nada é gravado no cache (sem cache negativo).
+  if (resolucao.endereco == null) {
+    return {
+      coords: null,
+      motivo:
+        resolucao.motivo === "nao_encontrado"
+          ? "cep_inexistente"
+          : "transitorio",
+    };
+  }
+  const resolvido: EnderecoCepResolvido = resolucao.endereco;
 
   const candidatos = montarConsultasCepCliente(resolvido);
   // Sem cidade/UF não há âncora geográfica utilizável (defensivo — o próprio
@@ -422,10 +543,15 @@ export async function geocodificarCepResolvido(
   if (candidatos.length === 0) return { coords: null, motivo: "transitorio" };
 
   for (const consulta of candidatos) {
-    const r = await consultarGoogle(chave, consulta, { restringirBrasil: true, ip });
+    const r = await consultarGoogle(chave, consulta, {
+      restringirBrasil: true,
+      ip,
+      idBurst: `burst:${ip}`,
+    });
     if (r.coords == null) {
-      // Falha de canal/orçamento: para a cascata imediatamente.
-      if (r.motivo === "transitorio") return r;
+      // Falha de canal/orçamento: para a cascata imediatamente (180-B:
+      // `esgotado` também — insistir com o teto batido não muda o resultado).
+      if (r.motivo !== "nao_encontrado") return r;
       // ZERO_RESULTS: tenta o próximo candidato, mais genérico.
       continue;
     }

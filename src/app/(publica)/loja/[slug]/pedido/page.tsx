@@ -101,6 +101,12 @@ export default async function CheckoutPage({ params }: PageProps) {
     loja.whatsapp_envio_automatico === true &&
     (loja.whatsapp ?? "").trim() !== "";
 
+  // [180-B] Número público de WhatsApp da loja (mesmo campo já exibido no
+  // header da vitrine). Independente de `whatsapp_envio_automatico`: o modal de
+  // frete indisponível só precisa saber se EXISTE canal para combinar a
+  // entrega; sem número, ele oferece retirada.
+  const whatsappLoja = (loja.whatsapp ?? "").trim() || null;
+
   return (
     <CheckoutWizard
       lojaId={lojaId}
@@ -110,6 +116,7 @@ export default async function CheckoutPage({ params }: PageProps) {
       aceitaEntrega={aceitaEntrega}
       formasPagamento={formasPagamento}
       preAbrirWhatsapp={preAbrirWhatsapp}
+      whatsappLoja={whatsappLoja}
     />
   );
 }

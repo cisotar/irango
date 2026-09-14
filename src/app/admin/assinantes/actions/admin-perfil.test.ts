@@ -170,13 +170,23 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 //    para o override `coords:null` do caso best-effort também type-checar.
 type GeoResultado =
   | { coords: { latitude: number; longitude: number } }
-  | { coords: null; motivo: "nao_encontrado" | "transitorio" };
-const geocodificarEnderecoComMotivo = vi.fn<() => Promise<GeoResultado>>(
-  async () => ({ coords: { latitude: -23.55, longitude: -46.63 } }),
-);
+  | {
+      coords: null;
+      motivo:
+        | "nao_encontrado"
+        | "transitorio"
+        | "throttle_interno"
+        | "indisponivel_config"
+        | "esgotado_global"
+        | "esgotado_ip"
+        | "cep_inexistente";
+    };
+const geocodificarEnderecoComMotivo = vi.fn<
+  (consulta: string, lojaId: string) => Promise<GeoResultado>
+>(async () => ({ coords: { latitude: -23.55, longitude: -46.63 } }));
 vi.mock("@/lib/utils/geocodificarEndereco", () => ({
   geocodificarEnderecoComMotivo: (...a: unknown[]) =>
-    geocodificarEnderecoComMotivo(...(a as [])),
+    geocodificarEnderecoComMotivo(...(a as [string, string])),
 }));
 
 // 'use server' é só diretiva; o módulo importa no runner node. Hoje só o STUB
@@ -496,7 +506,11 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
     });
 
     expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(1);
+    // 2 chamadas, não 1: a correção da MÉDIA A (re-auditoria 180-B) deu ao
+    // caminho admin o MESMO retry que `salvarPerfil` já tinha — a divergência
+    // era o defeito. `transitorio` passa em segundos, então retentar antes de
+    // apagar o par é o comportamento correto nos dois callers.
+    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(2);
     expect(updates).toHaveLength(2);
     expect(updates[1].patch).toEqual({ latitude: null, longitude: null });
   });
@@ -542,5 +556,67 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
     expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
     expect(updates).toHaveLength(2);
     expect(updates[1].patch).toEqual({ latitude: null, longitude: null });
+  });
+});
+
+// =============================================================================
+// RED — re-auditoria de segurança da 180-B, achado MÉDIA A (via admin)
+//
+// `salvarPerfilAdmin` tem o MESMO padrão de `salvarPerfil`: geocoding
+// best-effort seguido de um 2º UPDATE que grava `latitude/longitude` NULL
+// quando não há coords. Duas consequências do balde de burst compartilhado
+// (`burst:loja`, 10/s para TODA a plataforma):
+//   1. o admin salvando várias lojas em sequência satura a janela e apaga as
+//      coords das PRÓPRIAS lojas que está editando — e das lojas de lojistas
+//      que estejam salvando ao mesmo tempo (cross-tenant);
+//   2. sem retry, um throttle NOSSO basta para desligar as zonas por raio.
+//
+// Contrato novo: identificador de balde isolado por loja + retry nos motivos
+// que passam em segundos.
+// =============================================================================
+describe("[re-auditoria 180-B / MÉDIA A] salvarPerfilAdmin: throttle nosso não apaga coords", () => {
+  beforeEach(() => {
+    process.env.GEOCODE_RETRY_DELAY_MS = "0";
+  });
+
+  it("passa o ID DA LOJA-ALVO ao geocoder (balde de burst isolado por loja)", async () => {
+    await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(geocodificarEnderecoComMotivo.mock.calls[0]?.[1]).toBe(LOJA_ID);
+  });
+
+  it("throttle_interno → RETRY; retry OK → coords PERSISTIDAS (não vira par NULL)", async () => {
+    geocodificarEnderecoComMotivo
+      .mockResolvedValueOnce({ coords: null, motivo: "throttle_interno" })
+      .mockResolvedValueOnce({ coords: { latitude: -23.55, longitude: -46.63 } });
+
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toMatchObject({ ok: true, geocodificado: true });
+    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(2);
+    expect(updates[1].patch).toEqual({ latitude: -23.55, longitude: -46.63 });
+  });
+
+  it("transitorio → RETRY também no caminho admin (paridade com salvarPerfil)", async () => {
+    geocodificarEnderecoComMotivo
+      .mockResolvedValueOnce({ coords: null, motivo: "transitorio" })
+      .mockResolvedValueOnce({ coords: { latitude: -23.55, longitude: -46.63 } });
+
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toMatchObject({ ok: true, geocodificado: true });
+    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(2);
+    expect(updates[1].patch).toEqual({ latitude: -23.55, longitude: -46.63 });
+  });
+
+  it("nao_encontrado (dado do lojista) segue SEM retry — retentar não acha o inexistente", async () => {
+    geocodificarEnderecoComMotivo.mockResolvedValue({
+      coords: null,
+      motivo: "nao_encontrado",
+    });
+
+    await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,9 +13,18 @@
 // (que precisa permanecer pura/sem I/O).
 //
 // FAIL-CLOSED: qualquer falha (rede, timeout/abort, CEP inexistente, HTTP
-// não-ok, JSON inválido, resposta sem localidade/uf) → `null`. NUNCA cai em dado
-// declarado pelo cliente e NUNCA propaga exceção (try/catch total) — o caller
-// decide o que fazer com o sinal, sem nunca reabrir o vetor de subpagamento.
+// não-ok, JSON inválido, resposta sem localidade/uf) → SEM endereço. NUNCA cai
+// em dado declarado pelo cliente e NUNCA propaga exceção (try/catch total) — o
+// caller decide o que fazer com o sinal, sem nunca reabrir o vetor de
+// subpagamento.
+//
+// (180-B / achado 1 da auditoria) O retorno deixou de ser `EnderecoCepResolvido
+// | null`: aquele `null` ÚNICO colapsava "o ViaCEP caiu" (falha do CANAL) com
+// "este CEP não existe" (fato sobre o INPUT DO CLIENTE). A jusante o colapso
+// virava `motivo: "transitorio"` → `classificarFrete` → `a_combinar` →
+// `taxa_entrega` NULL: bastava digitar um CEP de formato válido e inexistente
+// para fechar pedido com frete ZERO. A política fail-closed é IDÊNTICA; o que
+// muda é que a CAUSA deixa de se perder.
 
 /** Endereço resolvido no servidor a partir do CEP (fonte: ViaCEP). */
 export type EnderecoCepResolvido = {
@@ -23,18 +32,39 @@ export type EnderecoCepResolvido = {
   bairro: string | null;
   /** NÃO entra na consulta de geocoding (D1 da 185); exposto para a issue 186. */
   logradouro: string | null;
-  /** obrigatório: sem cidade não há âncora geográfica → retorno é null. */
+  /** obrigatório: sem cidade não há âncora geográfica → resolução sem endereço. */
   cidade: string;
   /** obrigatório: idem. */
   uf: string;
 };
+
+/**
+ * Por que não há endereço (180-B/achado 1). A pergunta que o caller responde é
+ * "a culpa é do CANAL ou do DADO que o cliente digitou?":
+ *   - `nao_encontrado` — o ViaCEP respondeu 200 e AFIRMOU `{ erro: true }`: o
+ *     CEP não existe. Fato sobre o endereço do cliente; NUNCA pode alcançar o
+ *     caminho "frete a combinar".
+ *   - `transitorio`    — o canal falhou (HTTP não-ok, timeout, exceção de rede,
+ *     JSON inválido, 200 sem localidade/uf). Resposta malformada NÃO é o ViaCEP
+ *     afirmando que o CEP não existe — ele diria `erro:true` —, então tratá-la
+ *     como `nao_encontrado` faria uma degradação do ViaCEP virar cobrança de
+ *     fallback num endereço que talvez esteja dentro do raio.
+ */
+export type MotivoResolucaoCep = "nao_encontrado" | "transitorio";
+
+/** Resultado discriminado: endereço resolvido, ou a CAUSA da ausência. */
+export type ResolucaoCep =
+  | { endereco: EnderecoCepResolvido }
+  | { endereco: null; motivo: MotivoResolucaoCep };
 
 type RespostaViaCep = {
   bairro?: string;
   logradouro?: string;
   localidade?: string;
   uf?: string;
-  erro?: boolean;
+  // O ViaCEP passou a responder `"erro": "true"` (string) em parte das rotas —
+  // ambas as formas são truthy e classificam igual.
+  erro?: boolean | string;
 };
 
 /**
@@ -43,33 +73,38 @@ type RespostaViaCep = {
  */
 export async function resolverCepServidor(
   cep: string,
-): Promise<EnderecoCepResolvido | null> {
+): Promise<ResolucaoCep> {
   try {
     const cepDigitos = cep.replace(/\D/g, "");
     const resp = await fetch(`https://viacep.com.br/ws/${cepDigitos}/json/`, {
       signal: AbortSignal.timeout(3000),
     });
-    if (!resp.ok) return null;
+    // Canal caído (5xx, 429, …): não é afirmação sobre o CEP.
+    if (!resp.ok) return { endereco: null, motivo: "transitorio" };
 
     const body = (await resp.json()) as RespostaViaCep;
-    // ViaCEP responde 200 com { erro: true } para CEP inexistente.
-    if (body.erro) return null;
+    // ViaCEP responde 200 com { erro: true } para CEP inexistente. É a ÚNICA
+    // afirmação de que o dado do cliente está errado (180-B/achado 1).
+    if (body.erro) return { endereco: null, motivo: "nao_encontrado" };
 
     // Sem cidade/UF não há âncora geográfica utilizável: fail-closed (185/D1).
+    // Resposta malformada = canal degradado, não CEP inexistente.
     const cidade = body.localidade?.trim();
     const uf = body.uf?.trim();
-    if (!cidade || !uf) return null;
+    if (!cidade || !uf) return { endereco: null, motivo: "transitorio" };
 
     return {
-      bairro: body.bairro?.trim() || null,
-      logradouro: body.logradouro?.trim() || null,
-      cidade,
-      uf,
+      endereco: {
+        bairro: body.bairro?.trim() || null,
+        logradouro: body.logradouro?.trim() || null,
+        cidade,
+        uf,
+      },
     };
   } catch (e) {
     // §14/§21: erro de I/O nunca vaza e o log é genérico — nem o CEP nem o
     // endereço do cliente entram na mensagem.
     console.error("[resolverCepServidor]", e);
-    return null;
+    return { endereco: null, motivo: "transitorio" };
   }
 }

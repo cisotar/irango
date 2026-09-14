@@ -21,11 +21,11 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaDoDono, slugExiste } from "@/lib/supabase/queries/lojas";
 import { schemaPerfil, schemaHorarios, schemaTema } from "@/lib/validacoes/loja";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
-import {
-  geocodificarEnderecoComMotivo,
-  type Coordenadas,
-  type MotivoGeocoding,
+import type {
+  Coordenadas,
+  MotivoGeocoding,
 } from "@/lib/utils/geocodificarEndereco";
+import { geocodificarLojaComRetry } from "@/lib/actions/geocodificarComRetry";
 import {
   montarPatchPerfil,
   montarConsultaGeocoding,
@@ -43,15 +43,6 @@ export type ResultadoSalvar = { ok: true } | { ok: false; erro: string };
 export type ResultadoPerfil =
   | { ok: true; geocodificado: boolean; motivo?: MotivoGeocoding }
   | { ok: false; erro: string };
-
-// Espera best-effort entre a 1ª tentativa e o retry de geocoding. O retry só
-// ajuda se a janela da trava global de 1 req/s (fixedWindow) tiver virado — por
-// isso esperamos ~1s antes de disputar o token de novo (seguranca.md §12-A: a
-// trava NÃO é afrouxada; só damos tempo a ela). Configurável por env só para os
-// testes rodarem sem delay real.
-function esperar(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Revalida a vitrine best-effort: o dado JÁ foi persistido com sucesso, então
@@ -125,16 +116,18 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoPerfil> {
     // (re-salvar resolve) de endereço não localizável (dado do lojista). No
     // transitório, tenta UM retry após a janela da trava virar — assim o lojista
     // não fica com o raio quebrado por uma rajada momentânea do Nominatim.
+    //
+    // (re-auditoria 180-B / MÉDIA A) O conjunto de motivos retriáveis e o
+    // isolamento do balde de burst por loja vivem em `geocodificarLojaComRetry`
+    // — fonte única compartilhada com `salvarPerfilAdmin`. `throttle_interno`
+    // (o NOSSO balde negou) entrou na lista: sem retry ele caía direto no
+    // `coordsPatch` NULL, apagando as coordenadas da loja e desligando as zonas
+    // por raio por causa de um throttle nosso.
     const consulta = montarConsultaGeocoding(dados);
     let coords: Coordenadas | null = null;
     let motivo: MotivoGeocoding | undefined;
     if (consulta !== null) {
-      let geo = await geocodificarEnderecoComMotivo(consulta);
-      if (geo.coords === null && geo.motivo === "transitorio") {
-        const atrasoMs = Number(process.env.GEOCODE_RETRY_DELAY_MS ?? 1100);
-        await esperar(atrasoMs);
-        geo = await geocodificarEnderecoComMotivo(consulta);
-      }
+      const geo = await geocodificarLojaComRetry(consulta, loja.id);
       coords = geo.coords;
       if (geo.coords === null) motivo = geo.motivo;
     }
