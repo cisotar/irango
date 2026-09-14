@@ -110,6 +110,7 @@ import {
   VEREDITO_A_COMBINAR_ESGOTADO,
   VEREDITO_A_COMBINAR_CEP,
   VEREDITO_LOJA_SEM_COORDS,
+  VEREDITO_CEP_NAO_EXISTE,
 } from "./freteDegradado";
 import type { ResultadoFrete } from "./calcularFrete";
 
@@ -374,7 +375,14 @@ describe("[auditoria 180-B] causas que NÃO podem virar 'a combinar'", () => {
     ).toEqual({ tipo: "ok" });
   });
 
-  it("[achado 1] 'cep_inexistente' + loja SEM fallback → indisponivel (recusa pré-180-B), NÃO a_combinar", () => {
+  // LITERAL ATUALIZADO na fase GREEN (decisão de UX do `executar`): o `tdd`
+  // havia travado o veredito genérico "indisponivel", que a UI renderiza como
+  // "não atendemos seu bairro". Isso é MENTIRA sobre a causa — o bairro
+  // canônico foi descartado pelo fail-closed da 064 justamente porque o CEP não
+  // existe, e o cliente pode consertar o CEP. Corrigir a mentira no caminho
+  // a-combinar e deixá-la de pé no caminho indisponível seria meia correção,
+  // que é exatamente o que esta issue existe para não fazer.
+  it("[achado 1] 'cep_inexistente' + loja SEM fallback → indisponivel PELO CEP (nunca a_combinar)", () => {
     expect(
       classificarFrete({
         resultado: resultadoForaDeArea(),
@@ -382,7 +390,7 @@ describe("[auditoria 180-B] causas que NÃO podem virar 'a combinar'", () => {
         causaDistancia: causaNova("cep_inexistente"),
         temCoordsLoja: true,
       }),
-    ).toEqual({ tipo: "indisponivel", veredito: "indisponivel" });
+    ).toEqual({ tipo: "indisponivel", veredito: VEREDITO_CEP_NAO_EXISTE });
   });
 
   // ── Achado 2 (ALTA): balde de burst global de chave fixa ───────────────────

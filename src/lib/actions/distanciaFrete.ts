@@ -29,7 +29,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { buscarCoordsLoja } from "@/lib/supabase/queries/lojas";
 import { geocodificarCepResolvido } from "@/lib/utils/geocodificarEndereco";
-import type { EnderecoCepResolvido } from "@/lib/utils/resolverCepServidor";
+import type { ResolucaoCep } from "@/lib/utils/resolverCepServidor";
 import { haversine } from "@/lib/utils/haversine";
 
 // ─────────────────────────── Retorno discriminado (180-B) ───────────────────
@@ -44,7 +44,17 @@ import { haversine } from "@/lib/utils/haversine";
 // Nenhum dado sensível novo atravessa: a causa é um ENUM e o par (lat,lng)
 // continua morrendo dentro do módulo de geocoding (seguranca.md §19).
 
-/** Causa da (in)disponibilidade da distância loja→CEP (180-B/D1). */
+/**
+ * Causa da (in)disponibilidade da distância loja→CEP (180-B/D1).
+ *
+ * Os literais espelham `MotivoGeocoding` por construção (o motivo do geocoder É
+ * a causa). Os três últimos vieram da auditoria de segurança da 180-B e existem
+ * justamente para NÃO classificarem como "a combinar" em `classificarFrete`: o
+ * caminho a-combinar (taxa_entrega NULL) só pode ser alcançado por falha
+ * GENUÍNA do serviço externo — nunca por input do cliente (`cep_inexistente`),
+ * nunca pelo nosso throttle (`throttle_interno`), nunca por config quebrada
+ * nossa (`indisponivel_config`).
+ */
 export type CausaDistancia =
   | "ok"
   | "sem_cep"
@@ -52,7 +62,10 @@ export type CausaDistancia =
   | "nao_encontrado"
   | "transitorio"
   | "esgotado"
-  | "erro";
+  | "erro"
+  | "cep_inexistente"
+  | "throttle_interno"
+  | "indisponivel_config";
 
 /** Resultado discriminado: distância real só existe com `causa: "ok"`. */
 export type ResultadoDistancia =
@@ -63,6 +76,11 @@ export type ResultadoDistancia =
  * Distância em km (linha reta) entre a loja e o CEP do cliente, para alimentar
  * zonas de frete tipo 'raio_km' em calcularFrete. Recebe `svc` (service_role) por
  * param — coords não têm SELECT anon (§19); não instancia client nem lê process.env.
+ *
+ * `resolverEndereco` devolve `ResolucaoCep` — o motivo VIAJA junto (180-B,
+ * achado 1 da auditoria): "o CEP não existe" (input do cliente) e "o ViaCEP
+ * caiu" (canal) precisam chegar distintos ao geocoder, senão o primeiro vira
+ * frete a combinar, isto é, frete ZERO a pedido do comprador.
  *
  * `resolverEndereco` é OBRIGATÓRIO (convenção da issue 160): um parâmetro
  * opcional deixaria um caller esquecer e cair silenciosamente no caminho
@@ -81,7 +99,7 @@ export async function distanciaDaLojaAoCep(
   svc: SupabaseClient<Database>,
   lojaId: string,
   cep: string | null | undefined,
-  resolverEndereco: () => Promise<EnderecoCepResolvido | null>,
+  resolverEndereco: () => Promise<ResolucaoCep>,
   ip: string,
 ): Promise<ResultadoDistancia> {
   // CEP ausente/vazio → nada a geocodificar (não chama coords nem geocode).
@@ -95,10 +113,11 @@ export async function distanciaDaLojaAoCep(
 
     // O CEP é a CHAVE; a CONSULTA (cascata) é montada dentro do geocoder a
     // partir do endereço resolvido no servidor. Se o ViaCEP falhar,
-    // `resolverEndereco` devolve null e o geocoder é fail-closed — jamais cai
-    // no CEP cru como consulta de consolo (causa raiz da 185).
+    // `resolverEndereco` devolve uma resolução SEM endereço (carregando o
+    // motivo) e o geocoder é fail-closed — jamais cai no CEP cru como consulta
+    // de consolo (causa raiz da 185).
     const cliente = await geocodificarCepResolvido(cep, resolverEndereco, ip);
-    // O motivo do geocoder É a causa (mesmos três literais, por construção):
+    // O motivo do geocoder É a causa (mesmos literais, por construção):
     // repassá-lo é o que impede o fallback fora-de-zona de ser cobrado por uma
     // falha de canal (180-B).
     if (cliente.coords == null) return { km: undefined, causa: cliente.motivo };

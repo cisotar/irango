@@ -35,7 +35,7 @@ import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
 import {
   resolverCepServidor,
-  type EnderecoCepResolvido,
+  type ResolucaoCep,
 } from "@/lib/utils/resolverCepServidor";
 import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
 import { classificarFrete } from "@/lib/utils/freteDegradado";
@@ -271,19 +271,29 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // (185) A resolução do CEP é MEMOIZADA e serve dois consumidores: o bairro
       // canônico aqui e a consulta de geocoding logo abaixo. É um thunk, não uma
       // chamada eager — o helper de distância só o invoca no miss de cache.
+      //
+      // (180-B/achado 1) O thunk repassa a `ResolucaoCep` INTEIRA — é por dentro
+      // dela que o motivo "este CEP não existe" chega ao geocoder distinto de
+      // "o ViaCEP caiu". Sem CEP o thunk nem vai ao ViaCEP; o motivo desse ramo
+      // é irrelevante (`distanciaDaLojaAoCep` curto-circuita em `sem_cep`) e a
+      // reconciliação abaixo só lê `endereco`.
       const cepCliente = endereco.cep;
-      let promessaCep: Promise<EnderecoCepResolvido | null> | undefined;
-      const resolverCep = (): Promise<EnderecoCepResolvido | null> =>
+      let promessaCep: Promise<ResolucaoCep> | undefined;
+      const resolverCep = (): Promise<ResolucaoCep> =>
         cepCliente
           ? (promessaCep ??= resolverCepServidor(cepCliente))
-          : Promise.resolve(null);
+          : Promise.resolve({ endereco: null, motivo: "transitorio" });
 
       let enderecoAutoritativo = endereco;
       if (endereco.bairro) {
-        const resolvido = await resolverCep();
+        const resolucao = await resolverCep();
         // Não resolvível (sem CEP, ViaCEP down ou CEP inexistente): bairro
-        // declarado não é confiável para seleção de zona → descarta.
-        enderecoAutoritativo = { ...endereco, bairro: resolvido?.bairro ?? null };
+        // declarado não é confiável para seleção de zona → descarta. O
+        // fail-closed da 064 NÃO muda com o contrato novo.
+        enderecoAutoritativo = {
+          ...endereco,
+          bairro: resolucao.endereco?.bairro ?? null,
+        };
       }
 
       // (006/RN-7) Distância loja→CEP para zonas tipo='raio_km'. MESMA sequência do

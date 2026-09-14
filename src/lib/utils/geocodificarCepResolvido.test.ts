@@ -115,35 +115,23 @@ function googleStatus(status: string): Response {
 // input do CLIENTE) e "o ViaCEP caiu" (falha do CANAL) chegam aqui
 // indistinguíveis — e o primeiro acaba virando frete a combinar, isto é,
 // frete ZERO, a pedido do comprador.
-//
-// STUB TDD — ponte de tipo, some na fase GREEN.
-// `geocodificarCepResolvido` ainda DECLARA o thunk antigo. Sem esta ponte, os
-// thunks do contrato novo quebrariam o `npx tsc --noEmit` inteiro e o RED
-// viraria erro de compilação em vez de FALHA DE ASSERÇÃO — que é o que precisa
-// ser provado. O GREEN troca o parâmetro para `() => Promise<ResolucaoCep>` e
-// apaga isto.
-type ThunkDeclaradoHoje = Parameters<typeof geocodificarCepResolvido>[1];
-function comoThunk<T>(f: T): T & ThunkDeclaradoHoje {
-  return f as T & ThunkDeclaradoHoje;
-}
 
 /** Thunk memoizado de sucesso — devolve o endereço resolvido pelo ViaCEP. */
 function resolverOk(e: EnderecoCepResolvido = ENDERECO_A) {
-  return comoThunk(vi.fn(async () => ({ endereco: e })));
+  return vi.fn(async () => ({ endereco: e }));
 }
 
 /** Thunk fail-closed de CANAL — o ViaCEP caiu (rede/timeout/HTTP não-ok). */
 function resolverNulo() {
-  return comoThunk(
-    vi.fn(async () => ({ endereco: null, motivo: "transitorio" as const })),
-  );
+  return vi.fn(async () => ({ endereco: null, motivo: "transitorio" as const }));
 }
 
 /** Thunk fail-closed de DADO — o ViaCEP afirmou que o CEP não existe. */
 function resolverCepInexistente() {
-  return comoThunk(
-    vi.fn(async () => ({ endereco: null, motivo: "nao_encontrado" as const })),
-  );
+  return vi.fn(async () => ({
+    endereco: null,
+    motivo: "nao_encontrado" as const,
+  }));
 }
 
 /** Concatena todas as URLs passadas ao fetch, já decodificadas. */
@@ -488,7 +476,13 @@ describe("[achado 1] ViaCEP afirma que o CEP não existe → 'cep_inexistente', 
   // existe) e foi a GOOGLE que não o indexou. Aqui o cliente não tem culpa
   // nenhuma e o frete continua "a combinar".
   it("ZERO_RESULTS da Google para um CEP que o ViaCEP RESOLVEU segue 'nao_encontrado' (a_combinar legítimo)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(googleStatus("ZERO_RESULTS"));
+    // `mockImplementation`, NÃO `mockResolvedValue`: a cascata faz vários
+    // fetches e um único `Response` tem o body consumido no primeiro `.json()`
+    // — reusá-lo faria o 2º candidato lançar e o resultado virar `transitorio`,
+    // mascarando o que este teste afirma.
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      googleStatus("ZERO_RESULTS"),
+    );
 
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
@@ -811,7 +805,11 @@ describe("[190] status ausente/malformado no corpo da Google → transitorio IME
 // a chamada, sem estado espúrio entre CEPs diferentes.
 // =============================================================================
 describe("[190] teto diário — negação no meio de uma sequência não contamina chamadas vizinhas", () => {
-  it("CEP1 concede, CEP2 nega (teto atingido), CEP3 concede de novo (nova janela) → só CEP2 fica transitorio", async () => {
+  // Rótulo dos mocks corrigido junto com o achado 2: com `ip` presente há TRÊS
+  // chamadas de `limit()` por consulta (burst → teto/IP → teto global), então o
+  // `false` da 4ª chamada é o BURST do CEP2 — e burst negado passou a ser
+  // `throttle_interno` (throttle NOSSO nunca vira frete a combinar).
+  it("CEP1 concede, CEP2 nega, CEP3 concede de novo (nova janela) → só CEP2 degrada", async () => {
     const CEP_C = "01310-100";
     const ENDERECO_C: EnderecoCepResolvido = {
       logradouro: "Avenida Paulista",
@@ -823,11 +821,11 @@ describe("[190] teto diário — negação no meio de uma sequência não contam
 
     limitMock
       .mockResolvedValueOnce({ success: true }) // CEP1 burst
-      .mockResolvedValueOnce({ success: true }) // CEP1 diário → concede
-      .mockResolvedValueOnce({ success: true }) // CEP2 burst
-      .mockResolvedValueOnce({ success: false }) // CEP2 diário → teto atingido
-      .mockResolvedValueOnce({ success: true }) // CEP3 burst
-      .mockResolvedValueOnce({ success: true }); // CEP3 diário → concede (nova janela)
+      .mockResolvedValueOnce({ success: true }) // CEP1 teto/IP
+      .mockResolvedValueOnce({ success: true }) // CEP1 teto global → concede
+      .mockResolvedValueOnce({ success: false }) // CEP2 burst → nega
+      .mockResolvedValueOnce({ success: true }) // (não alcançadas por CEP2)
+      .mockResolvedValueOnce({ success: true });
 
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -843,7 +841,7 @@ describe("[190] teto diário — negação no meio de uma sequência não contam
     const r3 = await geocodificarCepResolvido(CEP_C, resolverOk(ENDERECO_C), IP_CLIENTE);
 
     expect(r1).toEqual({ coords: COORDS_A });
-    expect(r2).toEqual({ coords: null, motivo: "transitorio" });
+    expect(r2).toEqual({ coords: null, motivo: "throttle_interno" });
     expect(r3).toEqual({ coords: COORDS_C });
     // CEP2 negado: nenhum fetch pago por ele. CEP1 e CEP3 usam 1 fetch cada
     // (1º candidato já sucede) → 2 fetches no total.
@@ -1086,21 +1084,25 @@ describe("[180-B] MotivoGeocoding ganha 'esgotado' — retentar AGORA adianta?",
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("GOOGLE_GEOCODING_API_KEY ausente → 'esgotado' (env var faltando: 20s de spinner é desperdício)", async () => {
+  it("GOOGLE_GEOCODING_API_KEY ausente → 'indisponivel_config' (achado 3)", async () => {
     delete process.env.GOOGLE_GEOCODING_API_KEY;
 
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // INVERTIDO pela auditoria (achado 3): config ausente é defeito NOSSO e
+    // deixou de ser `esgotado` (que classifica como a_combinar e zera o frete).
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
   });
 
-  it("credenciais Upstash ausentes → 'esgotado' (sem travas verificáveis, fail-closed permanente)", async () => {
+  it("credenciais Upstash ausentes → 'indisponivel_config' (achado 3)", async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // Mesma inversão do teste acima: falta de credencial NOSSA é defeito nosso,
+    // não orçamento esgotado — e não pode zerar o frete de ninguém.
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
   });
 
   // ── nao_encontrado: o problema é o DADO, retentar não resolve ─────────────
@@ -1130,12 +1132,14 @@ describe("[180-B] MotivoGeocoding ganha 'esgotado' — retentar AGORA adianta?",
   });
 
   // ── transitorio: retry faz sentido (inalterado — guardas de não-regressão) ─
-  it("burst 10/s negou → 'transitorio' (pico degenerado passa em 1s)", async () => {
+  // INVERTIDO pela auditoria (achado 2): o burst é throttle NOSSO, não outage
+  // do canal externo, e como `transitorio` classificava como a_combinar.
+  it("burst 10/s negou → 'throttle_interno' (achado 2)", async () => {
     limitMock.mockResolvedValueOnce({ success: false }); // burst nega
 
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(r).toEqual({ coords: null, motivo: "throttle_interno" });
   });
 
   it("HTTP 500 da Google → 'transitorio'", async () => {

@@ -61,9 +61,13 @@ const LOJA_COORDS = { latitude: -22.9610457, longitude: -46.5422615 };
 // Par que o Google devolve para o CEP acima (evidência da issue 190).
 const CLIENTE_COORDS = { latitude: -22.9520235, longitude: -46.5418586 };
 
-/** Resolvedor memoizado de sucesso, como frete.ts/pedido.ts o constroem. */
+/**
+ * Resolvedor memoizado de sucesso, como frete.ts/pedido.ts o constroem.
+ * (180-B/achado 1) O thunk devolve `ResolucaoCep` — o endereço vem EMBRULHADO,
+ * e é o embrulho que abre espaço para o motivo quando não há endereço.
+ */
 function resolvedorOk() {
-  return vi.fn(async () => ENDERECO_RESOLVIDO);
+  return vi.fn(async () => ({ endereco: ENDERECO_RESOLVIDO }));
 }
 
 beforeEach(() => {

@@ -61,6 +61,16 @@ export const VEREDITO_A_COMBINAR_ESGOTADO = "a_combinar_esgotado";
 /** O CEP não foi localizado — pede conferir o CEP, sem retry. */
 export const VEREDITO_A_COMBINAR_CEP = "a_combinar_cep";
 
+/**
+ * (auditoria 180-B / achado 1 + decisão de UX) O ViaCEP AFIRMOU que o CEP não
+ * existe E a loja não tem fallback fora-de-zona. Sem bairro canônico nenhuma
+ * zona casa, então o resultado é "não atendido" — mas dizer "não atendemos seu
+ * bairro" seria MENTIR sobre a causa: o problema é o CEP digitado, e o cliente
+ * pode consertá-lo. Consertar a mentira no caminho a-combinar e deixá-la de pé
+ * no caminho indisponível seria meia correção.
+ */
+export const VEREDITO_CEP_NAO_EXISTE = "indisponivel_cep";
+
 export type VereditoACombinar =
   | typeof VEREDITO_A_COMBINAR_RETRIAVEL
   | typeof VEREDITO_A_COMBINAR_ESGOTADO
@@ -71,7 +81,10 @@ export type VereditoFrete =
   | { tipo: "a_combinar"; veredito: VereditoACombinar }
   | {
       tipo: "indisponivel";
-      veredito: "indisponivel" | typeof VEREDITO_LOJA_SEM_COORDS;
+      veredito:
+        | "indisponivel"
+        | typeof VEREDITO_LOJA_SEM_COORDS
+        | typeof VEREDITO_CEP_NAO_EXISTE;
     };
 
 /**
@@ -87,10 +100,29 @@ export function distanciaEraNecessaria(zonas: ZonaComTaxa[]): boolean {
   return zonas.some((z) => z.tipo === "raio_km" && z.ativo && z.taxa != null);
 }
 
+/**
+ * Causas que podem virar "a combinar" — falha GENUÍNA do serviço EXTERNO de
+ * geocoding, e só ela (invariante da auditoria da 180-B). Ficam DE FORA, de
+ * propósito: `cep_inexistente` (input do cliente), `throttle_interno` (nosso
+ * throttle) e `indisponivel_config` (nossa config quebrada). Nenhuma das três
+ * pode zerar o frete — todas caem no ramo `!resultado.atendido`/`ok` abaixo,
+ * exatamente como era antes da 180-B.
+ */
+const CAUSAS_A_COMBINAR = [
+  "nao_encontrado",
+  "transitorio",
+  "esgotado",
+  "erro",
+] as const satisfies readonly CausaDistancia[];
+
+type CausaACombinar = (typeof CAUSAS_A_COMBINAR)[number];
+
+function ehCausaACombinar(causa: CausaDistancia): causa is CausaACombinar {
+  return (CAUSAS_A_COMBINAR as readonly CausaDistancia[]).includes(causa);
+}
+
 /** Causa da distância → veredito exibível (a pergunta é "retentar adianta?"). */
-function vereditoDaCausa(
-  causa: Exclude<CausaDistancia, "ok" | "sem_cep" | "loja_sem_coords">,
-): VereditoACombinar {
+function vereditoDaCausa(causa: CausaACombinar): VereditoACombinar {
   switch (causa) {
     case "esgotado":
       return VEREDITO_A_COMBINAR_ESGOTADO;
@@ -149,12 +181,22 @@ export function classificarFrete(args: {
     if (causaDistancia === "loja_sem_coords") {
       return { tipo: "indisponivel", veredito: VEREDITO_LOJA_SEM_COORDS };
     }
-    if (causaDistancia !== "ok" && causaDistancia !== "sem_cep") {
+    // (auditoria 180-B) A LISTA é branca, não preta: uma causa NOVA que ninguém
+    // adicionar a `CAUSAS_A_COMBINAR` nunca zera frete por esquecimento.
+    if (ehCausaACombinar(causaDistancia)) {
       return { tipo: "a_combinar", veredito: vereditoDaCausa(causaDistancia) };
     }
   }
 
   if (!resultado.atendido) {
+    // (auditoria 180-B / decisão de UX) O CEP não existe: a causa da recusa é o
+    // CEP, não o bairro. `cep_inexistente` chega aqui em qualquer configuração
+    // de zonas (o bairro canônico foi descartado pelo fail-closed da 064, logo
+    // nenhuma zona 'bairro' poderia casar) — então a checagem NÃO depende de
+    // haver zona de raio.
+    if (causaDistancia === "cep_inexistente") {
+      return { tipo: "indisponivel", veredito: VEREDITO_CEP_NAO_EXISTE };
+    }
     return {
       tipo: "indisponivel",
       veredito: lojaTemRaioSemCoords(zonas, temCoordsLoja !== false)

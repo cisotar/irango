@@ -151,10 +151,12 @@ beforeEach(() => {
   // [067/185] Por padrão o ViaCEP resolve o CEP para o bairro canônico "Centro".
   // Espelha o autoritativo (064): com CEP+bairro, o canônico do CEP vence.
   resolverCepServidor.mockResolvedValue({
-    bairro: "Centro",
-    logradouro: "Praça da Sé",
-    cidade: "São Paulo",
-    uf: "SP",
+    endereco: {
+      bairro: "Centro",
+      logradouro: "Praça da Sé",
+      cidade: "São Paulo",
+      uf: "SP",
+    },
   });
 });
 
@@ -186,10 +188,12 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
 
   it("bairro canônico FORA das zonas + taxa_entrega_fora_zona fixa → 'fora_zona' + taxa fixa", async () => {
     resolverCepServidor.mockResolvedValue({
-      bairro: "Subúrbio Distante",
-      logradouro: null,
-      cidade: "São Paulo",
-      uf: "SP",
+      endereco: {
+        bairro: "Subúrbio Distante",
+        logradouro: null,
+        cidade: "São Paulo",
+        uf: "SP",
+      },
     });
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -201,10 +205,12 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
 
   it("bairro canônico FORA + taxa_entrega_fora_zona null → 'indisponivel' + taxa 0", async () => {
     resolverCepServidor.mockResolvedValue({
-      bairro: "Subúrbio Distante",
-      logradouro: null,
-      cidade: "São Paulo",
-      uf: "SP",
+      endereco: {
+        bairro: "Subúrbio Distante",
+        logradouro: null,
+        cidade: "São Paulo",
+        uf: "SP",
+      },
     });
     buscarLojaPublicaPorId.mockResolvedValue({
       id: LOJA_ID,
@@ -221,10 +227,12 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
   it("acento e CAIXA no bairro canônico não impedem o match (normalizarBairro)", async () => {
     // O ViaCEP devolve "CÉNTRO " — normalizarBairro casa com a zona de "Centro".
     resolverCepServidor.mockResolvedValue({
-      bairro: "  CÉNTRO ",
-      logradouro: null,
-      cidade: "São Paulo",
-      uf: "SP",
+      endereco: {
+        bairro: "  CÉNTRO ",
+        logradouro: null,
+        cidade: "São Paulo",
+        uf: "SP",
+      },
     });
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -265,7 +273,7 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
     // Fail-closed: descarta o declarado → nenhuma zona casa → fallback R$ 15
     // (idêntico ao que criarPedido cobraria).
     // ViaCEP fora do ar → resolução null (fail-closed): nada é aproveitado.
-    resolverCepServidor.mockResolvedValue(null);
+    resolverCepServidor.mockResolvedValue({ endereco: null, motivo: "transitorio" });
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
       cep: CEP_CENTRO,
@@ -290,10 +298,12 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
       } as ZonaVitrine,
     ]);
     resolverCepServidor.mockResolvedValue({
-      bairro: "Jardins",
-      logradouro: null,
-      cidade: "São Paulo",
-      uf: "SP",
+      endereco: {
+        bairro: "Jardins",
+        logradouro: null,
+        cidade: "São Paulo",
+        uf: "SP",
+      },
     });
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -558,10 +568,12 @@ describe("calcularFreteAction — degradação coords ausentes (issue 005)", () 
     // Só zona bairro; bairro reconciliado fora; sem fallback. Não há raio → nunca
     // é 'indisponivel_loja' mesmo que coords faltassem.
     resolverCepServidor.mockResolvedValue({
-      bairro: "Longe",
-      logradouro: null,
-      cidade: "São Paulo",
-      uf: "SP",
+      endereco: {
+        bairro: "Longe",
+        logradouro: null,
+        cidade: "São Paulo",
+        uf: "SP",
+      },
     });
     buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: null });
 
@@ -602,7 +614,9 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
   });
 
   it("[185-P2] MEMOIZAÇÃO: resolverCepServidor é chamada no MÁXIMO 1 vez por invocação", async () => {
-    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    resolverCepServidor.mockResolvedValue({
+      endereco: ENDERECO_BRAGANCA,
+    });
 
     await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -621,7 +635,9 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
   });
 
   it("[185-P3] só CEP (sem bairro): nada é resolvido EAGER; o thunk resolve 1 vez quando invocado", async () => {
-    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    resolverCepServidor.mockResolvedValue({
+      endereco: ENDERECO_BRAGANCA,
+    });
 
     await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
 
@@ -696,7 +712,9 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
     // Zona raio de 5 km; a distância real é ~1 km → casa. Antes do fix, o CEP
     // cru geocodificava na República Tcheca → nenhuma zona casava.
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    resolverCepServidor.mockResolvedValue({
+      endereco: ENDERECO_BRAGANCA,
+    });
     distanciaDaLojaAoCep.mockResolvedValue({ km: DISTANCIA_BRAGANCA, causa: "ok" });
 
     const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
@@ -705,7 +723,7 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
   });
 
   it("[185-P6] ViaCEP indisponível → fail-closed: bairro descartado e taxa NÃO fica mais barata", async () => {
-    resolverCepServidor.mockResolvedValue(null);
+    resolverCepServidor.mockResolvedValue({ endereco: null, motivo: "transitorio" });
     // [180-B] ViaCEP fora do ar é `transitorio` para o geocoder; aqui a loja NÃO
     // tem zona de raio (só a zona bairro padrão), então a distância nunca
     // importou e o fallback fora-de-zona segue sendo regra legítima.
@@ -789,10 +807,12 @@ const PAYLOAD_FORA = {
 /** Bairro canônico que NÃO casa nenhuma zona → caminho do fallback. */
 function bairroForaDeZona() {
   resolverCepServidor.mockResolvedValue({
-    bairro: "Subúrbio Distante",
-    logradouro: null,
-    cidade: "São Paulo",
-    uf: "SP",
+    endereco: {
+      bairro: "Subúrbio Distante",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
+    },
   });
 }
 
@@ -940,6 +960,7 @@ describe("[180-B] calcularFreteAction — preview espelha o autoritativo (RN-7)"
 // =============================================================================
 
 import type { CausaDistancia } from "@/lib/actions/distanciaFrete";
+import { VEREDITO_CEP_NAO_EXISTE } from "@/lib/utils/freteDegradado";
 
 /** Causa que ainda não existe no union — cast só enquanto durar o RED. */
 function causaNovaPreview(c: string): { km: undefined; causa: CausaDistancia } {
@@ -957,7 +978,13 @@ describe("[auditoria 180-B] ESPELHO do preview: causa não-externa não vira a_c
     expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
   });
 
-  it("[achado 1] 'cep_inexistente' SEM fallback → indisponível (o cliente confere o CEP), NÃO a_combinar", async () => {
+  // LITERAL ATUALIZADO na fase GREEN (decisão de UX do `executar`): o `tdd`
+  // travou 'indisponivel', que a UI renderiza como "não atendemos seu bairro" —
+  // mentira, já que o bairro canônico só não casou porque o CEP não existe. O
+  // preview passa a devolver um veredito PRÓPRIO (`indisponivel_cep`) e a UI
+  // pede para conferir o CEP. Mentir sobre a causa é o que esta issue corrige;
+  // consertar só o caminho a-combinar deixaria a mesma mentira de pé aqui.
+  it("[achado 1] 'cep_inexistente' SEM fallback → 'indisponivel_cep' (confira o CEP), NÃO a_combinar", async () => {
     bairroForaDeZona();
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
     buscarLojaPublicaPorId.mockResolvedValue({
@@ -968,7 +995,11 @@ describe("[auditoria 180-B] ESPELHO do preview: causa não-externa não vira a_c
 
     const r = await calcularFreteAction(PAYLOAD_FORA);
 
-    expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel" });
+    expect(r).toEqual({
+      ok: true,
+      taxa_preview: 0,
+      zona_nome: VEREDITO_CEP_NAO_EXISTE,
+    });
   });
 
   it("[achado 2] 'throttle_interno' + fallback 15 → 'fora_zona' R$ 15, NÃO a_combinar", async () => {

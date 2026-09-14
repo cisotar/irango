@@ -322,10 +322,12 @@ function cenarioFeliz() {
   // [064/185] por padrão a resolução SUCEDE devolvendo o bairro declarado
   // (CEP↔bairro coerentes) — assim o frete dos testes felizes é determinístico.
   resolverCepServidor.mockResolvedValue({
-    bairro: "Centro",
-    logradouro: "Praça da Sé",
-    cidade: "São Paulo",
-    uf: "SP",
+    endereco: {
+      bairro: "Centro",
+      logradouro: "Praça da Sé",
+      cidade: "São Paulo",
+      uf: "SP",
+    },
   });
   // [085] sem opcionais por padrão: nenhuma leitura de opcional retorna nada.
   buscarOpcionaisPorIds.mockResolvedValue([]);
@@ -685,7 +687,7 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
     // ViaCEP down → fail-closed (resolução null).
-    resolverCepServidor.mockResolvedValue(null);
+    resolverCepServidor.mockResolvedValue({ endereco: null, motivo: "transitorio" });
     fakeClient.rpc.mockResolvedValue({
       data: [{ pedido_id: PEDIDO_ID, token_acesso: TOKEN }],
       error: null,
@@ -705,7 +707,7 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     buscarCupomPorCodigo.mockResolvedValue(null);
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
-    resolverCepServidor.mockResolvedValue(null);
+    resolverCepServidor.mockResolvedValue({ endereco: null, motivo: "transitorio" });
 
     const r = await criarPedido(payloadBase());
     expect(r).toEqual({ erro: expect.any(String) });
@@ -734,10 +736,12 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
     resolverCepServidor.mockResolvedValue({
-      bairro: "Jardins",
-      logradouro: null,
-      cidade: "São Paulo",
-      uf: "SP",
+      endereco: {
+        bairro: "Jardins",
+        logradouro: null,
+        cidade: "São Paulo",
+        uf: "SP",
+      },
     });
     fakeClient.rpc.mockResolvedValue({
       data: [{ pedido_id: PEDIDO_ID, token_acesso: TOKEN }],
@@ -1685,10 +1689,12 @@ describe("[167] criarPedido — observação por item", () => {
     listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
     buscarCupomPorCodigo.mockResolvedValue(null);
     resolverCepServidor.mockResolvedValue({
-      bairro: "Centro",
-      logradouro: null,
-      cidade: "São Paulo",
-      uf: "SP",
+      endereco: {
+        bairro: "Centro",
+        logradouro: null,
+        cidade: "São Paulo",
+        uf: "SP",
+      },
     });
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
@@ -2096,7 +2102,9 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
 
   it("[185-A1] passa um RESOLVEDOR (4º arg) ao helper de distância, não só o CEP", async () => {
     cenarioFeliz();
-    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    resolverCepServidor.mockResolvedValue({
+      endereco: ENDERECO_BRAGANCA,
+    });
 
     await criarPedido(payloadBraganca());
 
@@ -2110,7 +2118,9 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
 
   it("[185-A2] MEMOIZAÇÃO: resolverCepServidor é chamada no MÁXIMO 1 vez por pedido", async () => {
     cenarioFeliz();
-    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    resolverCepServidor.mockResolvedValue({
+      endereco: ENDERECO_BRAGANCA,
+    });
 
     await criarPedido(payloadBraganca());
 
@@ -2125,7 +2135,9 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
   it("[185-A3] ESPELHO: CEP 12914-190 + Pão do Ciso → cobra a taxa da zona de raio", async () => {
     // Espelho de [185-P5] em frete.test.ts: mesma distância, mesma zona, mesma taxa.
     cenarioFeliz();
-    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    resolverCepServidor.mockResolvedValue({
+      endereco: ENDERECO_BRAGANCA,
+    });
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
     distanciaDaLojaAoCep.mockResolvedValue({ km: DISTANCIA_BRAGANCA, causa: "ok" });
 
@@ -2142,7 +2154,7 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
   it("[185-A4] ViaCEP indisponível → fail-closed: bairro descartado E distância ausente", async () => {
     cenarioFeliz();
     buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
-    resolverCepServidor.mockResolvedValue(null);
+    resolverCepServidor.mockResolvedValue({ endereco: null, motivo: "transitorio" });
     // [180-B] ViaCEP fora do ar é `transitorio`; aqui a loja NÃO tem zona de
     // raio (só bairro), então a distância nunca importou e o fallback
     // fora-de-zona segue sendo a regra legítima.
@@ -2168,7 +2180,9 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
 
   it("[185-A5] cidade/uf declarados pelo cliente NÃO alteram taxa nem distância (issue 064)", async () => {
     cenarioFeliz();
-    resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
+    resolverCepServidor.mockResolvedValue({
+      endereco: ENDERECO_BRAGANCA,
+    });
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
     distanciaDaLojaAoCep.mockResolvedValue({ km: DISTANCIA_BRAGANCA, causa: "ok" });
 
@@ -2228,10 +2242,12 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
 /** Bairro que NÃO casa nenhuma zona — força o caminho do fallback fora-de-zona. */
 function bairroForaDeZona() {
   resolverCepServidor.mockResolvedValue({
-    bairro: "Subúrbio Distante",
-    logradouro: null,
-    cidade: "São Paulo",
-    uf: "SP",
+    endereco: {
+      bairro: "Subúrbio Distante",
+      logradouro: null,
+      cidade: "São Paulo",
+      uf: "SP",
+    },
   });
   return payloadBase({
     endereco_entrega: {

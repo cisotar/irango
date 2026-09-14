@@ -39,7 +39,7 @@ import {
 } from "@/lib/utils/freteDegradado";
 import {
   resolverCepServidor,
-  type EnderecoCepResolvido,
+  type ResolucaoCep,
 } from "@/lib/utils/resolverCepServidor";
 
 // Schema zod .strict(): rejeita qualquer campo que não seja loja_id + bairro +
@@ -85,6 +85,10 @@ export type ResultadoFretePreview =
  *   - bairro em zona  → { ok:true, taxa_preview, zona_nome: <nome da zona> }
  *   - fora + fallback → { ok:true, taxa_preview, zona_nome: 'fora_zona' }
  *   - fora + sem fal  → { ok:true, taxa_preview: 0, zona_nome: 'indisponivel' }
+ *   - CEP INEXISTENTE (ViaCEP afirmou) + sem fallback → { ok:true,
+ *     taxa_preview: 0, zona_nome: 'indisponivel_cep' } — a causa é o CEP, não o
+ *     bairro; dizer "não atendemos seu bairro" aqui seria mentir (auditoria
+ *     180-B, achado 1)
  *   - distância necessária e DESCONHECIDA (geocoding caído/esgotado/CEP não
  *     localizado) → { ok:true, a_combinar:true, veredito } — NUNCA um número
  *     (180-B): cobrar o fallback fora-de-zona aqui seria cobrar o cliente por
@@ -134,14 +138,23 @@ export async function calcularFreteAction(
     //     bairro canônico aqui e a consulta de geocoding em 3c. É um thunk, não
     //     uma chamada eager — sem bairro declarado e com cache de coords quente,
     //     o ViaCEP não é tocado nenhuma vez.
-    let promessaCep: Promise<EnderecoCepResolvido | null> | undefined;
-    const resolverCep = (): Promise<EnderecoCepResolvido | null> =>
-      cep ? (promessaCep ??= resolverCepServidor(cep)) : Promise.resolve(null);
+    //     (180-B/achado 1) O thunk repassa a `ResolucaoCep` INTEIRA: é por
+    //     dentro dela que "o CEP não existe" chega ao geocoder distinto de "o
+    //     ViaCEP caiu". Sem CEP o thunk nem vai ao ViaCEP — o motivo é
+    //     irrelevante nesse ramo (`distanciaDaLojaAoCep` curto-circuita em
+    //     `sem_cep` antes de invocá-lo) e a reconciliação só lê `endereco`.
+    let promessaCep: Promise<ResolucaoCep> | undefined;
+    const resolverCep = (): Promise<ResolucaoCep> =>
+      cep
+        ? (promessaCep ??= resolverCepServidor(cep))
+        : Promise.resolve({ endereco: null, motivo: "transitorio" });
 
     const endereco: EnderecoEntrega = { cep };
     if (bairro) {
-      const resolvido = await resolverCep();
-      endereco.bairro = resolvido?.bairro ?? null;
+      const resolucao = await resolverCep();
+      // Fail-closed da 064 INTACTO: sem endereço canônico (qualquer motivo), o
+      // bairro declarado pelo cliente é descartado.
+      endereco.bairro = resolucao.endereco?.bairro ?? null;
     }
 
     // 3c) (007) Distância por raio — paridade EXATA com o autoritativo (criarPedido,

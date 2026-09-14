@@ -24,6 +24,7 @@ import {
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ResumoValores } from "./ResumoValores";
 import {
+  VEREDITO_CEP_NAO_EXISTE,
   VEREDITO_LOJA_SEM_COORDS,
   type VereditoACombinar,
 } from "@/lib/utils/freteDegradado";
@@ -80,6 +81,11 @@ type EstadoFrete =
   // (005) Loja mal configurada: tem zona por raio mas está sem coords no banco.
   // Nenhum endereço do cliente resolveria → mensagem distinta, sem "tente outro".
   | { status: "indisponivel_loja" }
+  // (auditoria 180-B/achado 1) O ViaCEP AFIRMOU que o CEP não existe e a loja
+  // não tem fallback. A recusa é real, mas a causa é o CEP — dizer "não
+  // atendemos seu bairro" mentiria sobre um problema que o cliente CONSEGUE
+  // consertar.
+  | { status: "indisponivel_cep" }
   // (180-B) A distância era necessária e ficou DESCONHECIDA: nenhum valor é
   // exibido (inventar um seria cobrar o cliente por uma falha nossa) e o
   // checkout segue — o frete é combinado com a loja.
@@ -158,12 +164,15 @@ export function EtapaEntrega({
       }
       if (
         r.zona_nome === "indisponivel" ||
-        r.zona_nome === VEREDITO_LOJA_SEM_COORDS
+        r.zona_nome === VEREDITO_LOJA_SEM_COORDS ||
+        r.zona_nome === VEREDITO_CEP_NAO_EXISTE
       ) {
         const status =
           r.zona_nome === VEREDITO_LOJA_SEM_COORDS
             ? "indisponivel_loja"
-            : "indisponivel";
+            : r.zona_nome === VEREDITO_CEP_NAO_EXISTE
+              ? "indisponivel_cep"
+              : "indisponivel";
         setFrete({ status });
         onFreteChange(0);
         onFreteStatusChange?.(status);
@@ -350,6 +359,12 @@ export function EtapaEntrega({
               <p className="text-xs text-destructive">
                 Entrega indisponível para o seu bairro. Tente outro endereço ou
                 escolha retirada.
+              </p>
+            )}
+            {frete.status === "indisponivel_cep" && (
+              <p className="text-xs text-destructive">
+                Não encontramos esse CEP. Confira o número digitado e calcule
+                novamente.
               </p>
             )}
             {frete.status === "indisponivel_loja" && (
