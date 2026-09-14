@@ -512,6 +512,19 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
     expect(insertsAcesso).toHaveLength(0);
   });
 
+  it("coords pela METADE (só latitude) + endereço inalterado → não regeocodifica; geocodificado:false reflete o par incompleto", async () => {
+    // temCoordenadas trata o par pela metade como "sem coords": deveRegeocodificar
+    // não vê nada a limpar (nem coord válida a preservar) e pula o 2º UPDATE. O
+    // retorno geocodificado NUNCA reporta true para um par corrompido.
+    mockarLoja({ ...LOJA_MESMO_ENDERECO, latitude: -23.55, longitude: null });
+
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(1);
+  });
+
   it("coord ÓRFÃ (loja com coords, endereço incompleto nos dois lados) → 2º UPDATE limpa o par (D3)", async () => {
     mockarLoja({ ...LOJA_SEM_ENDERECO, latitude: -23.55, longitude: -46.63 });
 

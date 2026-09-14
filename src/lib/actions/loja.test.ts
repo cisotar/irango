@@ -413,6 +413,44 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
     expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 
+  it("loja com coords pela METADE (só latitude, sem endereço) + endereço segue incompleto → false NÃO pula: temCoordenadas já é false, mas deveRegeocodificar detecta 'nada a limpar' e pula o 2º UPDATE mesmo assim", async () => {
+    // Par corrompido (só latitude) é tratado por temCoordenadas como "sem
+    // coords" — deveRegeocodificar não vê nada a limpar e pula o 2º UPDATE.
+    // Prova que geocodificado também reflete a metade como "false" (não some
+    // silenciosamente do retorno nem finge que há coords).
+    buscarLojaDoDono.mockResolvedValue({
+      id: LOJA_ID,
+      dono_id: USER_ID,
+      slug: PERFIL_OK.slug,
+      latitude: COORDS_SP.latitude,
+      longitude: null,
+    });
+
+    const r = await salvarPerfil(PERFIL_OK);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("endereço IGUAL e loja com coords pela METADE (só longitude) → não regeocodifica; geocodificado:false reflete o par incompleto", async () => {
+    // Mesmo endereço de PERFIL_COM_ENDERECO, mas só longitude gravada: não é um
+    // par válido (temCoordenadas → false), então geocodificado também é false —
+    // mesmo com endereço "geocodificado" antes. Documenta que o retorno nunca
+    // reporta true para um par pela metade.
+    buscarLojaDoDono.mockResolvedValue({
+      ...LOJA_GEOCODIFICADA,
+      latitude: null,
+      longitude: COORDS_SP.longitude,
+    });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+  });
+
   it("coord ÓRFÃ (loja com coords e endereço incompleto) → 2º UPDATE limpa o par (D3 preservada)", async () => {
     buscarLojaDoDono.mockResolvedValue({
       id: LOJA_ID,
