@@ -851,3 +851,147 @@ describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () 
     expect(menorLimiteDiario).toBeGreaterThan(0);
   });
 });
+
+// =============================================================================
+// RED (TDD red-first) — issue 180-B, teste nº 8 do plano.
+//
+// `MotivoGeocoding` ganha "esgotado". A pergunta que a UI precisa responder NÃO
+// é "a falha é permanente?" e sim "retentar AGORA adianta?" — 20s de spinner
+// por uma env var faltando é desperdício da atenção do comprador.
+//
+// Mapa fixo e exaustivo (plan/180-B §D2):
+//   burst fixedWindow(10,"1s") negou ........ transitorio   (retry sim)
+//   fetch timeout / reject / exceção ........ transitorio   (retry sim)
+//   HTTP não-ok (5xx, 429) .................. transitorio   (retry sim)
+//   status ≠ OK/ZERO_RESULTS (OVER_QUERY_
+//     LIMIT, UNKNOWN_ERROR, REQUEST_DENIED) . transitorio   (retry sim)
+//   teto diário GLOBAL negou ................ esgotado      (retry NÃO)
+//   teto diário POR IP negou ................ esgotado      (retry NÃO)
+//   GOOGLE_GEOCODING_API_KEY ausente ........ esgotado      (retry NÃO)
+//   credenciais Upstash ausentes ............ esgotado      (retry NÃO)
+//   ViaCEP null / lançou .................... transitorio   (retry sim)
+//   CEP malformado .......................... nao_encontrado (retry NÃO —
+//       hoje é transitorio; retentar um CEP inválido NUNCA resolve)
+//   ZERO_RESULTS em toda a cascata .......... nao_encontrado (retry NÃO)
+//
+// ⚠ Os testes ACIMA que afirmam "transitorio" para os casos REMAPEADOS (teto
+//   global, teto por IP, chave ausente, credenciais ausentes, CEP malformado)
+//   ficam vermelhos na fase GREEN: é a fase GREEN que os atualiza, com o porquê
+//   no diff (plan/180-B, passo 4 da ordem de implementação).
+//
+// A ordem das travas em `consultarGoogle` é burst → teto por IP → teto global;
+// as sequências de `limitMock` abaixo dependem dela.
+// =============================================================================
+
+describe("[180-B] MotivoGeocoding ganha 'esgotado' — retentar AGORA adianta?", () => {
+  // ── esgotado: retentar agora NÃO adianta ──────────────────────────────────
+  it("teto diário GLOBAL negou → 'esgotado' (não 'transitorio'), fetch nunca chamado", async () => {
+    limitMock
+      .mockResolvedValueOnce({ success: true }) // burst concede
+      .mockResolvedValueOnce({ success: true }) // teto por IP concede
+      .mockResolvedValueOnce({ success: false }); // teto GLOBAL nega
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("teto diário POR IP negou → 'esgotado' (NAT/CGNAT: a UI não pode culpar o cliente)", async () => {
+    limitMock
+      .mockResolvedValueOnce({ success: true }) // burst concede
+      .mockResolvedValueOnce({ success: false }); // teto POR IP nega
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("GOOGLE_GEOCODING_API_KEY ausente → 'esgotado' (env var faltando: 20s de spinner é desperdício)", async () => {
+    delete process.env.GOOGLE_GEOCODING_API_KEY;
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+  });
+
+  it("credenciais Upstash ausentes → 'esgotado' (sem travas verificáveis, fail-closed permanente)", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+  });
+
+  // ── nao_encontrado: o problema é o DADO, retentar não resolve ─────────────
+  it("CEP malformado → 'nao_encontrado' (não 'transitorio'): retentar um CEP inválido nunca resolve", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const resolver = resolverOk();
+
+    const r = await geocodificarCepResolvido("123", resolver, IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
+    expect(getMock).not.toHaveBeenCalled();
+    expect(resolver).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("ZERO_RESULTS em TODA a cascata → 'nao_encontrado' (inalterado)", async () => {
+    // `mockImplementation` (não `mockResolvedValue`): cada candidato da cascata
+    // precisa de um Response NOVO — um corpo já consumido lançaria no 2º
+    // `.json()` e mascararia o motivo real com "transitorio".
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      googleStatus("ZERO_RESULTS"),
+    );
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
+  });
+
+  // ── transitorio: retry faz sentido (inalterado — guardas de não-regressão) ─
+  it("burst 10/s negou → 'transitorio' (pico degenerado passa em 1s)", async () => {
+    limitMock.mockResolvedValueOnce({ success: false }); // burst nega
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("HTTP 500 da Google → 'transitorio'", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("erro", { status: 500 }),
+    );
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("status OVER_QUERY_LIMIT → 'transitorio' (a resposta não distingue de erro momentâneo)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(googleStatus("OVER_QUERY_LIMIT"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("ViaCEP devolveu null → 'transitorio' (jamais cai no CEP cru como consulta de consolo)", async () => {
+    const r = await geocodificarCepResolvido(CEP_A, resolverNulo(), IP_CLIENTE);
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("fetch lançou (timeout de 5s) → 'transitorio'", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("TimeoutError"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+});

@@ -482,3 +482,57 @@ describe("geocodificarEndereco — não-vazamento de secrets ao cliente", () => 
     expect(src).not.toMatch(/NEXT_PUBLIC_/);
   });
 });
+
+// =============================================================================
+// RED (TDD red-first) — issue 180-B, teste nº 8 do plano (caminho da LOJA).
+//
+// `consultarGoogle` e os portões 0/1 são COMPARTILHADOS entre o caminho do CEP
+// do cliente e o caminho do endereço da loja, então o remapeamento para
+// "esgotado" aparece nos dois — a ASSINATURA de `geocodificarEnderecoComMotivo`
+// não muda (ela "só herda o tipo", plan/180-B), mas o MOTIVO devolvido sim.
+//
+// ⚠ Os testes acima que afirmam "transitorio" para chave ausente / credenciais
+//   ausentes / teto diário negado ficam vermelhos na fase GREEN, que os
+//   atualiza com o porquê no diff (passo 4 da ordem de implementação).
+// =============================================================================
+
+describe("[180-B] caminho da LOJA herda 'esgotado' de consultarGoogle", () => {
+  it("chave Google ausente → 'esgotado', fetch nunca chamado", async () => {
+    delete process.env.GOOGLE_GEOCODING_API_KEY;
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("credenciais Upstash ausentes → 'esgotado', sem tocar o Redis", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+  });
+
+  it("teto diário GLOBAL negou → 'esgotado' (orçamento acabou; retentar agora não adianta)", async () => {
+    limitMock
+      .mockResolvedValueOnce({ success: true }) // burst concede
+      .mockResolvedValueOnce({ success: false }); // teto GLOBAL nega (sem ip aqui)
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("burst 10/s negou → segue 'transitorio' (não-regressão)", async () => {
+    limitMock.mockResolvedValueOnce({ success: false });
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+});

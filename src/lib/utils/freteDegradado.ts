@@ -39,3 +39,60 @@ export function lojaTemRaioSemCoords(
     (z) => z.tipo === "raio_km" && z.ativo && z.taxa != null,
   );
 }
+
+// ─────────────────────────── STUB TDD (fase RED, issue 180-B) ───────────────
+// A implementação real é da fase GREEN (`executar`), conforme plan/180-B §D3.
+// Aqui só o CONTRATO: assinatura + constantes, para que o RED falhe na ASSERÇÃO
+// e não na resolução do import.
+
+import type { CausaDistancia } from "@/lib/actions/distanciaFrete";
+import type { ResultadoFrete } from "./calcularFrete";
+
+/** Frete não pôde ser calculado; o canal pode voltar — a UI retenta (10s/20s). */
+export const VEREDITO_A_COMBINAR_RETRIAVEL = "a_combinar_retriavel";
+/** Orçamento/credencial esgotados — retentar AGORA não adianta, sem retry. */
+export const VEREDITO_A_COMBINAR_ESGOTADO = "a_combinar_esgotado";
+/** O CEP não foi localizado — pede conferir o CEP, sem retry. */
+export const VEREDITO_A_COMBINAR_CEP = "a_combinar_cep";
+
+export type VereditoACombinar =
+  | typeof VEREDITO_A_COMBINAR_RETRIAVEL
+  | typeof VEREDITO_A_COMBINAR_ESGOTADO
+  | typeof VEREDITO_A_COMBINAR_CEP;
+
+export type VereditoFrete =
+  | { tipo: "ok" }
+  | { tipo: "a_combinar"; veredito: VereditoACombinar }
+  | {
+      tipo: "indisponivel";
+      veredito: "indisponivel" | typeof VEREDITO_LOJA_SEM_COORDS;
+    };
+
+/**
+ * STUB TDD — `true` quando existe ao menos uma zona `raio_km` ATIVA e COM taxa,
+ * isto é, quando a distância ERA necessária para calcular o frete. Espelha o
+ * predicado de `zonaAtende` para não divergir do cálculo.
+ */
+export function distanciaEraNecessaria(_zonas: ZonaComTaxa[]): boolean {
+  throw new Error("TODO: GREEN (180-B)");
+}
+
+/**
+ * STUB TDD — fonte ÚNICA da decisão "ok × a combinar × indisponível", consumida
+ * pelo preview (`calcularFreteAction`) e pelo autoritativo (`criarPedido`).
+ *
+ * a_combinar ⟺ causa ∈ {nao_encontrado, transitorio, esgotado, erro,
+ *                       loja_sem_coords}
+ *            ∧ resultado.zonaId == null
+ *            ∧ distanciaEraNecessaria(zonas)
+ *
+ * O veredito a-combinar PRECEDE o fallback fora-de-zona (inversão deliberada).
+ */
+export function classificarFrete(_args: {
+  resultado: ResultadoFrete;
+  zonas: ZonaComTaxa[];
+  causaDistancia: CausaDistancia;
+  temCoordsLoja: boolean | null;
+}): VereditoFrete {
+  throw new Error("TODO: GREEN (180-B)");
+}

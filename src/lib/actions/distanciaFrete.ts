@@ -81,3 +81,27 @@ export async function distanciaDaLojaAoCep(
     return undefined;
   }
 }
+
+// ─────────────────────────── STUB TDD (fase RED, issue 180-B) ───────────────
+// CONTRATO de retorno discriminado (plan/180-B §D1, decisão (c)). Só os TIPOS
+// entram aqui na fase RED — o corpo de `distanciaDaLojaAoCep` continua o antigo
+// e é a fase GREEN (`executar`) que passa a devolver `ResultadoDistancia`,
+// mapeando: CEP ausente → "sem_cep" (sem I/O); buscarCoordsLoja null →
+// "loja_sem_coords" (sem chamar o geocoder); motivo do geocoder →
+// "nao_encontrado" | "transitorio" | "esgotado"; catch → "erro".
+// Fail-closed preservado: `km` só é `number` quando a distância é REAL.
+
+/** Causa da (in)disponibilidade da distância loja→CEP (180-B/D1). */
+export type CausaDistancia =
+  | "ok"
+  | "sem_cep"
+  | "loja_sem_coords"
+  | "nao_encontrado"
+  | "transitorio"
+  | "esgotado"
+  | "erro";
+
+/** Resultado discriminado: distância real só existe com `causa: "ok"`. */
+export type ResultadoDistancia =
+  | { km: number; causa: "ok" }
+  | { km: undefined; causa: Exclude<CausaDistancia, "ok"> };

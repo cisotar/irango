@@ -254,3 +254,95 @@ describe("distanciaDaLojaAoCep — fail-closed total (nunca propaga exceção)",
     ).resolves.toBeUndefined();
   });
 });
+
+// =============================================================================
+// RED (TDD red-first) — issue 180-B, teste nº 10 do plano.
+//
+// CONTRATO NOVO: `distanciaDaLojaAoCep` para de colapsar SETE causas distintas
+// num único `undefined` e passa a devolver `ResultadoDistancia` discriminado
+// (plan/180-B §D1, decisão (c)):
+//
+//   { km: number;    causa: "ok" }
+//   { km: undefined; causa: "sem_cep" | "loja_sem_coords" | "nao_encontrado"
+//                         | "transitorio" | "esgotado" | "erro" }
+//
+// Continua FAIL-CLOSED e continua NUNCA lançando: `km` só é número quando a
+// distância é REAL. O que muda é que a CAUSA deixa de ser perdida — sem ela,
+// `calcularFrete` não tem como distinguir "a distância não se aplica" de "a
+// distância não pôde ser calculada", e o fallback fora-de-zona (regra de
+// negócio sobre o ENDEREÇO) acaba aplicado a uma falha de INFRAESTRUTURA nossa.
+//
+// ⚠ Os testes acima (contrato antigo, `toBeUndefined()` / `toBe(7.42)`) ficam
+//   VERMELHOS na fase GREEN: é a fase GREEN que os atualiza para o novo
+//   contrato, com o porquê no diff (plan/180-B, passo 6 da ordem).
+// =============================================================================
+
+describe("[180-B] distanciaDaLojaAoCep — retorno discriminado (km + causa)", () => {
+  it("CEP null → { km: undefined, causa: 'sem_cep' } SEM nenhuma I/O", async () => {
+    const resolver = resolvedorOk();
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, null, resolver, IP_TESTE);
+
+    expect(r).toEqual({ km: undefined, causa: "sem_cep" });
+    expect(buscarCoordsLoja).not.toHaveBeenCalled();
+    expect(geocodificarCepResolvido).not.toHaveBeenCalled();
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it("loja sem coords → { km: undefined, causa: 'loja_sem_coords' } SEM chamar o geocoder", async () => {
+    buscarCoordsLoja.mockResolvedValue(null);
+
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+
+    expect(r).toEqual({ km: undefined, causa: "loja_sem_coords" });
+    expect(geocodificarCepResolvido).not.toHaveBeenCalled();
+  });
+
+  it("geocoder 'transitorio' → causa 'transitorio' (retriável: a UI retenta em 10s/20s)", async () => {
+    geocodificarCepResolvido.mockResolvedValue({ coords: null, motivo: "transitorio" });
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+    expect(r).toEqual({ km: undefined, causa: "transitorio" });
+  });
+
+  it("geocoder 'esgotado' → causa 'esgotado' (teto batido: retentar AGORA não adianta)", async () => {
+    geocodificarCepResolvido.mockResolvedValue({ coords: null, motivo: "esgotado" });
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+    expect(r).toEqual({ km: undefined, causa: "esgotado" });
+  });
+
+  it("geocoder 'nao_encontrado' → causa 'nao_encontrado' (sem retry; pede conferir o CEP)", async () => {
+    geocodificarCepResolvido.mockResolvedValue({ coords: null, motivo: "nao_encontrado" });
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+    expect(r).toEqual({ km: undefined, causa: "nao_encontrado" });
+  });
+
+  it("sucesso → { km: <haversine cru, sem arredondar>, causa: 'ok' }", async () => {
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+    expect(r).toEqual({ km: 7.42, causa: "ok" });
+  });
+
+  it("distância 0 (loja = cliente) → { km: 0, causa: 'ok' } — zero é fato, não ausência", async () => {
+    haversine.mockReturnValue(0);
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+    expect(r).toEqual({ km: 0, causa: "ok" });
+  });
+
+  it("exceção do banco → { km: undefined, causa: 'erro' } e NUNCA propaga", async () => {
+    buscarCoordsLoja.mockRejectedValue(new Error("connection refused"));
+    await expect(
+      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE),
+    ).resolves.toEqual({ km: undefined, causa: "erro" });
+  });
+
+  it("exceção do geocoder → causa 'erro', sem propagar", async () => {
+    geocodificarCepResolvido.mockRejectedValue(new Error("timeout"));
+    await expect(
+      distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE),
+    ).resolves.toEqual({ km: undefined, causa: "erro" });
+  });
+
+  it("§19: nenhum par (lat,lng) atravessa o retorno — só km derivado e o enum de causa", async () => {
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+    expect(Object.keys(r as unknown as object).sort()).toEqual(["causa", "km"]);
+    expect(JSON.stringify(r)).not.toMatch(/latitude|longitude/);
+  });
+});

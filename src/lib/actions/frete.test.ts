@@ -682,3 +682,167 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
     expect(json).not.toContain("22.9");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RED (TDD red-first) — issue 180-B, teste nº 5 do plano: PARIDADE RN-7.
+//
+// `distanciaFrete.ts` é fonte única justamente para que preview e autoritativo
+// não divirjam. Os casos abaixo são o ESPELHO EXATO dos de `pedido.test.ts`
+// ([180-B] criarPedido — geocoding caído...): mesmo input → o preview devolve
+// `a_combinar` exatamente quando `criarPedido` grava `frete_a_combinar = true`.
+//
+// Um commit que conserte só o preview é exatamente a divergência que o helper
+// existe para impedir — por isso os dois lados têm caso-espelho idêntico.
+//
+// Contrato novo (plan/180-B §D1/D5):
+//   - o helper resolve `{ km, causa }` (mocks abaixo resolvem objeto);
+//   - `ResultadoFretePreview` ganha a variante
+//       { ok: true; a_combinar: true; veredito: VereditoACombinar }
+//     — terceira variante do UNION, não mais um literal em `zona_nome`, para
+//     que um consumidor esquecido quebre no type-check (D5).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PAYLOAD_FORA = {
+  loja_id: LOJA_ID,
+  cep: "99999-999",
+  bairro: "Subúrbio Distante",
+};
+
+/** Bairro canônico que NÃO casa nenhuma zona → caminho do fallback. */
+function bairroForaDeZona() {
+  resolverCepServidor.mockResolvedValue({
+    bairro: "Subúrbio Distante",
+    logradouro: null,
+    cidade: "São Paulo",
+    uf: "SP",
+  });
+}
+
+describe("[180-B] calcularFreteAction — preview espelha o autoritativo (RN-7)", () => {
+  it("ESPELHO nº 1: 'transitorio' + fallback 15 + zona raio ATIVA → a_combinar RETRIÁVEL (não 'fora_zona' com R$ 15)", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({
+      ok: true,
+      a_combinar: true,
+      veredito: "a_combinar_retriavel",
+    });
+  });
+
+  it("ESPELHO nº 2a: 'esgotado' → a_combinar ESGOTADO (a UI vai direto ao passo 3, sem spinner)", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "esgotado" });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({
+      ok: true,
+      a_combinar: true,
+      veredito: "a_combinar_esgotado",
+    });
+  });
+
+  it("ESPELHO nº 2b: 'nao_encontrado' → a_combinar CEP (pede conferir o CEP, sem retry)", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "nao_encontrado" });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({
+      ok: true,
+      a_combinar: true,
+      veredito: "a_combinar_cep",
+    });
+  });
+
+  it("ESPELHO nº 1b: geocoding caído SEM fallback → a_combinar, NUNCA 'indisponivel' ('tente outro endereço' mente)", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    buscarLojaPublicaPorId.mockResolvedValue({
+      id: LOJA_ID,
+      taxa_entrega_fora_zona: null,
+    });
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({
+      ok: true,
+      a_combinar: true,
+      veredito: "a_combinar_retriavel",
+    });
+  });
+
+  it("ESPELHO nº 3: loja SEM zona de raio + geocoding caído → 'fora_zona' com R$ 15 (fallback legítimo NÃO regride)", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaCentro()]); // só 'bairro'
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  it("ESPELHO nº 4: geocoding caído mas zona 'bairro' casa → taxa da zona, sem a_combinar", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaCentro(), zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro",
+    });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 7.5, zona_nome: "Zona Central" });
+  });
+
+  it("caminho feliz (causa 'ok') → zona raio casa, sem a_combinar (nenhuma regressão)", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 4.7, causa: "ok" });
+
+    const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_CENTRO });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 3.0, zona_nome: "Zona Raio 5km" });
+  });
+
+  it("loja SEM coords (causa 'loja_sem_coords') → VEREDITO_LOJA_SEM_COORDS preservado (005), NÃO a_combinar", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    buscarLojaPublicaPorId.mockResolvedValue({
+      id: LOJA_ID,
+      taxa_entrega_fora_zona: null,
+    });
+    buscarCoordsLoja.mockResolvedValue(null);
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "loja_sem_coords",
+    });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({
+      ok: true,
+      taxa_preview: 0,
+      zona_nome: "indisponivel_loja",
+    });
+  });
+
+  it("§19: o par (lat,lng) NUNCA chega à UI — a resposta a_combinar só carrega o enum", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    const serializado = JSON.stringify(r);
+    expect(serializado).not.toMatch(/latitude|longitude|distanciaKm|km"/);
+    // Nenhum detalhe técnico da causa (nome de trava, status da Google, IP).
+    expect(serializado).not.toMatch(/OVER_QUERY_LIMIT|upstash|ratelimit|203\.0\.113/i);
+  });
+});
