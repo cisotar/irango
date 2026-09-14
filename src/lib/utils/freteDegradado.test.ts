@@ -264,6 +264,23 @@ describe("classificarFrete (180-B) — matriz causa × zona casou × raio necess
     ).toEqual({ tipo: "ok" });
   });
 
+  // Caso que motivou a divergência 1 do `executar` (ver plano da 180-B): a
+  // loja NÃO tem coords (misconfiguração que existe independente do bairro
+  // ter casado), mas o bairro do cliente CASOU uma zona específica. `zonaId`
+  // não-null tira o ramo `resultado.zonaId == null` do jogo antes mesmo de
+  // `temCoordsLoja` ser consultado — a falta de coords da loja é irrelevante
+  // quando o frete já é fato conhecido pelo bairro.
+  it("loja SEM coords mas o bairro do cliente CASOU uma zona específica → { tipo:'ok' }, não VEREDITO_LOJA_SEM_COORDS", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoZonaEspecifica(),
+        zonas: [zonaBairro(), zonaRaio()],
+        causaDistancia: "sem_cep",
+        temCoordsLoja: false,
+      }),
+    ).toEqual({ tipo: "ok" });
+  });
+
   // ── sem_cep e loja_sem_coords: casos que NÃO viram a combinar ──────────────
   it("causa 'sem_cep' + fallback aplicado → { tipo:'ok' } (sem CEP o caminho de raio nem se aplica)", () => {
     expect(

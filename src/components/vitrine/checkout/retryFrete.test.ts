@@ -143,6 +143,23 @@ describe("[180-B] criarRetryFrete — motivo retriável", () => {
     expect(estados.at(-1)).toEqual({ tentativa: 2, fase: "sucesso" });
   });
 
+  it("sucesso na 3ª tentativa (a 2ª ainda falhando) cancela qualquer timer pendente e reporta sucesso na tentativa 3", async () => {
+    tentar
+      .mockResolvedValueOnce(AINDA_A_COMBINAR) // tentativa 2: continua a combinar
+      .mockResolvedValueOnce(SUCESSO); // tentativa 3: resolve
+    const c = criarRetryFrete(deps());
+    c.iniciar(VEREDITO_A_COMBINAR_RETRIAVEL);
+
+    await relogio.avancar(); // dispara tentativa 2 (falha, agenda a 3ª)
+    expect(tentar).toHaveBeenCalledTimes(1);
+    expect(relogio.pendentes.size).toBe(1); // t=20s agendado
+
+    await relogio.avancar(); // dispara tentativa 3 (sucesso)
+    expect(tentar).toHaveBeenCalledTimes(2);
+    expect(relogio.pendentes.size).toBe(0);
+    expect(estados.at(-1)).toEqual({ tentativa: 3, fase: "sucesso" });
+  });
+
   it("uma retentativa que volta 'esgotado' NÃO agenda a próxima", async () => {
     tentar.mockResolvedValueOnce(AGORA_ESGOTADO);
     const c = criarRetryFrete(deps());

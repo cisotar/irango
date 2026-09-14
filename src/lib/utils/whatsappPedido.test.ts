@@ -158,3 +158,50 @@ describe("montarLinkWhatsappPedido — anti-injeção de rótulo", () => {
     }
   });
 });
+
+describe("[180-B] montarLinkWhatsappPedido — frete a combinar não é 'R$ 0,00' nem 'Grátis'", () => {
+  it("frete_a_combinar=true + taxa_entrega=null (entrega) → linha 'Entrega: A combinar', nunca R$ 0,00", () => {
+    const link = montarLinkWhatsappPedido(
+      pedido({
+        tipo_entrega: "entrega",
+        taxa_entrega: null as unknown as number,
+        total: 20,
+        frete_a_combinar: true,
+      }),
+      LOJA,
+    );
+    const mensagem = mensagemDe(link!.href);
+    expect(mensagem).toContain("Entrega: A combinar");
+    expect(mensagem).not.toContain("R$ 0,00");
+    expect(mensagem).not.toContain("Entrega: Grátis");
+  });
+
+  it("retirada com frete_a_combinar=false + taxa_entrega=0 continua dizendo 'Grátis' (não regride para 'A combinar')", () => {
+    const link = montarLinkWhatsappPedido(
+      pedido({
+        tipo_entrega: "retirada",
+        taxa_entrega: 0,
+        frete_a_combinar: false,
+      }),
+      LOJA,
+    );
+    const mensagem = mensagemDe(link!.href);
+    expect(mensagem).toContain("Taxa de entrega: Grátis");
+    expect(mensagem).not.toContain("A combinar");
+  });
+
+  it("entrega com frete conhecido (frete_a_combinar=false, taxa 8) continua mostrando o valor formatado", () => {
+    const link = montarLinkWhatsappPedido(
+      pedido({
+        tipo_entrega: "entrega",
+        taxa_entrega: 8,
+        total: 28,
+        frete_a_combinar: false,
+      }),
+      LOJA,
+    );
+    const mensagem = mensagemDe(link!.href);
+    expect(mensagem).toContain(`Entrega: ${formatarMoeda(8)}`);
+    expect(mensagem).not.toContain("A combinar");
+  });
+});
