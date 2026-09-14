@@ -173,7 +173,9 @@ export default async function VitrinePage({ params }: PageProps) {
     })),
   }));
 
-  const temVazio = categoriasComProdutos.every((c) => c.produtos.length === 0);
+  // Grupo sem produto visível já não vem de `buscarCatalogoPublico` (issue 177),
+  // então lista vazia = loja sem nada a mostrar.
+  const temVazio = categoriasComProdutos.length === 0;
 
   return (
     <>

@@ -142,6 +142,48 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
     expect(ultimo.produtos.map((p) => p.id)).toEqual(["p9"]);
   });
 
+  it("177 — categoria SEM nenhum produto não vira grupo (cabeçalho solto na vitrine)", async () => {
+    const produtos = [
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-lanches", nome: "X-Burguer", preco: 20, disponivel: true, ordem: 0 },
+    ];
+    const categorias = [
+      { id: "cat-vazia", loja_id: "loja-1", nome: "Vazia", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+      { id: "cat-lanches", loja_id: "loja-1", nome: "Lanches", ordem: 1, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+    ];
+    const { client } = makeClient({ data: produtos, error: null });
+
+    const grupos = await buscarCatalogoPublico(client, "loja-1", categorias);
+
+    expect(grupos.map((g) => g.nome)).toEqual(["Lanches"]);
+  });
+
+  it("177 — categoria só com produto OCULTO some (o oculto nem chega do PostgREST)", async () => {
+    // `.eq("oculto", false)` já filtra na query: a categoria fica sem produto.
+    const categorias = [
+      { id: "cat-so-oculto", loja_id: "loja-1", nome: "Só oculto", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+    ];
+    const { client } = makeClient({ data: [], error: null });
+
+    const grupos = await buscarCatalogoPublico(client, "loja-1", categorias);
+
+    expect(grupos).toEqual([]);
+  });
+
+  it("177 — categoria só com produto ESGOTADO CONTINUA aparecendo", async () => {
+    const produtos = [
+      { id: "p2", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Suco", preco: 7, disponivel: false, ordem: 0 },
+    ];
+    const categorias = [
+      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+    ];
+    const { client } = makeClient({ data: produtos, error: null });
+
+    const grupos = await buscarCatalogoPublico(client, "loja-1", categorias);
+
+    expect(grupos.map((g) => g.nome)).toEqual(["Bebidas"]);
+    expect(grupos[0].produtos.map((p) => p.disponivel)).toEqual([false]);
+  });
+
   it("PROPAGA o error do PostgREST (não mascara como agrupamento vazio)", async () => {
     const { client } = makeClient({ data: null, error: { message: "db down" } });
     await expect(buscarCatalogoPublico(client, "loja-1")).rejects.toBeTruthy();
