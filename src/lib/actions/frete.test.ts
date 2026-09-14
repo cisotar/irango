@@ -629,17 +629,67 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
     expect(resolverCepServidor).not.toHaveBeenCalled();
 
     const resolver = distanciaDaLojaAoCep.mock.calls[0]![3] as () => Promise<unknown>;
-    await expect(resolver()).resolves.toEqual(ENDERECO_BRAGANCA);
+    // INVERTIDO (achado 1): o thunk repassa a `ResolucaoCep` INTEIRA, não só o
+    // endereço. É por dentro dele que o motivo "o CEP não existe" chega ao
+    // geocoder — sem isso o achado 1 não tem como ser corrigido a jusante.
+    await expect(resolver()).resolves.toEqual({ endereco: ENDERECO_BRAGANCA });
     await resolver();
     expect(resolverCepServidor).toHaveBeenCalledTimes(1);
   });
 
-  it("[185-P4] sem CEP: o resolvedor devolve null SEM tocar no ViaCEP", async () => {
+  it("[185-P4] sem CEP: o resolvedor devolve resolução SEM endereço, sem tocar no ViaCEP", async () => {
     await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
 
     const resolver = distanciaDaLojaAoCep.mock.calls[0]![3] as () => Promise<unknown>;
-    await expect(resolver()).resolves.toBeNull();
+    // INVERTIDO (achado 1): era `toBeNull()`. O `motivo` fica de fora da
+    // asserção de propósito — sem CEP, `distanciaDaLojaAoCep` já curto-circuita
+    // em `sem_cep` antes de invocar o thunk; o que importa aqui é que NÃO há
+    // endereço e que o ViaCEP não foi tocado.
+    await expect(resolver()).resolves.toMatchObject({ endereco: null });
     expect(resolverCepServidor).not.toHaveBeenCalled();
+  });
+
+  // ── Achado 1 no CALLER: a reconciliação de bairro lê o contrato novo ───────
+  it("[achado 1] resolução OK no contrato novo → bairro CANÔNICO vence o declarado", async () => {
+    // Não-regressão do vetor de subpagamento da 064: o embrulho `{ endereco }`
+    // não pode fazer o caller ler `undefined` e descartar o bairro canônico,
+    // que é o que seleciona a zona.
+    listarZonasComTaxas.mockResolvedValue([zonaCentro()]);
+    resolverCepServidor.mockResolvedValue({
+      endereco: {
+        bairro: "Centro",
+        logradouro: "Praça da Sé",
+        cidade: "São Paulo",
+        uf: "SP",
+      },
+    });
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro",
+    });
+
+    expect(r).toEqual({ ok: true, taxa_preview: 7.5, zona_nome: "Zona Central" });
+  });
+
+  it("[achado 1] CEP inexistente no contrato novo → bairro declarado DESCARTADO (fail-closed 064)", async () => {
+    listarZonasComTaxas.mockResolvedValue([zonaCentro()]);
+    resolverCepServidor.mockResolvedValue({
+      endereco: null,
+      motivo: "nao_encontrado",
+    });
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "sem_cep" });
+
+    const r = await calcularFreteAction({
+      loja_id: LOJA_ID,
+      cep: CEP_CENTRO,
+      bairro: "Centro", // bairro BARATO declarado pelo cliente
+    });
+
+    // Sem bairro canônico nenhuma zona 'bairro' casa → fallback fora-de-zona.
+    // O CEP inventado não pode COMPRAR a zona barata nem o frete zero.
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
   });
 
   it("[185-P5] ESPELHO: CEP 12914-190 + Pão do Ciso → taxa da zona de raio (mesma do autoritativo)", async () => {
@@ -872,5 +922,131 @@ describe("[180-B] calcularFreteAction — preview espelha o autoritativo (RN-7)"
     expect(serializado).not.toMatch(/latitude|longitude|distanciaKm|km"/);
     // Nenhum detalhe técnico da causa (nome de trava, status da Google, IP).
     expect(serializado).not.toMatch(/OVER_QUERY_LIMIT|upstash|ratelimit|203\.0\.113/i);
+  });
+});
+// =============================================================================
+// RED — auditoria de segurança da 180-B, PARIDADE (RN-7) no preview.
+//
+// CASO-ESPELHO IDÊNTICO ao de `pedido.test.ts`
+// ("[auditoria 180-B] falha que NÃO é do canal externo não pode zerar o
+// frete"): mesmo input, mesmo resultado nas duas pontas. É este par que pega o
+// drift entre o que o cliente VÊ e o que o servidor COBRA — se só o
+// autoritativo for corrigido, o comprador vê "a combinar" e é cobrado R$ 20,
+// o que é pior do que o bug original.
+//
+// As três causas novas NÃO são a_combinar: o preview volta a mostrar o
+// fallback fora-de-zona (ou a indisponibilidade), exatamente como antes da
+// 180-B.
+// =============================================================================
+
+import type { CausaDistancia } from "@/lib/actions/distanciaFrete";
+
+/** Causa que ainda não existe no union — cast só enquanto durar o RED. */
+function causaNovaPreview(c: string): { km: undefined; causa: CausaDistancia } {
+  return { km: undefined, causa: c as unknown as CausaDistancia };
+}
+
+describe("[auditoria 180-B] ESPELHO do preview: causa não-externa não vira a_combinar", () => {
+  it("[achado 1] 'cep_inexistente' + só zona raio + fallback 15 → 'fora_zona' R$ 15, NÃO a_combinar", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(causaNovaPreview("cep_inexistente"));
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  it("[achado 1] 'cep_inexistente' SEM fallback → indisponível (o cliente confere o CEP), NÃO a_combinar", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    buscarLojaPublicaPorId.mockResolvedValue({
+      id: LOJA_ID,
+      taxa_entrega_fora_zona: null,
+    });
+    distanciaDaLojaAoCep.mockResolvedValue(causaNovaPreview("cep_inexistente"));
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel" });
+  });
+
+  it("[achado 2] 'throttle_interno' + fallback 15 → 'fora_zona' R$ 15, NÃO a_combinar", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(
+      causaNovaPreview("throttle_interno"),
+    );
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  it("[achado 3] 'indisponivel_config' + fallback 15 → 'fora_zona' R$ 15, NÃO a_combinar", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue(
+      causaNovaPreview("indisponivel_config"),
+    );
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+  });
+
+  // ── Paridade explícita: preview e autoritativo dizem a MESMA coisa ────────
+  it("PARIDADE: para as três causas novas o preview mostra 15 e o autoritativo grava 15 (nenhum drift)", async () => {
+    for (const c of [
+      "cep_inexistente",
+      "throttle_interno",
+      "indisponivel_config",
+    ]) {
+      bairroForaDeZona();
+      listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+      distanciaDaLojaAoCep.mockResolvedValue(causaNovaPreview(c));
+
+      const r = await calcularFreteAction(PAYLOAD_FORA);
+
+      // O espelho autoritativo deste número está em pedido.test.ts
+      // ("COBRA 20" com fallback 20); aqui o fallback da loja de teste é 15.
+      expect(r).toMatchObject({ ok: true, taxa_preview: 15 });
+      expect(r).not.toHaveProperty("a_combinar");
+    }
+  });
+
+  // ── NÃO-REGRESSÃO: falha genuína do canal segue a_combinar no preview ─────
+  it("[não-regressão] 'transitorio' segue a_combinar RETRIÁVEL no preview", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "transitorio",
+    });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({
+      ok: true,
+      a_combinar: true,
+      veredito: "a_combinar_retriavel",
+    });
+  });
+
+  it("[não-regressão] 'nao_encontrado' (ZERO_RESULTS) segue a_combinar CEP no preview", async () => {
+    bairroForaDeZona();
+    listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "nao_encontrado",
+    });
+
+    const r = await calcularFreteAction(PAYLOAD_FORA);
+
+    expect(r).toEqual({
+      ok: true,
+      a_combinar: true,
+      veredito: "a_combinar_cep",
+    });
   });
 });

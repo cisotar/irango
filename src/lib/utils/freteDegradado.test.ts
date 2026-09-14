@@ -328,3 +328,182 @@ describe("classificarFrete (180-B) — matriz causa × zona casou × raio necess
     expect(Object.keys(v).sort()).toEqual(["tipo", "veredito"]);
   });
 });
+// =============================================================================
+// RED — auditoria de segurança da 180-B, os TRÊS achados na fonte única
+//
+// A invariante que os três violam:
+//   "o caminho 'frete a combinar' só pode ser alcançado por falha GENUÍNA do
+//    serviço externo de geocoding — nunca por input do cliente, nunca pelo
+//    nosso próprio throttle, nunca por configuração quebrada nossa."
+//
+// Hoje as três coisas colapsam em `transitorio`/`esgotado` e viram frete
+// zerado. Cada uma ganha uma causa própria, e nenhuma delas classifica como
+// a_combinar: o comportamento volta a ser o pré-180-B (fallback fora-de-zona
+// quando a loja tem um, recusa quando não tem).
+//
+//   cep_inexistente ..... achado 1 — o ViaCEP AFIRMOU que o CEP não existe
+//   throttle_interno .... achado 2 — o balde de burst NOSSO negou
+//   indisponivel_config . achado 3 — falta env var NOSSA (chave/credenciais)
+//
+// `causaDistancia` é `CausaDistancia`, um union de literais: os três valores
+// novos ainda não existem nele, então o cast pelo `unknown` é o que mantém o
+// RED por ASSERÇÃO em vez de por type-check (o cast SAI na fase GREEN, quando
+// os literais entrarem no union).
+// =============================================================================
+
+import type { CausaDistancia } from "@/lib/actions/distanciaFrete";
+
+/** Causa que ainda não existe no union — cast só enquanto durar o RED. */
+function causaNova(c: string): CausaDistancia {
+  return c as unknown as CausaDistancia;
+}
+
+describe("[auditoria 180-B] causas que NÃO podem virar 'a combinar'", () => {
+  // ── Achado 1 (ALTA): CEP inexistente vira frete grátis ─────────────────────
+  it("[achado 1] 'cep_inexistente' + loja COM fallback → cobra o fallback (NÃO a_combinar)", () => {
+    // Exploração que este teste fecha: comprador a 12 km, fora do raio, digita
+    // rua/número/bairro reais e um CEP de formato válido que não existe. Hoje
+    // sai a_combinar → taxa_entrega NULL → frete zero, a pedido do cliente.
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: causaNova("cep_inexistente"),
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "ok" });
+  });
+
+  it("[achado 1] 'cep_inexistente' + loja SEM fallback → indisponivel (recusa pré-180-B), NÃO a_combinar", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoForaDeArea(),
+        zonas: [zonaRaio()],
+        causaDistancia: causaNova("cep_inexistente"),
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "indisponivel", veredito: "indisponivel" });
+  });
+
+  // ── Achado 2 (ALTA): balde de burst global de chave fixa ───────────────────
+  it("[achado 2] 'throttle_interno' + loja COM fallback → cobra o fallback (NÃO a_combinar)", () => {
+    // 2-3 IPs saturando a janela de 10/s zeravam o frete de TODA loja com zona
+    // raio_km. Throttle nosso não é outage do canal externo.
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: causaNova("throttle_interno"),
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "ok" });
+  });
+
+  it("[achado 2] 'throttle_interno' + loja SEM fallback → indisponivel, NÃO a_combinar", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoForaDeArea(),
+        zonas: [zonaRaio()],
+        causaDistancia: causaNova("throttle_interno"),
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "indisponivel", veredito: "indisponivel" });
+  });
+
+  // ── Achado 3 (MÉDIA): config ausente vira frete grátis silencioso ──────────
+  it("[achado 3] 'indisponivel_config' + loja COM fallback → cobra o fallback (NÃO a_combinar)", () => {
+    // Perder GOOGLE_GEOCODING_API_KEY ou UPSTASH_REDIS_REST_* fazia TODO pedido
+    // de entrega de TODA loja nascer sem frete, sem erro na UI e sem alarme.
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: causaNova("indisponivel_config"),
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "ok" });
+  });
+
+  it("[achado 3] 'indisponivel_config' + loja SEM fallback → indisponivel, NÃO a_combinar", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoForaDeArea(),
+        zonas: [zonaRaio()],
+        causaDistancia: causaNova("indisponivel_config"),
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "indisponivel", veredito: "indisponivel" });
+  });
+
+  // ── Uma zona ESPECÍFICA casou: nada muda em nenhum dos três ────────────────
+  it("qualquer das três causas + zona específica casou → 'ok' (o frete é fato conhecido)", () => {
+    for (const c of [
+      "cep_inexistente",
+      "throttle_interno",
+      "indisponivel_config",
+    ]) {
+      expect(
+        classificarFrete({
+          resultado: resultadoZonaEspecifica(),
+          zonas: [zonaRaio(), zonaBairro()],
+          causaDistancia: causaNova(c),
+          temCoordsLoja: true,
+        }),
+      ).toEqual({ tipo: "ok" });
+    }
+  });
+});
+
+// =============================================================================
+// NÃO-REGRESSÃO: os a_combinar LEGÍTIMOS continuam legítimos.
+// Falha genuína do serviço externo é exatamente o caso que a 180-B existe para
+// cobrir — apertar os três achados não pode reabrir o dano original (cobrar do
+// cliente o fallback fora-de-zona por um problema de infraestrutura NOSSO).
+// =============================================================================
+describe("[auditoria 180-B] não-regressão: falha genuína do canal SEGUE a_combinar", () => {
+  it("'transitorio' (timeout do Google / ViaCEP caído) → a_combinar RETRIÁVEL", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: "transitorio",
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_RETRIAVEL });
+  });
+
+  it("'nao_encontrado' (ZERO_RESULTS num CEP que o ViaCEP RESOLVEU) → a_combinar CEP", () => {
+    // Endereço REAL que o geocoder não indexa: o cliente não tem culpa e não
+    // tem como consertar trocando o CEP. Segue a_combinar.
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: "nao_encontrado",
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_CEP });
+  });
+
+  it("'esgotado' (teto diário REAL batido) → a_combinar ESGOTADO", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: "esgotado",
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_ESGOTADO });
+  });
+
+  it("'erro' (exceção interna) → a_combinar RETRIÁVEL", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: "erro",
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_RETRIAVEL });
+  });
+});

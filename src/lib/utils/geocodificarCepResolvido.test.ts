@@ -109,14 +109,41 @@ function googleStatus(status: string): Response {
   });
 }
 
-/** Thunk memoizado de sucesso — devolve o endereço resolvido pelo ViaCEP. */
-function resolverOk(e: EnderecoCepResolvido = ENDERECO_A) {
-  return vi.fn(async () => e);
+// [180-B/achado 1] O THUNK mudou de contrato: devolve `ResolucaoCep`
+// (`{ endereco }` | `{ endereco: null, motivo }`) em vez de
+// `EnderecoCepResolvido | null`. Sem isso, "o CEP não existe" (fato sobre o
+// input do CLIENTE) e "o ViaCEP caiu" (falha do CANAL) chegam aqui
+// indistinguíveis — e o primeiro acaba virando frete a combinar, isto é,
+// frete ZERO, a pedido do comprador.
+//
+// STUB TDD — ponte de tipo, some na fase GREEN.
+// `geocodificarCepResolvido` ainda DECLARA o thunk antigo. Sem esta ponte, os
+// thunks do contrato novo quebrariam o `npx tsc --noEmit` inteiro e o RED
+// viraria erro de compilação em vez de FALHA DE ASSERÇÃO — que é o que precisa
+// ser provado. O GREEN troca o parâmetro para `() => Promise<ResolucaoCep>` e
+// apaga isto.
+type ThunkDeclaradoHoje = Parameters<typeof geocodificarCepResolvido>[1];
+function comoThunk<T>(f: T): T & ThunkDeclaradoHoje {
+  return f as T & ThunkDeclaradoHoje;
 }
 
-/** Thunk fail-closed — o ViaCEP falhou (rede/timeout/sem cidade). */
+/** Thunk memoizado de sucesso — devolve o endereço resolvido pelo ViaCEP. */
+function resolverOk(e: EnderecoCepResolvido = ENDERECO_A) {
+  return comoThunk(vi.fn(async () => ({ endereco: e })));
+}
+
+/** Thunk fail-closed de CANAL — o ViaCEP caiu (rede/timeout/HTTP não-ok). */
 function resolverNulo() {
-  return vi.fn(async () => null);
+  return comoThunk(
+    vi.fn(async () => ({ endereco: null, motivo: "transitorio" as const })),
+  );
+}
+
+/** Thunk fail-closed de DADO — o ViaCEP afirmou que o CEP não existe. */
+function resolverCepInexistente() {
+  return comoThunk(
+    vi.fn(async () => ({ endereco: null, motivo: "nao_encontrado" as const })),
+  );
 }
 
 /** Concatena todas as URLs passadas ao fetch, já decodificadas. */
@@ -424,6 +451,52 @@ describe("[190-28] resolverEndereco null (ViaCEP fora do ar) → transitorio", (
 });
 
 // =============================================================================
+// ACHADO 1 (ALTA) — CEP inexistente não pode virar frete grátis
+//
+// `resolverEndereco` devolvendo `{ endereco: null, motivo: "nao_encontrado" }`
+// é o ViaCEP AFIRMANDO que o CEP digitado não existe. Isso é um fato sobre o
+// input do CLIENTE, não uma falha do canal, e precisa de um motivo próprio que
+// NÃO seja classificado como a_combinar lá em `classificarFrete`.
+//
+// Nome do motivo novo: `cep_inexistente`. NÃO reaproveitamos `nao_encontrado`
+// do `MotivoGeocoding` porque esse literal já significa ZERO_RESULTS da Google
+// (endereço REAL que o geocoder não indexa) — que continua sendo a_combinar
+// legítimo e não pode regredir. Ver o relatório do `tdd` (divergência 1).
+// =============================================================================
+describe("[achado 1] ViaCEP afirma que o CEP não existe → 'cep_inexistente', não 'transitorio'", () => {
+  it("resolverEndereco → { endereco:null, motivo:'nao_encontrado' } ⇒ cep_inexistente, fetch NUNCA chamado", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const resolver = resolverCepInexistente();
+
+    const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "cep_inexistente" });
+    expect(resolver).toHaveBeenCalledTimes(1);
+    // Nada a geocodificar: nenhuma chamada paga ao Google (fail-closed intacto).
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("NÃO grava cache negativo para CEP inexistente (RN-F10 preservada)", async () => {
+    vi.spyOn(globalThis, "fetch");
+
+    await geocodificarCepResolvido(CEP_A, resolverCepInexistente(), IP_CLIENTE);
+
+    expect(setMock).not.toHaveBeenCalled();
+  });
+
+  // Não-regressão do a_combinar LEGÍTIMO: o ViaCEP resolveu o endereço (ele
+  // existe) e foi a GOOGLE que não o indexou. Aqui o cliente não tem culpa
+  // nenhuma e o frete continua "a combinar".
+  it("ZERO_RESULTS da Google para um CEP que o ViaCEP RESOLVEU segue 'nao_encontrado' (a_combinar legítimo)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(googleStatus("ZERO_RESULTS"));
+
+    const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
+
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
+  });
+});
+
+// =============================================================================
 // 29) Teto diário excedido → fail-closed, zero fetch
 // =============================================================================
 describe("[190-29] teto diário GLOBAL excedido → esgotado, fail-closed", () => {
@@ -462,14 +535,92 @@ describe("[190-29] teto diário GLOBAL excedido → esgotado, fail-closed", () =
 // Burst 10/s ainda funciona (guarda de custo, não mais anti-ban)
 // =============================================================================
 describe("guarda de custo — burst 10/s", () => {
-  it("burst nega (1ª chamada de limit) → transitorio, fetch NUNCA chamado", async () => {
+  // INVERTIDO (achado 2): antes este teste travava `transitorio`. `transitorio`
+  // classifica como a_combinar → taxa_entrega NULL. Ou seja: o NOSSO PRÓPRIO
+  // throttle zerava o frete de toda loja com zona raio_km. Throttle interno não
+  // é outage do canal externo; é um estado que NÓS criamos e sobre o qual o
+  // comprador não tem nenhuma culpa nem controle. Precisa de motivo próprio,
+  // fora do conjunto que vira a_combinar.
+  it("[achado 2] burst nega (1ª chamada de limit) → 'throttle_interno' (NÃO 'transitorio'), fetch NUNCA chamado", async () => {
     limitMock.mockResolvedValueOnce({ success: false }); // burst nega
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(r).toEqual({ coords: null, motivo: "throttle_interno" });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// ACHADO 2 (ALTA) — o balde de burst é GLOBAL, de chave fixa
+//
+// `obterLimitadorBurst().limit("geocode-burst")` usa um identificador
+// CONSTANTE: fixedWindow(10, "1 s") para a PLATAFORMA INTEIRA. O rate limit da
+// action é 20/min em sliding window, então um único IP cabe 20 chamadas dentro
+// do mesmo segundo — 2 ou 3 IPs mantêm a janela saturada indefinidamente e
+// TODA loja com zona raio_km para de cobrar frete enquanto durar.
+//
+// Contrato novo: o balde é POR IP (`limit(\`burst:${ip}\`)`), do mesmo jeito
+// que o teto diário por IP já faz (`.limit(opcoes.ip)`).
+// =============================================================================
+describe("[achado 2] burst é balde POR IP, não um balde global de chave fixa", () => {
+  const IP_ABUSIVO = "198.51.100.77";
+  const IP_LEGITIMO = "198.51.100.88";
+
+  it("o identificador do burst CONTÉM o IP do chamador (não é constante)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_ABUSIVO);
+
+    // 1ª chamada de limit() é o burst.
+    const identificadorBurst = String(limitMock.mock.calls[0]?.[0]);
+    expect(identificadorBurst).toContain(IP_ABUSIVO);
+    expect(identificadorBurst).not.toBe("geocode-burst");
+  });
+
+  it("dois IPs distintos usam identificadores de burst DIFERENTES", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_ABUSIVO);
+    const burstA = String(limitMock.mock.calls[0]?.[0]);
+    limitMock.mockClear();
+    await geocodificarCepResolvido(CEP_B, resolverOk(ENDERECO_B), IP_LEGITIMO);
+    const burstB = String(limitMock.mock.calls[0]?.[0]);
+
+    expect(burstA).not.toBe(burstB);
+  });
+
+  // O TESTE CENTRAL DO ACHADO 2: isolamento real entre baldes.
+  it("IP abusivo estoura o próprio burst e NÃO derruba o frete de um IP legítimo", async () => {
+    // Só os identificadores que carregam o IP abusivo são negados. Se o balde
+    // for global (chave fixa "geocode-burst"), nenhuma negação acontece para o
+    // abusivo — e o teste falha exatamente aí, denunciando a chave constante.
+    limitMock.mockImplementation(async (identificador: string) => ({
+      success: !String(identificador).includes(IP_ABUSIVO),
+    }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      googleOk(COORDS_A.latitude, COORDS_A.longitude),
+    );
+
+    const abusivo = await geocodificarCepResolvido(
+      CEP_A,
+      resolverOk(ENDERECO_A),
+      IP_ABUSIVO,
+    );
+    const legitimo = await geocodificarCepResolvido(
+      CEP_B,
+      resolverOk(ENDERECO_B),
+      IP_LEGITIMO,
+    );
+
+    expect(abusivo).toEqual({ coords: null, motivo: "throttle_interno" });
+    // O cliente legítimo continua com frete calculado NORMALMENTE.
+    expect(legitimo).toEqual({ coords: COORDS_A });
   });
 });
 
@@ -484,15 +635,28 @@ describe("[190] portões de pré-condição preservados", () => {
 
     const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
-    // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
-    // move no curto prazo, e a UI usa o motivo para decidir se retenta.
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // INVERTIDO (achado 3): antes travava `esgotado`, que classifica como
+    // a_combinar. Consequência: perder UMA env var fazia TODO pedido de entrega
+    // de TODA loja nascer sem frete, sem erro na UI e sem alarme nenhum.
+    // "Não estamos configurados" não é "o orçamento acabou": é defeito NOSSO,
+    // não pode virar desconto para o cliente e precisa ser barulhento.
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
     expect(getMock).not.toHaveBeenCalled();
     expect(resolver).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("sem credenciais Upstash → esgotado, sem tocar Redis nem ViaCEP", async () => {
+  it("[achado 3] sem GOOGLE_GEOCODING_API_KEY → console.error (config quebrada é BARULHENTA)", async () => {
+    delete process.env.GOOGLE_GEOCODING_API_KEY;
+    const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await geocodificarCepResolvido(CEP_A, resolverOk(), IP_CLIENTE);
+
+    // Silêncio é o que torna o achado 3 caro: a loja só descobre no fim do mês.
+    expect(erroSpy).toHaveBeenCalled();
+  });
+
+  it("sem credenciais Upstash → indisponivel_config, sem tocar Redis nem ViaCEP", async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -500,9 +664,11 @@ describe("[190] portões de pré-condição preservados", () => {
 
     const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
-    // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
-    // move no curto prazo, e a UI usa o motivo para decidir se retenta.
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // INVERTIDO (achado 3), mesma justificativa da chave da Google. Agravante
+    // registrado na auditoria: `rateLimit.ts` é fail-OPEN com as MESMAS
+    // credenciais Upstash — perder a env var desliga o rate limit E zera o
+    // frete ao mesmo tempo.
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
     expect(getMock).not.toHaveBeenCalled();
     expect(limitMock).not.toHaveBeenCalled();
     expect(resolver).not.toHaveBeenCalled();

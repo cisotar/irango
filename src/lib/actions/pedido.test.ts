@@ -2474,3 +2474,252 @@ describe("[180-B nº 6] payload adulterado é barrado pelo .strict() ANTES de qu
     expect(fakeClient.rpc).not.toHaveBeenCalled();
   });
 });
+// =============================================================================
+// RED — auditoria de segurança da 180-B: os três achados no AUTORITATIVO.
+//
+// `criarPedido` é quem GRAVA o dinheiro. Os testes acima já travam que uma
+// falha genuína do canal não cobra o fallback fora-de-zona; estes travam o
+// outro lado, que é onde a auditoria achou o buraco: três estados que NÃO são
+// falha genuína do canal estavam chegando aqui como se fossem, gravando
+// `p_taxa_entrega = NULL` (frete zero) num pedido que devia ser cobrado.
+//
+//   cep_inexistente ..... achado 1 — o CLIENTE digitou um CEP que não existe
+//   throttle_interno .... achado 2 — o NOSSO balde de burst negou
+//   indisponivel_config . achado 3 — falta env var NOSSA
+//
+// `causa` é `CausaDistancia`, union de literais; os três ainda não existem
+// nele, daí o cast (que SAI na fase GREEN).
+// =============================================================================
+
+import type { CausaDistancia } from "@/lib/actions/distanciaFrete";
+
+/** Causa que ainda não existe no union — cast só enquanto durar o RED. */
+function causaNova(c: string): { km: undefined; causa: CausaDistancia } {
+  return { km: undefined, causa: c as unknown as CausaDistancia };
+}
+
+describe("[auditoria 180-B] falha que NÃO é do canal externo não pode zerar o frete", () => {
+  // ── O TESTE CENTRAL DO ACHADO 1 ───────────────────────────────────────────
+  it("[achado 1] CEP inexistente + zona raio + taxa_entrega_fora_zona=20 → COBRA 20, p_frete_a_combinar FALSE", async () => {
+    // Exploração, sem ferramenta nenhuma: loja cuja única zona ativa é raio_km
+    // e que tem fallback fora-de-zona configurado. O comprador mora a 12 km,
+    // fora do raio. Ele digita rua/número/bairro reais e um CEP de formato
+    // válido que NÃO EXISTE — o schema só valida `^\d{5}-?\d{3}$`. Hoje o
+    // pedido fecha com frete ZERO.
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue(causaNova("cep_inexistente"));
+
+    await criarPedido(bairroForaDeZona());
+
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBe(20);
+    expect(args.p_frete_a_combinar).toBe(false);
+    expect(args.p_total).toBe(70); // 50 + 20
+  });
+
+  it("[achado 1] CEP inexistente + loja SEM fallback → RECUSA (pré-180-B), não pedido a combinar", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: null }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue(causaNova("cep_inexistente"));
+
+    const r = await criarPedido(bairroForaDeZona());
+
+    // Sem fallback, a loja não entrega para fora das zonas — e o comprador não
+    // pode furar essa recusa inventando um CEP.
+    expect(r).toHaveProperty(
+      "erro",
+      "Entrega não disponível para o seu bairro.",
+    );
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  // ── Achado 2 ──────────────────────────────────────────────────────────────
+  it("[achado 2] throttle interno (burst nosso) + fallback=20 → COBRA 20, p_frete_a_combinar FALSE", async () => {
+    // O balde de burst é global e de chave fixa: 2-3 IPs mantêm a janela de
+    // 10/s saturada e TODA loja com zona raio_km para de cobrar frete.
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue(causaNova("throttle_interno"));
+
+    await criarPedido(bairroForaDeZona());
+
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBe(20);
+    expect(args.p_frete_a_combinar).toBe(false);
+    expect(args.p_total).toBe(70);
+  });
+
+  // ── Achado 3 ──────────────────────────────────────────────────────────────
+  it("[achado 3] config ausente (env var faltando) + fallback=20 → COBRA 20, p_frete_a_combinar FALSE", async () => {
+    // Perder GOOGLE_GEOCODING_API_KEY ou UPSTASH_REDIS_REST_* fazia TODO pedido
+    // de entrega de TODA loja nascer sem frete, em silêncio.
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue(causaNova("indisponivel_config"));
+
+    await criarPedido(bairroForaDeZona());
+
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBe(20);
+    expect(args.p_frete_a_combinar).toBe(false);
+    expect(args.p_total).toBe(70);
+  });
+
+  // ── NÃO-REGRESSÃO: o dano original da 180-B continua fechado ──────────────
+  it("[não-regressão] falha GENUÍNA do canal ('transitorio') + fallback=20 → segue taxa NULL + a combinar", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "transitorio",
+    });
+
+    await criarPedido(bairroForaDeZona());
+
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBeNull();
+    expect(args.p_frete_a_combinar).toBe(true);
+    expect(args.p_total).toBe(50);
+  });
+
+  it("[não-regressão] ZERO_RESULTS da Google ('nao_encontrado') → segue taxa NULL + a combinar", async () => {
+    // CEP que o ViaCEP RESOLVEU (existe) mas a Google não indexa: o endereço é
+    // real e o comprador não tem como consertar. Continua a combinar.
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "nao_encontrado",
+    });
+
+    await criarPedido(bairroForaDeZona());
+
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBeNull();
+    expect(args.p_frete_a_combinar).toBe(true);
+  });
+
+  it("[não-regressão] teto diário REAL batido ('esgotado') → segue taxa NULL + a combinar", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "esgotado",
+    });
+
+    await criarPedido(bairroForaDeZona());
+
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBeNull();
+    expect(args.p_frete_a_combinar).toBe(true);
+  });
+
+  it("[não-regressão] exceção interna ('erro') → segue taxa NULL + a combinar", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "erro" });
+
+    await criarPedido(bairroForaDeZona());
+
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBeNull();
+    expect(args.p_frete_a_combinar).toBe(true);
+  });
+
+  // ── Loja SEM zona de raio: os três não mudam nada (a distância não importava)
+  it("as três causas novas + loja SEM zona raio_km → fallback 20 cobrado normalmente", async () => {
+    for (const c of [
+      "cep_inexistente",
+      "throttle_interno",
+      "indisponivel_config",
+    ]) {
+      vi.clearAllMocks();
+      cenarioFeliz();
+      buscarLojaParaPedido.mockResolvedValue(
+        lojaRow({ taxa_entrega_fora_zona: 20 }),
+      );
+      listarZonasComTaxas.mockResolvedValue(zonasComFrete5());
+      distanciaDaLojaAoCep.mockResolvedValue(causaNova(c));
+
+      await criarPedido(bairroForaDeZona());
+
+      const args = argsRpc();
+      expect(args.p_taxa_entrega).toBe(20);
+      expect(args.p_frete_a_combinar).toBe(false);
+    }
+  });
+});
+
+// =============================================================================
+// RED — achado 1 no CALLER autoritativo: `criarPedido` lê o contrato novo.
+//
+// A reconciliação CEP↔bairro (064, §10-A) é o outro consumidor da resolução do
+// CEP. O embrulho `{ endereco }` não pode fazer o caller ler `undefined` e
+// descartar o bairro CANÔNICO — isso reabriria o vetor de subpagamento que a
+// 064 fechou (cliente declara um bairro barato e leva a zona errada).
+// =============================================================================
+describe("[auditoria 180-B/achado 1] criarPedido lê a ResolucaoCep no contrato novo", () => {
+  it("resolução OK ({ endereco }) → bairro CANÔNICO seleciona a zona (vetor da 064 segue fechado)", async () => {
+    cenarioFeliz();
+    resolverCepServidor.mockResolvedValue({
+      endereco: {
+        bairro: "Centro",
+        logradouro: "Praça da Sé",
+        cidade: "São Paulo",
+        uf: "SP",
+      },
+    });
+
+    await criarPedido(payloadBase());
+
+    const args = argsRpc();
+    // Zona 'Centro' de R$ 5,00 (zonasComFrete5) casada pelo bairro CANÔNICO.
+    expect(args.p_taxa_entrega).toBe(5);
+    expect(args.p_total).toBe(55);
+  });
+
+  it("CEP inexistente ({ endereco:null, motivo:'nao_encontrado' }) → bairro declarado DESCARTADO (fail-closed 064)", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ taxa_entrega_fora_zona: 20 }),
+    );
+    resolverCepServidor.mockResolvedValue({
+      endereco: null,
+      motivo: "nao_encontrado",
+    });
+    distanciaDaLojaAoCep.mockResolvedValue(causaNova("cep_inexistente"));
+
+    await criarPedido(payloadBase());
+
+    const args = argsRpc();
+    // Sem bairro canônico nenhuma zona 'bairro' casa → fallback fora-de-zona.
+    // Um CEP inventado não compra nem a zona barata nem o frete zero.
+    expect(args.p_taxa_entrega).toBe(20);
+    expect(args.p_frete_a_combinar).toBe(false);
+  });
+});

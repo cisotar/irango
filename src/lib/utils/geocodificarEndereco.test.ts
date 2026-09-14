@@ -100,10 +100,12 @@ describe("geocodificarEnderecoComMotivo — fail-closed: chave Google ausente", 
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
-    // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
-    // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // INVERTIDO (achado 3 da auditoria 180-B): antes `esgotado`, que classifica
+    // como a_combinar. "Não estamos configurados" é defeito NOSSO e não pode
+    // virar frete zerado; `esgotado` fica reservado ao orçamento que REALMENTE
+    // acabou (teto diário). O caminho da LOJA compartilha os portões 0/1 com o
+    // caminho do CLIENTE, então a reclassificação aparece nos dois.
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -113,10 +115,12 @@ describe("geocodificarEnderecoComMotivo — fail-closed: chave Google ausente", 
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
-    // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
-    // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // INVERTIDO (achado 3 da auditoria 180-B): antes `esgotado`, que classifica
+    // como a_combinar. "Não estamos configurados" é defeito NOSSO e não pode
+    // virar frete zerado; `esgotado` fica reservado ao orçamento que REALMENTE
+    // acabou (teto diário). O caminho da LOJA compartilha os portões 0/1 com o
+    // caminho do CLIENTE, então a reclassificação aparece nos dois.
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
@@ -130,10 +134,12 @@ describe("geocodificarEnderecoComMotivo — fail-closed: credenciais Upstash aus
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
-    // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
-    // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // INVERTIDO (achado 3 da auditoria 180-B): antes `esgotado`, que classifica
+    // como a_combinar. "Não estamos configurados" é defeito NOSSO e não pode
+    // virar frete zerado; `esgotado` fica reservado ao orçamento que REALMENTE
+    // acabou (teto diário). O caminho da LOJA compartilha os portões 0/1 com o
+    // caminho do CLIENTE, então a reclassificação aparece nos dois.
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(limitMock).not.toHaveBeenCalled();
   });
@@ -141,13 +147,17 @@ describe("geocodificarEnderecoComMotivo — fail-closed: credenciais Upstash aus
 
 // ── 14/15: guarda de custo — burst e teto diário ─────────────────────────────
 describe("geocodificarEnderecoComMotivo — guarda de custo: burst e teto diário", () => {
-  it("14) burst nega (1ª chamada de limit) → transitorio, fetch NUNCA chamado", async () => {
+  // INVERTIDO (achado 2): o burst é throttle NOSSO, não outage do canal
+  // externo. Como `transitorio`, ele classificava como a_combinar e zerava o
+  // frete — no caminho do cliente isso é dinheiro; aqui (loja) o motivo é
+  // compartilhado por `consultarGoogle` e precisa ser o mesmo literal.
+  it("14) burst nega (1ª chamada de limit) → 'throttle_interno', fetch NUNCA chamado", async () => {
     limitMock.mockResolvedValueOnce({ success: false }); // burst
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    expect(r).toEqual({ coords: null, motivo: "throttle_interno" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -508,24 +518,25 @@ describe("geocodificarEndereco — não-vazamento de secrets ao cliente", () => 
 //   atualiza com o porquê no diff (passo 4 da ordem de implementação).
 // =============================================================================
 
-describe("[180-B] caminho da LOJA herda 'esgotado' de consultarGoogle", () => {
-  it("chave Google ausente → 'esgotado', fetch nunca chamado", async () => {
+describe("[180-B] caminho da LOJA herda os motivos de consultarGoogle", () => {
+  // INVERTIDOS (achado 3): config ausente deixou de ser `esgotado`.
+  it("chave Google ausente → 'indisponivel_config', fetch nunca chamado", async () => {
     delete process.env.GOOGLE_GEOCODING_API_KEY;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("credenciais Upstash ausentes → 'esgotado', sem tocar o Redis", async () => {
+  it("credenciais Upstash ausentes → 'indisponivel_config', sem tocar o Redis", async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
   });
 
   it("teto diário GLOBAL negou → 'esgotado' (orçamento acabou; retentar agora não adianta)", async () => {
@@ -540,8 +551,37 @@ describe("[180-B] caminho da LOJA herda 'esgotado' de consultarGoogle", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("burst 10/s negou → segue 'transitorio' (não-regressão)", async () => {
+  // INVERTIDO (achado 2): ver o teste 14.
+  it("burst 10/s negou → 'throttle_interno' (throttle nosso nunca é a_combinar)", async () => {
     limitMock.mockResolvedValueOnce({ success: false });
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "throttle_interno" });
+  });
+
+  // NÃO-REGRESSÃO dos a_combinar legítimos: falha GENUÍNA do canal externo
+  // continua `transitorio`, e o orçamento que acabou de verdade continua
+  // `esgotado`. É a fronteira que os três achados não podem borrar.
+  it("timeout do Google (fetch rejeita) → segue 'transitorio'", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+      Object.assign(new Error("timeout"), { name: "TimeoutError" }),
+    );
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+
+    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+
+  it("OVER_QUERY_LIMIT momentâneo → segue 'transitorio'", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: "OVER_QUERY_LIMIT" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
