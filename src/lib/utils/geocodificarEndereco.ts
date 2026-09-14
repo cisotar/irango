@@ -16,7 +16,8 @@
 //   não podem ser verificadas (sem chave, sem credenciais, Redis down,
 //   exceção) ⇒ NÃO chamar. O MOTIVO devolvido responde "retentar agora
 //   adianta?" (180-B) E "de quem é a falha?" (auditoria da 180-B): tetos
-//   diários negados ⇒ esgotado; chave/credenciais ausentes ⇒
+//   diários negados ⇒ esgotado_global (teto da plataforma) ou esgotado_ip
+//   (fatia do chamador — throttle nosso, fora do a_combinar); chave/credenciais ausentes ⇒
 //   indisponivel_config; burst negado ⇒ throttle_interno; Redis down e falhas
 //   do canal externo ⇒ transitorio. Só os motivos de falha GENUÍNA do serviço
 //   externo podem virar "frete a combinar" a jusante.
@@ -225,9 +226,20 @@ async function gravarCacheCoordenadas(
  *   - `transitorio`    — o canal EXTERNO pode voltar em segundos: timeout,
  *                        5xx, status de erro da Google, ViaCEP fora do ar.
  *                        Retentar FAZ sentido.
- *   - `esgotado`       — a trava que negou não se move no curto prazo: teto
- *                        diário global ou teto diário por IP. Retentar agora
- *                        NÃO adianta.
+ *   - `esgotado_global` — o TETO DIÁRIO GLOBAL negou: o orçamento da
+ *                        PLATAFORMA acabou. Retentar agora NÃO adianta. Falha
+ *                        NOSSA de capacidade, que um comprador sozinho não
+ *                        consegue acionar ⇒ segue a_combinar legítimo.
+ *   - `esgotado_ip`    — o TETO DIÁRIO POR IP negou: a fatia DESTE chamador
+ *                        acabou. Retentar agora NÃO adianta. (re-auditoria
+ *                        180-B / MÉDIA B) É throttle NOSSO e, ao contrário do
+ *                        global, é ACIONÁVEL pelo próprio comprador: 51 CEPs
+ *                        distintos (cache miss forçado) em ~3 minutos e ele se
+ *                        auto-concedia `taxa_entrega` NULL. Por isso está FORA
+ *                        da lista branca `CAUSAS_A_COMBINAR` — cobra o fallback
+ *                        fora-de-zona, como antes da 180-B. A mensagem ao
+ *                        cliente segue NEUTRA: CGNAT móvel e NAT corporativo
+ *                        estouram esse teto sem culpa nenhuma dele.
  *   - `nao_encontrado` — o problema é o DADO, não o canal: `ZERO_RESULTS` da
  *                        Google (endereço REAL que ela não indexa), coords
  *                        não-finitas/fora do Brasil, CEP malformado.
@@ -250,7 +262,8 @@ async function gravarCacheCoordenadas(
 export type MotivoGeocoding =
   | "nao_encontrado"
   | "transitorio"
-  | "esgotado"
+  | "esgotado_global"
+  | "esgotado_ip"
   | "cep_inexistente"
   | "throttle_interno"
   | "indisponivel_config";
@@ -300,7 +313,7 @@ function configAusente(variavel: string): ResultadoGeocoding {
 async function consultarGoogle(
   chave: string,
   consulta: string,
-  opcoes: { restringirBrasil: boolean; ip?: string },
+  opcoes: { restringirBrasil: boolean; ip?: string; idBurst: string },
 ): Promise<ResultadoGeocoding> {
   try {
     // Burst: cautela de sanidade contra picos degenerados.
@@ -312,9 +325,14 @@ async function consultarGoogle(
     // teto diário por IP. O caminho da LOJA (sem `ip`) usa um identificador
     // estável próprio: é um lojista AUTENTICADO no painel, fora do vetor
     // anônimo-em-escala, e seu balde fica isolado do dos compradores.
-    const burst = await obterLimitadorBurst().limit(
-      `burst:${opcoes.ip ?? "loja"}`,
-    );
+    // (re-auditoria 180-B / MÉDIA A) `burst:loja` — chave CONSTANTE — reabria o
+    // MESMO defeito do lado do lojista: um balde de 10/s dividido por TODOS os
+    // lojistas E pelo admin. Operação em lote do admin saturava a janela, o
+    // `salvarPerfil` de lojistas ALHEIOS voltava `throttle_interno` e o 2º
+    // UPDATE gravava latitude/longitude NULL — throttle NOSSO apagando dado do
+    // lojista, com alcance cross-tenant. Agora o identificador vem do caller
+    // (`idBurst`) e isola por LOJA, simétrico ao isolamento por IP.
+    const burst = await obterLimitadorBurst().limit(opcoes.idBurst);
     // (180-B/achado 2) `throttle_interno`, não `transitorio`: quem negou fomos
     // NÓS, e o comprador não tem culpa nem controle sobre isso.
     if (!burst.success) return { coords: null, motivo: "throttle_interno" };
@@ -330,12 +348,18 @@ async function consultarGoogle(
       // e só volta na virada do dia. Retentar em 10s/20s só queimaria a
       // atenção do comprador. NÃO culpa o cliente na UI — o teto por IP pode
       // ter sido estourado por NAT corporativo/CGNAT móvel (rateLimit.ts).
-      if (!diarioIp.success) return { coords: null, motivo: "esgotado" };
+      // (re-auditoria 180-B / MÉDIA B) `esgotado_ip`, DISTINTO de
+      // `esgotado_global`: só o global é falha de capacidade nossa inacionável
+      // pelo comprador. Este aqui o comprador aciona sozinho, então não pode
+      // valer "frete a combinar".
+      if (!diarioIp.success) return { coords: null, motivo: "esgotado_ip" };
     }
     // Teto diário: a guarda de custo real, GLOBAL.
     const diario = await obterLimitadorDiario().limit("geocode-daily");
-    // (180-B) `esgotado`: o orçamento diário acabou; retentar agora não adianta.
-    if (!diario.success) return { coords: null, motivo: "esgotado" };
+    // (180-B) `esgotado_global`: o orçamento diário da PLATAFORMA acabou;
+    // retentar agora não adianta. Segue a_combinar legítimo — é falha nossa de
+    // capacidade, fora do alcance de um comprador sozinho.
+    if (!diario.success) return { coords: null, motivo: "esgotado_global" };
 
     const pais = opcoes.restringirBrasil ? "&components=country:BR" : "";
     const url = `https://maps.googleapis.com/maps/api/geocode/json?key=${chave}&address=${encodeURIComponent(consulta)}${pais}`;
@@ -385,10 +409,19 @@ async function consultarGoogle(
  * NÃO lê nem grava cache (185/D3): cacheabilidade deixou de ser inferida do
  * formato da consulta.
  *
+ * `lojaId` é OBRIGATÓRIO (re-auditoria 180-B / MÉDIA A, convenção da issue
+ * 160): é o identificador do balde de burst, que passa a ser isolado POR LOJA.
+ * Antes era a constante `burst:loja` — um único balde de 10/s para todos os
+ * lojistas e para o admin, de modo que uma operação em lote do admin derrubava
+ * o geocoding de lojas alheias e o 2º UPDATE do caller apagava as coordenadas
+ * delas. Parâmetro opcional deixaria um caller esquecer e reabrir o vetor em
+ * silêncio. Nunca é logado; serve só de chave no Redis (a própria lib Upstash
+ * trata isso internamente).
+ *
  * Guarda de custo fail-closed (seguranca.md, 190): qualquer estado em que as
  * travas (burst/diária) não puderam ser verificadas/concedidas ⇒ NÃO chama a
  * Google. Esses estados são classificados por "retentar agora adianta?"
- * (180-B): tetos diários negados ⇒ `esgotado`; chave/credenciais ausentes ⇒
+ * (180-B): teto diário global negado ⇒ `esgotado_global`; chave/credenciais ausentes ⇒
  * `indisponivel_config` (achado 3); burst negado ⇒ `throttle_interno`
  * (achado 2); timeout, HTTP não-ok e status de erro ⇒ `transitorio`; só
  * `ZERO_RESULTS` é `nao_encontrado`. Nunca propaga exceção; nunca loga o par (lat,lng), a
@@ -396,6 +429,7 @@ async function consultarGoogle(
  */
 export async function geocodificarEnderecoComMotivo(
   consulta: string,
+  lojaId: string,
 ): Promise<ResultadoGeocoding> {
   // Portões 0 e 1: chave da Google e credenciais Upstash são pré-condições.
   // (180-B/achado 3) `indisponivel_config` + console.error — ver
@@ -408,7 +442,10 @@ export async function geocodificarEnderecoComMotivo(
   // sem a restrição nada impedia o endereço digitado pelo lojista de resolver
   // para um ponto fora do país. O caller ainda checa `dentroDoBrasil` no par
   // devolvido — restringir a busca é o primeiro filtro, não o único.
-  return consultarGoogle(chave, consulta, { restringirBrasil: true });
+  return consultarGoogle(chave, consulta, {
+    restringirBrasil: true,
+    idBurst: `burst:loja:${lojaId}`,
+  });
 }
 
 /**
@@ -506,7 +543,11 @@ export async function geocodificarCepResolvido(
   if (candidatos.length === 0) return { coords: null, motivo: "transitorio" };
 
   for (const consulta of candidatos) {
-    const r = await consultarGoogle(chave, consulta, { restringirBrasil: true, ip });
+    const r = await consultarGoogle(chave, consulta, {
+      restringirBrasil: true,
+      ip,
+      idBurst: `burst:${ip}`,
+    });
     if (r.coords == null) {
       // Falha de canal/orçamento: para a cascata imediatamente (180-B:
       // `esgotado` também — insistir com o teto batido não muda o resultado).

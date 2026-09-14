@@ -831,10 +831,13 @@ describe("[180-B] calcularFreteAction — preview espelha o autoritativo (RN-7)"
     });
   });
 
-  it("ESPELHO nº 2a: 'esgotado' → a_combinar ESGOTADO (a UI vai direto ao passo 3, sem spinner)", async () => {
+  it("ESPELHO nº 2a: 'esgotado_global' → a_combinar ESGOTADO (a UI vai direto ao passo 3, sem spinner)", async () => {
     bairroForaDeZona();
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "esgotado" });
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "esgotado_global",
+    });
 
     const r = await calcularFreteAction(PAYLOAD_FORA);
 

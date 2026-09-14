@@ -25,17 +25,14 @@ import {
 } from "@/components/ui/dialog";
 import type { MotivoGeocoding } from "@/lib/utils/geocodificarEndereco";
 
-/**
- * Texto por motivo, copiado LITERALMENTE do toast que existia em PerfilClient
- * (issues 007/008). Exportado para a 180-B (caminho do cliente) reusar em vez de
- * reescrever a copy.
- */
-export const TEXTO_AVISO_GEOCODING: Record<MotivoGeocoding, string> = {
-  transitorio:
-    "Não conseguimos localizar seu endereço agora. Tente salvar novamente em instantes para ativar as zonas por raio.",
-  nao_encontrado:
-    "Não localizamos seu endereço no mapa — confira rua, número e CEP. Zonas por raio ficam inativas até corrigir.",
-};
+import { avisoGeocodingPerfil } from "./avisoGeocoding";
+
+// (180-B) O mapa de textos que existia aqui saiu: com os motivos novos da
+// re-auditoria (`throttle_interno`, `indisponivel_config`, `esgotado_*`,
+// `cep_inexistente`) um `Record<MotivoGeocoding, string>` local duplicaria a
+// decisão — e, pior, silenciaria a invariante de que falha NOSSA não manda o
+// lojista conferir o endereço dele. A escolha do texto é fonte única em
+// `avisoGeocodingPerfil`: função pura, testável sem DOM (o repo não tem jsdom).
 
 export type AvisoGeocodingDialogProps = {
   /** Motivo devolvido pela Server Action; `undefined` mantém o modal fechado. */
@@ -64,7 +61,7 @@ export function AvisoGeocodingDialog({
             Loja sem localização no mapa
           </DialogTitle>
           <DialogDescription>
-            {motivo ? TEXTO_AVISO_GEOCODING[motivo] : null}
+            {motivo ? avisoGeocodingPerfil(motivo) : null}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-row justify-end">

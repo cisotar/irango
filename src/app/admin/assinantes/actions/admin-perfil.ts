@@ -33,7 +33,7 @@ import {
   deveRegeocodificar,
   temCoordenadas,
 } from "@/lib/actions/patches-loja";
-import { geocodificarEnderecoComMotivo } from "@/lib/utils/geocodificarEndereco";
+import { geocodificarLojaComRetry } from "@/lib/actions/geocodificarComRetry";
 
 // Tipo LOCAL (não exportado): 'use server' só pode exportar funções async. O
 // caller infere o retorno; este alias serve só de documentação interna.
@@ -120,11 +120,17 @@ export async function salvarPerfilAdmin(
       // 2º UPDATE: par de coords derivado no servidor (RN-1/RN-2), best-effort.
       // Endereço incompleto ou geocoding falho → par NULL (tudo-ou-nada, sem
       // rebaixar o salvamento nem deixar coords órfãs — D3, agora condicional).
+      //
+      // (re-auditoria 180-B / MÉDIA A) MESMA fonte de retry e MESMO isolamento
+      // de balde do caminho do lojista (`geocodificarLojaComRetry`): sem eles, o
+      // admin salvando lojas em lote saturava o balde de burst compartilhado e o
+      // par NULL acima apagava as coordenadas — inclusive de lojistas salvando
+      // ao mesmo tempo (cross-tenant).
       const consulta = montarConsultaGeocoding(dados);
       const coords =
         consulta === null
           ? null
-          : (await geocodificarEnderecoComMotivo(consulta)).coords;
+          : (await geocodificarLojaComRetry(consulta, validacao.lojaId)).coords;
       const coordsPatch =
         coords === null
           ? { latitude: null, longitude: null }

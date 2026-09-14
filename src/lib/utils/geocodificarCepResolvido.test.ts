@@ -493,9 +493,10 @@ describe("[achado 1] ViaCEP afirma que o CEP não existe → 'cep_inexistente', 
 // =============================================================================
 // 29) Teto diário excedido → fail-closed, zero fetch
 // =============================================================================
-describe("[190-29] teto diário GLOBAL excedido → esgotado, fail-closed", () => {
-  it("limitador diário nega (success:false) → esgotado, ZERO fetch, mesmo com cache miss e ViaCEP disponível", async () => {
-    // 1ª chamada de limit() é o burst (concede), a 2ª é o teto diário (nega).
+describe("[190-29] teto diário excedido → esgotado, fail-closed", () => {
+  it("limitador diário nega (success:false) → esgotado_ip, ZERO fetch, mesmo com cache miss e ViaCEP disponível", async () => {
+    // 1ª chamada de limit() é o burst (concede), a 2ª é o teto diário POR IP
+    // (nega) — a ordem em `consultarGoogle` é burst → teto por IP → global.
     limitMock
       .mockResolvedValueOnce({ success: true })
       .mockResolvedValueOnce({ success: false });
@@ -506,7 +507,9 @@ describe("[190-29] teto diário GLOBAL excedido → esgotado, fail-closed", () =
 
     // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
     // move no curto prazo, e a UI usa o motivo para decidir se retenta.
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    // (re-auditoria 180-B / MÉDIA B) e o teto POR IP é `esgotado_ip`, distinto
+    // do global: este o próprio comprador aciona, então não vale a_combinar.
+    expect(r).toEqual({ coords: null, motivo: "esgotado_ip" });
     expect(fetchSpy).not.toHaveBeenCalled();
     // ViaCEP FOI consultado (o teto é verificado só depois de montar a
     // cascata) — mas nenhuma chamada paga ao Google aconteceu.
@@ -957,9 +960,10 @@ describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () 
       resolverOk(ENDERECO_A),
       IP_ABUSIVO,
     );
-    // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
-    // move no curto prazo, e a UI usa o motivo para decidir se retenta.
-    expect(bloqueado).toEqual({ coords: null, motivo: "esgotado" });
+    // [180-B] era `transitorio`; virou `esgotado`; e na re-auditoria virou
+    // `esgotado_ip` — a trava que negou não se move no curto prazo E é a fatia
+    // DESTE IP, acionável pelo próprio comprador (fora do a_combinar).
+    expect(bloqueado).toEqual({ coords: null, motivo: "esgotado_ip" });
     expect(fetchSpy).not.toHaveBeenCalled();
 
     const liberado = await geocodificarCepResolvido(
@@ -1029,7 +1033,8 @@ describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () 
 // =============================================================================
 // RED (TDD red-first) — issue 180-B, teste nº 8 do plano.
 //
-// `MotivoGeocoding` ganha "esgotado". A pergunta que a UI precisa responder NÃO
+// `MotivoGeocoding` ganha "esgotado" (na re-auditoria, esgotado_global e
+// esgotado_ip). A pergunta que a UI precisa responder NÃO
 // é "a falha é permanente?" e sim "retentar AGORA adianta?" — 20s de spinner
 // por uma env var faltando é desperdício da atenção do comprador.
 //
@@ -1039,10 +1044,10 @@ describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () 
 //   HTTP não-ok (5xx, 429) .................. transitorio   (retry sim)
 //   status ≠ OK/ZERO_RESULTS (OVER_QUERY_
 //     LIMIT, UNKNOWN_ERROR, REQUEST_DENIED) . transitorio   (retry sim)
-//   teto diário GLOBAL negou ................ esgotado      (retry NÃO)
-//   teto diário POR IP negou ................ esgotado      (retry NÃO)
-//   GOOGLE_GEOCODING_API_KEY ausente ........ esgotado      (retry NÃO)
-//   credenciais Upstash ausentes ............ esgotado      (retry NÃO)
+//   teto diário GLOBAL negou ............ esgotado_global  (retry NÃO)
+//   teto diário POR IP negou ............ esgotado_ip      (retry NÃO)
+//   GOOGLE_GEOCODING_API_KEY ausente .... esgotado         (retry NÃO)
+//   credenciais Upstash ausentes ........ esgotado         (retry NÃO)
 //   ViaCEP null / lançou .................... transitorio   (retry sim)
 //   CEP malformado .......................... nao_encontrado (retry NÃO —
 //       hoje é transitorio; retentar um CEP inválido NUNCA resolve)
@@ -1059,7 +1064,7 @@ describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () 
 
 describe("[180-B] MotivoGeocoding ganha 'esgotado' — retentar AGORA adianta?", () => {
   // ── esgotado: retentar agora NÃO adianta ──────────────────────────────────
-  it("teto diário GLOBAL negou → 'esgotado' (não 'transitorio'), fetch nunca chamado", async () => {
+  it("teto diário GLOBAL negou → 'esgotado_global' (não 'transitorio'), fetch nunca chamado", async () => {
     limitMock
       .mockResolvedValueOnce({ success: true }) // burst concede
       .mockResolvedValueOnce({ success: true }) // teto por IP concede
@@ -1068,11 +1073,11 @@ describe("[180-B] MotivoGeocoding ganha 'esgotado' — retentar AGORA adianta?",
 
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(r).toEqual({ coords: null, motivo: "esgotado_global" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("teto diário POR IP negou → 'esgotado' (NAT/CGNAT: a UI não pode culpar o cliente)", async () => {
+  it("teto diário POR IP negou → 'esgotado_ip' (NAT/CGNAT: a UI não pode culpar o cliente)", async () => {
     limitMock
       .mockResolvedValueOnce({ success: true }) // burst concede
       .mockResolvedValueOnce({ success: false }); // teto POR IP nega
@@ -1080,7 +1085,7 @@ describe("[180-B] MotivoGeocoding ganha 'esgotado' — retentar AGORA adianta?",
 
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(r).toEqual({ coords: null, motivo: "esgotado_ip" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -1173,5 +1178,62 @@ describe("[180-B] MotivoGeocoding ganha 'esgotado' — retentar AGORA adianta?",
     const r = await geocodificarCepResolvido(CEP_A, resolverOk(ENDERECO_A), IP_CLIENTE);
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+});
+
+// =============================================================================
+// RED — re-auditoria de segurança da 180-B, achado MÉDIA B
+//
+// O teto diário POR IP e o teto diário GLOBAL colapsavam no MESMO motivo
+// (`esgotado`), que está na lista branca `CAUSAS_A_COMBINAR` — logo o próprio
+// comprador podia ACIONAR o caminho "frete a combinar" (taxa_entrega NULL):
+// basta disparar `calcularFreteAction` com 51 CEPs distintos (cache miss
+// forçado) para estourar o teto do PRÓPRIO IP. Auto-serviço de frete zero.
+//
+// Contrato novo: dois motivos distintos.
+//   - `esgotado_global` — o orçamento da PLATAFORMA acabou. Falha NOSSA de
+//     capacidade, inacionável por um comprador sozinho ⇒ segue a_combinar.
+//   - `esgotado_ip`     — a fatia DESTE IP acabou. É throttle NOSSO e é
+//     acionável pelo cliente ⇒ SAI da lista branca (cobra o fallback
+//     fora-de-zona, como antes da 180-B).
+//
+// A tensão documentada permanece: CGNAT móvel / NAT corporativo estouram o teto
+// por IP legitimamente. Por isso a mensagem ao cliente continua NEUTRA — ele
+// não fez nada errado; o que muda é só o valor, que volta ao pré-180-B.
+// =============================================================================
+describe("[re-auditoria 180-B / MÉDIA B] teto por IP e teto global são motivos DISTINTOS", () => {
+  const IP_QUALQUER = "203.0.113.200";
+
+  it("teto por IP negado → 'esgotado_ip' (throttle nosso, acionável pelo cliente)", async () => {
+    limitMock.mockImplementation(async (id: unknown) => ({
+      success: id !== IP_QUALQUER,
+    }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarCepResolvido(
+      CEP_A,
+      resolverOk(ENDERECO_A),
+      IP_QUALQUER,
+    );
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado_ip" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("teto GLOBAL negado → 'esgotado_global' (orçamento da plataforma, não do cliente)", async () => {
+    // burst e teto por IP concedem; só a chave do teto global nega.
+    limitMock.mockImplementation(async (id: unknown) => ({
+      success: id !== "geocode-daily",
+    }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarCepResolvido(
+      CEP_A,
+      resolverOk(ENDERECO_A),
+      IP_QUALQUER,
+    );
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado_global" });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

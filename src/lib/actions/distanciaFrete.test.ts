@@ -273,7 +273,7 @@ describe("distanciaDaLojaAoCep — fail-closed total (nunca propaga exceção)",
 //
 //   { km: number;    causa: "ok" }
 //   { km: undefined; causa: "sem_cep" | "loja_sem_coords" | "nao_encontrado"
-//                         | "transitorio" | "esgotado" | "erro" }
+//                         | "transitorio" | "esgotado_global" | "esgotado_ip" | "erro" }
 //
 // Continua FAIL-CLOSED e continua NUNCA lançando: `km` só é número quando a
 // distância é REAL. O que muda é que a CAUSA deixa de ser perdida — sem ela,
@@ -312,10 +312,25 @@ describe("[180-B] distanciaDaLojaAoCep — retorno discriminado (km + causa)", (
     expect(r).toEqual({ km: undefined, causa: "transitorio" });
   });
 
-  it("geocoder 'esgotado' → causa 'esgotado' (teto batido: retentar AGORA não adianta)", async () => {
-    geocodificarCepResolvido.mockResolvedValue({ coords: null, motivo: "esgotado" });
+  it("geocoder 'esgotado_global' → causa 'esgotado_global' (teto da plataforma: retentar AGORA não adianta)", async () => {
+    geocodificarCepResolvido.mockResolvedValue({
+      coords: null,
+      motivo: "esgotado_global",
+    });
     const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
-    expect(r).toEqual({ km: undefined, causa: "esgotado" });
+    expect(r).toEqual({ km: undefined, causa: "esgotado_global" });
+  });
+
+  // (re-auditoria 180-B / MÉDIA B) O teto por IP tem dono DIFERENTE do global —
+  // é o próprio comprador que o esgota. O motivo precisa chegar distinto a
+  // `classificarFrete`, senão ele se auto-concede `taxa_entrega` NULL.
+  it("geocoder 'esgotado_ip' → causa 'esgotado_ip' (repasse fiel, sem colapsar no global)", async () => {
+    geocodificarCepResolvido.mockResolvedValue({
+      coords: null,
+      motivo: "esgotado_ip",
+    });
+    const r = await distanciaDaLojaAoCep(svc, LOJA_ID, CEP, resolvedorOk(), IP_TESTE);
+    expect(r).toEqual({ km: undefined, causa: "esgotado_ip" });
   });
 
   it("geocoder 'nao_encontrado' → causa 'nao_encontrado' (sem retry; pede conferir o CEP)", async () => {

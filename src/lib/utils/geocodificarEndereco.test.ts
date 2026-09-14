@@ -55,6 +55,10 @@ const CHAVE_GOOGLE = "chave-google-fake-de-teste";
 
 const ENDERECO_LOJA = "Rua das Flores, 100, São Paulo, SP";
 
+// Id da loja-alvo: 2º parâmetro OBRIGATÓRIO desde a re-auditoria da 180-B
+// (MÉDIA A) — identificador do balde de burst, isolado POR LOJA.
+const LOJA_TESTE = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+
 function googleOk(lat: number, lng: number): Response {
   return new Response(
     JSON.stringify({
@@ -98,7 +102,7 @@ describe("geocodificarEnderecoComMotivo — fail-closed: chave Google ausente", 
     delete process.env.GOOGLE_GEOCODING_API_KEY;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     // INVERTIDO (achado 3 da auditoria 180-B): antes `esgotado`, que classifica
     // como a_combinar. "Não estamos configurados" é defeito NOSSO e não pode
@@ -113,7 +117,7 @@ describe("geocodificarEnderecoComMotivo — fail-closed: chave Google ausente", 
     process.env.GOOGLE_GEOCODING_API_KEY = "   ";
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     // INVERTIDO (achado 3 da auditoria 180-B): antes `esgotado`, que classifica
     // como a_combinar. "Não estamos configurados" é defeito NOSSO e não pode
@@ -132,7 +136,7 @@ describe("geocodificarEnderecoComMotivo — fail-closed: credenciais Upstash aus
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     // INVERTIDO (achado 3 da auditoria 180-B): antes `esgotado`, que classifica
     // como a_combinar. "Não estamos configurados" é defeito NOSSO e não pode
@@ -155,7 +159,7 @@ describe("geocodificarEnderecoComMotivo — guarda de custo: burst e teto diári
     limitMock.mockResolvedValueOnce({ success: false }); // burst
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "throttle_interno" });
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -167,12 +171,12 @@ describe("geocodificarEnderecoComMotivo — guarda de custo: burst e teto diári
       .mockResolvedValueOnce({ success: false }); // diário
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
     // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
     // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(r).toEqual({ coords: null, motivo: "esgotado_global" });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(limitMock).toHaveBeenCalledTimes(2);
   });
@@ -182,7 +186,7 @@ describe("geocodificarEnderecoComMotivo — guarda de custo: burst e teto diári
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -197,7 +201,7 @@ describe("geocodificarEnderecoComMotivo — sucesso (Google)", () => {
       googleOk(-23.5, -46.6),
     );
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: { latitude: -23.5, longitude: -46.6 } });
   });
@@ -207,7 +211,7 @@ describe("geocodificarEnderecoComMotivo — sucesso (Google)", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
-    await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const url = String(fetchSpy.mock.calls[0]?.[0]);
@@ -220,7 +224,7 @@ describe("geocodificarEnderecoComMotivo — sucesso (Google)", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
-    await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     // Toda loja do iRango é brasileira: restringir a busca ao país é o primeiro
     // filtro contra um endereço digitado resolver para fora do Brasil. O caller
@@ -235,7 +239,7 @@ describe("geocodificarEnderecoComMotivo — sucesso (Google)", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
-    await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(init?.signal).toBeDefined();
@@ -249,7 +253,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       googleStatus("ZERO_RESULTS"),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -259,7 +263,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       googleStatus("OVER_QUERY_LIMIT"),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "transitorio" },
     );
   });
@@ -270,7 +274,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
     );
     const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
     const logado = erroSpy.mock.calls
@@ -285,7 +289,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       new Response("erro", { status: 500 }),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "transitorio" },
     );
   });
@@ -296,7 +300,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "transitorio" },
     );
   });
@@ -306,7 +310,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       googleStatus("UNKNOWN_ERROR"),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "transitorio" },
     );
   });
@@ -318,7 +322,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       }),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -334,7 +338,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       ),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -344,7 +348,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       new Response(JSON.stringify({ results: [] }), { status: 200 }),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "transitorio" },
     );
   });
@@ -356,7 +360,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       }),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "transitorio" },
     );
   });
@@ -370,7 +374,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "transitorio" },
     );
   });
@@ -382,7 +386,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       }),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -395,7 +399,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       ),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -411,7 +415,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       ),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -434,7 +438,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       ),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -450,7 +454,7 @@ describe("geocodificarEnderecoComMotivo — falhas de I/O e status do Google (nu
       ),
     );
 
-    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA)).resolves.toEqual(
+    await expect(geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE)).resolves.toEqual(
       { coords: null, motivo: "nao_encontrado" },
     );
   });
@@ -469,7 +473,7 @@ describe("geocodificarEnderecoComMotivo — 17) não-vazamento de coords/consult
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(await resp());
     const erroSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     const logado = erroSpy.mock.calls
       .map((c) => c.map((a) => String(a)).join(" "))
@@ -485,7 +489,7 @@ describe("[190] geocodificarEnderecoComMotivo NÃO toca o cache de coordenadas",
   it("endereço completo da loja → get e set NUNCA chamados", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(googleOk(-23.5, -46.6));
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: { latitude: -23.5, longitude: -46.6 } });
     expect(getMock).not.toHaveBeenCalled();
@@ -524,7 +528,7 @@ describe("[180-B] caminho da LOJA herda os motivos de consultarGoogle", () => {
     delete process.env.GOOGLE_GEOCODING_API_KEY;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -534,7 +538,7 @@ describe("[180-B] caminho da LOJA herda os motivos de consultarGoogle", () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "indisponivel_config" });
   });
@@ -545,9 +549,9 @@ describe("[180-B] caminho da LOJA herda os motivos de consultarGoogle", () => {
       .mockResolvedValueOnce({ success: false }); // teto GLOBAL nega (sem ip aqui)
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
-    expect(r).toEqual({ coords: null, motivo: "esgotado" });
+    expect(r).toEqual({ coords: null, motivo: "esgotado_global" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -555,7 +559,7 @@ describe("[180-B] caminho da LOJA herda os motivos de consultarGoogle", () => {
   it("burst 10/s negou → 'throttle_interno' (throttle nosso nunca é a_combinar)", async () => {
     limitMock.mockResolvedValueOnce({ success: false });
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "throttle_interno" });
   });
@@ -569,7 +573,7 @@ describe("[180-B] caminho da LOJA herda os motivos de consultarGoogle", () => {
       Object.assign(new Error("timeout"), { name: "TimeoutError" }),
     );
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
   });
@@ -583,8 +587,74 @@ describe("[180-B] caminho da LOJA herda os motivos de consultarGoogle", () => {
       }),
     );
 
-    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_TESTE);
 
     expect(r).toEqual({ coords: null, motivo: "transitorio" });
+  });
+});
+
+// =============================================================================
+// RED — re-auditoria de segurança da 180-B, achado MÉDIA A (balde compartilhado)
+//
+// O caminho da LOJA usava `burst:loja` como identificador: UM balde
+// fixedWindow(10,"1 s") dividido por TODOS os lojistas E pelo admin. Uma
+// operação em lote do admin saturava a janela e fazia o `salvarPerfil` de
+// lojistas ALHEIOS voltar `throttle_interno` — que, sem retry, gravava
+// latitude/longitude NULL e desligava as zonas por raio deles. Impacto
+// cross-tenant partindo de um throttle NOSSO.
+//
+// Contrato novo: `geocodificarEnderecoComMotivo(consulta, lojaId)` — o balde é
+// isolado por loja, igual ao balde por IP do caminho do comprador.
+// =============================================================================
+describe("[re-auditoria 180-B / MÉDIA A] burst da loja é isolado POR LOJA", () => {
+  const LOJA_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const LOJA_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+  it("o identificador do burst CONTÉM o id da loja (não é a constante 'burst:loja')", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(googleOk(-23.5, -46.6));
+
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_A);
+
+    const identificadorBurst = String(limitMock.mock.calls[0]?.[0]);
+    expect(identificadorBurst).toContain(LOJA_A);
+    expect(identificadorBurst).not.toBe("burst:loja");
+  });
+
+  it("duas lojas distintas usam identificadores de burst DIFERENTES", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(googleOk(-23.5, -46.6));
+
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_A);
+    const burstA = String(limitMock.mock.calls[0]?.[0]);
+    limitMock.mockClear();
+    limitMock.mockResolvedValue({ success: true });
+    await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_B);
+    const burstB = String(limitMock.mock.calls[0]?.[0]);
+
+    expect(burstA).not.toBe(burstB);
+  });
+
+  it("loja que estoura o PRÓPRIO burst não derruba o geocoding de outra loja", async () => {
+    limitMock.mockImplementation(async (id: unknown) => ({
+      success: !String(id).includes(LOJA_A),
+    }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(googleOk(-23.5, -46.6));
+
+    const bloqueada = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_A);
+    const livre = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_B);
+
+    expect(bloqueada).toEqual({ coords: null, motivo: "throttle_interno" });
+    expect(livre).toEqual({ coords: { latitude: -23.5, longitude: -46.6 } });
+  });
+
+  it("teto diário GLOBAL negado no caminho da loja → 'esgotado_global' (MÉDIA B)", async () => {
+    limitMock.mockImplementation(async (id: unknown) => ({
+      success: id !== "geocode-daily",
+    }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA, LOJA_A);
+
+    expect(r).toEqual({ coords: null, motivo: "esgotado_global" });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

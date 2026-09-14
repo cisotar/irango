@@ -56,7 +56,7 @@ import type { ResultadoFrete } from "./calcularFrete";
 
 /** Frete não pôde ser calculado; o canal pode voltar — a UI retenta (10s/20s). */
 export const VEREDITO_A_COMBINAR_RETRIAVEL = "a_combinar_retriavel";
-/** Orçamento/credencial esgotados — retentar AGORA não adianta, sem retry. */
+/** Orçamento da PLATAFORMA esgotado — retentar AGORA não adianta, sem retry. */
 export const VEREDITO_A_COMBINAR_ESGOTADO = "a_combinar_esgotado";
 /** O CEP não foi localizado — pede conferir o CEP, sem retry. */
 export const VEREDITO_A_COMBINAR_CEP = "a_combinar_cep";
@@ -107,11 +107,21 @@ export function distanciaEraNecessaria(zonas: ZonaComTaxa[]): boolean {
  * throttle) e `indisponivel_config` (nossa config quebrada). Nenhuma das três
  * pode zerar o frete — todas caem no ramo `!resultado.atendido`/`ok` abaixo,
  * exatamente como era antes da 180-B.
+ *
+ * (re-auditoria 180-B / MÉDIA B) `esgotado_ip` é a QUARTA de fora, e pela mesma
+ * razão: o teto diário POR IP é throttle NOSSO e, pior, é ACIONÁVEL pelo
+ * comprador — bastavam 51 CEPs distintos (cache miss forçado, ~3 minutos sob o
+ * rate limit de ~20/min da action) para ele se auto-conceder `taxa_entrega`
+ * NULL. Só `esgotado_global` (o orçamento da PLATAFORMA, que um comprador
+ * sozinho não alcança) permanece. Consequência deliberada e já documentada:
+ * CGNAT móvel / NAT corporativo, que estouram o teto por IP legitimamente,
+ * voltam a pagar o fallback fora-de-zona como antes da 180-B — sem que a
+ * mensagem ao cliente o culpe por isso.
  */
 const CAUSAS_A_COMBINAR = [
   "nao_encontrado",
   "transitorio",
-  "esgotado",
+  "esgotado_global",
   "erro",
 ] as const satisfies readonly CausaDistancia[];
 
@@ -124,7 +134,7 @@ function ehCausaACombinar(causa: CausaDistancia): causa is CausaACombinar {
 /** Causa da distância → veredito exibível (a pergunta é "retentar adianta?"). */
 function vereditoDaCausa(causa: CausaACombinar): VereditoACombinar {
   switch (causa) {
-    case "esgotado":
+    case "esgotado_global":
       return VEREDITO_A_COMBINAR_ESGOTADO;
     case "nao_encontrado":
       return VEREDITO_A_COMBINAR_CEP;
@@ -141,7 +151,7 @@ function vereditoDaCausa(causa: CausaACombinar): VereditoACombinar {
  * PRECISAM concordar (RN-7), e duplicar esta decisão seria exatamente o bug que
  * a issue 180-B corrige.
  *
- *   a_combinar ⟺ causa ∈ {nao_encontrado, transitorio, esgotado, erro}
+ *   a_combinar ⟺ causa ∈ {nao_encontrado, transitorio, esgotado_global, erro}
  *              ∧ resultado.zonaId == null          // nenhuma zona específica casou
  *              ∧ distanciaEraNecessaria(zonas)     // a distância importava
  *

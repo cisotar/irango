@@ -54,6 +54,13 @@ import { haversine } from "@/lib/utils/haversine";
  * GENUÍNA do serviço externo — nunca por input do cliente (`cep_inexistente`),
  * nunca pelo nosso throttle (`throttle_interno`), nunca por config quebrada
  * nossa (`indisponivel_config`).
+ *
+ * (re-auditoria 180-B / MÉDIA B) `esgotado` virou DOIS literais pelo mesmo
+ * motivo: o teto diário GLOBAL é orçamento da plataforma (falha nossa de
+ * capacidade, inacionável por um comprador sozinho ⇒ a_combinar legítimo),
+ * enquanto o teto diário POR IP é a fatia do próprio chamador — ele a esgota
+ * com 51 CEPs distintos e se auto-concederia `taxa_entrega` NULL. Só
+ * `esgotado_global` fica na lista branca.
  */
 export type CausaDistancia =
   | "ok"
@@ -61,7 +68,8 @@ export type CausaDistancia =
   | "loja_sem_coords"
   | "nao_encontrado"
   | "transitorio"
-  | "esgotado"
+  | "esgotado_global"
+  | "esgotado_ip"
   | "erro"
   | "cep_inexistente"
   | "throttle_interno"

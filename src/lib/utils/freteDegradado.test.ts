@@ -88,7 +88,7 @@ describe("lojaTemRaioSemCoords (issue 003)", () => {
 //    AUSÊNCIA de conhecimento não é um fato sobre o endereço."
 //
 // Predicado do plano (§D3):
-//   a_combinar ⟺ causa ∈ {nao_encontrado, transitorio, esgotado, erro,
+//   a_combinar ⟺ causa ∈ {nao_encontrado, transitorio, esgotado_global, erro,
 //                         loja_sem_coords}
 //              ∧ resultado.zonaId == null
 //              ∧ distanciaEraNecessaria(zonas)
@@ -187,12 +187,12 @@ describe("classificarFrete (180-B) — matriz causa × zona casou × raio necess
     ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_RETRIAVEL });
   });
 
-  it("causa 'esgotado' → a_combinar ESGOTADO (mesma invariante, texto diferente)", () => {
+  it("causa 'esgotado_global' → a_combinar ESGOTADO (mesma invariante, texto diferente)", () => {
     expect(
       classificarFrete({
         resultado: resultadoFallback(15),
         zonas: [zonaRaio()],
-        causaDistancia: "esgotado",
+        causaDistancia: "esgotado_global",
         temCoordsLoja: true,
       }),
     ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_ESGOTADO });
@@ -337,7 +337,7 @@ describe("classificarFrete (180-B) — matriz causa × zona casou × raio necess
 //    serviço externo de geocoding — nunca por input do cliente, nunca pelo
 //    nosso próprio throttle, nunca por configuração quebrada nossa."
 //
-// Hoje as três coisas colapsam em `transitorio`/`esgotado` e viram frete
+// Hoje as três coisas colapsam em `transitorio`/`esgotado_global` e viram frete
 // zerado. Cada uma ganha uma causa própria, e nenhuma delas classifica como
 // a_combinar: o comportamento volta a ser o pré-180-B (fallback fora-de-zona
 // quando a loja tem um, recusa quando não tem).
@@ -493,12 +493,12 @@ describe("[auditoria 180-B] não-regressão: falha genuína do canal SEGUE a_com
     ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_CEP });
   });
 
-  it("'esgotado' (teto diário REAL batido) → a_combinar ESGOTADO", () => {
+  it("'esgotado_global' (teto diário GLOBAL REAL batido) → a_combinar ESGOTADO", () => {
     expect(
       classificarFrete({
         resultado: resultadoFallback(20),
         zonas: [zonaRaio()],
-        causaDistancia: "esgotado",
+        causaDistancia: "esgotado_global",
         temCoordsLoja: true,
       }),
     ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_ESGOTADO });
@@ -513,5 +513,75 @@ describe("[auditoria 180-B] não-regressão: falha genuína do canal SEGUE a_com
         temCoordsLoja: true,
       }),
     ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_RETRIAVEL });
+  });
+});
+
+// =============================================================================
+// RED — re-auditoria de segurança da 180-B, achado MÉDIA B
+//
+// `esgotado` colapsava DUAS travas com donos opostos:
+//   - teto diário GLOBAL: orçamento da PLATAFORMA. Um comprador sozinho não o
+//     aciona ⇒ falha nossa de capacidade ⇒ a_combinar LEGÍTIMO.
+//   - teto diário POR IP: a fatia do PRÓPRIO comprador. 51 CEPs distintos em
+//     ~3 minutos (o rate limit da action é ~20/min) e ele se auto-concede
+//     `taxa_entrega` NULL ⇒ auto-serviço de frete a combinar.
+//
+// Com a separação, só `esgotado_global` segue na lista BRANCA. `esgotado_ip`
+// sai dela e volta ao comportamento pré-180-B: cobra o fallback fora-de-zona.
+// A mensagem ao cliente permanece neutra — CGNAT/NAT corporativo estouram o
+// teto por IP sem culpa nenhuma do comprador.
+// =============================================================================
+describe("[re-auditoria 180-B / MÉDIA B] teto por IP não é auto-serviço de frete a combinar", () => {
+  it("'esgotado_global' (orçamento da plataforma) → a_combinar ESGOTADO", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: "esgotado_global",
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "a_combinar", veredito: VEREDITO_A_COMBINAR_ESGOTADO });
+  });
+
+  it("'esgotado_ip' NÃO zera o frete: cobra o fallback fora-de-zona (pré-180-B)", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoFallback(20),
+        zonas: [zonaRaio()],
+        causaDistancia: "esgotado_ip",
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "ok" });
+  });
+
+  it("'esgotado_ip' sem fallback → indisponível genérico, JAMAIS a_combinar", () => {
+    expect(
+      classificarFrete({
+        resultado: resultadoForaDeArea(),
+        zonas: [zonaRaio()],
+        causaDistancia: "esgotado_ip",
+        temCoordsLoja: true,
+      }),
+    ).toEqual({ tipo: "indisponivel", veredito: "indisponivel" });
+  });
+
+  // Trava da lista BRANCA: a causa nova `esgotado_ip` só entraria em
+  // a_combinar se alguém a adicionasse explicitamente a CAUSAS_A_COMBINAR.
+  it("[não-regressão] as três causas de culpa NOSSA/do cliente seguem fora do a_combinar", () => {
+    for (const causa of [
+      "cep_inexistente",
+      "throttle_interno",
+      "indisponivel_config",
+      "esgotado_ip",
+    ] as const) {
+      expect(
+        classificarFrete({
+          resultado: resultadoFallback(20),
+          zonas: [zonaRaio()],
+          causaDistancia: causa,
+          temCoordsLoja: true,
+        }),
+      ).toEqual({ tipo: "ok" });
+    }
   });
 });

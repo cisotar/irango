@@ -2295,11 +2295,14 @@ describe("[180-B] criarPedido — geocoding caído NÃO pode cobrar o fallback f
   });
 
   // ── nº 2: a invariante é UMA SÓ — muda o veredito, não a regra de dinheiro ─
-  it("geocoding 'esgotado' (teto diário/por IP batido) → mesma gravação: taxa NULL + a combinar", async () => {
+  it("geocoding 'esgotado_global' (orçamento da plataforma) → mesma gravação: taxa NULL + a combinar", async () => {
     cenarioFeliz();
     buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 15 }));
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
-    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "esgotado" });
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "esgotado_global",
+    });
 
     await criarPedido(bairroForaDeZona());
 
@@ -2634,7 +2637,7 @@ describe("[auditoria 180-B] falha que NÃO é do canal externo não pode zerar o
     expect(args.p_frete_a_combinar).toBe(true);
   });
 
-  it("[não-regressão] teto diário REAL batido ('esgotado') → segue taxa NULL + a combinar", async () => {
+  it("[não-regressão] teto diário GLOBAL REAL batido ('esgotado_global') → segue taxa NULL + a combinar", async () => {
     cenarioFeliz();
     buscarLojaParaPedido.mockResolvedValue(
       lojaRow({ taxa_entrega_fora_zona: 20 }),
@@ -2642,7 +2645,7 @@ describe("[auditoria 180-B] falha que NÃO é do canal externo não pode zerar o
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
     distanciaDaLojaAoCep.mockResolvedValue({
       km: undefined,
-      causa: "esgotado",
+      causa: "esgotado_global",
     });
 
     await criarPedido(bairroForaDeZona());
