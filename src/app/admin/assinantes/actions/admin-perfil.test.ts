@@ -506,7 +506,11 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
     });
 
     expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(1);
+    // 2 chamadas, não 1: a correção da MÉDIA A (re-auditoria 180-B) deu ao
+    // caminho admin o MESMO retry que `salvarPerfil` já tinha — a divergência
+    // era o defeito. `transitorio` passa em segundos, então retentar antes de
+    // apagar o par é o comportamento correto nos dois callers.
+    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(2);
     expect(updates).toHaveLength(2);
     expect(updates[1].patch).toEqual({ latitude: null, longitude: null });
   });
@@ -552,6 +556,9 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
     expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
     expect(updates).toHaveLength(2);
     expect(updates[1].patch).toEqual({ latitude: null, longitude: null });
+  });
+});
+
 // =============================================================================
 // RED — re-auditoria de segurança da 180-B, achado MÉDIA A (via admin)
 //
