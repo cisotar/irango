@@ -1,10 +1,14 @@
-# [193] Endereço obrigatório no perfil + gate de publicação da loja
+# [193] Endereço E coordenada obrigatórios no perfil + gate de publicação da loja
 
 **crítica:** NÃO — regra de negócio + UX. Não toca valor monetário nem RLS. Mas altera o
 gate de publicação, que hoje é a única trava de "perfil mínimo para ir ao ar".
 **Mundo:** painel do lojista (+ admin, se o gate valer lá também)
 **Depende de:** `180-A` (entrega primeiro; esta issue reaproveita o estado que a 180-A
 deixa exposto). Não é bloqueio duro.
+**Conversa com:** `180-B` — o item 5 do escopo (loja publicada que perde a coordenada)
+é exatamente o caso que a 180-B encontra no checkout. A decisão precisa ser a mesma nas
+duas issues: se aqui a loja sem coords é estado a ser prevenido, lá o cliente vê
+"indisponível"; se aqui é estado tolerado, lá vira "a combinar".
 **Origem:** decisão do usuário durante a execução da 180-A. O `revisar` apontou que, com
 o aviso de geocoding virando modal bloqueante, uma loja que **nunca preencheu endereço**
 passa a ver o modal em **todo** save do perfil — com uma mensagem factualmente errada.
@@ -38,18 +42,52 @@ obrigatório — e a loja não deve ir ao ar sem ele.**
    exige (`endereco_cidade` + `endereco_estado`), mas a issue deve decidir se rua/número
    também entram, porque o gate atual do geocoder aceita só cidade+UF e isso produz uma
    coordenada grosseira que é o centro de todas as zonas `raio_km`.
-2. **Bloquear a publicação sem endereço.** O gate vive em `src/lib/actions/loja.ts:177-180`
+2. **Bloquear a publicação sem endereço E sem coordenada.** O gate vive em
+   `src/lib/actions/loja.ts:177-180`
    (`if (publicar && (!loja.nome?.trim() || !loja.whatsapp))`, erro
    `ERRO_PERFIL_INCOMPLETO` = *"Complete nome e WhatsApp antes de publicar a loja."*).
-   Somar o endereço à condição e atualizar o texto do erro.
+   Somar à condição **os campos de endereço e o par `latitude`/`longitude` não-nulo**, e
+   atualizar o texto do erro.
+
+   **Decisão do usuário (explícita).** Exigir só os campos de endereço não fecha o buraco:
+   ter endereço preenchido não é ter coordenada. A publicação passa a exigir o par
+   gravado. **Consequência aceita:** com o serviço de geocoding fora do ar, o lojista
+   **não consegue publicar** até o serviço voltar — a falha da nossa infraestrutura
+   bloqueia a publicação dele. O custo foi levantado e a decisão foi mantida; a mitigação
+   é a mensagem de erro distinguir "falta preencher o endereço" (ação do lojista) de
+   "não conseguimos localizar seu endereço agora, tente em instantes" (falha nossa), e
+   nunca sugerir que ele corrija um dado que está certo.
 3. **Refletir na UI do perfil:** marcar os campos como obrigatórios e validar no schema
    zod (`src/lib/validacoes/loja.ts`), não só no servidor — o servidor continua sendo a
-   autoridade, o cliente ganha o feedback.
+   autoridade, o cliente ganha o feedback. A coordenada **não** entra no schema zod: ela
+   é derivada no servidor e jamais vem do cliente (mandato 1).
 4. **Com o endereço garantido, revisar o aviso da 180-A:** o ramo "sem endereço nenhum"
    deixa de existir para loja publicada, e o modal volta a significar só o que deve
    significar (falha do serviço ou endereço não localizável).
+5. **Loja JÁ publicada que PERDE a coordenada.** O gate do item 2 roda na ação de
+   publicar, então não alcança este caso — e ele não é hipotético: é consequência
+   deliberada da **180-A**, decisão D3. Endereço alterado com o geocoder fora do ar limpa
+   o par de propósito (coordenada velha com endereço novo aponta o pino para o lugar
+   errado e calcula frete de um ponto que não existe mais). A loja segue publicada, sem
+   coords, com as zonas por raio inativas.
+
+   A issue precisa decidir o que fazer com esse estado. Opções levantadas, **nenhuma
+   decidida ainda**: despublicar automaticamente (agressivo — tira a loja do ar por
+   falha nossa), manter publicada com aviso persistente no painel, ou manter publicada e
+   deixar o checkout degradar (é o que a **180-B** trata). Ver a seção de dependência
+   abaixo antes de escolher.
 
 ## Pontos que a issue precisa resolver antes de implementar
+
+- **Lojas já publicadas sem COORDENADA** (não só sem endereço). Com o item 2, elas
+  passam a estar num estado que o gate novo não permitiria criar. Levantar quantas
+  existem no cloud antes de decidir entre backfill (tentar geocodificar em lote),
+  aviso dirigido, ou deixar como está até o próximo save do perfil.
+- **O gate de coordenada interage com a 180-A.** A 180-A só regeocodifica quando o
+  endereço muda. Uma loja sem coords que salve o perfil sem tocar no endereço
+  **não** vai regeocodificar — logo não sai sozinha do estado bloqueado. A issue
+  precisa de um caminho explícito de recuperação (ex.: botão "tentar localizar
+  novamente", ou exceção no gate da 180-A quando as coords estão nulas).
 
 - **Lojas já publicadas sem endereço.** O gate só roda na ação de publicar, então elas
   continuam no ar; o bloqueio só morde se despublicarem e tentarem republicar. Decidir:
@@ -70,6 +108,10 @@ obrigatório — e a loja não deve ir ao ar sem ele.**
 
 - [ ] Publicar loja sem o endereço mínimo é recusado no servidor, com mensagem que diz
       quais campos faltam.
+- [ ] Publicar loja com endereço preenchido mas **sem coordenada** é recusado, com
+      mensagem que distingue falha do serviço de dado errado do lojista.
+- [ ] Existe caminho de recuperação para loja sem coords cujo endereço não mudou —
+      ela não fica presa pelo gate da 180-A.
 - [ ] O schema zod do perfil exige os mesmos campos, e o form marca-os como obrigatórios.
 - [ ] Loja já publicada sem endereço tem comportamento definido e documentado (não
       quebra silenciosamente).
