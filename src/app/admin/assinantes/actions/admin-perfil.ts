@@ -19,7 +19,7 @@
 //    recebe mensagem genérica.
 
 import type { TablesUpdate } from "@/lib/database.types";
-import { slugExiste } from "@/lib/supabase/queries/lojas";
+import { buscarLojaAdminPorId, slugExiste } from "@/lib/supabase/queries/lojas";
 import { schemaPerfil } from "@/lib/validacoes/loja";
 import {
   validarLojaIdAdmin,
@@ -30,6 +30,8 @@ import {
 import {
   montarPatchPerfil,
   montarConsultaGeocoding,
+  deveRegeocodificar,
+  temCoordenadas,
 } from "@/lib/actions/patches-loja";
 import { geocodificarEnderecoComMotivo } from "@/lib/utils/geocodificarEndereco";
 
@@ -55,6 +57,7 @@ const CHAVES_PERFIL = Object.keys(schemaPerfil.shape) as (keyof typeof schemaPer
 const ERRO_GENERICO = "Não foi possível salvar. Tente novamente.";
 const ERRO_VALIDACAO = "Dados inválidos. Confira os campos e tente novamente.";
 const ERRO_SLUG_OCUPADO = "Este endereço (slug) já está em uso por outra loja.";
+const ERRO_SEM_LOJA = "Loja não encontrada.";
 
 /**
  * Salva perfil/endereço da loja-alvo (`lojaId`) como admin SaaS. Recalcula coords
@@ -90,31 +93,49 @@ export async function salvarPerfilAdmin(
     const ocupado = await slugExiste(svc, dados.slug, validacao.lojaId);
     if (ocupado) return { ok: false, erro: ERRO_SLUG_OCUPADO };
 
+    // (180-A) Endereço ANTERIOR da loja-alvo, lido ANTES do 1º UPDATE — a ordem
+    // é obrigatória: depois do UPDATE o endereço antigo já foi sobrescrito e a
+    // comparação viraria "novo contra ele mesmo", desligando a regeocodificação
+    // em silêncio (coord congelada para sempre). Query já existente, service_role
+    // escopado por id.
+    const lojaAtual = await buscarLojaAdminPorId(svc, validacao.lojaId);
+    if (!lojaAtual) return { ok: false, erro: ERRO_SEM_LOJA };
+
     // 1º UPDATE: allowlist explícita (RN-7) via wrapper (escopo por id à loja-alvo).
     // montarPatchPerfil devolve só chaves da allowlist (RN-7); o cast estreita do
     // Record genérico para o tipo do row `lojas` (service client é tipado Database).
     const patch = montarPatchPerfil(dados) as TablesUpdate<"lojas">;
     const { error, count } = await escopo.atualizarLoja(patch);
     if (error) throw error;
-    if (count === 0) return { ok: false, erro: "Loja não encontrada." };
+    if (count === 0) return { ok: false, erro: ERRO_SEM_LOJA };
 
-    // 2º UPDATE: par de coords derivado no servidor (RN-1/RN-2), best-effort.
-    // Endereço incompleto ou geocoding falho → par NULL (tudo-ou-nada, sem
-    // rebaixar o salvamento nem deixar coords órfãs).
-    const consulta = montarConsultaGeocoding(dados);
-    const coords =
-      consulta === null
-        ? null
-        : (await geocodificarEnderecoComMotivo(consulta)).coords;
-    const coordsPatch =
-      coords === null
-        ? { latitude: null, longitude: null }
-        : { latitude: coords.latitude, longitude: coords.longitude };
+    // (180-A) O 2º UPDATE é CONDICIONAL: roda só quando o endereço mudou de fato
+    // (ou quando há coord órfã de endereço incompleto a limpar). Antes era
+    // incondicional e apagava localização válida quando o geocoder falhava num
+    // save que sequer tocou o endereço. Pulado, o par gravado é preservado.
+    const regeocodificar = deveRegeocodificar(dados, lojaAtual);
+    let geocodificado = temCoordenadas(lojaAtual);
 
-    const { error: erroCoords, count: countCoords } =
-      await escopo.atualizarLoja(coordsPatch);
-    if (erroCoords) throw erroCoords;
-    if (countCoords === 0) return { ok: false, erro: "Loja não encontrada." };
+    if (regeocodificar) {
+      // 2º UPDATE: par de coords derivado no servidor (RN-1/RN-2), best-effort.
+      // Endereço incompleto ou geocoding falho → par NULL (tudo-ou-nada, sem
+      // rebaixar o salvamento nem deixar coords órfãs — D3, agora condicional).
+      const consulta = montarConsultaGeocoding(dados);
+      const coords =
+        consulta === null
+          ? null
+          : (await geocodificarEnderecoComMotivo(consulta)).coords;
+      const coordsPatch =
+        coords === null
+          ? { latitude: null, longitude: null }
+          : { latitude: coords.latitude, longitude: coords.longitude };
+
+      const { error: erroCoords, count: countCoords } =
+        await escopo.atualizarLoja(coordsPatch);
+      if (erroCoords) throw erroCoords;
+      if (countCoords === 0) return { ok: false, erro: ERRO_SEM_LOJA };
+      geocodificado = coords !== null;
+    }
 
     revalidarLojaAdmin(validacao.lojaId);
     registrarAcessoAdmin(svc, {
@@ -124,7 +145,7 @@ export async function salvarPerfilAdmin(
       metadados: { campos: Object.keys(patch) },
     });
 
-    return { ok: true, geocodificado: coords !== null };
+    return { ok: true, geocodificado };
   } catch (e) {
     console.error("salvarPerfilAdmin:", e);
     return { ok: false, erro: ERRO_GENERICO };

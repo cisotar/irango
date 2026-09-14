@@ -58,9 +58,29 @@ vi.mock("@/lib/utils/geocodificarEndereco", () => ({
 vi.mock("@/lib/supabase/service", () => {
   const RESPOSTA: RespostaFake = { data: null, error: null, count: 1 };
 
+  // (180-A) `buscarLojaAdminPorId` (query REAL, não mockada aqui) lê a loja-alvo
+  // com `.select("*").eq("id", …).maybeSingle()` ANTES do 1º UPDATE. O fake
+  // devolve uma loja SEM endereço e COM o par de coords gravado: é a coord ÓRFÃ,
+  // que `deveRegeocodificar` manda limpar (D3) — assim o 2º UPDATE continua
+  // acontecendo e as asserções de escopo deste arquivo seguem exercitadas.
+  const LOJA_FAKE: RespostaFake = {
+    data: {
+      // Literal: a factory do vi.mock é hoisted e não enxerga LOJA_ALVO.
+      id: "5ec21485-e58a-4071-a41c-f8963076ae00",
+      slug: "loja-alvo",
+      endereco_cidade: null,
+      endereco_estado: null,
+      latitude: -23.55,
+      longitude: -46.63,
+    },
+    error: null,
+    count: 1,
+  };
+
   function criarEncadeavel(
     eqs: Array<[string, string]>,
     resposta: RespostaFake = RESPOSTA,
+    respostaSingle: RespostaFake = resposta,
   ) {
     const encadeavel = {
       eq(coluna: string, valor: string) {
@@ -79,7 +99,7 @@ vi.mock("@/lib/supabase/service", () => {
         return encadeavel;
       },
       maybeSingle() {
-        return Promise.resolve(resposta);
+        return Promise.resolve(respostaSingle);
       },
       then(
         onFulfilled?: (v: RespostaFake) => unknown,
@@ -118,7 +138,13 @@ vi.mock("@/lib/supabase/service", () => {
           tabela === "lojas" && estadoSlug.ocupado
             ? { data: [{ id: "outra-loja-com-mesmo-slug" }], error: null, count: 1 }
             : RESPOSTA;
-        return criarEncadeavel(registro.eqs, resposta);
+        // `then` (slugExiste) e `maybeSingle` (buscarLojaAdminPorId) leem o MESMO
+        // SELECT em `lojas` com shapes diferentes — daí as duas respostas.
+        return criarEncadeavel(
+          registro.eqs,
+          resposta,
+          tabela === "lojas" ? LOJA_FAKE : resposta,
+        );
       },
     };
   }

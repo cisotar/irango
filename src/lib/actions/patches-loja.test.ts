@@ -14,6 +14,8 @@ import { describe, it, expect } from "vitest";
 import {
   montarPatchPerfil,
   montarConsultaGeocoding,
+  deveRegeocodificar,
+  temCoordenadas,
   type DadosPerfil,
 } from "./patches-loja";
 
@@ -214,5 +216,231 @@ describe("montarConsultaGeocoding — gate cidade+estado", () => {
     expect(
       montarConsultaGeocoding({ endereco_cidade: "  ", endereco_estado: "SP" }),
     ).toBeNull();
+  });
+});
+
+// ── Issue 180-A: deveRegeocodificar — o 2º UPDATE deixa de ser incondicional ──
+// O bug: salvar só o nome da loja com o geocoder fora do ar apagava uma
+// localização válida. A comparação sai da MESMA montarConsultaGeocoding dos dois
+// lados (D-180A-1) — nenhuma segunda lista de campos de endereço.
+describe("deveRegeocodificar — só regeocodifica quando o endereço mudou (180-A)", () => {
+  const ENDERECO_LOJA = {
+    endereco_cep: "01310-100",
+    endereco_rua: "Av. Paulista",
+    endereco_numero: "1000",
+    endereco_bairro: "Bela Vista",
+    endereco_cidade: "São Paulo",
+    endereco_estado: "SP",
+  };
+  const LOJA_COM_COORDS = {
+    ...ENDERECO_LOJA,
+    latitude: -23.56,
+    longitude: -46.65,
+  };
+
+  it("endereço idêntico → false (preserva as coords, é o bug da issue)", () => {
+    expect(deveRegeocodificar({ ...ENDERECO_LOJA }, LOJA_COM_COORDS)).toBe(false);
+  });
+
+  it("idêntico a menos de espaços em volta → false (trim da consulta absorve)", () => {
+    expect(
+      deveRegeocodificar(
+        {
+          ...ENDERECO_LOJA,
+          endereco_cidade: "  São Paulo ",
+          endereco_estado: " SP  ",
+          endereco_rua: " Av. Paulista ",
+        },
+        LOJA_COM_COORDS,
+      ),
+    ).toBe(false);
+  });
+
+  it("[D-180A-1] só o CEP mudou → false: o CEP está fora da consulta (186), o ponto seria o mesmo", () => {
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA, endereco_cep: "99999-999" },
+        LOJA_COM_COORDS,
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["endereco_rua", "Rua Augusta"],
+    ["endereco_numero", "2000"],
+    ["endereco_bairro", "Consolação"],
+    ["endereco_cidade", "Campinas"],
+    ["endereco_estado", "RJ"],
+  ])("%s alterado → true (endereço mudou de fato)", (campo, valor) => {
+    expect(
+      deveRegeocodificar({ ...ENDERECO_LOJA, [campo]: valor }, LOJA_COM_COORDS),
+    ).toBe(true);
+  });
+
+  it("endereço completo → incompleto (apagou a cidade) → true; o par vai a NULL (D3)", () => {
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA, endereco_cidade: null },
+        LOJA_COM_COORDS,
+      ),
+    ).toBe(true);
+  });
+
+  it("consultas iguais e NULAS, mas a loja tem coords órfãs → true (limpa o par, D3)", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: -23.56, longitude: -46.65 },
+      ),
+    ).toBe(true);
+  });
+
+  it("consultas iguais e NULAS, loja SEM coords → false (nada a limpar, nada a buscar)", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: null, longitude: null },
+      ),
+    ).toBe(false);
+  });
+
+  it("coord órfã pela METADE (só latitude) não conta como par → false", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: -23.56, longitude: null },
+      ),
+    ).toBe(false);
+  });
+
+  it("endereço igual e loja SEM coords (nunca geocodificada) → true: é a ÚNICA saída do estado sem coordenada (D-180A-2)", () => {
+    // Antes da 180-A todo save regeocodificava, então uma falha transitória se
+    // curava no save seguinte. Com o gate ingênuo (só "mudou?"), a loja ficaria
+    // presa até ALTERAR o endereço — e a 193, que passa a exigir coordenada para
+    // publicar, a deixaria sem saída nenhuma. O par ausente é o próprio sinal de
+    // que a tentativa anterior falhou: tentar de novo é o comportamento correto.
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA },
+        { ...ENDERECO_LOJA, latitude: null, longitude: null },
+      ),
+    ).toBe(true);
+  });
+
+  it("coord órfã pela METADE (só longitude) não conta como par → false", () => {
+    // Espelha o caso "só latitude" acima — sem isso, um bug que trocasse
+    // latitude↔longitude na checagem de temCoordenadas passaria despercebido.
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: null, longitude: -46.65 },
+      ),
+    ).toBe(false);
+  });
+
+  it("endereço incompleto → completo (ganhou cidade+UF) → true, mesmo sem coords prévias", () => {
+    // Direção oposta do caso "completo → incompleto" já coberto acima: prova que
+    // a regra não é assimétrica (ex.: um bug que só testasse consultaAtual===null
+    // passaria a ignorar esta direção).
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA },
+        { endereco_cidade: null, endereco_estado: null, latitude: null, longitude: null },
+      ),
+    ).toBe(true);
+  });
+
+  it("row projetada: campos de endereço da loja atual vêm UNDEFINED (não null) com coords gravadas → true (limpa a órfã)", () => {
+    // Uma query que projeta só um subconjunto de colunas devolve `undefined`
+    // para as que não pediu, nunca `null`. montarConsultaGeocoding trata os dois
+    // igual (?.trim()), mas é o comportamento de deveRegeocodificar com esse dado
+    // real que este teste trava — undefined não pode "esconder" a coord órfã.
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: undefined, endereco_estado: undefined },
+        { latitude: -23.56, longitude: -46.65 }, // sem nenhuma chave de endereço
+      ),
+    ).toBe(true);
+  });
+
+  it("coords da loja atual UNDEFINED (não null) nas duas colunas → false (não é par, nada a limpar)", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null }, // latitude/longitude ausentes
+      ),
+    ).toBe(false);
+  });
+
+  it("só um dos pares é UNDEFINED (latitude presente, longitude undefined) → false", () => {
+    expect(
+      deveRegeocodificar(
+        { endereco_cidade: null, endereco_estado: null },
+        { endereco_cidade: null, endereco_estado: null, latitude: -23.56 },
+      ),
+    ).toBe(false);
+  });
+
+  it("diferença só de caixa/acento (São Paulo vs Sao paulo) → true: NÃO é normalizada, só espaço é (documenta o limite do D-180A-1)", () => {
+    // O comentário de deveRegeocodificar é explícito: só o trim() da consulta é
+    // "de graça". Maiúsculas/acentos diferentes produzem strings distintas e
+    // disparam regeocodificação — comportamento intencional, não bug. Este teste
+    // trava essa decisão: se alguém normalizar caixa/acento no futuro sem querer,
+    // ele quebra e obriga a decisão consciente.
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA, endereco_cidade: "Sao paulo" },
+        LOJA_COM_COORDS,
+      ),
+    ).toBe(true);
+  });
+
+  it("endereço completo INALTERADO com coords pela METADE (só latitude) → true: meio par não é coordenada usável", () => {
+    // Com a regra 3 (D-180A-2) o par corrompido passou a ser REPARADO, não
+    // preservado. É a leitura certa: `temCoordenadas` exige os dois campos
+    // porque haversine precisa dos dois — meio par não posiciona nada, então
+    // vale exatamente tanto quanto par ausente e merece a mesma nova tentativa.
+    expect(
+      deveRegeocodificar(
+        { ...ENDERECO_LOJA },
+        { ...ENDERECO_LOJA, latitude: -23.56, longitude: null },
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("temCoordenadas — par tudo-ou-nada, direto (sem passar por deveRegeocodificar)", () => {
+  it("ambas presentes → true", () => {
+    expect(temCoordenadas({ latitude: -23.56, longitude: -46.65 })).toBe(true);
+  });
+
+  it("ambas null → false", () => {
+    expect(temCoordenadas({ latitude: null, longitude: null })).toBe(false);
+  });
+
+  it("ambas UNDEFINED (row projetada sem as colunas) → false", () => {
+    expect(temCoordenadas({})).toBe(false);
+  });
+
+  it("só latitude (longitude null) → false", () => {
+    expect(temCoordenadas({ latitude: -23.56, longitude: null })).toBe(false);
+  });
+
+  it("só longitude (latitude null) → false", () => {
+    expect(temCoordenadas({ latitude: null, longitude: -46.65 })).toBe(false);
+  });
+
+  it("só latitude (longitude UNDEFINED) → false", () => {
+    expect(temCoordenadas({ latitude: -23.56 })).toBe(false);
+  });
+
+  it("latitude null, longitude UNDEFINED (mistura dos dois \"vazios\") → false", () => {
+    expect(temCoordenadas({ latitude: null, longitude: undefined })).toBe(false);
+  });
+
+  it("latitude ZERO (linha do equador) + longitude presente → true: 0 não é falsy aqui (checagem é !== null/undefined, não truthiness)", () => {
+    // Guarda contra um bug clássico: `!loja.latitude` trataria 0 como ausente.
+    // A implementação usa !== null/undefined, então precisa passar com lat=0.
+    expect(temCoordenadas({ latitude: 0, longitude: -46.65 })).toBe(true);
   });
 });

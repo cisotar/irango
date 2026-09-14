@@ -29,6 +29,8 @@ import {
 import {
   montarPatchPerfil,
   montarConsultaGeocoding,
+  deveRegeocodificar,
+  temCoordenadas,
 } from "@/lib/actions/patches-loja";
 
 export type ResultadoSalvar = { ok: true } | { ok: false; erro: string };
@@ -103,10 +105,21 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoPerfil> {
     const { error } = await supabase.from("lojas").update(patch).eq("id", loja.id);
     if (error) throw error;
 
+    // (180-A) O 2º UPDATE é CONDICIONAL: só roda quando o endereço mudou de fato
+    // (ou quando há coord órfã a limpar). Antes era incondicional, e um save que
+    // não tocava o endereço — trocar só o nome — apagava uma localização VÁLIDA
+    // se o geocoder estivesse fora do ar. `deveRegeocodificar` compara a CONSULTA
+    // do payload com a da loja gravada, pela MESMA montarConsultaGeocoding.
+    if (!deveRegeocodificar(dados, loja)) {
+      revalidarVitrine(dados.slug, ...(dados.slug !== loja.slug ? [loja.slug] : []));
+      return { ok: true, geocodificado: temCoordenadas(loja) };
+    }
+
     // Coords DERIVADAS no servidor (RN-1): o endereço já foi gravado; agora
     // geocodificamos no servidor. 2º UPDATE separado e best-effort (D2) — par
     // tudo-ou-nada (RN-2). Endereço incompleto ou geocoding falho → par NULL,
-    // nunca rebaixa o salvamento nem deixa coords órfãs (D3).
+    // nunca rebaixa o salvamento nem deixa coords órfãs (D3 — que segue valendo,
+    // só que agora apenas no ramo "endereço mudou", 180-A).
     //
     // (007, RN-2-B) Usa o helper COM MOTIVO para distinguir falha transitória
     // (re-salvar resolve) de endereço não localizável (dado do lojista). No

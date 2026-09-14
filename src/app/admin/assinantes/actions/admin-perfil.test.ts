@@ -90,6 +90,7 @@ function builderLojas() {
     update(patch: Record<string, unknown>) {
       const reg: UpdateRegistro = { patch };
       updates.push(reg);
+      ordemChamadas.push(`update:${updates.length}`);
       const idx = updates.length - 1;
       return {
         eq(col: string, val: unknown) {
@@ -138,9 +139,30 @@ vi.mock("@/lib/supabase/service", () => ({
 }));
 
 // ── slugExiste (query helper) → mock. Default: slug livre (false). ────────────
+// (180-A) buscarLojaAdminPorId entra aqui: é a leitura do endereço ANTERIOR que
+// alimenta `deveRegeocodificar`. Default = loja-alvo SEM endereço e SEM coords,
+// então qualquer payload com endereço conta como "mudou" (fluxo antigo intacto).
 const slugExiste = vi.fn(async () => false);
+type LojaAdminMock = Record<string, unknown> | null;
+const LOJA_SEM_ENDERECO: LojaAdminMock = {
+  id: LOJA_ID,
+  slug: "pizzaria-do-ze",
+  endereco_cep: null,
+  endereco_rua: null,
+  endereco_numero: null,
+  endereco_bairro: null,
+  endereco_cidade: null,
+  endereco_estado: null,
+  latitude: null,
+  longitude: null,
+};
+const buscarLojaAdminPorId = vi.fn<() => Promise<LojaAdminMock>>(async () => {
+  ordemChamadas.push("buscarLojaAdminPorId");
+  return LOJA_SEM_ENDERECO;
+});
 vi.mock("@/lib/supabase/queries/lojas", () => ({
   slugExiste: (...a: unknown[]) => slugExiste(...(a as [])),
+  buscarLojaAdminPorId: (...a: unknown[]) => buscarLojaAdminPorId(...(a as [])),
 }));
 
 // ── geocodificarEnderecoComMotivo (server-only) → mock. Default: coords ok. ───
@@ -188,6 +210,10 @@ beforeEach(() => {
   });
   obterAdminUserId.mockReturnValue("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   slugExiste.mockResolvedValue(false);
+  buscarLojaAdminPorId.mockImplementation(async () => {
+    ordemChamadas.push("buscarLojaAdminPorId");
+    return LOJA_SEM_ENDERECO;
+  });
   geocodificarEnderecoComMotivo.mockResolvedValue({
     coords: { latitude: -23.55, longitude: -46.63 },
   });
@@ -398,5 +424,123 @@ describe("salvarPerfilAdmin — loja inexistente não deve devolver ok:true (164
     expect(r).toMatchObject({ ok: false, erro: "Loja não encontrada." });
     expect(updates).toHaveLength(2);
     expect(insertsAcesso).toHaveLength(0);
+  });
+});
+
+// ───────── Caso 8 (issue 180-A): 2º UPDATE deixa de ser incondicional ────────
+// Mesmo bug do painel: salvar o perfil pela via admin com o geocoder fora do ar
+// apagava uma localização válida, mesmo sem o endereço ter mudado.
+describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)", () => {
+  const LOJA_MESMO_ENDERECO: LojaAdminMock = {
+    id: LOJA_ID,
+    slug: PAYLOAD_BASE.slug,
+    endereco_cep: PAYLOAD_BASE.endereco_cep,
+    endereco_rua: PAYLOAD_BASE.endereco_rua,
+    endereco_numero: PAYLOAD_BASE.endereco_numero,
+    endereco_bairro: PAYLOAD_BASE.endereco_bairro,
+    endereco_cidade: PAYLOAD_BASE.endereco_cidade,
+    endereco_estado: PAYLOAD_BASE.endereco_estado,
+    latitude: -23.55,
+    longitude: -46.63,
+  };
+
+  function mockarLoja(loja: LojaAdminMock) {
+    buscarLojaAdminPorId.mockImplementation(async () => {
+      ordemChamadas.push("buscarLojaAdminPorId");
+      return loja;
+    });
+  }
+
+  it("CRITÉRIO 2: endereço IGUAL + geocoder fora do ar → geocoder NÃO chamado, só 1 UPDATE, coords intactas", async () => {
+    mockarLoja(LOJA_MESMO_ENDERECO);
+    geocodificarEnderecoComMotivo.mockResolvedValue({
+      coords: null,
+      motivo: "transitorio",
+    });
+
+    const r = await salvarPerfilAdmin(LOJA_ID, { ...PAYLOAD_BASE, nome: "Nome Novo" });
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(1);
+    expect(updates[0].patch).not.toHaveProperty("latitude");
+    expect(updates[0].patch).not.toHaveProperty("longitude");
+    // O salvamento em si não é rebaixado: trilha de auditoria registrada.
+    expect(insertsAcesso).toHaveLength(1);
+  });
+
+  it("RISCO DO DIFF: a loja é lida ANTES do 1º UPDATE (senão compara o endereço novo consigo mesmo)", async () => {
+    mockarLoja(LOJA_MESMO_ENDERECO);
+
+    await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    const posLeitura = ordemChamadas.indexOf("buscarLojaAdminPorId");
+    const posUpdate = ordemChamadas.indexOf("update:1");
+    expect(posLeitura).toBeGreaterThanOrEqual(0);
+    expect(posUpdate).toBeGreaterThanOrEqual(0);
+    expect(posLeitura).toBeLessThan(posUpdate);
+    // E depois do fail-closed de admin (D-4): nenhuma leitura sem prova.
+    expect(ordemChamadas.indexOf("verificarAdminSaaS")).toBeLessThan(posLeitura);
+  });
+
+  it("endereço ALTERADO + geocoder fora do ar → geocoder chamado e 2º UPDATE grava o par NULL", async () => {
+    mockarLoja(LOJA_MESMO_ENDERECO);
+    geocodificarEnderecoComMotivo.mockResolvedValue({
+      coords: null,
+      motivo: "transitorio",
+    });
+
+    const r = await salvarPerfilAdmin(LOJA_ID, {
+      ...PAYLOAD_BASE,
+      endereco_rua: "Rua Augusta",
+    });
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(1);
+    expect(updates).toHaveLength(2);
+    expect(updates[1].patch).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("loja-alvo inexistente na leitura → { ok:false, erro:'Loja não encontrada.' } sem nenhum UPDATE", async () => {
+    mockarLoja(null);
+
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toEqual({ ok: false, erro: "Loja não encontrada." });
+    expect(updates).toHaveLength(0);
+    expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
+    expect(insertsAcesso).toHaveLength(0);
+  });
+
+  it("coords pela METADE (só latitude) + endereço inalterado → REPARA o par (regra 3, D-180A-2)", async () => {
+    // temCoordenadas trata o par pela metade como "sem coords" — e com a regra 3
+    // isso passa a DISPARAR nova tentativa, não a pular. Meio par não posiciona
+    // nada: haversine precisa dos dois campos. Espelha o caso do painel, para o
+    // caminho do admin não divergir.
+    mockarLoja({ ...LOJA_MESMO_ENDERECO, latitude: -23.55, longitude: null });
+    geocodificarEnderecoComMotivo.mockResolvedValue({
+      coords: { latitude: -23.55, longitude: -46.63 },
+    });
+
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(geocodificarEnderecoComMotivo).toHaveBeenCalled();
+    expect(updates).toHaveLength(2);
+  });
+
+  it("coord ÓRFÃ (loja com coords, endereço incompleto nos dois lados) → 2º UPDATE limpa o par (D3)", async () => {
+    mockarLoja({ ...LOJA_SEM_ENDERECO, latitude: -23.55, longitude: -46.63 });
+
+    const r = await salvarPerfilAdmin(LOJA_ID, {
+      nome: "Pizzaria do Zé",
+      slug: "pizzaria-do-ze",
+      whatsapp: "5511999998888",
+    });
+
+    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(2);
+    expect(updates[1].patch).toEqual({ latitude: null, longitude: null });
   });
 });
