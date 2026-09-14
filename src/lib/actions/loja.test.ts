@@ -398,7 +398,12 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
     expect(updatePatch.mock.calls[1][0]).toEqual({ latitude: null, longitude: null });
   });
 
-  it("endereço igual, loja SEM coords → pula o 2º UPDATE e reporta geocodificado:false (sem motivo)", async () => {
+  it("endereço igual, loja SEM coords → TENTA DE NOVO (D-180A-2): é a única saída do estado sem coordenada", async () => {
+    // Regra 3: o par ausente com endereço válido é o sinal de que a tentativa
+    // anterior falhou. Se pulássemos aqui, a loja ficaria presa sem coordenada
+    // até ALTERAR o endereço — e a 193 (coordenada obrigatória para publicar) a
+    // deixaria sem saída. Aqui o geocoder segue fora do ar, então o par continua
+    // NULL e o motivo transitório volta para a UI abrir o modal.
     buscarLojaDoDono.mockResolvedValue({
       ...LOJA_GEOCODIFICADA,
       latitude: null,
@@ -408,9 +413,29 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
 
     const r = await salvarPerfil(PERFIL_COM_ENDERECO);
 
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    expect(updatePatch).toHaveBeenCalledTimes(1);
+    expect(r).toEqual({ ok: true, geocodificado: false, motivo: "transitorio" });
+    expect(geocodificarComMotivo).toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(2);
+    expect(updatePatch).toHaveBeenLastCalledWith({ latitude: null, longitude: null });
+  });
+
+  it("endereço igual, loja SEM coords, geocoder VOLTOU → grava o par e a loja se recupera sozinha", async () => {
+    // O outro lado da regra 3: é isto que tira a loja do estado bloqueado sem
+    // que o lojista precise mexer no endereço.
+    buscarLojaDoDono.mockResolvedValue({
+      ...LOJA_GEOCODIFICADA,
+      latitude: null,
+      longitude: null,
+    });
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP, motivo: undefined });
+
+    const r = await salvarPerfil(PERFIL_COM_ENDERECO);
+
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(updatePatch).toHaveBeenLastCalledWith({
+      latitude: COORDS_SP.latitude,
+      longitude: COORDS_SP.longitude,
+    });
   });
 
   it("loja com coords pela METADE (só latitude, sem endereço) + endereço segue incompleto → false NÃO pula: temCoordenadas já é false, mas deveRegeocodificar detecta 'nada a limpar' e pula o 2º UPDATE mesmo assim", async () => {
@@ -433,22 +458,21 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
     expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 
-  it("endereço IGUAL e loja com coords pela METADE (só longitude) → não regeocodifica; geocodificado:false reflete o par incompleto", async () => {
-    // Mesmo endereço de PERFIL_COM_ENDERECO, mas só longitude gravada: não é um
-    // par válido (temCoordenadas → false), então geocodificado também é false —
-    // mesmo com endereço "geocodificado" antes. Documenta que o retorno nunca
-    // reporta true para um par pela metade.
+  it("endereço IGUAL e loja com coords pela METADE (só longitude) → REPARA o par: meio par não posiciona nada", async () => {
+    // Par pela metade vale exatamente tanto quanto par ausente — haversine
+    // precisa dos dois campos. Pela regra 3 ele é reparado, não preservado.
     buscarLojaDoDono.mockResolvedValue({
       ...LOJA_GEOCODIFICADA,
       latitude: null,
       longitude: COORDS_SP.longitude,
     });
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP, motivo: undefined });
 
     const r = await salvarPerfil(PERFIL_COM_ENDERECO);
 
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    expect(updatePatch).toHaveBeenCalledTimes(1);
+    expect(r).toEqual({ ok: true, geocodificado: true });
+    expect(geocodificarComMotivo).toHaveBeenCalled();
+    expect(updatePatch).toHaveBeenCalledTimes(2);
   });
 
   it("coord ÓRFÃ (loja com coords e endereço incompleto) → 2º UPDATE limpa o par (D3 preservada)", async () => {

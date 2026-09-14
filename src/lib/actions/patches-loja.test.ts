@@ -313,13 +313,18 @@ describe("deveRegeocodificar — só regeocodifica quando o endereço mudou (180
     ).toBe(false);
   });
 
-  it("endereço igual e loja SEM coords (nunca geocodificada) → false", () => {
+  it("endereço igual e loja SEM coords (nunca geocodificada) → true: é a ÚNICA saída do estado sem coordenada (D-180A-2)", () => {
+    // Antes da 180-A todo save regeocodificava, então uma falha transitória se
+    // curava no save seguinte. Com o gate ingênuo (só "mudou?"), a loja ficaria
+    // presa até ALTERAR o endereço — e a 193, que passa a exigir coordenada para
+    // publicar, a deixaria sem saída nenhuma. O par ausente é o próprio sinal de
+    // que a tentativa anterior falhou: tentar de novo é o comportamento correto.
     expect(
       deveRegeocodificar(
         { ...ENDERECO_LOJA },
         { ...ENDERECO_LOJA, latitude: null, longitude: null },
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("coord órfã pela METADE (só longitude) não conta como par → false", () => {
@@ -390,19 +395,17 @@ describe("deveRegeocodificar — só regeocodifica quando o endereço mudou (180
     ).toBe(true);
   });
 
-  it("endereço completo INALTERADO mas coords gravadas pela METADE (só latitude) → false: reparo de par corrompido é FORA do escopo de D3", () => {
-    // D3 só limpa coord órfã quando o ENDEREÇO está incompleto. Se o endereço
-    // está completo e igual ao anterior, a função não entra no ramo 2 (só chega
-    // lá quando consultaNova === null) — logo um par corrompido por outra causa
-    // (ex.: escrita direta no banco) sobrevive até o próximo save que MUDE o
-    // endereço. Comportamento atual, travado aqui para não ser "corrigido" por
-    // engano numa refatoração sem essa decisão consciente.
+  it("endereço completo INALTERADO com coords pela METADE (só latitude) → true: meio par não é coordenada usável", () => {
+    // Com a regra 3 (D-180A-2) o par corrompido passou a ser REPARADO, não
+    // preservado. É a leitura certa: `temCoordenadas` exige os dois campos
+    // porque haversine precisa dos dois — meio par não posiciona nada, então
+    // vale exatamente tanto quanto par ausente e merece a mesma nova tentativa.
     expect(
       deveRegeocodificar(
         { ...ENDERECO_LOJA },
         { ...ENDERECO_LOJA, latitude: -23.56, longitude: null },
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
