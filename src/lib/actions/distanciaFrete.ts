@@ -16,17 +16,48 @@
 // geocoding, não deste caller (plan/tecnico-geocoding-google.md,
 // simplificação de contrato).
 //
-// FAIL-CLOSED (RN-5, seguranca.md §12-A): retorna `undefined` em QUALQUER falha
+// FAIL-CLOSED (RN-5, seguranca.md §12-A): `km` é `undefined` em QUALQUER falha
 // ou pré-condição ausente — loja sem coords (RN-3), CEP ausente, geocoding null.
 // NUNCA lança. `undefined` propaga para EnderecoEntrega.distanciaKm → zona
 // 'raio_km' não casa → calcularFrete cai no fallback. distanciaKm jamais vem do
 // cliente. NÃO arredonda (haversine cru — auditoria fiel; UI arredonda se preciso).
+//
+// (180-B) O retorno virou DISCRIMINADO (`{ km, causa }`): quem cobra precisa
+// saber se a distância "não se aplica" ou "não pôde ser calculada" —
+// `classificarFrete` decide, e o veredito a-combinar precede o fallback.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { buscarCoordsLoja } from "@/lib/supabase/queries/lojas";
 import { geocodificarCepResolvido } from "@/lib/utils/geocodificarEndereco";
 import type { EnderecoCepResolvido } from "@/lib/utils/resolverCepServidor";
 import { haversine } from "@/lib/utils/haversine";
+
+// ─────────────────────────── Retorno discriminado (180-B) ───────────────────
+// `distanciaDaLojaAoCep` colapsava SETE causas distintas num único `undefined`.
+// A jusante, `calcularFrete` não tinha como distinguir "a distância não se
+// aplica" de "a distância não pôde ser calculada" — e o fallback fora-de-zona
+// (regra de negócio sobre o ENDEREÇO) acabava aplicado a uma falha de
+// INFRAESTRUTURA nossa, cobrando o cliente pelo nosso problema.
+//
+// Fail-closed preservado: `km` só é `number` quando a distância é REAL; a
+// função continua NUNCA lançando. O que muda é que a CAUSA deixa de se perder.
+// Nenhum dado sensível novo atravessa: a causa é um ENUM e o par (lat,lng)
+// continua morrendo dentro do módulo de geocoding (seguranca.md §19).
+
+/** Causa da (in)disponibilidade da distância loja→CEP (180-B/D1). */
+export type CausaDistancia =
+  | "ok"
+  | "sem_cep"
+  | "loja_sem_coords"
+  | "nao_encontrado"
+  | "transitorio"
+  | "esgotado"
+  | "erro";
+
+/** Resultado discriminado: distância real só existe com `causa: "ok"`. */
+export type ResultadoDistancia =
+  | { km: number; causa: "ok" }
+  | { km: undefined; causa: Exclude<CausaDistancia, "ok"> };
 
 /**
  * Distância em km (linha reta) entre a loja e o CEP do cliente, para alimentar
@@ -52,56 +83,41 @@ export async function distanciaDaLojaAoCep(
   cep: string | null | undefined,
   resolverEndereco: () => Promise<EnderecoCepResolvido | null>,
   ip: string,
-): Promise<number | undefined> {
+): Promise<ResultadoDistancia> {
   // CEP ausente/vazio → nada a geocodificar (não chama coords nem geocode).
-  if (!cep) return undefined;
+  if (!cep) return { km: undefined, causa: "sem_cep" };
 
   try {
-    // Coords da loja primeiro: curto-circuito evita bater no Nominatim à toa
+    // Coords da loja primeiro: curto-circuito evita bater no geocoder à toa
     // quando a loja nem tem coords (RN-3).
     const loja = await buscarCoordsLoja(svc, lojaId);
-    if (loja == null) return undefined;
+    if (loja == null) return { km: undefined, causa: "loja_sem_coords" };
 
     // O CEP é a CHAVE; a CONSULTA (cascata) é montada dentro do geocoder a
     // partir do endereço resolvido no servidor. Se o ViaCEP falhar,
     // `resolverEndereco` devolve null e o geocoder é fail-closed — jamais cai
     // no CEP cru como consulta de consolo (causa raiz da 185).
     const cliente = await geocodificarCepResolvido(cep, resolverEndereco, ip);
-    if (cliente.coords == null) return undefined;
+    // O motivo do geocoder É a causa (mesmos três literais, por construção):
+    // repassá-lo é o que impede o fallback fora-de-zona de ser cobrado por uma
+    // falha de canal (180-B).
+    if (cliente.coords == null) return { km: undefined, causa: cliente.motivo };
 
-    return haversine(
-      loja.latitude,
-      loja.longitude,
-      cliente.coords.latitude,
-      cliente.coords.longitude,
-    );
-  } catch {
+    return {
+      km: haversine(
+        loja.latitude,
+        loja.longitude,
+        cliente.coords.latitude,
+        cliente.coords.longitude,
+      ),
+      causa: "ok",
+    };
+  } catch (e) {
     // Fail-closed total: qualquer exceção (ex. buscarCoordsLoja propaga error
-    // do PostgREST) vira undefined → zona raio_km não casa → fallback.
-    return undefined;
+    // do PostgREST) NUNCA propaga. `erro` é tratado como retriável pela UI —
+    // um blip de banco costuma se resolver em segundos.
+    console.error("[distanciaDaLojaAoCep]", e);
+    return { km: undefined, causa: "erro" };
   }
 }
 
-// ─────────────────────────── STUB TDD (fase RED, issue 180-B) ───────────────
-// CONTRATO de retorno discriminado (plan/180-B §D1, decisão (c)). Só os TIPOS
-// entram aqui na fase RED — o corpo de `distanciaDaLojaAoCep` continua o antigo
-// e é a fase GREEN (`executar`) que passa a devolver `ResultadoDistancia`,
-// mapeando: CEP ausente → "sem_cep" (sem I/O); buscarCoordsLoja null →
-// "loja_sem_coords" (sem chamar o geocoder); motivo do geocoder →
-// "nao_encontrado" | "transitorio" | "esgotado"; catch → "erro".
-// Fail-closed preservado: `km` só é `number` quando a distância é REAL.
-
-/** Causa da (in)disponibilidade da distância loja→CEP (180-B/D1). */
-export type CausaDistancia =
-  | "ok"
-  | "sem_cep"
-  | "loja_sem_coords"
-  | "nao_encontrado"
-  | "transitorio"
-  | "esgotado"
-  | "erro";
-
-/** Resultado discriminado: distância real só existe com `causa: "ok"`. */
-export type ResultadoDistancia =
-  | { km: number; causa: "ok" }
-  | { km: undefined; causa: Exclude<CausaDistancia, "ok"> };

@@ -14,7 +14,9 @@
 //   (burst 10/s + teto diário GLOBAL + teto diário POR IP, quando há IP) foram
 //   efetivamente verificadas e concedidas. Qualquer estado em que as travas
 //   não podem ser verificadas (sem chave, sem credenciais, Redis down,
-//   exceção) ⇒ NÃO chamar ⇒ transitorio.
+//   exceção) ⇒ NÃO chamar. O MOTIVO devolvido responde "retentar agora
+//   adianta?" (180-B): sem chave/credenciais e tetos diários negados ⇒
+//   esgotado; Redis down, burst negado e falhas de canal ⇒ transitorio.
 //
 //   TETO POR IP (achado MÉDIO do `auditar`, issue 190): o teto diário global
 //   sozinho protege o ORÇAMENTO agregado, mas `calcularFreteAction` é um
@@ -213,12 +215,21 @@ async function gravarCacheCoordenadas(
 }
 
 /**
- * Motivo da ausência de coords (issue 004). Discrimina falha **transitória**
- * (re-tentar resolve: guarda de custo excedida, timeout, 5xx, Redis/chave
- * indisponíveis, status de erro da Google) de **endereço não localizável**
- * (`ZERO_RESULTS` ou coords não-finitas — problema do dado, não do canal).
+ * Motivo da ausência de coords (issue 004; "esgotado" na 180-B). A pergunta
+ * que o consumidor precisa responder NÃO é "a falha é permanente?" e sim
+ * **"retentar AGORA adianta?"** — 20s de spinner por uma env var faltando é
+ * desperdício da atenção do comprador (plan/180-B §D2):
+ *   - `transitorio`    — o canal pode voltar em segundos: burst negado,
+ *                        timeout, 5xx, status de erro da Google, ViaCEP fora
+ *                        do ar. Retentar FAZ sentido.
+ *   - `esgotado`       — a trava que negou não se move no curto prazo: teto
+ *                        diário global, teto diário por IP, chave da Google
+ *                        ausente, credenciais Upstash ausentes. Retentar
+ *                        agora NÃO adianta.
+ *   - `nao_encontrado` — o problema é o DADO, não o canal: `ZERO_RESULTS`,
+ *                        coords não-finitas/fora do Brasil, CEP malformado.
  */
-export type MotivoGeocoding = "nao_encontrado" | "transitorio";
+export type MotivoGeocoding = "nao_encontrado" | "transitorio" | "esgotado";
 
 /** Resultado discriminado do geocoding com motivo (issue 004). */
 export type ResultadoGeocoding =
@@ -261,11 +272,16 @@ async function consultarGoogle(
     // orçamento coletivo).
     if (opcoes.ip) {
       const diarioIp = await obterLimitadorDiarioIp().limit(opcoes.ip);
-      if (!diarioIp.success) return { coords: null, motivo: "transitorio" };
+      // (180-B) `esgotado`, não `transitorio`: a fatia diária deste IP acabou
+      // e só volta na virada do dia. Retentar em 10s/20s só queimaria a
+      // atenção do comprador. NÃO culpa o cliente na UI — o teto por IP pode
+      // ter sido estourado por NAT corporativo/CGNAT móvel (rateLimit.ts).
+      if (!diarioIp.success) return { coords: null, motivo: "esgotado" };
     }
     // Teto diário: a guarda de custo real, GLOBAL.
     const diario = await obterLimitadorDiario().limit("geocode-daily");
-    if (!diario.success) return { coords: null, motivo: "transitorio" };
+    // (180-B) `esgotado`: o orçamento diário acabou; retentar agora não adianta.
+    if (!diario.success) return { coords: null, motivo: "esgotado" };
 
     const pais = opcoes.restringirBrasil ? "&components=country:BR" : "";
     const url = `https://maps.googleapis.com/maps/api/geocode/json?key=${chave}&address=${encodeURIComponent(consulta)}${pais}`;
@@ -317,24 +333,26 @@ async function consultarGoogle(
  *
  * Guarda de custo fail-closed (seguranca.md, 190): qualquer estado em que as
  * travas (burst/diária) não puderam ser verificadas/concedidas ⇒ NÃO chama a
- * Google. Esses estados (sem chave/credenciais, travas negadas/indisponíveis,
- * timeout, HTTP não-ok, status de erro) são `transitorio`; só `ZERO_RESULTS`
- * é `nao_encontrado`. Nunca propaga exceção; nunca loga o par (lat,lng), a
+ * Google. Esses estados são classificados por "retentar agora adianta?"
+ * (180-B): sem chave/credenciais e tetos diários negados ⇒ `esgotado`; burst
+ * negado, timeout, HTTP não-ok e status de erro ⇒ `transitorio`; só
+ * `ZERO_RESULTS` é `nao_encontrado`. Nunca propaga exceção; nunca loga o par (lat,lng), a
  * consulta nem a chave (§14/§21).
  */
 export async function geocodificarEnderecoComMotivo(
   consulta: string,
 ): Promise<ResultadoGeocoding> {
   // Portão 0: chave da Google é pré-condição — sem ela não há como chamar a
-  // API paga. Ausente/vazia → não chama (transitório: re-tentar com a env
-  // corrigida resolve).
+  // API paga. Ausente/vazia → não chama.
+  // (180-B) `esgotado`: sem a env var não há chamada possível AGORA; retentar
+  // em 10s não conserta uma configuração ausente.
   const chave = chaveGoogle();
-  if (!chave) return { coords: null, motivo: "transitorio" };
+  if (!chave) return { coords: null, motivo: "esgotado" };
 
   // Portão 1: sem credenciais Upstash não há como verificar a guarda de custo
   // → fail-closed. NÃO toca o Redis (oposto de rateLimit.ts, que retornaria
-  // permitido:true).
-  if (!credenciaisUpstash()) return { coords: null, motivo: "transitorio" };
+  // permitido:true). (180-B) `esgotado` pelo mesmo motivo do portão 0.
+  if (!credenciaisUpstash()) return { coords: null, motivo: "esgotado" };
 
   // `restringirBrasil: true` (issue 186): toda loja do iRango é brasileira, e
   // sem a restrição nada impedia o endereço digitado pelo lojista de resolver
@@ -362,15 +380,15 @@ export async function geocodificarEnderecoComMotivo(
  *   chave Google → credenciais Upstash → GET cache → resolverEndereco
  *   (ViaCEP) → montarConsultasCepCliente (cascata) → para cada candidato:
  *     burst 10/s → teto diário N/dia → fetch Google → ZERO_RESULTS? próximo
- *     candidato : outro status/erro? transitorio IMEDIATO (não cascateia em
+ *     candidato : outro status/erro? transitorio/esgotado IMEDIATO (não cascateia em
  *     falha de canal/orçamento) : OK? dentroDoBrasil → SET cache com v:3 e
  *     ex:2_160_000 → retorna.
  *
  * FAIL-CLOSED: `resolverEndereco` retornando `null` (ViaCEP fora do ar, CEP
  * inexistente, resposta sem cidade/UF) ⇒ `transitorio` SEM chamar a Google —
  * jamais cai no CEP cru como consulta de consolo. A cascata só avança em
- * `nao_encontrado` (ZERO_RESULTS); qualquer falha transitória de canal/
- * orçamento interrompe a cascata imediatamente (retry num canal já degradado
+ * `nao_encontrado` (ZERO_RESULTS); qualquer falha de canal/orçamento
+ * (`transitorio` ou `esgotado`) interrompe a cascata imediatamente (retry num canal já degradado
  * dobraria o gasto sem chance real de sucesso).
  *
  * `ip` é OBRIGATÓRIO (convenção da issue 160 — parâmetro opcional deixaria um
@@ -390,14 +408,18 @@ export async function geocodificarCepResolvido(
   ip: string,
 ): Promise<ResultadoGeocoding> {
   // Portões 0 e 1: idênticos ao caminho da loja.
+  // (180-B) Portões 0/1 → `esgotado` (ver `MotivoGeocoding`): configuração
+  // ausente não se resolve em 10s de spinner.
   const chave = chaveGoogle();
-  if (!chave) return { coords: null, motivo: "transitorio" };
-  if (!credenciaisUpstash()) return { coords: null, motivo: "transitorio" };
+  if (!chave) return { coords: null, motivo: "esgotado" };
+  if (!credenciaisUpstash()) return { coords: null, motivo: "esgotado" };
 
   // A chave é o CEP normalizado: com e sem máscara resolvem a MESMA entrada.
   // CEP malformado → nada a resolver, sem NENHUMA I/O externa.
   const digitos = limparCep(cep);
-  if (!/^\d{8}$/.test(digitos)) return { coords: null, motivo: "transitorio" };
+  // (180-B) `nao_encontrado`, não `transitorio`: retentar um CEP inválido NUNCA
+  // resolve — o que a UI precisa pedir é conferir o número digitado.
+  if (!/^\d{8}$/.test(digitos)) return { coords: null, motivo: "nao_encontrado" };
 
   // Portão de cache (leitura) ANTES do ViaCEP: é o que sustenta o teto de
   // chamadas. Miss/lixo/Redis down → fail-open, segue (RN-F4/F5 preservados).
@@ -424,8 +446,9 @@ export async function geocodificarCepResolvido(
   for (const consulta of candidatos) {
     const r = await consultarGoogle(chave, consulta, { restringirBrasil: true, ip });
     if (r.coords == null) {
-      // Falha de canal/orçamento: para a cascata imediatamente.
-      if (r.motivo === "transitorio") return r;
+      // Falha de canal/orçamento: para a cascata imediatamente (180-B:
+      // `esgotado` também — insistir com o teto batido não muda o resultado).
+      if (r.motivo !== "nao_encontrado") return r;
       // ZERO_RESULTS: tenta o próximo candidato, mais genérico.
       continue;
     }

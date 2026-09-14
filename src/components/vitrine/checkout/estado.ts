@@ -63,8 +63,14 @@ export const ESTADO_INICIAL: EstadoWizard = {
  * só este predicado decide se o botão "Confirmar pedido" habilita.
  *
  * `true` quando há forma de pagamento E (retirada OU (entrega + endereço
- * preenchido + frete resolvido "ok")). Em entrega, frete "calculando",
+ * preenchido + frete RESOLVIDO)). Em entrega, frete "calculando",
  * "indisponivel", "erro" ou "ocioso" mantém o botão bloqueado.
+ *
+ * (180-B) "a_combinar" TAMBÉM libera: um pedido a combinar é um pedido válido —
+ * o comprador conclui normalmente e o frete é definido no chat com a loja.
+ * Manter só "ok" prenderia o cliente exatamente no cenário que a issue existe
+ * para destravar. Continua sendo só GATE DE UI: quem decide o valor é
+ * `criarPedido`, que reclassifica do zero e não recebe flag do cliente.
  */
 export function podeConfirmar(
   estado: EstadoWizard,
@@ -74,7 +80,8 @@ export function podeConfirmar(
   if (estado.formaPagamento == null) return false;
   if (tipoEntrega == null) return false;
   if (tipoEntrega === "retirada") return true;
-  return estado.endereco !== null && freteStatus === "ok";
+  if (estado.endereco === null) return false;
+  return freteStatus === "ok" || freteStatus === "a_combinar";
 }
 
 /**

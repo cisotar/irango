@@ -25,7 +25,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 //   - a CHAVE do cache é o CEP (8 dígitos), NUNCA o texto da consulta;
 //   - valor de cache sem `v === 3` (incluindo o v:2 antigo) ⇒ MISS;
 //   - a cascata SÓ avança em ZERO_RESULTS; falha transitória interrompe;
-//   - teto diário excedido ⇒ transitorio, fetch NUNCA chamado (fail-closed).
+//   - teto diário excedido ⇒ esgotado (180-B), fetch NUNCA chamado (fail-closed).
 //
 // Critério de sucesso da issue 190: os CEPs 12914-190 (Jardim Sevilha) e
 // 12900-430 (Centro), mesma cidade (Bragança Paulista/SP), geocodificam para
@@ -373,16 +373,18 @@ describe("[190-25/26] cache gravado com TTL de 25 dias e v:3", () => {
 });
 
 // =============================================================================
-// 27) CEP malformado → transitorio, zero I/O
+// 27) CEP malformado → nao_encontrado (180-B), zero I/O
 // =============================================================================
-describe("[190-27] CEP malformado → transitorio, zero I/O", () => {
-  it("CEP com menos de 8 dígitos → transitorio, sem cache, sem resolverEndereco, sem fetch", async () => {
+describe("[190-27] CEP malformado → nao_encontrado, zero I/O", () => {
+  it("CEP com menos de 8 dígitos → nao_encontrado, sem cache, sem resolverEndereco, sem fetch", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const resolver = resolverOk();
 
     const r = await geocodificarCepResolvido("123", resolver, IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `nao_encontrado`: o problema é o DADO,
+    // e retentar um CEP inválido nunca resolve — a UI pede conferir o número.
+    expect(r).toEqual({ coords: null, motivo: "nao_encontrado" });
     expect(getMock).not.toHaveBeenCalled();
     expect(resolver).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -424,8 +426,8 @@ describe("[190-28] resolverEndereco null (ViaCEP fora do ar) → transitorio", (
 // =============================================================================
 // 29) Teto diário excedido → fail-closed, zero fetch
 // =============================================================================
-describe("[190-29] teto diário GLOBAL excedido → transitorio, fail-closed", () => {
-  it("limitador diário nega (success:false) → transitorio, ZERO fetch, mesmo com cache miss e ViaCEP disponível", async () => {
+describe("[190-29] teto diário GLOBAL excedido → esgotado, fail-closed", () => {
+  it("limitador diário nega (success:false) → esgotado, ZERO fetch, mesmo com cache miss e ViaCEP disponível", async () => {
     // 1ª chamada de limit() é o burst (concede), a 2ª é o teto diário (nega).
     limitMock
       .mockResolvedValueOnce({ success: true })
@@ -435,7 +437,9 @@ describe("[190-29] teto diário GLOBAL excedido → transitorio, fail-closed", (
 
     const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
+    // move no curto prazo, e a UI usa o motivo para decidir se retenta.
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
     expect(fetchSpy).not.toHaveBeenCalled();
     // ViaCEP FOI consultado (o teto é verificado só depois de montar a
     // cascata) — mas nenhuma chamada paga ao Google aconteceu.
@@ -473,20 +477,22 @@ describe("guarda de custo — burst 10/s", () => {
 // Portões 0/1 (chave Google / credenciais Upstash) preservados
 // =============================================================================
 describe("[190] portões de pré-condição preservados", () => {
-  it("sem GOOGLE_GEOCODING_API_KEY → transitorio, sem cache, sem resolverEndereco, sem fetch", async () => {
+  it("sem GOOGLE_GEOCODING_API_KEY → esgotado, sem cache, sem resolverEndereco, sem fetch", async () => {
     delete process.env.GOOGLE_GEOCODING_API_KEY;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const resolver = resolverOk();
 
     const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
+    // move no curto prazo, e a UI usa o motivo para decidir se retenta.
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
     expect(getMock).not.toHaveBeenCalled();
     expect(resolver).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("sem credenciais Upstash → transitorio, sem tocar Redis nem ViaCEP", async () => {
+  it("sem credenciais Upstash → esgotado, sem tocar Redis nem ViaCEP", async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -494,7 +500,9 @@ describe("[190] portões de pré-condição preservados", () => {
 
     const r = await geocodificarCepResolvido(CEP_A, resolver, IP_CLIENTE);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
+    // move no curto prazo, e a UI usa o motivo para decidir se retenta.
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
     expect(getMock).not.toHaveBeenCalled();
     expect(limitMock).not.toHaveBeenCalled();
     expect(resolver).not.toHaveBeenCalled();
@@ -761,7 +769,7 @@ describe("[190] nenhum log carrega coordenada, endereço ou chave", () => {
 // 3º parâmetro OBRIGATÓRIO (convenção da issue 160 — opcional deixaria um
 // caller esquecer e reabrir o vetor silenciosamente).
 describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () => {
-  it("31) IP com teto por IP já esgotado é bloqueado (transitorio, zero fetch) mesmo com teto GLOBAL livre; outro IP não é afetado", async () => {
+  it("31) IP com teto por IP já esgotado é bloqueado (esgotado, zero fetch) mesmo com teto GLOBAL livre; outro IP não é afetado", async () => {
     const IP_ABUSIVO = "203.0.113.9";
     const IP_LEGITIMO = "203.0.113.55";
     // burst e teto diário GLOBAL sempre concedem; só o teto por IP do
@@ -785,7 +793,9 @@ describe("[190-31/33] teto diário SECUNDÁRIO por IP — auditoria MÉDIA", () 
       resolverOk(ENDERECO_A),
       IP_ABUSIVO,
     );
-    expect(bloqueado).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado`: a trava que negou não se
+    // move no curto prazo, e a UI usa o motivo para decidir se retenta.
+    expect(bloqueado).toEqual({ coords: null, motivo: "esgotado" });
     expect(fetchSpy).not.toHaveBeenCalled();
 
     const liberado = await geocodificarCepResolvido(

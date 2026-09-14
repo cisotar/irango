@@ -132,10 +132,14 @@ function zonaRaio(raioMaxKm = 5, taxa = 3.0): ZonaVitrine {
 beforeEach(() => {
   vi.clearAllMocks();
   listarZonasComTaxas.mockResolvedValue([zonaCentro()]);
-  // [007] Default fail-closed: sem coords / sem geocode → undefined → zona
-  // raio_km não casa. Mantém todos os testes pré-existentes (bairro/faixa_cep)
-  // intactos; só os casos de raio sobrescrevem com número.
-  distanciaDaLojaAoCep.mockResolvedValue(undefined);
+  // [007] Default fail-closed: sem distância → zona raio_km não casa. Mantém
+  // todos os testes pré-existentes (bairro/faixa_cep) intactos; só os casos de
+  // raio sobrescrevem.
+  // [180-B] O helper passou a devolver `{ km, causa }`. O default usa
+  // `sem_cep` — "a distância não se APLICA" —, a única causa que não é falha de
+  // canal: assim os testes que não são sobre geocoding continuam medindo o que
+  // mediam, sem cair no caminho a-combinar.
+  distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "sem_cep" });
   // Loja com fallback fora-de-zona configurado (R$ 15,00) por padrão.
   buscarLojaPublicaPorId.mockResolvedValue({
     id: LOJA_ID,
@@ -413,7 +417,7 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
     // Só existe zona raio_km (raio_max_km=5, taxa 3,00). Helper resolve 4,7 km
     // (<= 5) → distanciaKm injetado → a zona raio casa em calcularFrete.
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue(4.7);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 4.7, causa: "ok" });
 
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -433,25 +437,36 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
 
   // 2) Geocoding null (helper undefined) → zona raio não casa → fallback fora-de-zona,
   //    idêntico ao autoritativo (RN-5 fail-closed).
-  it("[007-2] geocoding null (helper undefined) → zona raio NÃO casa → fallback (mesmo do autoritativo)", async () => {
-    // Só zona raio_km; loja tem taxa_entrega_fora_zona=15. Helper undefined →
-    // distanciaKm ausente → raio não casa → fallback R$ 15 (igual ao criarPedido).
+  it("[007-2 → 180-B] geocoding caído + só zona raio → a_combinar, NÃO o fallback de R$ 15", async () => {
+    // ESTE é o cenário que a 180-B corrige: o fallback fora-de-zona é regra de
+    // negócio sobre o ENDEREÇO e estava sendo aplicado a uma falha de
+    // INFRAESTRUTURA nossa. O espelho autoritativo está em pedido.test.ts
+    // ("[180-B] criarPedido — geocoding caído...", nº 1).
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
 
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
       cep: CEP_CENTRO,
     });
 
-    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+    expect(r).toEqual({
+      ok: true,
+      a_combinar: true,
+      veredito: "a_combinar_retriavel",
+    });
   });
 
   // 3) Loja SEM coords → helper undefined → comportamento atual inalterado
   //    (zonas tipo='bairro' seguem funcionando normalmente).
-  it("[007-3] loja sem coords (helper undefined) → comportamento de bairro inalterado", async () => {
-    // Mantém a zona de bairro padrão (Centro 7.50) + helper undefined (sem coords).
-    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+  it("[007-3] loja sem coords → comportamento de bairro inalterado", async () => {
+    // Mantém a zona de bairro padrão (Centro 7.50). [180-B] A causa é
+    // `loja_sem_coords`, mas a zona de bairro CASOU: o frete é fato conhecido,
+    // então nada de a_combinar nem de indisponivel_loja.
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "loja_sem_coords",
+    });
 
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -469,7 +484,7 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
   //    (distanciaDaLojaAoCep(client, loja_id, cep) → 4.7; zona raio_max_km=5 taxa 3,00).
   it("[007-4] PARIDADE: mesmo input → preview e criarPedido produzem a MESMA taxa (mesmos args ao helper)", async () => {
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue(4.7);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 4.7, causa: "ok" });
 
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -498,7 +513,10 @@ describe("calcularFreteAction — preview de frete por raio (raio_km) [007]", ()
 describe("calcularFreteAction — degradação coords ausentes (issue 005)", () => {
   it("[005-1] zona raio + coords NULL + SEM fallback → zona_nome 'indisponivel_loja'", async () => {
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue(undefined); // sem coords → sem distância
+    // [180-B] `sem_cep` mantém o caminho ORIGINAL da 005 sob teste: é o ramo em
+    // que a action ainda consulta `buscarCoordsLoja` para distinguir
+    // misconfiguração de endereço fora de área.
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "sem_cep" });
     buscarCoordsLoja.mockResolvedValue(null); // loja sem coords (par NULL)
     buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: null });
 
@@ -509,7 +527,7 @@ describe("calcularFreteAction — degradação coords ausentes (issue 005)", () 
 
   it("[005-2] endereço fora de área (loja COM coords) → 'indisponivel' (mensagem atual inalterada)", async () => {
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue(99); // longe demais (> raio 5)
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 99, causa: "ok" }); // longe demais (> raio 5)
     buscarCoordsLoja.mockResolvedValue({ latitude: -22.96, longitude: -46.54 });
     buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: null });
 
@@ -518,15 +536,22 @@ describe("calcularFreteAction — degradação coords ausentes (issue 005)", () 
     expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel" });
   });
 
-  it("[005-3] zona raio + coords NULL + COM fallback → 'fora_zona' (atendido, não toca degradação)", async () => {
+  it("[005-3 → 180-B] zona raio + coords NULL + COM fallback → 'indisponivel_loja', não mais 'fora_zona'", async () => {
+    // Mudança deliberada da 180-B: antes, ter `taxa_entrega_fora_zona` fazia a
+    // misconfiguração da loja passar despercebida e o cliente pagar o fallback.
+    // A classificação agora precede o fallback também aqui — a loja sem
+    // coordenada é estado a corrigir (193), não a faturar.
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "loja_sem_coords",
+    });
     buscarCoordsLoja.mockResolvedValue(null);
     buscarLojaPublicaPorId.mockResolvedValue({ id: LOJA_ID, taxa_entrega_fora_zona: 15 });
 
     const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_CENTRO });
 
-    expect(r).toEqual({ ok: true, taxa_preview: 15, zona_nome: "fora_zona" });
+    expect(r).toEqual({ ok: true, taxa_preview: 0, zona_nome: "indisponivel_loja" });
   });
 
   it("[005-4] bairro fora (loja COM coords, sem raio) → 'indisponivel' genérico inalterado", async () => {
@@ -622,7 +647,7 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
     // cru geocodificava na República Tcheca → nenhuma zona casava.
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
     resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
-    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: DISTANCIA_BRAGANCA, causa: "ok" });
 
     const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
 
@@ -631,7 +656,10 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
 
   it("[185-P6] ViaCEP indisponível → fail-closed: bairro descartado e taxa NÃO fica mais barata", async () => {
     resolverCepServidor.mockResolvedValue(null);
-    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+    // [180-B] ViaCEP fora do ar é `transitorio` para o geocoder; aqui a loja NÃO
+    // tem zona de raio (só a zona bairro padrão), então a distância nunca
+    // importou e o fallback fora-de-zona segue sendo regra legítima.
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
 
     const r = await calcularFreteAction({
       loja_id: LOJA_ID,
@@ -671,7 +699,7 @@ describe("calcularFreteAction — [185] resolução do CEP no servidor", () => {
 
   it("[185-P8] §19/§21: a resposta do preview nunca contém coordenadas", async () => {
     listarZonasComTaxas.mockResolvedValue([zonaRaio(5, 3.0)]);
-    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: DISTANCIA_BRAGANCA, causa: "ok" });
 
     const r = await calcularFreteAction({ loja_id: LOJA_ID, cep: CEP_BRAGANCA });
 

@@ -344,7 +344,11 @@ beforeEach(() => {
   fakeClient.rpc.mockReset();
   // [006] Default fail-closed: sem distância calculada. Mantém todos os testes
   // pré-existentes (bairro/faixa_cep) sem regressão; só A1 sobrescreve.
-  distanciaDaLojaAoCep.mockResolvedValue(undefined);
+  // [180-B] O helper passou a devolver `{ km, causa }`. O default usa
+  // `sem_cep` — "a distância não se APLICA" —, a única causa que não é falha de
+  // canal: assim os testes que não são sobre geocoding continuam medindo o que
+  // mediam, sem cair no caminho a-combinar.
+  distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "sem_cep" });
 });
 
 /** Zona tipo='raio_km' com raio_max_km e taxa configuráveis (alimenta A1). */
@@ -1051,7 +1055,7 @@ describe("criarPedido — frete por raio (distanciaKm autoritativo + snapshot) [
     cenarioFeliz();
     // Helper resolve 4,7 km (loja com coords + geocoding ok). Zona raio_km com
     // raio_max_km=5 cobre 4,7 e taxa 3,00 (mais barata) → calcularFrete casa raio.
-    distanciaDaLojaAoCep.mockResolvedValue(4.7);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 4.7, causa: "ok" });
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
 
     await criarPedido(payloadBase());
@@ -1079,34 +1083,42 @@ describe("criarPedido — frete por raio (distanciaKm autoritativo + snapshot) [
     expect(args.p_endereco_entrega.distanciaKm).toBe(4.7);
   });
 
-  // A2 — geocoding null → zona raio não casa → fallback; snapshot SEM distanciaKm
-  it("[006-A2] geocoding null (helper undefined) → zona raio_km NÃO casa → fallback; p_endereco_entrega SEM distanciaKm (fail-closed RN-5)", async () => {
+  // A2 — geocoding caído + só zona raio → [180-B] a combinar, não mais fallback
+  it("[006-A2 → 180-B] geocoding caído + só zona raio_km → taxa NULL/a combinar; p_endereco_entrega SEM distanciaKm (fail-closed RN-5)", async () => {
     cenarioFeliz();
-    // Loja tem fallback fora-de-zona (8,00); só existe zona raio_km. Helper
-    // undefined → distanciaKm ausente → raio não casa → cai no fallback.
+    // Loja tem fallback fora-de-zona (8,00); só existe zona raio_km. Até a
+    // 180-B o cliente pagava esses 8,00 por uma falha de infraestrutura NOSSA;
+    // agora o frete fica a combinar (o teste nº 1 da 180-B é o espelho direto).
     buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
-    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
 
     await criarPedido(payloadBase());
 
     // A action DEVE consultar o helper no ramo entrega (mesmo que ele falhe):
-    // é o caminho que liga a sequência geocode→haversine. Hoje não chama → RED.
+    // é o caminho que liga a sequência geocode→haversine.
     expect(distanciaDaLojaAoCep).toHaveBeenCalledTimes(1);
     expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
     const args = fakeClient.rpc.mock.calls[0][1] as {
-      p_taxa_entrega: number;
+      p_taxa_entrega: number | null;
+      p_frete_a_combinar: boolean;
       p_endereco_entrega: Record<string, unknown>;
     };
-    expect(args.p_taxa_entrega).toBe(8.0); // fallback, não a taxa do raio
+    expect(args.p_taxa_entrega).toBeNull();
+    expect(args.p_frete_a_combinar).toBe(true);
     // campo aditivo AUSENTE (não null) quando não calculado — RN-9 / spec §snapshot.
     expect(args.p_endereco_entrega).not.toHaveProperty("distanciaKm");
   });
 
   // A3 — loja sem coords → comportamento atual (bairro) 100% inalterado
-  it("[006-A3] loja sem coords (helper undefined) → fluxo bairro inalterado; frete da zona bairro, sem distanciaKm no snapshot", async () => {
-    cenarioFeliz(); // zona 'Centro' (bairro) taxa 5,00; helper default undefined
-    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+  it("[006-A3] loja sem coords → fluxo bairro inalterado; frete da zona bairro, sem distanciaKm no snapshot", async () => {
+    cenarioFeliz(); // zona 'Centro' (bairro) taxa 5,00
+    // [180-B] Sem coords da loja, mas a zona de BAIRRO casou: o frete é fato
+    // conhecido, então nada de a_combinar.
+    distanciaDaLojaAoCep.mockResolvedValue({
+      km: undefined,
+      causa: "loja_sem_coords",
+    });
 
     await criarPedido(payloadBase());
 
@@ -1131,7 +1143,7 @@ describe("criarPedido — frete por raio (distanciaKm autoritativo + snapshot) [
     // Helper resolve number mesmo sem zona raio_km (pode acontecer quando a loja
     // tem coords mas só configurou zonas bairro). O número é dado server-side e deve
     // aparecer no snapshot para auditoria, independente de casar zona raio.
-    distanciaDaLojaAoCep.mockResolvedValue(2.1);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 2.1, causa: "ok" });
 
     await criarPedido(payloadBase());
 
@@ -1970,6 +1982,8 @@ describe("[159] criarPedido — caracterização pré-paralelização", () => {
       p_observacoes: "entregar na portaria",
       p_subtotal: 70.0,
       p_taxa_entrega: 5.0,
+      // [180-B] 17º argumento: derivado 100% no servidor, nunca do cliente.
+      p_frete_a_combinar: false,
       p_desconto: 5.0,
       p_total: 70.0,
       p_cupom_id: CUPOM_ID,
@@ -2113,7 +2127,7 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
     cenarioFeliz();
     resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
-    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: DISTANCIA_BRAGANCA, causa: "ok" });
 
     await criarPedido(payloadBraganca());
 
@@ -2129,7 +2143,10 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
     cenarioFeliz();
     buscarLojaParaPedido.mockResolvedValue(lojaRow({ taxa_entrega_fora_zona: 8.0 }));
     resolverCepServidor.mockResolvedValue(null);
-    distanciaDaLojaAoCep.mockResolvedValue(undefined);
+    // [180-B] ViaCEP fora do ar é `transitorio`; aqui a loja NÃO tem zona de
+    // raio (só bairro), então a distância nunca importou e o fallback
+    // fora-de-zona segue sendo a regra legítima.
+    distanciaDaLojaAoCep.mockResolvedValue({ km: undefined, causa: "transitorio" });
 
     await criarPedido(payloadBraganca({
       endereco_entrega: {
@@ -2153,7 +2170,7 @@ describe("criarPedido — [185] resolução do CEP no servidor", () => {
     cenarioFeliz();
     resolverCepServidor.mockResolvedValue(ENDERECO_BRAGANCA);
     listarZonasComTaxas.mockResolvedValue(zonasComRaio(5, 3.0));
-    distanciaDaLojaAoCep.mockResolvedValue(DISTANCIA_BRAGANCA);
+    distanciaDaLojaAoCep.mockResolvedValue({ km: DISTANCIA_BRAGANCA, causa: "ok" });
 
     await criarPedido(payloadBraganca({
       endereco_entrega: {

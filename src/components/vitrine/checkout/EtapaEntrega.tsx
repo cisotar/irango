@@ -10,17 +10,30 @@
 // CRÍTICO (seguranca.md §10): o frete exibido é PREVIEW. O servidor (071)
 // recalcula do banco e, em retirada, FORÇA frete 0 ignorando endereço (RN-C2).
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { FormEndereco, type EnderecoEntrega } from "@/components/vitrine/FormEndereco";
-import { calcularFreteAction } from "@/lib/actions/frete";
+import {
+  calcularFreteAction,
+  type ResultadoFretePreview,
+} from "@/lib/actions/frete";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ResumoValores } from "./ResumoValores";
-import { VEREDITO_LOJA_SEM_COORDS } from "@/lib/utils/freteDegradado";
+import {
+  VEREDITO_LOJA_SEM_COORDS,
+  type VereditoACombinar,
+} from "@/lib/utils/freteDegradado";
+import { ModalFreteIndisponivel } from "./ModalFreteIndisponivel";
+import {
+  criarRetryFrete,
+  type ControladorRetryFrete,
+  type EstadoRetry,
+} from "./retryFrete";
+import { ROTULO_FRETE_A_COMBINAR } from "@/lib/utils/rotuloFrete";
 import { chaveFrete, precisaCalcularFrete, type TipoEntrega } from "./estado";
 
 const SECAO =
@@ -45,6 +58,14 @@ export type EtapaEntregaProps = {
   onVoltar: () => void;
   onContinuar: () => void;
   /**
+   * (180-B) WhatsApp PÚBLICO da loja (vitrine_lojas), derivado no SSR. Decide o
+   * rodapé do modal de frete indisponível: `null` ⇒ oferece retirada. É
+   * INDEPENDENTE de `whatsapp_envio_automatico` — aqui só importa TER canal.
+   */
+  whatsappLoja?: string | null;
+  /** Nome da loja, usado só no texto do link de WhatsApp (sem PII). */
+  lojaNome?: string;
+  /**
    * "wizard" (mobile, padrão): mostra resumo + botões "Continuar/Voltar".
    * "desktop": 3 seções empilhadas — resumo e CTA vivem na coluna sticky (006).
    */
@@ -59,6 +80,10 @@ type EstadoFrete =
   // (005) Loja mal configurada: tem zona por raio mas está sem coords no banco.
   // Nenhum endereço do cliente resolveria → mensagem distinta, sem "tente outro".
   | { status: "indisponivel_loja" }
+  // (180-B) A distância era necessária e ficou DESCONHECIDA: nenhum valor é
+  // exibido (inventar um seria cobrar o cliente por uma falha nossa) e o
+  // checkout segue — o frete é combinado com a loja.
+  | { status: "a_combinar"; veredito: VereditoACombinar }
   | { status: "erro"; mensagem: string };
 
 export function EtapaEntrega({
@@ -74,6 +99,8 @@ export function EtapaEntrega({
   onFreteStatusChange,
   onVoltar,
   onContinuar,
+  whatsappLoja = null,
+  lojaNome = "",
   variante = "wizard",
 }: EtapaEntregaProps) {
   const [frete, setFrete] = useState<EstadoFrete>({ status: "ocioso" });
@@ -81,6 +108,12 @@ export function EtapaEntrega({
   // Chave `cep|bairro` do último cálculo concluído com SUCESSO. É estado (não
   // ref) porque o botão de calcular precisa re-renderizar quando ela muda.
   const [chaveCalculada, setChaveCalculada] = useState<string | null>(null);
+  // (180-B) Modal + relógio do retry. O relógio vive 100% no cliente e não é
+  // autoridade sobre nada: cada retentativa é uma chamada nova e independente à
+  // Server Action, que recalcula tudo do banco.
+  const [modalAberto, setModalAberto] = useState(false);
+  const [estadoRetry, setEstadoRetry] = useState<EstadoRetry | null>(null);
+  const retryRef = useRef<ControladorRetryFrete | null>(null);
 
   const ehEntrega = tipoEntrega === "entrega";
   const tipoSelecionado = tipoEntrega !== null;
@@ -102,28 +135,25 @@ export function EtapaEntrega({
   }, [chaveAtual, chaveCalculada, onFreteChange, onFreteStatusChange]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Cálculo MANUAL: a chamada à Server Action sai só por clique do cliente.
-  const calcularFrete = useCallback(() => {
-    if (chaveAtual === null) return;
-    // chaveAtual != null garante bairro presente; o CEP é opcional (faixa_cep).
-    const bairro = endereco?.bairro?.trim() ?? "";
-    const cep = endereco?.cep?.trim();
-    const chaveDestaChamada = chaveAtual;
-
-    startCalculo(async () => {
-      setFrete({ status: "calculando" });
-      onFreteStatusChange?.("calculando");
-      // Passa o CEP p/ reconciliação CEP↔bairro (paridade 064/067). Server
-      // recalcula do banco — nenhum valor monetário vem do cliente.
-      const r = await calcularFreteAction({
-        loja_id: lojaId,
-        bairro,
-        ...(cep ? { cep } : {}),
-      });
+  // Aplica o resultado do preview ao estado local + avisa o pai. Extraído para
+  // que a chamada do botão e as RETENTATIVAS do relógio (180-B) sigam
+  // exatamente o mesmo caminho — duas leituras diferentes do mesmo retorno
+  // seriam duas chances de divergir do servidor.
+  const aplicarResultado = useCallback(
+    (r: ResultadoFretePreview, chaveDestaChamada: string): void => {
       if (!r.ok) {
         setFrete({ status: "erro", mensagem: r.erro });
         onFreteChange(0);
         onFreteStatusChange?.("erro");
+        return;
+      }
+      if ("a_combinar" in r) {
+        setFrete({ status: "a_combinar", veredito: r.veredito });
+        // Zero aqui é ausência de frete no TOTAL preview, não "frete grátis":
+        // o rótulo exibido vem do status, nunca do número.
+        onFreteChange(0);
+        onFreteStatusChange?.("a_combinar");
+        // NÃO fixa a chave de dedupe: trocar o CEP deve permitir novo cálculo.
         return;
       }
       if (
@@ -148,16 +178,75 @@ export function EtapaEntrega({
       // transitórios, já que o geocoding é fail-closed) mantêm o botão
       // habilitado para nova tentativa com o MESMO endereço.
       setChaveCalculada(chaveDestaChamada);
-    });
-  }, [chaveAtual, endereco, lojaId, onFreteChange, onFreteStatusChange]);
+    },
+    [onFreteChange, onFreteStatusChange],
+  );
 
-  const fretePreview = frete.status === "ok" ? frete.taxa : 0;
-  const totalPreview = Math.max(0, subtotal - desconto) + fretePreview;
+  // Cálculo MANUAL: a chamada à Server Action sai só por clique do cliente.
+  const calcularFrete = useCallback(() => {
+    if (chaveAtual === null) return;
+    // chaveAtual != null garante bairro presente; o CEP é opcional (faixa_cep).
+    const bairro = endereco?.bairro?.trim() ?? "";
+    const cep = endereco?.cep?.trim();
+    const chaveDestaChamada = chaveAtual;
+
+    startCalculo(async () => {
+      setFrete({ status: "calculando" });
+      onFreteStatusChange?.("calculando");
+      // Passa o CEP p/ reconciliação CEP↔bairro (paridade 064/067). Server
+      // recalcula do banco — nenhum valor monetário vem do cliente.
+      const payload = {
+        loja_id: lojaId,
+        bairro,
+        ...(cep ? { cep } : {}),
+      };
+      const r = await calcularFreteAction(payload);
+      aplicarResultado(r, chaveDestaChamada);
+
+      if (!r.ok || !("a_combinar" in r)) return;
+
+      // (180-B) Esta chamada JÁ foi a tentativa 1. O relógio agenda no máximo
+      // mais duas (t=10s e t=20s) e só para o motivo retriável; `esgotado` e
+      // `nao_encontrado` abrem o modal direto no passo final, sem spinner.
+      retryRef.current?.parar();
+      const controlador = criarRetryFrete({
+        // Cada retentativa aplica o resultado pelo MESMO caminho da 1ª: se o
+        // canal voltou, o frete correto entra no wizard e o modal fecha.
+        tentar: async () => {
+          const nova = await calcularFreteAction(payload);
+          aplicarResultado(nova, chaveDestaChamada);
+          if (nova.ok && !("a_combinar" in nova)) setModalAberto(false);
+          return nova;
+        },
+        agendar: (fn, ms) => window.setTimeout(fn, ms),
+        cancelar: (id) => window.clearTimeout(id),
+        aoEstado: setEstadoRetry,
+      });
+      retryRef.current = controlador;
+      setModalAberto(true);
+      controlador.iniciar(r.veredito);
+    });
+  }, [aplicarResultado, chaveAtual, endereco, lojaId, onFreteStatusChange]);
+
+  // Unmount / troca de etapa: limpa o timer pendente (sem setState órfão).
+  useEffect(() => () => retryRef.current?.parar(), []);
+
+  const fretePreview: number | "a_combinar" =
+    frete.status === "ok"
+      ? frete.taxa
+      : frete.status === "a_combinar"
+        ? "a_combinar"
+        : 0;
+  const totalPreview =
+    Math.max(0, subtotal - desconto) +
+    (typeof fretePreview === "number" ? fretePreview : 0);
 
   // Pode avançar: deve ter selecionado um tipo; retirada = ok; entrega exige endereço + frete.
   const podeAvancar = tipoSelecionado
     ? ehEntrega
-      ? endereco !== null && frete.status === "ok" && !calculando
+      ? endereco !== null &&
+        (frete.status === "ok" || frete.status === "a_combinar") &&
+        !calculando
       : true
     : false;
 
@@ -251,6 +340,12 @@ export function EtapaEntrega({
                 {formatarMoeda(frete.taxa)}
               </p>
             )}
+            {frete.status === "a_combinar" && (
+              <p className="text-xs text-texto-muted">
+                Entrega: <strong>{ROTULO_FRETE_A_COMBINAR}</strong>. Você pode
+                concluir o pedido normalmente.
+              </p>
+            )}
             {frete.status === "indisponivel" && (
               <p className="text-xs text-destructive">
                 Entrega indisponível para o seu bairro. Tente outro endereço ou
@@ -307,6 +402,30 @@ export function EtapaEntrega({
             </Button>
           </div>
         </>
+      )}
+
+      {frete.status === "a_combinar" && (
+        <ModalFreteIndisponivel
+          aberto={modalAberto}
+          veredito={frete.veredito}
+          estadoRetry={estadoRetry}
+          whatsappLoja={whatsappLoja}
+          nomeLoja={lojaNome}
+          onFechar={() => {
+            retryRef.current?.parar();
+            setModalAberto(false);
+          }}
+          onContinuar={() => {
+            retryRef.current?.parar();
+            setModalAberto(false);
+          }}
+          onEscolherRetirada={() => {
+            retryRef.current?.parar();
+            setModalAberto(false);
+            // MESMO caminho do wizard quando a loja não aceita entrega.
+            onTipoEntregaChange("retirada");
+          }}
+        />
       )}
     </section>
   );

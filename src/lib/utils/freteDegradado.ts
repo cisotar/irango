@@ -35,15 +35,21 @@ export function lojaTemRaioSemCoords(
   temCoords: boolean,
 ): boolean {
   if (temCoords) return false;
-  return zonas.some(
-    (z) => z.tipo === "raio_km" && z.ativo && z.taxa != null,
-  );
+  // (180-B) O predicado das zonas é UM SÓ (`distanciaEraNecessaria`): duplicá-lo
+  // aqui permitiria que a mensagem de misconfiguração e a classificação de
+  // frete divergissem num futuro ajuste de `zonaAtende`.
+  return distanciaEraNecessaria(zonas);
 }
 
-// ─────────────────────────── STUB TDD (fase RED, issue 180-B) ───────────────
-// A implementação real é da fase GREEN (`executar`), conforme plan/180-B §D3.
-// Aqui só o CONTRATO: assinatura + constantes, para que o RED falhe na ASSERÇÃO
-// e não na resolução do import.
+// ─────────────────────── Classificação do frete (180-B) ─────────────────────
+// A invariante que esta seção existe para garantir:
+//   "o valor cobrado só pode derivar de FATO conhecido sobre o endereço;
+//    AUSÊNCIA de conhecimento não é um fato sobre o endereço."
+//
+// O fallback fora-de-zona é uma regra de negócio sobre o ENDEREÇO ("você mora
+// fora das minhas zonas"); aplicá-lo a uma falha de INFRAESTRUTURA nossa cobra
+// do cliente por um problema que não é dele. Daí a inversão deliberada: o
+// veredito a-combinar PRECEDE o fallback fora-de-zona.
 
 import type { CausaDistancia } from "@/lib/actions/distanciaFrete";
 import type { ResultadoFrete } from "./calcularFrete";
@@ -69,30 +75,93 @@ export type VereditoFrete =
     };
 
 /**
- * STUB TDD — `true` quando existe ao menos uma zona `raio_km` ATIVA e COM taxa,
- * isto é, quando a distância ERA necessária para calcular o frete. Espelha o
- * predicado de `zonaAtende` para não divergir do cálculo.
+ * `true` quando existe ao menos uma zona `raio_km` ATIVA e COM taxa, isto é,
+ * quando a distância ERA necessária para calcular o frete desta loja.
+ *
+ * Espelha o predicado de `zonaAtende` (calcularFrete) — mesma condição de
+ * `lojaTemRaioSemCoords` — para que a classificação não divirja do cálculo.
+ * Loja sem nenhuma zona de raio nunca dependeu da distância: ali o fallback
+ * fora-de-zona é regra de negócio legítima e CONTINUA valendo.
  */
-export function distanciaEraNecessaria(_zonas: ZonaComTaxa[]): boolean {
-  throw new Error("TODO: GREEN (180-B)");
+export function distanciaEraNecessaria(zonas: ZonaComTaxa[]): boolean {
+  return zonas.some((z) => z.tipo === "raio_km" && z.ativo && z.taxa != null);
+}
+
+/** Causa da distância → veredito exibível (a pergunta é "retentar adianta?"). */
+function vereditoDaCausa(
+  causa: Exclude<CausaDistancia, "ok" | "sem_cep" | "loja_sem_coords">,
+): VereditoACombinar {
+  switch (causa) {
+    case "esgotado":
+      return VEREDITO_A_COMBINAR_ESGOTADO;
+    case "nao_encontrado":
+      return VEREDITO_A_COMBINAR_CEP;
+    // `transitorio` e `erro` (exceção interna, blip de banco/PostgREST) são
+    // transitórios do ponto de vista da UI: retentar em segundos pode resolver.
+    default:
+      return VEREDITO_A_COMBINAR_RETRIAVEL;
+  }
 }
 
 /**
- * STUB TDD — fonte ÚNICA da decisão "ok × a combinar × indisponível", consumida
- * pelo preview (`calcularFreteAction`) e pelo autoritativo (`criarPedido`).
+ * Fonte ÚNICA da decisão "ok × a combinar × indisponível", consumida pelo
+ * preview (`calcularFreteAction`) e pelo autoritativo (`criarPedido`) — os dois
+ * PRECISAM concordar (RN-7), e duplicar esta decisão seria exatamente o bug que
+ * a issue 180-B corrige.
  *
- * a_combinar ⟺ causa ∈ {nao_encontrado, transitorio, esgotado, erro,
- *                       loja_sem_coords}
- *            ∧ resultado.zonaId == null
- *            ∧ distanciaEraNecessaria(zonas)
+ *   a_combinar ⟺ causa ∈ {nao_encontrado, transitorio, esgotado, erro}
+ *              ∧ resultado.zonaId == null          // nenhuma zona específica casou
+ *              ∧ distanciaEraNecessaria(zonas)     // a distância importava
  *
- * O veredito a-combinar PRECEDE o fallback fora-de-zona (inversão deliberada).
+ * As três conjunções importam: zona específica que casou é FATO conhecido (a
+ * falha de geocoding é irrelevante); loja sem zona de raio nunca dependeu da
+ * distância.
+ *
+ * `loja_sem_coords` NÃO vira a combinar (decisão registrada na issue 180-B,
+ * "Ambiguidades RESOLVIDAS"): é misconfiguração da LOJA, tratada pela 193, e
+ * tolerá-la no checkout removeria o incentivo de corrigi-la.
+ *
+ * `temCoordsLoja` só é consultado no ramo `sem_cep` (onde o caminho de raio nem
+ * se aplica e o veredito 005 ainda vale); `null` = não consultado.
+ *
+ * Função PURA, sem I/O. O par (lat,lng) nunca entra nem sai: só enum e booleano
+ * derivados no servidor (seguranca.md §19).
  */
-export function classificarFrete(_args: {
+export function classificarFrete(args: {
   resultado: ResultadoFrete;
   zonas: ZonaComTaxa[];
   causaDistancia: CausaDistancia;
   temCoordsLoja: boolean | null;
 }): VereditoFrete {
-  throw new Error("TODO: GREEN (180-B)");
+  const { resultado, zonas, causaDistancia, temCoordsLoja } = args;
+
+  // O CORAÇÃO: a distância era necessária (existe zona de raio ativa e com
+  // taxa) e NENHUMA zona específica casou — ou seja, o frete só poderia sair do
+  // raio, e o raio não pôde ser avaliado. PRECEDE tanto o fallback fora-de-zona
+  // quanto o "não atendemos seu bairro".
+  //
+  // Se uma zona específica casou (bairro/faixa_cep), o frete é FATO conhecido e
+  // nada aqui se aplica — mesmo com o geocoder no chão.
+  if (resultado.zonaId == null && distanciaEraNecessaria(zonas)) {
+    // Misconfiguração da LOJA (não do canal): mensagem própria (005), sem
+    // retry e sem WhatsApp — a 193 exige coordenada para publicar, então esse
+    // estado é para ser CORRIGIDO, não tolerado como "a combinar".
+    if (causaDistancia === "loja_sem_coords") {
+      return { tipo: "indisponivel", veredito: VEREDITO_LOJA_SEM_COORDS };
+    }
+    if (causaDistancia !== "ok" && causaDistancia !== "sem_cep") {
+      return { tipo: "a_combinar", veredito: vereditoDaCausa(causaDistancia) };
+    }
+  }
+
+  if (!resultado.atendido) {
+    return {
+      tipo: "indisponivel",
+      veredito: lojaTemRaioSemCoords(zonas, temCoordsLoja !== false)
+        ? VEREDITO_LOJA_SEM_COORDS
+        : "indisponivel",
+    };
+  }
+
+  return { tipo: "ok" };
 }

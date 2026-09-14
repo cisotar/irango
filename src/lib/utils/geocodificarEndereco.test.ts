@@ -92,39 +92,48 @@ afterEach(() => {
   process.env = { ...ENV_BACKUP };
 });
 
-// ── 12: sem GOOGLE_GEOCODING_API_KEY → transitorio, fetch NUNCA chamado ─────
+// ── 12: sem GOOGLE_GEOCODING_API_KEY → esgotado (180-B), fetch NUNCA chamado ─
 describe("geocodificarEnderecoComMotivo — fail-closed: chave Google ausente", () => {
-  it("sem GOOGLE_GEOCODING_API_KEY → transitorio e fetch NUNCA chamado", async () => {
+  it("sem GOOGLE_GEOCODING_API_KEY → esgotado e fetch NUNCA chamado", async () => {
     delete process.env.GOOGLE_GEOCODING_API_KEY;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
+    // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
+    // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("GOOGLE_GEOCODING_API_KEY vazia/só-espaços → transitorio e fetch NUNCA chamado", async () => {
+  it("GOOGLE_GEOCODING_API_KEY vazia/só-espaços → esgotado e fetch NUNCA chamado", async () => {
     process.env.GOOGLE_GEOCODING_API_KEY = "   ";
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
+    // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
+    // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
 // ── 13: sem credenciais Upstash ──────────────────────────────────────────────
 describe("geocodificarEnderecoComMotivo — fail-closed: credenciais Upstash ausentes", () => {
-  it("sem UPSTASH_* → transitorio, fetch NÃO chamado, limit NÃO chamado", async () => {
+  it("sem UPSTASH_* → esgotado, fetch NÃO chamado, limit NÃO chamado", async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
+    // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
+    // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(limitMock).not.toHaveBeenCalled();
   });
@@ -142,7 +151,7 @@ describe("geocodificarEnderecoComMotivo — guarda de custo: burst e teto diári
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("15) burst ok, diário nega (2ª chamada de limit) → transitorio, fetch NUNCA chamado", async () => {
+  it("15) burst ok, diário nega (2ª chamada de limit) → esgotado, fetch NUNCA chamado", async () => {
     limitMock
       .mockResolvedValueOnce({ success: true }) // burst
       .mockResolvedValueOnce({ success: false }); // diário
@@ -150,7 +159,10 @@ describe("geocodificarEnderecoComMotivo — guarda de custo: burst e teto diári
 
     const r = await geocodificarEnderecoComMotivo(ENDERECO_LOJA);
 
-    expect(r).toEqual({ coords: null, motivo: "transitorio" });
+    // [180-B] era `transitorio`; virou `esgotado` — a pergunta que o
+    // consumidor faz é "retentar AGORA adianta?", e configuração/orçamento
+    // ausentes não se resolvem em 10s de spinner (plan/180-B §D2).
+    expect(r).toEqual({ coords: null, motivo: "esgotado" });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(limitMock).toHaveBeenCalledTimes(2);
   });

@@ -19,6 +19,10 @@ import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
 import { listarFormasPagamento } from "@/lib/supabase/queries/entregaPagamento";
 import { resolverAcaoConfirmacao } from "@/lib/utils/confirmacao";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import {
+  freteConhecido,
+  ROTULO_FRETE_A_COMBINAR,
+} from "@/lib/utils/rotuloFrete";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
@@ -216,9 +220,13 @@ export default async function ConfirmacaoPage({
                 {ped.tipo_entrega === "retirada" ? "Taxa de entrega" : "Entrega"}
               </dt>
               <dd>
-                {ped.tipo_entrega === "retirada" && ped.taxa_entrega === 0
-                  ? "Grátis"
-                  : formatarMoeda(ped.taxa_entrega)}
+                {/* [180-B] "a combinar" é distinguível de frete GRÁTIS: a
+                    etiqueta vem de `frete_a_combinar`, nunca de taxa === 0. */}
+                {!freteConhecido(ped)
+                  ? ROTULO_FRETE_A_COMBINAR
+                  : ped.tipo_entrega === "retirada" && ped.taxa_entrega === 0
+                    ? "Grátis"
+                    : formatarMoeda(ped.taxa_entrega)}
               </dd>
             </div>
             <div className="flex justify-between text-base font-semibold">

@@ -1,6 +1,10 @@
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import {
+  freteConhecido,
+  ROTULO_FRETE_A_COMBINAR_CURTO,
+} from "@/lib/utils/rotuloFrete";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 
 /** Rótulo amigável da forma de pagamento. */
@@ -107,8 +111,11 @@ export function montarLinkWhatsappPedido(
 
   const rotuloTaxa =
     pedido.tipo_entrega === "retirada" ? "Taxa de entrega" : "Entrega";
-  const valorTaxa =
-    pedido.tipo_entrega === "retirada" && pedido.taxa_entrega === 0
+  // [180-B] O lojista precisa ver que o frete ainda será combinado — nunca
+  // "R$ 0,00" (que ele leria como frete grátis já concedido).
+  const valorTaxa = !freteConhecido(pedido)
+    ? ROTULO_FRETE_A_COMBINAR_CURTO
+    : pedido.tipo_entrega === "retirada" && pedido.taxa_entrega === 0
       ? "Grátis"
       : formatarMoeda(pedido.taxa_entrega);
   linhas.push(`${rotuloTaxa}: ${valorTaxa}`);

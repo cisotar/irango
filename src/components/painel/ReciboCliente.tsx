@@ -3,6 +3,10 @@ import type { ReactElement } from "react";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { formatarDataHora } from "@/lib/utils/formatarDataHora";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import {
+  freteConhecido,
+  ROTULO_FRETE_A_COMBINAR_CURTO,
+} from "@/lib/utils/rotuloFrete";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import {
   ROTULO_FORMA_PAGAMENTO,
@@ -124,8 +128,12 @@ export function ReciboCliente({
         )}
         <div className="flex justify-between">
           <span>Taxa de entrega</span>
+          {/* [180-B] Recibo impresso também precisa distinguir "a combinar" de
+              frete grátis — o lojista cobra a diferença na entrega. */}
           <span className="shrink-0 tabular-nums">
-            {formatarMoeda(pedido.taxa_entrega)}
+            {freteConhecido(pedido)
+              ? formatarMoeda(pedido.taxa_entrega)
+              : ROTULO_FRETE_A_COMBINAR_CURTO}
           </span>
         </div>
         <div className="mt-1 flex justify-between border-t-2 border-black pt-1 text-[1.2rem] font-black">
