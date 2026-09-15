@@ -10,6 +10,7 @@ import {
   type LojaCompleta,
 } from "@/lib/supabase/queries/lojas";
 import { decidirAcessoBase } from "@/lib/utils/acessoPainel";
+import { ehAdminSaaS } from "@/lib/auth/admin";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
 import { THEME_PADRAO } from "@/lib/utils/manifest";
 import {
@@ -87,6 +88,9 @@ export default async function PainelLayout({
       // mesmos `!` já usados no ramo de onboarding. Identidade da loja + conta
       // logada alimentam o shell (issue 194): nada aqui concede poder, é UX;
       // a barreira real continua sendo RLS + guards de rota.
+      // Mesma conta pode ser dono de loja E dono do SaaS (`SAAS_ADMIN_USER_ID`).
+      // `ehAdminSaaS` é fail-safe (nunca lança) — link a mais nunca bloqueia o
+      // painel; é só atalho de UX, a barreira real segue em `verificarAdminSaaS`.
       const contexto: ContextoNav = {
         nomeLoja: loja!.nome,
         logoUrl: loja!.logo_url,
@@ -94,9 +98,12 @@ export default async function PainelLayout({
         horarios: loja!.horarios as unknown as Horarios,
         timezone: loja!.timezone,
         emailConta: user!.email ?? undefined,
+        ...(ehAdminSaaS(user!.id)
+          ? { voltarHref: "/admin", voltarRotulo: "Voltar ao hub admin" }
+          : {}),
       };
       return (
-        <div className="flex min-h-svh">
+        <div className="flex h-svh">
           <SidebarPainel contexto={contexto} />
           <div className="flex min-w-0 flex-1 flex-col">
             <TopbarPainel contexto={contexto} />

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BadgeCheck,
+  ChevronDown,
   ClipboardList,
   Clock,
   CreditCard,
@@ -387,83 +388,100 @@ function BotaoLogout() {
 }
 
 /**
- * Identidade da loja no topo do shell (F1/F2). Sem `nomeLoja` cai no `titulo`
- * (default `iRango`) — é o caso do hub admin, onde nome e status vivem na faixa
- * persistente da coluna de conteúdo (issue 145), não aqui.
+ * Identidade da loja (F1/F2) + conta logada, no topo do shell. Sem `nomeLoja`
+ * cai no `titulo` (default `iRango`) — é o caso do hub admin, onde nome e
+ * status vivem na faixa persistente da coluna de conteúdo (issue 145), não
+ * aqui. O logo é a ÚNICA marca da loja no shell: nenhuma cor vem de `lojas.tema`.
  *
- * O logo é a ÚNICA marca da loja no shell: nenhuma cor vem de `lojas.tema`.
+ * Clicar no logo/nome abre uma sanfona com e-mail da conta (F10), link de
+ * volta opcional e "Sair". Antes esses três viviam fixos no rodapé do shell —
+ * com muitos itens de pedido em tela, alcançá-los exigia rolar a página
+ * inteira até o fim. No topo, ficam sempre alcançáveis sem depender de rolagem.
+ *
+ * "Ver vitrine" (link) e o `BadgeStatus` ficam FORA do `<button>` do gatilho:
+ * são elementos próprios, e aninhar interativo dentro de interativo é HTML
+ * inválido. O link de volta é condicionado por `voltarHref` — dado PASSADO
+ * pelo layout, nunca inferido do `basePath`: regra de roteamento não mora em
+ * componente de apresentação.
  */
-function IdentidadeLoja({ contexto }: { contexto: ContextoNav }) {
-  const { nome, temStatus } = identidadeLoja(contexto);
-  const logo = fotoSegura(contexto.logoUrl);
-
-  return (
-    <div className="flex items-center gap-3 px-3 py-3">
-      {logo ? (
-        <Image
-          src={logo}
-          alt=""
-          width={32}
-          height={32}
-          unoptimized
-          className="size-8 shrink-0 rounded-full object-cover"
-        />
-      ) : null}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate font-heading text-base font-semibold text-sidebar-foreground">
-            {nome}
-          </span>
-          {contexto.slugLoja ? (
-            <Link
-              href={`/loja/${contexto.slugLoja}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Ver vitrine"
-              aria-label={`Ver vitrine de ${nome} (abre em nova aba)`}
-              className="shrink-0 rounded p-1.5 text-sidebar-foreground/60 outline-none transition-colors hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2"
-            >
-              <ExternalLink aria-hidden className="size-3.5" />
-            </Link>
-          ) : null}
-        </div>
-        {temStatus ? (
-          <div className="mt-1">
-            <BadgeStatus
-              horarios={contexto.horarios!}
-              timezone={contexto.timezone!}
-            />
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Rodapé: conta logada (F10), link de volta opcional e "Sair". O link de volta
- * é condicionado por `voltarHref` — dado PASSADO pelo layout, nunca inferido do
- * `basePath`: regra de roteamento não mora em componente de apresentação.
- */
-function RodapeSidebar({
+function PainelConta({
   contexto,
   onNavegar,
 }: {
   contexto: ContextoNav;
   onNavegar?: () => void;
 }) {
+  const [aberto, setAberto] = useState(false);
+  const idPainel = useId();
+  const { nome, temStatus } = identidadeLoja(contexto);
+  const logo = fotoSegura(contexto.logoUrl);
+
   return (
-    <div className="flex flex-col gap-1 px-2 py-2">
-      {contexto.emailConta ? (
-        <p
-          title={contexto.emailConta}
-          className="truncate px-3 text-xs text-sidebar-foreground/60"
+    <div>
+      <div className="flex items-center gap-1 px-3 py-3">
+        <button
+          type="button"
+          onClick={() => setAberto((v) => !v)}
+          aria-expanded={aberto}
+          aria-controls={idPainel}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2"
         >
-          {contexto.emailConta}
-        </p>
+          {logo ? (
+            <Image
+              src={logo}
+              alt=""
+              width={32}
+              height={32}
+              unoptimized
+              className="size-8 shrink-0 rounded-full object-cover"
+            />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate font-heading text-base font-semibold text-sidebar-foreground">
+            {nome}
+          </span>
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "size-4 shrink-0 text-sidebar-foreground/50 transition-transform",
+              aberto && "rotate-180",
+            )}
+          />
+        </button>
+        {contexto.slugLoja ? (
+          <Link
+            href={`/loja/${contexto.slugLoja}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Ver vitrine"
+            aria-label={`Ver vitrine de ${nome} (abre em nova aba)`}
+            className="shrink-0 rounded p-1.5 text-sidebar-foreground/60 outline-none transition-colors hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2"
+          >
+            <ExternalLink aria-hidden className="size-3.5" />
+          </Link>
+        ) : null}
+      </div>
+      {temStatus ? (
+        <div className="px-3 pb-3">
+          <BadgeStatus
+            horarios={contexto.horarios!}
+            timezone={contexto.timezone!}
+          />
+        </div>
       ) : null}
-      {contexto.voltarHref ? (
-        <>
+      <div
+        id={idPainel}
+        hidden={!aberto}
+        className="flex flex-col gap-1 border-t border-sidebar-border px-2 py-2"
+      >
+        {contexto.emailConta ? (
+          <p
+            title={contexto.emailConta}
+            className="truncate px-3 text-xs text-sidebar-foreground/60"
+          >
+            {contexto.emailConta}
+          </p>
+        ) : null}
+        {contexto.voltarHref ? (
           <Link
             href={contexto.voltarHref}
             onClick={onNavegar}
@@ -472,10 +490,9 @@ function RodapeSidebar({
             <ArrowLeft aria-hidden className="size-4 shrink-0" />
             {contexto.voltarRotulo ?? "Voltar"}
           </Link>
-          <Separator className="my-1" />
-        </>
-      ) : null}
-      <BotaoLogout />
+        ) : null}
+        <BotaoLogout />
+      </div>
     </div>
   );
 }
@@ -489,13 +506,11 @@ function ConteudoSidebar({
 }) {
   return (
     <>
-      <IdentidadeLoja contexto={contexto} />
+      <PainelConta contexto={contexto} onNavegar={onNavegar} />
       <Separator />
       <div className="flex flex-1 flex-col overflow-y-auto px-2 py-2">
         <ListaNav contexto={contexto} onNavegar={onNavegar} />
       </div>
-      <Separator />
-      <RodapeSidebar contexto={contexto} onNavegar={onNavegar} />
     </>
   );
 }
@@ -537,17 +552,15 @@ export function TopbarPainel({ contexto = {} }: { contexto?: ContextoNav }) {
             {/* Nome acessível do diálogo: o título VISÍVEL é a identidade da
                 loja, que não serve de rótulo do menu no hub admin. */}
             <SheetTitle className="sr-only">Menu do painel</SheetTitle>
-            <IdentidadeLoja contexto={contexto} />
           </SheetHeader>
+          <PainelConta
+            contexto={contexto}
+            onNavegar={() => setAberto(false)}
+          />
           <Separator />
           <div className="flex flex-1 flex-col overflow-y-auto px-2 py-2">
             <ListaNav contexto={contexto} onNavegar={() => setAberto(false)} />
           </div>
-          <Separator />
-          <RodapeSidebar
-            contexto={contexto}
-            onNavegar={() => setAberto(false)}
-          />
         </SheetContent>
       </Sheet>
       {/* F12: a topbar mostra QUAL loja está sendo gerenciada e o status. */}
