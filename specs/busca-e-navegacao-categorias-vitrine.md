@@ -65,14 +65,14 @@ O estado do termo vive em `CatalogoVitrine` porque busca, nav e catálogo precis
 
 #### Behaviors — NavCategorias
 
-- [ ] **Ver os chips de categoria numa barra sticky** — a barra (busca + trilho) gruda em `top-0` com `z-30` ao rolar; o `HeaderLoja` rola para fora normalmente. Garantido em: cliente (UX puro). Os nomes e a ordem das categorias vêm do SSR.
-- [ ] **Tocar num chip e rolar até a categoria** — `<a href="#cat-<id>">` nativo: funciona antes da hidratação e com JS desligado. Garantido em: cliente (UX puro).
-- [ ] **Ver o chip da categoria em tela marcado** — `IntersectionObserver` sobre as `<section>`, `rootMargin: "-<altura-barra> 0px -55% 0px"`, `threshold: 0`. Sem listener de `scroll` (evita jank no mobile). Empate entre duas seções visíveis: vence a primeira na ordem do catálogo. Chip ativo recebe `aria-current="true"`. Garantido em: cliente (UX puro).
-- [ ] **Ver o chip ativo trazido para o centro do trilho** — `scrollIntoView({ inline: "center", block: "nearest" })`. `block: "nearest"` é **obrigatório**: sem ele o `scrollIntoView` sequestra o scroll vertical e o catálogo pula sozinho. Garantido em: cliente (UX puro).
-- [ ] **Clicar num chip marca o ativo imediatamente**, antes do observer reagir — senão o chip pisca no estado antigo durante o scroll suave. Garantido em: cliente (UX puro).
-- [ ] **Percorrer os chips por teclado** — Tab entra na lista, Enter navega. Sem `tabindex` custom, sem roving tabindex, **sem sequestrar ←/→** (o usuário ainda precisa das setas para rolar a página). O chip fora da viewport do trilho é trazido para dentro ao receber foco.
-- [ ] **Rolar o trilho com o dedo** — `overflow-x: auto`, `scroll-snap-type: x proximity`, `scroll-snap-align: center` nos chips, fade de 16px (`mask-image`) nas duas bordas como affordance de "tem mais". Sem botões de seta.
-- [ ] **Não ver o trilho quando ele não serve** — `NavCategorias` só renderiza com **≥3 categorias**; com 1 ou 2, a rolagem natural basta. A barra inteira não renderiza quando o catálogo está vazio (`temVazio`). Garantido em: cliente (derivado do dado do SSR).
+- [x] **Ver os chips de categoria numa barra sticky** — a barra (busca + trilho) gruda em `top-0` com `z-30` ao rolar; o `HeaderLoja` rola para fora normalmente. Garantido em: cliente (UX puro). Os nomes e a ordem das categorias vêm do SSR.
+- [x] **Tocar num chip e rolar até a categoria** — `<a href="#cat-<id>">` nativo: funciona antes da hidratação e com JS desligado. Garantido em: cliente (UX puro).
+- [x] **Ver o chip da categoria em tela marcado** — `IntersectionObserver` sobre as `<section>`, `rootMargin: "-<altura-barra> 0px -55% 0px"`, `threshold: 0`. Sem listener de `scroll` (evita jank no mobile). Empate entre duas seções visíveis: vence a primeira na ordem do catálogo. Chip ativo recebe `aria-current="true"`. Garantido em: cliente (UX puro).
+- [x] **Ver o chip ativo trazido para o centro do trilho** — `scrollIntoView({ inline: "center", block: "nearest" })`. `block: "nearest"` é **obrigatório**: sem ele o `scrollIntoView` sequestra o scroll vertical e o catálogo pula sozinho. Garantido em: cliente (UX puro).
+- [x] **Clicar num chip marca o ativo imediatamente**, antes do observer reagir — senão o chip pisca no estado antigo durante o scroll suave. Garantido em: cliente (UX puro).
+- [x] **Percorrer os chips por teclado** — Tab entra na lista, Enter navega. Sem `tabindex` custom, sem roving tabindex, **sem sequestrar ←/→** (o usuário ainda precisa das setas para rolar a página). O chip fora da viewport do trilho é trazido para dentro ao receber foco.
+- [x] **Rolar o trilho com o dedo** — `overflow-x: auto`, `scroll-snap-type: x proximity`, `scroll-snap-align: center` nos chips, fade de 16px (`mask-image`) nas duas bordas como affordance de "tem mais". Sem botões de seta.
+- [x] **Não ver o trilho quando ele não serve** — `NavCategorias` só renderiza com **≥3 categorias**; com 1 ou 2, a rolagem natural basta. A barra inteira não renderiza quando o catálogo está vazio (`temVazio`). Garantido em: cliente (derivado do dado do SSR).
 
 #### Behaviors — BuscaProdutos
 
@@ -90,7 +90,7 @@ O estado do termo vive em `CatalogoVitrine` porque busca, nav e catálogo precis
 
 - [x] **Chegar na categoria com o título visível** — a altura real da barra é **medida em runtime** (`ResizeObserver` + `getBoundingClientRect`, arredondada para cima) e publicada como `--altura-barra` no `documentElement`; `SecaoCatalogo` usa `scroll-margin-top: calc(var(--altura-barra) + folga)`. **Nunca valor fixo:** hoje `scroll-mt-24` é uma coincidência que quebra assim que a barra existir, escondendo o título atrás dela — o cliente acha que o link não funcionou. O `rootMargin` do scrollspy lê a **mesma** variável, senão scrollspy e âncora marcam pontos diferentes.
 - [x] **Ver a barra remedida ao girar o celular ou trocar de modo** — o `ResizeObserver` reage a rotação, quebra de linha e à troca trilho ↔ resumo de busca (alturas diferentes). Garantido em: cliente.
-- [ ] **Não sofrer movimento indesejado** — `scroll-behavior: smooth` (na página e no `scrollIntoView` do chip) só dentro de `@media (prefers-reduced-motion: no-preference)`.
+- [x] **Não sofrer movimento indesejado** — `scroll-behavior: smooth` (na página e no `scrollIntoView` do chip) só dentro de `@media (prefers-reduced-motion: no-preference)`.
 
 ---
 
