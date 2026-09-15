@@ -12,7 +12,12 @@ import {
 import { decidirAcessoBase } from "@/lib/utils/acessoPainel";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
 import { THEME_PADRAO } from "@/lib/utils/manifest";
-import { SidebarPainel, TopbarPainel } from "@/components/painel/NavPainel";
+import {
+  SidebarPainel,
+  TopbarPainel,
+  type ContextoNav,
+} from "@/components/painel/NavPainel";
+import type { Horarios } from "@/lib/utils/lojaAberta";
 
 export const metadata: Metadata = {
   manifest: "/painel/manifest.webmanifest",
@@ -77,17 +82,30 @@ export default async function PainelLayout({
       }
       redirect("/painel");
     }
-    case "ok":
+    case "ok": {
+      // `decidirAcessoBase` só devolve "ok" com `user` E `loja` não-nulos —
+      // mesmos `!` já usados no ramo de onboarding. Identidade da loja + conta
+      // logada alimentam o shell (issue 194): nada aqui concede poder, é UX;
+      // a barreira real continua sendo RLS + guards de rota.
+      const contexto: ContextoNav = {
+        nomeLoja: loja!.nome,
+        logoUrl: loja!.logo_url,
+        slugLoja: loja!.slug,
+        horarios: loja!.horarios as unknown as Horarios,
+        timezone: loja!.timezone,
+        emailConta: user!.email ?? undefined,
+      };
       return (
         <div className="flex min-h-svh">
-          <SidebarPainel />
+          <SidebarPainel contexto={contexto} />
           <div className="flex min-w-0 flex-1 flex-col">
-            <TopbarPainel />
+            <TopbarPainel contexto={contexto} />
             <main className="flex-1 overflow-y-auto p-4 lg:p-6">
               {children}
             </main>
           </div>
         </div>
       );
+    }
   }
 }

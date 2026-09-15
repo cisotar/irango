@@ -3,7 +3,11 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { SidebarPainel, TopbarPainel } from "@/components/painel/NavPainel";
+import {
+  SidebarPainel,
+  TopbarPainel,
+  type ContextoNav,
+} from "@/components/painel/NavPainel";
 import { carregarCabecalhoLojaAdmin } from "./cabecalho";
 
 // Dados da loja-alvo mudam por ação admin a qualquer momento — nunca cachear.
@@ -38,7 +42,16 @@ export default async function HubLojaLayout({
   const { lojaId } = await params;
   const loja = await carregarCabecalhoLojaAdmin(lojaId);
 
-  const contexto = { basePath: `/admin/assinantes/${lojaId}` };
+  // Identidade/status da loja-alvo NÃO entram na sidebar (issue 194): vivem na
+  // faixa abaixo, que aparece nos dois breakpoints. O "voltar" da sidebar é o
+  // nível de cima (hub raiz) e vem por DADO — o componente não infere rota do
+  // `basePath`. O "Voltar para assinantes" da faixa é outro nível (trocar de
+  // loja) e continua onde está.
+  const contexto: ContextoNav = {
+    basePath: `/admin/assinantes/${lojaId}`,
+    voltarHref: "/admin",
+    voltarRotulo: "Voltar ao hub admin",
+  };
 
   return (
     <div className="flex min-h-svh">
