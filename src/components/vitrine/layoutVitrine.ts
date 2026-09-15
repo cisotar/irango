@@ -19,3 +19,15 @@ export const ESCADA_LARGURA_VITRINE =
 /** Classes do `<main>` da vitrine: escada + respiro lateral/vertical. O `pb-28`
  *  reserva o espaço da barra fixa do carrinho (`VitrineClient`, z-40). */
 export const CLASSES_MAIN_VITRINE = `${ESCADA_LARGURA_VITRINE} px-4 py-6 pb-28`;
+
+/**
+ * Altura mínima do slot que a barra sticky da vitrine troca entre trilho de
+ * categorias (`NavCategorias`) e resumo de busca (`ResumoBusca`) — issue 202,
+ * achado acelerar/202. Os dois têm quase a mesma altura de conteúdo (ambos
+ * usam alvo de toque de 44px), mas não EXATAMENTE a mesma: a diferença de
+ * ~4px fazia `--altura-barra` oscilar a cada ciclo buscar/limpar e o
+ * `IntersectionObserver` do scrollspy (203) ser reconstruído em cima de um
+ * `rootMargin` errado por um frame. Uma altura mínima compartilhada elimina a
+ * oscilação sem mudar o alvo de toque de nenhum dos dois.
+ */
+export const ALTURA_SLOT_BARRA = "min-h-[60px]";

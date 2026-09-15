@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
+import { ALTURA_SLOT_BARRA } from "@/components/vitrine/layoutVitrine";
 import { VAR_ALTURA_BARRA } from "@/components/vitrine/medicaoBarraVitrine";
 import {
   criarScrollspy,
@@ -160,9 +161,16 @@ function TrilhoCategorias({ categorias, alturaBarra }: NavCategoriasProps) {
   }, [ativo]);
 
   return (
-    <nav aria-label="Categorias do cardápio" className="px-4 pb-2.5">
+    <nav
+      aria-label="Categorias do cardápio"
+      className={`flex items-center px-4 pb-2.5 ${ALTURA_SLOT_BARRA}`}
+    >
       <ul
-        className="m-0 flex list-none gap-2 overflow-x-auto overflow-y-hidden p-0 trilho-categorias"
+        // w-full: o <nav> virou flex (para centralizar o trilho na altura
+        // compartilhada do slot, achado acelerar/202) — sem isso o <ul>
+        // encolhe para o conteúdo como filho flex e o overflow-x/scroll-snap
+        // do trilho para de fazer sentido.
+        className="m-0 flex w-full list-none gap-2 overflow-x-auto overflow-y-hidden p-0 trilho-categorias"
         style={ESTILO_TRILHO}
       >
         {categorias.map((categoria, indice) => {
