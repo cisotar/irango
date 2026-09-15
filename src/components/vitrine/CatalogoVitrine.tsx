@@ -41,9 +41,10 @@ export function CatalogoVitrine({
 
   // Altura REAL da barra, medida antes do paint e republicada a cada resize
   // (rotação, quebra de linha, troca trilho↔resumo da 202). Valor fixo é
-  // proibido (RN-6): 6rem de `scroll-mt-24` só não quebrava porque não havia
-  // barra. `useLayoutEffect` direto — o aviso de SSR do React não existe mais
-  // desde facebook/react#26395 (projeto em react 19).
+  // proibido (RN-6): os 6rem da antiga classe fixa de scroll-margin só não
+  // quebravam porque não havia barra. `useLayoutEffect` direto — o aviso de
+  // SSR do React não existe mais desde facebook/react#26395 (projeto em
+  // react 19).
   //
   // Mecânica extraída para `medicaoBarraVitrine.ts` (módulo neutro, testado em
   // `environment: node` com fakes injetados) — aqui só o fio com o DOM real.

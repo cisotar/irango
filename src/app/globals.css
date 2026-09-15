@@ -31,7 +31,8 @@
   /* Altura REAL da barra sticky da vitrine, medida em runtime por
      CatalogoVitrine (ResizeObserver) e publicada aqui. 0px = não há barra
      (catálogo vazio, ou qualquer rota fora da vitrine). NUNCA chutar um
-     valor: `scroll-mt-24` era 115px de coincidência (issue 201). */
+     valor: a antiga classe fixa de scroll-margin (6rem = 115px) era
+     coincidência (issue 201). */
   --altura-barra: 0px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

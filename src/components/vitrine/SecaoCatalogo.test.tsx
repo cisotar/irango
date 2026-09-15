@@ -162,9 +162,9 @@ describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista p
 /**
  * Issue 201 — a âncora da seção vem de `ancoraCategoria` (fonte única) e o
  * deslocamento de âncora passa a ser a altura MEDIDA da barra sticky
- * (`--altura-barra`), não mais o `scroll-mt-24` fixo. Falha silenciosa em
- * produção (título escondido atrás da barra) não quebra build nem tipo — só
- * este teste pega.
+ * (`--altura-barra`), não mais a antiga classe fixa de scroll-margin. Falha
+ * silenciosa em produção (título escondido atrás da barra) não quebra build
+ * nem tipo — só este teste pega.
  */
 describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", () => {
   function categoriasComGrupoSemId(): CategoriaComProdutos[] {
@@ -203,12 +203,15 @@ describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", (
     expect(html).toContain('id="cat-cat-doces"');
   });
 
-  it("a seção usa scroll-margin-top medido e NÃO o antigo scroll-mt-24", () => {
+  it("a seção usa scroll-margin-top medido e NÃO a antiga classe fixa de scroll-margin", () => {
     const html = renderToStaticMarkup(
       <SecaoCatalogo categorias={categoriasFixture()} />,
     );
 
     expect(html).toContain("scroll-margin-top:calc(var(--altura-barra)");
-    expect(html).not.toContain("scroll-mt-24");
+    // Montada por concatenação: um literal contíguo aqui seria varrido pelo
+    // scanner de texto do Tailwind v4 e geraria um utilitário órfão no CSS
+    // compilado (achado verificar/201) — mesmo sem nenhuma className usá-lo.
+    expect(html).not.toContain(["scroll", "mt", "24"].join("-"));
   });
 });

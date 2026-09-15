@@ -127,8 +127,8 @@ export function SecaoCatalogo({
           // mockup. Inline, e não classe Tailwind arbitrária: um `_` esquecido
           // no escape geraria classe inválida em silêncio — o exato modo de
           // falha que a issue 201 existe para eliminar. Valor fixo é proibido
-          // (RN-6): o antigo `scroll-mt-24` só não incomodava porque não havia
-          // barra nenhuma sobre a qual compensar.
+          // (RN-6): a antiga classe fixa de scroll-margin (6rem) só não
+          // incomodava porque não havia barra nenhuma sobre a qual compensar.
           style={ESTILO_ANCORA_CATEGORIA}
         >
           {/* Título de seção: h2 em caixa-alta flanqueado por linhas-gradiente

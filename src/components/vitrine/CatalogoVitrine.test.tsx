@@ -49,12 +49,15 @@ describe("201 CatalogoVitrine — barra sticky e main do catálogo", () => {
     expect(html).toContain("<main");
   });
 
-  it("as seções saem com o scroll-margin medido, sem o antigo scroll-mt-24", () => {
+  it("as seções saem com o scroll-margin medido, sem a antiga classe fixa", () => {
     const html = renderToStaticMarkup(
       <CatalogoVitrine categorias={categorias()} />,
     );
 
     expect(html).toContain("scroll-margin-top:calc(var(--altura-barra)");
-    expect(html).not.toContain("scroll-mt-24");
+    // Concatenado para não deixar o literal contíguo no fonte — o scanner de
+    // texto do Tailwind v4 varre até comentário/string e geraria um
+    // utilitário órfão no CSS compilado (achado verificar/201).
+    expect(html).not.toContain(["scroll", "mt", "24"].join("-"));
   });
 });
