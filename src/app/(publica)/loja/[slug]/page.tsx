@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 
+import { CatalogoVitrine } from "@/components/vitrine/CatalogoVitrine";
 import { HeaderLoja } from "@/components/vitrine/HeaderLoja";
-import {
-  SecaoCatalogo,
-  type CategoriaComProdutos,
-} from "@/components/vitrine/SecaoCatalogo";
+import { CLASSES_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
+// `import type` explícito: é TIPO, apagado na compilação. Importar um VALOR de
+// um módulo 'use client' aqui viraria referência de cliente (issue 201, D1).
+import type { CategoriaComProdutos } from "@/components/vitrine/SecaoCatalogo";
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
 import { createClient } from "@/lib/supabase/server";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
@@ -119,7 +120,7 @@ export default async function VitrinePage({ params }: PageProps) {
           timezone={loja.timezone ?? "America/Sao_Paulo"}
           whatsapp={loja.whatsapp}
         />
-        <main className="mx-auto w-full max-w-3xl px-4 py-6 pb-28 md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
+        <main className={CLASSES_MAIN_VITRINE}>
           <div className="flex flex-col items-center gap-3 py-20 text-center">
             <span aria-hidden className="text-4xl">
               🔒
@@ -192,8 +193,13 @@ export default async function VitrinePage({ params }: PageProps) {
           whatsapp={loja.whatsapp}
         />
 
-        <main className="mx-auto w-full max-w-3xl px-4 py-6 pb-28 md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
-          {temVazio ? (
+        {/* Catálogo vazio (RN-4): sem barra e sem wrapper client — o `<main>`
+            fica aqui. Com catálogo, `CatalogoVitrine` é o dono do `<main>` e da
+            barra sticky, que precisa correr de ponta a ponta da viewport (fora
+            do `px-4`/escada do main) — issue 201, D5. Exatamente UM `<main>`
+            por render em cada ramo. */}
+        {temVazio ? (
+          <main className={CLASSES_MAIN_VITRINE}>
             <div className="flex flex-col items-center gap-3 py-20 text-center">
               <span aria-hidden className="text-4xl">
                 📦
@@ -205,13 +211,13 @@ export default async function VitrinePage({ params }: PageProps) {
                 Volte em breve para fazer seu pedido.
               </p>
             </div>
-          ) : (
-            <SecaoCatalogo
-              categorias={categoriasComProdutos}
-              opcionaisPorCategoria={opcionaisPorCategoria}
-            />
-          )}
-        </main>
+          </main>
+        ) : (
+          <CatalogoVitrine
+            categorias={categoriasComProdutos}
+            opcionaisPorCategoria={opcionaisPorCategoria}
+          />
+        )}
 
         <VitrineClient lojaSlug={slug} />
       </div>

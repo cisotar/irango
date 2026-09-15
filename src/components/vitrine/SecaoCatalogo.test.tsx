@@ -26,6 +26,8 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { ancoraCategoria } from "@/lib/utils/ancoraCategoria";
+
 import {
   SecaoCatalogo,
   type CategoriaComProdutos,
@@ -154,5 +156,59 @@ describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista p
       'aria-label="Adicionar Suco de laranja 500ml ao carrinho"',
     );
     expect(html).not.toContain("exemplo.com/suco.jpg");
+  });
+});
+
+/**
+ * Issue 201 — a âncora da seção vem de `ancoraCategoria` (fonte única) e o
+ * deslocamento de âncora passa a ser a altura MEDIDA da barra sticky
+ * (`--altura-barra`), não mais o `scroll-mt-24` fixo. Falha silenciosa em
+ * produção (título escondido atrás da barra) não quebra build nem tipo — só
+ * este teste pega.
+ */
+describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", () => {
+  function categoriasComGrupoSemId(): CategoriaComProdutos[] {
+    const produto: ProdutoCatalogo = {
+      id: "p-1",
+      nome: "Pão na chapa",
+      descricao: null,
+      preco: 6,
+      foto_url: null,
+      categoria_id: null,
+      disponivel: true,
+    };
+    return [
+      { id: null, nome: "Outros", produtos: [produto] },
+      { id: "cat-doces", nome: "Doces", produtos: [produto] },
+    ];
+  }
+
+  it("o id da seção é exatamente `ancoraCategoria(id, indice)`", () => {
+    const categorias = categoriasComGrupoSemId();
+    const html = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categorias} />,
+    );
+
+    categorias.forEach((categoria, indice) => {
+      expect(html).toContain(`id="${ancoraCategoria(categoria.id, indice)}"`);
+    });
+  });
+
+  it('grupo sem id ("Outros") vira `grupo-<indice>`', () => {
+    const html = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasComGrupoSemId()} />,
+    );
+
+    expect(html).toContain('id="grupo-0"');
+    expect(html).toContain('id="cat-cat-doces"');
+  });
+
+  it("a seção usa scroll-margin-top medido e NÃO o antigo scroll-mt-24", () => {
+    const html = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasFixture()} />,
+    );
+
+    expect(html).toContain("scroll-margin-top:calc(var(--altura-barra)");
+    expect(html).not.toContain("scroll-mt-24");
   });
 });
