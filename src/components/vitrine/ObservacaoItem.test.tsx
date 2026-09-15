@@ -74,8 +74,14 @@ describe("[197] ObservacaoItem — XSS: texto do cliente é dado, nunca markup",
   it("<img onerror> não vira elemento no DOM", () => {
     const html = render('<img src=x onerror="alert(1)">');
     expect(html).not.toContain("<img");
-    expect(html).not.toContain("onerror=");
+    // GREEN [197]: a asserção original era `not.toContain("onerror=")`, o que
+    // NENHUMA renderização fiel satisfaz — o texto do cliente contém esse
+    // literal e o React escapa `<`, `>` e `"`, não o `=`. O que importa (e é o
+    // que o título do teste diz) é que nada disso abre um elemento: sem `<img`,
+    // o `onerror` fica dentro de um nó de TEXTO, com as aspas escapadas.
+    expect(html).not.toContain('<img src=x onerror="');
     expect(html).toContain("&lt;img");
+    expect(html).toContain("onerror=&quot;alert(1)&quot;&gt;");
   });
 
   it("aspas e < > são escapados (nada escapa para atributo)", () => {

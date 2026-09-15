@@ -11,7 +11,7 @@
 // recalcula do banco e, em retirada, FORÇA frete 0 ignorando endereço (RN-C2).
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, MapPin } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -64,6 +64,13 @@ export type EtapaEntregaProps = {
    * INDEPENDENTE de `whatsapp_envio_automatico` — aqui só importa TER canal.
    */
   whatsappLoja?: string | null;
+  /**
+   * [197] Endereço curto da loja (`{rua}, {numero} · {bairro}`), formatado no
+   * SSR por `formatarEnderecoLoja` (RN-R1/RN-R2). Só aparece em retirada
+   * (RN-R3), como informação — nunca entra em `podeAvancar`/`podeConfirmar`,
+   * nem em payload, frete, cupom ou total. `null` ⇒ fallback (RN-R5).
+   */
+  enderecoLoja?: string | null;
   /** Nome da loja, usado só no texto do link de WhatsApp (sem PII). */
   lojaNome?: string;
   /**
@@ -106,6 +113,7 @@ export function EtapaEntrega({
   onVoltar,
   onContinuar,
   whatsappLoja = null,
+  enderecoLoja = null,
   lojaNome = "",
   variante = "wizard",
 }: EtapaEntregaProps) {
@@ -313,6 +321,23 @@ export function EtapaEntrega({
               </span>
             </Label>
           </RadioGroup>
+
+          {/* [197] Retirada: onde ir. Reusa as classes do aviso "apenas
+              retirada" acima. SEM link do Maps aqui (RN-R6): link externo no
+              meio do checkout tiraria o cliente do fluxo ANTES de o pedido
+              existir — o link vive só na confirmação. */}
+          {tipoEntrega === "retirada" && (
+            <p className="rounded-lg bg-cinza-claro px-3 py-2 text-xs text-texto-muted">
+              {enderecoLoja ? (
+                <>
+                  <MapPin aria-hidden className="mr-1 inline size-3.5" />
+                  Retirar em: <strong>{enderecoLoja}</strong>
+                </>
+              ) : (
+                "Combine o local de retirada com a loja pelo WhatsApp."
+              )}
+            </p>
+          )}
         </div>
       </div>
 

@@ -16,6 +16,7 @@ import { useCarrinho, linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
+import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
 
 export type CarrinhoProps = {
   open: boolean;
@@ -91,6 +92,9 @@ export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
                             quantidade: o.quantidade,
                           }))}
                         />
+                        {/* [197] A observação do comprador já viajava até o
+                            pedido (167/168) sem nunca aparecer na gaveta. */}
+                        <ObservacaoItem observacao={item.observacao} />
                         <div className="mt-1 flex items-center gap-2">
                           <Button
                             variant="outline"

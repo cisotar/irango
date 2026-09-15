@@ -55,6 +55,12 @@ export type CheckoutWizardProps = {
    * combinar a entrega. `null` ⇒ o modal de frete indisponível oferece retirada.
    */
   whatsappLoja?: string | null;
+  /**
+   * [197] Endereço curto da loja (`{rua}, {numero} · {bairro}`), derivado no
+   * SSR. Exibido só no ramo "retirada" (RN-R3). `null` ⇒ a loja não cadastrou
+   * endereço e a tela mostra o fallback (RN-R5) — nunca bloqueia o checkout.
+   */
+  enderecoLoja?: string | null;
 };
 
 export function CheckoutWizard({
@@ -66,6 +72,7 @@ export function CheckoutWizard({
   formasPagamento,
   preAbrirWhatsapp = false,
   whatsappLoja = null,
+  enderecoLoja = null,
 }: CheckoutWizardProps) {
   const router = useRouter();
   const { itens, incrementar, decrementar, remover } = useCarrinho();
@@ -242,6 +249,7 @@ export function CheckoutWizard({
           onFreteChange={setFretePreview}
           onFreteStatusChange={setFreteStatusPreview}
           whatsappLoja={whatsappLoja}
+          enderecoLoja={enderecoLoja}
           lojaNome={lojaNome}
           onVoltar={() => setEtapa(1)}
           onContinuar={() => setEtapa(3)}
@@ -308,6 +316,7 @@ export function CheckoutWizard({
             onFreteChange={setFretePreview}
             onFreteStatusChange={setFreteStatusPreview}
             whatsappLoja={whatsappLoja}
+            enderecoLoja={enderecoLoja}
             lojaNome={lojaNome}
             onVoltar={() => {}}
             onContinuar={() => {}}

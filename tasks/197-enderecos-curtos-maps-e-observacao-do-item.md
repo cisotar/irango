@@ -301,3 +301,78 @@ Rótulo `Obs` (mesmo do painel), `whitespace-pre-line`, texto como filho de JSX
    está asserido nos dois lados.
 5. **Nenhum stub foi criado.** As 3 suítes falham por resolução de módulo, não por
    asserção. Assim que o GREEN criar os arquivos, o vermelho vira asserção real.
+
+## GREEN
+
+Fase GREEN executada em 2026-09-15 na branch `feat/enderecos-curtos-maps-e-observacao`,
+sobre o vermelho do commit `35b6666`. Nenhum commit feito — a sessão principal revisa.
+
+### Arquivos tocados
+
+**Criados**
+- `src/lib/utils/enderecoLoja.ts` — `formatarEnderecoLoja`, `formatarEnderecoCliente`,
+  `montarHrefMapsLoja` (+ tipo `EnderecoColunasLoja`). Origem do Maps literal na
+  constante `ORIGEM_MAPS`; consulta 100% delegada a `montarConsultaGeocoding`.
+- `src/components/vitrine/confirmacao/LinkMapsLoja.tsx` — recebe `loja`, monta o href
+  internamente, `target="_blank" rel="noopener noreferrer"`, `sr-only` "(abre em nova aba)".
+- `src/components/vitrine/ObservacaoItem.tsx` — rótulo `Obs:`, `whitespace-pre-line`,
+  texto como filho de JSX, `return null` para vazio/só-espaços.
+
+**Modificados**
+- `src/lib/utils/whatsappPedido.ts` — `Pick` alargado com
+  `Partial<Pick<LojaCompleta, endereco_*>>`; linha `Retirar em:` em retirada (só com
+  endereço); `Endereço:` do cliente passa a usar `formatarEnderecoCliente` (fallback `—`
+  preservado); `formatarEndereco` local REMOVIDA.
+- `src/app/(publica)/loja/[slug]/confirmacao/page.tsx` — cópia local de `formatarEndereco`
+  REMOVIDA; bloco "Endereço para retirada" + `<LinkMapsLoja>`; `<ObservacaoItem>` no map de itens.
+- `src/app/(publica)/loja/[slug]/pedido/page.tsx` — deriva `enderecoLoja` de `loja`.
+- `src/components/vitrine/checkout/CheckoutWizard.tsx` — prop `enderecoLoja` nas DUAS
+  instâncias de `EtapaEntrega` (celular e computador).
+- `src/components/vitrine/checkout/EtapaEntrega.tsx` — bloco de retirada reusando as classes
+  do aviso existente, com `MapPin`. Sem link do Maps (RN-R6).
+- `src/components/vitrine/Carrinho.tsx`, `src/components/vitrine/checkout/EtapaItens.tsx` —
+  `<ObservacaoItem>` plugado. Em `EtapaItens` fica FORA do bloco `opcionais.length > 0`:
+  item sem opcional também pode ter observação.
+- ⚠️ `src/components/vitrine/ObservacaoItem.test.tsx` — **uma** asserção corrigida (ver abaixo).
+
+### Correção de um teste do RED (única edição de teste)
+
+`"<img onerror> não vira elemento no DOM"` pedia `expect(html).not.toContain("onerror=")`.
+Nenhuma renderização FIEL do texto do cliente satisfaz isso: o React escapa `<`, `>` e `"`,
+não o `=`, então o literal `onerror=` sobrevive dentro do nó de TEXTO. A asserção foi
+trocada por `not.toContain('<img src=x onerror="')` + `toContain("onerror=&quot;alert(1)&quot;&gt;")`,
+que provam o que o título do teste diz (não abre elemento; payload escapado) sem exigir
+mutilar o texto do comprador. As demais 12 asserções do arquivo ficaram intactas.
+
+### Gates
+
+```
+npx tsc --noEmit   → 0 erros
+npm run lint       → ✖ 1 problem (0 errors, 1 warning)
+                     (warning pré-existente em admin/assinantes/nova/FormNovaLoja.tsx,
+                      react-hooks/incompatible-library — não tocado por esta issue)
+npx vitest run     → Test Files 217 passed (217) | Tests 3487 passed (3487)
+npm run build      → exit code 0 (build succeeded)
+```
+
+Alvos individuais (Bloco A, antes do Bloco B): `enderecoLoja.test.ts` +
+`whatsappPedido.test.ts` + `LinkMapsLoja.test.tsx` + `pedido.test.ts` +
+`patches-loja.test.ts` → **5 arquivos, 232 testes, todos PASS**. `pedido.test.ts` NÃO
+foi editado (`git diff --name-only` confirma).
+
+`git diff --name-only` ⊆ lista permitida; nenhum arquivo proibido
+(`pedido.ts`, `pedido.test.ts`, `patches-loja.ts`, `components/painel/**`,
+`supabase/migrations/**`, `queries/**`, `validacoes/**`).
+
+### Mandatos
+
+- **Nunca confiar no cliente:** nenhum valor monetário tocado. O endereço da loja é
+  exibição pura — não entra em payload, frete, cupom nem total, e nunca em `podeAvancar`/
+  `podeConfirmar`. `[071]` verde e intocado.
+- **RLS / PII:** nenhuma query, view ou policy alterada. Nada novo exposto ao `anon`
+  (endereço da loja já vive em `vitrine_lojas`). A exibição do endereço do cliente
+  ENCURTOU (menos PII na tela); coleta e gravação inalteradas.
+- **Não reinventar:** `montarConsultaGeocoding` reusado (CEP fora + gate cidade/estado);
+  duas cópias de `formatarEndereco` consolidadas em um único util.
+- **XSS / URL:** esquema e domínio do Maps literais; só a consulta interpolada por
+  `encodeURIComponent`; nenhum `searchParams` (nem `token_acesso`) alcança o href.
