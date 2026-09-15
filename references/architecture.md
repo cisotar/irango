@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.25 | **Atualizado:** 2026-09-13
+**Versão:** 0.2.26 | **Atualizado:** 2026-09-14
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -350,7 +350,7 @@ const items = order.order_items
 - Componente aparece em 2+ lugares → extrai pra `components/`
 - `components/ui/` → shadcn gerado, não editar manualmente
 - `components/vitrine/` → exclusivos da loja pública
-- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente. O shell de navegação segue o mesmo princípio: `NavPainel.tsx` (`SidebarPainel`/`TopbarPainel`) recebe um `contexto?` opcional (só `basePath`/`título`; default = comportamento do painel do lojista) — o painel do lojista é a fonte única do front, o hub admin (`/admin/assinantes/[lojaId]`) reusa o mesmo shell trocando só o `basePath`, byte-a-byte idêntico ao lojista, nunca por cópia de markup
+- `components/painel/` → exclusivos do dashboard do lojista; parametrizados com action por prop (default = action do lojista), permitindo reuso no contexto admin sem duplicar componente. O shell de navegação segue o mesmo princípio: `NavPainel.tsx` (`SidebarPainel`/`TopbarPainel`) recebe um `contexto?: ContextoNav` opcional — `basePath`/`titulo` (roteamento e legenda); `nomeLoja`/`logoUrl`/`slugLoja`/`horarios`/`timezone`/`emailConta` (identidade e status, só no shell do lojista — o hub admin não os passa, pois vivem na faixa persistente da coluna de conteúdo, issue 145); `voltarHref`/`voltarRotulo` (link de volta no rodapé, dado explícito do layout, nunca inferido do `basePath`) — o painel do lojista é a fonte única do front, o hub admin (`/admin/assinantes/[lojaId]`) reusa o mesmo shell trocando `basePath`+`voltarHref`/`voltarRotulo`, byte-a-byte idêntico ao lojista, nunca por cópia de markup. No hub admin, dois links de "voltar" coexistem em níveis diferentes: "Voltar para assinantes" (faixa âmbar da coluna de conteúdo, `/admin/assinantes`, troca de loja-alvo) e "Voltar ao hub admin" (rodapé da sidebar, `/admin`, via `voltarHref`/`voltarRotulo` — issue 194)
 
 ### Server vs Client
 
