@@ -1,0 +1,881 @@
+<title>Sidebar do Painel iRango</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+/* ============================================================
+   Chrome do documento — paleta espresso/verde derivada dos
+   tokens reais do iRango (--marrom-cafe, --cor-destaque).
+   O PREVIEW abaixo usa a paleta neutra real do painel.
+   ============================================================ */
+:root {
+  --ground: #FBF9F6;
+  --surface: #FFFFFF;
+  --surface-2: #F3EFE9;
+  --line: #E2DAD0;
+  --line-soft: #EFE9E1;
+  --ink: #2E2610;
+  --ink-2: #6B5D4F;
+  --ink-3: #8C8073;
+  --accent: #3E5233;
+  --accent-soft: #E7EEE2;
+  --alto: #B23A22;
+  --alto-soft: #FBEAE5;
+  --medio: #8A5D06;
+  --medio-soft: #FBF0DA;
+  --baixo: #4B5D6B;
+  --baixo-soft: #EAEFF3;
+  --shadow: 0 1px 2px rgba(46,38,16,.06), 0 8px 24px -12px rgba(46,38,16,.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #16110C;
+    --surface: #201A13;
+    --surface-2: #2A2219;
+    --line: #372E23;
+    --line-soft: #2B2319;
+    --ink: #EFE7DA;
+    --ink-2: #A6978A;
+    --ink-3: #8B7C6E;
+    --accent: #8FB27A;
+    --accent-soft: #232E1D;
+    --alto: #E58A72;
+    --alto-soft: #35211B;
+    --medio: #DDA13F;
+    --medio-soft: #332714;
+    --baixo: #9FB1BF;
+    --baixo-soft: #1E262C;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #16110C;
+  --surface: #201A13;
+  --surface-2: #2A2219;
+  --line: #372E23;
+  --line-soft: #2B2319;
+  --ink: #EFE7DA;
+  --ink-2: #A6978A;
+  --ink-3: #8B7C6E;
+  --accent: #8FB27A;
+  --accent-soft: #232E1D;
+  --alto: #E58A72;
+  --alto-soft: #35211B;
+  --medio: #DDA13F;
+  --medio-soft: #332714;
+  --baixo: #9FB1BF;
+  --baixo-soft: #1E262C;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-inline: 20px;
+  padding-block: 40px 72px;
+}
+
+/* ---------- cabeçalho ---------- */
+.eyebrow {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 14px;
+}
+h1 {
+  font-family: "Fraunces", Georgia, serif;
+  font-variation-settings: "opsz" 120, "SOFT" 40, "WONK" 1;
+  font-weight: 600;
+  font-size: clamp(34px, 6.4vw, 58px);
+  line-height: 1.02;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+  margin: 0 0 16px;
+}
+.dek {
+  font-size: 17px;
+  color: var(--ink-2);
+  max-width: 62ch;
+  margin: 0 0 26px;
+}
+.dek b { color: var(--ink); font-weight: 600; }
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  padding-block: 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.meta span { display: block; color: var(--ink-3); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.meta b { color: var(--ink); font-weight: 500; }
+
+/* ---------- gate ---------- */
+.gate {
+  margin-top: 26px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 4px;
+  padding: 18px 20px;
+}
+.gate h2 {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 12px; font-weight: 500;
+}
+.gate dl { margin: 0; display: grid; gap: 8px; }
+.gate .row { display: grid; grid-template-columns: 130px 1fr; gap: 4px 16px; font-size: 13.5px; }
+.gate dt { color: var(--ink-2); font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding-top: 3px; }
+.gate dd { margin: 0; color: var(--ink); }
+.gate code { font-family: "JetBrains Mono", monospace; font-size: 12px; background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 3px; }
+.gate .veredito { font-weight: 600; color: var(--accent); }
+@media (max-width: 620px) { .gate .row { grid-template-columns: 1fr; } }
+
+/* ---------- layout principal ---------- */
+.split {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 48px;
+  margin-top: 56px;
+  align-items: start;
+}
+@media (max-width: 940px) { .split { grid-template-columns: 1fr; gap: 40px; } }
+
+.rail { position: sticky; top: 24px; }
+@media (max-width: 940px) { .rail { position: static; } }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+.tab {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px; letter-spacing: .04em;
+  padding: 9px 11px;
+  min-height: 36px;
+  background: transparent;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.tab:hover { color: var(--ink); border-color: var(--ink-3); }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.tab:focus-visible, .pin:focus-visible, .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stage {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.stage-cap {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 12px;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   PREVIEW — paleta e métrica reais do painel.
+   rem base do app = 19.2px (globals.css:212); todos os valores
+   abaixo são os px computados correspondentes.
+   ============================================================ */
+.app {
+  --sidebar: #FAFAFA;
+  --sidebar-fg: #252525;
+  --sidebar-primary: #343434;
+  --sidebar-accent: #F1F1F1;
+  --sidebar-accent-fg: #343434;
+  --sidebar-border: #EBEBEB;
+  --muted-fg: #8E8E8E;
+  --card: #FFFFFF;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+  color: var(--sidebar-fg);
+  background: var(--sidebar);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.app--desktop { width: 240px; min-height: 560px; }
+.app--recolhido { width: 64px; min-height: 560px; }
+.app--mobile { width: 288px; min-height: 560px; box-shadow: 12px 0 28px -18px rgba(0,0,0,.5); }
+
+.sb-head { display: flex; gap: 10px; align-items: flex-start; padding: 12px; }
+.app--recolhido .sb-head { justify-content: center; padding: 12px 0; }
+.logo {
+  width: 32px; height: 32px; flex: 0 0 32px;
+  border-radius: 7px;
+  background: linear-gradient(150deg, #4A3A22, #2E2610);
+  color: #F3E7D2;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 13px; letter-spacing: -.02em;
+}
+.sb-ident { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.sb-nome {
+  font-size: 14px; font-weight: 600; line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: center; gap: 5px;
+}
+.sb-nome svg { flex: 0 0 11px; color: var(--muted-fg); }
+.badge-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  align-self: flex-start;
+  height: 20px; padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  background: #E7F3E9; color: #17632C;
+}
+.badge-status .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.rule { height: 1px; background: var(--sidebar-border); }
+
+.sb-nav { flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 8px; }
+.app--recolhido .sb-nav { padding: 8px 8px; align-items: center; }
+
+.item {
+  position: relative;
+  display: flex; align-items: center; gap: 12px;
+  min-height: 48px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 16.8px;
+  font-weight: 500;
+  color: var(--muted-fg);
+  text-decoration: none;
+  line-height: 24px;
+}
+.item svg { flex: 0 0 16px; }
+.item .rot { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item:hover { background: color-mix(in srgb, var(--sidebar-accent) 55%, transparent); color: var(--sidebar-fg); }
+.item.ativo {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-fg);
+  font-weight: 600;
+}
+.item.ativo::before {
+  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px;
+  width: 2px; border-radius: 2px; background: var(--sidebar-primary);
+}
+.app--recolhido .item { width: 40px; min-height: 40px; padding: 12px; justify-content: center; }
+
+.cnt {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sidebar-primary); color: #FAFAFA;
+  font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chev { flex: 0 0 14px; color: var(--muted-fg); transition: transform .18s; }
+.aberto .chev { transform: rotate(180deg); }
+
+.subs { display: flex; flex-direction: column; gap: 2px; padding-left: 28px; overflow: hidden; }
+.subs[hidden] { display: none; }
+.sub {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 12px;
+  border-radius: 8px;
+  font-size: 16.8px; line-height: 24px;
+  color: var(--muted-fg); text-decoration: none;
+}
+.sub svg { flex: 0 0 14px; }
+.sub:hover { background: color-mix(in srgb, var(--sidebar-accent) 55%, transparent); color: var(--sidebar-fg); }
+.acc-trigger { width: 100%; background: none; border: none; cursor: pointer; text-align: left; font: inherit; }
+.acc-trigger:focus-visible, .item:focus-visible, .sub:focus-visible { outline: 2px solid var(--sidebar-ring, #2563eb); outline-offset: 2px; }
+
+.sb-foot { padding: 10px 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.plano {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px 6px;
+  font-size: 12px; color: var(--muted-fg);
+  font-variant-numeric: tabular-nums;
+}
+.plano .pill {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+  padding: 1px 6px; border-radius: 4px;
+  background: #EDE9FE; color: #4C1D95;
+}
+.conta {
+  padding: 0 12px 6px;
+  font-size: 12px; color: var(--muted-fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sair { color: var(--muted-fg); }
+.foco-demo { outline: 2px solid #6B7280; outline-offset: 2px; }
+
+/* topbar mobile */
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  height: 56px; padding: 0 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--sidebar-border);
+}
+.hamb {
+  width: 44px; height: 44px; flex: 0 0 44px;
+  display: grid; place-items: center;
+  border-radius: 8px; color: var(--sidebar-fg);
+}
+.topbar .sb-nome { font-size: 15px; }
+
+/* ---------- marcadores ---------- */
+.pin {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 26px; padding: 0 5px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ground);
+  background: var(--ink); color: var(--ground);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px; font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,.28);
+  transition: transform .15s;
+}
+.pin:hover { transform: scale(1.14); }
+.pin[data-sev="alto"] { background: var(--alto); }
+.pin[data-sev="medio"] { background: var(--medio); }
+.pin[data-sev="baixo"] { background: var(--baixo); }
+.stage[data-pins="off"] .pin { display: none; }
+
+.toggle {
+  margin-top: 12px;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: none; cursor: pointer;
+  color: var(--ink-2); font-family: "JetBrains Mono", monospace; font-size: 11px;
+  padding: 8px 2px; min-height: 36px;
+}
+.toggle .box {
+  width: 15px; height: 15px; border: 1px solid var(--ink-3); border-radius: 3px;
+  display: grid; place-items: center; font-size: 10px; color: var(--ground); background: transparent;
+}
+.toggle[aria-pressed="true"] .box { background: var(--ink); border-color: var(--ink); }
+
+/* ---------- achados ---------- */
+.sec-titulo {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 20px; font-weight: 500;
+  padding-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.achados { display: flex; flex-direction: column; }
+.achado {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 4px 18px;
+  padding-block: 22px;
+  border-bottom: 1px solid var(--line-soft);
+  scroll-margin-top: 24px;
+}
+.achado:target, .achado.destaque { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.achado .id {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px; font-weight: 500;
+  color: var(--ink);
+  padding-top: 2px;
+}
+.achado h3 {
+  margin: 0 0 8px; font-size: 17px; font-weight: 600; line-height: 1.35;
+  font-family: "Fraunces", Georgia, serif;
+  font-variation-settings: "opsz" 24, "SOFT" 20;
+  text-wrap: balance;
+}
+.sev {
+  display: inline-block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 3px; margin-bottom: 9px;
+}
+.sev[data-sev="alto"] { background: var(--alto-soft); color: var(--alto); }
+.sev[data-sev="medio"] { background: var(--medio-soft); color: var(--medio); }
+.sev[data-sev="baixo"] { background: var(--baixo-soft); color: var(--baixo); }
+.achado p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; max-width: 66ch; }
+.achado p:last-child { margin-bottom: 0; }
+.fonte {
+  font-family: "JetBrains Mono", monospace; font-size: 11.5px;
+  color: var(--ink-3); display: block; margin-bottom: 9px;
+}
+.fix {
+  border-left: 2px solid var(--accent);
+  padding-left: 14px;
+  margin-top: 12px;
+}
+.fix strong {
+  display: block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--accent); font-weight: 500; margin-bottom: 5px;
+}
+.fix code, .achado code {
+  font-family: "JetBrains Mono", monospace; font-size: 12.5px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  padding: 1px 5px; border-radius: 3px; color: var(--ink);
+}
+.fix p { font-size: 14.5px; color: var(--ink); }
+@media (max-width: 520px) {
+  .achado { grid-template-columns: 1fr; gap: 0; }
+  .achado .id { margin-bottom: 6px; color: var(--ink-3); }
+}
+
+/* ---------- blocos finais ---------- */
+.faixa { margin-top: 64px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+@media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; gap: 36px; } }
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 11px 14px 11px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+th {
+  font-family: "JetBrains Mono", monospace; font-size: 10px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); font-weight: 500;
+}
+td:first-child { white-space: nowrap; font-weight: 600; padding-right: 22px; }
+td { color: var(--ink-2); }
+
+.check { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 11px; }
+.check li { display: grid; grid-template-columns: 20px 1fr; gap: 11px; font-size: 14.5px; color: var(--ink-2); }
+.check .mk { color: var(--accent); font-weight: 700; }
+.check b { color: var(--ink); font-weight: 600; }
+
+.escopo {
+  margin-top: 56px; padding: 20px;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  color: var(--ink-2); font-size: 14.5px;
+}
+.escopo strong {
+  display: block; color: var(--ink);
+  font-family: "JetBrains Mono", monospace; font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">iRango · painel do lojista</p>
+  <h1>Sidebar do painel</h1>
+  <p class="dek">O shell que fica em toda rota de <code>/painel</code> hoje diz o nome do <b>SaaS</b>, não o da <b>loja</b>. Este mockup reconstrói a sidebar em torno das duas perguntas que o lojista faz o dia inteiro — <b>que loja é esta</b> e <b>ela está vendendo agora</b> — sem token novo, sem cor nova e sem componente novo.</p>
+
+  <div class="meta">
+    <div><span>Fonte</span><b>src/components/painel/NavPainel.tsx</b></div>
+    <div><span>Consumidores</span><b>painel/layout.tsx · admin/assinantes/[lojaId]</b></div>
+    <div><span>Atritos</span><b>12 · 4 altos</b></div>
+    <div><span>Base rem do app</span><b>19.2px (globals.css:212)</b></div>
+  </div>
+
+  <section class="gate">
+    <h2>Gate de reuso</h2>
+    <dl>
+      <div class="row"><dt>shadcn/ui</dt><dd><code>accordion</code> <code>badge</code> <code>button</code> <code>menu</code> <code>separator</code> <code>sheet</code> — todos já em <code>components/ui/</code>. Nenhum a gerar.</dd></div>
+      <div class="row"><dt>vitrine/painel</dt><dd><code>vitrine/BadgeStatus</code> (único componente que cruza os dois mundos) · <code>painel/StatusAssinatura</code> · <code>painel/rotulosAssinatura</code> · <code>painel/NavPainel</code> (alvo)</dd></div>
+      <div class="row"><dt>Tokens</dt><dd>A família <code>--sidebar-*</code> já está declarada no <code>@theme</code> e hoje está <b>inteiramente ociosa</b> — a sidebar pinta com <code>bg-card</code>, <code>bg-accent</code> e <code>muted</code>.</dd></div>
+      <div class="row"><dt>Decisão</dt><dd class="veredito">REUSAR + ADAPTAR — um arquivo reestruturado, zero primitivo novo, zero cor nova.</dd></div>
+    </dl>
+  </section>
+
+  <div class="split">
+
+    <!-- ============ PREVIEW ============ -->
+    <div class="rail">
+      <div class="tabs" role="tablist" aria-label="Estados da sidebar">
+        <button class="tab" role="tab" id="tab-desktop" aria-selected="true" aria-controls="v-desktop">desktop 240px</button>
+        <button class="tab" role="tab" id="tab-recolhido" aria-selected="false" aria-controls="v-recolhido">recolhido 64px</button>
+        <button class="tab" role="tab" id="tab-mobile" aria-selected="false" aria-controls="v-mobile">sheet mobile</button>
+      </div>
+
+      <div class="stage" id="stage" data-pins="on">
+
+        <!-- desktop expandido -->
+        <div id="v-desktop" role="tabpanel" aria-labelledby="tab-desktop">
+          <div class="app app--desktop">
+            <div class="sb-head">
+              <div class="logo">LB</div>
+              <div class="sb-ident">
+                <div class="sb-nome">Lanches do Bairro
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+                </div>
+                <span class="badge-status"><span class="dot"></span>Aberto agora</span>
+              </div>
+            </div>
+            <div class="rule"></div>
+
+            <nav class="sb-nav" aria-label="Menu do painel">
+              <a href="#f6" class="item ativo">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+                <span class="rot">Dashboard</span>
+              </a>
+              <a href="#f9" class="item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 11h6M9 15h4"/></svg>
+                <span class="rot">Pedidos</span>
+                <span class="cnt">3</span>
+              </a>
+              <a href="#f3" class="item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3zM3 7.5 12 12l9-4.5M12 12v9"/></svg>
+                <span class="rot">Produtos</span>
+                <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </a>
+              <a href="#f4" class="item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2.5 2.5 0 0 0 0 6v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2.5 2.5 0 0 0 0-6z"/><path d="M14 5v14" stroke-dasharray="2 3"/></svg>
+                <span class="rot">Cupons</span>
+              </a>
+              <button type="button" class="item aberto acc-trigger" id="trig-config" aria-expanded="true" aria-controls="subs-config">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7" transform="translate(1.8 0)"/></svg>
+                <span class="rot">Configurações</span>
+                <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="subs" id="subs-config">
+                <a href="#f4" class="sub"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg>Perfil</a>
+                <a href="#f4" class="sub"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>Horários</a>
+                <a href="#f5" class="sub foco-demo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7h10v9H3z"/><path d="M13 10h4l4 3v3h-8z"/><circle cx="7.5" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg>Entregas</a>
+                <a href="#f4" class="sub"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>Pagamentos</a>
+                <a href="#f4" class="sub"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.4 0 1.9-.9 1.9-1.8 0-.5-.3-1-.6-1.5-.3-.5-.1-1.7 1.2-1.7h1.9a4.2 4.2 0 0 0 4.2-4.2C20.6 6.6 16.8 3 12 3z"/><circle cx="7.6" cy="11" r="1.1"/><circle cx="12" cy="7.4" r="1.1"/><circle cx="16.4" cy="11" r="1.1"/></svg>Tema</a>
+                <a href="#f4" class="sub"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.3 2.3 4.7-4.7"/></svg>Assinatura</a>
+              </div>
+            </nav>
+
+            <div class="rule"></div>
+            <div class="sb-foot">
+              <div class="plano"><span class="pill">PRO</span> renova em 12 dias</div>
+              <div class="conta">maria@lanchesdobairro.com.br</div>
+              <a href="#f10" class="item sair" style="min-height:48px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                <span class="rot">Sair</span>
+              </a>
+            </div>
+          </div>
+
+          <button class="pin" data-sev="alto" data-f="f1" style="left:200px;top:22px" aria-label="Atrito F1">F1</button>
+          <button class="pin" data-sev="alto" data-f="f2" style="left:200px;top:52px" aria-label="Atrito F2">F2</button>
+          <button class="pin" data-sev="medio" data-f="f7" style="left:-8px;top:120px" aria-label="Atrito F7">F7</button>
+          <button class="pin" data-sev="medio" data-f="f6" style="left:200px;top:112px" aria-label="Atrito F6">F6</button>
+          <button class="pin" data-sev="alto" data-f="f9" style="left:200px;top:160px" aria-label="Atrito F9">F9</button>
+          <button class="pin" data-sev="alto" data-f="f3" style="left:200px;top:256px" aria-label="Atrito F3">F3</button>
+          <button class="pin" data-sev="alto" data-f="f4" style="left:-8px;top:310px" aria-label="Atrito F4">F4</button>
+          <button class="pin" data-sev="medio" data-f="f5" style="left:200px;top:352px" aria-label="Atrito F5">F5</button>
+          <button class="pin" data-sev="baixo" data-f="f10" style="left:200px;top:492px" aria-label="Atrito F10">F10</button>
+        </div>
+
+        <!-- recolhido -->
+        <div id="v-recolhido" role="tabpanel" aria-labelledby="tab-recolhido" hidden>
+          <div class="app app--recolhido">
+            <div class="sb-head"><div class="logo">LB</div></div>
+            <div class="rule"></div>
+            <nav class="sb-nav" aria-label="Menu do painel">
+              <a href="#f11" class="item ativo" aria-label="Dashboard"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></a>
+              <a href="#f11" class="item" aria-label="Pedidos, 3 pendentes"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 11h6M9 15h4"/></svg></a>
+              <a href="#f11" class="item" aria-label="Produtos"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3zM3 7.5 12 12l9-4.5M12 12v9"/></svg></a>
+              <a href="#f11" class="item" aria-label="Cupons"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2.5 2.5 0 0 0 0 6v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2.5 2.5 0 0 0 0-6z"/></svg></a>
+              <a href="#f11" class="item" aria-label="Configurações"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8.6" stroke-dasharray="3 3"/></svg></a>
+            </nav>
+            <div class="rule"></div>
+            <div class="sb-foot" style="align-items:center">
+              <a href="#f11" class="item sair" aria-label="Sair"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></a>
+            </div>
+          </div>
+          <button class="pin" data-sev="baixo" data-f="f11" style="left:26px;top:120px" aria-label="Atrito F11">F11</button>
+        </div>
+
+        <!-- sheet mobile -->
+        <div id="v-mobile" role="tabpanel" aria-labelledby="tab-mobile" hidden>
+          <div class="app app--mobile">
+            <div class="topbar">
+              <div class="hamb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg></div>
+              <div class="sb-ident">
+                <div class="sb-nome">Lanches do Bairro</div>
+              </div>
+              <span class="badge-status" style="margin-left:auto"><span class="dot"></span>Aberto</span>
+            </div>
+            <div class="sb-head">
+              <div class="logo">LB</div>
+              <div class="sb-ident">
+                <div class="sb-nome">Lanches do Bairro</div>
+                <span class="badge-status"><span class="dot"></span>Aberto agora</span>
+              </div>
+            </div>
+            <div class="rule"></div>
+            <nav class="sb-nav" aria-label="Menu do painel">
+              <a href="#f4" class="item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span class="rot">Dashboard</span></a>
+              <a href="#f9" class="item ativo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 11h6M9 15h4"/></svg><span class="rot">Pedidos</span><span class="cnt">3</span></a>
+              <a href="#f3" class="item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3zM3 7.5 12 12l9-4.5M12 12v9"/></svg><span class="rot">Produtos</span><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
+              <a href="#f4" class="item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2.5 2.5 0 0 0 0 6v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2.5 2.5 0 0 0 0-6z"/></svg><span class="rot">Cupons</span></a>
+              <a href="#f3" class="item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8.6" stroke-dasharray="3 3"/></svg><span class="rot">Configurações</span><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
+            </nav>
+            <div class="rule"></div>
+            <div class="sb-foot">
+              <div class="plano"><span class="pill">PRO</span> renova em 12 dias</div>
+              <div class="conta">maria@lanchesdobairro.com.br</div>
+              <a href="#f10" class="item sair"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span class="rot">Sair</span></a>
+            </div>
+          </div>
+          <button class="pin" data-sev="baixo" data-f="f12" style="left:250px;top:16px" aria-label="Atrito F12">F12</button>
+          <button class="pin" data-sev="alto" data-f="f4" style="left:250px;top:210px" aria-label="Atrito F4">F4</button>
+        </div>
+
+        <p class="stage-cap" style="margin-bottom:0">Renderizado na fonte e na métrica reais do app<br>— <code style="font-size:10px">--font-sans</code> do sistema, base rem 19.2px.</p>
+      </div>
+
+      <button class="toggle" id="toggle-pins" aria-pressed="true"><span class="box">✓</span> marcadores de atrito</button>
+    </div>
+
+    <!-- ============ ACHADOS ============ -->
+    <div>
+      <h2 class="sec-titulo">Atritos, por impacto</h2>
+      <div class="achados">
+
+        <article class="achado" id="f1">
+          <div class="id">F1</div>
+          <div>
+            <span class="sev" data-sev="alto">Alto</span>
+            <h3>O painel de um produto multitenant não diz qual tenant você está operando</h3>
+            <span class="fonte">NavPainel.tsx:219 — <code>{contexto.titulo ?? "iRango"}</code></span>
+            <p>O topo da sidebar é o nome do SaaS. Em nenhuma rota de <code>/painel</code> aparece o nome da loja. No hub admin o custo é maior: o operador navega entre lojas de terceiros e só tem o <code>titulo</code> injetado para se orientar.</p>
+            <div class="fix"><strong>Fix</strong><p>Cabeçalho com logo (32px), nome da loja com <code>truncate</code> e link "Ver vitrine" para <code>/loja/[slug]</code>. <code>contexto.titulo</code> vira fallback, não fonte primária.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f2">
+          <div class="id">F2</div>
+          <div>
+            <span class="sev" data-sev="alto">Alto</span>
+            <h3>Aberto ou fechado é a pergunta mais cara do dia e some fora do dashboard</h3>
+            <span class="fonte">ausente no shell — só em <code>DashboardLoja.tsx</code></span>
+            <p>Quem está cadastrando produto ou ajustando cupom não tem como saber se a loja está recebendo pedido. É o estado que decide se o telefone vai tocar.</p>
+            <div class="fix"><strong>Fix</strong><p><code>BadgeStatus</code> no cabeçalho da sidebar, em toda rota. Reuso direto do componente que já cruza vitrine e painel (design-system §7) — cor <b>e</b> texto, nunca só a cor.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f3">
+          <div class="id">F3</div>
+          <div>
+            <span class="sev" data-sev="alto">Alto</span>
+            <h3>Doze links abertos ao mesmo tempo achatam a navegação diária</h3>
+            <span class="fonte">NavPainel.tsx:158-170 — subitens sempre renderizados</span>
+            <p>Cinco pais, seis subitens de Configurações e um de Produtos, todos visíveis sempre. "Pedidos", aberto dezenas de vezes por dia, divide peso visual com "Tema" e "Assinatura", abertos uma vez por mês. Agrava: "Configurações" é hoje um <code>&lt;Link href="/painel/configuracoes"&gt;</code>, e não existe <code>page.tsx</code> nessa rota — só nas sub-rotas. Clicar no pai é um clique morto que dá <b>404</b>.</p>
+            <div class="fix"><strong>Fix</strong><p><code>ui/accordion.tsx</code> — que já existe, gerado na issue 175 — com <code>openMultiple={false}</code>. O grupo abre sozinho quando a rota ativa está dentro dele; <code>aria-expanded</code> e <code>aria-controls</code> vêm do Base UI de graça. O pai vira <code>&lt;AccordionTrigger&gt;</code> (elemento <code>&lt;button&gt;</code>), não mais um <code>&lt;Link&gt;</code> — resolve o 404 de graça, porque o pai deixa de navegar.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f4">
+          <div class="id">F4</div>
+          <div>
+            <span class="sev" data-sev="alto">Alto · a11y</span>
+            <h3>O alvo de toque mede 43.2px — falta 0.8px para o mínimo</h3>
+            <span class="fonte">NavPainel.tsx:115 — <code>px-3 py-2 text-sm</code></span>
+            <p>Com a base rem do app em 19.2px: <code>line-height</code> de 24px mais <code>py-2</code> de 9.6px em cada lado dá 43.2px. É o alvo principal do Sheet mobile, onde o dedo é o único ponteiro.</p>
+            <div class="fix"><strong>Fix</strong><p><code>py-2.5</code> → 12 + 24 + 12 = <b>48px</b>. Vale para o item e para o subitem — este último ganha ícone de 14px próprio (antes só tinha texto), sem mudar a altura do alvo de toque.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f5">
+          <div class="id">F5</div>
+          <div>
+            <span class="sev" data-sev="medio">Médio · a11y</span>
+            <h3>Navegar a sidebar por teclado é navegar às cegas</h3>
+            <span class="fonte">NavPainel.tsx:114-118 — nenhuma classe de foco</span>
+            <p>Sem <code>focus-visible</code>, o item de menu fica só com o outline default do browser, que praticamente desaparece sobre o <code>bg-card</code> branco.</p>
+            <div class="fix"><strong>Fix</strong><p><code>focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2</code> em item, subitem e trigger do accordion. O token <code>--sidebar-ring</code> já existe.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f6">
+          <div class="id">F6</div>
+          <div>
+            <span class="sev" data-sev="medio">Médio</span>
+            <h3>Item ativo e item sob o mouse são exatamente a mesma cor</h3>
+            <span class="fonte">NavPainel.tsx:117 — <code>bg-accent</code> e <code>hover:bg-muted</code></span>
+            <p>Ambos resolvem para <code>oklch(0.97 0 0)</code>. Com o cursor parado sobre qualquer item, "onde eu estou" e "o que vai acontecer se eu clicar" viram o mesmo pixel. Só o <code>aria-current</code> distingue — e ele é invisível.</p>
+            <div class="fix"><strong>Fix</strong><p>Dois degraus separados: ativo em <code>bg-sidebar-accent</code> + <code>font-semibold</code> + barra; hover em <code>hover:bg-sidebar-accent/50</code>.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f7">
+          <div class="id">F7</div>
+          <div>
+            <span class="sev" data-sev="medio">Médio</span>
+            <h3>O rótulo pula 2px a cada navegação</h3>
+            <span class="fonte">NavPainel.tsx:117 — <code>border-l-2</code> só no ativo</span>
+            <p>A borda entra no fluxo sem compensação de padding, então o texto do item que acabou de virar ativo desloca para a direita.</p>
+            <div class="fix"><strong>Fix</strong><p>Barra como pseudo-elemento fora do fluxo: <code>::before</code> com <code>absolute inset-y-1 left-0 w-0.5</code>. Deslocamento zero.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f8">
+          <div class="id">F8</div>
+          <div>
+            <span class="sev" data-sev="medio">Médio · a11y</span>
+            <h3>Dois landmarks de navegação, nenhum com nome</h3>
+            <span class="fonte">NavPainel.tsx:139 — <code>&lt;nav&gt;</code> sem <code>aria-label</code></span>
+            <p>O leitor de tela anuncia "navigation" para o desktop e para o Sheet sem nada que os diferencie na lista de landmarks.</p>
+            <div class="fix"><strong>Fix</strong><p><code>aria-label="Menu do painel"</code> nos dois. O Sheet só monta quando aberto, então não há duplicidade real.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f9">
+          <div class="id">F9</div>
+          <div>
+            <span class="sev" data-sev="alto">Alto</span>
+            <h3>Pedido novo não avisa — o lojista precisa ir procurar</h3>
+            <span class="fonte">ausente — nenhum contador no shell</span>
+            <p>A única forma de descobrir que chegou pedido pendente é abrir <code>/painel/pedidos</code> e olhar. Numa cozinha em horário de pico, isso é atraso de comanda.</p>
+            <div class="fix"><strong>Fix</strong><p><code>Badge</code> com a contagem ao lado de "Pedidos", e o número <b>também</b> no nome acessível: <code>aria-label="Pedidos, 3 pendentes"</code>. Nunca só um ponto colorido. Zero pendentes não renderiza badge; acima de 99 mostra "99+" com o valor real no <code>aria-label</code>.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f10">
+          <div class="id">F10</div>
+          <div>
+            <span class="sev" data-sev="baixo">Baixo</span>
+            <h3>"Sair" tem o mesmo peso de um link de navegação e não diz de quem é a sessão</h3>
+            <span class="fonte">NavPainel.tsx:196-206</span>
+            <p>Sair é reversível — basta logar de novo — então confirmação seria atrito à toa. O que falta é saber <b>qual conta</b> está logada, o que importa em máquina compartilhada de balcão.</p>
+            <div class="fix"><strong>Fix</strong><p>Rodapé com o e-mail da conta truncado acima do botão, e o plano da assinatura via <code>rotulosAssinatura.ts</code>. "Sair" continua <code>variant="ghost"</code>, em <code>text-muted-foreground</code>.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f11">
+          <div class="id">F11</div>
+          <div>
+            <span class="sev" data-sev="baixo">Baixo</span>
+            <h3>240px fixos disputam espaço com as tabelas densas em telas de 1024–1280px</h3>
+            <span class="fonte">NavPainel.tsx:235 — <code>w-60</code> sem alternativa</span>
+            <p><code>TabelaPedidos</code> e <code>TabelaProdutos</code> são as telas que mais precisam de largura, e são as que mais convivem com laptop pequeno.</p>
+            <div class="fix"><strong>Fix — opcional, fase 2</strong><p>Modo recolhido <code>w-16</code>: ícone com <code>aria-label</code> obrigatório, grupo com subitens vira flyout de <code>ui/menu.tsx</code>, preferência em <code>localStorage</code>. O Sheet mobile nunca recolhe.</p></div>
+          </div>
+        </article>
+
+        <article class="achado" id="f12">
+          <div class="id">F12</div>
+          <div>
+            <span class="sev" data-sev="baixo">Baixo</span>
+            <h3>A topbar mobile repete o título e nunca diz onde você está</h3>
+            <span class="fonte">NavPainel.tsx:275</span>
+            <p>Ao voltar de <code>/painel/pedidos/[id]</code>, a única pista de contexto é o conteúdo da página.</p>
+            <div class="fix"><strong>Fix</strong><p>Topbar passa a ser <b>hamburger · nome da loja · BadgeStatus</b>. O título da página fica no <code>&lt;h1&gt;</code> da própria página, que é onde ele já deveria estar.</p></div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CONTRATOS ============ -->
+  <div class="faixa grid2">
+    <div>
+      <h2 class="sec-titulo">Contrato de estado</h2>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Estado</th><th>Regra</th></tr></thead>
+          <tbody>
+            <tr><td>Ativo</td><td><code>estaAtivo</code> como já está (NavPainel.tsx:91-94): raiz por igualdade exata, resto por prefixo. Pai com subitem ativo continua sem destaque próprio.</td></tr>
+            <tr><td>Grupo aberto</td><td>Abre quando a rota ativa está dentro. Fechar manualmente é permitido, mas não persiste: a rota sempre reabre o grupo dela.</td></tr>
+            <tr><td>Recolhido</td><td><code>localStorage</code>, só desktop. Grupo com subitens vira flyout. O Sheet mobile nunca recolhe.</td></tr>
+            <tr><td>Contador</td><td>Número vem do servidor. Zero não renderiza badge. Acima de 99 exibe "99+" com o valor real no nome acessível.</td></tr>
+            <tr><td>Loja fechada</td><td><code>BadgeStatus</code> mostra o horário de reabertura, como na vitrine. Não bloqueia navegação.</td></tr>
+            <tr><td>Ordem do menu</td><td>Inalterada. Ordem de menu é memória muscular — mexer sem motivo custa mais do que rende.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="sec-titulo">Checagem WCAG 2.1 AA</h2>
+      <ul class="check">
+        <li><span class="mk">✓</span><span><b>Alvo ≥44px</b> — item 48px, subitem 48px, hamburger já 44px (<code>size-11</code>, NavPainel.tsx:255).</span></li>
+        <li><span class="mk">✓</span><span><b>Foco visível</b> — <code>ring-2</code> em item, subitem e trigger do accordion.</span></li>
+        <li><span class="mk">✓</span><span><b><code>aria-current="page"</code></b> — já existe na linha 112; mantido.</span></li>
+        <li><span class="mk">✓</span><span><b>Modal</b> — <code>role="dialog"</code>, foco preso e ESC vêm prontos do <code>ui/sheet.tsx</code>.</span></li>
+        <li><span class="mk">✓</span><span><b>Nunca só cor</b> — Aberto/Fechado tem texto; o contador tem número no nome acessível; o ativo tem <code>aria-current</code>, peso de fonte <b>e</b> barra.</span></li>
+        <li><span class="mk">✓</span><span><b>Ícone sem texto</b> — só no modo recolhido, e lá <code>aria-label</code> é obrigatório.</span></li>
+        <li><span class="mk">✓</span><span><b>Contraste</b> — tudo em <code>--sidebar-*</code>, a escala neutra do sistema.</span></li>
+      </ul>
+
+      <div class="escopo" style="margin-top:28px">
+        <strong>Guard de tema</strong>
+        A sidebar não consome <code>lojas.tema</code>. <code>primaria</code> é escolhida pelo lojista e pode ser amarela; sobre <code>--sidebar</code> (<code>oklch(0.985 0 0)</code>) o item ativo cairia bem abaixo de 4.5:1. A marca da loja entra no shell pelo <b>logo</b> e pelo <b>nome</b> — nunca pela cor de um estado de navegação, pela mesma razão que <code>BadgeStatus</code> tem cor fixa (design-system §8).
+      </div>
+    </div>
+  </div>
+
+  <div class="escopo">
+    <strong>Fora de escopo</strong>
+    Renomear rotas, mexer na ordem do menu, tema escuro do painel, busca global (⌘K) e notificações. Nada disso foi pedido e nada disso é atrito medido. O painel não tem tema escuro hoje — o preview acima reflete isso.
+  </div>
+
+</div>
+
+<script>
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  function selecionar(tab) {
+    tabs.forEach(function (t) {
+      var alvo = document.getElementById(t.getAttribute('aria-controls'));
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (alvo) alvo.hidden = !on;
+    });
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { selecionar(t); });
+    t.addEventListener('keydown', function (e) {
+      var i = tabs.indexOf(t);
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        var prox = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        prox.focus(); selecionar(prox);
+      }
+    });
+  });
+
+  var stage = document.getElementById('stage');
+  var toggle = document.getElementById('toggle-pins');
+  toggle.addEventListener('click', function () {
+    var on = toggle.getAttribute('aria-pressed') === 'true';
+    toggle.setAttribute('aria-pressed', on ? 'false' : 'true');
+    stage.setAttribute('data-pins', on ? 'off' : 'on');
+  });
+
+  document.querySelectorAll('.acc-trigger').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var aberto = btn.getAttribute('aria-expanded') === 'true';
+      var painel = document.getElementById(btn.getAttribute('aria-controls'));
+      btn.setAttribute('aria-expanded', aberto ? 'false' : 'true');
+      btn.classList.toggle('aberto', !aberto);
+      if (painel) painel.hidden = aberto;
+    });
+  });
+
+  document.querySelectorAll('.pin').forEach(function (p) {
+    p.addEventListener('click', function () {
+      var alvo = document.getElementById(p.getAttribute('data-f'));
+      if (!alvo) return;
+      document.querySelectorAll('.achado.destaque').forEach(function (a) { a.classList.remove('destaque'); });
+      alvo.classList.add('destaque');
+      alvo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+})();
+</script>
