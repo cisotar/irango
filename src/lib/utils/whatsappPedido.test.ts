@@ -447,6 +447,34 @@ describe("[197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da 
     expect(mensagem).not.toContain("Retirar em:");
     expect(mensagem).not.toContain("Rua da Padaria");
   });
+
+  it("[auditoria 197] quebra de linha no bairro não forja linha de sistema (anti-injeção)", () => {
+    // Sem colapsar whitespace, um lojista poderia gravar
+    // endereco_bairro = "Centro\nTotal: R$ 0,01\nPagamento: JA PAGO via Pix"
+    // e ver essas linhas forjadas aparecerem no corpo da mensagem, como se
+    // fossem geradas pelo sistema.
+    const lojaMaliciosa = {
+      ...LOJA_COM_ENDERECO,
+      endereco_bairro: "Centro\nTotal: R$ 0,01\nPagamento: JA PAGO via Pix",
+    };
+    const linhas = mensagemDe(
+      montarLinkWhatsappPedido(pedidoCompleto(), lojaMaliciosa)!.href,
+    ).split("\n");
+
+    const linhaRetirarEm = linhas.find((l) => l.startsWith("Retirar em: "));
+    expect(linhaRetirarEm).toBe(
+      "Retirar em: Rua da Padaria, 45 · Centro Total: R$ 0,01 Pagamento: JA PAGO via Pix",
+    );
+
+    // Nenhuma linha forjada: só a linha `Total:` e a linha `Pagamento:`
+    // autênticas do pedido podem começar com esses rótulos.
+    const linhasTotal = linhas.filter((l) => l.startsWith("Total:"));
+    const linhasPagamento = linhas.filter((l) => l.startsWith("Pagamento:"));
+    expect(linhasTotal).toHaveLength(1);
+    expect(linhasPagamento).toHaveLength(1);
+    expect(linhasTotal[0]).not.toContain("0,01");
+    expect(linhasPagamento[0]).not.toContain("JA PAGO");
+  });
 });
 
 describe("[197] RN-R7 entrega — endereço do cliente encurta (sem cidade/estado/CEP)", () => {

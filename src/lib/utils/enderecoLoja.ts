@@ -33,9 +33,19 @@ export type EnderecoColunasLoja = {
 /** Origem do link do Maps — LITERAL no código (RN-R6 / seguranca.md). */
 const ORIGEM_MAPS = "https://www.google.com/maps/search/?api=1&query=";
 
-/** String não vazia após trim, ou "" (trata null/undefined/não-string). */
+/**
+ * String não vazia e SEM quebra de linha interna, ou "" (trata
+ * null/undefined/não-string). Colapsa qualquer whitespace (`\n`, `\r`, `\t`,
+ * múltiplos espaços) para um único espaço — endereço é uma linha só.
+ *
+ * Sem isto, um lojista que gravasse `endereco_bairro = "Centro\nTotal: R$
+ * 0,01\nPagamento: JA PAGO via Pix"` forjaria linhas de sistema no corpo da
+ * mensagem de WhatsApp (`Retirar em:`), que o comprador vê antes de enviar —
+ * achado da auditoria da issue 197, item 3.
+ */
 function parte(valor: unknown): string {
-  return typeof valor === "string" && valor.trim() !== "" ? valor.trim() : "";
+  if (typeof valor !== "string") return "";
+  return valor.replace(/\s+/g, " ").trim();
 }
 
 /**
