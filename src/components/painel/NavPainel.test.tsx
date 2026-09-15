@@ -23,7 +23,20 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-import { SidebarPainel, type ContextoNav } from "./NavPainel";
+// `ui/sheet` (Base UI Dialog) só monta o conteúdo do Sheet quando `open` é
+// true, e o `aberto` de `TopbarPainel` nasce `useState(false)` — sem jsdom não
+// há como clicar no gatilho para abrir. Stub passthrough (mesmo padrão de
+// admin/page.test.tsx para `ui/card`): NÃO mocka lógica de NavPainel, só o
+// wrapper de terceiro que esconderia o conteúdo do `<nav>` mobile do teste.
+vi.mock("@/components/ui/sheet", () => ({
+  Sheet: (p: { children?: unknown }) => p.children,
+  SheetTrigger: () => null,
+  SheetContent: (p: { children?: unknown }) => p.children,
+  SheetHeader: (p: { children?: unknown }) => p.children,
+  SheetTitle: (p: { children?: unknown }) => p.children,
+}));
+
+import { SidebarPainel, TopbarPainel, type ContextoNav } from "./NavPainel";
 
 /** Extrai (href, aria-current presente?) de cada <a> do HTML renderizado. */
 function links(html: string): { href: string; ativo: boolean }[] {
@@ -40,6 +53,30 @@ function render(pathname: string, contexto?: ContextoNav): string {
   return renderToStaticMarkup(<SidebarPainel contexto={contexto} />);
 }
 
+/** Mesma coisa, mas para a topbar mobile (Sheet stubado sempre "aberto"). */
+function renderMobile(pathname: string, contexto?: ContextoNav): string {
+  pathnameMock.mockReturnValue(pathname);
+  return renderToStaticMarkup(<TopbarPainel contexto={contexto} />);
+}
+
+/** Tag de abertura do `<button data-slot="accordion-trigger">` de Configurações. */
+function triggerConfiguracoes(html: string): string | undefined {
+  return html.match(/<button[^>]*data-slot="accordion-trigger"[^>]*>/)?.[0];
+}
+
+function grupoConfiguracoesAberto(html: string): boolean {
+  return triggerConfiguracoes(html)?.includes('aria-expanded="true"') ?? false;
+}
+
+const SUBITENS_CONFIGURACOES = [
+  "/painel/configuracoes/perfil",
+  "/painel/configuracoes/horarios",
+  "/painel/configuracoes/entregas",
+  "/painel/configuracoes/pagamentos",
+  "/painel/configuracoes/tema",
+  "/painel/configuracoes/assinatura",
+];
+
 beforeEach(() => {
   pathnameMock.mockReset();
 });
@@ -53,7 +90,10 @@ describe("NavPainel — default (lojista, sem contexto)", () => {
     expect(hrefs).toContain("/painel/produtos");
     expect(hrefs).toContain("/painel/produtos/opcionais");
     expect(hrefs).toContain("/painel/cupons");
-    expect(hrefs).toContain("/painel/configuracoes");
+    // Issue 194/F3: "Configurações" deixou de ser <Link> e virou gatilho de
+    // sanfona (<button>) — a rota pai não tem `page.tsx` e dava 404. `links()`
+    // só lê <a>, então o href do pai não pode mais aparecer.
+    expect(hrefs).not.toContain("/painel/configuracoes");
     // Subitens de configurações do lojista, incluindo Assinatura.
     expect(hrefs).toContain("/painel/configuracoes/assinatura");
     expect(hrefs).toContain("/painel/configuracoes/tema");
@@ -121,7 +161,9 @@ describe("NavPainel — contexto admin", () => {
     expect(hrefs).toContain("/admin/assinantes/L1/produtos");
     expect(hrefs).toContain("/admin/assinantes/L1/produtos/opcionais");
     expect(hrefs).toContain("/admin/assinantes/L1/cupons");
-    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes");
+    // Issue 194/F3: o pai "Configurações" é <button>, não <a> — ver o teste
+    // equivalente do lojista.
+    expect(hrefs).not.toContain("/admin/assinantes/L1/configuracoes");
     // Nenhum href pode apontar para /painel.
     expect(hrefs.every((h) => h.startsWith("/admin/assinantes/L1"))).toBe(true);
   });
@@ -163,5 +205,124 @@ describe("NavPainel — contexto admin", () => {
     expect(
       emPedido.find((l) => l.href === "/admin/assinantes/L1")?.ativo,
     ).toBe(false);
+  });
+});
+
+// Issue 194 — cobertura que o `executar` deixou pendente ao ajustar só o
+// mínimo para reverdecer a suíte após trocar o pai de Configurações de <Link>
+// para AccordionTrigger. Ver mockups/sidebar-painel.md (contrato §1 F3-F10).
+
+describe("NavPainel — F3: gatilho de Configurações é <button>, não <a>", () => {
+  it("o pai 'Configurações' é um <button data-slot='accordion-trigger'>, prova direta de que o 404 morreu", () => {
+    const html = render("/painel");
+    // Prova POSITIVA (não só ausência em `links()`): existe um <button> real
+    // envolvendo o texto "Configurações" — é o que resolve o 404 de
+    // `/painel/configuracoes` (rota sem page.tsx), porque deixa de navegar.
+    expect(html).toMatch(
+      /<button[^>]*data-slot="accordion-trigger"[^>]*>[\s\S]*?Configurações[\s\S]*?<\/button>/,
+    );
+  });
+
+  it("o mesmo vale no contexto admin, sobre a base /admin/assinantes/L1", () => {
+    const html = render("/admin/assinantes/L1", {
+      basePath: "/admin/assinantes/L1",
+    });
+    expect(html).toMatch(
+      /<button[^>]*data-slot="accordion-trigger"[^>]*>[\s\S]*?Configurações[\s\S]*?<\/button>/,
+    );
+  });
+});
+
+describe("NavPainel — F3: o grupo Configurações abre sozinho pela rota ativa", () => {
+  it.each(SUBITENS_CONFIGURACOES)(
+    "abre (aria-expanded=true) quando a rota ativa é %s",
+    (pathname) => {
+      const html = render(pathname);
+      expect(grupoConfiguracoesAberto(html)).toBe(true);
+    },
+  );
+
+  it.each(["/painel", "/painel/pedidos", "/painel/produtos", "/painel/cupons"])(
+    "fica fechado (aria-expanded=false) quando a rota ativa é %s",
+    (pathname) => {
+      const html = render(pathname);
+      expect(grupoConfiguracoesAberto(html)).toBe(false);
+    },
+  );
+
+  it("abre também no contexto admin quando a rota ativa é um subitem", () => {
+    const ctx: ContextoNav = { basePath: "/admin/assinantes/L1" };
+    const aberto = render("/admin/assinantes/L1/configuracoes/tema", ctx);
+    const fechado = render("/admin/assinantes/L1/pedidos", ctx);
+    expect(grupoConfiguracoesAberto(aberto)).toBe(true);
+    expect(grupoConfiguracoesAberto(fechado)).toBe(false);
+  });
+});
+
+describe("NavPainel — rodapé: voltarHref/voltarRotulo (botão 'voltar ao hub admin')", () => {
+  it("contexto default (lojista, sem voltarHref) não renderiza nenhum link de volta", () => {
+    const html = render("/painel");
+    // ArrowLeft só é usado pelo link de volta — ausência da classe do ícone
+    // prova que nada renderizou, não só que o texto de um rótulo específico
+    // está ausente.
+    expect(html).not.toContain("lucide-arrow-left");
+  });
+
+  it("com voltarHref + voltarRotulo, renderiza o link com href e rótulo passados", () => {
+    const html = render("/painel", {
+      voltarHref: "/admin",
+      voltarRotulo: "Voltar ao hub admin",
+    });
+    expect(html).toMatch(
+      /<a[^>]*href="\/admin"[^>]*>[\s\S]*?lucide-arrow-left[\s\S]*?Voltar ao hub admin<\/a>/,
+    );
+  });
+
+  it("com voltarHref sem voltarRotulo, cai no rótulo default 'Voltar'", () => {
+    const html = render("/painel", { voltarHref: "/admin" });
+    expect(html).toMatch(/<a[^>]*href="\/admin"[^>]*>[\s\S]*?>Voltar<\/a>/);
+  });
+});
+
+describe("NavPainel — F8: aria-label='Menu do painel' nos dois <nav>", () => {
+  it("desktop (SidebarPainel) tem o aria-label", () => {
+    const html = render("/painel");
+    expect(html).toContain('<nav aria-label="Menu do painel"');
+  });
+
+  it("mobile (TopbarPainel/Sheet) tem o aria-label", () => {
+    const html = renderMobile("/painel");
+    expect(html).toContain('<nav aria-label="Menu do painel"');
+  });
+});
+
+describe("NavPainel — F3/F4: ícone em cada um dos 6 subitens de Configurações", () => {
+  it.each(SUBITENS_CONFIGURACOES)(
+    "subitem %s tem <svg> logo após o link — não é só texto",
+    (href) => {
+      const html = render(href);
+      const escapado = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      expect(html).toMatch(new RegExp(`<a[^>]*href="${escapado}"[^>]*>\\s*<svg`));
+    },
+  );
+});
+
+describe("NavPainel — 6 subitens de Configurações em ambos os contextos", () => {
+  it("exatamente 6 sub-itens sob configuracoes/ no contexto default (lojista)", () => {
+    const hrefs = links(render("/painel")).map((l) => l.href);
+    expect(
+      hrefs.filter((h) => h.startsWith("/painel/configuracoes/")).length,
+    ).toBe(6);
+  });
+
+  it("exatamente 6 sub-itens sob configuracoes/ no contexto admin (basePath diferente)", () => {
+    const ctx: ContextoNav = { basePath: "/admin/assinantes/L1" };
+    const hrefs = links(render("/admin/assinantes/L1", ctx)).map(
+      (l) => l.href,
+    );
+    expect(
+      hrefs.filter((h) => h.startsWith("/admin/assinantes/L1/configuracoes/"))
+        .length,
+    ).toBe(6);
   });
 });
