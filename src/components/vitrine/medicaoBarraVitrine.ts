@@ -36,6 +36,13 @@ export type ConstrutorResizeObserver = new (
 export type DepsMedicaoBarra = {
   raiz: RaizInjetavel;
   ResizeObserverCtor?: ConstrutorResizeObserver;
+  /**
+   * 203: notificado só quando a altura MUDA (a guarda de `ultimaAltura` abaixo
+   * já filtra as entregas redundantes do ResizeObserver). É por aqui que o
+   * scrollspy reconstrói o `rootMargin` sem uma SEGUNDA medição e sem listener
+   * global de `resize`/`orientationchange`.
+   */
+  aoMedir?: (alturaPx: number) => void;
 };
 
 /**
@@ -51,7 +58,7 @@ export function medirEObservarBarra(
   barra: ElementoMedivel,
   deps: DepsMedicaoBarra,
 ): () => void {
-  const { raiz, ResizeObserverCtor } = deps;
+  const { raiz, ResizeObserverCtor, aoMedir } = deps;
   // Achado acelerar/201: sem a guarda, toda entrega do ResizeObserver (a
   // primeira é imediata, por contrato) escreve a var mesmo com a altura
   // inalterada — cada escrita de custom property não registrada invalida o
@@ -64,6 +71,7 @@ export function medirEObservarBarra(
     if (altura === ultimaAltura) return;
     ultimaAltura = altura;
     raiz.style.setProperty(VAR_ALTURA_BARRA, `${altura}px`);
+    aoMedir?.(altura);
   }
 
   medir();

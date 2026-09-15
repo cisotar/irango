@@ -229,6 +229,14 @@ body {
   }
 }
 
+/* Trilho de categorias da vitrine (issue 203). Pseudo-elemento NÃO cabe em
+   `style` inline — o resto do trilho (mask-image, scroll-snap, scrollbar-width)
+   vive em `ESTILO_TRILHO` no `NavCategorias.tsx`, e não em classe Tailwind
+   arbitrária: literal com vírgula/parêntese vira classe órfã em silêncio. */
+.trilho-categorias::-webkit-scrollbar {
+  display: none;
+}
+
 /* ============================================================
    IMPRESSÃO — @media print (issue 138 · fonte única · RN-P3)
    Mostra APENAS a variante ativa e oculta o resto + todo `.no-print`.

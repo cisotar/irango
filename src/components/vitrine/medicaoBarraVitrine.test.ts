@@ -115,6 +115,32 @@ describe("201 medirEObservarBarra — mede a CSS var e limpa no cleanup", () => 
     expect(propriedades.has(VAR_ALTURA_BARRA)).toBe(false);
   });
 
+  it("203 aoMedir é notificado só quando a altura MUDA (a guarda impede loop de render)", () => {
+    const { raiz } = raizFake();
+    let altura = 60;
+    const barra = { getBoundingClientRect: () => ({ height: altura }) };
+    const ro = resizeObserverFake();
+    const aoMedir = vi.fn();
+
+    medirEObservarBarra(barra, {
+      raiz,
+      ResizeObserverCtor: ro.Ctor,
+      aoMedir,
+    });
+    expect(aoMedir).toHaveBeenCalledTimes(1);
+    expect(aoMedir).toHaveBeenLastCalledWith(60);
+
+    // Entrega redundante do ResizeObserver (altura igual): NÃO notifica — é o
+    // que impede o `setState` da 203 de virar loop de render.
+    ro.disparar();
+    expect(aoMedir).toHaveBeenCalledTimes(1);
+
+    altura = 88; // rotação de tela / troca trilho↔resumo
+    ro.disparar();
+    expect(aoMedir).toHaveBeenCalledTimes(2);
+    expect(aoMedir).toHaveBeenLastCalledWith(88);
+  });
+
   it("altura zero (barra só com a borda, slots vazios desta issue) publica 0px, não a string vazia", () => {
     const { raiz, propriedades } = raizFake();
     const barra = barraFake(0.3); // sub-pixel de borda arredonda pra 1, não 0

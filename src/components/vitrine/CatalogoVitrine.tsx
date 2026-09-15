@@ -1,7 +1,8 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
+import { NavCategorias } from "@/components/vitrine/NavCategorias";
 import {
   SecaoCatalogo,
   type CategoriaComProdutos,
@@ -38,6 +39,12 @@ export function CatalogoVitrine({
 }: CatalogoVitrineProps) {
   const barraRef = useRef<HTMLDivElement>(null);
   const temBarra = categorias.length > 0;
+  // Altura medida da barra, em px. NÃO é usada como valor aqui: só desce para
+  // `NavCategorias` como GATILHO de reconstrução do observer (o `rootMargin` é
+  // congelado no construtor do IntersectionObserver). `aoMedir` só dispara
+  // quando a altura MUDA de verdade — montagem, rotação, troca trilho↔resumo
+  // (202) — nunca por scroll ou tecla digitada, então não há loop de render.
+  const [alturaBarra, setAlturaBarra] = useState(0);
 
   // Altura REAL da barra, medida antes do paint e republicada a cada resize
   // (rotação, quebra de linha, troca trilho↔resumo da 202). Valor fixo é
@@ -59,6 +66,7 @@ export function CatalogoVitrine({
       raiz,
       ResizeObserverCtor:
         typeof ResizeObserver === "undefined" ? undefined : ResizeObserver,
+      aoMedir: setAlturaBarra,
     });
   }, [temBarra]);
 
@@ -71,9 +79,12 @@ export function CatalogoVitrine({
         >
           <div className={ESCADA_LARGURA_VITRINE}>
             {/* 202: <BuscaProdutos/> — o slot traz o próprio `px-4 pt-3 pb-2`. */}
-            {/* 203: <NavCategorias/> — o slot traz o próprio `px-4 pb-2.5`. */}
-            {/* A barra NÃO tem padding vertical próprio: com os slots vazios
-                ela mede 1px (só a borda) e a vitrine fica igual à de hoje. */}
+            {/* A barra NÃO tem padding vertical próprio: cada slot traz o seu.
+                A nav some sozinha com menos de 3 categorias (RN-4) e a 202 vai
+                DESMONTÁ-LA (não ocultá-la) quando o termo de busca não for
+                vazio — desmontar é o que desconecta o observer e impede que ele
+                siga observando <section> que a filtragem tirou do DOM. */}
+            <NavCategorias categorias={categorias} alturaBarra={alturaBarra} />
           </div>
         </div>
       ) : null}

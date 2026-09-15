@@ -215,3 +215,75 @@ describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", (
     expect(html).not.toContain(["scroll", "mt", "24"].join("-"));
   });
 });
+
+/**
+ * Issue 200 — repasse do `termo` de busca até o realce do nome.
+ *
+ * O casamento vive em `partirPorTermo` (199, testado em buscarProdutos.test.ts)
+ * e a projeção em DOM em `TextoRealcado.test.tsx`. Aqui se prova só a CADEIA:
+ * `SecaoCatalogo` leva `termo` aos dois ramos (grid e lista) e, sem termo, a
+ * vitrine renderiza exatamente como antes.
+ */
+describe("SecaoCatalogo (200) — realce do trecho casado", () => {
+  function categoriasPao(exibirImagens: boolean): CategoriaComProdutos[] {
+    return [
+      {
+        id: "cat-paes",
+        nome: "Pães",
+        exibir_imagens: exibirImagens,
+        produtos: [
+          {
+            id: "p-pao",
+            nome: "Pão na chapa",
+            descricao: null,
+            preco: 6,
+            foto_url: null,
+            categoria_id: "cat-paes",
+            disponivel: true,
+          },
+        ],
+      },
+    ];
+  }
+
+  it("sem termo (e com termo vazio) o HTML é byte a byte o de antes, sem <mark>", () => {
+    const categorias = categoriasFixture();
+    const semTermo = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categorias} />,
+    );
+    const termoVazio = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categorias} termo="" />,
+    );
+
+    expect(termoVazio).toBe(semTermo);
+    expect(semTermo).not.toContain("<mark");
+  });
+
+  it("com termo, o ramo de grid realça o nome preservando o acento", () => {
+    const html = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasPao(true)} termo="pao" />,
+    );
+
+    expect(html).toMatch(/<mark[^>]*>Pão<\/mark>/);
+  });
+
+  it("com termo, o ramo de lista (exibir_imagens=false) também realça", () => {
+    const html = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasPao(false)} termo="pao" />,
+    );
+
+    expect(html).toMatch(/<mark[^>]*>Pão<\/mark>/);
+  });
+
+  it("`alt` e `aria-label` continuam com o nome cru, sem <mark> dentro", () => {
+    const grid = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasPao(true)} termo="pao" />,
+    );
+    const lista = renderToStaticMarkup(
+      <SecaoCatalogo categorias={categoriasPao(false)} termo="pao" />,
+    );
+
+    expect(grid).toContain('aria-label="Adicionar Pão na chapa ao carrinho"');
+    expect(lista).toContain('aria-label="Ver detalhes de Pão na chapa,');
+  });
+});

@@ -49,6 +49,12 @@ type SecaoCatalogoProps = {
    * Produto sem categoria ou sem associação → sem opcionais no modal.
    */
   opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
+  /**
+   * Termo de busca ativo (200), repassado a cada card/linha para realçar o
+   * trecho casado. Ausente/vazio → catálogo renderiza exatamente como antes.
+   * O filtro em si é de quem monta `categorias` (`filtrarCatalogo`, 199/202).
+   */
+  termo?: string;
 };
 
 /**
@@ -72,6 +78,7 @@ const ESTILO_ANCORA_CATEGORIA: CSSProperties = {
 export function SecaoCatalogo({
   categorias,
   opcionaisPorCategoria = {},
+  termo,
 }: SecaoCatalogoProps) {
   const { adicionar } = useCarrinho();
   const [produtoSelecionado, setProdutoSelecionado] =
@@ -153,6 +160,7 @@ export function SecaoCatalogo({
                   key={produto.id}
                   nome={produto.nome}
                   preco={produto.preco}
+                  termo={termo}
                   onSelecionar={() => abrirModal(produto)}
                 />
               ))}
@@ -168,6 +176,7 @@ export function SecaoCatalogo({
                   preco={produto.preco}
                   fotoUrl={produto.foto_url}
                   disponivel={produto.disponivel}
+                  termo={termo}
                   // Em vez de adicionar direto, abre o modal de detalhe do produto.
                   onAdicionar={() => abrirModal(produto)}
                 />
