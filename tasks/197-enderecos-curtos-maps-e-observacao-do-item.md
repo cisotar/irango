@@ -152,3 +152,152 @@ Tudo que `specs/retirada-endereco-da-loja.md` v0.3.0 lista em "Fora do escopo":
 mapa embutido, coordenadas, geocoding pelo iRango, link no checkout, distância
 estimada, endereço obrigatório para publicar, endereço na vitrine pública,
 personalizar texto da mensagem, horário de retirada.
+
+
+## RED — output real
+
+Fase RED executada em 2026-09-15 na branch `feat/enderecos-curtos-maps-e-observacao`.
+**Nenhum código de produção foi escrito** — nem os três arquivos novos, nem a
+edição de `whatsappPedido.ts`.
+
+### Arquivos de teste criados / editados
+
+- `src/lib/utils/enderecoLoja.test.ts` (novo) — RN-R1 (loja + cliente) e RN-R5/RN-R6 (href do Maps)
+- `src/lib/utils/whatsappPedido.test.ts` (editado, só APPEND ao final) — trava de
+  regressão byte a byte (RN-R7) + comportamento novo
+- `src/components/vitrine/confirmacao/LinkMapsLoja.test.tsx` (novo)
+- `src/components/vitrine/ObservacaoItem.test.tsx` (novo)
+
+### Leitura do vermelho
+
+`Test Files 4 failed (4)` — `Tests 5 failed | 18 passed (23)`.
+
+- **3 suítes inteiras vermelhas por `ERR_MODULE_NOT_FOUND`**: `enderecoLoja.ts`,
+  `LinkMapsLoja.tsx` e `ObservacaoItem.tsx` ainda não existem. Não foi criado stub
+  (instrução explícita da sessão: zero código de produção nesta fase).
+- **5 asserções vermelhas em `whatsappPedido.test.ts`** — o comportamento novo da RN-R7.
+- **As 2 travas de regressão byte a byte estão VERDES e devem continuar verdes** depois
+  do GREEN: são o alarme do "todo o resto da mensagem permanece idêntico".
+  Os 18 testes pré-existentes do arquivo (observação por item, anti-injeção `[180-B]`)
+  seguem verdes — nenhuma falha pré-existente na suíte.
+- `npx tsc --noEmit` acusa **exatamente** os 3 `TS2307` dos módulos ausentes e nada mais
+  (a `loja` de teste é passada como variável, não literal inline — evita excess property
+  check antes do GREEN alargar o `Pick`).
+
+### Output (`npx vitest run` nos 4 arquivos, `--reporter=verbose`)
+
+```
+
+ RUN  v4.1.9 /home/lenovo/github/irango
+
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — observação por item > retorna null quando a loja não tem WhatsApp 2ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — observação por item > acrescenta a linha obs depois do item e dos opcionais 1ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — observação por item > item com observacao null não gera linha nem rótulo vazio 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — observação por item > totais são idênticos com e sem observação 1ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — observação por item > observação com caracteres especiais gera href válido 1ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — anti-injeção de rótulo > não deixa o cliente forjar uma linha Total: pela observação do pedido 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — anti-injeção de rótulo > não deixa o cliente forjar uma linha Pagamento: pela observação do item 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > montarLinkWhatsappPedido — anti-injeção de rótulo > cita todas as linhas do texto do cliente 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [180-B] montarLinkWhatsappPedido — frete a combinar não é 'R$ 0,00' nem 'Grátis' > frete_a_combinar=true + taxa_entrega=null (entrega) → linha 'Entrega: A combinar', nunca R$ 0,00 1ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [180-B] montarLinkWhatsappPedido — frete a combinar não é 'R$ 0,00' nem 'Grátis' > retirada com frete_a_combinar=false + taxa_entrega=0 continua dizendo 'Grátis' (não regride para 'A combinar') 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [180-B] montarLinkWhatsappPedido — frete a combinar não é 'R$ 0,00' nem 'Grátis' > entrega com frete conhecido (frete_a_combinar=false, taxa 8) continua mostrando o valor formatado 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 regressão — o resto da mensagem é byte a byte igual > retirada, loja SEM endereço: mensagem inteira idêntica ao formato de hoje 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 regressão — o resto da mensagem é byte a byte igual > entrega: tudo menos a linha `Endereço:` é idêntico ao formato de hoje 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 regressão — o resto da mensagem é byte a byte igual > acrescentar o endereço da loja não muda nenhuma outra linha da retirada 1ms
+ × src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da loja > loja COM endereço → linha `Retirar em: rua, numero · bairro` 5ms
+   → expected [ 'Novo pedido iRango', …(21) ] to include 'Retirar em: Rua da Padaria, 45 · Vila…'
+ × src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da loja > a linha vem logo DEPOIS de `Entrega: Retirada no local` (RN-R7) 3ms
+   → expected 'Cliente: Cliente Teste — (11) 98888-7…' to be 'Retirar em: Rua da Padaria, 45 · Vila…' // Object.is equality
+ × src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da loja > o endereço da loja sai no formato CURTO — sem cidade, estado nem CEP (RN-R1) 1ms
+   → expected undefined to be defined
+ ✓ src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da loja > loja SEM endereço → NENHUMA linha `Retirar em:` (RN-R5: nunca '—', nunca linha vazia) 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da loja > loja com endereço só de espaços → NENHUMA linha `Retirar em:` 0ms
+ ✓ src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da loja > em ENTREGA nunca aparece `Retirar em:`, mesmo com a loja tendo endereço (RN-R3) 0ms
+ × src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 entrega — endereço do cliente encurta (sem cidade/estado/CEP) > linha `Endereço:` no formato curto `rua, numero · bairro` 1ms
+   → expected [ 'Novo pedido iRango', …(22) ] to include 'Endereço: Rua das Flores, 100 · Centro'
+ × src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 entrega — endereço do cliente encurta (sem cidade/estado/CEP) > a linha `Endereço:` não traz cidade, estado nem CEP (pedido literal, item 2) 1ms
+   → expected 'Endereço: Rua das Flores, 100 · Centr…' not to contain 'Campinas'
+ ✓ src/lib/utils/whatsappPedido.test.ts > [197] RN-R7 entrega — endereço do cliente encurta (sem cidade/estado/CEP) > endereço parcial (sem bairro) → sem separador '·' órfão 1ms
+
+ Test Files  4 failed (4)
+      Tests  5 failed | 18 passed (23)
+   Start at  09:14:39
+   Duration  341ms (transform 220ms, setup 0ms, import 134ms, tests 23ms, environment 0ms)
+```
+
+### Contrato para a fase GREEN (`executar`)
+
+**1. `src/lib/utils/enderecoLoja.ts` (criar)**
+
+```ts
+export function formatarEnderecoLoja(loja: {
+  endereco_rua?: string | null; endereco_numero?: string | null;
+  endereco_bairro?: string | null; endereco_cidade?: string | null;
+  endereco_estado?: string | null; endereco_cep?: string | null;
+}): string | null
+
+/** Adaptador do JSONB `pedidos.endereco_entrega` — chaves rua/numero/bairro/cidade/estado/cep. */
+export function formatarEnderecoCliente(endereco: unknown): string | null
+
+/** `https://www.google.com/maps/search/?api=1&query=` + encodeURIComponent(montarConsultaGeocoding(loja)). */
+export function montarHrefMapsLoja(loja: /* mesmas colunas */): string | null
+```
+
+- Formato: `{rua}, {numero} · {bairro}`; `trim()` por parte; separador só entre
+  partes presentes; tudo vazio → `null` (nunca `"—"`, nunca `""`).
+- `montarHrefMapsLoja` **reusa** `montarConsultaGeocoding` de
+  `src/lib/actions/patches-loja.ts` (não reimplementar, não editar aquele arquivo):
+  ela já exclui o CEP e devolve `null` sem cidade **e** estado.
+- Origem do href **literal no código**; só a consulta é interpolada, sempre por
+  `encodeURIComponent`. A função só pode ler chaves `endereco_*` — nada de
+  `searchParams`.
+
+**2. `src/lib/utils/whatsappPedido.ts` (editar)**
+
+- Alargar o 2º parâmetro para
+  `Pick<LojaCompleta, "nome" | "whatsapp"> & Partial<Pick<LojaCompleta, "endereco_rua" | "endereco_numero" | "endereco_bairro" | "endereco_cidade" | "endereco_estado" | "endereco_cep">>`.
+- Em `retirada`: se `formatarEnderecoLoja(loja)` !== null, empurrar
+  `` `Retirar em: ${...}` `` **imediatamente após** `Entrega: Retirada no local`.
+  Se `null`, **nenhuma linha**.
+- Em `entrega`: a linha `Endereço:` passa a usar `formatarEnderecoCliente`.
+- Remover a `formatarEndereco` local (linha 33) — a mesma consolidação vale para
+  `confirmacao/page.tsx:60`.
+- Tudo o mais **intocado** — as duas travas de regressão quebram se algo mais mudar.
+
+**3. `src/components/vitrine/confirmacao/LinkMapsLoja.tsx` (criar)**
+
+```tsx
+export function LinkMapsLoja({ loja }: { loja: /* colunas endereco_* */ | null })
+```
+`target="_blank"`, `rel="noopener noreferrer"`, texto com "nova aba" para leitor de
+tela, `href` de `montarHrefMapsLoja`; `null` (nada no DOM) quando o href é `null`
+ou `loja` é `null`.
+
+**4. `src/components/vitrine/ObservacaoItem.tsx` (criar)**
+
+```tsx
+export function ObservacaoItem({ observacao, className }: {
+  observacao: string | null | undefined; className?: string;
+})
+```
+Rótulo `Obs` (mesmo do painel), `whitespace-pre-line`, texto como filho de JSX
+(auto-escapado), `return null` para `null`/`undefined`/vazia/só-espaços/só-quebras.
+
+### Casos descobertos durante o RED
+
+1. **`formatarMoeda` usa NBSP (U+00A0) entre `R$` e o valor.** As duas travas de
+   regressão só fecham byte a byte com `"R$\u00A023,00"`. Quem editar
+   `whatsappPedido.ts` não pode normalizar espaço na mensagem — quebraria a trava.
+2. **A trava de retirada usa uma loja SEM endereço de propósito.** Assim ela
+   congela a mensagem de hoje e continua válida depois do GREEN (RN-R5: sem
+   endereço, nenhuma linha nova). A trava de entrega compara a mensagem inteira
+   **menos** a linha `Endereço:`, a única que a RN-R7 autoriza mudar.
+3. **`formatarEnderecoLoja` e `formatarEnderecoCliente` têm paridade testada**
+   (mesmo endereço nos dois shapes → mesma string). É o teste anti-drift da
+   RN-R2 entre a exibição da loja e a do cliente.
+4. **Consulta ≠ exibição (RN-R6) fica explícita nos testes**: a tela mostra
+   `Rua da Padaria, 45 · Vila Nova`; a consulta do Maps é
+   `Rua da Padaria, 45, Vila Nova, Campinas - SP, Brasil`. Não é contradição —
+   está asserido nos dois lados.
+5. **Nenhum stub foi criado.** As 3 suítes falham por resolução de módulo, não por
+   asserção. Assim que o GREEN criar os arquivos, o vermelho vira asserção real.

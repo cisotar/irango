@@ -205,3 +205,283 @@ describe("[180-B] montarLinkWhatsappPedido — frete a combinar não é 'R$ 0,00
     expect(mensagem).not.toContain("A combinar");
   });
 });
+
+// ===========================================================================
+// [197] Fase RED — RN-R7: a mensagem muda em DOIS pontos e mais nada.
+//
+// Ordem obrigatória da spec (`specs/retirada-endereco-da-loja.md` v0.3.0,
+// seção Testes): TRAVAR o formato atual byte a byte ANTES de editar
+// `whatsappPedido.ts`. Os dois blocos abaixo são, nesta ordem:
+//   1. regressão — o texto de hoje, inteiro, congelado (deve continuar verde
+//      DEPOIS da fase GREEN: é o alarme do "resto byte a byte igual");
+//   2. comportamento novo — vermelho hoje, verde depois do GREEN.
+// ===========================================================================
+
+/** Pedido "completo": todos os blocos opcionais da mensagem acesos de uma vez. */
+function pedidoCompleto(overrides: Partial<PedidoComItens> = {}): PedidoComItens {
+  return pedido({
+    telefone_cliente: "(11) 98888-7777",
+    subtotal: 23,
+    desconto: 2,
+    taxa_entrega: 0,
+    total: 21,
+    cupom_codigo: "BEMVINDO",
+    forma_pagamento: "dinheiro",
+    troco_para: 50,
+    observacoes: "tocar a campainha",
+    frete_a_combinar: false,
+    itens_pedido: [
+      item({
+        observacao: "sem cebola",
+        itens_pedido_opcionais: [
+          {
+            id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            item_pedido_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            nome_snapshot: "Bacon",
+            preco_snapshot: 3,
+            quantidade: 1,
+          },
+        ],
+      } as unknown as Partial<ItemPedidoComOpcionais>),
+    ],
+    ...overrides,
+  } as Partial<PedidoComItens>);
+}
+
+const ENDERECO_CLIENTE = {
+  rua: "Rua das Flores",
+  numero: "100",
+  bairro: "Centro",
+  cidade: "Campinas",
+  estado: "SP",
+  cep: "13010-000",
+};
+
+/**
+ * Loja COM endereço cadastrado. Declarada como variável (não literal inline)
+ * de propósito: hoje o parâmetro é `Pick<LojaCompleta, "nome" | "whatsapp">` e
+ * um literal com colunas a mais dispararia excess property check no `tsc`. A
+ * fase GREEN alarga o Pick com `Partial<Pick<LojaCompleta, ...endereco>>`.
+ */
+const LOJA_COM_ENDERECO = {
+  nome: "Loja Teste",
+  whatsapp: "(11) 90000-0000",
+  endereco_rua: "Rua da Padaria",
+  endereco_numero: "45",
+  endereco_bairro: "Vila Nova",
+  endereco_cidade: "Campinas",
+  endereco_estado: "SP",
+  endereco_cep: "13010-000",
+};
+
+/** Loja SEM nenhuma coluna de endereço preenchida (RN-R5 — achado 5). */
+const LOJA_SEM_ENDERECO = {
+  nome: "Loja Teste",
+  whatsapp: "(11) 90000-0000",
+  endereco_rua: null,
+  endereco_numero: null,
+  endereco_bairro: null,
+  endereco_cidade: null,
+  endereco_estado: null,
+  endereco_cep: null,
+};
+
+/** Mensagem de retirada de hoje, byte a byte (capturada antes de qualquer edição). */
+const MENSAGEM_RETIRADA_ATUAL = [
+  "Novo pedido iRango",
+  "Loja: Loja Teste",
+  "Pedido nº 11111111",
+  "",
+  "Itens:",
+  "- 1x X-Salada — R$\u00A023,00",
+  "  + Bacon (1x) — R$\u00A03,00",
+  "  obs: > sem cebola",
+  "",
+  "Subtotal: R$\u00A023,00",
+  "Desconto (BEMVINDO): -R$\u00A02,00",
+  "Taxa de entrega: Grátis",
+  "Total: R$\u00A021,00",
+  "",
+  "Entrega: Retirada no local",
+  "Cliente: Cliente Teste — (11) 98888-7777",
+  "",
+  "Pagamento: Dinheiro",
+  "Troco para R$\u00A050,00",
+  "Obs.: > tocar a campainha",
+  "",
+  "Localize este pedido no painel pelo nº 11111111.",
+].join("\n");
+
+/** Mensagem de entrega de hoje, byte a byte, SEM a linha `Endereço:` (a que muda). */
+const MENSAGEM_ENTREGA_ATUAL_SEM_LINHA_ENDERECO = [
+  "Novo pedido iRango",
+  "Loja: Loja Teste",
+  "Pedido nº 11111111",
+  "",
+  "Itens:",
+  "- 1x X-Salada — R$\u00A023,00",
+  "  + Bacon (1x) — R$\u00A03,00",
+  "  obs: > sem cebola",
+  "",
+  "Subtotal: R$\u00A023,00",
+  "Desconto (BEMVINDO): -R$\u00A02,00",
+  "Entrega: R$\u00A08,00",
+  "Total: R$\u00A029,00",
+  "",
+  "Entrega: Entrega",
+  "Cliente: Cliente Teste — (11) 98888-7777",
+  "",
+  "Pagamento: Dinheiro",
+  "Troco para R$\u00A050,00",
+  "Obs.: > tocar a campainha",
+  "",
+  "Localize este pedido no painel pelo nº 11111111.",
+].join("\n");
+
+function semLinhaEndereco(mensagem: string): string {
+  return mensagem
+    .split("\n")
+    .filter((l) => !l.startsWith("Endereço: "))
+    .join("\n");
+}
+
+describe("[197] RN-R7 regressão — o resto da mensagem é byte a byte igual", () => {
+  it("retirada, loja SEM endereço: mensagem inteira idêntica ao formato de hoje", () => {
+    const link = montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO);
+    expect(mensagemDe(link!.href)).toBe(MENSAGEM_RETIRADA_ATUAL);
+  });
+
+  it("entrega: tudo menos a linha `Endereço:` é idêntico ao formato de hoje", () => {
+    const link = montarLinkWhatsappPedido(
+      pedidoCompleto({
+        tipo_entrega: "entrega",
+        taxa_entrega: 8,
+        total: 29,
+        endereco_entrega: ENDERECO_CLIENTE,
+      } as unknown as Partial<PedidoComItens>),
+      LOJA_SEM_ENDERECO,
+    );
+    expect(semLinhaEndereco(mensagemDe(link!.href))).toBe(
+      MENSAGEM_ENTREGA_ATUAL_SEM_LINHA_ENDERECO,
+    );
+  });
+
+  it("acrescentar o endereço da loja não muda nenhuma outra linha da retirada", () => {
+    const semEndereco = mensagemDe(
+      montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO)!.href,
+    ).split("\n");
+    const comEndereco = mensagemDe(
+      montarLinkWhatsappPedido(pedidoCompleto(), LOJA_COM_ENDERECO)!.href,
+    ).split("\n");
+    // Única diferença permitida: a linha nova `Retirar em: ...`.
+    expect(comEndereco.filter((l) => !l.startsWith("Retirar em: "))).toEqual(
+      semEndereco,
+    );
+  });
+});
+
+describe("[197] RN-R7 retirada — linha `Retirar em:` com o endereço curto da loja", () => {
+  it("loja COM endereço → linha `Retirar em: rua, numero · bairro`", () => {
+    const link = montarLinkWhatsappPedido(pedidoCompleto(), LOJA_COM_ENDERECO);
+    const linhas = mensagemDe(link!.href).split("\n");
+    expect(linhas).toContain("Retirar em: Rua da Padaria, 45 · Vila Nova");
+  });
+
+  it("a linha vem logo DEPOIS de `Entrega: Retirada no local` (RN-R7)", () => {
+    const linhas = mensagemDe(
+      montarLinkWhatsappPedido(pedidoCompleto(), LOJA_COM_ENDERECO)!.href,
+    ).split("\n");
+    const i = linhas.indexOf("Entrega: Retirada no local");
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(linhas[i + 1]).toBe("Retirar em: Rua da Padaria, 45 · Vila Nova");
+  });
+
+  it("o endereço da loja sai no formato CURTO — sem cidade, estado nem CEP (RN-R1)", () => {
+    const mensagem = mensagemDe(
+      montarLinkWhatsappPedido(pedidoCompleto(), LOJA_COM_ENDERECO)!.href,
+    );
+    const linha = mensagem
+      .split("\n")
+      .find((l) => l.startsWith("Retirar em: "));
+    expect(linha).toBeDefined();
+    expect(linha!).not.toContain("Campinas");
+    expect(linha!).not.toContain("SP");
+    expect(linha!).not.toContain("13010-000");
+    expect(linha!).not.toContain("CEP");
+  });
+
+  it("loja SEM endereço → NENHUMA linha `Retirar em:` (RN-R5: nunca '—', nunca linha vazia)", () => {
+    const mensagem = mensagemDe(
+      montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO)!.href,
+    );
+    expect(mensagem).not.toContain("Retirar em:");
+    expect(mensagem).not.toContain("Retirar em");
+    expect(mensagem.split("\n").filter((l) => l.trim() === "—")).toEqual([]);
+  });
+
+  it("loja com endereço só de espaços → NENHUMA linha `Retirar em:`", () => {
+    const lojaEspacos = {
+      ...LOJA_COM_ENDERECO,
+      endereco_rua: "   ",
+      endereco_numero: "",
+      endereco_bairro: "  ",
+    };
+    const mensagem = mensagemDe(
+      montarLinkWhatsappPedido(pedidoCompleto(), lojaEspacos)!.href,
+    );
+    expect(mensagem).not.toContain("Retirar em:");
+  });
+
+  it("em ENTREGA nunca aparece `Retirar em:`, mesmo com a loja tendo endereço (RN-R3)", () => {
+    const mensagem = mensagemDe(
+      montarLinkWhatsappPedido(
+        pedidoCompleto({
+          tipo_entrega: "entrega",
+          taxa_entrega: 8,
+          total: 29,
+          endereco_entrega: ENDERECO_CLIENTE,
+        } as unknown as Partial<PedidoComItens>),
+        LOJA_COM_ENDERECO,
+      )!.href,
+    );
+    expect(mensagem).not.toContain("Retirar em:");
+    expect(mensagem).not.toContain("Rua da Padaria");
+  });
+});
+
+describe("[197] RN-R7 entrega — endereço do cliente encurta (sem cidade/estado/CEP)", () => {
+  function mensagemEntrega(endereco: unknown = ENDERECO_CLIENTE): string {
+    return mensagemDe(
+      montarLinkWhatsappPedido(
+        pedidoCompleto({
+          tipo_entrega: "entrega",
+          taxa_entrega: 8,
+          total: 29,
+          endereco_entrega: endereco,
+        } as unknown as Partial<PedidoComItens>),
+        LOJA_SEM_ENDERECO,
+      )!.href,
+    );
+  }
+
+  it("linha `Endereço:` no formato curto `rua, numero · bairro`", () => {
+    expect(mensagemEntrega().split("\n")).toContain(
+      "Endereço: Rua das Flores, 100 · Centro",
+    );
+  });
+
+  it("a linha `Endereço:` não traz cidade, estado nem CEP (pedido literal, item 2)", () => {
+    const linha = mensagemEntrega()
+      .split("\n")
+      .find((l) => l.startsWith("Endereço: "))!;
+    expect(linha).not.toContain("Campinas");
+    expect(linha).not.toContain("SP");
+    expect(linha).not.toContain("13010-000");
+    expect(linha).not.toContain("CEP");
+  });
+
+  it("endereço parcial (sem bairro) → sem separador '·' órfão", () => {
+    expect(mensagemEntrega({ rua: "Rua das Flores", numero: "100" })
+      .split("\n")).toContain("Endereço: Rua das Flores, 100");
+  });
+});
