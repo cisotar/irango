@@ -7,22 +7,81 @@ import {
 } from "./buscarProdutos";
 
 // RED-first: a armadilha real da issue 199 e o motivo deste modulo existir.
-// Nome de produto vem frequentemente em NFD do banco ("Pão" = 4 chars),
-// enquanto a forma normalizada de busca tem 3 ("pao"). Fatiar a string ORIGINAL
-// com offsets da NORMALIZADA desloca o realce silenciosamente.
-describe("partirPorTermo — alinhamento de indice sob NFD", () => {
-  it("casa 'pao' em nome NFD e devolve o trecho original com acento intacto", () => {
-    const nfd = "Pão de queijo"; // "Pão de queijo" decomposto
-    expect(partirPorTermo(nfd, "pao")).toEqual([
-      { texto: "Pão", casa: true },
-      { texto: " de queijo", casa: false },
-    ]);
+// Nome de produto vem frequentemente em NFD do banco ("Pão" = 4 code points:
+// P, a, TIL combinante, o), enquanto a forma normalizada de busca tem 3 ("pao").
+// Fatiar a string ORIGINAL com offsets da NORMALIZADA desloca o realce
+// silenciosamente. IMPORTANTE: um literal "Pão" digitado direto no arquivo
+// fica NFC no disco (confirmado: "Pão de queijo".normalize("NFD") !== "Pão de
+// queijo"), entao NAO exercita a armadilha -- length de NFC ja bate com a
+// normalizada, e ate uma implementacao ingenua passa nesse caso. Por isso
+// construimos o NFD em runtime com `.normalize("NFD")`, imune a como o
+// editor/git grava o arquivo.
+const paoNfd = "Pão de queijo".normalize("NFD");
+const cafeAcucarNfd = "Café com açúcar".normalize("NFD");
+const acaiNfd = "açaí com açúcar".normalize("NFD");
+
+describe("partirPorTermo — alinhamento de indice sob NFD genuino", () => {
+  it("paoNfd é de fato NFD (pré-condição do teste, não do módulo)", () => {
+    // Se isso falhar, o teste abaixo não prova nada — estaria testando NFC.
+    expect(paoNfd).not.toBe("Pão de queijo".normalize("NFC"));
+    expect(paoNfd.length).toBe(14); // P a TIL o (espaço) d e (espaço) q u e i j o
   });
 
-  it("reconstroi a string original exatamente (sem perda nem duplicacao)", () => {
+  it("casa 'pao' em nome NFD genuino e devolve o trecho original com o TIL combinante intacto — não corta no meio do caractere", () => {
+    // Uma implementação ingênua (normalizarBusca(texto).indexOf + slice com
+    // offset de termo.length) corta em "Pã" + "o de queijo": o comprimento
+    // total bate (a invariante de reconstrução abaixo não pegaria isso
+    // sozinha), mas a fronteira do match está errada.
+    const partes = partirPorTermo(paoNfd, "pao");
+    expect(partes).toEqual([
+      { texto: "Pão".normalize("NFD"), casa: true },
+      { texto: " de queijo", casa: false },
+    ]);
+    // Fronteira exata: o segmento casado tem 4 UTF-16 units (P, a, TIL, o) —
+    // não 2 ("Pã" da implementação ingênua).
+    expect(partes[0].texto.length).toBe(4);
+    expect(partes[0].texto).not.toBe("Pã".normalize("NFD"));
+  });
+
+  it("casa 'CAFE' em nome NFD com cedilha e agudo combinantes, preservando os dois acentos", () => {
+    const partes = partirPorTermo(cafeAcucarNfd, "CAFE");
+    expect(partes[0]).toEqual({ texto: "Café".normalize("NFD"), casa: true });
+    expect(partes.map((p) => p.texto).join("")).toBe(cafeAcucarNfd);
+  });
+
+  it("multiplas ocorrencias sobre texto NFD com combinantes em ambos os lados do match", () => {
+    // "açaí com açúcar" NFD: 'a' aparece solto e dentro de 'açaí'/'açúcar',
+    // cada um carregando um combinante próprio (cedilha/agudo) que não deve
+    // vazar para o segmento vizinho.
+    const partes = partirPorTermo(acaiNfd, "a");
+    expect(partes.map((p) => p.texto).join("")).toBe(acaiNfd);
+    for (const p of partes) {
+      if (p.casa) expect(p.texto).toBe("a");
+    }
+  });
+
+  it("nao perde combinante solto na posicao 0 (nao tem caractere anterior que o absorva)", () => {
+    // Achado auditar/199: `mapa[0]` sem o guard aponta para o indice do primeiro
+    // caractere SOBREVIVENTE, entao um combinante inicial some do trecho.
+    const texto = "́Pão";
+    expect(
+      partirPorTermo(texto, "pao")
+        .map((p) => p.texto)
+        .join(""),
+    ).toBe(texto);
+    const soCombinantes = "́́";
+    expect(
+      partirPorTermo(soCombinantes, "x")
+        .map((p) => p.texto)
+        .join(""),
+    ).toBe(soCombinantes);
+  });
+
+  it("reconstroi a string original exatamente (sem perda nem duplicacao), incluindo NFD genuino", () => {
     const casos: [string, string][] = [
-      ["Pão de queijo", "pao"],
-      ["Pão de queijo", "pao"],
+      [paoNfd, "pao"],
+      [cafeAcucarNfd, "CAFE"],
+      [acaiNfd, "acucar"],
       ["Café com açúcar", "CAFE"],
       ["Batata assada", "a"],
       ["Sucos naturais", ""],
@@ -141,6 +200,30 @@ describe("filtrarCatalogo", () => {
     expect(filtrarCatalogo(catalogo, "a").map((c) => c.id)).not.toContain(
       "cat-vazia",
     );
+  });
+
+  it("nome de produto em NFD genuino (lojista digitando em macOS/iOS) casa termo em NFC", () => {
+    const nomeNfd = "Pão de queijo".normalize("NFD");
+    const catalogoNfd: CategoriaComProdutos[] = [
+      {
+        id: "cat-padaria-nfd",
+        nome: "Padaria",
+        produtos: [
+          {
+            id: "p-nfd",
+            nome: nomeNfd,
+            descricao: null,
+            preco: 5,
+            foto_url: null,
+            categoria_id: "cat-padaria-nfd",
+            disponivel: true,
+          },
+        ],
+      },
+    ];
+    const r = filtrarCatalogo(catalogoNfd, "pão"); // termo digitado no celular, em NFC
+    expect(r).toHaveLength(1);
+    expect(r[0].produtos.map((p) => p.id)).toEqual(["p-nfd"]);
   });
 
   it("nao muta a entrada e preserva os campos da categoria por spread", () => {

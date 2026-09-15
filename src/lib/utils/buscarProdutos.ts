@@ -52,13 +52,24 @@ function normalizarComMapa(texto: string): { alvo: string; mapa: number[] } {
     indiceOriginal += cp.length;
   }
   mapa.push(texto.length);
+  // Nada antes do primeiro indice sobrevivente pode ser perdido: um code point
+  // que normaliza para vazio na posicao 0 nao tem caractere anterior que o
+  // absorva (achado auditar/199: sem isto, `partirPorTermo` cortava o primeiro
+  // combinante solto e quebrava a invariante join("") === texto).
+  mapa[0] = 0;
   return { alvo, mapa };
 }
 
-/** Verdadeiro se `texto` contem `termoNormalizado` (ja normalizado pelo chamador). */
+/**
+ * Verdadeiro se `texto` contem `termoNormalizado` (ja normalizado pelo chamador).
+ * Usa `normalizarBusca`, nao `normalizarComMapa`: aqui so o boolean importa, e o
+ * mapa indice-a-indice (alocado por code point) seria construido e descartado a
+ * cada tecla/produto — o mapa so vale a pena em `partirPorTermo`, que opera sobre
+ * a string curta e isolada do match.
+ */
 function casaTexto(texto: string | null, termoNormalizado: string): boolean {
   if (!texto) return false;
-  return normalizarComMapa(texto).alvo.includes(termoNormalizado);
+  return normalizarBusca(texto).includes(termoNormalizado);
 }
 
 /**
