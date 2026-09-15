@@ -20,6 +20,7 @@ import { validarCupomAction } from "@/lib/actions/cupomPreview";
 import type { ItemCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
+import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
 import { ResumoValores } from "./ResumoValores";
 
 const SECAO =
@@ -213,6 +214,13 @@ export function EtapaItens({
                     />
                   </div>
                 )}
+
+                {/* [197] Observação do comprador: fora do bloco de opcionais,
+                    porque item sem opcional também pode ter observação. */}
+                <ObservacaoItem
+                  observacao={item.observacao}
+                  className="mt-2.5"
+                />
               </div>
             );
           })}

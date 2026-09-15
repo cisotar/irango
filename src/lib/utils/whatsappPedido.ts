@@ -6,6 +6,10 @@ import {
   ROTULO_FRETE_A_COMBINAR_CURTO,
 } from "@/lib/utils/rotuloFrete";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
+import {
+  formatarEnderecoCliente,
+  formatarEnderecoLoja,
+} from "@/lib/utils/enderecoLoja";
 
 /** Rótulo amigável da forma de pagamento. */
 function rotuloForma(tipo: string | null): string {
@@ -26,24 +30,6 @@ function rotuloTipoEntrega(tipo: string | null): string {
   if (tipo === "retirada") return "Retirada no local";
   if (tipo === "entrega") return "Entrega";
   return tipo ?? "—";
-}
-
-/**
- * Formata endereço de entrega a partir do JSONB `endereco_entrega`.
- * O objeto pode conter campos livres; só lemos os conhecidos (rua, numero, bairro, cidade, estado, cep).
- */
-function formatarEndereco(endereco: unknown): string {
-  if (endereco == null || typeof endereco !== "object") return "—";
-  const e = endereco as Record<string, unknown>;
-  const str = (v: unknown): string =>
-    typeof v === "string" && v.trim() !== "" ? v.trim() : "";
-
-  const linha1 = [str(e.rua), str(e.numero)].filter(Boolean).join(", ");
-  const linha2 = [str(e.bairro), str(e.cidade), str(e.estado)]
-    .filter(Boolean)
-    .join(" — ");
-  const cep = str(e.cep) ? `CEP ${str(e.cep)}` : "";
-  return [linha1, linha2, cep].filter(Boolean).join(" · ") || "—";
 }
 
 /**
@@ -69,7 +55,18 @@ function citarTextoCliente(texto: string): string {
  */
 export function montarLinkWhatsappPedido(
   pedido: PedidoComItens,
-  loja: Pick<LojaCompleta, "nome" | "whatsapp">,
+  loja: Pick<LojaCompleta, "nome" | "whatsapp"> &
+    Partial<
+      Pick<
+        LojaCompleta,
+        | "endereco_rua"
+        | "endereco_numero"
+        | "endereco_bairro"
+        | "endereco_cidade"
+        | "endereco_estado"
+        | "endereco_cep"
+      >
+    >,
 ): { href: string } | null {
   const numeroLimpo = (loja.whatsapp ?? "").replace(/\D/g, "");
   if (!numeroLimpo) return null;
@@ -122,8 +119,20 @@ export function montarLinkWhatsappPedido(
   linhas.push(`Total: ${formatarMoeda(pedido.total)}`);
 
   linhas.push("", `Entrega: ${rotuloTipoEntrega(pedido.tipo_entrega)}`);
+  if (pedido.tipo_entrega === "retirada") {
+    // [197] RN-R7: endereço curto da LOJA logo abaixo do tipo de entrega. Em
+    // retirada o pedido não grava endereço nenhum (pedido.ts, RN-R4/LGPD), então
+    // a loja é a única fonte do "onde ir". Sem endereço cadastrado (RN-R5):
+    // NENHUMA linha — nunca "—", nunca linha vazia.
+    const enderecoLoja = formatarEnderecoLoja(loja);
+    if (enderecoLoja) linhas.push(`Retirar em: ${enderecoLoja}`);
+  }
   if (pedido.tipo_entrega === "entrega") {
-    linhas.push(`Endereço: ${formatarEndereco(pedido.endereco_entrega)}`);
+    // [197] RN-R1: formato curto, sem cidade, estado nem CEP. O fallback "—"
+    // preserva o comportamento de hoje quando o JSONB vem vazio/ausente.
+    linhas.push(
+      `Endereço: ${formatarEnderecoCliente(pedido.endereco_entrega) ?? "—"}`,
+    );
   }
   linhas.push(
     `Cliente: ${pedido.nome_cliente}${pedido.telefone_cliente ? ` — ${pedido.telefone_cliente}` : ""}`,
