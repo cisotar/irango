@@ -188,13 +188,48 @@ completa, e nenhuma mudança de código foi necessária — nenhuma issue aberta
 | `ProdutoModal` a ~130 ms de INP a 4× | auditoria da 202 | dentro do alvo, mas é a interação mais cara da vitrine |
 | Gatilho de reauditoria | auditoria da 202 | loja com catálogo acima de ~300 produtos |
 
+## Correção do orçamento de bundle (medição posterior no artefato real)
+
+A estimativa `+3,1 KB gzip` acima foi calculada somando módulo a módulo com `esbuild
+--bundle --minify --packages=external` — não é o artefato que o usuário baixa. Uma
+segunda auditoria (independente, disparada em paralelo, mesma metodologia de CDP+4×
+throttle) mediu o **build de produção real** dos dois lados (`next build` + `next start`
+na branch `cf0c177` vs. worktree de `main`), somando todos os chunks `/_next/static/*.js`
+referenciados no HTML de `/loja/lanches-base`:
+
+| | main | branch | delta |
+|---|---|---|---|
+| chunks | 16 | 18 | +2 |
+| gzip | 329.088 B | 339.626 B | **+10.538 B (+3,2 %)** |
+
+O número correto do acréscimo de bundle é **~10,5 KB gzip**, não ~3,1 KB — a diferença é
+framing/re-split de chunk do bundler de produção (Turbopack) mais `ui/input.tsx` e os
+ícones (`Search`/`X`/`SearchX`) entrando no grafo da rota, que a soma por módulo isolado
+não captura. **Zero dependência nova continua confirmado** (`package.json`/`package-lock.json`
+sem diff) e o orçamento da 204 ("zero lib nova") segue cumprido — só o valor em KB muda.
+Use **339.626 B gzip / 18 chunks** como baseline em comparações futuras, não a soma parcial.
+
+A mesma auditoria reconfirmou, sem achado novo, os itens abaixo (métodos independentes,
+mesmos resultados da auditoria original desta issue): zero listener de `scroll`, zero
+leitura de layout durante o scroll (0 `getBoundingClientRect`/`getComputedStyle` no
+caminho do scroll), scrollspy reconstruído 1× na hidratação e 1× (não 2×) ao limpar a
+busca, `ativo` isolado em `TrilhoCategorias` (o catálogo nunca re-renderiza por causa do
+scrollspy), e a medição da barra sem double-measure (o segundo `getBoundingClientRect`
+é a entrega obrigatória do `ResizeObserver`, guardada por `ultimaAltura` contra escrita
+redundante). Um item do checklist ficou inconclusivo por limitação de ambiente: navegação
+SPA sintética via `pushState`/`popstate` não dispara o App Router de verdade, então
+"observers não acumulam ao trocar de loja" segue provado só indiretamente (teste unitário
+de cleanup + `ioDisconnect: 1` observado ao desmontar a nav) — verificação a olho fica
+pendente para quando houver browser real disponível.
+
 ## Conclusão
 
 **O ciclo 199–203 fecha sem nenhum GARGALO e sem nenhum CUSTO.** A feature inteira custa
-**+3,1 KB gzip (+0,98 % do JS da rota) com zero dependência nova**, a pior interação do fluxo real
-(alternar categoria → buscar → limpar → alternar categoria) mede **56 ms contra 200 ms de INP**,
-o scroll com nav e busca ativas fecha em **p95 de 17,6 ms sem um único frame perdido**, o **CLS é 0**
+**+10,5 KB gzip (+3,2 % do JS da rota, medido no artefato de produção — ver correção
+acima) com zero dependência nova**, a pior interação do fluxo real (alternar categoria →
+buscar → limpar → alternar categoria) mede **56 ms contra 200 ms de INP**, o scroll com
+nav e busca ativas fecha em **p95 de 17,6 ms sem um único frame perdido**, o **CLS é 0**
 e o banco não é tocado. Os dois fixes herdados das auditorias parciais foram reconferidos em uso
 real e estão valendo: **um** observer por montagem da nav e `--altura-barra` estável em 129 px
 durante todo o ciclo. O LCP fora do alvo é inteiramente pré-existente e vem das imagens sem
-otimização (F5/201).
+otimização (F5/201, já em `tasks/205`).
