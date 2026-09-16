@@ -9,6 +9,7 @@ import {
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
 import { CheckoutWizard } from "@/components/vitrine/checkout/CheckoutWizard";
+import { formatarEnderecoLoja } from "@/lib/utils/enderecoLoja";
 import type {
   FormaPagamentoWizard,
   TipoPagamento,
@@ -107,6 +108,12 @@ export default async function CheckoutPage({ params }: PageProps) {
   // entrega; sem número, ele oferece retirada.
   const whatsappLoja = (loja.whatsapp ?? "").trim() || null;
 
+  // [197] Endereço curto da loja (RN-R1), derivado no SSR a partir de
+  // `vitrine_lojas` (dado já público). Exibição pura: o cliente só decide
+  // MOSTRAR ou não conforme o rádio — nenhuma chamada de rede no toggle e
+  // nenhum efeito sobre frete, cupom ou total. `null` ⇒ fallback (RN-R5).
+  const enderecoLoja = formatarEnderecoLoja(loja);
+
   return (
     <CheckoutWizard
       lojaId={lojaId}
@@ -117,6 +124,7 @@ export default async function CheckoutPage({ params }: PageProps) {
       formasPagamento={formasPagamento}
       preAbrirWhatsapp={preAbrirWhatsapp}
       whatsappLoja={whatsappLoja}
+      enderecoLoja={enderecoLoja}
     />
   );
 }

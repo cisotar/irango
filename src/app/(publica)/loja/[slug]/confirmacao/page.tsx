@@ -25,7 +25,13 @@ import {
 } from "@/lib/utils/rotuloFrete";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
+import {
+  formatarEnderecoCliente,
+  formatarEnderecoLoja,
+} from "@/lib/utils/enderecoLoja";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
+import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
+import { LinkMapsLoja } from "@/components/vitrine/confirmacao/LinkMapsLoja";
 import { StatusPedidoLive } from "@/components/vitrine/confirmacao/StatusPedidoLive";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
@@ -55,24 +61,6 @@ function rotuloTipoEntrega(tipo: string | null): string {
   if (tipo === "retirada") return "Retirada no local";
   if (tipo === "entrega") return "Entrega";
   return tipo ?? "—";
-}
-
-/**
- * Formata endereço de entrega a partir do JSONB `endereco_entrega`.
- * O objeto pode conter campos livres; só lemos os conhecidos (rua, numero, bairro, cidade, estado, cep).
- */
-function formatarEndereco(endereco: unknown): string {
-  if (endereco == null || typeof endereco !== "object") return "—";
-  const e = endereco as Record<string, unknown>;
-  const str = (v: unknown): string =>
-    typeof v === "string" && v.trim() !== "" ? v.trim() : "";
-
-  const linha1 = [str(e.rua), str(e.numero)].filter(Boolean).join(", ");
-  const linha2 = [str(e.bairro), str(e.cidade), str(e.estado)]
-    .filter(Boolean)
-    .join(" — ");
-  const cep = str(e.cep) ? `CEP ${str(e.cep)}` : "";
-  return [linha1, linha2, cep].filter(Boolean).join(" · ") || "—";
 }
 
 /**
@@ -142,6 +130,8 @@ export default async function ConfirmacaoPage({
 
   const loja = await buscarLojaParaPedido(svc, ped.loja_id);
   const linkWhatsapp = loja ? montarLinkWhatsappPedido(ped, loja) : null;
+  // [197] RN-R1/RN-R2: fonte única do endereço curto, igual ao do checkout.
+  const enderecoLoja = loja ? formatarEnderecoLoja(loja) : null;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col gap-6 px-4 py-10 md:max-w-2xl">
@@ -197,6 +187,10 @@ export default async function ConfirmacaoPage({
                       quantidade: o.quantidade,
                     }))}
                   />
+                  {/* [197] Observação livre do comprador ("sem cebola"): já
+                      gravada em `itens_pedido.observacao` (167/168) e até aqui
+                      nunca renderizada nas telas do comprador. */}
+                  <ObservacaoItem observacao={item.observacao} />
                 </div>
               );
             })}
@@ -243,11 +237,33 @@ export default async function ConfirmacaoPage({
             <p className="font-medium">{rotuloTipoEntrega(ped.tipo_entrega)}</p>
           </div>
 
-          {/* Endereço — só exibe em entregas domiciliares */}
+          {/* Endereço — só exibe em entregas domiciliares. [197] RN-R1: formato
+              curto, sem cidade, estado nem CEP (as colunas seguem gravadas). */}
           {ped.tipo_entrega === "entrega" && (
             <div className="text-sm">
               <p className="text-muted-foreground">Endereço de entrega</p>
-              <p className="font-medium">{formatarEndereco(ped.endereco_entrega)}</p>
+              <p className="font-medium">
+                {formatarEnderecoCliente(ped.endereco_entrega) ?? "—"}
+              </p>
+            </div>
+          )}
+
+          {/* [197] Retirada: o pedido não grava endereço nenhum (RN-R4/LGPD),
+              então a LOJA é a única fonte do "onde ir". Exibição pura — não
+              entra em payload, frete, cupom nem total. */}
+          {ped.tipo_entrega === "retirada" && (
+            <div className="text-sm">
+              <p className="text-muted-foreground">Endereço para retirada</p>
+              {enderecoLoja ? (
+                <>
+                  <p className="font-medium">{enderecoLoja}</p>
+                  <LinkMapsLoja loja={loja} />
+                </>
+              ) : (
+                <p className="font-medium">
+                  Combine o local de retirada com a loja pelo WhatsApp.
+                </p>
+              )}
             </div>
           )}
 
