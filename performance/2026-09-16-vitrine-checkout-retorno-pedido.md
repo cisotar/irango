@@ -179,3 +179,57 @@ cache de dado no servidor.
 Nenhum fix aplicado — auditoria é diagnóstico. F1+F2 devem virar uma issue única
 (são o mesmo sintoma); F3+F4 uma segunda; F5/F6 podem virar issue separada; F7
 já está em `tasks/205`; F8 opcional.
+
+### Atualização — 2026-09-16, F1–F4 aplicados
+
+Branch `fix/retorno-vitrine-loading-prefetch`. F1+F2 no commit `3d8d107`; F3+F4
+na issue 207 (plano em `plan/loop-cache-e-paralelizacao-vitrine.md`).
+
+**F3 — dedup confirmado por contagem de queries.** Instrumentação temporária em
+`buscarLojaPorSlug`, uma requisição a `/loja/lanches-base` em `next start`:
+
+| Código | Queries a `vitrine_lojas` por requisição |
+|---|---|
+| Antes | 3 |
+| Depois | 1 |
+
+O escopo de `cache()` do React é compartilhado entre `generateMetadata`,
+`generateViewport` e o render — o melhor caso previsto pelo plano. Confirmado
+que o Next **não** deduplicava isso sozinho: o código original de fato emitia as
+três leituras.
+
+**F3+F4 — latência ponta a ponta.** Mediana de 10 requisições (2 cold
+descartadas), `curl -H 'RSC: 1'`, mesmo build e mesma sessão de rede para os dois
+lados, medindo `time_total`:
+
+| Código | Mediana | Min | Max |
+|---|---|---|---|
+| Antes | 163,5 ms | 151,4 ms | 263,5 ms |
+| Depois | 148,0 ms | 116,6 ms | 183,5 ms |
+
+Ganho de 15,6 ms (9,5 %). `size_download` idêntico nos dois (72.477 B), como
+esperado — projeção de colunas é F5 e segue fora de escopo.
+
+**Por que o ganho é menor que os ~200 ms projetados.** A projeção somava os
+round-trips economizados assumindo que todos estavam no caminho crítico. Com o
+`loading.tsx` do F1 em produção, o Next passa a transmitir o shell em streaming,
+e as leituras de `generateMetadata`/`generateViewport` deixam de bloquear o
+primeiro byte. Os dois round-trips economizados são reais, mas estavam
+parcialmente fora do caminho crítico. O ganho medido é o que sobra.
+
+**Correção de metodologia para auditorias futuras:** `time_starttransfer` deixou
+de ser métrica válida para esta rota depois do `loading.tsx`. Com streaming ele
+mede a chegada do esqueleto (~8 ms), não o custo dos dados. Usar `time_total`.
+
+**Armadilha registrada (vale para o resto do repo).** `React.cache` memoiza por
+igualdade referencial dos argumentos. Passar o client do Supabase como argumento
+dá cache miss em toda chamada, porque `createClient()` devolve objeto novo. A
+memoização precisa ter como chave só o `slug`, com o client criado dentro. Pela
+mesma mecânica, o dedup de `src/app/(painel)/painel/(bloqueavel)/layout.tsx:13`
+provavelmente também não funciona hoje — não medido, issue própria a abrir.
+
+**Limite honesto:** nada disso cobre render visual em navegador real. Sem
+Playwright e sem MCP de browser nesta máquina (débito da `tasks/176`).
+
+**Aberto:** F5 (`select("*")` → projeção explícita), F6 (`dynamic()` no
+`ProdutoModal`, medir antes), F7 (`tasks/205`), F8 (matcher do middleware).
