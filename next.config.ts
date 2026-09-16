@@ -47,6 +47,23 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "2mb",
     },
+    // Router Cache do cliente (achado acelerar 2026-09-16, F1). O default de
+    // rota dinâmica é 0s: sem isto o payload prefetchado NÃO é reusado e voltar
+    // do checkout para a vitrine refaz o render no servidor toda vez.
+    //
+    // Cache de CLIENTE, não ISR — não vale como fonte de verdade. Produto
+    // esgotado pode aparecer disponível por até 30s no card, mas quem decide é
+    // `criarPedido`, que revalida disponibilidade e recalcula valor no servidor
+    // (mandato 1 / seguranca.md §10). A janela custa um card stale, nunca um
+    // pedido errado.
+    //
+    // A config é GLOBAL e alcança o painel. Aceitável: o painel não tem
+    // realtime nem polling, então já depende de navegação/reload para ver
+    // pedido novo — e toda mutação do lojista chama `revalidatePath`, que
+    // invalida este cache. Se a espera por pedido novo apertar, baixar aqui.
+    staleTimes: {
+      dynamic: 30,
+    },
   },
   async headers() {
     return [

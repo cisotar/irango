@@ -10,7 +10,7 @@
 // tudo do banco. Carrinho vazio → redireciona para a loja.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,11 @@ export type CheckoutWizardProps = {
   enderecoLoja?: string | null;
 };
 
+/** Alvo de toque do controle de voltar do header, compartilhado entre o
+ *  <Link> da etapa 1 e o <button> das etapas 2/3. */
+const CLASSES_VOLTAR_HEADER =
+  "flex size-11 shrink-0 items-center justify-center rounded-[10px] transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70";
+
 export function CheckoutWizard({
   lojaId,
   lojaSlug,
@@ -74,7 +79,6 @@ export function CheckoutWizard({
   whatsappLoja = null,
   enderecoLoja = null,
 }: CheckoutWizardProps) {
-  const router = useRouter();
   const { itens, incrementar, decrementar, remover } = useCarrinho();
   // Tailwind md = 768px. Escolhe UMA árvore (wizard mobile vs 2 colunas desktop)
   // — mesmo estado compartilhado, sem montar EtapaEntrega/frete duas vezes (006).
@@ -170,14 +174,11 @@ export function CheckoutWizard({
     [patch],
   );
 
-  // Voltar do header: etapa 1 → loja; etapas 2/3 → etapa anterior.
-  const voltarHeader = useCallback(() => {
-    if (etapa === 1) {
-      router.push(`/loja/${lojaSlug}`);
-    } else {
-      setEtapa((e) => (e === 3 ? 2 : 1));
-    }
-  }, [etapa, lojaSlug, router]);
+  // Voltar do header: etapa 1 vira <Link> (prefetch da vitrine — achado
+  // acelerar 2026-09-16, F1); etapas 2/3 só recuam de etapa, sem navegar.
+  const voltarEtapa = useCallback(() => {
+    setEtapa((e) => (e === 3 ? 2 : 1));
+  }, []);
 
   // Frete preview efetivo: retirada força 0 (servidor também — RN-C2).
   // [180-B] Quando o frete não pôde ser calculado, o resumo exibe RÓTULO em vez
@@ -210,9 +211,15 @@ export function CheckoutWizard({
       <main className="mx-auto w-full max-w-md px-4 py-16 text-center">
         <h1 className="text-xl font-semibold text-foreground">{lojaNome}</h1>
         <p className="mt-4 text-muted-foreground">Seu carrinho está vazio.</p>
-        <Button className="mt-6" onClick={() => router.push(`/loja/${lojaSlug}`)}>
-          Voltar ao cardápio
-        </Button>
+        <Button
+          className="mt-6"
+          nativeButton={false}
+          render={
+            <Link href={`/loja/${lojaSlug}`} prefetch>
+              Voltar ao cardápio
+            </Link>
+          }
+        />
       </main>
     );
   }
@@ -383,16 +390,25 @@ export function CheckoutWizard({
       {/* Banda do header — cor da loja, sticky (canônico .header) */}
       <header className="sticky top-0 z-50 bg-[var(--cor-primaria)] text-white shadow-[0_2px_8px_rgba(0,0,0,0.15)]">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3.5">
-          <button
-            type="button"
-            onClick={voltarHeader}
-            aria-label={
-              etapa === 1 ? "Voltar à loja" : "Voltar à etapa anterior"
-            }
-            className="flex size-11 shrink-0 items-center justify-center rounded-[10px] transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-          >
-            <ArrowLeft className="size-5" aria-hidden />
-          </button>
+          {etapa === 1 ? (
+            <Link
+              href={`/loja/${lojaSlug}`}
+              prefetch
+              aria-label="Voltar à loja"
+              className={CLASSES_VOLTAR_HEADER}
+            >
+              <ArrowLeft className="size-5" aria-hidden />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={voltarEtapa}
+              aria-label="Voltar à etapa anterior"
+              className={CLASSES_VOLTAR_HEADER}
+            >
+              <ArrowLeft className="size-5" aria-hidden />
+            </button>
+          )}
           <span className="text-base font-black uppercase tracking-wide">
             Finalizar pedido
           </span>
