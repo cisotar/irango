@@ -27,6 +27,13 @@
   --cinza-claro: #f9f9f9;
   --sombra-suave: rgba(0, 0, 0, 0.1);
   --sombra-media: rgba(0, 0, 0, 0.15);
+
+  /* Altura REAL da barra sticky da vitrine, medida em runtime por
+     CatalogoVitrine (ResizeObserver) e publicada aqui. 0px = não há barra
+     (catálogo vazio, ou qualquer rota fora da vitrine). NUNCA chutar um
+     valor: a antiga classe fixa de scroll-margin (6rem = 115px) era
+     coincidência (issue 201). */
+  --altura-barra: 0px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -210,13 +217,24 @@ body {
   html {
     @apply font-sans;
     font-size: 120%; /* base rem = 19.2px (default 16px × 1.2) */
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
-  @media (prefers-reduced-motion: reduce) {
+  /* Forma opt-in (issue 201): o scroll suave só existe para quem NÃO pediu
+     menos movimento. Mesma condição que o `scrollIntoView` do scrollspy (203)
+     usará — uma única regra, sem override a desfazer. */
+  @media (prefers-reduced-motion: no-preference) {
     html {
-      scroll-behavior: auto;
+      scroll-behavior: smooth;
     }
   }
+}
+
+/* Trilho de categorias da vitrine (issue 203). Pseudo-elemento NÃO cabe em
+   `style` inline — o resto do trilho (mask-image, scroll-snap, scrollbar-width)
+   vive em `ESTILO_TRILHO` no `NavCategorias.tsx`, e não em classe Tailwind
+   arbitrária: literal com vírgula/parêntese vira classe órfã em silêncio. */
+.trilho-categorias::-webkit-scrollbar {
+  display: none;
 }
 
 /* ============================================================

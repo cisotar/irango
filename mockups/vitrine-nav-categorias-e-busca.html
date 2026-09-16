@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iRango — nav de categorias + busca (vitrine)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          // TEMA DA LOJA (lojas.tema) — aqui com os defaults de globals.css.
+          // Troque os 3 valores abaixo para simular outra loja.
+          primaria: "#332616",
+          fundo: "#f5f0e6",
+          destaque: "#2d3a27",
+          // Sistema (fixo, independente do tema da loja)
+          "marrom-cafe": "#2e2610",
+          texto: "#3e2723",
+          "texto-muted": "#6b5d4f",
+          "borda-nav": "#dccbb0",
+          "cinza-medio": "#eeeeee",
+          "cinza-claro": "#f9f9f9",
+        },
+        borderRadius: { xl: "0.75rem" },
+      },
+    },
+  };
+</script>
+<style>
+  /* globals.css:212 — base rem = 19.2px. É por isso que min-h-11 (2.75rem)
+     vale 52.8px e NÃO 44px: todo alvo de toque usa valor LITERAL. */
+  html { font-size: 120%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+
+  :root {
+    --cor-primaria: #332616;
+    --cor-fundo: #f5f0e6;
+    --cor-destaque: #2d3a27;
+    /* Altura da barra sticky — medida em runtime (ver medirBarra() no <script>),
+       NUNCA um valor chutado: qualquer folga de fonte/line-height entre o
+       CSS e o layout real corta o título da seção atrás da barra. O valor
+       abaixo é só o fallback antes do primeiro paint. */
+    --altura-barra: 112px;
+    /* Respiro entre o fim da barra e o título — sem isso o título fica
+       colado na borda inferior da barra, tecnicamente visível mas apertado. */
+    --folga-topo: 14px;
+  }
+
+  .touch44 { min-height: 44px; min-width: 44px; }
+
+  /* ---------------- barra sticky (busca + carrossel) ---------------- */
+  .barra-sticky {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--cor-fundo);
+    border-bottom: 1px solid var(--borda-nav, #dccbb0);
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  }
+
+  /* ---------------- carrossel de categorias ---------------- */
+  .trilho {
+    display: flex; gap: .5rem;
+    overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 1rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* fade nas bordas = affordance de "tem mais coisa" sem botão extra */
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+            mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+  }
+  .trilho::-webkit-scrollbar { display: none; }
+
+  .chip {
+    scroll-snap-align: center;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto;
+    min-height: 44px;              /* literal, WCAG 2.5.5 */
+    padding: 0 .95rem;
+    border-radius: 9999px;
+    border: 1.5px solid var(--borda-nav, #dccbb0);
+    background: #fff;
+    color: var(--texto, #3e2723);
+    font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    white-space: nowrap; text-decoration: none;
+    transition: background-color .18s, color .18s, border-color .18s;
+  }
+  .chip:hover { border-color: var(--cor-primaria); }
+  .chip:focus-visible {
+    outline: 3px solid var(--cor-destaque);
+    outline-offset: 2px;
+  }
+  /* Ativo = cor da loja + TEXTO BRANCO FIXO (design-system §4: nunca derivar
+     a cor do texto do tema). Além da cor, o chip ativo tem peso/sublinhado
+     próprio — não depender só de cor (WCAG 1.4.1). */
+  .chip[aria-current] {
+    background: var(--cor-primaria);
+    border-color: var(--cor-primaria);
+    color: #fff;
+    box-shadow: inset 0 -3px 0 rgba(255,255,255,.45);
+  }
+
+  /* ---------------- campo de busca ---------------- */
+  .campo-busca { position: relative; display: flex; align-items: center; }
+  .campo-busca input {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 44px 0 40px;         /* espaço p/ lupa e p/ botão limpar */
+    border-radius: 9999px;
+    border: 1.5px solid var(--borda-nav, #dccbb0);
+    background: #fff;
+    color: var(--texto);
+    font-size: 16px;                /* < 16px faz o iOS dar zoom no focus */
+    outline: none;
+  }
+  .campo-busca input::placeholder { color: var(--texto-muted, #6b5d4f); }
+  .campo-busca input:focus-visible {
+    border-color: var(--cor-destaque);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cor-destaque) 35%, transparent);
+  }
+  .icone-lupa { position: absolute; left: 13px; width: 18px; height: 18px; color: var(--texto-muted); pointer-events: none; }
+  .btn-limpar {
+    position: absolute; right: 0;
+    display: none; align-items: center; justify-content: center;
+    min-width: 44px; min-height: 44px;
+    border: 0; background: transparent; cursor: pointer; color: var(--texto-muted);
+    border-radius: 9999px;
+  }
+  .btn-limpar:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: -3px; }
+  body[data-buscando="1"] .btn-limpar { display: inline-flex; }
+
+  /* ---------------- catálogo ---------------- */
+  .secao { scroll-margin-top: calc(var(--altura-barra) + var(--folga-topo)); }
+  .titulo-linha { height: 2px; flex: 1; background: linear-gradient(90deg, transparent, var(--marrom-cafe, #2e2610), transparent); }
+
+  .card-produto {
+    display: flex; flex-direction: column; overflow: hidden;
+    border-radius: .75rem; border: 1px solid #eee; background: #fff;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); cursor: pointer;
+  }
+  .card-foto { aspect-ratio: 4/3; width: 100%; background: linear-gradient(135deg,#e8dcc4,#d8c4a0); position: relative; }
+  .btn-add {
+    display: flex; align-items: center; justify-content: center;
+    height: 2rem; width: 2rem; border-radius: .5rem; border: 0; cursor: pointer;
+    background: var(--cor-destaque); color: #fff; font-weight: 900; line-height: 1;
+  }
+  .btn-add:focus-visible { outline: 3px solid #fff; outline-offset: -3px; }
+
+  .linha-produto {
+    display: flex; align-items: baseline; gap: .5rem;
+    min-height: 44px; padding: .75rem 1rem; cursor: pointer;
+    border-bottom: 1px solid var(--cinza-medio, #eee);
+  }
+  .linha-produto:last-child { border-bottom: 0; }
+  .linha-produto:hover { background: var(--cinza-claro, #f9f9f9); }
+  .linha-produto:focus-visible { outline: 3px solid var(--cor-destaque); outline-offset: -3px; }
+  .pontilhado { flex: 1; min-width: 1rem; margin-bottom: .25rem; border-bottom: 2px dotted var(--borda-nav); }
+
+  /* marcação do trecho que casou com a busca */
+  mark { background: color-mix(in srgb, var(--cor-destaque) 22%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  /* Estados de visibilidade controlados por data-attribute no <body> */
+  body[data-buscando="1"] #trilho-categorias { display: none; }
+  body[data-buscando="0"] #resumo-busca { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; animation: none !important; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+</style>
+</head>
+<body class="bg-fundo text-texto" data-buscando="0">
+
+<!-- ================= HeaderLoja (existente, NÃO sticky — rola) ================= -->
+<header class="bg-primaria px-4 py-2.5 text-white">
+  <div class="mx-auto flex max-w-3xl items-center justify-center gap-4 md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
+    <div aria-hidden class="flex size-[80px] shrink-0 items-center justify-center rounded-full border-[3px] border-white/35 bg-[#4a3a22] text-3xl font-black">P</div>
+    <div class="min-w-0">
+      <h1 class="mb-2 text-2xl font-black uppercase tracking-wide">Pão do Ciso</h1>
+      <div class="mb-2">
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-[#15803d] px-2.5 py-1 text-xs font-bold text-white">
+          <span aria-hidden>●</span> Aberto agora
+        </span>
+      </div>
+      <p class="text-sm text-white/90">(11) 90000-0000</p>
+    </div>
+  </div>
+</header>
+
+<!-- ================= BARRA STICKY: BuscaProdutos + NavCategorias ================= -->
+<div class="barra-sticky">
+  <div class="mx-auto w-full max-w-3xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
+
+    <!-- ---- BuscaProdutos ---- -->
+    <div class="px-4 pt-3 pb-2">
+      <form role="search" onsubmit="return false" class="campo-busca">
+        <label class="sr-only" for="busca-produto">Buscar produto no cardápio</label>
+        <svg class="icone-lupa" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+        </svg>
+        <input
+          id="busca-produto"
+          type="search"
+          inputmode="search"
+          autocomplete="off"
+          enterkeyhint="search"
+          placeholder="Buscar no cardápio…"
+          aria-describedby="busca-resumo"
+        />
+        <button type="button" id="btn-limpar" class="btn-limpar" aria-label="Limpar busca">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </form>
+    </div>
+
+    <!-- ---- NavCategorias (carrossel) — some durante a busca ---- -->
+    <nav id="trilho-categorias" aria-label="Categorias do cardápio" class="px-4 pb-2.5">
+      <ul class="trilho list-none p-0 m-0">
+        <li><a class="chip" href="#cat-paes"      aria-current="true">Pães</a></li>
+        <li><a class="chip" href="#cat-salgados">Salgados</a></li>
+        <li><a class="chip" href="#cat-doces">Doces</a></li>
+        <li><a class="chip" href="#cat-bolos">Bolos e Tortas</a></li>
+        <li><a class="chip" href="#cat-bebidas">Bebidas</a></li>
+        <li><a class="chip" href="#cat-cafe">Cafeteria</a></li>
+        <li><a class="chip" href="#cat-outros">Outros</a></li>
+      </ul>
+    </nav>
+
+    <!-- ---- Resumo do modo busca (substitui o carrossel) ---- -->
+    <div id="resumo-busca" class="flex items-center justify-between gap-3 px-4 pb-2.5">
+      <p id="busca-resumo-visivel" class="text-sm font-semibold text-texto-muted"></p>
+      <button type="button" id="btn-limpar-2"
+        class="touch44 inline-flex items-center rounded-full border-[1.5px] border-borda-nav bg-white px-3.5 text-xs font-bold uppercase tracking-wide text-texto focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-destaque">
+        Limpar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Região viva ÚNICA, sr-only — precedente: LinhaTempoStatus.tsx / StatusPedidoLive.tsx -->
+<p id="busca-resumo" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+
+<!-- ================= CATÁLOGO ================= -->
+<main class="mx-auto w-full max-w-3xl px-4 py-6 pb-28 md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
+
+  <!-- Estado vazio da busca -->
+  <div id="vazio-busca" class="hidden flex-col items-center gap-3 py-20 text-center">
+    <span aria-hidden class="text-4xl">🔍</span>
+    <p class="font-medium text-texto">Nenhum produto encontrado para “<span id="vazio-termo"></span>”.</p>
+    <p class="text-sm text-texto-muted">Tente outro termo ou veja o cardápio completo.</p>
+    <button type="button" id="btn-limpar-3"
+      class="touch44 mt-1 inline-flex items-center rounded-xl bg-destaque px-5 text-sm font-bold uppercase tracking-wide text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-destaque">
+      Ver cardápio completo
+    </button>
+  </div>
+
+  <div id="catalogo" class="flex flex-col gap-8"></div>
+</main>
+
+<!-- ================= barra de carrinho (existente) ================= -->
+<nav aria-label="Resumo do carrinho"
+  class="fixed inset-x-0 bottom-0 z-40 mx-auto flex min-h-16 max-w-3xl items-center justify-between gap-3 bg-destaque px-[18px] py-3 text-[#f5f0e6] shadow-[0_-4px_16px_rgba(0,0,0,0.2)] md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
+  <div class="flex flex-col gap-0.5 leading-tight">
+    <span class="text-xs font-medium uppercase tracking-wide opacity-85">2 itens</span>
+    <span class="text-xl font-black">R$ 27,40</span>
+  </div>
+  <button type="button" class="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] border border-white/40 bg-white/15 px-4 text-sm font-bold uppercase tracking-wide text-white">
+    Ver carrinho
+  </button>
+</nav>
+
+<script>
+/* ============================================================================
+   Dados fictícios (espelham CategoriaComProdutos de SecaoCatalogo.tsx)
+   ========================================================================== */
+const CATEGORIAS = [
+  { id: "cat-paes", nome: "Pães", exibir_imagens: true, produtos: [
+    { nome: "Pão francês (unidade)", descricao: "Assado a cada hora", preco: 1.20, disponivel: true },
+    { nome: "Pão de queijo mineiro", descricao: "Queijo canastra", preco: 4.50, disponivel: true },
+    { nome: "Pão integral 500g", descricao: "Grãos e linhaça", preco: 14.90, disponivel: false },
+    { nome: "Baguete artesanal", descricao: "Fermentação natural", preco: 12.00, disponivel: true },
+  ]},
+  { id: "cat-salgados", nome: "Salgados", exibir_imagens: true, produtos: [
+    { nome: "Coxinha de frango com catupiry", descricao: "Frita na hora", preco: 8.50, disponivel: true },
+    { nome: "Esfiha de carne", descricao: "Aberta, temperada", preco: 6.00, disponivel: true },
+    { nome: "Empada de palmito", descricao: "Massa amanteigada", preco: 9.00, disponivel: true },
+    { nome: "Enroladinho de salsicha", descricao: "", preco: 6.50, disponivel: true },
+  ]},
+  { id: "cat-doces", nome: "Doces", exibir_imagens: true, produtos: [
+    { nome: "Brigadeiro gourmet", descricao: "Cacau 55%", preco: 5.00, disponivel: true },
+    { nome: "Sonho de creme", descricao: "Recheio de baunilha", preco: 7.50, disponivel: true },
+    { nome: "Carolina de doce de leite", descricao: "", preco: 6.00, disponivel: true },
+  ]},
+  { id: "cat-bolos", nome: "Bolos e Tortas", exibir_imagens: true, produtos: [
+    { nome: "Bolo de cenoura com chocolate", descricao: "Fatia generosa", preco: 11.00, disponivel: true },
+    { nome: "Torta de limão", descricao: "Merengue maçaricado", preco: 13.50, disponivel: true },
+    { nome: "Bolo de fubá cremoso", descricao: "", preco: 9.50, disponivel: true },
+  ]},
+  /* exibir_imagens = false → lista textual (ItemProdutoLista) */
+  { id: "cat-bebidas", nome: "Bebidas", exibir_imagens: false, produtos: [
+    { nome: "Suco de laranja 300ml", descricao: "Natural", preco: 9.00, disponivel: true },
+    { nome: "Refrigerante lata", descricao: "", preco: 6.00, disponivel: true },
+    { nome: "Água com gás 500ml", descricao: "", preco: 5.00, disponivel: true },
+    { nome: "Achocolatado gelado", descricao: "", preco: 8.00, disponivel: true },
+  ]},
+  { id: "cat-cafe", nome: "Cafeteria", exibir_imagens: false, produtos: [
+    { nome: "Café expresso", descricao: "Grão 100% arábica", preco: 5.50, disponivel: true },
+    { nome: "Pingado", descricao: "", preco: 6.50, disponivel: true },
+    { nome: "Cappuccino cremoso", descricao: "Canela por cima", preco: 12.00, disponivel: true },
+  ]},
+  { id: "cat-outros", nome: "Outros", exibir_imagens: true, produtos: [
+    { nome: "Cesta de café da manhã", descricao: "Serve 2 pessoas", preco: 89.90, disponivel: true },
+    { nome: "Vale-presente R$ 50", descricao: "", preco: 50.00, disponivel: true },
+  ]},
+];
+
+const brl = (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+/* Vira lib/utils/buscarProdutos.ts — função PURA, testável em Vitest. */
+const normalizar = (s) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+function realcar(texto, termo) {
+  if (!termo) return escapar(texto);
+  const alvo = normalizar(texto), t = normalizar(termo);
+  const i = alvo.indexOf(t);
+  if (i < 0) return escapar(texto);
+  return escapar(texto.slice(0, i)) + "<mark>" + escapar(texto.slice(i, i + t.length)) + "</mark>" + escapar(texto.slice(i + t.length));
+}
+function escapar(s) { return (s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+/* ============================================================================
+   Render do catálogo (grid de CardProduto ou lista de ItemProdutoLista)
+   ========================================================================== */
+function render(termo) {
+  const t = normalizar(termo);
+  const grupos = CATEGORIAS
+    .map((c) => ({ ...c, produtos: t ? c.produtos.filter((p) =>
+        normalizar(p.nome).includes(t) || normalizar(p.descricao).includes(t)) : c.produtos }))
+    .filter((c) => c.produtos.length > 0);
+
+  const total = grupos.reduce((n, c) => n + c.produtos.length, 0);
+  const catalogo = document.getElementById("catalogo");
+  catalogo.innerHTML = grupos.map((c) => secaoHTML(c, termo)).join("");
+
+  const vazio = document.getElementById("vazio-busca");
+  const temBusca = t.length > 0;
+  vazio.className = (temBusca && total === 0) ? "flex flex-col items-center gap-3 py-20 text-center" : "hidden";
+  document.getElementById("vazio-termo").textContent = termo;
+
+  document.body.dataset.buscando = temBusca ? "1" : "0";
+  const plural = total === 1 ? "produto encontrado" : "produtos encontrados";
+  const resumo = temBusca ? `${total} ${plural} para “${termo}”` : "";
+  document.getElementById("busca-resumo-visivel").textContent = resumo;
+  anunciar(temBusca ? (total === 0 ? `Nenhum produto encontrado para ${termo}` : `${total} ${plural}`) : "");
+  if (!temBusca) observarSecoes();
+}
+
+function secaoHTML(c, termo) {
+  const corpo = c.exibir_imagens === false
+    ? `<div class="overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+         ${c.produtos.map((p) => `
+           <div class="linha-produto" role="button" tabindex="0" aria-label="Ver detalhes de ${escapar(p.nome)}, ${brl(p.preco)}">
+             <span class="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold">${realcar(p.nome, termo)}</span>
+             <span aria-hidden class="pontilhado"></span>
+             <span class="flex-shrink-0 text-sm font-extrabold text-destaque [font-variant-numeric:tabular-nums]">${brl(p.preco)}</span>
+           </div>`).join("")}
+       </div>`
+    : `<div class="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+         ${c.produtos.map((p) => `
+           <article class="card-produto ${p.disponivel ? "" : "opacity-60"}">
+             <div class="card-foto">${p.disponivel ? "" : `
+               <span aria-hidden class="absolute inset-0 bg-black/35"></span>
+               <span class="absolute bottom-[10px] left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full bg-[#111] px-[18px] py-2 text-sm font-extrabold uppercase tracking-wide text-white">Esgotado</span>`}
+             </div>
+             <div class="flex flex-1 flex-col gap-2 p-3">
+               <h3 class="line-clamp-2 text-sm font-bold leading-tight text-[#111]">${realcar(p.nome, termo)}</h3>
+               <div class="mt-auto flex items-center justify-between gap-2">
+                 <span class="text-lg font-black text-destaque">${brl(p.preco)}</span>
+                 <button type="button" class="btn-add" ${p.disponivel ? "" : "disabled"}
+                   aria-label="${p.disponivel ? `Adicionar ${escapar(p.nome)} ao carrinho` : `${escapar(p.nome)} esgotado`}">+</button>
+               </div>
+             </div>
+           </article>`).join("")}
+       </div>`;
+
+  return `<section id="${c.id}" class="secao">
+      <div class="mb-4 flex items-center gap-3.5">
+        <span aria-hidden class="titulo-linha"></span>
+        <h2 class="whitespace-nowrap text-base font-bold uppercase tracking-widest text-marrom-cafe">${escapar(c.nome)}</h2>
+        <span aria-hidden class="titulo-linha"></span>
+      </div>
+      ${corpo}
+    </section>`;
+}
+
+/* ============================================================================
+   aria-live com debounce: anuncia só quando o usuário para de digitar
+   ========================================================================== */
+let timerAnuncio;
+function anunciar(texto) {
+  clearTimeout(timerAnuncio);
+  timerAnuncio = setTimeout(() => { document.getElementById("busca-resumo").textContent = texto; }, 500);
+}
+
+/* ============================================================================
+   Altura real da barra sticky — MEDIDA, nunca chutada. Um valor fixo em CSS
+   diverge do layout real (fonte, line-height, quebra de linha do header) e
+   corta o título da seção atrás da barra ao rolar até a âncora. Reage a
+   resize/rotação e a mudança de conteúdo da própria barra (ex.: chips vs.
+   resumo de busca têm alturas diferentes).
+   ========================================================================== */
+const barraSticky = document.querySelector(".barra-sticky");
+function medirBarra() {
+  document.documentElement.style.setProperty("--altura-barra", `${Math.ceil(barraSticky.getBoundingClientRect().height)}px`);
+}
+new ResizeObserver(medirBarra).observe(barraSticky);
+medirBarra();
+
+/* ============================================================================
+   Scrollspy do carrossel — IntersectionObserver, sem listener de scroll
+   ========================================================================== */
+let observer;
+function observarSecoes() {
+  observer?.disconnect();
+  const chips = [...document.querySelectorAll(".chip")];
+  const visiveis = new Set();
+  observer = new IntersectionObserver((entries) => {
+    entries.forEach((e) => e.isIntersecting ? visiveis.add(e.target.id) : visiveis.delete(e.target.id));
+    const ordem = CATEGORIAS.map((c) => c.id).filter((id) => visiveis.has(id));
+    if (!ordem.length) return;
+    marcarAtivo(ordem[0], chips);
+  }, {
+    // Mesma folga do scroll-margin-top, senão o scrollspy marca a categoria
+    // ativa num ponto diferente de onde o clique no chip efetivamente parou.
+    rootMargin: `-${getComputedStyle(document.documentElement).getPropertyValue("--altura-barra").trim()} 0px -55% 0px`,
+    threshold: 0,
+  });
+  document.querySelectorAll(".secao").forEach((s) => observer.observe(s));
+}
+
+function marcarAtivo(id, chips) {
+  chips.forEach((c) => {
+    const ativo = c.getAttribute("href") === "#" + id;
+    if (ativo) c.setAttribute("aria-current", "true"); else c.removeAttribute("aria-current");
+    if (ativo) {
+      // Traz o chip ativo para a viewport do trilho SEM rolar a página:
+      // block "nearest" é obrigatório, senão o scrollIntoView sequestra o scroll vertical.
+      c.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+    }
+  });
+}
+
+/* ============================================================================
+   Wiring
+   ========================================================================== */
+const input = document.getElementById("busca-produto");
+input.addEventListener("input", (e) => render(e.target.value));
+input.addEventListener("keydown", (e) => { if (e.key === "Escape" && input.value) { limpar(); e.stopPropagation(); } });
+
+function limpar() { input.value = ""; render(""); input.focus(); }
+["btn-limpar", "btn-limpar-2", "btn-limpar-3"].forEach((id) =>
+  document.getElementById(id).addEventListener("click", limpar));
+
+// Clique no chip: o href âncora já funciona sem JS. O JS só antecipa o estado
+// ativo (evita o "pisca" até o IntersectionObserver reagir).
+document.querySelectorAll(".chip").forEach((c) =>
+  c.addEventListener("click", () => marcarAtivo(c.getAttribute("href").slice(1), [...document.querySelectorAll(".chip")])));
+
+render("");
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 import { CardProduto } from "@/components/vitrine/CardProduto";
 import { ItemProdutoLista } from "@/components/vitrine/ItemProdutoLista";
@@ -9,6 +9,7 @@ import {
   type ProdutoModalDados,
 } from "@/components/vitrine/ProdutoModal";
 import { useCarrinho } from "@/hooks/useCarrinho";
+import { ancoraCategoria } from "@/lib/utils/ancoraCategoria";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { OpcionalCarrinho } from "@/types/dominio";
@@ -48,12 +49,13 @@ type SecaoCatalogoProps = {
    * Produto sem categoria ou sem associação → sem opcionais no modal.
    */
   opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
+  /**
+   * Termo de busca ativo (200), repassado a cada card/linha para realçar o
+   * trecho casado. Ausente/vazio → catálogo renderiza exatamente como antes.
+   * O filtro em si é de quem monta `categorias` (`filtrarCatalogo`, 199/202).
+   */
+  termo?: string;
 };
-
-/** Slug-âncora estável por grupo (categorias têm id; "Outros" não). */
-function ancora(id: string | null, indice: number): string {
-  return id ? `cat-${id}` : `grupo-${indice}`;
-}
 
 /**
  * Catálogo da vitrine: seções por categoria, renderizadas como grid de
@@ -65,9 +67,18 @@ function ancora(id: string | null, indice: number): string {
  * Preço/subtotal são preview — o servidor recalcula valores no checkout
  * (seguranca.md §10).
  */
+
+// Achado acelerar/201: objeto literal inline em `style` é realocado a cada
+// render da `<section>` — hoisted para módulo porque a 202 vai re-renderizar
+// por categoria a cada tecla digitada na busca.
+const ESTILO_ANCORA_CATEGORIA: CSSProperties = {
+  scrollMarginTop: "calc(var(--altura-barra) + 0.75rem)",
+};
+
 export function SecaoCatalogo({
   categorias,
   opcionaisPorCategoria = {},
+  termo,
 }: SecaoCatalogoProps) {
   const { adicionar } = useCarrinho();
   const [produtoSelecionado, setProdutoSelecionado] =
@@ -116,9 +127,16 @@ export function SecaoCatalogo({
     <div className="flex flex-col gap-8">
       {categorias.map((categoria, indice) => (
         <section
-          key={categoria.id ?? `grupo-${indice}`}
-          id={ancora(categoria.id, indice)}
-          className="scroll-mt-24"
+          key={ancoraCategoria(categoria.id, indice)}
+          id={ancoraCategoria(categoria.id, indice)}
+          // Deslocamento da âncora = altura MEDIDA da barra sticky da vitrine
+          // (`--altura-barra`, publicada por CatalogoVitrine) + a folga do
+          // mockup. Inline, e não classe Tailwind arbitrária: um `_` esquecido
+          // no escape geraria classe inválida em silêncio — o exato modo de
+          // falha que a issue 201 existe para eliminar. Valor fixo é proibido
+          // (RN-6): a antiga classe fixa de scroll-margin (6rem) só não
+          // incomodava porque não havia barra nenhuma sobre a qual compensar.
+          style={ESTILO_ANCORA_CATEGORIA}
         >
           {/* Título de seção: h2 em caixa-alta flanqueado por linhas-gradiente
               (design-claude/vitrine/titulo-secao.html). */}
@@ -142,6 +160,7 @@ export function SecaoCatalogo({
                   key={produto.id}
                   nome={produto.nome}
                   preco={produto.preco}
+                  termo={termo}
                   onSelecionar={() => abrirModal(produto)}
                 />
               ))}
@@ -157,6 +176,7 @@ export function SecaoCatalogo({
                   preco={produto.preco}
                   fotoUrl={produto.foto_url}
                   disponivel={produto.disponivel}
+                  termo={termo}
                   // Em vez de adicionar direto, abre o modal de detalhe do produto.
                   onAdicionar={() => abrirModal(produto)}
                 />

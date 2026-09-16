@@ -53,6 +53,10 @@ const FORA_DE_AREA: ResultadoFrete = {
  *
  * Determinística e pura — mesma entrada sempre produz mesma saída.
  * Exportada para reuso em Server Actions (criarPedido, calcularFreteAction) — RN-C4.
+ *
+ * Prima de `normalizarBusca` (`buscarProdutos.ts`), que NÃO colapsa espaço interno
+ * por causa do alinhamento de índice do realce da busca. Duplicação deliberada —
+ * não unificar as duas sem um terceiro caso de uso.
  */
 export function normalizarBairro(valor: string): string {
   return valor

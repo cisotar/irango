@@ -2,18 +2,25 @@
 
 import Image from "next/image";
 
+import { TextoRealcado } from "@/components/vitrine/TextoRealcado";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 
 type CardProdutoProps = {
   id: string;
   nome: string;
-  /** Mantido no contrato; o design-claude não exibe descrição no card. */
+  /**
+   * Mantido no contrato; o design-claude não exibe descrição no card — por isso
+   * o realce da busca (200) cobre só o `nome`: não se realça o que não está na
+   * tela, e exibi-la seria a mudança de layout que a issue exclui.
+   */
   descricao?: string | null;
   preco: number;
   fotoUrl?: string | null;
   /** false → ribbon "Esgotado" + botão desabilitado. Default true. */
   disponivel?: boolean;
+  /** Termo de busca ativo (200). Ausente/vazio → nome renderiza como antes. */
+  termo?: string;
   onAdicionar: () => void;
 };
 
@@ -29,6 +36,7 @@ export function CardProduto({
   preco,
   fotoUrl,
   disponivel = true,
+  termo,
   onAdicionar,
 }: CardProdutoProps) {
   const foto = fotoSegura(fotoUrl);
@@ -70,8 +78,11 @@ export function CardProduto({
       </div>
 
       <div className="card-body flex flex-1 flex-col gap-2 p-3 lg:gap-1.5 lg:p-2.5">
+        {/* `alt` da imagem e `aria-label` do botão continuam a string CRUA:
+            atributo não aceita nó React, e é o nome inteiro que o leitor de
+            tela deve ouvir. O realce é estritamente visual. */}
         <h3 className="line-clamp-2 text-sm font-bold leading-tight text-[#111111] lg:text-xs">
-          {nome}
+          <TextoRealcado texto={nome} termo={termo} />
         </h3>
 
         <div className="mt-auto flex items-center justify-between gap-2">

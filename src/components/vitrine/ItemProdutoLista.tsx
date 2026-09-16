@@ -2,11 +2,14 @@
 
 import type { KeyboardEvent } from "react";
 
+import { TextoRealcado } from "@/components/vitrine/TextoRealcado";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 
 type ItemProdutoListaProps = {
   nome: string;
   preco: number;
+  /** Termo de busca ativo (200). Ausente/vazio → nome renderiza como antes. */
+  termo?: string;
   /** Abre o mesmo modal de produto que o CardProduto usa (reuso, sem duplicar lógica). */
   onSelecionar: () => void;
 };
@@ -27,6 +30,7 @@ type ItemProdutoListaProps = {
 export function ItemProdutoLista({
   nome,
   preco,
+  termo,
   onSelecionar,
 }: ItemProdutoListaProps) {
   const precoFormatado = formatarMoeda(preco);
@@ -47,8 +51,10 @@ export function ItemProdutoLista({
       onKeyDown={aoTeclar}
       className="flex min-h-11 cursor-pointer items-baseline gap-2 border-b border-cinza-medio px-4 py-3 last:border-b-0 hover:bg-cinza-claro focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-destaque"
     >
+      {/* `aria-label` da linha continua com o nome CRU: o realce é visual e o
+          leitor de tela deve ouvir o nome inteiro. */}
       <span className="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold text-texto">
-        {nome}
+        <TextoRealcado texto={nome} termo={termo} />
       </span>
       <span
         aria-hidden

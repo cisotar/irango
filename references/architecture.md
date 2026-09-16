@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.2.26 | **Atualizado:** 2026-09-14
+**Versão:** 0.2.28 | **Atualizado:** 2026-09-15
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -342,7 +342,7 @@ const items = order.order_items
 - Validação → `lib/validacoes/` — mesmo schema no form e na Server Action
 - Queries → `lib/supabase/queries/` — nunca escrever `.from('produtos').select(...)` inline
 - Helper de I/O compartilhado entre actions → `lib/actions/` — módulo neutro (sem `'use server'`); exporta só funções puras de validação/transformação; o I/O em si (upload, DB) fica em cada action. Exemplo: `upload-imagem.ts` reutilizado por `upload.ts` e `logo.ts`
-- Mecânica de browser que precisa ser testada sem jsdom (repo não usa jsdom) → módulo neutro (sem `'use client'`/`'use server'`) com o objeto global (janela, timer) **injetado por parâmetro**, nunca lido direto de `window`/`document` dentro da função — permite cobrir em `environment: node` com fake injetado. Padrão usado 2x: `criarControladorPolling`/`DepsPolling` (`confirmacao/StatusPedidoLive.tsx`, polling de status) e `prepararAbaWhatsapp`/`AbrirJanela` (`checkout/aberturaWhatsapp.ts`, issue 126)
+- Mecânica de browser que precisa ser testada sem jsdom (repo não usa jsdom) → módulo neutro (sem `'use client'`/`'use server'`) com o objeto global (janela, timer) **injetado por parâmetro**, nunca lido direto de `window`/`document` dentro da função — permite cobrir em `environment: node` com fake injetado. Padrão usado 4x: `criarControladorPolling`/`DepsPolling` (`confirmacao/StatusPedidoLive.tsx`, polling de status), `prepararAbaWhatsapp`/`AbrirJanela` (`checkout/aberturaWhatsapp.ts`, issue 126), a medição da barra sticky da vitrine (`components/vitrine/medicaoBarraVitrine.ts`, issue 201 — elemento e `ResizeObserver` injetados) e o scrollspy da nav de categorias (`components/vitrine/scrollspyCategorias.ts`, issue 203 — `IntersectionObserver` e busca das `<section>` injetados)
 - Operação assíncrona com **debounce + coalescência + revert** (ex.: salvar uma reordenação sem disparar uma request por toque, sem perder o último movimento, sem reverter para um estado que nunca existiu no banco quando respostas chegam fora de ordem) → máquina de estado pura em `lib/utils/`, a Server Action **injetada por parâmetro** (nunca importada dentro do módulo), usando só `setTimeout`/`clearTimeout` globais — o vitest troca por timers falsos, cobre em `environment: node` sem jsdom. Primeira instância: `criarSalvamentoCoalescido` (`lib/utils/salvamento-coalescido.ts`, issue 175)
 
 ### Componentes
