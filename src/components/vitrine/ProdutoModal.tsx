@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { SecaoOpcionais } from "@/components/vitrine/SecaoOpcionais";
+import { achatarOpcionaisEscolhidos } from "@/components/vitrine/escolhasOpcionais";
 import { LIMITE_OBSERVACAO, MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import {
   ajudaObservacao,
@@ -138,17 +140,13 @@ export function ProdutoModal({
   const disponivel = produto.disponivel ?? true;
   const foto = fotoSegura(produto.fotoUrl);
   const grupos = produto.gruposOpcionais ?? [];
-  // Opcionais escolhidos (qtd > 0) achatados a partir dos grupos — preserva nome
-  // e preço (PREVIEW) para exibição/carrinho; o servidor recalcula tudo (§10).
-  const opcionaisEscolhidos: OpcionalCarrinho[] = grupos
-    .flatMap((g) => g.opcionais)
-    .map((o) => ({
-      opcionalId: o.id,
-      nome: o.nome,
-      preco: o.preco,
-      quantidade: qtdOpcionais[o.id] ?? 0,
-    }))
-    .filter((o) => o.quantidade > 0);
+  // Opcionais escolhidos (qtd > 0) achatados a partir dos GRUPOS (dado), não do que
+  // está visível na tela — grupo recolhido na sanfona (210) com qtd > 0 continua
+  // entrando no subtotal preview e no carrinho. O servidor recalcula tudo (§10).
+  const opcionaisEscolhidos: OpcionalCarrinho[] = achatarOpcionaisEscolhidos(
+    grupos,
+    qtdOpcionais,
+  );
 
   // Subtotal PREVIEW: reusa calcularSubtotal (082/090) — (preco × qtd) + Σ opc×qtd
   // (opcional por linha, não multiplica pela qtd do produto).
@@ -360,71 +358,11 @@ export function ProdutoModal({
                 ref={opcionaisSecaoRef}
                 className={`px-4 pb-4 md:pt-4 ${quantidade > 0 ? "" : "hidden"}`}
               >
-                <div className="rounded-2xl border border-[#eeeeee] bg-[#f9f9f9] p-4">
-                  <p className="mb-1 text-xs font-bold uppercase tracking-wide text-marrom-cafe">
-                    Opcionais
-                  </p>
-                  {grupos.map((grupo) => (
-                    <div key={grupo.categoriaOpcionalId} className="mt-3 first:mt-1">
-                      <p className="border-t border-[#eeeeee] pt-3 text-[0.7rem] font-bold uppercase tracking-wide text-[var(--texto-muted)] first:border-t-0 first:pt-0">
-                        {grupo.categoriaOpcionalNome}
-                      </p>
-                      {grupo.opcionais.map((opcional) => {
-                        const qtd = qtdOpcionais[opcional.id] ?? 0;
-                        return (
-                          <div
-                            key={opcional.id}
-                            className="flex items-center justify-between gap-3 border-b border-[#eeeeee] py-2.5 last:border-b-0"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-[var(--texto)]">
-                                {opcional.nome}
-                              </p>
-                              <p className="mt-0.5 text-xs font-bold text-[var(--cor-destaque)]">
-                                + {formatarMoeda(opcional.preco)}
-                              </p>
-                            </div>
-                            <div
-                              role="group"
-                              aria-label={`Quantidade de ${opcional.nome}`}
-                              className="flex shrink-0 items-center overflow-hidden rounded-lg border-[1.5px] border-[#dccbb0] bg-white"
-                            >
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Remover ${opcional.nome}`}
-                                disabled={qtd <= 0}
-                                onClick={() => ajustarOpcional(opcional.id, -1)}
-                                className="size-7 rounded-none text-[var(--cor-destaque)]"
-                              >
-                                <Minus aria-hidden className="size-3.5" />
-                              </Button>
-                              <span
-                                role="status"
-                                aria-live="polite"
-                                aria-label={`${opcional.nome}: ${qtd}`}
-                                className="min-w-6 border-x border-[#dccbb0] px-0.5 text-center text-sm font-bold tabular-nums text-[var(--texto)]"
-                              >
-                                {qtd}
-                              </span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Adicionar ${opcional.nome}`}
-                                onClick={() => ajustarOpcional(opcional.id, 1)}
-                                className="size-7 rounded-none text-[var(--cor-destaque)]"
-                              >
-                                <Plus aria-hidden className="size-3.5" />
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
+                <SecaoOpcionais
+                  grupos={grupos}
+                  qtdOpcionais={qtdOpcionais}
+                  onAjustar={ajustarOpcional}
+                />
               </div>
             ) : null}
 
