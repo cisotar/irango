@@ -49,7 +49,10 @@ type Op = {
 let ops: Op[];
 
 // Resposta simulada do terminador da cadeia, escolhida pela TABELA.
-let respostaPorTabela: Record<string, { data: unknown; error: unknown }>;
+let respostaPorTabela: Record<
+  string,
+  { data: unknown; error: unknown; count?: number }
+>;
 
 function makeChain() {
   const client: Record<string, unknown> = {

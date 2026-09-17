@@ -101,18 +101,21 @@ export type Database = {
           categoria_opcional_id: string
           id: string
           loja_id: string
+          ordem: number
         }
         Insert: {
           categoria_id: string
           categoria_opcional_id: string
           id?: string
           loja_id: string
+          ordem?: number
         }
         Update: {
           categoria_id?: string
           categoria_opcional_id?: string
           id?: string
           loja_id?: string
+          ordem?: number
         }
         Relationships: [
           {
@@ -1238,6 +1241,10 @@ export type Database = {
       pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
       reordenar_categorias: {
         Args: { p_ids: string[]; p_loja_id: string }
+        Returns: number
+      }
+      reordenar_opcionais_da_categoria: {
+        Args: { p_categoria_id: string; p_ids: string[]; p_loja_id: string }
         Returns: number
       }
     }
