@@ -423,6 +423,13 @@ describe("removerOpcionalAdmin (Server Action — admin SaaS)", () => {
 // ────────────────────── salvarAssociacaoOpcionaisAdmin ──────────────────────
 describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => {
   it("caso 5 — DELETE-por-categoria_id cru carrega eq('loja_id') E eq('categoria_id') (exceção documentada)", async () => {
+    // RN-12 (issue 208): o DELETE não é mais "do conjunto inteiro" — ele só roda
+    // para os DESMARCADOS e carrega também o `in("categoria_opcional_id", …)`.
+    // Aqui CAT_OPC_ALHEIA está associado hoje e não está na seleção → sai.
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [{ categoria_opcional_id: CAT_OPC_ALHEIA, ordem: 0 }],
+      error: null,
+    };
     const r = await salvarAssociacaoOpcionaisAdmin(
       LOJA_ALVO,
       payloadAssociacao(),
@@ -434,6 +441,26 @@ describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => 
     expect(del).toBeDefined();
     expect(del?.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
     expect(del?.filtros).toContainEqual(["categoria_id", CAT_PROD_PROPRIA]);
+    expect(del?.filtros).toContainEqual([
+      "categoria_opcional_id",
+      [CAT_OPC_ALHEIA],
+    ]);
+  });
+
+  it("caso 5 — RN-12: quem PERMANECE não é deletado nem reinserido (a `ordem` sobrevive)", async () => {
+    // O grupo já associado continua marcado: nada a remover, nada a inserir.
+    // É o clique mais comum do painel (re-salvar sem mexer), que com o
+    // delete+insert de antes zeraria a ordem de toda a categoria.
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [{ categoria_opcional_id: CAT_OPC_PROPRIA, ordem: 3 }],
+      error: null,
+    };
+    const r = await salvarAssociacaoOpcionaisAdmin(
+      LOJA_ALVO,
+      payloadAssociacao(),
+    );
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("categoria_produto_opcionais")).toBeUndefined();
   });
 
   it("caso 5 — INSERT da associação grava loja_id = lojaId da URL (nunca do payload)", async () => {
@@ -467,7 +494,11 @@ describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => 
     expect(opEscrita("categoria_produto_opcionais")).toBeUndefined();
   });
 
-  it("caso 5 — lista vazia: DELETE executa (substituição), INSERT não roda → { ok:true }", async () => {
+  it("caso 5 — lista vazia: DELETE de tudo que estava associado, INSERT não roda → { ok:true }", async () => {
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [{ categoria_opcional_id: CAT_OPC_PROPRIA, ordem: 0 }],
+      error: null,
+    };
     const r = await salvarAssociacaoOpcionaisAdmin(
       LOJA_ALVO,
       payloadAssociacao({ categoria_opcional_id: [] }),

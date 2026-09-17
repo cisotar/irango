@@ -39,9 +39,38 @@ export const schemaAssociacaoCategoriaOpcional = z
   })
   .strict();
 
+/**
+ * Reordenação dos GRUPOS de opcional dentro de UMA categoria de produto
+ * (issue 208). Espelha `schemaReordenacaoCategorias`
+ * (src/lib/validacoes/produto.ts:60) e NÃO reusa
+ * `schemaAssociacaoCategoriaOpcional`: lá a lista é um conjunto, aqui é uma
+ * SEQUÊNCIA, e duplicata/lista de 1 são inválidas.
+ *
+ * O cliente manda só ids — nunca `ordem` (derivada de `ordinality - 1` na RPC)
+ * nem `loja_id` (derivada de `auth.uid()` na Server Action). O `.strict()` é o
+ * que impede uma propriedade hostil pendurada no payload de chegar aos args da
+ * RPC; o parse devolve um objeto NOVO.
+ *
+ * `.min(2)`: lista de 1 não tem ordem. `.max(200)`: teto de cardinalidade
+ * (CWE-770). O refine de unicidade é defesa em profundidade — a RPC também
+ * rejeita duplicata pelo `row_count`, mas ela nem deve chegar ao banco.
+ */
+export const schemaReordenacaoOpcionaisDaCategoria = z
+  .object({
+    categoria_id: z.guid(),
+    categoria_opcional_id: z.array(z.guid()).min(2).max(200),
+  })
+  .strict()
+  .refine(({ categoria_opcional_id: ids }) => new Set(ids).size === ids.length, {
+    message: "Ids repetidos na reordenação",
+  });
+
 // Tipos inferidos para react-hook-form
 export type CategoriaOpcionalFormData = z.infer<typeof schemaCategoriaOpcional>;
 export type OpcionalFormData = z.infer<typeof schemaOpcional>;
 export type AssociacaoCategoriaOpcionalFormData = z.infer<
   typeof schemaAssociacaoCategoriaOpcional
+>;
+export type ReordenacaoOpcionaisDaCategoriaFormData = z.infer<
+  typeof schemaReordenacaoOpcionaisDaCategoria
 >;

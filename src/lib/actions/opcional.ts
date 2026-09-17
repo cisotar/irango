@@ -15,7 +15,9 @@ import {
   schemaCategoriaOpcional,
   schemaOpcional,
   schemaAssociacaoCategoriaOpcional,
+  schemaReordenacaoOpcionaisDaCategoria,
 } from "@/lib/validacoes/opcional";
+import { planejarAssociacaoOpcionais } from "@/lib/utils/associacao-opcionais";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
@@ -23,6 +25,13 @@ import { revalidatePath } from "next/cache";
 export type ResultadoOpcional = { ok: true } | { ok: false; erro: string };
 
 const CAMINHO_PAINEL = "/painel/produtos/opcionais";
+
+/**
+ * Mensagem ÚNICA para id alheio, lista incompleta, categoria de outra loja e
+ * erro de banco (seguranca.md §14): mensagem distinta viraria oráculo de
+ * existência de id. O detalhe fica no console.error do servidor.
+ */
+const ERRO_ORDEM = "Não foi possível salvar a ordem.";
 
 type Client = Awaited<ReturnType<typeof createClient>>;
 
@@ -313,23 +322,40 @@ export async function salvarAssociacaoOpcionais(
       }
     }
 
-    // Substitui o conjunto: remove as associações atuais desta categoria de
-    // produto e insere a seleção. Escopo por loja reforça o isolamento.
-    const { error: erroDelete } = await supabase
+    // RN-12: NÃO substitui o conjunto inteiro. O delete+insert de tudo zeraria
+    // `categoria_produto_opcionais.ordem` (default 0) a cada clique de checkbox.
+    // O plano é um DELTA: quem permanece não é tocado e mantém a ordem.
+    const { data: associados, error: erroLeitura } = await supabase
       .from("categoria_produto_opcionais")
-      .delete()
+      .select("categoria_opcional_id, ordem")
       .eq("loja_id", loja.id)
       .eq("categoria_id", categoria_id);
-    if (erroDelete) {
-      console.error("[salvarAssociacaoOpcionais:delete]", erroDelete);
+    if (erroLeitura) {
+      console.error("[salvarAssociacaoOpcionais:select]", erroLeitura);
       return { ok: false, erro: "Não foi possível salvar a associação." };
     }
 
-    if (categoria_opcional_id.length > 0) {
-      const linhas = categoria_opcional_id.map((catOpcId) => ({
+    const plano = planejarAssociacaoOpcionais(associados ?? [], categoria_opcional_id);
+
+    if (plano.remover.length > 0) {
+      const { error: erroDelete } = await supabase
+        .from("categoria_produto_opcionais")
+        .delete()
+        .eq("loja_id", loja.id)
+        .eq("categoria_id", categoria_id)
+        .in("categoria_opcional_id", plano.remover);
+      if (erroDelete) {
+        console.error("[salvarAssociacaoOpcionais:delete]", erroDelete);
+        return { ok: false, erro: "Não foi possível salvar a associação." };
+      }
+    }
+
+    if (plano.inserir.length > 0) {
+      const linhas = plano.inserir.map((linha) => ({
         loja_id: loja.id,
         categoria_id,
-        categoria_opcional_id: catOpcId,
+        categoria_opcional_id: linha.categoria_opcional_id,
+        ordem: linha.ordem,
       }));
       const { error: erroInsert } = await supabase
         .from("categoria_produto_opcionais")
@@ -345,5 +371,76 @@ export async function salvarAssociacaoOpcionais(
   } catch (e) {
     console.error("[salvarAssociacaoOpcionais]", e);
     return { ok: false, erro: "Não foi possível salvar a associação." };
+  }
+}
+
+// ── Reordenação dos grupos de opcional DENTRO de uma categoria de produto ────
+
+/**
+ * Grava `ordem` normalizada 0..n-1 para TODOS os grupos de opcional associados a
+ * UMA categoria de produto, numa única instrução atômica (issue 208, RN-4).
+ *
+ * Isto é AUTORIZAÇÃO, não CRUD: o payload é uma lista de ids escolhida pelo
+ * cliente. `p_loja_id` vem SEMPRE de `buscarLojaDoDono` (auth.uid()), NUNCA do
+ * payload. Já `categoria_id` vem do payload — é o único parâmetro de escopo que
+ * não deriva do auth — e por isso passa por `categoriaProdutoPertenceALoja`
+ * antes da RPC (RN-5b), além do filtro `categoria_id` dentro da própria RPC e da
+ * RLS por baixo.
+ *
+ * O pre-check de posse dos ids é deliberadamente deixado para a RPC: em JS ele
+ * seria TOCTOU (a lista pode mudar entre o SELECT e o UPDATE); dentro da
+ * transação, não. A RPC exige a PERMUTAÇÃO COMPLETA do par (loja, categoria) e
+ * confere o `row_count` — id alheio, inexistente, duplicado ou de outra
+ * categoria derruba a transação inteira.
+ */
+export async function reordenarOpcionaisDaCategoria(
+  payload: unknown,
+): Promise<ResultadoOpcional> {
+  // 1) Forma ANTES de qualquer I/O. O parse devolve um objeto NOVO: propriedade
+  //    hostil pendurada pelo cliente (ex.: `loja_id`) não chega aos args da RPC.
+  const parsed = schemaReordenacaoOpcionaisDaCategoria.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: ERRO_ORDEM };
+  }
+  const { categoria_id, categoria_opcional_id } = parsed.data;
+
+  try {
+    // 2) Client AUTENTICADO — `security invoker` mantém a RLS
+    //    `cat_prod_opc_escrita_propria` valendo dentro da função.
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: ERRO_ORDEM };
+    }
+
+    // 3) RN-5b: a categoria de PRODUTO veio do cliente — provar que é da loja.
+    const produtoOk = await categoriaProdutoPertenceALoja(
+      supabase,
+      categoria_id,
+      loja.id,
+    );
+    if (!produtoOk) {
+      return { ok: false, erro: ERRO_ORDEM };
+    }
+
+    // 4) UMA ida ao banco, UMA instrução, atômica.
+    const { error } = await supabase.rpc("reordenar_opcionais_da_categoria", {
+      p_loja_id: loja.id,
+      p_categoria_id: categoria_id,
+      p_ids: categoria_opcional_id,
+    });
+    if (error) {
+      console.error("[reordenarOpcionaisDaCategoria]", error);
+      return { ok: false, erro: ERRO_ORDEM };
+    }
+
+    // A vitrine vai pelo slug da PRÓPRIA loja, nunca pela forma coringa
+    // ("/loja/[slug]", "page"), que invalidaria o Router Cache de TODAS as lojas.
+    revalidatePath(CAMINHO_PAINEL);
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[reordenarOpcionaisDaCategoria]", e);
+    return { ok: false, erro: ERRO_ORDEM };
   }
 }
