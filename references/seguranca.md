@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.3.3 | **Atualizado:** 2026-09-09
+**Versão:** 0.3.4 | **Atualizado:** 2026-09-17
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -373,9 +373,11 @@ CREATE POLICY "zonas_escrita_propria" ON zonas_entrega FOR ALL
 -- (idem taxas_entrega via zona → loja, bairros_zona via zona → loja, formas_pagamento via loja)
 ```
 
-### RPC de escrita em lote do lojista — segunda variante do padrão RPC (issue 175)
+### RPC de escrita em lote do lojista — segunda variante do padrão RPC (issue 175, 208)
 
 `public.reordenar_categorias(p_loja_id uuid, p_ids uuid[])` (migration `20260908120000_rpc_reordenar_categorias.sql`) é a primeira RPC de escrita do lado do **lojista** — as RPCs anteriores (`criar_pedido`, §10; `garantir_loja_do_dono`, §17) são do lado público/auto-cura, chamadas sob `service_role`. Ela existe porque PostgREST não faz `update-many` com valor diferente por linha (aqui, `ordem = ordinalidade - 1` para todas as categorias da loja numa só instrução).
+
+`public.reordenar_opcionais_da_categoria(p_loja_id uuid, p_categoria_id uuid, p_ids uuid[])` (migrations `20260917120000_ordem_em_categoria_produto_opcionais.sql` + `20260917121000_rpc_reordenar_opcionais_da_categoria.sql`, issue 208) é a segunda instância do mesmo padrão, e espelha fielmente a primeira (`SECURITY INVOKER`, `SET search_path = public`, `REVOKE ALL FROM public, anon`, `GRANT EXECUTE TO authenticated, service_role`, `cardinality()`). **Diferença estrutural, não de estilo:** a permutação completa de `reordenar_categorias` é da **loja inteira**; a de `reordenar_opcionais_da_categoria` é do **par (loja, categoria de produto)** — o mesmo grupo de opcional pode estar associado a várias categorias de produto com posições diferentes em cada uma. Por isso a função recebe um segundo parâmetro de escopo, `p_categoria_id`, e é o único parâmetro de escopo desta feature que **vem do payload do cliente** (os demais, `p_loja_id` incluído, vêm de `auth.uid()` no servidor). Três camadas cobrem esse parâmetro: a Server Action valida `categoria_id` como pertencente à loja com `categoriaProdutoPertenceALoja` **antes** de chamar a RPC; a RPC filtra o `UPDATE` por `and cpo.categoria_id = p_categoria_id` como segunda camada, além da RLS; e `cat_prod_opc_escrita_propria` é a terceira. Um id de outra categoria dentro de `p_ids`, ou um `p_categoria_id` de outra loja, derruba a transação inteira (permutação incompleta → `row_count` diverge → `raise exception`).
 
 **Diferença do padrão de `criar_pedido`:** `GRANT EXECUTE` vai para `authenticated`, não `service_role`. A escrita é feita pelo próprio lojista autenticado, autorizada pela RLS `categorias_escrita_propria` avaliada sob o invoker — não por bypass de service_role.
 
@@ -383,7 +385,7 @@ CREATE POLICY "zonas_escrita_propria" ON zonas_entrega FOR ALL
 - **`GRANT EXECUTE` explícito é obrigatório em toda função nova, não só nas que usam `service_role`.** O Postgres concede `EXECUTE` a `PUBLIC` por padrão em função nova, e o projeto **não** tem `ALTER DEFAULT PRIVILEGES ... ON FUNCTIONS` (só em tabelas/sequences — ver §19 "Default privileges do schema public"). Sem `REVOKE ALL ... FROM PUBLIC, anon` explícito, `anon` executaria.
 - **Validar cardinalidade de array vindo do cliente com `cardinality()`, nunca `array_length(arr, 1)`.** Achado BAIXA corrigido por `20260908130000_cardinality_reordenar_categorias.sql`: `array_length` conta só a primeira dimensão — um array multidimensional passa pela checagem `v_enviadas = v_na_loja` declarando menos elementos do que o `unnest` de fato entrega, corrompendo a `ordinality` usada para derivar `ordem`. `cardinality()` conta todos os elementos, em todas as dimensões.
 
-**Regra para devs e agentes:** RPC de escrita em lote autorizada pela RLS do próprio chamador (não por `service_role`) segue `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon` + `GRANT EXECUTE TO authenticated`. Se a função validar array vindo do cliente, usar `cardinality()`.
+**Regra para devs e agentes:** RPC de escrita em lote autorizada pela RLS do próprio chamador (não por `service_role`) segue `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon` + `GRANT EXECUTE TO authenticated`. Se a função validar array vindo do cliente, usar `cardinality()`. Se a permutação for de um escopo mais fino que a loja inteira (ex.: um par loja+categoria), o parâmetro extra que define esse escopo vem do payload do cliente — não de `auth.uid()` — e por isso exige checagem explícita na Server Action **antes** da RPC, além do filtro dentro da função e da RLS.
 
 ---
 
