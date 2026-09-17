@@ -479,16 +479,33 @@ export async function reordenarOpcionaisDaCategoriaAdmin(
     if (!cobreTudo) return { ok: false, erro: ERRO_ORDEM_ADMIN };
 
     // `ordem` é DERIVADA do índice no servidor — o cliente só mandou a sequência.
-    // Cada UPDATE carrega o escopo da loja-alvo E da categoria explicitamente.
+    //
+    // NÃO usa `escopo.atualizar(tabela, id, patch)` de propósito, embora o wrapper
+    // exista e a tabela tenha `id` próprio: ele escopa por (loja_id, id), e aqui a
+    // identidade da linha é a TRIPLA (loja_id, categoria_id, categoria_opcional_id).
+    // Sob `service_role` a RLS está desligada, então o predicado explícito é a única
+    // trava — trocá-lo por (loja_id, id) afrouxaria a garantia no único caminho que
+    // não tem rede de proteção embaixo.
+    //
+    // `count: "exact"` é o que o wrapper daria de graça e o loop precisa ter: sem ele,
+    // uma linha removida entre o SELECT acima e este UPDATE afeta 0 linhas SEM erro, e
+    // a action devolveria { ok: true } com uma posição faltando (TOCTOU).
     for (const [posicao, catOpcId] of categoria_opcional_id.entries()) {
-      const { error } = await svc
+      const { error, count } = await svc
         .from("categoria_produto_opcionais")
-        .update({ ordem: posicao })
+        .update({ ordem: posicao }, { count: "exact" })
         .eq("loja_id", loja.lojaId)
         .eq("categoria_id", categoria_id)
         .eq("categoria_opcional_id", catOpcId);
       if (error) {
         console.error("[reordenarOpcionaisDaCategoriaAdmin:update]", error);
+        return { ok: false, erro: ERRO_ORDEM_ADMIN };
+      }
+      if (count !== 1) {
+        console.error(
+          "[reordenarOpcionaisDaCategoriaAdmin:update] linhas afetadas inesperado",
+          { catOpcId, count },
+        );
         return { ok: false, erro: ERRO_ORDEM_ADMIN };
       }
     }

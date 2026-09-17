@@ -41,6 +41,7 @@ type Op = {
   tabela: string;
   insert?: Record<string, unknown>;
   update?: Record<string, unknown>;
+  updateOpts?: { count?: string };
   deleted?: boolean;
   selected?: boolean;
   filtros: Array<[string, unknown]>;
@@ -71,8 +72,12 @@ function makeChain() {
         op.insert = row;
         return queryChain;
       };
-      queryChain.update = (row: Record<string, unknown>) => {
+      queryChain.update = (
+        row: Record<string, unknown>,
+        opts?: { count?: string },
+      ) => {
         op.update = row;
+        op.updateOpts = opts;
         return queryChain;
       };
       queryChain.delete = () => {
@@ -80,10 +85,18 @@ function makeChain() {
         return queryChain;
       };
       // Só a cadeia da query é thenável → resolve a resposta da SUA tabela.
-      queryChain.then = (onF: (v: unknown) => unknown) =>
-        Promise.resolve(
-          respostaPorTabela[tabela] ?? { data: null, error: null },
-        ).then(onF);
+      // UPDATE com `count: "exact"` devolve `count` no PostgREST real; sem modelar
+      // isso o mock não distingue "afetou a linha" de "não afetou nenhuma", que é
+      // exatamente a janela TOCTOU que o count existe para fechar. Default 1 (afetou
+      // a linha); um teste que queira o caso 0 sobrescreve via `respostaPorTabela`.
+      queryChain.then = (onF: (v: unknown) => unknown) => {
+        const base = respostaPorTabela[tabela] ?? { data: null, error: null };
+        const resposta =
+          op.update != null && (base as { count?: number }).count == null
+            ? { ...base, count: 1 }
+            : base;
+        return Promise.resolve(resposta).then(onF);
+      };
       return queryChain;
     },
   };
@@ -571,6 +584,35 @@ describe("reordenarOpcionaisDaCategoriaAdmin (Server Action — issue 208)", () 
       "categoria_opcional_id",
       CAT_OPC_ALHEIA,
     ]);
+  });
+
+  it("cada UPDATE pede `count: \"exact\"` — sem isso a action não sabe se afetou a linha", async () => {
+    await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    const updates = ops.filter(
+      (o) => o.tabela === "categoria_produto_opcionais" && o.update,
+    );
+    expect(updates).toHaveLength(2);
+    for (const u of updates) {
+      expect(u.updateOpts).toEqual({ count: "exact" });
+    }
+  });
+
+  it("TOCTOU: linha some entre o SELECT e o UPDATE (count 0) → { ok:false }, PARA no primeiro e não segue o loop", async () => {
+    // Permutação confere na leitura, mas o UPDATE não acha a linha: sem a
+    // checagem de `count` isso passaria como { ok:true } com posição faltando.
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [
+        { categoria_opcional_id: CAT_OPC_PROPRIA },
+        { categoria_opcional_id: CAT_OPC_ALHEIA },
+      ],
+      error: null,
+      count: 0,
+    };
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(
+      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+    ).toHaveLength(1);
   });
 
   it("RN-5b: categoria_id (de produto) que não pertence à loja-alvo → { ok:false }, zero UPDATE", async () => {
