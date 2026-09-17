@@ -11,6 +11,10 @@ import {
   // cai em `TypeError: ... is not a function` — vermelho por asserção, não por
   // erro de compilação que mascararia o resto da suite. Implementação é da GREEN.
   buscarOpcionaisPorCategoriaDaLoja,
+  // issue 207: `buscarCatalogoPublico` foi quebrada em fetch (`buscarProdutosPublicos`)
+  // + agrupamento puro (`agruparCatalogo`) para permitir Promise.all na vitrine.
+  agruparCatalogo,
+  buscarProdutosPublicos,
 } from "./produtos";
 
 /**
@@ -549,5 +553,137 @@ describe("132 buscarOpcionaisPorCategoriaDaLoja — contrato TS (camada 2, mock)
     const mapa = await buscarOpcionaisPorCategoriaDaLoja(client, LOJA_A, ["cat-paes"]);
 
     expect(mapa["cat-paes"].map((g) => g.categoriaOpcionalId)).toEqual(["oc-doces"]);
+  });
+});
+
+// ───────────────────────── agruparCatalogo (issue 207 — função pura, novo limite)
+/**
+ * `agruparCatalogo` nasceu da quebra de `buscarCatalogoPublico` (issue 207, F4):
+ * a query virou `buscarProdutosPublicos` e o agrupamento virou esta função PURA,
+ * para a vitrine poder buscar produtos e categorias em `Promise.all`. Os testes
+ * de `buscarCatalogoPublico` acima já cobrem o comportamento via composição —
+ * estes testam a função pura DIRETAMENTE, sem client/mock de Supabase, que é a
+ * superfície nova que não existia antes do refactor.
+ */
+describe("207 agruparCatalogo — função pura (fetch/agrupamento separados)", () => {
+  const catBebidas = {
+    id: "cat-bebidas",
+    loja_id: "loja-1",
+    nome: "Bebidas",
+    ordem: 0,
+    criado_em: "2026-01-01T00:00:00Z",
+    exibir_imagens: true,
+  };
+  const catLanches = {
+    id: "cat-lanches",
+    loja_id: "loja-1",
+    nome: "Lanches",
+    ordem: 1,
+    criado_em: "2026-01-01T00:00:00Z",
+    exibir_imagens: true,
+  };
+
+  it('produto SEM categoria_id vai para "Outros", e "Outros" fica por ÚLTIMO mesmo com categorias antes dele', () => {
+    const produtos = [
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", preco: 5, disponivel: true, ordem: 0 },
+      { id: "p9", loja_id: "loja-1", categoria_id: null, nome: "Brinde", preco: 0, disponivel: true, ordem: 0 },
+    ];
+
+    const grupos = agruparCatalogo(produtos as never, [catBebidas]);
+
+    expect(grupos.map((g) => g.nome)).toEqual(["Bebidas", "Outros"]);
+    expect(grupos[grupos.length - 1].id).toBeNull();
+    expect(grupos[grupos.length - 1].produtos.map((p) => p.id)).toEqual(["p9"]);
+  });
+
+  it('produto com categoria_id que NÃO existe na lista de categorias também cai em "Outros" (join órfão, não é descartado)', () => {
+    // Diferente do caso categoria_id=null: aqui o produto TEM categoria_id, mas
+    // a categoria não veio em `categorias` (ex.: categoria apagada entre as duas
+    // buscas paralelas). Se o código trocasse `?? undefined` por um `.get()` que
+    // lança, ou se ignorasse silenciosamente o produto, este teste pegaria: o
+    // produto precisa aparecer em algum grupo, nunca sumir.
+    const produtos = [
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-fantasma", nome: "X", preco: 10, disponivel: true, ordem: 0 },
+    ];
+
+    const grupos = agruparCatalogo(produtos as never, [catBebidas]);
+
+    expect(grupos.map((g) => g.nome)).toEqual(["Outros"]);
+    expect(grupos[0].produtos.map((p) => p.id)).toEqual(["p1"]);
+  });
+
+  it("categoria que só tem produto ESGOTADO (disponivel:false) continua aparecendo — não filtra por disponivel", () => {
+    const produtos = [
+      { id: "p2", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Suco", preco: 7, disponivel: false, ordem: 0 },
+    ];
+
+    const grupos = agruparCatalogo(produtos as never, [catBebidas, catLanches]);
+
+    expect(grupos.map((g) => g.nome)).toEqual(["Bebidas"]);
+    expect(grupos[0].produtos[0].disponivel).toBe(false);
+  });
+
+  it("177 — grupo de categoria SEM nenhum produto some do resultado (filter)", () => {
+    const produtos = [
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-lanches", nome: "X-Burguer", preco: 20, disponivel: true, ordem: 0 },
+    ];
+
+    // "Bebidas" não tem nenhum produto: não pode sobrar como grupo vazio.
+    const grupos = agruparCatalogo(produtos as never, [catBebidas, catLanches]);
+
+    expect(grupos.map((g) => g.nome)).toEqual(["Lanches"]);
+    expect(grupos.find((g) => g.nome === "Bebidas")).toBeUndefined();
+  });
+
+  it('categorias=[] (padrão) com produtos → um único grupo "Outros" contendo todos', () => {
+    const produtos = [
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", preco: 5, disponivel: true, ordem: 0 },
+      { id: "p2", loja_id: "loja-1", categoria_id: null, nome: "Brinde", preco: 0, disponivel: true, ordem: 1 },
+    ];
+
+    const grupos = agruparCatalogo(produtos as never);
+
+    expect(grupos.length).toBe(1);
+    expect(grupos[0].nome).toBe("Outros");
+    expect(grupos[0].produtos.map((p) => p.id)).toEqual(["p1", "p2"]);
+  });
+
+  it("produtos=[] e categorias=[] → [] (nada de 'Outros' vazio sobrando)", () => {
+    expect(agruparCatalogo([], [])).toEqual([]);
+  });
+
+  it("produtos=[] com categorias definidas → [] (nenhuma categoria vazia vaza para a vitrine)", () => {
+    expect(agruparCatalogo([], [catBebidas, catLanches])).toEqual([]);
+  });
+});
+
+// ───────────────────────── buscarProdutosPublicos (issue 207 — só a query)
+describe("207 buscarProdutosPublicos — só a query (sem agrupamento)", () => {
+  it("consulta produtos filtrando loja_id + oculto=false, ordenado por ordem, e devolve a lista CRUA (sem agrupar)", async () => {
+    const rows = [
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", preco: 5, disponivel: true, ordem: 0 },
+      { id: "p2", loja_id: "loja-1", categoria_id: "cat-lanches", nome: "X-Burguer", preco: 20, disponivel: true, ordem: 1 },
+    ];
+    const { client, calls } = makeClient({ data: rows, error: null });
+
+    const out = await buscarProdutosPublicos(client, "loja-1");
+
+    expect(calls.from).toHaveBeenCalledWith("produtos");
+    expect(calls.eq).toHaveBeenCalledWith("loja_id", "loja-1");
+    expect(calls.eq).toHaveBeenCalledWith("oculto", false);
+    expect(calls.order).toHaveBeenCalledWith("ordem", { ascending: true });
+    // Sem agrupamento: devolve a lista plana tal como veio do PostgREST.
+    expect(out).toEqual(rows);
+  });
+
+  it("data=null → [] (não lança, não mascara erro que não existe)", async () => {
+    const { client } = makeClient({ data: null, error: null });
+    const out = await buscarProdutosPublicos(client, "loja-1");
+    expect(out).toEqual([]);
+  });
+
+  it("PROPAGA o error do PostgREST — não retorna [] silenciosamente", async () => {
+    const { client } = makeClient({ data: null, error: { message: "db down" } });
+    await expect(buscarProdutosPublicos(client, "loja-1")).rejects.toBeTruthy();
   });
 });

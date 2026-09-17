@@ -48,23 +48,21 @@ export type GrupoCatalogo = {
 };
 
 /**
- * Catálogo público da vitrine: produtos NÃO-ocultos de loja ativa (`oculto=false`),
- * agrupados por categoria (ordem da categoria) e ordenados por `ordem`. Produtos
- * indisponíveis (`disponivel=false`) NÃO-ocultos ENTRAM no catálogo (renderizam
- * como "esgotado" — RN-3, RN-4); o campo `disponivel` vem no objeto via `select("*")`.
- * O filtro `.eq("oculto", false)` é defesa em profundidade sobre a RLS 083 (§9.4),
- * não a substitui. Produtos sem categoria caem no grupo "Outros", que fica POR ÚLTIMO.
- * `categorias` é a lista já buscada (buscarCategorias) usada para ordenar/nomear os grupos.
- * Grupo sem nenhum produto visível NÃO é devolvido (issue 177): a vitrine não pode
- * renderizar cabeçalho de categoria que não leva a lugar nenhum. Categoria só com
- * produto esgotado CONTINUA aparecendo — `disponivel` não filtra, só `oculto`.
- * O painel enxerga as categorias vazias por `buscarCategorias`, não por aqui.
+ * Produtos visíveis na vitrine: NÃO-ocultos (`oculto=false`) da loja, ordenados
+ * por `ordem`. Produtos indisponíveis (`disponivel=false`) NÃO-ocultos ENTRAM no
+ * resultado (renderizam como "esgotado" — RN-3, RN-4); o campo `disponivel` vem
+ * no objeto via `select("*")`. O filtro `.eq("oculto", false)` é defesa em
+ * profundidade sobre a RLS 083 (§9.4), não a substitui.
+ *
+ * Só a QUERY: o agrupamento por categoria é `agruparCatalogo` (função pura). A
+ * separação existe para que a vitrine possa buscar produtos e categorias em
+ * paralelo (`Promise.all`) — o agrupamento não é dependência de fetch (issue 207,
+ * achado F4 da auditoria de 2026-09-16). Propaga `error` (§14).
  */
-export async function buscarCatalogoPublico(
+export async function buscarProdutosPublicos(
   client: Client,
   lojaId: string,
-  categorias: Categoria[] = [],
-): Promise<GrupoCatalogo[]> {
+): Promise<Produto[]> {
   const { data, error } = await client
     .from("produtos")
     .select("*")
@@ -72,8 +70,25 @@ export async function buscarCatalogoPublico(
     .eq("oculto", false)
     .order("ordem", { ascending: true });
   if (error) throw error;
-  const produtos = (data ?? []) as Produto[];
+  return (data ?? []) as Produto[];
+}
 
+/**
+ * Agrupa os produtos já buscados por categoria, na ordem das categorias. Função
+ * PURA (sem I/O): `categorias` é a lista já buscada (`buscarCategorias`), usada
+ * só para ordenar/nomear os grupos.
+ *
+ * Produtos sem categoria (ou de categoria fora da lista) caem no grupo "Outros",
+ * que fica POR ÚLTIMO. Grupo sem nenhum produto visível NÃO é devolvido (issue
+ * 177): a vitrine não pode renderizar cabeçalho de categoria que não leva a lugar
+ * nenhum. Categoria só com produto esgotado CONTINUA aparecendo — `disponivel`
+ * não filtra, só `oculto`. O painel enxerga as categorias vazias por
+ * `buscarCategorias`, não por aqui.
+ */
+export function agruparCatalogo(
+  produtos: Produto[],
+  categorias: Categoria[] = [],
+): GrupoCatalogo[] {
   // Um grupo por categoria, na ordem das categorias.
   const grupos: GrupoCatalogo[] = categorias.map((categoria) => ({
     id: categoria.id,
@@ -100,6 +115,20 @@ export async function buscarCatalogoPublico(
 
   if (outros) grupos.push(outros);
   return grupos.filter((grupo) => grupo.produtos.length > 0);
+}
+
+/**
+ * Catálogo público da vitrine: composição de `buscarProdutosPublicos` (query) com
+ * `agruparCatalogo` (agrupamento em memória). Mantida com assinatura e retorno
+ * idênticos para os callers que não precisam paralelizar as duas buscas; quem
+ * precisa (a page da vitrine) chama as duas peças diretamente.
+ */
+export async function buscarCatalogoPublico(
+  client: Client,
+  lojaId: string,
+  categorias: Categoria[] = [],
+): Promise<GrupoCatalogo[]> {
+  return agruparCatalogo(await buscarProdutosPublicos(client, lojaId), categorias);
 }
 
 /**

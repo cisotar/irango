@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { CatalogoVitrine } from "@/components/vitrine/CatalogoVitrine";
 import { HeaderLoja } from "@/components/vitrine/HeaderLoja";
@@ -12,8 +13,9 @@ import { createClient } from "@/lib/supabase/server";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
 import {
-  buscarCatalogoPublico,
+  agruparCatalogo,
   buscarOpcionaisPorCategoria,
+  buscarProdutosPublicos,
 } from "@/lib/supabase/queries/produtos";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
@@ -24,6 +26,20 @@ import {
 } from "@/lib/utils/assinatura";
 
 type PageProps = { params: Promise<{ slug: string }> };
+
+/**
+ * Dedup por REQUEST (`cache()` do React), não entre requests: `generateMetadata`,
+ * `generateViewport` e o render da página leem a MESMA linha de `vitrine_lojas`.
+ * A chave é só o `slug` — `createClient()` devolve um objeto novo a cada chamada,
+ * então passar o client como argumento daria cache miss em todas (issue 207).
+ * `createClient()` não faz I/O de rede (só lê cookies), criá-lo aqui dentro é barato.
+ * NÃO é ISR/`revalidate`/`'use cache'`: a vitrine carrega dado vivo (`disponivel`
+ * e o gate de assinatura), que não pode ser cacheado entre requisições.
+ */
+const carregarLoja = cache(async (slug: string) => {
+  const db = await createClient();
+  return buscarLojaPorSlug(db, slug);
+});
 
 type Tema = { primaria: string; fundo: string; destaque: string };
 
@@ -53,8 +69,7 @@ export async function generateMetadata({
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   try {
-    const db = await createClient();
-    const loja = await buscarLojaPorSlug(db, slug);
+    const loja = await carregarLoja(slug);
     // Loja inexistente/inativa: só title, SEM manifest (não há app instalável
     // de loja que não existe). `apple-touch-icon` é genérico, fica.
     if (!loja || !loja.nome) {
@@ -82,8 +97,7 @@ export async function generateViewport({
 }: PageProps): Promise<Viewport> {
   const { slug } = await params;
   try {
-    const db = await createClient();
-    const loja = await buscarLojaPorSlug(db, slug);
+    const loja = await carregarLoja(slug);
     const parsed = schemaTema.safeParse(loja?.tema);
     return { themeColor: parsed.success ? parsed.data.primaria : THEME_PADRAO };
   } catch (e) {
@@ -97,7 +111,7 @@ export default async function VitrinePage({ params }: PageProps) {
   const db = await createClient();
 
   // Vitrine pública (role anon): a view `vitrine_lojas` já filtra `ativo = true`.
-  const loja = await buscarLojaPorSlug(db, slug);
+  const loja = await carregarLoja(slug);
   if (!loja || !loja.id || !loja.nome) notFound();
 
   // Gate de assinatura (RN-A7) — SEMPRE server-side, mesma fonte de verdade do
@@ -139,8 +153,14 @@ export default async function VitrinePage({ params }: PageProps) {
 
   const lojaId = loja.id;
 
-  const categorias = await buscarCategorias(db, lojaId);
-  const grupos = await buscarCatalogoPublico(db, lojaId, categorias);
+  // Categorias e produtos só dependem de `lojaId` — buscados em paralelo, e o
+  // agrupamento (em memória) acontece depois (issue 207, F4). Ambos DEPOIS do
+  // gate de assinatura: loja inválida não dispara query de catálogo.
+  const [categorias, produtos] = await Promise.all([
+    buscarCategorias(db, lojaId),
+    buscarProdutosPublicos(db, lojaId),
+  ]);
+  const grupos = agruparCatalogo(produtos, categorias);
 
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
   // opcionais ativos de loja ativa. Buscados pelas categorias do catálogo.
@@ -174,7 +194,7 @@ export default async function VitrinePage({ params }: PageProps) {
     })),
   }));
 
-  // Grupo sem produto visível já não vem de `buscarCatalogoPublico` (issue 177),
+  // Grupo sem produto visível já não vem de `agruparCatalogo` (issue 177),
   // então lista vazia = loja sem nada a mostrar.
   const temVazio = categoriasComProdutos.length === 0;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
 
 import {
@@ -25,7 +25,6 @@ export type CarrinhoProps = {
 };
 
 export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
-  const router = useRouter();
   const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho();
 
   const vazio = itens.length === 0;
@@ -145,13 +144,14 @@ export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
               </div>
               <Button
                 className="min-h-11 bg-[var(--cor-primaria)] text-white hover:bg-[var(--cor-primaria)]/90"
-                onClick={() => {
-                  onOpenChange(false);
-                  router.push(`/loja/${lojaSlug}/pedido`);
-                }}
-              >
-                Finalizar pedido
-              </Button>
+                nativeButton={false}
+                onClick={() => onOpenChange(false)}
+                render={
+                  <Link href={`/loja/${lojaSlug}/pedido`} prefetch>
+                    Finalizar pedido
+                  </Link>
+                }
+              />
             </SheetFooter>
           </>
         )}
