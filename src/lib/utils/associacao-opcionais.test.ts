@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { planejarAssociacaoOpcionais } from "./associacao-opcionais";
+import {
+  planejarAssociacaoOpcionais,
+  haAlteracaoNaAssociacao,
+} from "./associacao-opcionais";
 
 /**
  * Testes da função pura que RN-12 (issue 208) introduziu para substituir o
@@ -96,5 +99,40 @@ describe("planejarAssociacaoOpcionais", () => {
     const plano = planejarAssociacaoOpcionais(atuais, [B, C]);
     expect(plano.remover).toEqual([A]);
     expect(plano.inserir).toEqual([{ categoria_opcional_id: C, ordem: 2 }]);
+  });
+});
+
+describe("haAlteracaoNaAssociacao — gate do botão Reordenar (209)", () => {
+  const s = (...ids: string[]) => new Set(ids);
+
+  it("conjuntos idênticos → false (pode reordenar)", () => {
+    expect(haAlteracaoNaAssociacao(s("a", "b"), s("a", "b"))).toBe(false);
+  });
+
+  it("ordem de iteração não importa — é conjunto, não lista", () => {
+    expect(haAlteracaoNaAssociacao(s("a", "b"), s("b", "a"))).toBe(false);
+  });
+
+  it("grupo recém-MARCADO e não salvo → true (bloqueia)", () => {
+    // O caso que a trava existe para pegar: 'c' ainda não tem linha em
+    // categoria_produto_opcionais, e mandá-lo na permutação derrubaria a RPC.
+    expect(haAlteracaoNaAssociacao(s("a", "b"), s("a", "b", "c"))).toBe(true);
+  });
+
+  it("grupo DESMARCADO e não salvo → true (bloqueia)", () => {
+    expect(haAlteracaoNaAssociacao(s("a", "b"), s("a"))).toBe(true);
+  });
+
+  it("troca de mesmo tamanho → true (tamanho igual não é suficiente)", () => {
+    // Sem a checagem de pertinência, o `size` igual passaria batido.
+    expect(haAlteracaoNaAssociacao(s("a", "b"), s("a", "c"))).toBe(true);
+  });
+
+  it("ambos vazios → false", () => {
+    expect(haAlteracaoNaAssociacao(s(), s())).toBe(false);
+  });
+
+  it("gravados vazios e um marcado → true", () => {
+    expect(haAlteracaoNaAssociacao(s(), s("a"))).toBe(true);
   });
 });

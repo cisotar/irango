@@ -64,3 +64,27 @@ export function planejarAssociacaoOpcionais(
 
   return { remover, inserir };
 }
+
+/**
+ * Há diferença entre a seleção de checkbox na tela e o que está gravado?
+ *
+ * Existe para o gate do botão "Reordenar" (issue 209): um grupo recém-marcado
+ * ainda NÃO tem linha em `categoria_produto_opcionais`, e mandá-lo no payload da
+ * reordenação faria a RPC derrubar a transação por `row_count` — a permutação
+ * precisa ser completa e só de linhas existentes. Enquanto houver alteração não
+ * salva, reordenar fica bloqueado.
+ *
+ * É função pura de propósito: dentro do componente essa comparação só mudava
+ * depois de um clique, e `renderToStaticMarkup` não dispara handler nenhum, então
+ * a trava ficava sem cobertura possível neste ambiente (sem jsdom).
+ */
+export function haAlteracaoNaAssociacao(
+  gravados: ReadonlySet<string>,
+  selecionados: ReadonlySet<string>,
+): boolean {
+  if (gravados.size !== selecionados.size) return true;
+  for (const id of selecionados) {
+    if (!gravados.has(id)) return true;
+  }
+  return false;
+}

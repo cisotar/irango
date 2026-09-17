@@ -22,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { haAlteracaoNaAssociacao } from "@/lib/utils/associacao-opcionais";
 import {
   schemaCategoriaOpcional,
   schemaOpcional,
@@ -749,13 +750,10 @@ function CartaoAssociacao({
     exige a permutação COMPLETA e confere `row_count`) derrubar a transação e
     devolver erro genérico — atrito sem causa visível na tela.
   */
-  const temAlteracaoNaoSalva = useMemo(() => {
-    if (selecionados.size !== selecionadosIniciais.size) return true;
-    for (const id of selecionados) {
-      if (!selecionadosIniciais.has(id)) return true;
-    }
-    return false;
-  }, [selecionados, selecionadosIniciais]);
+  const temAlteracaoNaoSalva = useMemo(
+    () => haAlteracaoNaAssociacao(selecionadosIniciais, selecionados),
+    [selecionados, selecionadosIniciais],
+  );
 
   /*
     Só os marcados, na ordem do servidor. O desempate por id espelha o segundo
