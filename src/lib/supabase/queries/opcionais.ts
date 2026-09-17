@@ -56,7 +56,15 @@ export async function buscarOpcionaisDoLojista(
 
 /**
  * Associações categoria-de-produto ⋈ categoria-de-opcional de uma loja.
- * Usada pela UI de associação (089) para marcar os checkboxes.
+ * Usada pela UI de associação (089) para marcar os checkboxes e pelo modo
+ * reordenar (209) para abrir a lista na ordem gravada.
+ *
+ * A ordenação por `ordem` (coluna da 208) é o que faz o modo reordenar abrir na
+ * sequência que o lojista gravou. O desempate por `categoria_opcional_id` NÃO é
+ * enfeite: as linhas anteriores à 208 nasceram todas com `ordem = 0`, e sem um
+ * segundo critério estável o Postgres poderia devolver ordens diferentes entre
+ * requisições — o SSR e o cliente divergiriam e o primeiro arrasto gravaria uma
+ * permutação que ninguém pediu.
  */
 export async function buscarAssociacoesOpcional(
   client: Client,
@@ -65,7 +73,9 @@ export async function buscarAssociacoesOpcional(
   const { data, error } = await client
     .from("categoria_produto_opcionais")
     .select("*")
-    .eq("loja_id", lojaId);
+    .eq("loja_id", lojaId)
+    .order("ordem", { ascending: true })
+    .order("categoria_opcional_id", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }

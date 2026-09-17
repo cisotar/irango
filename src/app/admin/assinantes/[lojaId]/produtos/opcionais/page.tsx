@@ -14,7 +14,7 @@ import { OpcionaisAdminClient } from "./OpcionaisAdminClient";
  * O narrowing dos tipos largos do agregado para os shapes estreitos que o
  * `OpcionaisAdminClient` (via `Pick`) exige espelha a `page.tsx` do painel:
  * `categoriasProduto` e `associacoes` são mapeados para `{ id, nome }` /
- * `{ categoria_id, categoria_opcional_id }`; `categoriasOpcional` e `opcionais`
+ * `{ categoria_id, categoria_opcional_id, ordem }`; `categoriasOpcional` e `opcionais`
  * passam direto. Os campos `produtos`/`opcionaisPorCategoria` do agregado
  * pertencem à rota Cardápio (143) e não são consumidos aqui.
  */
@@ -39,6 +39,7 @@ export default async function OpcionaisAdminPage({
       associacoes={associacoes.map((a) => ({
         categoria_id: a.categoria_id,
         categoria_opcional_id: a.categoria_opcional_id,
+        ordem: a.ordem,
       }))}
     />
   );

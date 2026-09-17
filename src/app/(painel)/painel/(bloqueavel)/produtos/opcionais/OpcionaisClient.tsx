@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { Pencil, Plus, Trash2, Loader2 } from "lucide-react";
@@ -35,22 +35,37 @@ import type {
   alternarOpcionalAtivo,
   removerOpcional,
   salvarAssociacaoOpcionais,
+  reordenarOpcionaisDaCategoria,
 } from "@/lib/actions/opcional";
 import type {
   CategoriaOpcional,
   Opcional,
 } from "@/lib/supabase/queries/opcionais";
+import {
+  ReordenarOpcionaisDaCategoria,
+  type GrupoOpcionalReordenavel,
+} from "@/components/painel/ReordenarOpcionaisDaCategoria";
+import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar";
 
 type CategoriaProduto = { id: string; nome: string };
-type Associacao = { categoria_id: string; categoria_opcional_id: string };
+/** `ordem` (coluna da 208) é o que abre o modo reordenar na sequência gravada. */
+type Associacao = {
+  categoria_id: string;
+  categoria_opcional_id: string;
+  ordem: number;
+};
 
 /**
- * Actions injetadas das 8 operações de opcionais. Todas OBRIGATÓRIAS (issue
- * 160): a page do painel passa as 8 do lojista, a via admin (137) passa as 8
+ * Actions injetadas das 9 operações de opcionais. Todas OBRIGATÓRIAS (issue
+ * 160): a page do painel passa as 9 do lojista, a via admin (137) passa as 9
  * variantes escopadas por `lojaId`. Sem default — omitir uma chave aqui quebra
  * o build em vez de cair na action do lojista (que resolve a loja por
  * `auth.uid()`) e gravar na loja errada. Tipadas via `typeof` (single-source,
  * espelha `ProdutosClient`).
+ *
+ * A 9ª (`reordenarOpcionaisDaCategoria`, issues 208/209) segue a mesma regra: é
+ * escrita de ordem escopada por loja, e um default aqui seria exatamente o bug
+ * que a 160 existe para impedir.
  */
 export type OpcionaisClientAcoes = {
   criarCategoriaOpcional: typeof criarCategoriaOpcional;
@@ -61,6 +76,7 @@ export type OpcionaisClientAcoes = {
   alternarOpcionalAtivo: typeof alternarOpcionalAtivo;
   removerOpcional: typeof removerOpcional;
   salvarAssociacaoOpcionais: typeof salvarAssociacaoOpcionais;
+  reordenarOpcionaisDaCategoria: typeof reordenarOpcionaisDaCategoria;
 };
 
 export type OpcionaisClientProps = {
@@ -88,6 +104,7 @@ export function OpcionaisClient({
       <Separator />
       <AssociacaoOpcionais
         categoriasOpcional={categoriasOpcional}
+        opcionais={opcionais}
         categoriasProduto={categoriasProduto}
         associacoes={associacoes}
         acoes={acoes}
@@ -604,11 +621,13 @@ function FormOpcional({
 
 function AssociacaoOpcionais({
   categoriasOpcional,
+  opcionais,
   categoriasProduto,
   associacoes,
   acoes,
 }: {
   categoriasOpcional: CategoriaOpcional[];
+  opcionais: Opcional[];
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
   acoes: OpcionaisClientAcoes;
@@ -625,6 +644,34 @@ function AssociacaoOpcionais({
     }
     return mapa;
   }, [associacoes]);
+
+  /*
+    `ordem` gravada (208) por categoria de produto → grupo de opcional. Vem
+    SEMPRE das props, nunca de estado: sair do modo reordenar faz
+    `router.refresh()`, e é por aqui que a ordem recém-gravada volta. Um estado
+    local sobrevivendo entre as entradas no modo atropelaria a verdade do banco.
+  */
+  const ordemPorProduto = useMemo(() => {
+    const mapa = new Map<string, Map<string, number>>();
+    for (const a of associacoes) {
+      const porGrupo = mapa.get(a.categoria_id) ?? new Map<string, number>();
+      porGrupo.set(a.categoria_opcional_id, a.ordem);
+      mapa.set(a.categoria_id, porGrupo);
+    }
+    return mapa;
+  }, [associacoes]);
+
+  /** `categoria_opcional_id → nº de itens`, só para o `detalhe` de cada linha. */
+  const totalItensPorGrupo = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const o of opcionais) {
+      mapa.set(
+        o.categoria_opcional_id,
+        (mapa.get(o.categoria_opcional_id) ?? 0) + 1,
+      );
+    }
+    return mapa;
+  }, [opcionais]);
 
   return (
     <section>
@@ -652,6 +699,8 @@ function AssociacaoOpcionais({
             categoriaProduto={catProd}
             categoriasOpcional={categoriasOpcional}
             selecionadosIniciais={inicialPorProduto.get(catProd.id) ?? new Set()}
+            ordemPorGrupo={ordemPorProduto.get(catProd.id) ?? new Map()}
+            totalItensPorGrupo={totalItensPorGrupo}
             onSalvo={() => router.refresh()}
             acoes={acoes}
           />
@@ -661,22 +710,115 @@ function AssociacaoOpcionais({
   );
 }
 
+/**
+ * Um cartão = uma categoria de PRODUTO. Dois modos que nunca coexistem (RN-12):
+ * a grade de checkboxes (associação) OU a lista arrastável dos grupos marcados
+ * (ordem, issues 208/209). Não coexistirem é o que impede alterar a associação
+ * no meio de um arrasto.
+ */
 function CartaoAssociacao({
   categoriaProduto,
   categoriasOpcional,
   selecionadosIniciais,
+  ordemPorGrupo,
+  totalItensPorGrupo,
   onSalvo,
   acoes,
 }: {
   categoriaProduto: CategoriaProduto;
   categoriasOpcional: CategoriaOpcional[];
+  /** Ids PERSISTIDOS desta categoria de produto (props = verdade do servidor). */
   selecionadosIniciais: Set<string>;
+  /** `categoria_opcional_id → ordem` gravada. Ausente = 0 (linhas pré-208). */
+  ordemPorGrupo: Map<string, number>;
+  totalItensPorGrupo: Map<string, number>;
   onSalvo: () => void;
   acoes: OpcionaisClientAcoes;
 }) {
   const [selecionados, setSelecionados] =
     useState<Set<string>>(selecionadosIniciais);
   const [salvando, startSalvar] = useTransition();
+  const [modoReordenar, setModoReordenar] = useState(false);
+  const reordenarRef = useRef<ManipuladorModoReordenar | null>(null);
+  const saindoDoModoRef = useRef(false);
+
+  /*
+    Comparação de CONJUNTO contra os ids persistidos que vieram das props. Um
+    grupo recém-marcado e ainda não salvo NÃO tem linha em
+    `categoria_produto_opcionais`: mandá-lo no payload faria a RPC da 208 (que
+    exige a permutação COMPLETA e confere `row_count`) derrubar a transação e
+    devolver erro genérico — atrito sem causa visível na tela.
+  */
+  const temAlteracaoNaoSalva = useMemo(() => {
+    if (selecionados.size !== selecionadosIniciais.size) return true;
+    for (const id of selecionados) {
+      if (!selecionadosIniciais.has(id)) return true;
+    }
+    return false;
+  }, [selecionados, selecionadosIniciais]);
+
+  /*
+    Só os marcados, na ordem do servidor. O desempate por id espelha o segundo
+    `.order` de `buscarAssociacoesOpcional`: sem ele, linhas pré-208 (todas com
+    `ordem = 0`) abririam numa ordem que o SSR não garante.
+  */
+  const gruposMarcados = useMemo<GrupoOpcionalReordenavel[]>(
+    () =>
+      categoriasOpcional
+        .filter((c) => selecionados.has(c.id))
+        .map((c) => ({
+          id: c.id,
+          nome: c.nome,
+          totalItens: totalItensPorGrupo.get(c.id) ?? 0,
+        }))
+        .sort((a, b) => {
+          const ordemA = ordemPorGrupo.get(a.id) ?? 0;
+          const ordemB = ordemPorGrupo.get(b.id) ?? 0;
+          return ordemA - ordemB || a.id.localeCompare(b.id);
+        }),
+    [categoriasOpcional, selecionados, ordemPorGrupo, totalItensPorGrupo],
+  );
+
+  const podeReordenar = selecionados.size >= 2 && !temAlteracaoNaoSalva;
+
+  /** O motivo fica na TELA; um botão inerte sem explicação vira suporte. */
+  const motivoReordenar = temAlteracaoNaoSalva
+    ? "Salve a associação antes de reordenar."
+    : selecionados.size < 2
+      ? "Marque pelo menos 2 grupos para poder ordená-los."
+      : null;
+
+  /**
+   * Saída do modo — Concluir e ESC passam os dois por aqui (espelha
+   * `ProdutosClient.sairDoModoReordenar`).
+   *
+   * O `await finalizar()` NÃO é decorativo: o modo salva com debounce de 500ms,
+   * e mover um grupo + sair antes disso descartaria o movimento em silêncio (o
+   * `router.refresh()` de `onSalvo` traria a ordem ANTIGA por cima). Daí a
+   * ORDEM: flush → desmonta → refresh.
+   */
+  const sairDoModo = useCallback(async () => {
+    if (saindoDoModoRef.current) return; // ESC repetido / duplo clique
+    saindoDoModoRef.current = true;
+    try {
+      await reordenarRef.current?.finalizar();
+    } finally {
+      saindoDoModoRef.current = false;
+      setModoReordenar(false);
+      onSalvo();
+    }
+  }, [onSalvo]);
+
+  // ESC também sai do modo. O listener só existe enquanto ESTE cartão está no
+  // modo — dois cartões abertos ao mesmo tempo são permitidos e independentes.
+  useEffect(() => {
+    if (!modoReordenar) return;
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === "Escape") void sairDoModo();
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [modoReordenar, sairDoModo]);
 
   function alternar(catOpcId: string, marcado: boolean) {
     setSelecionados((atual) => {
@@ -715,6 +857,13 @@ function CartaoAssociacao({
           <p className="text-sm text-muted-foreground">
             Crie categorias de opcional para poder associá-las.
           </p>
+        ) : modoReordenar ? (
+          <ReordenarOpcionaisDaCategoria
+            ref={reordenarRef}
+            categoriaProdutoId={categoriaProduto.id}
+            grupos={gruposMarcados}
+            onReordenar={acoes.reordenarOpcionaisDaCategoria}
+          />
         ) : (
           <div className="grid grid-cols-2 gap-2">
             {categoriasOpcional.map((catOpc) => (
@@ -731,15 +880,41 @@ function CartaoAssociacao({
             ))}
           </div>
         )}
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            disabled={salvando || categoriasOpcional.length === 0}
-            onClick={salvar}
-          >
-            {salvando && <Loader2 className="mr-2 size-4 animate-spin" />}
-            Salvar
-          </Button>
+        {categoriasOpcional.length > 0 && !modoReordenar && motivoReordenar && (
+          <p className="text-xs text-muted-foreground">{motivoReordenar}</p>
+        )}
+        <div className="flex justify-end gap-2">
+          {modoReordenar ? (
+            <Button size="sm" onClick={() => void sairDoModo()}>
+              Concluir
+            </Button>
+          ) : (
+            <>
+              {/*
+                `disabled` real (e não `aria-disabled`) é o certo AQUI: este
+                botão não está numa lista cujo foco precise ser preservado, e o
+                motivo aparece na tela acima.
+              */}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  salvando || categoriasOpcional.length === 0 || !podeReordenar
+                }
+                onClick={() => setModoReordenar(true)}
+              >
+                Reordenar
+              </Button>
+              <Button
+                size="sm"
+                disabled={salvando || categoriasOpcional.length === 0}
+                onClick={salvar}
+              >
+                {salvando && <Loader2 className="mr-2 size-4 animate-spin" />}
+                Salvar
+              </Button>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>
