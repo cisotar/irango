@@ -87,6 +87,14 @@ const VAR_ALTURA_NAV = "--altura-nav-opcionais";
 /** Fallback só vale até a primeira medição (e em browser sem ResizeObserver). */
 const SCROLL_MT = `scroll-mt-[var(${VAR_ALTURA_NAV},4rem)]`;
 
+/** As duas seções da página, na ordem em que aparecem. */
+const ID_SECOES = ["biblioteca", "por-categoria"] as const;
+type IdSecao = (typeof ID_SECOES)[number];
+
+function ehIdSecao(id: string): id is IdSecao {
+  return (ID_SECOES as readonly string[]).includes(id);
+}
+
 type CategoriaProduto = { id: string; nome: string };
 /** `ordem` (coluna da 208) é o que abre a lista na sequência da vitrine. */
 type Associacao = {
@@ -161,6 +169,40 @@ export function OpcionaisClient({
     });
   }, []);
 
+  /*
+    Qual seção está à vista. Clicar marca na hora (o scroll suave levaria
+    ~300ms para o observer reagir, e o botão precisa responder ao toque);
+    o `IntersectionObserver` corrige depois, inclusive quando o lojista
+    rola à mão sem usar o toggle.
+
+    `rootMargin` corta a faixa de decisão para o terço superior: sem isso,
+    as duas seções ficam visíveis ao mesmo tempo em tela grande e o estado
+    piscaria entre elas.
+  */
+  const [secaoAtiva, setSecaoAtiva] = useState<IdSecao>("biblioteca");
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const alvos = ID_SECOES.map((id) => document.getElementById(id)).filter(
+      (el): el is HTMLElement => el != null,
+    );
+    if (alvos.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entradas) => {
+        const visivel = entradas
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visivel == null) return;
+        const id = visivel.target.id;
+        if (ehIdSecao(id)) setSecaoAtiva(id);
+      },
+      { rootMargin: "0px 0px -60% 0px", threshold: [0, 0.2, 0.6, 1] },
+    );
+    alvos.forEach((alvo) => observer.observe(alvo));
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
       <div className="mb-4">
@@ -179,23 +221,33 @@ export function OpcionaisClient({
         — sem rastrear a seção visível, sem IntersectionObserver e sem estado
         reativo de "seção ativa" a manter em sincronia com o scroll.
       */}
-      {/* SEM barra própria (sem bg/border/padding extra): o mockup aprovado
-          mostra o toggle direto sobre o fundo da página — uma moldura a
-          menos do que uma barra sticky com fundo branco em volta dele. */}
+      {/* Fundo `bg-fundo` (o creme da própria página), NÃO `bg-background`
+          (branco): sem fundo, o conteúdo rolava por trás e a barra parecia
+          solta; com branco, virava o card extra que o mockup não tem. O
+          `-mx-4 px-4` sangra até a borda para o conteúdo não espiar pelos
+          lados. Sem `border-b`: a moldura é a do próprio contêiner das
+          pílulas. */}
       <nav
         ref={navRef}
         aria-label="Seções desta página"
-        className="sticky top-0 z-20 mb-6"
+        className="sticky top-0 z-20 -mx-4 mb-6 bg-fundo px-4 py-2"
       >
-        {/* Contêiner cheio, pílulas dividem o espaço igual (mockup aprovado).
-            Sem tracking de seção ativa (decisão 4): "Biblioteca" fica com o
-            estilo preenchido por ser a seção padrão ao abrir a página — é
-            default fixo, não estado reativo. */}
+        {/* Contêiner cheio, pílulas dividem o espaço igual (mockup aprovado). */}
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
-          <LinkSecao href="#biblioteca" ativo>
+          <LinkSecao
+            href="#biblioteca"
+            ativo={secaoAtiva === "biblioteca"}
+            onClick={() => setSecaoAtiva("biblioteca")}
+          >
             Biblioteca
           </LinkSecao>
-          <LinkSecao href="#por-categoria">Por categoria de produto</LinkSecao>
+          <LinkSecao
+            href="#por-categoria"
+            ativo={secaoAtiva === "por-categoria"}
+            onClick={() => setSecaoAtiva("por-categoria")}
+          >
+            Por categoria de produto
+          </LinkSecao>
         </div>
       </nav>
 
@@ -224,15 +276,19 @@ export function OpcionaisClient({
 function LinkSecao({
   href,
   ativo = false,
+  onClick,
   children,
 }: {
   href: string;
   ativo?: boolean;
+  onClick?: () => void;
   children: ReactNode;
 }) {
   return (
     <a
       href={href}
+      onClick={onClick}
+      aria-current={ativo ? "true" : undefined}
       className={`${ALVO_TOQUE} flex flex-1 items-center justify-center rounded-lg px-4 text-center text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
         ativo
           ? "bg-primary text-primary-foreground"
@@ -362,12 +418,15 @@ function BibliotecaOpcionais({
           aria-hidden
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
         />
+        {/* `bg-card` e `h-11`: o Input do projeto é `bg-transparent h-8` e,
+            sobre o creme da página, vira uma linha fina. O mockup mostra campo
+            BRANCO e com respiro. */}
         <Input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar opcional por nome…"
           aria-label="Buscar opcional por nome"
-          className="rounded-xl pl-9"
+          className="h-11 rounded-xl bg-card pl-9"
         />
       </div>
 
