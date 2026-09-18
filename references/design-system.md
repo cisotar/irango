@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.2.3 | **Atualizado:** 2026-09-18
+**Versão:** 0.2.4 | **Atualizado:** 2026-09-18
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -61,7 +61,7 @@ Fonte: architecture.md §2 e §7, spec "Stack Tecnológica". Não introduzir lib
 | Color picker | **react-colorful** | só na tela de tema (`/painel/configuracoes/tema`) |
 | Máscaras de input | **react-imask** | CEP, telefone, WhatsApp |
 
-**Regra de origem do componente.** Primeiro tentar um primitivo shadcn (`Button`, `Input`, `Card`, `Dialog`, `AlertDialog`, `Select`, `Tabs`, `Switch`, `Form`, etc.). Só compor um componente de domínio (`components/vitrine/`, `components/painel/`) quando o primitivo não cobre o caso ou quando o padrão aparece em 2+ lugares (architecture.md §8).
+**Regra de origem do componente.** Primeiro tentar um primitivo shadcn (`Button`, `Input`, `Card`, `Dialog`, `AlertDialog`, `Select`, `Tabs`, `Switch`, `Form`, etc.). Só compor um componente de domínio (`components/vitrine/`, `components/painel/`) quando o primitivo não cobre o caso ou quando o padrão aparece em 2+ lugares (architecture.md §8). A lista é de catálogo, não de inventário — nem todo item foi gerado ainda; ver `src/components/ui/` para o que já existe. `Tabs` especificamente **nunca foi gerado**: `OpcionaisClient.tsx` (issue 213) precisou de um par de abas e rolou a própria `tablist`/`tab`/`tabpanel` (padrão WAI-ARIA APG, com navegação por ←/→/Home/End) em vez de rodar `npx shadcn add tabs`. Antes de repetir esse padrão numa tela nova, avalie gerar `Tabs` de vez — a versão manual existe porque ninguém parou para decidir isso, não porque foi escolha deliberada.
 
 ---
 
