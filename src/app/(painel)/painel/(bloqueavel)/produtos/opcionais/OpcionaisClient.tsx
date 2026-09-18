@@ -17,6 +17,7 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  Search,
   Trash2,
   Loader2,
 } from "lucide-react";
@@ -178,10 +179,13 @@ export function OpcionaisClient({
         — sem rastrear a seção visível, sem IntersectionObserver e sem estado
         reativo de "seção ativa" a manter em sincronia com o scroll.
       */}
+      {/* SEM barra própria (sem bg/border/padding extra): o mockup aprovado
+          mostra o toggle direto sobre o fundo da página — uma moldura a
+          menos do que uma barra sticky com fundo branco em volta dele. */}
       <nav
         ref={navRef}
         aria-label="Seções desta página"
-        className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border bg-background/95 px-4 py-2 backdrop-blur"
+        className="sticky top-0 z-20 mb-6"
       >
         {/* Contêiner cheio, pílulas dividem o espaço igual (mockup aprovado).
             Sem tracking de seção ativa (decisão 4): "Biblioteca" fica com o
@@ -353,12 +357,17 @@ function BibliotecaOpcionais({
         </Button>
       </div>
 
-      <div className="mb-4">
+      <div className="relative mb-4">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+        />
         <Input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar opcional por nome…"
           aria-label="Buscar opcional por nome"
+          className="rounded-xl pl-9"
         />
       </div>
 
