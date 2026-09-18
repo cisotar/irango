@@ -110,6 +110,7 @@ function render(props: {
   opcionais?: Opcional[];
   associacoes?: Associacao[];
   acoes?: OpcionaisClientAcoes;
+  secaoInicial?: "biblioteca" | "por-categoria";
 } = {}): string {
   return renderToStaticMarkup(
     <OpcionaisClient
@@ -118,16 +119,9 @@ function render(props: {
       categoriasProduto={CATEGORIA_PRODUTO}
       associacoes={props.associacoes ?? []}
       acoes={props.acoes ?? acoesBase()}
+      secaoInicial={props.secaoInicial}
     />,
   );
-}
-
-/** Tag do `<button>` "Reordenar" do cartão, com o `class` removido — as classes
- *  do shadcn incluem `disabled:pointer-events-none` e dariam falso positivo. */
-function botaoReordenar(html: string): string {
-  const i = html.indexOf(">Reordenar<");
-  const inicio = html.lastIndexOf("<button", i);
-  return html.slice(inicio, i + 1).replace(/\sclass="[^"]*"/g, "");
 }
 
 function associacao(categoriaOpcionalId: string, ordem: number): Associacao {
@@ -139,11 +133,17 @@ function associacao(categoriaOpcionalId: string, ordem: number): Associacao {
 }
 
 describe("injeção do painel do lojista — critério de aceite da 128", () => {
-  it("renderiza categoria, item, preço e checkbox de associação com os dados reais", () => {
+  it("renderiza categoria, item e preço na Biblioteca com os dados reais", () => {
     const html = render();
     expect(html).toContain("Laticínios");
     expect(html).toContain("Brie extra");
     expect(html).toContain(`+${formatarMoeda(5)}`);
+  });
+
+  it("renderiza a categoria de PRODUTO na aba de associação", () => {
+    // Separado do caso acima desde a 213: as duas seções deixaram de coexistir,
+    // então "Pizzas" (categoria de produto) só existe na outra aba.
+    const html = render({ secaoInicial: "por-categoria" });
     expect(html).toContain("Pizzas");
   });
 
@@ -174,47 +174,133 @@ describe("trocar a injeção de `acoes` não vaza para o render nem muda ramos c
   });
 });
 
-describe("gate do botão 'Reordenar' do cartão (issue 209)", () => {
+describe("cartão de associação — checkbox e ordem fundidos (issue 213)", () => {
   const DOIS_GRUPOS = [
     categoria({ id: "cat-1", nome: "Laticínios" }),
     categoria({ id: "cat-2", nome: "Molhos" }),
   ];
 
-  it("com 0 ou 1 grupo PERSISTIDO o botão fica desabilitado e o motivo aparece", () => {
-    // Um botão inerte sem explicação vira chamado de suporte. E com <2 ids a
-    // action recusaria de todo jeito: o `.min(2)` do zod é a contraparte no
-    // servidor deste gate de UX.
-    const htmlZero = render({ categoriasOpcional: DOIS_GRUPOS });
-    expect(botaoReordenar(htmlZero)).toMatch(/\sdisabled\b/);
-    expect(htmlZero).toContain("Marque pelo menos 2 grupos");
-
-    const htmlUm = render({
+  function renderDois(associacoes: Associacao[] = []) {
+    // O cartão de associação vive na aba "por categoria"; desde a 213 a outra
+    // aba não é renderizada, então o teste abre direto na certa.
+    return render({
       categoriasOpcional: DOIS_GRUPOS,
-      associacoes: [associacao("cat-1", 0)],
+      associacoes,
+      secaoInicial: "por-categoria",
     });
-    expect(botaoReordenar(htmlUm)).toMatch(/\sdisabled\b/);
-    expect(htmlUm).toContain("Marque pelo menos 2 grupos");
-  });
+  }
 
-  it("com 2 grupos persistidos o botão fica ativo e sem motivo na tela", () => {
-    const html = render({
-      categoriasOpcional: DOIS_GRUPOS,
-      associacoes: [associacao("cat-1", 0), associacao("cat-2", 1)],
-    });
-    expect(botaoReordenar(html)).not.toMatch(/\sdisabled\b/);
+  it("não existe mais botão 'Reordenar' nem 'Salvar': o cartão salva sozinho", () => {
+    // O autosave aposentou os dois botões JUNTO com o gate de ≥2 marcados —
+    // era o gate que exigia salvar antes de poder ordenar.
+    const html = renderDois([associacao("cat-1", 0), associacao("cat-2", 1)]);
+    expect(html).not.toContain(">Reordenar<");
+    expect(html).not.toContain(">Salvar<");
     expect(html).not.toContain("Marque pelo menos 2 grupos");
     expect(html).not.toContain("Salve a associação antes de reordenar.");
   });
 
-  it("fora do modo, o cartão mostra a grade de checkboxes e nenhuma lista arrastável", () => {
-    // Os dois modos nunca coexistem (RN-12): é isso que impede alterar a
-    // associação no meio de um arrasto. O SSR entra sempre fora do modo.
-    const html = render({
-      categoriasOpcional: DOIS_GRUPOS,
-      associacoes: [associacao("cat-1", 0), associacao("cat-2", 1)],
-    });
-    expect(html).toContain(">Salvar<");
-    expect(html).not.toContain(">Concluir<");
+  it("os MARCADOS vêm na ordem gravada, numerados e com alça de arrasto", () => {
+    // A lista já nasce na ordem da vitrine — não há mais um modo para entrar.
+    const html = renderDois([associacao("cat-2", 0), associacao("cat-1", 1)]);
+    expect(html).toContain('aria-label="Reordenar Molhos"');
+    expect(html).toContain('aria-label="Reordenar Laticínios"');
+    expect(html.indexOf('aria-label="Reordenar Molhos"')).toBeLessThan(
+      html.indexOf('aria-label="Reordenar Laticínios"'),
+    );
+  });
+
+  it("o checkbox do marcado diz o EFEITO e a categoria de produto", () => {
+    // Num cartão com 15 checkboxes, "Laticínios, caixa de seleção" 15 vezes não
+    // diz a quem o marcado pertence nem o que o clique vai fazer.
+    const html = renderDois([associacao("cat-1", 0)]);
+    expect(html).toContain(
+      'aria-label="Remover Laticínios dos opcionais de Pizzas"',
+    );
+    expect(html).toContain(
+      'aria-label="Incluir Molhos nos opcionais de Pizzas"',
+    );
+  });
+
+  it("o checkbox do marcado fica ANTES da alça na ordem de tabulação", () => {
+    // checkbox → alça → ↑ → ↓ → kebab: a ação mais frequente vem primeiro.
+    const html = renderDois([associacao("cat-1", 0)]);
+    const checkbox = html.indexOf(
+      'aria-label="Remover Laticínios dos opcionais de Pizzas"',
+    );
+    const alca = html.indexOf('aria-label="Reordenar Laticínios"');
+    expect(checkbox).toBeGreaterThan(-1);
+    expect(checkbox).toBeLessThan(alca);
+  });
+
+  it("os DISPONÍVEIS ficam num segmento à parte, contados e SEM alça", () => {
+    // É o que impede o `closestCenter` do dnd-kit de aceitar soltura na região
+    // dos desmarcados e produzir posição para um grupo sem linha em
+    // `categoria_produto_opcionais` (a RPC confere `row_count`).
+    const html = renderDois([associacao("cat-1", 0)]);
+    expect(html).toContain("Disponíveis (1)");
     expect(html).not.toContain('aria-label="Reordenar Molhos"');
+  });
+
+  it("sem nenhum marcado, a lista arrastável não é renderizada", () => {
+    const html = renderDois();
+    expect(html).toContain("Disponíveis (2)");
+    expect(html).toContain("Nenhum grupo incluído ainda.");
+    expect(html).not.toContain('aria-label="Reordenar Laticínios"');
+    expect(html).not.toContain('aria-label="Reordenar Molhos"');
+  });
+});
+
+describe("hierarquia e navegação da página (issue 213)", () => {
+  it("o toggle é um tablist: SÓ o painel da aba ativa existe no DOM", () => {
+    // Mudou na 213 a pedido do usuário: era `<nav>` de âncoras com as duas
+    // seções coexistindo. Agora é aba de verdade — selecionar uma ESCONDE a
+    // outra —, então a semântica correta é tablist/tab/tabpanel.
+    const html = render();
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('aria-label="Seções desta página"');
+    expect(html).toContain('id="aba-biblioteca"');
+    expect(html).toContain('id="aba-por-categoria"');
+    // Biblioteca é a aba inicial: o painel dela existe, o outro NÃO.
+    expect(html).toContain('id="biblioteca"');
+    expect(html).not.toContain('id="por-categoria"');
+    // Sem âncora: não há para onde navegar quando o painel nem existe.
+    expect(html).not.toContain('href="#por-categoria"');
+  });
+
+  it("a aba ativa é a única preenchida e a única na ordem de tabulação", () => {
+    const html = render();
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('aria-selected="false"');
+    expect(html).toContain('tabindex="-1"');
+  });
+
+  it("abrindo em 'por categoria', o painel da Biblioteca some", () => {
+    const html = render({ secaoInicial: "por-categoria" });
+    expect(html).toContain('id="por-categoria"');
+    expect(html).not.toContain('id="biblioteca"');
+    // A busca é da Biblioteca — some junto com ela.
+    expect(html).not.toContain("Buscar opcional por nome");
+  });
+
+  it("o nome da categoria de opcional virou header do Card, com a contagem", () => {
+    // Antes o pai era `text-sm text-muted-foreground` FORA do Card e o filho
+    // `font-medium text-foreground` DENTRO: o filho pesava mais que o pai.
+    const html = render({ opcionais: [opcional(), opcional({ id: "opc-2" })] });
+    const card = html.indexOf('data-slot="card"');
+    expect(card).toBeGreaterThan(-1);
+    expect(html.indexOf("Laticínios")).toBeGreaterThan(card);
+    expect(html).toContain("2 itens");
+  });
+
+  it("as ações da categoria viraram kebab (44px), não ícones de 33,6px", () => {
+    // `size="icon-sm"` dá 33,6px na base de 120% do projeto — abaixo da régua
+    // de 44px do design-system §5.
+    const html = render();
+    expect(html).toContain('aria-label="Mais ações da categoria Laticínios"');
+    expect(html).toContain('aria-label="Mais ações de Brie extra"');
+    expect(html).not.toContain('aria-label="Editar categoria Laticínios"');
+    expect(html).not.toContain('aria-label="Remover categoria Laticínios"');
+    expect(html).toContain("min-h-[44px]");
   });
 });

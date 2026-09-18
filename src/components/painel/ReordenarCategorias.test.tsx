@@ -197,3 +197,34 @@ describe("ReordenarCategorias — markup do modo (issue 175)", () => {
     expect(html).toContain('aria-haspopup="menu"');
   });
 });
+
+describe("ReordenarCategorias — as setas NUNCA compactam (issue 213, gate de não-regressão)", () => {
+  /**
+   * `ReordenarCategorias` nunca passa `prefixo`, então `compacta` (derivada de
+   * `item.prefixo != null` em `ModoReordenar`) fica sempre `false` aqui. A
+   * primeira versão da 213 escondia as setas ↑↓ abaixo de `sm` em TODO
+   * consumidor de `LinhaCategoriaReordenavel` — o autor corrigiu tornando
+   * `compacta` opt-in, mas os 13 casos acima (deliberadamente não editados)
+   * NÃO checam a classe responsiva das setas, só `aria-disabled` e rótulos.
+   * Sem este teste, uma regressão que volte a esconder as setas globalmente
+   * passaria pela suíte inteira sem um único vermelho.
+   */
+  it("as setas ↑↓ não levam a classe responsiva 'hidden sm:inline-flex'", () => {
+    const html = render([PIZZAS, BEBIDAS, SOBREMESAS]);
+    const setas =
+      html.match(/<button[^>]*aria-label="Mover [^"]*"[^>]*>/g) ?? [];
+    expect(setas.length).toBeGreaterThan(0);
+    for (const tag of setas) {
+      expect(tag).not.toContain("hidden sm:inline-flex");
+    }
+  });
+
+  it("o kebab NÃO ganha os itens 'Mover para cima/baixo' exclusivos do modo compacto", () => {
+    // Esses dois `MenuItem` só existem quando `compacta` é true (são a
+    // alternativa às setas escondidas abaixo de `sm`). Categoria de produto
+    // nunca é compacta — se aparecerem aqui, `compacta` vazou.
+    const html = render([PIZZAS, BEBIDAS]);
+    expect(html).not.toContain(">Mover para cima<");
+    expect(html).not.toContain(">Mover para baixo<");
+  });
+});

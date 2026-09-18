@@ -1,19 +1,50 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Pencil, Plus, Trash2, Loader2 } from "lucide-react";
+import {
+  Check,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuPortal,
+  MenuPositioner,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import {
   Sheet,
   SheetContent,
@@ -22,11 +53,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
-import { haAlteracaoNaAssociacao } from "@/lib/utils/associacao-opcionais";
+import { alternarAssociacaoOpcional } from "@/lib/utils/alternar-associacao-opcional";
 import {
   schemaCategoriaOpcional,
   schemaOpcional,
 } from "@/lib/validacoes/opcional";
+import type { StatusSalvamento } from "@/lib/utils/salvamento-coalescido";
 import type {
   criarCategoriaOpcional,
   atualizarCategoriaOpcional,
@@ -48,13 +80,19 @@ import {
 } from "@/components/painel/ReordenarOpcionaisDaCategoria";
 import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar";
 
+/** As duas abas da página. O id é usado em `aria-controls`/`aria-labelledby`. */
+type IdSecao = "biblioteca" | "por-categoria";
+
 type CategoriaProduto = { id: string; nome: string };
-/** `ordem` (coluna da 208) é o que abre o modo reordenar na sequência gravada. */
+/** `ordem` (coluna da 208) é o que abre a lista na sequência da vitrine. */
 type Associacao = {
   categoria_id: string;
   categoria_opcional_id: string;
   ordem: number;
 };
+
+/** 44px literal — `size="icon-sm"` daria 33,6px na base de 120% (design-system §5). */
+const ALVO_TOQUE = "min-h-[44px] min-w-[44px]";
 
 /**
  * Actions injetadas das 9 operações de opcionais. Todas OBRIGATÓRIAS (issue
@@ -86,6 +124,12 @@ export type OpcionaisClientProps = {
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
   acoes: OpcionaisClientAcoes;
+  /**
+   * Aba aberta ao montar. Existe como costura de TESTE: sem jsdom não há como
+   * clicar na aba, e o painel de "por categoria" nunca seria renderizado por
+   * `renderToStaticMarkup`. Em produção fica no default.
+   */
+  secaoInicial?: IdSecao;
 };
 
 export function OpcionaisClient({
@@ -94,23 +138,192 @@ export function OpcionaisClient({
   categoriasProduto,
   associacoes,
   acoes,
+  secaoInicial = "biblioteca",
 }: OpcionaisClientProps) {
+  const navRef = useRef<HTMLElement>(null);
+  /** Marcador NÃO-sticky logo antes da barra: o `getBoundingClientRect` da
+   *  própria barra mente quando ela já está grudada no topo. */
+  const ancoraRef = useRef<HTMLDivElement>(null);
+  const painelRef = useRef<HTMLDivElement>(null);
+  const [espacoFinal, setEspacoFinal] = useState(0);
+  const [secaoAtiva, setSecaoAtiva] = useState<IdSecao>(secaoInicial);
+
+  /**
+   * O contêiner que realmente rola é o `<main>` do layout do painel
+   * (`overflow-y-auto`), não a janela — `window.scrollTo` aqui não faz nada.
+   * Sobe na árvore até achar quem tem overflow de rolagem.
+   */
+  const acharRolador = useCallback((de: HTMLElement | null): HTMLElement => {
+    let no = de?.parentElement ?? null;
+    while (no != null) {
+      const { overflowY } = getComputedStyle(no);
+      if (overflowY === "auto" || overflowY === "scroll") return no;
+      no = no.parentElement;
+    }
+    return document.documentElement;
+  }, []);
+
+  /*
+    Filler no fim: para a seção encostar embaixo da barra, o conteúdo depois da
+    barra precisa ter ao menos uma tela de altura. Com "Bebidas — 0 incluídos"
+    a página é curta demais e a rolagem para antes. O vazio é medido, não
+    chutado: sobra exata entre a altura do rolador e o que já existe.
+  */
+  const recalcularEspaco = useCallback(() => {
+    const barra = navRef.current;
+    const painel = painelRef.current;
+    if (barra == null || painel == null) return;
+    const rolador = acharRolador(barra);
+    const falta =
+      rolador.clientHeight -
+      barra.getBoundingClientRect().height -
+      painel.getBoundingClientRect().height;
+    setEspacoFinal(Math.max(0, Math.ceil(falta)));
+  }, [acharRolador]);
+
+  useLayoutEffect(() => {
+    recalcularEspaco();
+    if (typeof ResizeObserver === "undefined") return;
+    // O painel muda de altura ao abrir/fechar sanfona e ao trocar de aba.
+    const observer = new ResizeObserver(recalcularEspaco);
+    if (painelRef.current != null) observer.observe(painelRef.current);
+    if (navRef.current != null) observer.observe(navRef.current);
+    return () => observer.disconnect();
+  }, [recalcularEspaco, secaoAtiva]);
+
+  /**
+   * Troca de aba: marca o estado e ROLA até a barra grudar no topo, para a
+   * seção escolhida ficar imediatamente abaixo dela. O scroll é o feedback de
+   * que a troca aconteceu — sem ele a página só pisca.
+   */
+  const trocarSecao = useCallback(
+    (id: IdSecao) => {
+      setSecaoAtiva(id);
+      const barra = navRef.current;
+      const ancora = ancoraRef.current;
+      if (barra == null || ancora == null) return;
+      const rolador = acharRolador(barra);
+      const alvo =
+        ancora.getBoundingClientRect().top -
+        rolador.getBoundingClientRect().top +
+        rolador.scrollTop;
+      const suave = window.matchMedia("(prefers-reduced-motion: no-preference)")
+        .matches;
+      // Depois da pintura: o painel novo muda a altura e, sem esperar, o
+      // destino seria calculado sobre o layout velho.
+      requestAnimationFrame(() => {
+        rolador.scrollTo({ top: alvo, behavior: suave ? "smooth" : "auto" });
+      });
+    },
+    [acharRolador],
+  );
+
   return (
-    <main className="mx-auto w-full max-w-3xl space-y-10 px-4 py-6">
-      <BibliotecaOpcionais
-        categoriasOpcional={categoriasOpcional}
-        opcionais={opcionais}
-        acoes={acoes}
-      />
-      <Separator />
-      <AssociacaoOpcionais
-        categoriasOpcional={categoriasOpcional}
-        opcionais={opcionais}
-        categoriasProduto={categoriasProduto}
-        associacoes={associacoes}
-        acoes={acoes}
-      />
+    <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <div className="mb-4">
+        <h1 className="font-heading text-xl font-semibold text-foreground">
+          Opcionais
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Monte a biblioteca de opcionais e escolha quais aparecem em cada
+          categoria de produto.
+        </p>
+      </div>
+
+      {/* Marcador não-sticky: é ele que diz onde a barra COMEÇA. A própria
+          barra, já grudada, devolveria sempre topo 0. */}
+      <div ref={ancoraRef} aria-hidden />
+
+      {/* Abas de verdade (não mais âncoras): só um painel existe por vez, então
+          a semântica correta é `tablist`/`tab`/`tabpanel`. Fundo `bg-fundo` (o
+          creme da própria página, não o branco do `bg-background`): sem fundo o
+          conteúdo rola por trás; com branco vira card extra. `-mx-4 px-4` sangra
+          até a borda para nada espiar pelos lados. */}
+      <nav
+        ref={navRef}
+        className="sticky top-0 z-20 -mx-4 mb-6 bg-fundo px-4 py-2"
+      >
+        <div
+          role="tablist"
+          aria-label="Seções desta página"
+          className="flex gap-1 rounded-xl border border-border bg-card p-1"
+        >
+          <AbaSecao
+            id="biblioteca"
+            ativo={secaoAtiva === "biblioteca"}
+            onSelecionar={trocarSecao}
+          >
+            Biblioteca
+          </AbaSecao>
+          <AbaSecao
+            id="por-categoria"
+            ativo={secaoAtiva === "por-categoria"}
+            onSelecionar={trocarSecao}
+          >
+            Por categoria de produto
+          </AbaSecao>
+        </div>
+      </nav>
+
+      <div ref={painelRef}>
+        {secaoAtiva === "biblioteca" ? (
+          <BibliotecaOpcionais
+            categoriasOpcional={categoriasOpcional}
+            opcionais={opcionais}
+            acoes={acoes}
+          />
+        ) : (
+          <AssociacaoOpcionais
+            categoriasOpcional={categoriasOpcional}
+            opcionais={opcionais}
+            categoriasProduto={categoriasProduto}
+            associacoes={associacoes}
+            acoes={acoes}
+          />
+        )}
+      </div>
+
+      {/* Vazio medido: sem ele a rolagem para antes de a barra grudar no topo
+          quando o painel é curto. Só background, nada dentro. */}
+      <div aria-hidden style={{ height: espacoFinal }} />
     </main>
+  );
+}
+
+/** Pílula da aba (mockup aprovado). `flex-1`: as duas dividem o espaço do
+ *  contêiner igual — sem isso ficam do tamanho do texto, coladas à esquerda.
+ *  `<button>` e não `<a href="#...">`: só um painel existe por vez, então não
+ *  há âncora para onde navegar. 44px literais no alvo de toque. */
+function AbaSecao({
+  id,
+  ativo,
+  onSelecionar,
+  children,
+}: {
+  id: IdSecao;
+  ativo: boolean;
+  onSelecionar: (id: IdSecao) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`aba-${id}`}
+      aria-selected={ativo}
+      aria-controls={id}
+      // A aba inativa sai da ordem de tabulação: num `tablist`, as setas ←→
+      // é que andam entre abas — Tab salta para o painel.
+      tabIndex={ativo ? 0 : -1}
+      onClick={() => onSelecionar(id)}
+      className={`${ALVO_TOQUE} flex flex-1 items-center justify-center rounded-lg px-4 text-center text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+        ativo
+          ? "bg-primary text-primary-foreground"
+          : "text-muted-foreground hover:bg-muted"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -149,8 +362,15 @@ function BibliotecaOpcionais({
 
   const buscaNorm = busca.trim().toLowerCase();
 
+  /*
+    A busca filtra ITENS; enquanto ela existe, categoria SEM match some da tela.
+    Antes da 213 as 12 categorias continuavam renderizadas e 11 diziam "Nenhum
+    item nesta categoria" — o resultado ficava escondido dentro do ruído.
+    Sem busca, a categoria vazia continua aparecendo (é ali que se cria o
+    primeiro item dela).
+  */
   const grupos = useMemo(() => {
-    return categoriasOpcional.map((cat) => ({
+    const todos = categoriasOpcional.map((cat) => ({
       cat,
       itens: opcionais
         .filter((o) => o.categoria_opcional_id === cat.id)
@@ -158,6 +378,7 @@ function BibliotecaOpcionais({
           (o) => !buscaNorm || o.nome.toLowerCase().includes(buscaNorm),
         ),
     }));
+    return buscaNorm ? todos.filter((g) => g.itens.length > 0) : todos;
   }, [categoriasOpcional, opcionais, buscaNorm]);
 
   function aoSalvar() {
@@ -208,23 +429,31 @@ function BibliotecaOpcionais({
   }
 
   return (
-    <section>
+    <section id="biblioteca" role="tabpanel" aria-labelledby="aba-biblioteca">
       <div className="mb-4 flex items-center justify-between gap-2">
-        <h1 className="font-heading text-xl font-semibold text-foreground">
-          Opcionais
-        </h1>
+        <h2 className="font-heading text-lg font-semibold text-foreground">
+          Biblioteca
+        </h2>
         <Button onClick={() => setCatForm({ aberto: true, cat: null })}>
           <Plus className="size-4" />
           Nova categoria
         </Button>
       </div>
 
-      <div className="mb-4">
+      <div className="relative mb-4">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        {/* `bg-card` e `h-11`: o Input do projeto é `bg-transparent h-8` e,
+            sobre o creme da página, vira uma linha fina. O mockup mostra campo
+            BRANCO e com respiro. */}
         <Input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar opcional por nome…"
           aria-label="Buscar opcional por nome"
+          className="h-11 rounded-xl bg-card pl-9"
         />
       </div>
 
@@ -237,104 +466,185 @@ function BibliotecaOpcionais({
         </Card>
       )}
 
-      <div className="space-y-6">
-        {grupos.map(({ cat, itens }) => (
-          <section key={cat.id}>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                {cat.nome}
-              </h2>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setOpcForm({
-                      aberto: true,
-                      opc: null,
-                      categoriaOpcionalId: cat.id,
-                    })
-                  }
-                >
-                  <Plus className="size-4" />
-                  Item
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Editar categoria ${cat.nome}`}
-                  onClick={() => setCatForm({ aberto: true, cat })}
-                >
-                  <Pencil className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Remover categoria ${cat.nome}`}
-                  onClick={() => setCatARemover(cat)}
-                >
-                  <Trash2 className="size-4 text-destructive" />
-                </Button>
-              </div>
-            </div>
-            <Card>
-              <CardContent className="divide-y divide-foreground/10 p-0">
-                {itens.length === 0 && (
-                  <div className="px-4 py-3 text-sm text-muted-foreground">
-                    Nenhum item nesta categoria.
-                  </div>
-                )}
-                {itens.map((o) => (
-                  <div key={o.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-medium text-foreground">
-                          {o.nome}
-                        </span>
-                        {!o.ativo && <Badge variant="outline">Inativo</Badge>}
-                      </div>
-                      <span className="text-sm text-muted-foreground">
-                        +{formatarMoeda(o.preco)}
-                      </span>
-                    </div>
+      {categoriasOpcional.length > 0 && grupos.length === 0 && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            Nenhum opcional encontrado para &ldquo;{busca.trim()}&rdquo;.
+          </CardContent>
+        </Card>
+      )}
 
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                      <Switch
-                        checked={o.ativo}
-                        disabled={alternando}
-                        onCheckedChange={() => alternar(o)}
-                        aria-label={`${o.ativo ? "Desativar" : "Ativar"} ${o.nome}`}
-                      />
-                    </label>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Editar ${o.nome}`}
-                      onClick={() =>
-                        setOpcForm({
-                          aberto: true,
-                          opc: o,
-                          categoriaOpcionalId: o.categoria_opcional_id,
-                        })
+      {/*
+        O nome da categoria virou o HEADER do Card, com `border-b` e a contagem
+        num Badge: antes ele era um `text-sm text-muted-foreground` FORA do
+        cartão enquanto o item era `font-medium text-foreground` DENTRO — o
+        filho pesava mais que o pai. Sanfona ABERTA por padrão (mesma decisão do
+        `ProdutosClient`: a tela não muda de comportamento para quem nunca vai
+        fechar nada).
+      */}
+      <Accordion
+        multiple
+        defaultValue={categoriasOpcional.map((c) => c.id)}
+        className="gap-4"
+      >
+        {grupos.map(({ cat, itens }) => (
+          <AccordionItem
+            key={cat.id}
+            value={cat.id}
+            className="not-last:border-b-0"
+          >
+            <Card>
+              {/* O gatilho da sanfona é um <button>; as ações da categoria ficam
+                  FORA dele (button aninhado é HTML inválido). */}
+              <div className="flex items-center justify-between gap-2 border-b px-4 [&>h3]:min-w-0 [&>h3]:flex-1">
+                <AccordionTrigger className="min-h-[44px] font-heading text-base font-semibold text-foreground">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">{cat.nome}</span>
+                    <Badge variant="outline">
+                      {itens.length} {itens.length === 1 ? "item" : "itens"}
+                    </Badge>
+                  </span>
+                </AccordionTrigger>
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="min-h-[44px]"
+                    aria-label={`Novo item em ${cat.nome}`}
+                    onClick={() =>
+                      setOpcForm({
+                        aberto: true,
+                        opc: null,
+                        categoriaOpcionalId: cat.id,
+                      })
+                    }
+                  >
+                    <Plus className="size-4" />
+                    <span className="hidden sm:inline">Item</span>
+                  </Button>
+                  {/* Editar/Remover consolidados no kebab: os dois ícones em
+                      `size="icon-sm"` davam 33,6px, abaixo dos 44px da régua. */}
+                  <Menu>
+                    <MenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={ALVO_TOQUE}
+                          aria-label={`Mais ações da categoria ${cat.nome}`}
+                        />
                       }
                     >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Remover ${o.nome}`}
-                      onClick={() => setOpcARemover(o)}
+                      <MoreVertical aria-hidden className="size-4" />
+                    </MenuTrigger>
+                    <MenuPortal>
+                      <MenuPositioner align="end">
+                        <MenuPopup>
+                          <MenuItem
+                            className="min-h-[44px]"
+                            onClick={() => setCatForm({ aberto: true, cat })}
+                          >
+                            <Pencil aria-hidden className="size-4" />
+                            Editar categoria
+                          </MenuItem>
+                          <MenuItem
+                            className="min-h-[44px] text-destructive"
+                            onClick={() => setCatARemover(cat)}
+                          >
+                            <Trash2 aria-hidden className="size-4" />
+                            Remover categoria
+                          </MenuItem>
+                        </MenuPopup>
+                      </MenuPositioner>
+                    </MenuPortal>
+                  </Menu>
+                </div>
+              </div>
+
+              <AccordionContent className="pt-0 pb-0">
+                <CardContent className="divide-y divide-foreground/10 p-0">
+                  {itens.length === 0 && (
+                    <div className="px-4 py-3 text-sm text-muted-foreground">
+                      Nenhum item nesta categoria.
+                    </div>
+                  )}
+                  {itens.map((o) => (
+                    <div
+                      key={o.id}
+                      className="flex items-center gap-3 px-4 py-3"
                     >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium text-foreground">
+                            {o.nome}
+                          </span>
+                          {!o.ativo && <Badge variant="outline">Inativo</Badge>}
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          +{formatarMoeda(o.preco)}
+                        </span>
+                      </div>
+
+                      <label
+                        className={`${ALVO_TOQUE} flex cursor-pointer items-center justify-center`}
+                      >
+                        <Switch
+                          checked={o.ativo}
+                          disabled={alternando}
+                          onCheckedChange={() => alternar(o)}
+                          aria-label={`${o.ativo ? "Desativar" : "Ativar"} ${o.nome}`}
+                        />
+                      </label>
+
+                      <Menu>
+                        <MenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={ALVO_TOQUE}
+                              aria-label={`Mais ações de ${o.nome}`}
+                            />
+                          }
+                        >
+                          <MoreVertical aria-hidden className="size-4" />
+                        </MenuTrigger>
+                        <MenuPortal>
+                          <MenuPositioner align="end">
+                            <MenuPopup>
+                              <MenuItem
+                                className="min-h-[44px]"
+                                onClick={() =>
+                                  setOpcForm({
+                                    aberto: true,
+                                    opc: o,
+                                    categoriaOpcionalId:
+                                      o.categoria_opcional_id,
+                                  })
+                                }
+                              >
+                                <Pencil aria-hidden className="size-4" />
+                                Editar
+                              </MenuItem>
+                              <MenuItem
+                                className="min-h-[44px] text-destructive"
+                                onClick={() => setOpcARemover(o)}
+                              >
+                                <Trash2 aria-hidden className="size-4" />
+                                Remover
+                              </MenuItem>
+                            </MenuPopup>
+                          </MenuPositioner>
+                        </MenuPortal>
+                      </Menu>
+                    </div>
+                  ))}
+                </CardContent>
+              </AccordionContent>
             </Card>
-          </section>
+          </AccordionItem>
         ))}
-      </div>
+      </Accordion>
 
       {/* Sheet categoria de opcional */}
       <Sheet
@@ -648,9 +958,8 @@ function AssociacaoOpcionais({
 
   /*
     `ordem` gravada (208) por categoria de produto → grupo de opcional. Vem
-    SEMPRE das props, nunca de estado: sair do modo reordenar faz
-    `router.refresh()`, e é por aqui que a ordem recém-gravada volta. Um estado
-    local sobrevivendo entre as entradas no modo atropelaria a verdade do banco.
+    SEMPRE das props, nunca de estado: todo toggle e toda reordenação terminam
+    em `router.refresh()`, e é por aqui que a ordem recém-gravada volta.
   */
   const ordemPorProduto = useMemo(() => {
     const mapa = new Map<string, Map<string, number>>();
@@ -675,13 +984,13 @@ function AssociacaoOpcionais({
   }, [opcionais]);
 
   return (
-    <section>
+    <section id="por-categoria" role="tabpanel" aria-labelledby="aba-por-categoria">
       <h2 className="mb-1 font-heading text-lg font-semibold text-foreground">
         Opcionais por categoria de produto
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
         Escolha quais categorias de opcional aparecem para os produtos de cada
-        categoria. Quem não tiver nenhuma marcada fica &ldquo;sem
+        categoria, e em que ordem. Quem não tiver nenhuma marcada fica &ldquo;sem
         opcionais&rdquo;.
       </p>
 
@@ -693,7 +1002,16 @@ function AssociacaoOpcionais({
         </Card>
       )}
 
-      <div className="space-y-4">
+      {/*
+        Só a PRIMEIRA nasce aberta (decisão do usuário, sem limiar por
+        quantidade): com 12 categorias de produto abertas a página viraria um
+        rolo, e a lista segmentada de cada cartão é alta.
+      */}
+      <Accordion
+        multiple
+        defaultValue={categoriasProduto.slice(0, 1).map((c) => c.id)}
+        className="gap-4"
+      >
         {categoriasProduto.map((catProd) => (
           <CartaoAssociacao
             key={catProd.id}
@@ -706,16 +1024,44 @@ function AssociacaoOpcionais({
             acoes={acoes}
           />
         ))}
-      </div>
+      </Accordion>
     </section>
   );
 }
 
+/** "3 itens" / "1 item" — a singularização mora onde o domínio é conhecido. */
+function rotuloItens(total: number): string {
+  return `${total} ${total === 1 ? "item" : "itens"}`;
+}
+
 /**
- * Um cartão = uma categoria de PRODUTO. Dois modos que nunca coexistem (RN-12):
- * a grade de checkboxes (associação) OU a lista arrastável dos grupos marcados
- * (ordem, issues 208/209). Não coexistirem é o que impede alterar a associação
- * no meio de um arrasto.
+ * Um cartão = uma categoria de PRODUTO (issue 213).
+ *
+ * ─────────────────────────────────────────── Um modo só
+ * Antes havia dois que nunca coexistiam (grade de checkbox OU lista arrastável,
+ * atrás de um botão "Reordenar" com gate de ≥2 marcados). Agora a lista já
+ * nasce na ORDEM DA VITRINE com o checkbox na própria linha, e o salvamento é
+ * automático: some o botão "Salvar" e some o gate.
+ *
+ * ─────────────────────────────────────────── Por que a lista é SEGMENTADA
+ * Razão técnica, não estética: marcados e desmarcados no MESMO
+ * `SortableContext` fariam o `closestCenter` do dnd-kit aceitar soltura na
+ * região dos desmarcados e produzir posição para um grupo que NÃO tem linha em
+ * `categoria_produto_opcionais` — a RPC confere `row_count` e derruba a
+ * transação. Com dois segmentos, só os marcados entram no `SortableContext`.
+ *
+ * ─────────────────────────────────────────── A corrida do autosave
+ * Um toggle disparado com um reorder ainda no debounce (500ms) mandaria à RPC
+ * um conjunto de ids que não bate com as linhas persistidas → `row_count`
+ * mismatch → erro genérico. Por isso o toggle AGUARDA o `finalizar()` do handle
+ * imperativo ANTES de mexer no conjunto e de chamar `salvarAssociacaoOpcionais`.
+ * Enquanto está em voo, alça e setas ficam `aria-disabled` — nunca `disabled`,
+ * que tira da tabulação e perde o foco.
+ *
+ * ─────────────────────────────────────────── Desmarcar perde a posição
+ * Decisão do usuário, sem confirmação: `planejarAssociacaoOpcionais` remove a
+ * linha, e remarcar reinsere com `ordem = max(permanentes) + 1`, isto é, no FIM.
+ * A UI só mostra a verdade que o banco já tinha.
  */
 function CartaoAssociacao({
   categoriaProduto,
@@ -730,7 +1076,7 @@ function CartaoAssociacao({
   categoriasOpcional: CategoriaOpcional[];
   /** Ids PERSISTIDOS desta categoria de produto (props = verdade do servidor). */
   selecionadosIniciais: Set<string>;
-  /** `categoria_opcional_id → ordem` gravada. Ausente = 0 (linhas pré-208). */
+  /** `categoria_opcional_id → ordem` gravada. Ausente = ainda não persistido. */
   ordemPorGrupo: Map<string, number>;
   totalItensPorGrupo: Map<string, number>;
   onSalvo: () => void;
@@ -738,27 +1084,89 @@ function CartaoAssociacao({
 }) {
   const [selecionados, setSelecionados] =
     useState<Set<string>>(selecionadosIniciais);
-  const [salvando, startSalvar] = useTransition();
-  const [modoReordenar, setModoReordenar] = useState(false);
+  const [togglando, setTogglando] = useState(false);
+  const [statusAssociacao, setStatusAssociacao] =
+    useState<StatusSalvamento>("");
+  const [statusOrdem, setStatusOrdem] = useState<StatusSalvamento>("");
+  const [mensagemSemLista, setMensagemSemLista] = useState("");
   const reordenarRef = useRef<ManipuladorModoReordenar | null>(null);
-  const saindoDoModoRef = useRef(false);
+  const togglandoRef = useRef(false);
+  // Lido dentro do handler do toggle, que capturaria um `selecionados` velho.
+  // Sincronizado em EFEITO (escrever ref durante o render é proibido pelo
+  // `react-hooks/refs`): o efeito passivo é liberado antes do próximo evento
+  // discreto, então todo clique já lê o valor recém-commitado.
+  const selecionadosRef = useRef(selecionados);
+  useEffect(() => {
+    selecionadosRef.current = selecionados;
+  }, [selecionados]);
 
-  /*
-    Comparação de CONJUNTO contra os ids persistidos que vieram das props. Um
-    grupo recém-marcado e ainda não salvo NÃO tem linha em
-    `categoria_produto_opcionais`: mandá-lo no payload faria a RPC da 208 (que
-    exige a permutação COMPLETA e confere `row_count`) derrubar a transação e
-    devolver erro genérico — atrito sem causa visível na tela.
-  */
-  const temAlteracaoNaoSalva = useMemo(
-    () => haAlteracaoNaAssociacao(selecionadosIniciais, selecionados),
-    [selecionados, selecionadosIniciais],
+  /**
+   * Toggle do checkbox — ÚNICO caminho de escrita da associação.
+   *
+   * A ORDEM é a trava da corrida descrita no cabeçalho: flush do reorder
+   * pendente → novo conjunto → gravação → refresh. Trocar o conjunto antes do
+   * flush remontaria a lista (a `key` deriva dos marcados) e o `finalizar()`
+   * cairia no handle da instância nova, que não tem o movimento pendente.
+   */
+  const alternar = useCallback(
+    async (catOpcId: string, marcado: boolean) => {
+      // Reentrância: dois toggles simultâneos disputariam o mesmo flush.
+      if (togglandoRef.current) return;
+      togglandoRef.current = true;
+      setTogglando(true);
+
+      const anterior = selecionadosRef.current;
+      const nome =
+        categoriasOpcional.find((c) => c.id === catOpcId)?.nome ?? "Grupo";
+      const total = marcado
+        ? anterior.size + (anterior.has(catOpcId) ? 0 : 1)
+        : anterior.size - (anterior.has(catOpcId) ? 1 : 0);
+      const frase = marcado
+        ? `${nome} incluído. Posição ${total} de ${total}.`
+        : `${nome} removido. ${total} ${total === 1 ? "grupo" : "grupos"} na ordem.`;
+
+      try {
+        // A ORDEM (flush → seleção → gravação) é a trava da corrida e mora em
+        // `alternarAssociacaoOpcional`, fora do componente, porque aqui dentro
+        // ela era inalcançável por teste — ver o cabeçalho daquele arquivo.
+        await alternarAssociacaoOpcional(anterior, catOpcId, marcado, frase, {
+          finalizarReordenacao: () => reordenarRef.current?.finalizar(),
+          salvar: (ids) =>
+            acoes.salvarAssociacaoOpcionais({
+              categoria_id: categoriaProduto.id,
+              categoria_opcional_id: ids,
+            }),
+          aplicarSelecao: setSelecionados,
+          definirStatus: setStatusAssociacao,
+          avisarErro: (m) => toast.error(m),
+          // A região viva é a do `ModoReordenar` quando ele está montado — duas
+          // `aria-live` na mesma tela silenciam ou duplicam o anúncio.
+          anunciar: (f) => {
+            if (reordenarRef.current) {
+              reordenarRef.current.anunciar(f);
+            } else {
+              setMensagemSemLista(f);
+            }
+          },
+          aoSucesso: onSalvo,
+          registrarErro: (e) => console.error("[alternarAssociacao]", e),
+        });
+      } finally {
+        togglandoRef.current = false;
+        setTogglando(false);
+      }
+    },
+    [acoes, categoriaProduto.id, categoriasOpcional, onSalvo],
   );
 
   /*
-    Só os marcados, na ordem do servidor. O desempate por id espelha o segundo
-    `.order` de `buscarAssociacoesOpcional`: sem ele, linhas pré-208 (todas com
-    `ordem = 0`) abririam numa ordem que o SSR não garante.
+    Só os marcados, na ordem do servidor. Quem ainda NÃO tem linha gravada (o
+    recém-marcado, antes do `router.refresh()`) vai para o FIM — é onde
+    `planejarAssociacaoOpcionais` acabou de inseri-lo. Usar 0 como default o
+    jogaria para o topo e a tela mentiria por uma fração de segundo. O desempate
+    por id espelha o segundo `.order` de `buscarAssociacoesOpcional`: sem ele,
+    linhas pré-208 (todas com `ordem = 0`) abririam numa ordem que o SSR não
+    garante.
   */
   const gruposMarcados = useMemo<GrupoOpcionalReordenavel[]>(
     () =>
@@ -768,154 +1176,204 @@ function CartaoAssociacao({
           id: c.id,
           nome: c.nome,
           totalItens: totalItensPorGrupo.get(c.id) ?? 0,
+          prefixo: (
+            <span
+              className={`${ALVO_TOQUE} flex shrink-0 items-center justify-center`}
+            >
+              <Checkbox
+                checked
+                aria-label={`Remover ${c.nome} dos opcionais de ${categoriaProduto.nome}`}
+                onCheckedChange={() => void alternar(c.id, false)}
+              />
+            </span>
+          ),
         }))
         .sort((a, b) => {
-          const ordemA = ordemPorGrupo.get(a.id) ?? 0;
-          const ordemB = ordemPorGrupo.get(b.id) ?? 0;
+          const ordemA = ordemPorGrupo.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+          const ordemB = ordemPorGrupo.get(b.id) ?? Number.MAX_SAFE_INTEGER;
           return ordemA - ordemB || a.id.localeCompare(b.id);
         }),
-    [categoriasOpcional, selecionados, ordemPorGrupo, totalItensPorGrupo],
+    [
+      categoriasOpcional,
+      selecionados,
+      ordemPorGrupo,
+      totalItensPorGrupo,
+      categoriaProduto.nome,
+      alternar,
+    ],
   );
 
-  const podeReordenar = selecionados.size >= 2 && !temAlteracaoNaoSalva;
+  const disponiveis = useMemo(
+    () => categoriasOpcional.filter((c) => !selecionados.has(c.id)),
+    [categoriasOpcional, selecionados],
+  );
 
-  /** O motivo fica na TELA; um botão inerte sem explicação vira suporte. */
-  const motivoReordenar = temAlteracaoNaoSalva
-    ? "Salve a associação antes de reordenar."
-    : selecionados.size < 2
-      ? "Marque pelo menos 2 grupos para poder ordená-los."
-      : null;
 
-  /**
-   * Saída do modo — Concluir e ESC passam os dois por aqui (espelha
-   * `ProdutosClient.sairDoModoReordenar`).
-   *
-   * O `await finalizar()` NÃO é decorativo: o modo salva com debounce de 500ms,
-   * e mover um grupo + sair antes disso descartaria o movimento em silêncio (o
-   * `router.refresh()` de `onSalvo` traria a ordem ANTIGA por cima). Daí a
-   * ORDEM: flush → desmonta → refresh.
-   */
-  const sairDoModo = useCallback(async () => {
-    if (saindoDoModoRef.current) return; // ESC repetido / duplo clique
-    saindoDoModoRef.current = true;
-    try {
-      await reordenarRef.current?.finalizar();
-    } finally {
-      saindoDoModoRef.current = false;
-      setModoReordenar(false);
-      onSalvo();
-    }
-  }, [onSalvo]);
+  /*
+    Status AGREGADO do cartão: um só texto para a associação e para a ordem.
+    Dois indicadores lado a lado dizendo "Salvando…" seriam ruído, e o lojista
+    não faz ideia de que são duas escritas diferentes.
+  */
+  const status: StatusSalvamento =
+    statusAssociacao === "salvando" || statusOrdem === "salvando"
+      ? "salvando"
+      : statusAssociacao === "salvo" || statusOrdem === "salvo"
+        ? "salvo"
+        : "";
 
-  // ESC também sai do modo. O listener só existe enquanto ESTE cartão está no
-  // modo — dois cartões abertos ao mesmo tempo são permitidos e independentes.
-  useEffect(() => {
-    if (!modoReordenar) return;
-    function aoTeclar(e: KeyboardEvent) {
-      if (e.key === "Escape") void sairDoModo();
-    }
-    window.addEventListener("keydown", aoTeclar);
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [modoReordenar, sairDoModo]);
-
-  function alternar(catOpcId: string, marcado: boolean) {
-    setSelecionados((atual) => {
-      const proximo = new Set(atual);
-      if (marcado) {
-        proximo.add(catOpcId);
-      } else {
-        proximo.delete(catOpcId);
-      }
-      return proximo;
-    });
-  }
-
-  function salvar() {
-    startSalvar(async () => {
-      const r = await acoes.salvarAssociacaoOpcionais({
-        categoria_id: categoriaProduto.id,
-        categoria_opcional_id: Array.from(selecionados),
-      });
-      if (!r.ok) {
-        toast.error(r.erro);
-        return;
-      }
-      toast.success("Associação salva!");
-      onSalvo();
-    });
-  }
+  /*
+    REMONTA a lista quando o conjunto de marcados muda: o `ModoReordenar`
+    captura `itens` no primeiro render de propósito (é isso que preserva o
+    otimismo durante o arrasto), então sem a `key` um grupo recém-marcado nunca
+    apareceria. Só o CONJUNTO entra na chave — a ordem não, senão cada arrasto
+    remontaria a lista sob o dedo.
+  */
+  const chaveDaLista = Array.from(selecionados).sort().join("|");
 
   return (
-    <Card>
-      <CardContent className="space-y-3 p-4">
-        <h3 className="text-sm font-medium text-foreground">
-          {categoriaProduto.nome}
-        </h3>
-        {categoriasOpcional.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Crie categorias de opcional para poder associá-las.
-          </p>
-        ) : modoReordenar ? (
-          <ReordenarOpcionaisDaCategoria
-            ref={reordenarRef}
-            categoriaProdutoId={categoriaProduto.id}
-            grupos={gruposMarcados}
-            onReordenar={acoes.reordenarOpcionaisDaCategoria}
-          />
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {categoriasOpcional.map((catOpc) => (
-              <label
-                key={catOpc.id}
-                className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
-              >
-                <Checkbox
-                  checked={selecionados.has(catOpc.id)}
-                  onCheckedChange={(v) => alternar(catOpc.id, v === true)}
-                />
-                <span className="truncate">{catOpc.nome}</span>
-              </label>
-            ))}
-          </div>
-        )}
-        {categoriasOpcional.length > 0 && !modoReordenar && motivoReordenar && (
-          <p className="text-xs text-muted-foreground">{motivoReordenar}</p>
-        )}
-        <div className="flex justify-end gap-2">
-          {modoReordenar ? (
-            <Button size="sm" onClick={() => void sairDoModo()}>
-              Concluir
-            </Button>
-          ) : (
-            <>
-              {/*
-                `disabled` real (e não `aria-disabled`) é o certo AQUI: este
-                botão não está numa lista cujo foco precise ser preservado, e o
-                motivo aparece na tela acima.
-              */}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  salvando || categoriasOpcional.length === 0 || !podeReordenar
-                }
-                onClick={() => setModoReordenar(true)}
-              >
-                Reordenar
-              </Button>
-              <Button
-                size="sm"
-                disabled={salvando || categoriasOpcional.length === 0}
-                onClick={salvar}
-              >
-                {salvando && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Salvar
-              </Button>
-            </>
-          )}
+    <AccordionItem
+      value={categoriaProduto.id}
+      className="not-last:border-b-0"
+    >
+      <Card>
+        <div className="flex items-center justify-between gap-2 border-b px-4 [&>h3]:min-w-0 [&>h3]:flex-1">
+          <AccordionTrigger className="min-h-[44px] font-heading text-base font-semibold text-foreground">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate">{categoriaProduto.nome}</span>
+              <Badge variant="outline">
+                {selecionados.size}{" "}
+                {selecionados.size === 1 ? "incluído" : "incluídos"}
+              </Badge>
+            </span>
+          </AccordionTrigger>
         </div>
-      </CardContent>
-    </Card>
+
+        <AccordionContent className="pt-0 pb-0">
+          <CardContent className="space-y-3 p-4">
+            {categoriasOpcional.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Crie categorias de opcional para poder associá-las.
+              </p>
+            ) : (
+              <>
+                {gruposMarcados.length === 0 ? (
+                  <>
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      className="sr-only"
+                    >
+                      {mensagemSemLista}
+                    </p>
+                    <p className="px-2 py-3 text-sm text-muted-foreground">
+                      Nenhum grupo incluído ainda. Marque um em
+                      &ldquo;Disponíveis&rdquo; para incluir.
+                    </p>
+                  </>
+                ) : (
+                  <ReordenarOpcionaisDaCategoria
+                    key={chaveDaLista}
+                    ref={reordenarRef}
+                    categoriaProdutoId={categoriaProduto.id}
+                    grupos={gruposMarcados}
+                    onReordenar={acoes.reordenarOpcionaisDaCategoria}
+                    semCartao
+                    ocultarStatus
+                    aoMudarStatus={setStatusOrdem}
+                    arrastoBloqueado={togglando}
+                  />
+                )}
+
+                <Separator />
+
+                {/*
+                  Segmento COLAPSADO por padrão e SEM alça: nada aqui tem
+                  posição, e uma alça que não move nada seria um controle que
+                  não faz nada.
+                */}
+                <Accordion>
+                  <AccordionItem
+                    value="disponiveis"
+                    className="not-last:border-b-0"
+                  >
+                    <AccordionTrigger className="min-h-[44px] -mx-4 rounded-none bg-muted/60 px-4 text-sm font-medium text-foreground">
+                      <span className="flex flex-wrap items-baseline gap-x-2">
+                        Disponíveis ({disponiveis.length})
+                        <span className="text-xs font-normal text-muted-foreground">
+                          o cliente não vê estes
+                        </span>
+                      </span>
+                    </AccordionTrigger>
+                    {/* `keepMounted`: o segmento nasce colapsado, mas o
+                        conteúdo já vem do servidor — sem ele os checkboxes de
+                        "Incluir" não existiriam no DOM até o primeiro clique. */}
+                    <AccordionContent keepMounted>
+                      {disponiveis.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Todos os grupos já estão incluídos.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mb-1 text-xs text-muted-foreground">
+                            Marque para incluir — entra no fim da ordem.
+                          </p>
+                          <ul className="divide-y divide-foreground/10">
+                            {disponiveis.map((catOpc) => (
+                              <li key={catOpc.id}>
+                                <label className="flex cursor-pointer items-center gap-2 py-1">
+                                  <span
+                                    className={`${ALVO_TOQUE} flex shrink-0 items-center justify-center`}
+                                  >
+                                    <Checkbox
+                                      checked={false}
+                                      aria-label={`Incluir ${catOpc.nome} nos opcionais de ${categoriaProduto.nome}`}
+                                      onCheckedChange={() =>
+                                        void alternar(catOpc.id, true)
+                                      }
+                                    />
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="line-clamp-1 text-sm font-medium text-foreground">
+                                      {catOpc.nome}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {rotuloItens(
+                                        totalItensPorGrupo.get(catOpc.id) ?? 0,
+                                      )}
+                                    </span>
+                                  </span>
+                                </label>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+
+                {/*
+                  `aria-hidden`: a região viva do modo já cobre o leitor de tela.
+                */}
+                <div
+                  aria-hidden
+                  className="-mx-4 mt-1 flex min-h-8 items-center justify-end gap-1.5 border-t border-border px-4 pt-2 text-xs text-muted-foreground"
+                >
+                  {status === "salvando" && <span>Salvando…</span>}
+                  {status === "salvo" && (
+                    <>
+                      <Check className="size-3.5 text-emerald-600" />
+                      <span className="font-medium text-emerald-700">Salvo</span>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </AccordionContent>
+      </Card>
+    </AccordionItem>
   );
 }
 

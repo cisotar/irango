@@ -94,7 +94,13 @@ const INSTRUCOES_LEITOR: ScreenReaderInstructions = {
 };
 
 /** O mínimo que uma linha arrastável precisa. `detalhe` é a 2ª linha de texto. */
-export type ItemReordenavel = { id: string; nome: string; detalhe?: string };
+export type ItemReordenavel = {
+  id: string;
+  nome: string;
+  detalhe?: string;
+  /** Slot antes da alça (issue 213 — o checkbox do cartão de associação). */
+  prefixo?: ReactNode;
+};
 
 /**
  * Handle imperativo do modo. Existe por um motivo só: o pai precisa AGUARDAR o
@@ -103,6 +109,13 @@ export type ItemReordenavel = { id: string; nome: string; detalhe?: string };
 export type ManipuladorModoReordenar = {
   /** Resolve quando não há mais nada em voo nem na fila de salvamento. */
   finalizar: () => Promise<void>;
+  /**
+   * Escreve na região viva ÚNICA deste modo (issue 213). Existe para que o pai
+   * anuncie um evento que não é um movimento — marcar/desmarcar um grupo — sem
+   * criar uma segunda `aria-live` na mesma tela, que silenciaria ou duplicaria
+   * o anúncio.
+   */
+  anunciar: (mensagem: string) => void;
 };
 
 export type ModoReordenarProps = {
@@ -118,6 +131,17 @@ export type ModoReordenarProps = {
   mensagemInicial: string;
   /** Linha fixa NÃO ordenável no fim do `<ol>` (hoje só o "Sem categoria"). */
   rodape?: ReactNode;
+  /**
+   * Lista já embutida em outro cartão: dispensa o `<Card>` próprio. Default
+   * `false` — o markup de quem já usava o componente não muda um byte.
+   */
+  semCartao?: boolean;
+  /** Quem mostra o status é o pai (status AGREGADO do cartão, issue 213). */
+  ocultarStatus?: boolean;
+  /** Espelha o status para o pai poder agregá-lo com o dele. */
+  aoMudarStatus?: (status: StatusSalvamento) => void;
+  /** Salvamento do pai em voo: alça e setas ficam inertes (nunca `disabled`). */
+  arrastoBloqueado?: boolean;
   ref?: Ref<ManipuladorModoReordenar>;
 };
 
@@ -126,6 +150,10 @@ export function ModoReordenar({
   onReordenar,
   mensagemInicial,
   rodape,
+  semCartao = false,
+  ocultarStatus = false,
+  aoMudarStatus,
+  arrastoBloqueado = false,
   ref,
 }: ModoReordenarProps) {
   const [ordem, setOrdem] = useState<readonly ItemReordenavel[]>(itens);
@@ -141,6 +169,13 @@ export function ModoReordenar({
   useEffect(() => {
     ordemRef.current = ordem;
   }, [ordem]);
+
+  // Espelha o status para o pai por EFEITO, não de dentro da máquina de
+  // salvamento: ela é criada uma vez (inicializador preguiçoso abaixo) e
+  // capturaria para sempre a primeira identidade de `aoMudarStatus`.
+  useEffect(() => {
+    aoMudarStatus?.(status);
+  }, [status, aoMudarStatus]);
 
   /*
     Criada UMA vez, pelo inicializador preguiçoso de `useState`: recriá-la a cada
@@ -178,9 +213,14 @@ export function ModoReordenar({
   );
 
   // O pai aguarda isto antes de desmontar e de chamar `router.refresh()`.
-  useImperativeHandle(ref, () => ({ finalizar: () => salvamento.finalizar() }), [
-    salvamento,
-  ]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      finalizar: () => salvamento.finalizar(),
+      anunciar: (mensagem: string) => setMensagemViva(mensagem),
+    }),
+    [salvamento],
+  );
 
   // ÚLTIMO RECURSO para saídas que não passam por Concluir/ESC (navegação, por
   // exemplo): dispara o pendente em vez de descartá-lo. Nos caminhos normais
@@ -294,6 +334,71 @@ export function ModoReordenar({
   const ids = useMemo(() => ordem.map((i) => i.id), [ordem]);
   const arrastada = ordem.find((i) => i.id === idArrastando) ?? null;
 
+  const lista = (
+    <DndContext
+      sensors={sensores}
+      collisionDetection={closestCenter}
+      accessibility={{
+        announcements: anuncios,
+        screenReaderInstructions: INSTRUCOES_LEITOR,
+      }}
+      onDragStart={aoComecarArrasto}
+      onDragEnd={aoSoltar}
+      onDragCancel={() => setIdArrastando(null)}
+    >
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        {/* `<ol>` semântico; `key` = id (por índice quebraria animação e foco). */}
+        <ol className="motion-reduce:transition-none">
+          {ordem.map((item, indice) => (
+            <LinhaCategoriaReordenavel
+              key={item.id}
+              id={item.id}
+              nome={item.nome}
+              detalhe={item.detalhe}
+              prefixo={item.prefixo}
+              // Compacta exatamente quando há checkbox na linha: é o prefixo que
+              // come os ~44px que fazem o nome não caber em 360px. Sem ele
+              // (categorias de produto, 175), a linha continua como era.
+              compacta={item.prefixo != null}
+              bloqueado={arrastoBloqueado}
+              indice={indice}
+              total={ordem.length}
+              onMover={mover}
+            />
+          ))}
+
+          {/*
+            Linha fixa do chamador (hoje só o "Sem categoria" de produtos):
+            fica FORA do SortableContext, no fim, e NUNCA entra no payload.
+          */}
+          {rodape}
+        </ol>
+      </SortableContext>
+
+      {/*
+        DragOverlay em PORTAL: sem ele o `overflow` do Card clipa o item
+        em movimento. `document` não existe no SSR (o projeto renderiza
+        este componente com renderToStaticMarkup nos testes), daí o guard.
+      */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <DragOverlay>
+            {arrastada ? (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-2 shadow-lg motion-reduce:transform-none">
+                <span className="flex min-h-[44px] min-w-[44px] items-center justify-center text-muted-foreground">
+                  <GripVertical aria-hidden className="size-4" />
+                </span>
+                <span className="line-clamp-1 text-sm font-medium text-foreground">
+                  {arrastada.nome}
+                </span>
+              </div>
+            ) : null}
+          </DragOverlay>,
+          document.body,
+        )}
+    </DndContext>
+  );
+
   return (
     <div className="space-y-2">
       {/*
@@ -305,77 +410,31 @@ export function ModoReordenar({
         {mensagemViva}
       </p>
 
-      <Card>
-        <CardContent className="p-0">
-          <DndContext
-            sensors={sensores}
-            collisionDetection={closestCenter}
-            accessibility={{
-              announcements: anuncios,
-              screenReaderInstructions: INSTRUCOES_LEITOR,
-            }}
-            onDragStart={aoComecarArrasto}
-            onDragEnd={aoSoltar}
-            onDragCancel={() => setIdArrastando(null)}
-          >
-            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-              {/* `<ol>` semântico; `key` = id (por índice quebraria animação e foco). */}
-              <ol className="motion-reduce:transition-none">
-                {ordem.map((item, indice) => (
-                  <LinhaCategoriaReordenavel
-                    key={item.id}
-                    id={item.id}
-                    nome={item.nome}
-                    detalhe={item.detalhe}
-                    indice={indice}
-                    total={ordem.length}
-                    onMover={mover}
-                  />
-                ))}
-
-                {/*
-                  Linha fixa do chamador (hoje só o "Sem categoria" de produtos):
-                  fica FORA do SortableContext, no fim, e NUNCA entra no payload.
-                */}
-                {rodape}
-              </ol>
-            </SortableContext>
-
-            {/*
-              DragOverlay em PORTAL: sem ele o `overflow` do Card clipa o item
-              em movimento. `document` não existe no SSR (o projeto renderiza
-              este componente com renderToStaticMarkup nos testes), daí o guard.
-            */}
-            {typeof document !== "undefined" &&
-              createPortal(
-                <DragOverlay>
-                  {arrastada ? (
-                    <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-2 shadow-lg motion-reduce:transform-none">
-                      <span className="flex min-h-[44px] min-w-[44px] items-center justify-center text-muted-foreground">
-                        <GripVertical aria-hidden className="size-4" />
-                      </span>
-                      <span className="line-clamp-1 text-sm font-medium text-foreground">
-                        {arrastada.nome}
-                      </span>
-                    </div>
-                  ) : null}
-                </DragOverlay>,
-                document.body,
-              )}
-          </DndContext>
-        </CardContent>
-      </Card>
+      {/*
+        Embutida (issue 213), a lista já vive dentro do cartão do chamador:
+        um segundo `<Card>` desenharia borda sobre borda.
+      */}
+      {semCartao ? (
+        lista
+      ) : (
+        <Card>
+          <CardContent className="p-0">{lista}</CardContent>
+        </Card>
+      )}
 
       {/*
         Status agregado, não um toast por movimento (uma chuva de notificações)
         nem um spinner por linha (a lista tremeria a cada toque).
         `aria-hidden`: a região viva acima já cobre o leitor de tela — duplicar
-        causaria anúncio duplo.
+        causaria anúncio duplo. Quando o pai agrega o próprio status (213), ele
+        esconde este para não haver dois textos dizendo a mesma coisa.
       */}
-      <p aria-hidden className="h-4 text-xs text-muted-foreground">
-        {status === "salvando" && "Salvando ordem…"}
-        {status === "salvo" && "Ordem salva"}
-      </p>
+      {!ocultarStatus && (
+        <p aria-hidden className="h-4 text-xs text-muted-foreground">
+          {status === "salvando" && "Salvando ordem…"}
+          {status === "salvo" && "Ordem salva"}
+        </p>
+      )}
     </div>
   );
 }

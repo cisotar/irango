@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/menu";
 
 /**
- * Uma linha (`<li>`) da lista do modo reordenar (issue 175).
+ * Uma linha (`<li>`) da lista arrastável (issue 175).
  *
  * `useSortable` PRECISA morar no item (não no container), por isso este
  * componente existe separado de `ModoReordenar`.
@@ -38,9 +39,21 @@ import {
  *     topo, o foco estaria no `↑` que acaba de desabilitar e se perderia para o
  *     `<body>`. Esse é o bug nº 1 deste padrão. O clique continua chamando
  *     `onMover`, que vira no-op em `moverPorDeslocamento` (mesma referência).
+ *     A mesma régua vale para `bloqueado` (salvamento em voo).
  *  2. **Alvos de 44px LITERAIS.** `min-h-11` seria 2.75rem = 52,8px na base de
  *     120% do projeto (globals.css) e `size="icon-sm"` do shadcn é `size-7` =
  *     33,6px — proibido aqui.
+ *
+ * Com `compacta`, as setas ↑↓ somem abaixo de `sm` e viram itens do kebab: com
+ * o checkbox na linha, em 360px o chrome (prefixo + alça + nº + dois alvos de
+ * 44px + kebab) come ~220px e sobrariam ~140px para o nome. Nenhum caminho de
+ * teclado se perde — o `KeyboardSensor` continua na alça (espaço + setas) e os
+ * mesmos comandos existem no menu.
+ *
+ * `compacta` é OPT-IN de propósito. Sem ela, a linha sem checkbox (categorias de
+ * produto, issue 175) gasta ~176px de chrome e ainda tem ~184px para o nome —
+ * não precisa compactar, e escondê-las lá seria mudar no celular uma tela já
+ * entregue que ninguém pediu para mudar.
  *
  * A `aria-label` NÃO inclui a posição: ela mudaria a cada render e provocaria
  * re-anúncio. A posição é anunciada uma vez, pela região viva do pai.
@@ -54,6 +67,22 @@ export type LinhaCategoriaReordenavelProps = {
   nome: string;
   /** 2ª linha já formatada pelo pai (ex.: "0 produtos", "1 item"). Ausente = some. */
   detalhe?: string;
+  /**
+   * Slot ANTES da alça (issue 213): é onde o cartão de associação de opcionais
+   * encaixa o checkbox de "incluir/remover deste cartão". A linha não sabe o que
+   * é — só reserva o lugar e a ordem de tabulação (prefixo → alça → ↑ → ↓ → kebab).
+   */
+  prefixo?: ReactNode;
+  /**
+   * Salvamento em voo: arrasto e setas ficam inertes. `aria-disabled`, NUNCA
+   * `disabled` — ver armadilha 1.
+   */
+  bloqueado?: boolean;
+  /**
+   * Linha apertada (tem `prefixo`): esconde as setas ↑↓ abaixo de `sm` e deixa
+   * os mesmos comandos no kebab. Default `false` — ver comentário acima.
+   */
+  compacta?: boolean;
   /** Índice 0-based na lista atual. */
   indice: number;
   total: number;
@@ -65,6 +94,9 @@ export function LinhaCategoriaReordenavel({
   id,
   nome,
   detalhe,
+  prefixo,
+  bloqueado = false,
+  compacta = false,
   indice,
   total,
   onMover,
@@ -82,6 +114,11 @@ export function LinhaCategoriaReordenavel({
   const noTopo = indice === 0;
   const noFim = indice === total - 1;
 
+  function mover(para: number) {
+    if (bloqueado) return;
+    onMover(indice, para);
+  }
+
   return (
     <li
       ref={setNodeRef}
@@ -96,6 +133,8 @@ export function LinhaCategoriaReordenavel({
           : "bg-background")
       }
     >
+      {prefixo}
+
       {/* Alça dedicada: `touch-action: none` fica confinado a 44×44px, então o
           resto da página continua rolando normalmente no toque. Arrastar o card
           inteiro exigiria matar o scroll na área útil da página. */}
@@ -103,9 +142,13 @@ export function LinhaCategoriaReordenavel({
         type="button"
         ref={setActivatorNodeRef}
         {...attributes}
-        {...listeners}
+        {...(bloqueado ? {} : listeners)}
         style={{ touchAction: "none" }}
         aria-label={`Reordenar ${nome}`}
+        // Só sobrescreve quando bloqueado: sem isso, `undefined` apagaria o
+        // `aria-disabled="false"` que o spread do `useSortable` já emite, e a
+        // linha não-compacta (175) mudaria de markup sem ninguém ter pedido.
+        {...(bloqueado ? { "aria-disabled": true as const } : {})}
         className={`${ALVO_TOQUE} flex cursor-grab items-center justify-center rounded-lg text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:cursor-grabbing`}
       >
         <GripVertical aria-hidden className="size-4" />
@@ -131,25 +174,26 @@ export function LinhaCategoriaReordenavel({
         <Button
           variant="outline"
           size="sm"
-          className={ALVO_TOQUE}
+          className={compacta ? `hidden sm:inline-flex ${ALVO_TOQUE}` : ALVO_TOQUE}
           aria-label={`Mover ${nome} para cima`}
-          aria-disabled={noTopo}
-          onClick={() => onMover(indice, indice - 1)}
+          aria-disabled={noTopo || bloqueado}
+          onClick={() => mover(indice - 1)}
         >
           <ArrowUp aria-hidden className="size-4" />
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className={ALVO_TOQUE}
+          className={compacta ? `hidden sm:inline-flex ${ALVO_TOQUE}` : ALVO_TOQUE}
           aria-label={`Mover ${nome} para baixo`}
-          aria-disabled={noFim}
-          onClick={() => onMover(indice, indice + 1)}
+          aria-disabled={noFim || bloqueado}
+          onClick={() => mover(indice + 1)}
         >
           <ArrowDown aria-hidden className="size-4" />
         </Button>
 
-        {/* Resolve o pior caso (última → primeira) em 1 toque, em vez de N. */}
+        {/* Abriga o pior caso (última → primeira) em 1 toque e, abaixo de `sm`,
+            também o passo a passo que as setas dão no desktop. */}
         <Menu>
           <MenuTrigger
             render={
@@ -166,18 +210,41 @@ export function LinhaCategoriaReordenavel({
           <MenuPortal>
             <MenuPositioner align="end">
               <MenuPopup>
+                {/* Só existem na linha compacta, que é onde as setas somem
+                    abaixo de `sm`. Renderizar com `display:none` fora dela
+                    deixaria item morto no menu do ProdutosClient. */}
+                {compacta && (
+                  <>
+                    <MenuItem
+                      className="min-h-[44px] sm:hidden"
+                      aria-disabled={noTopo || bloqueado}
+                      onClick={() => mover(indice - 1)}
+                    >
+                      <ArrowUp aria-hidden className="size-4" />
+                      Mover para cima
+                    </MenuItem>
+                    <MenuItem
+                      className="min-h-[44px] sm:hidden"
+                      aria-disabled={noFim || bloqueado}
+                      onClick={() => mover(indice + 1)}
+                    >
+                      <ArrowDown aria-hidden className="size-4" />
+                      Mover para baixo
+                    </MenuItem>
+                  </>
+                )}
                 <MenuItem
                   className="min-h-[44px]"
-                  aria-disabled={noTopo}
-                  onClick={() => onMover(indice, 0)}
+                  aria-disabled={noTopo || bloqueado}
+                  onClick={() => mover(0)}
                 >
                   <ChevronsUp aria-hidden className="size-4" />
                   Mover para o topo
                 </MenuItem>
                 <MenuItem
                   className="min-h-[44px]"
-                  aria-disabled={noFim}
-                  onClick={() => onMover(indice, total - 1)}
+                  aria-disabled={noFim || bloqueado}
+                  onClick={() => mover(total - 1)}
                 >
                   <ChevronsDown aria-hidden className="size-4" />
                   Mover para o fim
