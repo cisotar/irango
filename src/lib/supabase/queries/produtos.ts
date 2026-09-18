@@ -194,6 +194,12 @@ export async function buscarOpcionaisPorIds(
 /** Linha de `categoria_produto_opcionais` com a categoria de opcional e seus itens aninhados. */
 type LinhaCategoriaOpcional = {
   categoria_id: string;
+  /**
+   * `ordem` da PRÓPRIA associação (issue 208/210) — a ordem que o lojista definiu
+   * para este grupo DENTRO desta categoria de produto. É a autoridade da sequência
+   * dos grupos; `opcionais_categorias.ordem` é a da biblioteca, global à loja.
+   */
+  ordem: number;
   opcionais_categorias: {
     id: string;
     nome: string;
@@ -210,7 +216,8 @@ type LinhaCategoriaOpcional = {
  * ativa — esta função NÃO reimplementa filtro de loja/ativo, só JOIN + agrupamento.
  * Nenhum preço é calculado aqui (preco é dado de exibição/preview).
  *
- * Retorna mapa `categoria_id → grupos`, grupos ordenados por `opcionais_categorias.ordem`
+ * Retorna mapa `categoria_id → grupos`, grupos ordenados por
+ * `categoria_produto_opcionais.ordem` (desempate por nome da categoria de opcional)
  * e itens por `opcionais.ordem`. Categoria sem associação (ou cujo grupo ficou sem
  * opcionais visíveis) simplesmente não aparece no mapa. Lista vazia → `{}` sem consulta.
  * Propaga `error` (§14).
@@ -224,7 +231,10 @@ export async function buscarOpcionaisPorCategoria(
   const { data, error } = await client
     .from("categoria_produto_opcionais")
     .select(
-      "categoria_id, opcionais_categorias(id, nome, ordem, opcionais(id, nome, preco, ordem))",
+      // `ordem` (raiz) = categoria_produto_opcionais.ordem — UM CAMPO A MAIS no
+      // select que já existia: nenhuma query nova, nenhum round-trip novo (RN-11,
+      // a paralelização/cache() da 207 seguem intactos).
+      "categoria_id, ordem, opcionais_categorias(id, nome, ordem, opcionais(id, nome, preco, ordem))",
     )
     .in("categoria_id", categoriaIds);
   if (error) throw error;
@@ -254,16 +264,31 @@ function agruparOpcionaisPorCategoria(
     grupos.push({
       categoriaOpcionalId: cat.id,
       categoriaOpcionalNome: cat.nome,
-      ordem: cat.ordem,
+      // Ordem da ASSOCIAÇÃO, não da biblioteca (208/210).
+      ordem: linha.ordem,
       opcionais,
     });
   }
 
   for (const grupos of Object.values(mapa)) {
-    grupos.sort((a, b) => a.ordem - b.ordem);
+    grupos.sort(compararGruposOpcionais);
   }
 
   return mapa;
+}
+
+/**
+ * CHAVE ÚNICA de ordenação dos grupos de opcional (issue 210): `ordem` da linha de
+ * `categoria_produto_opcionais` — a que o lojista arrasta no painel — com desempate
+ * por nome da categoria de opcional, para o render ser determinístico entre SSR e
+ * hidratação quando duas associações empatam na ordem.
+ *
+ * Existe extraída porque DUAS funções agrupam opcionais aqui; duplicar o critério é
+ * como as duas cópias divergem em silêncio.
+ */
+function compararGruposOpcionais(a: GrupoOpcional, b: GrupoOpcional): number {
+  if (a.ordem !== b.ordem) return a.ordem - b.ordem;
+  return a.categoriaOpcionalNome.localeCompare(b.categoriaOpcionalNome, "pt-BR");
 }
 
 /**
@@ -281,8 +306,9 @@ function agruparOpcionaisPorCategoria(
  * NÃO filtra `ativo` (decisão do plano): paridade com a visão do dono no painel,
  * que enxerga opcionais inativos. Esconder inativos, se preciso, é do cliente.
  *
- * Mesmo select aninhado e mesmo agrupamento/ordenação da original (grupos por
- * `opcionais_categorias.ordem`, itens por `opcionais.ordem`). `categoriaIds`
+ * Mesmo select aninhado e MESMO agrupador da original (`agruparOpcionaisPorCategoria`
+ * — grupos por `categoria_produto_opcionais.ordem` com desempate por nome, itens por
+ * `opcionais.ordem`). `categoriaIds`
  * vazio → `{}` sem consulta. `lojaId` fora de formato uuid → `{}` fail-closed
  * (defesa em profundidade; não substitui a validação do loader). Propaga `error` (§14).
  */
@@ -299,34 +325,14 @@ export async function buscarOpcionaisPorCategoriaDaLoja(
   const { data, error } = await client
     .from("categoria_produto_opcionais")
     .select(
-      "categoria_id, opcionais_categorias(id, nome, ordem, opcionais(id, nome, preco, ordem))",
+      // `ordem` (raiz) = categoria_produto_opcionais.ordem — UM CAMPO A MAIS no
+      // select que já existia: nenhuma query nova, nenhum round-trip novo (RN-11,
+      // a paralelização/cache() da 207 seguem intactos).
+      "categoria_id, ordem, opcionais_categorias(id, nome, ordem, opcionais(id, nome, preco, ordem))",
     )
     .eq("loja_id", lojaId)
     .in("categoria_id", categoriaIds);
   if (error) throw error;
 
-  const linhas = (data ?? []) as unknown as LinhaCategoriaOpcional[];
-  const mapa: OpcionaisPorCategoria = {};
-
-  for (const linha of linhas) {
-    const cat = linha.opcionais_categorias;
-    if (!cat) continue;
-
-    const opcionais = [...(cat.opcionais ?? [])].sort((a, b) => a.ordem - b.ordem);
-    if (opcionais.length === 0) continue; // grupo sem item
-
-    const grupos = (mapa[linha.categoria_id] ??= []);
-    grupos.push({
-      categoriaOpcionalId: cat.id,
-      categoriaOpcionalNome: cat.nome,
-      ordem: cat.ordem,
-      opcionais,
-    });
-  }
-
-  for (const grupos of Object.values(mapa)) {
-    grupos.sort((a, b) => a.ordem - b.ordem);
-  }
-
-  return mapa;
+  return agruparOpcionaisPorCategoria((data ?? []) as unknown as LinhaCategoriaOpcional[]);
 }

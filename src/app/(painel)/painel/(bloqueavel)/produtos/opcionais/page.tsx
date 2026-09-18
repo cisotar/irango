@@ -18,6 +18,7 @@ import {
   alternarOpcionalAtivo,
   removerOpcional,
   salvarAssociacaoOpcionais,
+  reordenarOpcionaisDaCategoria,
 } from "@/lib/actions/opcional";
 import { OpcionaisClient } from "./OpcionaisClient";
 
@@ -53,9 +54,12 @@ export default async function OpcionaisPage(): Promise<ReactElement> {
         id: c.id,
         nome: c.nome,
       }))}
+      // `ordem` (208) vai junto: é ela que abre o modo reordenar (209) na
+      // sequência gravada. `buscarAssociacoesOpcional` já ordena.
       associacoes={associacoes.map((a) => ({
         categoria_id: a.categoria_id,
         categoria_opcional_id: a.categoria_opcional_id,
+        ordem: a.ordem,
       }))}
       // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
       // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
@@ -68,6 +72,7 @@ export default async function OpcionaisPage(): Promise<ReactElement> {
         alternarOpcionalAtivo,
         removerOpcional,
         salvarAssociacaoOpcionais,
+        reordenarOpcionaisDaCategoria,
       }}
     />
   );

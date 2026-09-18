@@ -27,7 +27,9 @@ import {
   schemaCategoriaOpcional,
   schemaOpcional,
   schemaAssociacaoCategoriaOpcional,
+  schemaReordenacaoOpcionaisDaCategoria,
 } from "@/lib/validacoes/opcional";
+import { planejarAssociacaoOpcionais } from "@/lib/utils/associacao-opcionais";
 import {
   validarLojaIdAdmin,
   registrarAcessoAdmin,
@@ -37,6 +39,13 @@ import {
 } from "@/lib/actions/admin-loja";
 
 type Resultado = { ok: true } | { ok: false; erro: string };
+
+/**
+ * Mensagem ÚNICA para loja inválida, payload inválido, id alheio, lista
+ * incompleta e erro de banco (seguranca.md §14): mensagem distinta viraria
+ * oráculo de existência de id. O detalhe fica no console.error do servidor.
+ */
+const ERRO_ORDEM_ADMIN = "Não foi possível salvar a ordem.";
 
 /**
  * Descarta APENAS `loja_id` de um payload-objeto antes do parse. O escopo por
@@ -356,27 +365,46 @@ export async function salvarAssociacaoOpcionaisAdmin(
       if (!opcOk) return { ok: false, erro: "Categoria de opcional inválida." };
     }
 
-    // Substituição de conjunto: DELETE-por-categoria_id. EXCEÇÃO DOCUMENTADA ao
-    // wrapper `escopo` (que só remove por PK: .eq("loja_id").eq("id")). Aqui o
-    // filtro é por categoria_id, não por id — `svc` cru com escopo manual
-    // EXPLÍCITO .eq("loja_id", lojaId).eq("categoria_id", …), mesma categoria das
-    // exceções legítimas de admin-loja.ts (todo .delete() carrega .eq).
-    const { error: erroDelete } = await svc
+    // RN-12: NÃO substitui o conjunto inteiro. O delete+insert de tudo zeraria
+    // `categoria_produto_opcionais.ordem` (default 0) a cada clique de checkbox.
+    // MESMA regra do lojista, pela MESMA função pura — nada é duplicado aqui.
+    //
+    // SELECT e DELETE por `categoria_id` são EXCEÇÃO DOCUMENTADA ao wrapper
+    // `escopo` (que só opera por PK: .eq("loja_id").eq("id")): `svc` cru com
+    // escopo manual EXPLÍCITO .eq("loja_id", lojaId).eq("categoria_id", …),
+    // mesma categoria das exceções legítimas de admin-loja.ts.
+    const { data: associados, error: erroLeitura } = await svc
       .from("categoria_produto_opcionais")
-      .delete()
+      .select("categoria_opcional_id, ordem")
       .eq("loja_id", loja.lojaId)
       .eq("categoria_id", categoria_id);
-    if (erroDelete) {
-      console.error("[salvarAssociacaoOpcionaisAdmin:delete]", erroDelete);
+    if (erroLeitura) {
+      console.error("[salvarAssociacaoOpcionaisAdmin:select]", erroLeitura);
       return { ok: false, erro: "Não foi possível salvar a associação." };
     }
 
+    const plano = planejarAssociacaoOpcionais(associados ?? [], categoria_opcional_id);
+
+    if (plano.remover.length > 0) {
+      const { error: erroDelete } = await svc
+        .from("categoria_produto_opcionais")
+        .delete()
+        .eq("loja_id", loja.lojaId)
+        .eq("categoria_id", categoria_id)
+        .in("categoria_opcional_id", plano.remover);
+      if (erroDelete) {
+        console.error("[salvarAssociacaoOpcionaisAdmin:delete]", erroDelete);
+        return { ok: false, erro: "Não foi possível salvar a associação." };
+      }
+    }
+
     // INSERT NÃO é exceção: loop via escopo.inserir (loja_id injetado pelo wrapper),
-    // evitando uma segunda escrita crua. Lista vazia → nenhum INSERT roda.
-    for (const catOpcId of categoria_opcional_id) {
+    // evitando uma segunda escrita crua. Plano vazio → nenhum INSERT roda.
+    for (const linha of plano.inserir) {
       const { error: erroInsert } = await escopo.inserir("categoria_produto_opcionais", {
         categoria_id,
-        categoria_opcional_id: catOpcId,
+        categoria_opcional_id: linha.categoria_opcional_id,
+        ordem: linha.ordem,
       });
       if (erroInsert) {
         console.error("[salvarAssociacaoOpcionaisAdmin:insert]", erroInsert);
@@ -394,5 +422,103 @@ export async function salvarAssociacaoOpcionaisAdmin(
   } catch (e) {
     console.error("[salvarAssociacaoOpcionaisAdmin]", e);
     return { ok: false, erro: "Não foi possível salvar a associação." };
+  }
+}
+
+// ── Reordenação dos grupos de opcional dentro de uma categoria de produto ────
+
+/**
+ * Variante ADMIN de `reordenarOpcionaisDaCategoria` (issue 208), escopada pela
+ * LOJA-ALVO da URL admin.
+ *
+ * NÃO reusa a RPC `reordenar_opcionais_da_categoria`: ela é `security invoker` e
+ * a RLS do lojista (lojas.dono_id = auth.uid()) não vale para o admin do SaaS —
+ * sob service_role a permutação e o `row_count` seriam checados contra um
+ * conjunto que a RLS não filtra, e o isolamento passaria a depender só do
+ * argumento. Aqui o isolamento vem do escopo explícito por `lojaId` em TODA
+ * leitura e escrita.
+ *
+ * Fail-closed igual à RPC: a lista tem que ser a PERMUTAÇÃO COMPLETA do par
+ * (loja-alvo, categoria de produto). Subconjunto, id alheio ou duplicado →
+ * nenhuma escrita.
+ */
+export async function reordenarOpcionaisDaCategoriaAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: ERRO_ORDEM_ADMIN };
+
+  const parsed = schemaReordenacaoOpcionaisDaCategoria.safeParse(descartarLojaId(payload));
+  if (!parsed.success) return { ok: false, erro: ERRO_ORDEM_ADMIN };
+
+  const { categoria_id, categoria_opcional_id } = parsed.data;
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // A categoria de PRODUTO veio do cliente: provar que é da LOJA-ALVO (RN-5b).
+    const produtoOk = await categoriaProdutoPertenceALoja(escopo, categoria_id);
+    if (!produtoOk) return { ok: false, erro: ERRO_ORDEM_ADMIN };
+
+    // Permutação completa do PAR (loja-alvo, categoria de produto).
+    const { data: associados, error: erroLeitura } = await svc
+      .from("categoria_produto_opcionais")
+      .select("categoria_opcional_id")
+      .eq("loja_id", loja.lojaId)
+      .eq("categoria_id", categoria_id);
+    if (erroLeitura) {
+      console.error("[reordenarOpcionaisDaCategoriaAdmin:select]", erroLeitura);
+      return { ok: false, erro: ERRO_ORDEM_ADMIN };
+    }
+
+    const noPar = new Set((associados ?? []).map((a) => a.categoria_opcional_id));
+    const cobreTudo =
+      noPar.size === categoria_opcional_id.length &&
+      categoria_opcional_id.every((id) => noPar.has(id));
+    if (!cobreTudo) return { ok: false, erro: ERRO_ORDEM_ADMIN };
+
+    // `ordem` é DERIVADA do índice no servidor — o cliente só mandou a sequência.
+    //
+    // NÃO usa `escopo.atualizar(tabela, id, patch)` de propósito, embora o wrapper
+    // exista e a tabela tenha `id` próprio: ele escopa por (loja_id, id), e aqui a
+    // identidade da linha é a TRIPLA (loja_id, categoria_id, categoria_opcional_id).
+    // Sob `service_role` a RLS está desligada, então o predicado explícito é a única
+    // trava — trocá-lo por (loja_id, id) afrouxaria a garantia no único caminho que
+    // não tem rede de proteção embaixo.
+    //
+    // `count: "exact"` é o que o wrapper daria de graça e o loop precisa ter: sem ele,
+    // uma linha removida entre o SELECT acima e este UPDATE afeta 0 linhas SEM erro, e
+    // a action devolveria { ok: true } com uma posição faltando (TOCTOU).
+    for (const [posicao, catOpcId] of categoria_opcional_id.entries()) {
+      const { error, count } = await svc
+        .from("categoria_produto_opcionais")
+        .update({ ordem: posicao }, { count: "exact" })
+        .eq("loja_id", loja.lojaId)
+        .eq("categoria_id", categoria_id)
+        .eq("categoria_opcional_id", catOpcId);
+      if (error) {
+        console.error("[reordenarOpcionaisDaCategoriaAdmin:update]", error);
+        return { ok: false, erro: ERRO_ORDEM_ADMIN };
+      }
+      if (count !== 1) {
+        console.error(
+          "[reordenarOpcionaisDaCategoriaAdmin:update] linhas afetadas inesperado",
+          { catOpcId, count },
+        );
+        return { ok: false, erro: ERRO_ORDEM_ADMIN };
+      }
+    }
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "reordenar_opcionais_da_categoria",
+      entidadeId: categoria_id,
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[reordenarOpcionaisDaCategoriaAdmin]", e);
+    return { ok: false, erro: ERRO_ORDEM_ADMIN };
   }
 }

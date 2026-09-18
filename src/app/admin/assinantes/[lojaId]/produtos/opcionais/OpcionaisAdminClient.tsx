@@ -11,6 +11,7 @@ import {
   alternarOpcionalAtivoAdmin,
   removerOpcionalAdmin,
   salvarAssociacaoOpcionaisAdmin,
+  reordenarOpcionaisDaCategoriaAdmin,
 } from "@/app/admin/assinantes/actions/admin-opcionais";
 
 /**
@@ -64,6 +65,8 @@ export function OpcionaisAdminClient({
         removerOpcional: (id) => removerOpcionalAdmin(lojaId, id),
         salvarAssociacaoOpcionais: (payload) =>
           salvarAssociacaoOpcionaisAdmin(lojaId, payload),
+        reordenarOpcionaisDaCategoria: (payload) =>
+          reordenarOpcionaisDaCategoriaAdmin(lojaId, payload),
       }}
     />
   );

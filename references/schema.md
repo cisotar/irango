@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.17 | **Atualizado:** 2026-09-09
+**Versão:** 0.1.18 | **Atualizado:** 2026-09-17
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -313,6 +313,8 @@ CREATE TABLE opcionais_categorias (
   id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   loja_id   uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
   nome      text NOT NULL,
+  -- Ordem da Biblioteca de opcionais no painel. Desde a issue 208, NÃO é mais a
+  -- ordem da vitrine — isso é `categoria_produto_opcionais.ordem` (ver abaixo).
   ordem     int NOT NULL DEFAULT 0,
   criado_em timestamptz NOT NULL DEFAULT now()
 );
@@ -345,6 +347,12 @@ CREATE TABLE categoria_produto_opcionais (
   loja_id               uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
   categoria_id          uuid NOT NULL REFERENCES categorias(id) ON DELETE CASCADE,
   categoria_opcional_id uuid NOT NULL REFERENCES opcionais_categorias(id) ON DELETE CASCADE,
+  -- Posição do grupo de opcional DENTRO desta categoria de produto (0-based).
+  -- Autoridade da ordem na VITRINE (não confundir com `opcionais_categorias.ordem`,
+  -- que só ordena a Biblioteca no painel). Escrita só por
+  -- public.reordenar_opcionais_da_categoria — nunca direto por update/upsert.
+  -- Migration: 20260917120000_ordem_em_categoria_produto_opcionais.sql (issue 208).
+  ordem                 int NOT NULL DEFAULT 0,
   UNIQUE (categoria_id, categoria_opcional_id)
 );
 ```
@@ -470,6 +478,9 @@ CREATE UNIQUE INDEX taxas_entrega_zona_id_key ON taxas_entrega(zona_id);
 CREATE INDEX ON opcionais_categorias(loja_id, ordem);
 CREATE INDEX ON opcionais(loja_id, categoria_opcional_id, ativo, ordem);
 CREATE INDEX ON categoria_produto_opcionais(loja_id, categoria_id);
+-- Ordem dos grupos de opcional na vitrine, por categoria de produto (issue 208).
+-- Migration: 20260917120000_ordem_em_categoria_produto_opcionais.sql
+CREATE INDEX ON categoria_produto_opcionais(loja_id, categoria_id, ordem);
 CREATE INDEX ON itens_pedido_opcionais(item_pedido_id);
 
 -- Itens de um pedido (embed `itens_pedido(*)` de SELECT_PEDIDO_COM_ITENS).
@@ -524,4 +535,4 @@ Valores válidos:
 - Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado (`itens_pedido.observacao` é da mesma família)
 - Tipos gerados automaticamente: `npx supabase gen types typescript > src/lib/database.types.ts`
 - **Operações multi-tabela atômicas com trava de concorrência** usam função Postgres `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon, authenticated` + `GRANT EXECUTE TO service_role`. Exemplo: `public.criar_pedido(...)` (migration `20260614003000_rpc_criar_pedido.sql`). Nunca INSERT direto da action quando atomicidade ou trava de linha for necessária.
-- **Escrita em lote com valor diferente por linha** (PostgREST não faz `update-many` heterogêneo) usa a mesma base — `SECURITY INVOKER` + `SET search_path = public` — mas `GRANT EXECUTE TO authenticated`, não `service_role`: a escrita é do lojista autenticado, autorizada pela RLS avaliada sob o invoker. Exemplo: `public.reordenar_categorias(...)` (migration `20260908120000_rpc_reordenar_categorias.sql`). Racional completo em `seguranca.md` §2.
+- **Escrita em lote com valor diferente por linha** (PostgREST não faz `update-many` heterogêneo) usa a mesma base — `SECURITY INVOKER` + `SET search_path = public` — mas `GRANT EXECUTE TO authenticated`, não `service_role`: a escrita é do lojista autenticado, autorizada pela RLS avaliada sob o invoker. Exemplos: `public.reordenar_categorias(...)` (migration `20260908120000_rpc_reordenar_categorias.sql`, permutação é da loja inteira) e `public.reordenar_opcionais_da_categoria(...)` (migration `20260917121000_rpc_reordenar_opcionais_da_categoria.sql`, issue 208 — permutação é do **par** loja+categoria de produto, e por isso recebe `categoria_id` como escopo extra vindo do cliente). Racional completo em `seguranca.md` §2.

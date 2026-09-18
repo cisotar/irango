@@ -25,7 +25,11 @@ import {
  * Uma linha (`<li>`) da lista do modo reordenar (issue 175).
  *
  * `useSortable` PRECISA morar no item (não no container), por isso este
- * componente existe separado de `ReordenarCategorias`.
+ * componente existe separado de `ModoReordenar`.
+ *
+ * Genérica desde a 209: a linha não sabe o que é uma categoria de produto nem um
+ * grupo de opcional — só recebe `nome` e um `detalhe` já formatado pelo pai
+ * ("4 produtos", "1 item"). Quem singulariza é quem conhece o domínio.
  *
  * Duas armadilhas de a11y que este arquivo trava (mockup §7):
  *
@@ -48,8 +52,8 @@ const ALVO_TOQUE = "min-h-[44px] min-w-[44px]";
 export type LinhaCategoriaReordenavelProps = {
   id: string;
   nome: string;
-  /** Quantos produtos a categoria tem (0 é legítimo e só aparece neste modo). */
-  totalProdutos: number;
+  /** 2ª linha já formatada pelo pai (ex.: "0 produtos", "1 item"). Ausente = some. */
+  detalhe?: string;
   /** Índice 0-based na lista atual. */
   indice: number;
   total: number;
@@ -60,7 +64,7 @@ export type LinhaCategoriaReordenavelProps = {
 export function LinhaCategoriaReordenavel({
   id,
   nome,
-  totalProdutos,
+  detalhe,
   indice,
   total,
   onMover,
@@ -117,9 +121,9 @@ export function LinhaCategoriaReordenavel({
         <span className="line-clamp-1 text-sm font-medium text-foreground">
           {nome}
         </span>
-        <span className="text-xs text-muted-foreground">
-          {totalProdutos} {totalProdutos === 1 ? "produto" : "produtos"}
-        </span>
+        {detalhe != null && (
+          <span className="text-xs text-muted-foreground">{detalhe}</span>
+        )}
       </div>
 
       {/* gap-2: dois alvos de 44px encostados convidam ao toque errado. */}

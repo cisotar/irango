@@ -41,6 +41,7 @@ type Op = {
   tabela: string;
   insert?: Record<string, unknown>;
   update?: Record<string, unknown>;
+  updateOpts?: { count?: string };
   deleted?: boolean;
   selected?: boolean;
   filtros: Array<[string, unknown]>;
@@ -48,7 +49,10 @@ type Op = {
 let ops: Op[];
 
 // Resposta simulada do terminador da cadeia, escolhida pela TABELA.
-let respostaPorTabela: Record<string, { data: unknown; error: unknown }>;
+let respostaPorTabela: Record<
+  string,
+  { data: unknown; error: unknown; count?: number }
+>;
 
 function makeChain() {
   const client: Record<string, unknown> = {
@@ -71,8 +75,12 @@ function makeChain() {
         op.insert = row;
         return queryChain;
       };
-      queryChain.update = (row: Record<string, unknown>) => {
+      queryChain.update = (
+        row: Record<string, unknown>,
+        opts?: { count?: string },
+      ) => {
         op.update = row;
+        op.updateOpts = opts;
         return queryChain;
       };
       queryChain.delete = () => {
@@ -80,10 +88,18 @@ function makeChain() {
         return queryChain;
       };
       // Só a cadeia da query é thenável → resolve a resposta da SUA tabela.
-      queryChain.then = (onF: (v: unknown) => unknown) =>
-        Promise.resolve(
-          respostaPorTabela[tabela] ?? { data: null, error: null },
-        ).then(onF);
+      // UPDATE com `count: "exact"` devolve `count` no PostgREST real; sem modelar
+      // isso o mock não distingue "afetou a linha" de "não afetou nenhuma", que é
+      // exatamente a janela TOCTOU que o count existe para fechar. Default 1 (afetou
+      // a linha); um teste que queira o caso 0 sobrescreve via `respostaPorTabela`.
+      queryChain.then = (onF: (v: unknown) => unknown) => {
+        const base = respostaPorTabela[tabela] ?? { data: null, error: null };
+        const resposta =
+          op.update != null && (base as { count?: number }).count == null
+            ? { ...base, count: 1 }
+            : base;
+        return Promise.resolve(resposta).then(onF);
+      };
       return queryChain;
     },
   };
@@ -116,6 +132,7 @@ import {
   alternarOpcionalAtivoAdmin,
   removerOpcionalAdmin,
   salvarAssociacaoOpcionaisAdmin,
+  reordenarOpcionaisDaCategoriaAdmin,
 } from "./admin-opcionais";
 
 // ── Payloads válidos sob os schemas de lib/validacoes/opcional.ts ────────────
@@ -423,6 +440,13 @@ describe("removerOpcionalAdmin (Server Action — admin SaaS)", () => {
 // ────────────────────── salvarAssociacaoOpcionaisAdmin ──────────────────────
 describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => {
   it("caso 5 — DELETE-por-categoria_id cru carrega eq('loja_id') E eq('categoria_id') (exceção documentada)", async () => {
+    // RN-12 (issue 208): o DELETE não é mais "do conjunto inteiro" — ele só roda
+    // para os DESMARCADOS e carrega também o `in("categoria_opcional_id", …)`.
+    // Aqui CAT_OPC_ALHEIA está associado hoje e não está na seleção → sai.
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [{ categoria_opcional_id: CAT_OPC_ALHEIA, ordem: 0 }],
+      error: null,
+    };
     const r = await salvarAssociacaoOpcionaisAdmin(
       LOJA_ALVO,
       payloadAssociacao(),
@@ -434,6 +458,26 @@ describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => 
     expect(del).toBeDefined();
     expect(del?.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
     expect(del?.filtros).toContainEqual(["categoria_id", CAT_PROD_PROPRIA]);
+    expect(del?.filtros).toContainEqual([
+      "categoria_opcional_id",
+      [CAT_OPC_ALHEIA],
+    ]);
+  });
+
+  it("caso 5 — RN-12: quem PERMANECE não é deletado nem reinserido (a `ordem` sobrevive)", async () => {
+    // O grupo já associado continua marcado: nada a remover, nada a inserir.
+    // É o clique mais comum do painel (re-salvar sem mexer), que com o
+    // delete+insert de antes zeraria a ordem de toda a categoria.
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [{ categoria_opcional_id: CAT_OPC_PROPRIA, ordem: 3 }],
+      error: null,
+    };
+    const r = await salvarAssociacaoOpcionaisAdmin(
+      LOJA_ALVO,
+      payloadAssociacao(),
+    );
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("categoria_produto_opcionais")).toBeUndefined();
   });
 
   it("caso 5 — INSERT da associação grava loja_id = lojaId da URL (nunca do payload)", async () => {
@@ -467,7 +511,11 @@ describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => 
     expect(opEscrita("categoria_produto_opcionais")).toBeUndefined();
   });
 
-  it("caso 5 — lista vazia: DELETE executa (substituição), INSERT não roda → { ok:true }", async () => {
+  it("caso 5 — lista vazia: DELETE de tudo que estava associado, INSERT não roda → { ok:true }", async () => {
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [{ categoria_opcional_id: CAT_OPC_PROPRIA, ordem: 0 }],
+      error: null,
+    };
     const r = await salvarAssociacaoOpcionaisAdmin(
       LOJA_ALVO,
       payloadAssociacao({ categoria_opcional_id: [] }),
@@ -490,5 +538,185 @@ describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => 
     ).rejects.toThrow("Acesso negado.");
     expect(createServiceClient).not.toHaveBeenCalled();
     expect(opEscrita("categoria_produto_opcionais")).toBeUndefined();
+  });
+});
+
+// ─────────────────────── reordenarOpcionaisDaCategoriaAdmin ─────────────────
+/**
+ * Variante ADMIN de `reordenarOpcionaisDaCategoria` (issue 208). Não reusa a
+ * RPC `security invoker` do lojista — o isolamento vem do escopo explícito por
+ * `loja.lojaId` em toda leitura e escrita, igual ao resto deste arquivo.
+ */
+describe("reordenarOpcionaisDaCategoriaAdmin (Server Action — issue 208)", () => {
+  function payload(over: Record<string, unknown> = {}) {
+    return {
+      categoria_id: CAT_PROD_PROPRIA,
+      categoria_opcional_id: [CAT_OPC_PROPRIA, CAT_OPC_ALHEIA],
+      ...over,
+    };
+  }
+
+  beforeEach(() => {
+    // Permutação completa por padrão: os dois ids do payload cobrem exatamente
+    // o que está associado hoje na loja-alvo.
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [
+        { categoria_opcional_id: CAT_OPC_PROPRIA },
+        { categoria_opcional_id: CAT_OPC_ALHEIA },
+      ],
+      error: null,
+    };
+  });
+
+  it("caminho feliz: grava ordem 0..n-1 na sequência do payload, escopado por loja-alvo E categoria → { ok:true }", async () => {
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: true });
+    const updates = ops.filter(
+      (o) => o.tabela === "categoria_produto_opcionais" && o.update,
+    );
+    expect(updates).toHaveLength(2);
+    expect(updates[0].update).toEqual({ ordem: 0 });
+    expect(updates[0].filtros).toContainEqual(["loja_id", LOJA_ALVO]);
+    expect(updates[0].filtros).toContainEqual(["categoria_id", CAT_PROD_PROPRIA]);
+    expect(updates[0].filtros).toContainEqual([
+      "categoria_opcional_id",
+      CAT_OPC_PROPRIA,
+    ]);
+    expect(updates[1].update).toEqual({ ordem: 1 });
+    expect(updates[1].filtros).toContainEqual([
+      "categoria_opcional_id",
+      CAT_OPC_ALHEIA,
+    ]);
+  });
+
+  it("cada UPDATE pede `count: \"exact\"` — sem isso a action não sabe se afetou a linha", async () => {
+    await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    const updates = ops.filter(
+      (o) => o.tabela === "categoria_produto_opcionais" && o.update,
+    );
+    expect(updates).toHaveLength(2);
+    for (const u of updates) {
+      expect(u.updateOpts).toEqual({ count: "exact" });
+    }
+  });
+
+  it("TOCTOU: linha some entre o SELECT e o UPDATE (count 0) → { ok:false }, PARA no primeiro e não segue o loop", async () => {
+    // Permutação confere na leitura, mas o UPDATE não acha a linha: sem a
+    // checagem de `count` isso passaria como { ok:true } com posição faltando.
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [
+        { categoria_opcional_id: CAT_OPC_PROPRIA },
+        { categoria_opcional_id: CAT_OPC_ALHEIA },
+      ],
+      error: null,
+      count: 0,
+    };
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(
+      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+    ).toHaveLength(1);
+  });
+
+  it("RN-5b: categoria_id (de produto) que não pertence à loja-alvo → { ok:false }, zero UPDATE", async () => {
+    respostaPorTabela.categorias = { data: null, error: null };
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r.ok).toBe(false);
+    expect(
+      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+    ).toHaveLength(0);
+  });
+
+  it("lista SUBCONJUNTO (falta um id associado) → { ok:false }, zero UPDATE (permutação incompleta)", async () => {
+    // Só 1 dos 2 ids associados está no payload — não é permutação completa.
+    const r = await reordenarOpcionaisDaCategoriaAdmin(
+      LOJA_ALVO,
+      // min(2) exige pelo menos 2 ids; usa um id qualquer de mesmo formato para
+      // preencher sem cobrir o par inteiro.
+      payload({
+        categoria_opcional_id: [
+          CAT_OPC_PROPRIA,
+          "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        ],
+      }),
+    );
+    expect(r.ok).toBe(false);
+    expect(
+      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+    ).toHaveLength(0);
+  });
+
+  it("lista com id que NÃO está associado à categoria (id alheio) → { ok:false }, zero UPDATE", async () => {
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: [{ categoria_opcional_id: CAT_OPC_PROPRIA }],
+      error: null,
+    };
+    const r = await reordenarOpcionaisDaCategoriaAdmin(
+      LOJA_ALVO,
+      payload({ categoria_opcional_id: [CAT_OPC_PROPRIA, CAT_OPC_ALHEIA] }),
+    );
+    expect(r.ok).toBe(false);
+    expect(
+      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+    ).toHaveLength(0);
+  });
+
+  it("propriedade hostil loja_id no payload é descartada ANTES do parse — grava sempre na loja-alvo da URL", async () => {
+    const r = await reordenarOpcionaisDaCategoriaAdmin(
+      LOJA_ALVO,
+      payload({ loja_id: LOJA_OUTRA }),
+    );
+    expect(r).toEqual({ ok: true });
+    const updates = ops.filter(
+      (o) => o.tabela === "categoria_produto_opcionais" && o.update,
+    );
+    for (const u of updates) {
+      expect(u.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
+      expect(u.filtros).not.toContainEqual(["loja_id", LOJA_OUTRA]);
+    }
+  });
+
+  it("lojaId inválido (não-uuid) na URL → { ok:false }, service_role nunca criado", async () => {
+    const r = await reordenarOpcionaisDaCategoriaAdmin("nao-e-uuid", payload());
+    expect(r.ok).toBe(false);
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  it("erro de banco na checagem de posse da categoria de produto (lança) → mensagem genérica, sem vazar detalhe", async () => {
+    // categoriaProdutoPertenceALoja lança quando o SELECT devolve error (não
+    // apenas `data: null`) — caminho de exceção diferente do "categoria
+    // inexistente" (RN-5b acima), capturado pelo catch genérico da action.
+    respostaPorTabela.categorias = { data: null, error: { message: "boom interno" } };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(JSON.stringify(r)).not.toContain("boom interno");
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("erro de banco no SELECT de permutação (categoria_produto_opcionais) → mensagem genérica, zero UPDATE", async () => {
+    respostaPorTabela.categoria_produto_opcionais = {
+      data: null,
+      error: { message: "boom select" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(JSON.stringify(r)).not.toContain("boom select");
+    expect(
+      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+    ).toHaveLength(0);
+    spy.mockRestore();
+  });
+
+  it("fail-closed: admin negado → PROPAGA, zero UPDATE", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("Acesso negado."));
+    await expect(
+      reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload()),
+    ).rejects.toThrow("Acesso negado.");
+    expect(
+      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+    ).toHaveLength(0);
   });
 });

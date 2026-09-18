@@ -47,7 +47,10 @@ vi.mock("next/navigation", () => ({
 import {
   OpcionaisClient,
   type OpcionaisClientAcoes,
+  type OpcionaisClientProps,
 } from "./OpcionaisClient";
+
+type Associacao = OpcionaisClientProps["associacoes"][number];
 import type {
   CategoriaOpcional,
   Opcional,
@@ -83,8 +86,8 @@ function opcional(overrides: Partial<Opcional> = {}): Opcional {
 const CATEGORIA_PRODUTO = [{ id: "cp-1", nome: "Pizzas" }];
 
 /**
- * Injeção mínima e COMPLETA das 8 actions (issue 160: todas obrigatórias — não
- * há mais default apontando para a action do lojista).
+ * Injeção mínima e COMPLETA das 9 actions (issue 160: todas obrigatórias — não
+ * há mais default apontando para a action do lojista; a 9ª chegou com a 209).
  */
 function acoesBase(): OpcionaisClientAcoes {
   return {
@@ -96,12 +99,16 @@ function acoesBase(): OpcionaisClientAcoes {
     alternarOpcionalAtivo: vi.fn(async () => ({ ok: true }) as const),
     removerOpcional: vi.fn(async () => ({ ok: true }) as const),
     salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
+    // 9ª (issues 208/209). Sem ela o arquivo NÃO COMPILA — é essa quebra que
+    // prova o critério da 160: omitir uma chave não cai na action do lojista.
+    reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
   };
 }
 
 function render(props: {
   categoriasOpcional?: CategoriaOpcional[];
   opcionais?: Opcional[];
+  associacoes?: Associacao[];
   acoes?: OpcionaisClientAcoes;
 } = {}): string {
   return renderToStaticMarkup(
@@ -109,10 +116,26 @@ function render(props: {
       categoriasOpcional={props.categoriasOpcional ?? [categoria()]}
       opcionais={props.opcionais ?? [opcional()]}
       categoriasProduto={CATEGORIA_PRODUTO}
-      associacoes={[]}
+      associacoes={props.associacoes ?? []}
       acoes={props.acoes ?? acoesBase()}
     />,
   );
+}
+
+/** Tag do `<button>` "Reordenar" do cartão, com o `class` removido — as classes
+ *  do shadcn incluem `disabled:pointer-events-none` e dariam falso positivo. */
+function botaoReordenar(html: string): string {
+  const i = html.indexOf(">Reordenar<");
+  const inicio = html.lastIndexOf("<button", i);
+  return html.slice(inicio, i + 1).replace(/\sclass="[^"]*"/g, "");
+}
+
+function associacao(categoriaOpcionalId: string, ordem: number): Associacao {
+  return {
+    categoria_id: "cp-1",
+    categoria_opcional_id: categoriaOpcionalId,
+    ordem,
+  };
 }
 
 describe("injeção do painel do lojista — critério de aceite da 128", () => {
@@ -148,5 +171,50 @@ describe("trocar a injeção de `acoes` não vaza para o render nem muda ramos c
     ]) {
       expect(fn).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("gate do botão 'Reordenar' do cartão (issue 209)", () => {
+  const DOIS_GRUPOS = [
+    categoria({ id: "cat-1", nome: "Laticínios" }),
+    categoria({ id: "cat-2", nome: "Molhos" }),
+  ];
+
+  it("com 0 ou 1 grupo PERSISTIDO o botão fica desabilitado e o motivo aparece", () => {
+    // Um botão inerte sem explicação vira chamado de suporte. E com <2 ids a
+    // action recusaria de todo jeito: o `.min(2)` do zod é a contraparte no
+    // servidor deste gate de UX.
+    const htmlZero = render({ categoriasOpcional: DOIS_GRUPOS });
+    expect(botaoReordenar(htmlZero)).toMatch(/\sdisabled\b/);
+    expect(htmlZero).toContain("Marque pelo menos 2 grupos");
+
+    const htmlUm = render({
+      categoriasOpcional: DOIS_GRUPOS,
+      associacoes: [associacao("cat-1", 0)],
+    });
+    expect(botaoReordenar(htmlUm)).toMatch(/\sdisabled\b/);
+    expect(htmlUm).toContain("Marque pelo menos 2 grupos");
+  });
+
+  it("com 2 grupos persistidos o botão fica ativo e sem motivo na tela", () => {
+    const html = render({
+      categoriasOpcional: DOIS_GRUPOS,
+      associacoes: [associacao("cat-1", 0), associacao("cat-2", 1)],
+    });
+    expect(botaoReordenar(html)).not.toMatch(/\sdisabled\b/);
+    expect(html).not.toContain("Marque pelo menos 2 grupos");
+    expect(html).not.toContain("Salve a associação antes de reordenar.");
+  });
+
+  it("fora do modo, o cartão mostra a grade de checkboxes e nenhuma lista arrastável", () => {
+    // Os dois modos nunca coexistem (RN-12): é isso que impede alterar a
+    // associação no meio de um arrasto. O SSR entra sempre fora do modo.
+    const html = render({
+      categoriasOpcional: DOIS_GRUPOS,
+      associacoes: [associacao("cat-1", 0), associacao("cat-2", 1)],
+    });
+    expect(html).toContain(">Salvar<");
+    expect(html).not.toContain(">Concluir<");
+    expect(html).not.toContain('aria-label="Reordenar Molhos"');
   });
 });

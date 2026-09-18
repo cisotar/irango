@@ -308,6 +308,8 @@ describe("081 buscarOpcionaisPorCategoria — contrato TS (camada 2, mock)", () 
     return [
       {
         categoria_id: "cat-paes",
+        // `ordem` na RAIZ = categoria_produto_opcionais.ordem (208/210), a autoridade.
+        ordem: 1,
         opcionais_categorias: {
           id: "oc-laticinios",
           nome: "Laticínios",
@@ -320,6 +322,7 @@ describe("081 buscarOpcionaisPorCategoria — contrato TS (camada 2, mock)", () 
       },
       {
         categoria_id: "cat-paes",
+        ordem: 0,
         opcionais_categorias: {
           id: "oc-doces",
           nome: "Doces",
@@ -420,6 +423,8 @@ describe("132 buscarOpcionaisPorCategoriaDaLoja — contrato TS (camada 2, mock)
     return [
       {
         categoria_id: "cat-paes",
+        // `ordem` na RAIZ = categoria_produto_opcionais.ordem (208/210), a autoridade.
+        ordem: 1,
         opcionais_categorias: {
           id: "oc-laticinios",
           nome: "Laticínios",
@@ -432,6 +437,7 @@ describe("132 buscarOpcionaisPorCategoriaDaLoja — contrato TS (camada 2, mock)
       },
       {
         categoria_id: "cat-paes",
+        ordem: 0,
         opcionais_categorias: {
           id: "oc-doces",
           nome: "Doces",
@@ -685,5 +691,132 @@ describe("207 buscarProdutosPublicos — só a query (sem agrupamento)", () => {
   it("PROPAGA o error do PostgREST — não retorna [] silenciosamente", async () => {
     const { client } = makeClient({ data: null, error: { message: "db down" } });
     await expect(buscarProdutosPublicos(client, "loja-1")).rejects.toBeTruthy();
+  });
+});
+
+// ───────────────────────── issue 210 — ordem dos grupos vem da ASSOCIAÇÃO
+/**
+ * Até a 208 a sequência dos grupos de opcional vinha de `opcionais_categorias.ordem`
+ * (a ordem da BIBLIOTECA, global à loja). A partir da 210 a autoridade é
+ * `categoria_produto_opcionais.ordem` — a ordem que o lojista arrasta DENTRO de cada
+ * categoria de produto — com desempate por nome da categoria de opcional (render
+ * determinístico entre SSR e hidratação).
+ *
+ * RN-11: o ganho é UM CAMPO A MAIS no select que já existia. Nenhuma query nova,
+ * nenhum round-trip novo — os testes abaixo conferem o select e o `from` único.
+ */
+describe("210 ordenação dos grupos por categoria_produto_opcionais.ordem", () => {
+  // As duas leituras DIVERGEM de propósito: pela ordem da biblioteca sairia
+  // [Molhos, Queijos]; pela ordem da associação sai [Queijos, Molhos].
+  function linhasDivergentes() {
+    return [
+      {
+        categoria_id: "cat-lanches",
+        ordem: 1,
+        opcionais_categorias: {
+          id: "oc-molhos",
+          nome: "Molhos",
+          ordem: 0,
+          opcionais: [
+            { id: "o-barbecue", nome: "Barbecue", preco: 2, ordem: 1 },
+            { id: "o-maionese", nome: "Maionese", preco: 1, ordem: 0 },
+          ],
+        },
+      },
+      {
+        categoria_id: "cat-lanches",
+        ordem: 0,
+        opcionais_categorias: {
+          id: "oc-queijos",
+          nome: "Queijos",
+          ordem: 1,
+          opcionais: [{ id: "o-cheddar", nome: "Cheddar", preco: 3, ordem: 0 }],
+        },
+      },
+    ];
+  }
+
+  it("buscarOpcionaisPorCategoria: grupos saem pela ordem da ASSOCIAÇÃO, não pela da biblioteca", async () => {
+    const { client } = makeClient({ data: linhasDivergentes(), error: null });
+
+    const mapa = await buscarOpcionaisPorCategoria(client, ["cat-lanches"]);
+
+    expect(mapa["cat-lanches"].map((g) => g.categoriaOpcionalNome)).toEqual([
+      "Queijos",
+      "Molhos",
+    ]);
+    // `ordem` exposta no grupo é a da associação (o que o painel arrastou).
+    expect(mapa["cat-lanches"].map((g) => g.ordem)).toEqual([0, 1]);
+  });
+
+  it("buscarOpcionaisPorCategoriaDaLoja: MESMA chave de ordenação (agrupador único)", async () => {
+    const { client } = makeClient({ data: linhasDivergentes(), error: null });
+
+    const mapa = await buscarOpcionaisPorCategoriaDaLoja(
+      client,
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      ["cat-lanches"],
+    );
+
+    expect(mapa["cat-lanches"].map((g) => g.categoriaOpcionalNome)).toEqual([
+      "Queijos",
+      "Molhos",
+    ]);
+  });
+
+  it("empate de ordem desempata por NOME da categoria de opcional (render determinístico)", async () => {
+    const linhas = [
+      {
+        categoria_id: "cat-lanches",
+        ordem: 0,
+        opcionais_categorias: {
+          id: "oc-queijos",
+          nome: "Queijos",
+          ordem: 0,
+          opcionais: [{ id: "o-cheddar", nome: "Cheddar", preco: 3, ordem: 0 }],
+        },
+      },
+      {
+        categoria_id: "cat-lanches",
+        ordem: 0,
+        opcionais_categorias: {
+          id: "oc-molhos",
+          nome: "Molhos",
+          ordem: 9,
+          opcionais: [{ id: "o-maionese", nome: "Maionese", preco: 1, ordem: 0 }],
+        },
+      },
+    ];
+    const { client } = makeClient({ data: linhas, error: null });
+
+    const mapa = await buscarOpcionaisPorCategoria(client, ["cat-lanches"]);
+
+    expect(mapa["cat-lanches"].map((g) => g.categoriaOpcionalNome)).toEqual([
+      "Molhos",
+      "Queijos",
+    ]);
+  });
+
+  it("itens DENTRO do grupo seguem por opcionais.ordem — sem mudança", async () => {
+    const { client } = makeClient({ data: linhasDivergentes(), error: null });
+
+    const mapa = await buscarOpcionaisPorCategoria(client, ["cat-lanches"]);
+    const molhos = mapa["cat-lanches"].find((g) => g.categoriaOpcionalId === "oc-molhos")!;
+
+    expect(molhos.opcionais.map((o) => o.id)).toEqual(["o-maionese", "o-barbecue"]);
+  });
+
+  it("RN-11: a `ordem` da associação entra no select QUE JÁ EXISTIA — um from(), uma query", async () => {
+    const { client, calls } = makeClient({ data: linhasDivergentes(), error: null });
+
+    await buscarOpcionaisPorCategoria(client, ["cat-lanches"]);
+
+    expect(calls.from).toHaveBeenCalledTimes(1);
+    expect(calls.select).toHaveBeenCalledTimes(1);
+    const selectArg = String(calls.select.mock.calls[0]?.[0] ?? "");
+    // campo novo na RAIZ (antes do primeiro embed), sem remover nada do que já vinha
+    expect(selectArg.split("opcionais_categorias")[0]).toContain("ordem");
+    expect(selectArg).toContain("opcionais_categorias(id, nome, ordem");
+    expect(selectArg).toContain("opcionais(id, nome, preco, ordem)");
   });
 });
