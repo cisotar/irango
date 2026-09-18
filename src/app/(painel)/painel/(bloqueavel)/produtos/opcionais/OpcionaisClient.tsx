@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useTransition,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -79,9 +80,16 @@ import {
   type GrupoOpcionalReordenavel,
 } from "@/components/painel/ReordenarOpcionaisDaCategoria";
 import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar";
+import {
+  ehTeclaDeNavegacaoHorizontal,
+  proximoIndicePorTecla,
+} from "@/lib/utils/navegacao-por-teclado";
 
 /** As duas abas da página. O id é usado em `aria-controls`/`aria-labelledby`. */
 type IdSecao = "biblioteca" | "por-categoria";
+
+/** Ordem física das abas — é o que ←/→/Home/End percorrem. */
+const ORDEM_ABAS: readonly IdSecao[] = ["biblioteca", "por-categoria"];
 
 type CategoriaProduto = { id: string; nome: string };
 /** `ordem` (coluna da 208) é o que abre a lista na sequência da vitrine. */
@@ -218,6 +226,32 @@ export function OpcionaisClient({
     [acharRolador],
   );
 
+  /**
+   * Padrão WAI-ARIA APG de `tablist`: ←/→ (com volta ao extremo oposto) e
+   * Home/End andam entre abas, ativando na hora — mesmo efeito do clique,
+   * incluindo o scroll de `trocarSecao`. O foco SEGUE a seleção: só a aba
+   * ativa fica em `tabIndex 0` (ver `AbaSecao`), então sem mover o foco a
+   * tecla Tab seguinte pularia para o painel da aba errada.
+   */
+  const aoTeclarNaAba = useCallback(
+    (evento: KeyboardEvent<HTMLDivElement>, atual: IdSecao) => {
+      if (!ehTeclaDeNavegacaoHorizontal(evento.key)) return;
+      evento.preventDefault();
+      const indiceAtual = ORDEM_ABAS.indexOf(atual);
+      const proximoIndice = proximoIndicePorTecla(
+        evento.key,
+        indiceAtual,
+        ORDEM_ABAS.length,
+      );
+      const proximoId = ORDEM_ABAS[proximoIndice];
+      trocarSecao(proximoId);
+      navRef.current
+        ?.querySelector<HTMLButtonElement>(`#aba-${proximoId}`)
+        ?.focus();
+    },
+    [trocarSecao],
+  );
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
       <div className="mb-4">
@@ -246,6 +280,7 @@ export function OpcionaisClient({
         <div
           role="tablist"
           aria-label="Seções desta página"
+          onKeyDown={(e) => aoTeclarNaAba(e, secaoAtiva)}
           className="flex gap-1 rounded-xl border border-border bg-card p-1"
         >
           <AbaSecao
@@ -312,8 +347,9 @@ function AbaSecao({
       id={`aba-${id}`}
       aria-selected={ativo}
       aria-controls={id}
-      // A aba inativa sai da ordem de tabulação: num `tablist`, as setas ←→
-      // é que andam entre abas — Tab salta para o painel.
+      // A aba inativa sai da ordem de tabulação: ←/→/Home/End (tratados em
+      // `aoTeclarNaAba`, no pai) é que andam entre abas — Tab salta para o
+      // painel.
       tabIndex={ativo ? 0 : -1}
       onClick={() => onSelecionar(id)}
       className={`${ALVO_TOQUE} flex flex-1 items-center justify-center rounded-lg px-4 text-center text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
