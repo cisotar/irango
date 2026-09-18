@@ -31,6 +31,14 @@ Junto, nesta mesma issue porque é a troca de container que as torna necessária
   (96, 128, 151, 190, 229, 252, 270, 369, 439). Sem isso o sintoma é "editei e não atualizou",
   e só aparece em runtime.
 
+- **relocar `CategoriaProduto` e `OpcionaisClientAcoes` para um módulo neutro.** Hoje o
+  `CartaoAssociacaoOpcionais` importa os dois **de volta** de `OpcionaisClient.tsx` (rota),
+  porque na 214 eles ainda tinham outros consumidores lá e movê-los teria estourado o escopo
+  daquela issue. Esta issue introduz o **segundo** consumidor do cartão, que é o gatilho certo:
+  um componente em `components/painel/` não deve depender de um arquivo de rota, ainda mais de
+  uma rota que não é a dele. Apontado pelo `revisar` na 214, com o precedente
+  `src/components/painel/DetalhePedido.tsx:28` (mesma inversão, já existente).
+
 ## Fora de escopo
 
 Qualquer mudança de comportamento do cartão — ele chega pronto da 216. A página

@@ -41,6 +41,22 @@ Isso exige a prop nova **`semArrasto`** no `ModoReordenar` (~10 linhas): a prop 
 lugar que usa o grupo** — a biblioteca é da loja, e não existe "Coca só de Pães". A UI diz
 isso no momento da ação, não em texto de ajuda.
 
+### Desempate na leitura — pré-requisito, não enfeite
+
+Achado pelo `arquitetar` na 215 e conferido no código: `buscarOpcionaisDoLojista`
+(`src/lib/supabase/queries/opcionais.ts:52`) ordena **só por `ordem`, sem desempate**, e
+`opcionais.ordem` é `int not null default 0` (`supabase/migrations/20260614007500_opcionais.sql:49`)
+— ou seja, todas as linhas existentes hoje têm `ordem = 0`. O `sort` de itens em
+`src/lib/supabase/queries/produtos.ts:260` tem o mesmo buraco, enquanto o dos grupos não.
+
+Sem um segundo critério estável o Postgres pode devolver ordens diferentes entre requisições:
+o SSR e o cliente divergem, e **o primeiro arrasto grava uma permutação que o lojista não
+pediu** — exatamente o risco que `buscarAssociacoesOpcional` (`:62-67`, logo abaixo) já
+documenta e resolve para os grupos, com desempate por `categoria_opcional_id`.
+
+Acrescentar o mesmo desempate nas duas leituras **antes** de ligar a reordenação de itens.
+É pré-requisito da RPC da 215 funcionar como o lojista espera, não polimento.
+
 ## Fora de escopo
 
 O modal e a troca de container (217). Preço ou ordem por produto — o usuário rejeitou.
