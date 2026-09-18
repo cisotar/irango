@@ -51,6 +51,7 @@ function acoesBase(): OpcionaisClientAcoes {
     removerOpcional: vi.fn(async () => ({ ok: true }) as const),
     salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
     reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
+    reordenarItensDoGrupoOpcional: vi.fn(async () => ({ ok: true }) as const),
   };
 }
 
@@ -71,6 +72,10 @@ function render(props: {
         selecionadosIniciais={new Set()}
         ordemPorGrupo={new Map()}
         totalItensPorGrupo={props.totalItensPorGrupo}
+        // Props da 216 — este arquivo cobre o segmento "Disponíveis", onde
+        // nenhum painel de itens abre: mapas vazios bastam.
+        opcionaisPorGrupo={new Map()}
+        alcancePorGrupo={new Map()}
         onSalvo={() => {}}
         acoes={acoesBase()}
       />
@@ -110,5 +115,54 @@ describe("rótulo de itens no segmento Disponíveis (issue 214)", () => {
     });
     expect(html).toContain("0 itens");
     expect(html).toContain("Vazia");
+  });
+});
+
+/**
+ * A sanfona de itens (issue 216) — o que dá para provar por markup estático: o
+ * gatilho do disclosure existe na linha do grupo MARCADO, com `aria-expanded` e
+ * `aria-controls`, e o painel só monta com o grupo aberto (o que exige clique e
+ * por isso não é asserido aqui; o painel em si está coberto em
+ * `PainelItensDoGrupo.test.tsx`).
+ */
+describe("gatilho do disclosure na linha do grupo (issue 216)", () => {
+  function renderComMarcado(): string {
+    return renderToStaticMarkup(
+      <Accordion multiple defaultValue={[CATEGORIA_PRODUTO.id]}>
+        <CartaoAssociacaoOpcionais
+          categoriaProduto={CATEGORIA_PRODUTO}
+          categoriasOpcional={[categoriaOpcional({ id: "co-1", nome: "Bordas" })]}
+          selecionadosIniciais={new Set(["co-1"])}
+          ordemPorGrupo={new Map([["co-1", 0]])}
+          totalItensPorGrupo={new Map([["co-1", 2]])}
+          opcionaisPorGrupo={new Map()}
+          alcancePorGrupo={new Map()}
+          onSalvo={() => {}}
+          acoes={acoesBase()}
+        />
+      </Accordion>,
+    );
+  }
+
+  it("o bloco do nome vira o gatilho, com `aria-expanded` e `aria-controls`", () => {
+    // Não é um botão novo: em 360px a linha já está no teto de largura, e um 5º
+    // alvo de 44px estouraria. O nome é o maior alvo de toque da tela de graça.
+    const html = renderComMarcado();
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-controls="itens-cp-1-co-1"');
+    expect(html).toContain("Bordas");
+    expect(html).toContain("2 itens");
+  });
+
+  it("nasce FECHADO e sem painel: cinco abertos virariam um rolo infinito", () => {
+    // O `aria-expanded="true"` do cartão (o `AccordionTrigger` da categoria de
+    // produto) é outro controle — o que se assere aqui é o painel de ITENS.
+    const html = renderComMarcado();
+    expect(html).not.toContain('id="itens-cp-1-co-1"');
+    expect(html).not.toContain("Nenhum opcional neste grupo ainda.");
+  });
+
+  it("a alça de arrasto do GRUPO continua lá — só os itens perdem o arrasto", () => {
+    expect(renderComMarcado()).toContain('aria-label="Reordenar Bordas"');
   });
 });

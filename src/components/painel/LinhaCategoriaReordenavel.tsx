@@ -83,6 +83,21 @@ export type LinhaCategoriaReordenavelProps = {
    * os mesmos comandos no kebab. Default `false` — ver comentário acima.
    */
   compacta?: boolean;
+  /**
+   * Substitui o bloco nome/detalhe (issue 216). É por aqui que entra o gatilho
+   * do disclosure do cartão de associação: um `<button aria-expanded
+   * aria-controls>` em volta de "Bordas / 4 itens". Ausente = markup de hoje,
+   * byte a byte.
+   */
+  conteudo?: ReactNode;
+  /**
+   * Bloco renderizado DEPOIS da row, DENTRO do mesmo `<li>` (issue 216): é o
+   * painel de itens do grupo. Tem que ficar no mesmo `<li>` para o `<ol>` e a
+   * numeração continuarem válidos — um `<li>` extra contaria como posição.
+   *
+   * Só quando ele existe a estrutura do `<li>` muda (ver o `return`).
+   */
+  painel?: ReactNode;
   /** Índice 0-based na lista atual. */
   indice: number;
   total: number;
@@ -97,6 +112,8 @@ export function LinhaCategoriaReordenavel({
   prefixo,
   bloqueado = false,
   compacta = false,
+  conteudo,
+  painel,
   indice,
   total,
   onMover,
@@ -119,20 +136,8 @@ export function LinhaCategoriaReordenavel({
     onMover(indice, para);
   }
 
-  return (
-    <li
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      // O slot de origem vira placeholder de MESMA ALTURA (nunca colapsa a
-      // zero, senão a lista pularia sob o dedo); quem segue o cursor é o
-      // DragOverlay do pai.
-      className={
-        "flex items-center gap-2 border-b border-border px-2 py-2 last:border-b-0 " +
-        (isDragging
-          ? "rounded-lg border-2 border-dashed bg-muted/40 [&>*]:opacity-0"
-          : "bg-background")
-      }
-    >
+  const row = (
+    <>
       {prefixo}
 
       {/* Alça dedicada: `touch-action: none` fica confinado a 44×44px, então o
@@ -160,14 +165,16 @@ export function LinhaCategoriaReordenavel({
         {indice + 1}.
       </span>
 
-      <div className="min-w-0 flex-1">
-        <span className="line-clamp-1 text-sm font-medium text-foreground">
-          {nome}
-        </span>
-        {detalhe != null && (
-          <span className="text-xs text-muted-foreground">{detalhe}</span>
-        )}
-      </div>
+      {conteudo ?? (
+        <div className="min-w-0 flex-1">
+          <span className="line-clamp-1 text-sm font-medium text-foreground">
+            {nome}
+          </span>
+          {detalhe != null && (
+            <span className="text-xs text-muted-foreground">{detalhe}</span>
+          )}
+        </div>
+      )}
 
       {/* gap-2: dois alvos de 44px encostados convidam ao toque errado. */}
       <div className="flex shrink-0 items-center gap-2">
@@ -254,6 +261,40 @@ export function LinhaCategoriaReordenavel({
           </MenuPortal>
         </Menu>
       </div>
+    </>
+  );
+
+  /*
+    Com `painel`, o `<li>` deixa de ser a própria row e passa a EMPILHAR row +
+    painel — duas ramificações num `return`, feio e honesto: um wrapper sempre
+    presente mudaria o markup de duas telas já entregues (175/213) que ninguém
+    pediu para mudar.
+  */
+  const classesBase =
+    "border-b border-border px-2 py-2 last:border-b-0 " +
+    (isDragging
+      ? "rounded-lg border-2 border-dashed bg-muted/40 [&>*]:opacity-0"
+      : "bg-background");
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      // O slot de origem vira placeholder de MESMA ALTURA (nunca colapsa a
+      // zero, senão a lista pularia sob o dedo); quem segue o cursor é o
+      // DragOverlay do pai.
+      className={
+        painel == null ? `flex items-center gap-2 ${classesBase}` : classesBase
+      }
+    >
+      {painel == null ? (
+        row
+      ) : (
+        <>
+          <div className="flex items-center gap-2">{row}</div>
+          {painel}
+        </>
+      )}
     </li>
   );
 }

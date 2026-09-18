@@ -102,6 +102,8 @@ function acoesBase(): OpcionaisClientAcoes {
     // 9ª (issues 208/209). Sem ela o arquivo NÃO COMPILA — é essa quebra que
     // prova o critério da 160: omitir uma chave não cai na action do lojista.
     reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
+    // 10ª (issues 215/216) — mesma regra da 9ª.
+    reordenarItensDoGrupoOpcional: vi.fn(async () => ({ ok: true }) as const),
   };
 }
 

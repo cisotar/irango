@@ -40,6 +40,13 @@ export async function buscarCategoriasOpcional(
 /**
  * Opcionais (itens da biblioteca) de uma loja, ordenados por `ordem`.
  * Sob role do dono, a RLS `opcionais_leitura_propria` traz também os inativos.
+ *
+ * O segundo `.order("id")` é DESEMPATE ESTÁVEL, não "ordenar por id": `ordem` é
+ * `int not null default 0` (migration `…_opcionais.sql`), então toda linha
+ * anterior à 215 vale 0. Sem um segundo critério o Postgres pode devolver ordens
+ * diferentes entre requisições — o SSR e o cliente divergiriam e o primeiro
+ * movimento na sanfona de itens (216) gravaria uma permutação que o lojista não
+ * pediu. Mesmo padrão e mesmo motivo de `buscarAssociacoesOpcional`, abaixo.
  */
 export async function buscarOpcionaisDoLojista(
   client: Client,
@@ -49,7 +56,8 @@ export async function buscarOpcionaisDoLojista(
     .from("opcionais")
     .select("*")
     .eq("loja_id", lojaId)
-    .order("ordem", { ascending: true });
+    .order("ordem", { ascending: true })
+    .order("id", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }

@@ -65,6 +65,7 @@ import type {
   removerOpcional,
   salvarAssociacaoOpcionais,
   reordenarOpcionaisDaCategoria,
+  reordenarItensDoGrupoOpcional,
 } from "@/lib/actions/opcional";
 import type {
   CategoriaOpcional,
@@ -94,14 +95,15 @@ type Associacao = {
 const ALVO_TOQUE = "min-h-[44px] min-w-[44px]";
 
 /**
- * Actions injetadas das 9 operações de opcionais. Todas OBRIGATÓRIAS (issue
- * 160): a page do painel passa as 9 do lojista, a via admin (137) passa as 9
+ * Actions injetadas das 10 operações de opcionais. Todas OBRIGATÓRIAS (issue
+ * 160): a page do painel passa as 10 do lojista, a via admin (137) passa as 10
  * variantes escopadas por `lojaId`. Sem default — omitir uma chave aqui quebra
  * o build em vez de cair na action do lojista (que resolve a loja por
  * `auth.uid()`) e gravar na loja errada. Tipadas via `typeof` (single-source,
  * espelha `ProdutosClient`).
  *
- * A 9ª (`reordenarOpcionaisDaCategoria`, issues 208/209) segue a mesma regra: é
+ * A 9ª (`reordenarOpcionaisDaCategoria`, issues 208/209) e a 10ª
+ * (`reordenarItensDoGrupoOpcional`, issues 215/216) seguem a mesma regra: são
  * escrita de ordem escopada por loja, e um default aqui seria exatamente o bug
  * que a 160 existe para impedir.
  */
@@ -115,6 +117,7 @@ export type OpcionaisClientAcoes = {
   removerOpcional: typeof removerOpcional;
   salvarAssociacaoOpcionais: typeof salvarAssociacaoOpcionais;
   reordenarOpcionaisDaCategoria: typeof reordenarOpcionaisDaCategoria;
+  reordenarItensDoGrupoOpcional: typeof reordenarItensDoGrupoOpcional;
 };
 
 export type OpcionaisClientProps = {
@@ -998,17 +1001,62 @@ function AssociacaoOpcionais({
     return mapa;
   }, [associacoes]);
 
-  /** `categoria_opcional_id → nº de itens`, só para o `detalhe` de cada linha. */
-  const totalItensPorGrupo = useMemo(() => {
-    const mapa = new Map<string, number>();
+  /*
+    `categoria_opcional_id → itens do grupo` (issue 216), ativos E inativos: a
+    RPC da 215 exige a permutação COMPLETA do par (loja, grupo), então a sanfona
+    precisa listar o inativo — ele ocupa posição real na ordem.
+
+    O comparador ESPELHA o de `buscarOpcionaisDoLojista` e o dos grupos no
+    cartão: `ordem` com desempate por `id`. Não é redundância — o mapa é
+    reagrupado aqui no cliente, e um `sort` estável sobre uma ordem já correta é
+    barato e protege a lista de uma futura mudança na query.
+
+    Nenhuma query nova: `opcionais` já é prop desta tela.
+  */
+  const opcionaisPorGrupo = useMemo(() => {
+    const mapa = new Map<string, Opcional[]>();
     for (const o of opcionais) {
-      mapa.set(
-        o.categoria_opcional_id,
-        (mapa.get(o.categoria_opcional_id) ?? 0) + 1,
-      );
+      const lista = mapa.get(o.categoria_opcional_id) ?? [];
+      lista.push(o);
+      mapa.set(o.categoria_opcional_id, lista);
+    }
+    for (const lista of mapa.values()) {
+      lista.sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
     }
     return mapa;
   }, [opcionais]);
+
+  /** `categoria_opcional_id → nº de itens`, só para o `detalhe` de cada linha. */
+  const totalItensPorGrupo = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const [grupoId, lista] of opcionaisPorGrupo) {
+      mapa.set(grupoId, lista.length);
+    }
+    return mapa;
+  }, [opcionaisPorGrupo]);
+
+  /*
+    ALCANCE (issue 216): `categoria_opcional_id → nomes das categorias de
+    PRODUTO que usam o grupo`. Editar ou remover um item vale para todas elas —
+    a biblioteca é da loja, não existe "Coca só de Pães" — e é essa lista que a
+    UI usa para avisar no momento da ação.
+
+    Derivado de `associacoes` ⋈ `categoriasProduto`, ambas já props e ambas
+    dados RLS-escopados da própria loja: nenhuma leitura nova, nenhum vetor
+    cross-tenant.
+  */
+  const alcancePorGrupo = useMemo(() => {
+    const nomePorCategoria = new Map(categoriasProduto.map((c) => [c.id, c.nome]));
+    const mapa = new Map<string, string[]>();
+    for (const a of associacoes) {
+      const nome = nomePorCategoria.get(a.categoria_id);
+      if (nome == null) continue;
+      const nomes = mapa.get(a.categoria_opcional_id) ?? [];
+      nomes.push(nome);
+      mapa.set(a.categoria_opcional_id, nomes);
+    }
+    return mapa;
+  }, [associacoes, categoriasProduto]);
 
   return (
     <section id="por-categoria" role="tabpanel" aria-labelledby="aba-por-categoria">
@@ -1047,6 +1095,8 @@ function AssociacaoOpcionais({
             selecionadosIniciais={inicialPorProduto.get(catProd.id) ?? new Set()}
             ordemPorGrupo={ordemPorProduto.get(catProd.id) ?? new Map()}
             totalItensPorGrupo={totalItensPorGrupo}
+            opcionaisPorGrupo={opcionaisPorGrupo}
+            alcancePorGrupo={alcancePorGrupo}
             onSalvo={() => router.refresh()}
             acoes={acoes}
           />

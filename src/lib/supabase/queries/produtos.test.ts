@@ -360,6 +360,44 @@ describe("081 buscarOpcionaisPorCategoria — contrato TS (camada 2, mock)", () 
     expect(latic.opcionais[0]).toEqual({ id: "o-brie", nome: "Brie extra", preco: 8, ordem: 0 });
   });
 
+  it("DESEMPATA itens de MESMA `ordem` por `id` — saída idêntica em qualquer ordem de entrada (216)", async () => {
+    // `opcionais.ordem` é `int not null default 0`: toda linha anterior à 215
+    // empata em 0. Sem desempate, a vitrine e o painel poderiam listá-las em
+    // ordens diferentes e o primeiro movimento na sanfona (216) gravaria uma
+    // permutação que ninguém pediu.
+    function linhas(itens: { id: string; nome: string; preco: number; ordem: number }[]) {
+      return [
+        {
+          categoria_id: "cat-paes",
+          ordem: 0,
+          opcionais_categorias: {
+            id: "oc-legado",
+            nome: "Legado",
+            ordem: 0,
+            opcionais: itens,
+          },
+        },
+      ];
+    }
+    const a = { id: "o-aaa", nome: "Azeitona", preco: 1, ordem: 0 };
+    const b = { id: "o-bbb", nome: "Bacon", preco: 2, ordem: 0 };
+
+    const um = makeClient({ data: linhas([a, b]), error: null });
+    const outro = makeClient({ data: linhas([b, a]), error: null });
+
+    const mapaUm = await buscarOpcionaisPorCategoria(um.client, ["cat-paes"]);
+    const mapaOutro = await buscarOpcionaisPorCategoria(outro.client, ["cat-paes"]);
+
+    expect(mapaUm["cat-paes"][0].opcionais.map((o) => o.id)).toEqual([
+      "o-aaa",
+      "o-bbb",
+    ]);
+    expect(mapaOutro["cat-paes"][0].opcionais.map((o) => o.id)).toEqual([
+      "o-aaa",
+      "o-bbb",
+    ]);
+  });
+
   it("categoria SEM associação não aparece no mapa (ou mapa vazio)", async () => {
     const { client } = makeClient({ data: [], error: null });
     const mapa = await buscarOpcionaisPorCategoria(client, ["cat-bebidas"]);

@@ -12,6 +12,7 @@ import {
   removerOpcionalAdmin,
   salvarAssociacaoOpcionaisAdmin,
   reordenarOpcionaisDaCategoriaAdmin,
+  reordenarItensDoGrupoOpcionalAdmin,
 } from "@/app/admin/assinantes/actions/admin-opcionais";
 
 /**
@@ -67,6 +68,8 @@ export function OpcionaisAdminClient({
           salvarAssociacaoOpcionaisAdmin(lojaId, payload),
         reordenarOpcionaisDaCategoria: (payload) =>
           reordenarOpcionaisDaCategoriaAdmin(lojaId, payload),
+        reordenarItensDoGrupoOpcional: (payload) =>
+          reordenarItensDoGrupoOpcionalAdmin(lojaId, payload),
       }}
     />
   );

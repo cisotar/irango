@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,11 +16,13 @@ import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { alternarAssociacaoOpcional } from "@/lib/utils/alternar-associacao-opcional";
 import type { StatusSalvamento } from "@/lib/utils/salvamento-coalescido";
-import type { CategoriaOpcional } from "@/lib/supabase/queries/opcionais";
+import type { CategoriaOpcional, Opcional } from "@/lib/supabase/queries/opcionais";
 import {
   ReordenarOpcionaisDaCategoria,
   type GrupoOpcionalReordenavel,
 } from "@/components/painel/ReordenarOpcionaisDaCategoria";
+import { LinhaCategoriaReordenavel } from "@/components/painel/LinhaCategoriaReordenavel";
+import { PainelItensDoGrupo } from "@/components/painel/PainelItensDoGrupo";
 import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar";
 import type {
   CategoriaProduto,
@@ -59,6 +61,16 @@ function rotuloItens(total: number): string {
  * Enquanto está em voo, alça e setas ficam `aria-disabled` — nunca `disabled`,
  * que tira da tabulação e perde o foco.
  *
+ * ─────────────────────────────────────────── Onde mora "qual grupo está aberto"
+ * No CARTÃO, nunca na linha. O cartão REMONTA a lista de grupos por
+ * `key={chaveDaLista}` a cada toggle de checkbox; com o estado do disclosure na
+ * linha, desmarcar OUTRO grupo fecharia o painel aberto e jogaria o foco no
+ * `<body>`. Guardado por `categoria_opcional_id` ele sobrevive à remontagem, e
+ * o `gatilhosRef` devolve o foco ao gatilho quando ele se perdeu.
+ *
+ * UM grupo aberto por cartão: cinco painéis abertos tornariam o modal da 217 um
+ * rolo infinito.
+ *
  * ─────────────────────────────────────────── Desmarcar perde a posição
  * Decisão do usuário, sem confirmação: `planejarAssociacaoOpcionais` remove a
  * linha, e remarcar reinsere com `ordem = max(permanentes) + 1`, isto é, no FIM.
@@ -70,6 +82,8 @@ export function CartaoAssociacaoOpcionais({
   selecionadosIniciais,
   ordemPorGrupo,
   totalItensPorGrupo,
+  opcionaisPorGrupo,
+  alcancePorGrupo,
   onSalvo,
   acoes,
 }: {
@@ -80,6 +94,10 @@ export function CartaoAssociacaoOpcionais({
   /** `categoria_opcional_id → ordem` gravada. Ausente = ainda não persistido. */
   ordemPorGrupo: Map<string, number>;
   totalItensPorGrupo: Map<string, number>;
+  /** `categoria_opcional_id → itens do grupo` (ativos E inativos), já ordenados. */
+  opcionaisPorGrupo: Map<string, Opcional[]>;
+  /** `categoria_opcional_id → nomes das categorias de PRODUTO que usam o grupo`. */
+  alcancePorGrupo: Map<string, string[]>;
   onSalvo: () => void;
   acoes: OpcionaisClientAcoes;
 }) {
@@ -89,7 +107,11 @@ export function CartaoAssociacaoOpcionais({
   const [statusAssociacao, setStatusAssociacao] =
     useState<StatusSalvamento>("");
   const [statusOrdem, setStatusOrdem] = useState<StatusSalvamento>("");
+  const [statusItens, setStatusItens] = useState<StatusSalvamento>("");
   const [mensagemSemLista, setMensagemSemLista] = useState("");
+  /** Um só painel de itens aberto por cartão, por `categoria_opcional_id`. */
+  const [grupoAberto, setGrupoAberto] = useState<string | null>(null);
+  const gatilhosRef = useRef(new Map<string, HTMLButtonElement | null>());
   const reordenarRef = useRef<ManipuladorModoReordenar | null>(null);
   const togglandoRef = useRef(false);
   // Lido dentro do handler do toggle, que capturaria um `selecionados` velho.
@@ -100,6 +122,18 @@ export function CartaoAssociacaoOpcionais({
   useEffect(() => {
     selecionadosRef.current = selecionados;
   }, [selecionados]);
+
+  /**
+   * Região viva dos EVENTOS DE GRUPO (marcar/desmarcar, mover, abrir/fechar
+   * painel). É a do `ModoReordenar` quando ele está montado — duas `aria-live`
+   * para a MESMA classe de evento silenciam ou duplicam o anúncio. Eventos de
+   * ITEM têm a região deles, dentro do `PainelItensDoGrupo`; a divisão é rígida
+   * e é o que torna as duas regiões aceitáveis na mesma tela.
+   */
+  const anunciarGrupo = useCallback((frase: string) => {
+    if (reordenarRef.current) reordenarRef.current.anunciar(frase);
+    else setMensagemSemLista(frase);
+  }, []);
 
   /**
    * Toggle do checkbox — ÚNICO caminho de escrita da associação.
@@ -140,15 +174,7 @@ export function CartaoAssociacaoOpcionais({
           aplicarSelecao: setSelecionados,
           definirStatus: setStatusAssociacao,
           avisarErro: (m) => toast.error(m),
-          // A região viva é a do `ModoReordenar` quando ele está montado — duas
-          // `aria-live` na mesma tela silenciam ou duplicam o anúncio.
-          anunciar: (f) => {
-            if (reordenarRef.current) {
-              reordenarRef.current.anunciar(f);
-            } else {
-              setMensagemSemLista(f);
-            }
-          },
+          anunciar: anunciarGrupo,
           aoSucesso: onSalvo,
           registrarErro: (e) => console.error("[alternarAssociacao]", e),
         });
@@ -157,7 +183,7 @@ export function CartaoAssociacaoOpcionais({
         setTogglando(false);
       }
     },
-    [acoes, categoriaProduto.id, categoriasOpcional, onSalvo],
+    [acoes, anunciarGrupo, categoriaProduto.id, categoriasOpcional, onSalvo],
   );
 
   /*
@@ -204,6 +230,32 @@ export function CartaoAssociacaoOpcionais({
     ],
   );
 
+  /**
+   * Abre/fecha o painel de itens de um grupo. UM aberto por cartão: abrir B
+   * fecha A, e o anúncio diz as duas coisas numa frase só.
+   */
+  const alternarPainel = useCallback(
+    (catOpcId: string, nome: string) => {
+      if (grupoAberto === catOpcId) {
+        setGrupoAberto(null);
+        anunciarGrupo(`${nome} fechado.`);
+        return;
+      }
+      const total = opcionaisPorGrupo.get(catOpcId)?.length ?? 0;
+      const nomeAnterior =
+        grupoAberto == null
+          ? null
+          : (categoriasOpcional.find((c) => c.id === grupoAberto)?.nome ?? null);
+      setGrupoAberto(catOpcId);
+      anunciarGrupo(
+        (nomeAnterior == null ? "" : `${nomeAnterior} fechado. `) +
+          `${nome} aberto. ${total} ${total === 1 ? "opcional" : "opcionais"}, ` +
+          "na ordem da vitrine.",
+      );
+    },
+    [anunciarGrupo, categoriasOpcional, grupoAberto, opcionaisPorGrupo],
+  );
+
   const disponiveis = useMemo(
     () => categoriasOpcional.filter((c) => !selecionados.has(c.id)),
     [categoriasOpcional, selecionados],
@@ -216,9 +268,13 @@ export function CartaoAssociacaoOpcionais({
     não faz ideia de que são duas escritas diferentes.
   */
   const status: StatusSalvamento =
-    statusAssociacao === "salvando" || statusOrdem === "salvando"
+    statusAssociacao === "salvando" ||
+    statusOrdem === "salvando" ||
+    statusItens === "salvando"
       ? "salvando"
-      : statusAssociacao === "salvo" || statusOrdem === "salvo"
+      : statusAssociacao === "salvo" ||
+          statusOrdem === "salvo" ||
+          statusItens === "salvo"
         ? "salvo"
         : "";
 
@@ -230,6 +286,22 @@ export function CartaoAssociacaoOpcionais({
     remontaria a lista sob o dedo.
   */
   const chaveDaLista = Array.from(selecionados).sort().join("|");
+
+  /*
+    A remontagem da lista (toggle de checkbox) destrói o nó que tinha o foco. O
+    estado do disclosure sobrevive porque mora AQUI, mas o foco não: sem isto
+    ele cai no `<body>`. Só recupera quando REALMENTE caiu no body — nunca
+    rouba o foco de um controle vivo.
+  */
+  const chaveAnteriorRef = useRef(chaveDaLista);
+  useEffect(() => {
+    const mudou = chaveAnteriorRef.current !== chaveDaLista;
+    chaveAnteriorRef.current = chaveDaLista;
+    if (!mudou || grupoAberto == null) return;
+    if (typeof document === "undefined") return;
+    if (document.activeElement !== document.body) return;
+    gatilhosRef.current.get(grupoAberto)?.focus();
+  }, [chaveDaLista, grupoAberto]);
 
   return (
     <AccordionItem
@@ -283,6 +355,83 @@ export function CartaoAssociacaoOpcionais({
                     ocultarStatus
                     aoMudarStatus={setStatusOrdem}
                     arrastoBloqueado={togglando}
+                    // Arrastar um grupo COLAPSA o painel dele antes de a linha
+                    // sair do lugar: um fantasma de 400px sob o dedo é
+                    // injogável, e o placeholder de origem manteria a altura.
+                    aoComecarArrasto={() => setGrupoAberto(null)}
+                    renderLinha={({
+                      item,
+                      indice,
+                      total,
+                      bloqueado,
+                      onMover,
+                    }) => {
+                      const aberto = grupoAberto === item.id;
+                      const idPainel = `itens-${categoriaProduto.id}-${item.id}`;
+                      return (
+                        <LinhaCategoriaReordenavel
+                          id={item.id}
+                          nome={item.nome}
+                          detalhe={item.detalhe}
+                          prefixo={item.prefixo}
+                          compacta={item.prefixo != null}
+                          bloqueado={bloqueado}
+                          indice={indice}
+                          total={total}
+                          onMover={onMover}
+                          /*
+                            O gatilho do disclosure é o BLOCO DO NOME, não um
+                            botão novo: em 360px a linha já está no teto de
+                            largura (checkbox + alça + nº + ↑ + ↓ + kebab) e um
+                            5º alvo de 44px estouraria. O nome é o elemento mais
+                            largo da linha e vira o maior alvo de toque da tela.
+                          */
+                          conteudo={
+                            <button
+                              type="button"
+                              ref={(n) => {
+                                gatilhosRef.current.set(item.id, n);
+                              }}
+                              aria-expanded={aberto}
+                              aria-controls={idPainel}
+                              onClick={() => alternarPainel(item.id, item.nome)}
+                              className="flex min-h-[44px] min-w-0 flex-1 items-center gap-1 rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                            >
+                              <ChevronRight
+                                aria-hidden
+                                className={`size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${
+                                  aberto ? "rotate-90" : ""
+                                }`}
+                              />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium text-foreground">
+                                  {item.nome}
+                                </span>
+                                {item.detalhe != null && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    {item.detalhe}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          }
+                          painel={
+                            aberto ? (
+                              <PainelItensDoGrupo
+                                id={idPainel}
+                                grupoId={item.id}
+                                grupoNome={item.nome}
+                                itens={opcionaisPorGrupo.get(item.id) ?? []}
+                                alcance={alcancePorGrupo.get(item.id) ?? []}
+                                acoes={acoes}
+                                onSalvo={onSalvo}
+                                aoMudarStatus={setStatusItens}
+                              />
+                            ) : null
+                          }
+                        />
+                      );
+                    }}
                   />
                 )}
 
