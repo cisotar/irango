@@ -44,6 +44,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { alternarAssociacaoOpcional } from "@/lib/utils/alternar-associacao-opcional";
 import {
   schemaCategoriaOpcional,
   schemaOpcional,
@@ -964,50 +965,47 @@ function CartaoAssociacao({
    */
   const alternar = useCallback(
     async (catOpcId: string, marcado: boolean) => {
+      // Reentrância: dois toggles simultâneos disputariam o mesmo flush.
       if (togglandoRef.current) return;
       togglandoRef.current = true;
       setTogglando(true);
-      setStatusAssociacao("salvando");
 
       const anterior = selecionadosRef.current;
-      const proximo = new Set(anterior);
-      if (marcado) {
-        proximo.add(catOpcId);
-      } else {
-        proximo.delete(catOpcId);
-      }
+      const nome =
+        categoriasOpcional.find((c) => c.id === catOpcId)?.nome ?? "Grupo";
+      const total = marcado
+        ? anterior.size + (anterior.has(catOpcId) ? 0 : 1)
+        : anterior.size - (anterior.has(catOpcId) ? 1 : 0);
+      const frase = marcado
+        ? `${nome} incluído. Posição ${total} de ${total}.`
+        : `${nome} removido. ${total} ${total === 1 ? "grupo" : "grupos"} na ordem.`;
 
       try {
-        await reordenarRef.current?.finalizar();
-        setSelecionados(proximo);
-
-        const r = await acoes.salvarAssociacaoOpcionais({
-          categoria_id: categoriaProduto.id,
-          categoria_opcional_id: Array.from(proximo),
+        // A ORDEM (flush → seleção → gravação) é a trava da corrida e mora em
+        // `alternarAssociacaoOpcional`, fora do componente, porque aqui dentro
+        // ela era inalcançável por teste — ver o cabeçalho daquele arquivo.
+        await alternarAssociacaoOpcional(anterior, catOpcId, marcado, frase, {
+          finalizarReordenacao: () => reordenarRef.current?.finalizar(),
+          salvar: (ids) =>
+            acoes.salvarAssociacaoOpcionais({
+              categoria_id: categoriaProduto.id,
+              categoria_opcional_id: ids,
+            }),
+          aplicarSelecao: setSelecionados,
+          definirStatus: setStatusAssociacao,
+          avisarErro: (m) => toast.error(m),
+          // A região viva é a do `ModoReordenar` quando ele está montado — duas
+          // `aria-live` na mesma tela silenciam ou duplicam o anúncio.
+          anunciar: (f) => {
+            if (reordenarRef.current) {
+              reordenarRef.current.anunciar(f);
+            } else {
+              setMensagemSemLista(f);
+            }
+          },
+          aoSucesso: onSalvo,
+          registrarErro: (e) => console.error("[alternarAssociacao]", e),
         });
-        if (!r.ok) {
-          // Mensagem genérica vinda da action; o detalhe fica no log do servidor.
-          setSelecionados(anterior);
-          setStatusAssociacao("");
-          toast.error(r.erro);
-          return;
-        }
-
-        setStatusAssociacao("salvo");
-        const nome =
-          categoriasOpcional.find((c) => c.id === catOpcId)?.nome ?? "Grupo";
-        const total = proximo.size;
-        const frase = marcado
-          ? `${nome} incluído. Posição ${total} de ${total}.`
-          : `${nome} removido. ${total} ${total === 1 ? "grupo" : "grupos"} na ordem.`;
-        // A região viva é a do `ModoReordenar` quando ele está montado — duas
-        // `aria-live` na mesma tela silenciam ou duplicam o anúncio.
-        if (reordenarRef.current) {
-          reordenarRef.current.anunciar(frase);
-        } else {
-          setMensagemSemLista(frase);
-        }
-        onSalvo();
       } finally {
         togglandoRef.current = false;
         setTogglando(false);

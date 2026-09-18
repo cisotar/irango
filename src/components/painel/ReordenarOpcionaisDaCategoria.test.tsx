@@ -197,4 +197,70 @@ describe("ReordenarOpcionaisDaCategoria — markup do modo (issue 209)", () => {
     const alcas = html.match(/aria-label="Reordenar [^"]*"/g) ?? [];
     expect(alcas).toHaveLength(2);
   });
+
+  describe("arrastoBloqueado — corrida do autosave (issue 213)", () => {
+    /**
+     * `alternar()` em OpcionaisClient chama `finalizar()` e propaga o toggle
+     * como `arrastoBloqueado` enquanto a gravação está em voo. Este é o único
+     * ponto da cadeia (checkbox em voo → alça e setas inertes) alcançável sem
+     * clique/jsdom: `arrastoBloqueado` chega aqui como PROP direta, não como
+     * estado interno disparado por evento. A ORDEM `finalizar → set →
+     * salvarAssociacaoOpcionais` dentro de `alternar()` continua fora do
+     * alcance deste ambiente — ver nota no relatório do agente `testar`.
+     */
+    function renderBloqueado(bloqueado: boolean | undefined): string {
+      return renderToStaticMarkup(
+        <ReordenarOpcionaisDaCategoria
+          categoriaProdutoId="cp-1"
+          grupos={[MOLHOS, QUEIJOS, BORDAS]}
+          onReordenar={async () => ({ ok: true })}
+          arrastoBloqueado={bloqueado}
+        />,
+      );
+    }
+
+    it("bloqueado: a alça de TODO item vira aria-disabled=true, nunca disabled real", () => {
+      const html = renderBloqueado(true);
+      for (const nome of ["Molhos", "Queijos", "Bordas"]) {
+        expect(html).toMatch(
+          new RegExp(
+            `aria-label="Reordenar ${nome}"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*aria-label="Reordenar ${nome}"`,
+          ),
+        );
+      }
+      const alcas = html.match(/<button[^>]*aria-label="Reordenar [^"]*"[^>]*>/g) ?? [];
+      expect(alcas.length).toBeGreaterThan(0);
+      for (const tag of alcas) {
+        expect(tag).not.toMatch(/\sdisabled\b/);
+      }
+    });
+
+    it("bloqueado: as setas do MEIO da lista também ficam aria-disabled=true (não é só limite de posição)", () => {
+      // Sem `bloqueado`, Queijos (item do meio) tem as duas setas ativas — é o
+      // próprio caso já coberto no describe de posição. Aqui a MESMA linha,
+      // com o cartão em voo, precisa ficar inerte mesmo não estando no limite.
+      const html = renderBloqueado(true);
+      expect(html).toMatch(
+        /aria-label="Mover Queijos para cima"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*aria-label="Mover Queijos para cima"/,
+      );
+      expect(html).toMatch(
+        /aria-label="Mover Queijos para baixo"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*aria-label="Mover Queijos para baixo"/,
+      );
+      const botoes = botoesDeMover(html);
+      expect(botoes.length).toBeGreaterThan(0);
+      for (const tag of botoes) {
+        expect(tag).not.toMatch(/\sdisabled\b/);
+      }
+    });
+
+    it("livre (prop ausente): a alça e as setas do meio NÃO ficam bloqueadas", () => {
+      const html = renderBloqueado(undefined);
+      expect(html).toMatch(
+        /aria-label="Reordenar Molhos"[^>]*aria-disabled="false"|aria-disabled="false"[^>]*aria-label="Reordenar Molhos"/,
+      );
+      expect(html).toMatch(
+        /aria-label="Mover Queijos para cima"[^>]*aria-disabled="false"|aria-disabled="false"[^>]*aria-label="Mover Queijos para cima"/,
+      );
+    });
+  });
 });
