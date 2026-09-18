@@ -183,14 +183,16 @@ export function OpcionaisClient({
         aria-label="Seções desta página"
         className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border bg-background/95 px-4 py-2 backdrop-blur"
       >
-        <ul className="flex flex-wrap gap-2">
-          <li>
-            <LinkSecao href="#biblioteca">Biblioteca</LinkSecao>
-          </li>
-          <li>
-            <LinkSecao href="#por-categoria">Por categoria de produto</LinkSecao>
-          </li>
-        </ul>
+        {/* Contêiner cheio, pílulas dividem o espaço igual (mockup aprovado).
+            Sem tracking de seção ativa (decisão 4): "Biblioteca" fica com o
+            estilo preenchido por ser a seção padrão ao abrir a página — é
+            default fixo, não estado reativo. */}
+        <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
+          <LinkSecao href="#biblioteca" ativo>
+            Biblioteca
+          </LinkSecao>
+          <LinkSecao href="#por-categoria">Por categoria de produto</LinkSecao>
+        </div>
       </nav>
 
       <div className="space-y-10">
@@ -212,18 +214,26 @@ export function OpcionaisClient({
   );
 }
 
-/** Pílula sólida do toggle (mockup aprovado). 44px literais no alvo de toque. */
+/** Pílula do toggle (mockup aprovado). `flex-1`: as duas dividem o espaço do
+ *  contêiner igual — sem isso ficam do tamanho do texto, coladas à esquerda.
+ *  44px literais no alvo de toque. */
 function LinkSecao({
   href,
+  ativo = false,
   children,
 }: {
   href: string;
+  ativo?: boolean;
   children: ReactNode;
 }) {
   return (
     <a
       href={href}
-      className={`${ALVO_TOQUE} inline-flex items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors outline-none hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50`}
+      className={`${ALVO_TOQUE} flex flex-1 items-center justify-center rounded-lg px-4 text-center text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+        ativo
+          ? "bg-primary text-primary-foreground"
+          : "text-muted-foreground hover:bg-muted"
+      }`}
     >
       {children}
     </a>
