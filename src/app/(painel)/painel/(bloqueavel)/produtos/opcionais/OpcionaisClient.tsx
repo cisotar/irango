@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,7 +12,14 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { MoreVertical, Pencil, Plus, Trash2, Loader2 } from "lucide-react";
+import {
+  Check,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Trash2,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +52,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { medirEObservarBarra } from "@/components/vitrine/medicaoBarraVitrine";
 import { alternarAssociacaoOpcional } from "@/lib/utils/alternar-associacao-opcional";
 import {
   schemaCategoriaOpcional,
@@ -70,6 +79,12 @@ import {
   type GrupoOpcionalReordenavel,
 } from "@/components/painel/ReordenarOpcionaisDaCategoria";
 import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar";
+
+/** Altura real da barra de navegação desta página, medida em runtime. */
+const VAR_ALTURA_NAV = "--altura-nav-opcionais";
+
+/** Fallback só vale até a primeira medição (e em browser sem ResizeObserver). */
+const SCROLL_MT = `scroll-mt-[var(${VAR_ALTURA_NAV},4rem)]`;
 
 type CategoriaProduto = { id: string; nome: string };
 /** `ordem` (coluna da 208) é o que abre a lista na sequência da vitrine. */
@@ -121,6 +136,30 @@ export function OpcionaisClient({
   associacoes,
   acoes,
 }: OpcionaisClientProps) {
+  const navRef = useRef<HTMLElement>(null);
+
+  /*
+    A âncora tem que parar EMBAIXO da barra sticky, e a altura dela não é
+    constante: "Por categoria de produto" quebra em duas linhas no celular.
+    `scroll-mt` fixo seria o mesmo erro que a issue 201 corrigiu na vitrine —
+    o valor antigo era coincidência. Por isso a altura é MEDIDA e publicada
+    numa CSS var, reusando `medirEObservarBarra` (o módulo é neutro e recebe o
+    nome da var por parâmetro desde a 213).
+
+    `useLayoutEffect` e não `useEffect`: a var precisa existir antes da pintura,
+    senão o primeiro clique numa âncora usa o fallback e para no lugar errado.
+  */
+  useLayoutEffect(() => {
+    const barra = navRef.current;
+    if (barra == null) return;
+    return medirEObservarBarra(barra, {
+      raiz: document.documentElement,
+      ResizeObserverCtor:
+        typeof ResizeObserver === "undefined" ? undefined : ResizeObserver,
+      variavel: VAR_ALTURA_NAV,
+    });
+  }, []);
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
       <div className="mb-4">
@@ -140,6 +179,7 @@ export function OpcionaisClient({
         reativo de "seção ativa" a manter em sincronia com o scroll.
       */}
       <nav
+        ref={navRef}
         aria-label="Seções desta página"
         className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border bg-background/95 px-4 py-2 backdrop-blur"
       >
@@ -292,7 +332,7 @@ function BibliotecaOpcionais({
   }
 
   return (
-    <section id="biblioteca" className="scroll-mt-24">
+    <section id="biblioteca" className={SCROLL_MT}>
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="font-heading text-lg font-semibold text-foreground">
           Biblioteca
@@ -839,7 +879,7 @@ function AssociacaoOpcionais({
   }, [opcionais]);
 
   return (
-    <section id="por-categoria" className="scroll-mt-24">
+    <section id="por-categoria" className={SCROLL_MT}>
       <h2 className="mb-1 font-heading text-lg font-semibold text-foreground">
         Opcionais por categoria de produto
       </h2>
@@ -1152,8 +1192,13 @@ function CartaoAssociacao({
                     value="disponiveis"
                     className="not-last:border-b-0"
                   >
-                    <AccordionTrigger className="min-h-[44px] text-sm font-medium text-foreground">
-                      Disponíveis ({disponiveis.length})
+                    <AccordionTrigger className="min-h-[44px] -mx-4 rounded-none bg-muted/60 px-4 text-sm font-medium text-foreground">
+                      <span className="flex flex-wrap items-baseline gap-x-2">
+                        Disponíveis ({disponiveis.length})
+                        <span className="text-xs font-normal text-muted-foreground">
+                          o cliente não vê estes
+                        </span>
+                      </span>
                     </AccordionTrigger>
                     {/* `keepMounted`: o segmento nasce colapsado, mas o
                         conteúdo já vem do servidor — sem ele os checkboxes de
@@ -1206,10 +1251,18 @@ function CartaoAssociacao({
                 {/*
                   `aria-hidden`: a região viva do modo já cobre o leitor de tela.
                 */}
-                <p aria-hidden className="h-4 text-xs text-muted-foreground">
-                  {status === "salvando" && "Salvando…"}
-                  {status === "salvo" && "Salvo"}
-                </p>
+                <div
+                  aria-hidden
+                  className="-mx-4 mt-1 flex min-h-8 items-center justify-end gap-1.5 border-t border-border px-4 pt-2 text-xs text-muted-foreground"
+                >
+                  {status === "salvando" && <span>Salvando…</span>}
+                  {status === "salvo" && (
+                    <>
+                      <Check className="size-3.5 text-emerald-600" />
+                      <span className="font-medium text-emerald-700">Salvo</span>
+                    </>
+                  )}
+                </div>
               </>
             )}
           </CardContent>
