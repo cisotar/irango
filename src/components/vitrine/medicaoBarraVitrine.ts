@@ -43,14 +43,6 @@ export type DepsMedicaoBarra = {
    * global de `resize`/`orientationchange`.
    */
   aoMedir?: (alturaPx: number) => void;
-  /**
-   * Nome da CSS var a publicar. Default `--altura-barra` (a da vitrine).
-   * Existe porque o painel tem o MESMO problema — barra sticky de altura
-   * variável e âncoras que precisam parar embaixo dela — e a regra da 201
-   * ("valor fixo de scroll-margin é proibido") não é específica da vitrine.
-   * A página de opcionais (213) publica a sua própria var por aqui.
-   */
-  variavel?: string;
 };
 
 /**
@@ -66,7 +58,7 @@ export function medirEObservarBarra(
   barra: ElementoMedivel,
   deps: DepsMedicaoBarra,
 ): () => void {
-  const { raiz, ResizeObserverCtor, aoMedir, variavel = VAR_ALTURA_BARRA } = deps;
+  const { raiz, ResizeObserverCtor, aoMedir } = deps;
   // Achado acelerar/201: sem a guarda, toda entrega do ResizeObserver (a
   // primeira é imediata, por contrato) escreve a var mesmo com a altura
   // inalterada — cada escrita de custom property não registrada invalida o
@@ -78,7 +70,7 @@ export function medirEObservarBarra(
     const altura = Math.ceil(barra.getBoundingClientRect().height);
     if (altura === ultimaAltura) return;
     ultimaAltura = altura;
-    raiz.style.setProperty(variavel, `${altura}px`);
+    raiz.style.setProperty(VAR_ALTURA_BARRA, `${altura}px`);
     aoMedir?.(altura);
   }
 
@@ -86,7 +78,7 @@ export function medirEObservarBarra(
 
   if (!ResizeObserverCtor) {
     // Browser sem ResizeObserver: mede uma vez e degrada, nunca lança.
-    return () => raiz.style.removeProperty(variavel);
+    return () => raiz.style.removeProperty(VAR_ALTURA_BARRA);
   }
 
   const observador = new ResizeObserverCtor(medir);
@@ -94,6 +86,6 @@ export function medirEObservarBarra(
 
   return () => {
     observador.disconnect();
-    raiz.style.removeProperty(variavel);
+    raiz.style.removeProperty(VAR_ALTURA_BARRA);
   };
 }

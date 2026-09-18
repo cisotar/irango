@@ -53,7 +53,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
-import { medirEObservarBarra } from "@/components/vitrine/medicaoBarraVitrine";
 import { alternarAssociacaoOpcional } from "@/lib/utils/alternar-associacao-opcional";
 import {
   schemaCategoriaOpcional,
@@ -81,19 +80,8 @@ import {
 } from "@/components/painel/ReordenarOpcionaisDaCategoria";
 import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar";
 
-/** Altura real da barra de navegação desta página, medida em runtime. */
-const VAR_ALTURA_NAV = "--altura-nav-opcionais";
-
-/** Fallback só vale até a primeira medição (e em browser sem ResizeObserver). */
-const SCROLL_MT = `scroll-mt-[var(${VAR_ALTURA_NAV},4rem)]`;
-
-/** As duas seções da página, na ordem em que aparecem. */
-const ID_SECOES = ["biblioteca", "por-categoria"] as const;
-type IdSecao = (typeof ID_SECOES)[number];
-
-function ehIdSecao(id: string): id is IdSecao {
-  return (ID_SECOES as readonly string[]).includes(id);
-}
+/** As duas abas da página. O id é usado em `aria-controls`/`aria-labelledby`. */
+type IdSecao = "biblioteca" | "por-categoria";
 
 type CategoriaProduto = { id: string; nome: string };
 /** `ordem` (coluna da 208) é o que abre a lista na sequência da vitrine. */
@@ -136,6 +124,12 @@ export type OpcionaisClientProps = {
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
   acoes: OpcionaisClientAcoes;
+  /**
+   * Aba aberta ao montar. Existe como costura de TESTE: sem jsdom não há como
+   * clicar na aba, e o painel de "por categoria" nunca seria renderizado por
+   * `renderToStaticMarkup`. Em produção fica no default.
+   */
+  secaoInicial?: IdSecao;
 };
 
 export function OpcionaisClient({
@@ -144,64 +138,85 @@ export function OpcionaisClient({
   categoriasProduto,
   associacoes,
   acoes,
+  secaoInicial = "biblioteca",
 }: OpcionaisClientProps) {
   const navRef = useRef<HTMLElement>(null);
+  /** Marcador NÃO-sticky logo antes da barra: o `getBoundingClientRect` da
+   *  própria barra mente quando ela já está grudada no topo. */
+  const ancoraRef = useRef<HTMLDivElement>(null);
+  const painelRef = useRef<HTMLDivElement>(null);
+  const [espacoFinal, setEspacoFinal] = useState(0);
+  const [secaoAtiva, setSecaoAtiva] = useState<IdSecao>(secaoInicial);
+
+  /**
+   * O contêiner que realmente rola é o `<main>` do layout do painel
+   * (`overflow-y-auto`), não a janela — `window.scrollTo` aqui não faz nada.
+   * Sobe na árvore até achar quem tem overflow de rolagem.
+   */
+  const acharRolador = useCallback((de: HTMLElement | null): HTMLElement => {
+    let no = de?.parentElement ?? null;
+    while (no != null) {
+      const { overflowY } = getComputedStyle(no);
+      if (overflowY === "auto" || overflowY === "scroll") return no;
+      no = no.parentElement;
+    }
+    return document.documentElement;
+  }, []);
 
   /*
-    A âncora tem que parar EMBAIXO da barra sticky, e a altura dela não é
-    constante: "Por categoria de produto" quebra em duas linhas no celular.
-    `scroll-mt` fixo seria o mesmo erro que a issue 201 corrigiu na vitrine —
-    o valor antigo era coincidência. Por isso a altura é MEDIDA e publicada
-    numa CSS var, reusando `medirEObservarBarra` (o módulo é neutro e recebe o
-    nome da var por parâmetro desde a 213).
-
-    `useLayoutEffect` e não `useEffect`: a var precisa existir antes da pintura,
-    senão o primeiro clique numa âncora usa o fallback e para no lugar errado.
+    Filler no fim: para a seção encostar embaixo da barra, o conteúdo depois da
+    barra precisa ter ao menos uma tela de altura. Com "Bebidas — 0 incluídos"
+    a página é curta demais e a rolagem para antes. O vazio é medido, não
+    chutado: sobra exata entre a altura do rolador e o que já existe.
   */
-  useLayoutEffect(() => {
+  const recalcularEspaco = useCallback(() => {
     const barra = navRef.current;
-    if (barra == null) return;
-    return medirEObservarBarra(barra, {
-      raiz: document.documentElement,
-      ResizeObserverCtor:
-        typeof ResizeObserver === "undefined" ? undefined : ResizeObserver,
-      variavel: VAR_ALTURA_NAV,
-    });
-  }, []);
+    const painel = painelRef.current;
+    if (barra == null || painel == null) return;
+    const rolador = acharRolador(barra);
+    const falta =
+      rolador.clientHeight -
+      barra.getBoundingClientRect().height -
+      painel.getBoundingClientRect().height;
+    setEspacoFinal(Math.max(0, Math.ceil(falta)));
+  }, [acharRolador]);
 
-  /*
-    Qual seção está à vista. Clicar marca na hora (o scroll suave levaria
-    ~300ms para o observer reagir, e o botão precisa responder ao toque);
-    o `IntersectionObserver` corrige depois, inclusive quando o lojista
-    rola à mão sem usar o toggle.
-
-    `rootMargin` corta a faixa de decisão para o terço superior: sem isso,
-    as duas seções ficam visíveis ao mesmo tempo em tela grande e o estado
-    piscaria entre elas.
-  */
-  const [secaoAtiva, setSecaoAtiva] = useState<IdSecao>("biblioteca");
-
-  useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") return;
-    const alvos = ID_SECOES.map((id) => document.getElementById(id)).filter(
-      (el): el is HTMLElement => el != null,
-    );
-    if (alvos.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entradas) => {
-        const visivel = entradas
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (visivel == null) return;
-        const id = visivel.target.id;
-        if (ehIdSecao(id)) setSecaoAtiva(id);
-      },
-      { rootMargin: "0px 0px -60% 0px", threshold: [0, 0.2, 0.6, 1] },
-    );
-    alvos.forEach((alvo) => observer.observe(alvo));
+  useLayoutEffect(() => {
+    recalcularEspaco();
+    if (typeof ResizeObserver === "undefined") return;
+    // O painel muda de altura ao abrir/fechar sanfona e ao trocar de aba.
+    const observer = new ResizeObserver(recalcularEspaco);
+    if (painelRef.current != null) observer.observe(painelRef.current);
+    if (navRef.current != null) observer.observe(navRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [recalcularEspaco, secaoAtiva]);
+
+  /**
+   * Troca de aba: marca o estado e ROLA até a barra grudar no topo, para a
+   * seção escolhida ficar imediatamente abaixo dela. O scroll é o feedback de
+   * que a troca aconteceu — sem ele a página só pisca.
+   */
+  const trocarSecao = useCallback(
+    (id: IdSecao) => {
+      setSecaoAtiva(id);
+      const barra = navRef.current;
+      const ancora = ancoraRef.current;
+      if (barra == null || ancora == null) return;
+      const rolador = acharRolador(barra);
+      const alvo =
+        ancora.getBoundingClientRect().top -
+        rolador.getBoundingClientRect().top +
+        rolador.scrollTop;
+      const suave = window.matchMedia("(prefers-reduced-motion: no-preference)")
+        .matches;
+      // Depois da pintura: o painel novo muda a altura e, sem esperar, o
+      // destino seria calculado sobre o layout velho.
+      requestAnimationFrame(() => {
+        rolador.scrollTo({ top: alvo, behavior: suave ? "smooth" : "auto" });
+      });
+    },
+    [acharRolador],
+  );
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
@@ -215,80 +230,92 @@ export function OpcionaisClient({
         </p>
       </div>
 
-      {/*
-        Âncoras, não `Tabs`: as duas seções COEXISTEM na mesma página e a
-        semântica ARIA de tab esconderia um painel. O toggle só ROLA até a seção
-        — sem rastrear a seção visível, sem IntersectionObserver e sem estado
-        reativo de "seção ativa" a manter em sincronia com o scroll.
-      */}
-      {/* Fundo `bg-fundo` (o creme da própria página), NÃO `bg-background`
-          (branco): sem fundo, o conteúdo rolava por trás e a barra parecia
-          solta; com branco, virava o card extra que o mockup não tem. O
-          `-mx-4 px-4` sangra até a borda para o conteúdo não espiar pelos
-          lados. Sem `border-b`: a moldura é a do próprio contêiner das
-          pílulas. */}
+      {/* Marcador não-sticky: é ele que diz onde a barra COMEÇA. A própria
+          barra, já grudada, devolveria sempre topo 0. */}
+      <div ref={ancoraRef} aria-hidden />
+
+      {/* Abas de verdade (não mais âncoras): só um painel existe por vez, então
+          a semântica correta é `tablist`/`tab`/`tabpanel`. Fundo `bg-fundo` (o
+          creme da própria página, não o branco do `bg-background`): sem fundo o
+          conteúdo rola por trás; com branco vira card extra. `-mx-4 px-4` sangra
+          até a borda para nada espiar pelos lados. */}
       <nav
         ref={navRef}
-        aria-label="Seções desta página"
         className="sticky top-0 z-20 -mx-4 mb-6 bg-fundo px-4 py-2"
       >
-        {/* Contêiner cheio, pílulas dividem o espaço igual (mockup aprovado). */}
-        <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
-          <LinkSecao
-            href="#biblioteca"
+        <div
+          role="tablist"
+          aria-label="Seções desta página"
+          className="flex gap-1 rounded-xl border border-border bg-card p-1"
+        >
+          <AbaSecao
+            id="biblioteca"
             ativo={secaoAtiva === "biblioteca"}
-            onClick={() => setSecaoAtiva("biblioteca")}
+            onSelecionar={trocarSecao}
           >
             Biblioteca
-          </LinkSecao>
-          <LinkSecao
-            href="#por-categoria"
+          </AbaSecao>
+          <AbaSecao
+            id="por-categoria"
             ativo={secaoAtiva === "por-categoria"}
-            onClick={() => setSecaoAtiva("por-categoria")}
+            onSelecionar={trocarSecao}
           >
             Por categoria de produto
-          </LinkSecao>
+          </AbaSecao>
         </div>
       </nav>
 
-      <div className="space-y-10">
-        <BibliotecaOpcionais
-          categoriasOpcional={categoriasOpcional}
-          opcionais={opcionais}
-          acoes={acoes}
-        />
-        <Separator />
-        <AssociacaoOpcionais
-          categoriasOpcional={categoriasOpcional}
-          opcionais={opcionais}
-          categoriasProduto={categoriasProduto}
-          associacoes={associacoes}
-          acoes={acoes}
-        />
+      <div ref={painelRef}>
+        {secaoAtiva === "biblioteca" ? (
+          <BibliotecaOpcionais
+            categoriasOpcional={categoriasOpcional}
+            opcionais={opcionais}
+            acoes={acoes}
+          />
+        ) : (
+          <AssociacaoOpcionais
+            categoriasOpcional={categoriasOpcional}
+            opcionais={opcionais}
+            categoriasProduto={categoriasProduto}
+            associacoes={associacoes}
+            acoes={acoes}
+          />
+        )}
       </div>
+
+      {/* Vazio medido: sem ele a rolagem para antes de a barra grudar no topo
+          quando o painel é curto. Só background, nada dentro. */}
+      <div aria-hidden style={{ height: espacoFinal }} />
     </main>
   );
 }
 
-/** Pílula do toggle (mockup aprovado). `flex-1`: as duas dividem o espaço do
+/** Pílula da aba (mockup aprovado). `flex-1`: as duas dividem o espaço do
  *  contêiner igual — sem isso ficam do tamanho do texto, coladas à esquerda.
- *  44px literais no alvo de toque. */
-function LinkSecao({
-  href,
-  ativo = false,
-  onClick,
+ *  `<button>` e não `<a href="#...">`: só um painel existe por vez, então não
+ *  há âncora para onde navegar. 44px literais no alvo de toque. */
+function AbaSecao({
+  id,
+  ativo,
+  onSelecionar,
   children,
 }: {
-  href: string;
-  ativo?: boolean;
-  onClick?: () => void;
+  id: IdSecao;
+  ativo: boolean;
+  onSelecionar: (id: IdSecao) => void;
   children: ReactNode;
 }) {
   return (
-    <a
-      href={href}
-      onClick={onClick}
-      aria-current={ativo ? "true" : undefined}
+    <button
+      type="button"
+      role="tab"
+      id={`aba-${id}`}
+      aria-selected={ativo}
+      aria-controls={id}
+      // A aba inativa sai da ordem de tabulação: num `tablist`, as setas ←→
+      // é que andam entre abas — Tab salta para o painel.
+      tabIndex={ativo ? 0 : -1}
+      onClick={() => onSelecionar(id)}
       className={`${ALVO_TOQUE} flex flex-1 items-center justify-center rounded-lg px-4 text-center text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
         ativo
           ? "bg-primary text-primary-foreground"
@@ -296,7 +323,7 @@ function LinkSecao({
       }`}
     >
       {children}
-    </a>
+    </button>
   );
 }
 
@@ -402,7 +429,7 @@ function BibliotecaOpcionais({
   }
 
   return (
-    <section id="biblioteca" className={SCROLL_MT}>
+    <section id="biblioteca" role="tabpanel" aria-labelledby="aba-biblioteca">
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="font-heading text-lg font-semibold text-foreground">
           Biblioteca
@@ -957,7 +984,7 @@ function AssociacaoOpcionais({
   }, [opcionais]);
 
   return (
-    <section id="por-categoria" className={SCROLL_MT}>
+    <section id="por-categoria" role="tabpanel" aria-labelledby="aba-por-categoria">
       <h2 className="mb-1 font-heading text-lg font-semibold text-foreground">
         Opcionais por categoria de produto
       </h2>

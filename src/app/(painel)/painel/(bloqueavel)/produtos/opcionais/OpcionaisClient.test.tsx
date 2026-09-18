@@ -110,6 +110,7 @@ function render(props: {
   opcionais?: Opcional[];
   associacoes?: Associacao[];
   acoes?: OpcionaisClientAcoes;
+  secaoInicial?: "biblioteca" | "por-categoria";
 } = {}): string {
   return renderToStaticMarkup(
     <OpcionaisClient
@@ -118,6 +119,7 @@ function render(props: {
       categoriasProduto={CATEGORIA_PRODUTO}
       associacoes={props.associacoes ?? []}
       acoes={props.acoes ?? acoesBase()}
+      secaoInicial={props.secaoInicial}
     />,
   );
 }
@@ -131,11 +133,17 @@ function associacao(categoriaOpcionalId: string, ordem: number): Associacao {
 }
 
 describe("injeção do painel do lojista — critério de aceite da 128", () => {
-  it("renderiza categoria, item, preço e checkbox de associação com os dados reais", () => {
+  it("renderiza categoria, item e preço na Biblioteca com os dados reais", () => {
     const html = render();
     expect(html).toContain("Laticínios");
     expect(html).toContain("Brie extra");
     expect(html).toContain(`+${formatarMoeda(5)}`);
+  });
+
+  it("renderiza a categoria de PRODUTO na aba de associação", () => {
+    // Separado do caso acima desde a 213: as duas seções deixaram de coexistir,
+    // então "Pizzas" (categoria de produto) só existe na outra aba.
+    const html = render({ secaoInicial: "por-categoria" });
     expect(html).toContain("Pizzas");
   });
 
@@ -173,7 +181,13 @@ describe("cartão de associação — checkbox e ordem fundidos (issue 213)", ()
   ];
 
   function renderDois(associacoes: Associacao[] = []) {
-    return render({ categoriasOpcional: DOIS_GRUPOS, associacoes });
+    // O cartão de associação vive na aba "por categoria"; desde a 213 a outra
+    // aba não é renderizada, então o teste abre direto na certa.
+    return render({
+      categoriasOpcional: DOIS_GRUPOS,
+      associacoes,
+      secaoInicial: "por-categoria",
+    });
   }
 
   it("não existe mais botão 'Reordenar' nem 'Salvar': o cartão salva sozinho", () => {
@@ -238,15 +252,35 @@ describe("cartão de associação — checkbox e ordem fundidos (issue 213)", ()
 });
 
 describe("hierarquia e navegação da página (issue 213)", () => {
-  it("o toggle é um <nav> de âncoras, não Tabs — as duas seções coexistem", () => {
-    // `Tabs` esconderia um painel, e o projeto nem tem `tabs.tsx`.
+  it("o toggle é um tablist: SÓ o painel da aba ativa existe no DOM", () => {
+    // Mudou na 213 a pedido do usuário: era `<nav>` de âncoras com as duas
+    // seções coexistindo. Agora é aba de verdade — selecionar uma ESCONDE a
+    // outra —, então a semântica correta é tablist/tab/tabpanel.
     const html = render();
+    expect(html).toContain('role="tablist"');
     expect(html).toContain('aria-label="Seções desta página"');
-    expect(html).toContain('href="#biblioteca"');
-    expect(html).toContain('href="#por-categoria"');
+    expect(html).toContain('id="aba-biblioteca"');
+    expect(html).toContain('id="aba-por-categoria"');
+    // Biblioteca é a aba inicial: o painel dela existe, o outro NÃO.
     expect(html).toContain('id="biblioteca"');
+    expect(html).not.toContain('id="por-categoria"');
+    // Sem âncora: não há para onde navegar quando o painel nem existe.
+    expect(html).not.toContain('href="#por-categoria"');
+  });
+
+  it("a aba ativa é a única preenchida e a única na ordem de tabulação", () => {
+    const html = render();
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('aria-selected="false"');
+    expect(html).toContain('tabindex="-1"');
+  });
+
+  it("abrindo em 'por categoria', o painel da Biblioteca some", () => {
+    const html = render({ secaoInicial: "por-categoria" });
     expect(html).toContain('id="por-categoria"');
-    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('id="biblioteca"');
+    // A busca é da Biblioteca — some junto com ela.
+    expect(html).not.toContain("Buscar opcional por nome");
   });
 
   it("o nome da categoria de opcional virou header do Card, com a contagem", () => {
