@@ -28,7 +28,17 @@ export const schemaOpcional = z
     // z.guid(): qualquer UUID com formato válido, espelhando o tipo `uuid` do Postgres
     categoria_opcional_id: z.guid(),
     ativo: z.boolean(),
-    ordem: z.number().int().min(0),
+    // OPCIONAL de propósito (216): ausente = "não mexer na ordem". `ordem` é
+    // propriedade da RPC `reordenar_itens_do_grupo_opcional` (215), a única
+    // escrita que garante permutação completa. A edição inline de nome/preço
+    // NÃO manda `ordem`; a aba Biblioteca, que tem campo numérico explícito,
+    // continua mandando, e a criação manda `max(ordem)+1`.
+    //
+    // Enquanto era obrigatório, `update({ ...parsed.data })` reescrevia a ordem
+    // a CADA edição. Como a coluna nasce `default 0`, todo grupo que nunca foi
+    // reordenado tem todas as linhas em 0 — editar o preço do item do meio
+    // mandava `ordem: 1` e o jogava para o fim, no painel E na vitrine.
+    ordem: z.number().int().min(0).optional(),
   })
   .strict();
 

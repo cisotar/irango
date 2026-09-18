@@ -51,6 +51,31 @@ describe("schemaOpcional", () => {
     expect(result.success).toBe(true);
   });
 
+  // ─────────────── `ordem` opcional (216, achado do `auditar`)
+  // `atualizarOpcional` faz `update({ ...parsed.data })`. Enquanto `ordem` era
+  // obrigatória, TODA edição de nome/preço reescrevia a ordem — e como a coluna
+  // nasce `default 0`, todo grupo nunca reordenado tinha tudo em 0, então
+  // editar o item do meio o jogava para o fim, no painel e na vitrine.
+  //
+  // Estes dois casos são a trava dessa regressão. Ela mora aqui, e não na UI,
+  // porque sem jsdom nesta máquina (issue 176) nenhum teste de componente
+  // distingue `ordem: indice` de `ordem: item.ordem` — o teste de mutação da
+  // 216 provou isso. No schema é asserível e não depende de DOM.
+  it("aceita payload SEM `ordem`, e a chave não aparece na saída", () => {
+    const { ordem: _descartada, ...semOrdem } = base;
+    const result = schemaOpcional.safeParse(semOrdem);
+    expect(result.success).toBe(true);
+    // O que importa para o `update({ ...parsed.data })`: a chave tem que estar
+    // AUSENTE, não `undefined` — senão o Postgres receberia `ordem = null`.
+    expect(result.success && "ordem" in result.data).toBe(false);
+  });
+
+  it("segue aceitando `ordem` explícita — a aba Biblioteca tem campo numérico", () => {
+    const result = schemaOpcional.safeParse({ ...base, ordem: 7 });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.ordem).toBe(7);
+  });
+
   it("rejeita preco negativo", () => {
     const result = schemaOpcional.safeParse({ ...base, preco: -1 });
     expect(result.success).toBe(false);

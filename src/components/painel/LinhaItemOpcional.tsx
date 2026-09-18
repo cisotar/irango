@@ -88,13 +88,23 @@ export type FormularioItemInlineProps = {
   grupoId: string;
   ativo: boolean;
   /**
-   * `ordem` do payload. É o ÍNDICE atual da linha, nunca o `item.ordem` das
-   * props: `atualizarOpcional` faz `update({...parsed.data})` sobre um schema
-   * `.strict()` que exige `ordem`, então mandar a ordem velha jogaria o item de
-   * volta para o lugar anterior logo depois de um reordenar. O pai dá flush no
-   * salvamento coalescido antes de chamar a action, e aí índice == ordem.
+   * `ordem` do payload — presente SÓ na criação, onde o item precisa nascer no
+   * fim (`max(ordem)+1`). Na EDIÇÃO fica `undefined`, e o schema a omite: a
+   * edição de nome/preço não é dona da ordem.
+   *
+   * Isto não é preferência de estilo, é a correção de um bug achado pelo
+   * `auditar` na 216. Enquanto a edição mandava o índice da linha, ela só
+   * preservava a posição se o que estava GRAVADO já fosse a permutação
+   * normalizada 0..n-1 — e não é: a coluna nasce `default 0`, então todo grupo
+   * nunca reordenado tem tudo em 0, e `removerOpcional` deixa buraco. Editar o
+   * preço do item do meio o jogava para o fim, inclusive na vitrine.
+   *
+   * Não mandar a ordem torna a classe inteira de bug impossível, em vez de
+   * depender de disciplina — e disciplina aqui não é testável: sem jsdom nesta
+   * máquina (issue 176), nenhum teste distingue `ordem: indice` de
+   * `ordem: item.ordem`, como o teste de mutação da 216 provou.
    */
-  ordem: number;
+  ordem?: number;
   /** Nomes das categorias de PRODUTO que usam o grupo. */
   alcance: readonly string[];
   emVoo: boolean;
@@ -136,12 +146,23 @@ export function FormularioItemInline({
 
   function salvar() {
     if (emVoo) return;
+    // Validar a STRING antes de converter. `Number("")` e `Number("   ")` dão 0,
+    // que passa no `.min(0)` do schema — o item entraria na vitrine a R$ 0,00
+    // com toast de sucesso. O mesmo `Number()` aceita `0x10` (16) e `1e3`
+    // (1000). O regex também dá a mensagem certa para `1.234,56`, que hoje
+    // cairia no genérico via NaN.
+    const bruto = preco.trim();
+    if (!/^\d+([.,]\d{1,2})?$/.test(bruto)) {
+      setErro("Informe o preço em reais, com até 2 casas (ex.: 4,50).");
+      return;
+    }
     const parsed = schemaOpcional.safeParse({
       nome: nome.trim(),
-      preco: paraNumero(preco),
+      preco: paraNumero(bruto),
       categoria_opcional_id: grupoId,
       ativo,
-      ordem,
+      // Ausente na edição: o schema a torna opcional e o `update` não a toca.
+      ...(ordem != null ? { ordem } : {}),
     });
     if (!parsed.success) {
       setErro("Confira o nome e o preço: o preço vai em reais, com até 2 casas.");
@@ -303,7 +324,6 @@ export function LinhaItemOpcional({
             precoInicial={String(item.preco).replace(".", ",")}
             grupoId={item.categoria_opcional_id}
             ativo={item.ativo}
-            ordem={indice}
             alcance={alcance}
             emVoo={emVoo}
             onSalvar={onSalvarEdicao}

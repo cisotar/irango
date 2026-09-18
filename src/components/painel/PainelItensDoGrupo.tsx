@@ -132,6 +132,15 @@ export function PainelItensDoGrupo({
         }
         params.aoSucesso();
         onSalvo();
+      } catch (e) {
+        // Sem este catch, uma action que REJEITA (rede caindo, erro não tratado
+        // do runtime) virava unhandled rejection: nenhum toast, nenhum anúncio,
+        // e a linha ficava aberta em `editando`/`confirmando` sem explicação.
+        // Detalhe só no log do servidor — a UI recebe mensagem genérica.
+        console.error("[PainelItensDoGrupo]", e);
+        const generico = "Não foi possível concluir a ação. Tente de novo.";
+        toast.error(generico);
+        anunciar(generico);
       } finally {
         setIdEmVoo(null);
       }
@@ -317,7 +326,10 @@ export function PainelItensDoGrupo({
           <FormularioItemInline
             grupoId={grupoId}
             ativo
-            ordem={itens.length}
+            // `max(ordem)+1`, não `itens.length`: com buraco deixado por uma
+            // remoção (A=0, C=2, D=3), `length` daria 3 e empataria com D, e o
+            // desempate por id decidiria a posição do item novo.
+            ordem={itens.reduce((m, i) => Math.max(m, i.ordem), -1) + 1}
             alcance={alcance}
             emVoo={idEmVoo === "novo"}
             onSalvar={criarItem}

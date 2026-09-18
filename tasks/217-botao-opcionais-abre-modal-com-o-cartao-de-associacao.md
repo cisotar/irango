@@ -52,5 +52,9 @@ Qualquer mudança de comportamento do cartão — ele chega pronto da 216. A pá
 - [ ] `produtos/page.tsx` carrega os opcionais no `Promise.all` existente, não em sequência;
 - [ ] via admin compila e funciona com as actions escopadas por `lojaId`;
 - [ ] editar item pelo modal reflete em `/painel/produtos` sem recarregar à mão;
+- [ ] **cabeçalho do cartão `sticky top-0`** dentro do corpo rolável do modal
+      (desenho §3.4 nº 6 da 216). Não entrou na 216 de propósito: lá o cartão não
+      tem ancestral rolável, então seria CSS morto. É esta issue que cria o corpo
+      rolável, logo é aqui que o critério vale;
 - [ ] a ordem gravada aparece na vitrine `/loja/[slug]`;
 - [ ] `npx tsc --noEmit` → `npm run lint` → `npm test` → `npm run build`, todos verdes.
