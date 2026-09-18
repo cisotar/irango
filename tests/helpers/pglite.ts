@@ -25,11 +25,22 @@ create table if not exists auth.users (
 
 create or replace function auth.uid() returns uuid
   language sql stable
-as $$ select nullif(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid $$;
+as $$ select coalesce(
+       nullif(current_setting('request.jwt.claim.sub', true), ''),
+       (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
+     )::uuid $$;
 
+-- Definição FIEL à do Supabase cloud (conferida por supabase db dump --schema
+-- auth, issue 215): devolve NULL quando não há JWT. O coalesce(..., 'anon') que
+-- estava aqui antes era mais permissivo que a produção e escondia um fail-open
+-- na trava T2 das RPCs security definer — harness que mente a favor do código é
+-- pior que harness ausente.
 create or replace function auth.role() returns text
   language sql stable
-as $$ select coalesce(current_setting('request.jwt.claims', true)::json->>'role', 'anon') $$;
+as $$ select coalesce(
+       nullif(current_setting('request.jwt.claim.role', true), ''),
+       (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role')
+     )::text $$;
 
 create or replace function auth.email() returns text
   language sql stable

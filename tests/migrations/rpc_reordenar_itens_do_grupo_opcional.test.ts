@@ -242,6 +242,31 @@ async function comSessaoEClaimDivergentes<T>(
   }
 }
 
+/**
+ * Chama SEM nenhum JWT e SEM `set local role` — o contexto de um chamador de
+ * DENTRO do banco (SQL editor como postgres, pg_cron, trigger, ou outra função
+ * `definer` que envolva esta). Aqui `auth.role()` devolve NULL de verdade e
+ * `current_setting('role')` não é nem 'authenticated' nem 'anon'.
+ */
+async function semJwtNemRoleDeSessao<T>(
+  t: TestDb,
+  fn: (db: PGlite) => Promise<T>,
+): Promise<T> {
+  await t.db.exec("begin");
+  try {
+    // NÃO definir o GUC: sem JWT o Supabase deixa `request.jwt.claims` ausente,
+    // e `current_setting(..., true)` devolve NULL. Setá-lo como '' seria outra
+    // coisa (quebra o parse de json antes de chegar em T2).
+    await t.db.query(`select set_config('request.jwt.claims', null, true)`);
+    const result = await fn(t.db);
+    await t.db.exec("commit");
+    return result;
+  } catch (err) {
+    await t.db.exec("rollback");
+    throw err;
+  }
+}
+
 describe("215 RPC reordenar_itens_do_grupo_opcional — definer + RLS real (pglite)", () => {
   let t: TestDb;
   let c: Cenario;
@@ -606,7 +631,31 @@ describe("215 RPC reordenar_itens_do_grupo_opcional — definer + RLS real (pgli
     expect(r.rows.map((l) => l.id)).toEqual([c.i4, c.i1, c.i2]);
     expect(r.rows.map((l) => Number(l.ordem))).toEqual([0, 1, 3]);
   });
+
+  // ───────────────────────────── I19 (achado da auditoria de segurança, pós-215)
+  it("[215-I19] sem JWT (auth.role() NULL) e sem role de sessão → T2 recusa; NÃO pode ser fail-open", async () => {
+    // `auth.role()` do Supabase devolve NULL quando não há JWT (conferido por
+    // `supabase db dump --schema auth`). Com NULL, `auth.role() = 'service_role'`
+    // é NULL, logo `v_e_servico` é NULL; se o `exists` de dono também for false,
+    // `not (NULL or false)` é NULL — e plpgsql trata `IF NULL` como else, então
+    // o raise NÃO dispara e o UPDATE roda. Fail-OPEN, apesar de o comentário de
+    // T2 no SQL afirmar "Fail-closed por construção".
+    //
+    // Não é alcançável via PostgREST (que sempre fixa o role em anon /
+    // authenticated / service_role), mas É o contexto de todo chamador de dentro
+    // do banco. Numa função que abriu mão da RLS, a trava tem que negar por
+    // omissão, não aceitar.
+    const f = await falhaDe(() =>
+      semJwtNemRoleDeSessao(t, (db) =>
+        chamarRpc(db, c.lojaB, c.gSucos, [c.s2, c.s1]),
+      ),
+    );
+    expect(f.code).toBe("P0001");
+    expect(f.message).toMatch(/escopo negado/);
+    await esperarBaselineIntacto();
+  });
 });
+
 
 /**
  * CONTRATO PARA A FASE GREEN — issue 215, migration 1:

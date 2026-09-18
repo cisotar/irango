@@ -201,6 +201,23 @@ async function ordemAtual(
   return grupos.map((g) => porGrupo.get(g) ?? -1);
 }
 
+/** Sem JWT e sem `set local role` — o contexto de chamador de DENTRO do banco. */
+async function semJwtNemRoleDeSessao<T>(
+  t: TestDb,
+  fn: (db: PGlite) => Promise<T>,
+): Promise<T> {
+  await t.db.exec("begin");
+  try {
+    await t.db.query(`select set_config('request.jwt.claims', null, true)`);
+    const result = await fn(t.db);
+    await t.db.exec("commit");
+    return result;
+  } catch (err) {
+    await t.db.exec("rollback");
+    throw err;
+  }
+}
+
 describe("211/215 reordenar_opcionais_da_categoria convertida para SECURITY DEFINER", () => {
   let t: TestDb;
   let c: Cenario;
@@ -355,7 +372,26 @@ describe("211/215 reordenar_opcionais_da_categoria convertida para SECURITY DEFI
     // Releitura em bloco asService SEPARADO (o de cima sofreu rollback).
     expect(await ordemAtual(t, c.catPizzas, c.g)).toEqual([...ORDEM_PIZZAS]);
   });
+
+  // ───────────────────────────── G6 (achado da auditoria de segurança, pós-215)
+  it("[211-G6] sem JWT (auth.role() NULL) e sem role de sessão → T2 recusa; NÃO pode ser fail-open", async () => {
+    // Espelho de [215-I19] para a função de GRUPOS. Sem JWT o `auth.role()` do
+    // Supabase devolve NULL, `v_e_servico` vira NULL, `not (NULL or false)` é
+    // NULL, e plpgsql trata `IF NULL` como else — o raise não dispara e o
+    // UPDATE roda. A trava que substitui a RLS perdida com o DEFINER não pode
+    // aceitar por omissão.
+    const f = await falhaDe(() =>
+      semJwtNemRoleDeSessao(t, (db) =>
+        chamarRpc(db, c.lojaB, c.catB, [c.gb[1], c.gb[0]]),
+      ),
+    );
+    expect(f.code).toBe("P0001");
+    expect(f.message).toMatch(/escopo negado/);
+
+    await esperarBaselineIntacto();
+  });
 });
+
 
 /**
  * CONTRATO PARA A FASE GREEN — issue 215, migration 2 (fecha o 211):
