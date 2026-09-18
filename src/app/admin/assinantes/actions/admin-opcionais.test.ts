@@ -35,6 +35,10 @@ const CAT_OPC_PROPRIA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // categoria de 
 const CAT_OPC_ALHEIA = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; // categoria de opcional de outra loja
 const CAT_PROD_PROPRIA = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // categoria de PRODUTO da loja-alvo
 const CAT_PROD_ALHEIA = "dddddddd-dddd-dddd-dddd-dddddddddddd"; // categoria de PRODUTO de outra loja
+// [215] itens (linhas de `opcionais`) dentro de UM grupo da loja-alvo.
+const ITEM_1 = "d1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1";
+const ITEM_2 = "d2d2d2d2-d2d2-4d2d-8d2d-d2d2d2d2d2d2";
+const ITEM_3 = "d3d3d3d3-d3d3-4d3d-8d3d-d3d3d3d3d3d3";
 
 // ── Captura do que cada operação manda ao banco, por TABELA tocada. ───────────
 type Op = {
@@ -53,6 +57,13 @@ let respostaPorTabela: Record<
   string,
   { data: unknown; error: unknown; count?: number }
 >;
+
+// ── [215] Captura das chamadas de RPC do client RAIZ. Até esta issue NENHUMA
+//    action admin usava `svc.rpc(...)`; a 215 é a primeira, então o molde do
+//    terminador vem literalmente de src/lib/actions/opcional.test.ts:84-87.
+type ChamadaRpc = { nome: string; args: Record<string, unknown> };
+let chamadasRpc: ChamadaRpc[];
+let respostaRpc: { data: unknown; error: unknown };
 
 function makeChain() {
   const client: Record<string, unknown> = {
@@ -102,6 +113,12 @@ function makeChain() {
       };
       return queryChain;
     },
+    // [215] `rpc` é terminador PRÓPRIO do client raiz (não passa por `.from`):
+    // devolve a Promise direto, igual ao supabase-js real.
+    rpc: (nome: string, args: Record<string, unknown>) => {
+      chamadasRpc.push({ nome, args });
+      return Promise.resolve(respostaRpc);
+    },
   };
   return client;
 }
@@ -119,6 +136,17 @@ vi.mock("@/lib/auth/admin", () => ({
   verificarAdminSaaS: () => verificarAdminSaaS(),
 }));
 
+// [215] `registrarAcessoAdmin` (best-effort, fire-and-forget: INSERT em
+// `admin_acessos`) é espionado — asserir a trilha pelo `ops` dependeria de
+// `SAAS_ADMIN_USER_ID` no ambiente e de flush de microtask. O resto do módulo
+// (validarLojaIdAdmin, prepararContextoAdmin, escopo, revalidarLojaAdmin) fica
+// REAL: é ele que injeta o `.eq("loja_id")` que os testes deste arquivo provam.
+const registrarAcessoAdmin = vi.fn();
+vi.mock("@/lib/actions/admin-loja", async (orig) => {
+  const real = (await orig()) as Record<string, unknown>;
+  return { ...real, registrarAcessoAdmin: (...a: unknown[]) => registrarAcessoAdmin(...a) };
+});
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 // 'use server' é só diretiva; o módulo é importável no runner node. As actions
@@ -133,6 +161,8 @@ import {
   removerOpcionalAdmin,
   salvarAssociacaoOpcionaisAdmin,
   reordenarOpcionaisDaCategoriaAdmin,
+  // AINDA NÃO EXISTE (issue 215) — este import é o vermelho da camada 3.
+  reordenarItensDoGrupoOpcionalAdmin,
 } from "./admin-opcionais";
 
 // ── Payloads válidos sob os schemas de lib/validacoes/opcional.ts ────────────
@@ -166,6 +196,8 @@ function opEscrita(tabela: string): Op | undefined {
 beforeEach(() => {
   vi.clearAllMocks();
   ops = [];
+  chamadasRpc = [];
+  respostaRpc = { data: null, error: null };
   respostaPorTabela = {
     // SELECT de posse: por padrão as referências informadas são da LOJA-ALVO.
     opcionais_categorias: {
@@ -543,11 +575,25 @@ describe("salvarAssociacaoOpcionaisAdmin (Server Action — admin SaaS)", () => 
 
 // ─────────────────────── reordenarOpcionaisDaCategoriaAdmin ─────────────────
 /**
- * Variante ADMIN de `reordenarOpcionaisDaCategoria` (issue 208). Não reusa a
- * RPC `security invoker` do lojista — o isolamento vem do escopo explícito por
- * `loja.lojaId` em toda leitura e escrita, igual ao resto deste arquivo.
+ * Fase RED (TDD) da issue 215 — este describe foi REESCRITO e é o que FECHA O
+ * DÉBITO 211.
+ *
+ * Antes: a action lia a permutação (1 SELECT) e gravava num LOOP de N `update`
+ * com `count: "exact"`. Aquilo não era atômico — uma falha no meio deixava
+ * posições parciais gravadas — e o `count` só fechava a janela TOCTOU de cada
+ * linha, uma por vez. A 215 torna a RPC `reordenar_opcionais_da_categoria`
+ * `security definer` com a trava T2 no corpo, e a via admin passa a usá-la:
+ * N+1 round-trips viram 1, e a atomicidade vem da transação do Postgres
+ * (caso [211-G5] da suíte pglite).
+ *
+ * O que este describe prova agora:
+ *   - ZERO toque direto em `categoria_produto_opcionais` — nem SELECT, nem
+ *     update. Se o loop voltar, [211-A2] falha nomeando as Ops;
+ *   - UMA chamada de RPC, com `p_loja_id` = loja-alvo da URL, nunca do payload;
+ *   - os guards que já existiam (lojaId inválido, admin negado, categoria de
+ *     produto de outra loja, `loja_id` hostil, mensagem genérica) continuam.
  */
-describe("reordenarOpcionaisDaCategoriaAdmin (Server Action — issue 208)", () => {
+describe("reordenarOpcionaisDaCategoriaAdmin (Server Action — issue 215 fecha o 211)", () => {
   function payload(over: Record<string, unknown> = {}) {
     return {
       categoria_id: CAT_PROD_PROPRIA,
@@ -556,167 +602,276 @@ describe("reordenarOpcionaisDaCategoriaAdmin (Server Action — issue 208)", () 
     };
   }
 
-  beforeEach(() => {
-    // Permutação completa por padrão: os dois ids do payload cobrem exatamente
-    // o que está associado hoje na loja-alvo.
-    respostaPorTabela.categoria_produto_opcionais = {
-      data: [
-        { categoria_opcional_id: CAT_OPC_PROPRIA },
-        { categoria_opcional_id: CAT_OPC_ALHEIA },
-      ],
-      error: null,
-    };
-  });
+  function rpcGrupos(): ChamadaRpc | undefined {
+    return chamadasRpc.find((c) => c.nome === "reordenar_opcionais_da_categoria");
+  }
 
-  it("caminho feliz: grava ordem 0..n-1 na sequência do payload, escopado por loja-alvo E categoria → { ok:true }", async () => {
+  it("[211-A1] caminho feliz: UMA chamada de RPC com p_loja_id da loja-alvo, na ordem do payload → { ok:true }", async () => {
     const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    // A chamada de RPC é asserida ANTES do resultado: assim o vermelho desta
+    // fase acusa a AUSÊNCIA da RPC, não um { ok:false } que o caminho antigo
+    // devolveria por outro motivo.
+    expect(chamadasRpc).toHaveLength(1);
+    expect(chamadasRpc[0].nome).toBe("reordenar_opcionais_da_categoria");
+    expect(rpcGrupos()?.args).toEqual({
+      p_loja_id: LOJA_ALVO,
+      p_categoria_id: CAT_PROD_PROPRIA,
+      p_ids: [CAT_OPC_PROPRIA, CAT_OPC_ALHEIA],
+    });
     expect(r).toEqual({ ok: true });
-    const updates = ops.filter(
-      (o) => o.tabela === "categoria_produto_opcionais" && o.update,
-    );
-    expect(updates).toHaveLength(2);
-    expect(updates[0].update).toEqual({ ordem: 0 });
-    expect(updates[0].filtros).toContainEqual(["loja_id", LOJA_ALVO]);
-    expect(updates[0].filtros).toContainEqual(["categoria_id", CAT_PROD_PROPRIA]);
-    expect(updates[0].filtros).toContainEqual([
-      "categoria_opcional_id",
-      CAT_OPC_PROPRIA,
-    ]);
-    expect(updates[1].update).toEqual({ ordem: 1 });
-    expect(updates[1].filtros).toContainEqual([
-      "categoria_opcional_id",
-      CAT_OPC_ALHEIA,
-    ]);
   });
 
-  it("cada UPDATE pede `count: \"exact\"` — sem isso a action não sabe se afetou a linha", async () => {
+  it("[211-A2] o loop de N update MORREU: zero SELECT e zero update em categoria_produto_opcionais", async () => {
+    // É o critério de aceite do 211. A escrita inteira vive dentro da transação
+    // da RPC; qualquer `.from("categoria_produto_opcionais")` sobrando aqui é a
+    // volta do N+1 não-atômico.
     await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
-    const updates = ops.filter(
-      (o) => o.tabela === "categoria_produto_opcionais" && o.update,
-    );
-    expect(updates).toHaveLength(2);
-    for (const u of updates) {
-      expect(u.updateOpts).toEqual({ count: "exact" });
-    }
-  });
-
-  it("TOCTOU: linha some entre o SELECT e o UPDATE (count 0) → { ok:false }, PARA no primeiro e não segue o loop", async () => {
-    // Permutação confere na leitura, mas o UPDATE não acha a linha: sem a
-    // checagem de `count` isso passaria como { ok:true } com posição faltando.
-    respostaPorTabela.categoria_produto_opcionais = {
-      data: [
-        { categoria_opcional_id: CAT_OPC_PROPRIA },
-        { categoria_opcional_id: CAT_OPC_ALHEIA },
-      ],
-      error: null,
-      count: 0,
-    };
-    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
-    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    const tocadas = ops.filter((o) => o.tabela === "categoria_produto_opcionais");
     expect(
-      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
-    ).toHaveLength(1);
-  });
-
-  it("RN-5b: categoria_id (de produto) que não pertence à loja-alvo → { ok:false }, zero UPDATE", async () => {
-    respostaPorTabela.categorias = { data: null, error: null };
-    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
-    expect(r.ok).toBe(false);
-    expect(
-      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
+      tocadas,
+      `esperava ZERO toque direto na tabela (a RPC faz tudo), veio: ${JSON.stringify(tocadas)}`,
     ).toHaveLength(0);
   });
 
-  it("lista SUBCONJUNTO (falta um id associado) → { ok:false }, zero UPDATE (permutação incompleta)", async () => {
-    // Só 1 dos 2 ids associados está no payload — não é permutação completa.
-    const r = await reordenarOpcionaisDaCategoriaAdmin(
-      LOJA_ALVO,
-      // min(2) exige pelo menos 2 ids; usa um id qualquer de mesmo formato para
-      // preencher sem cobrir o par inteiro.
-      payload({
-        categoria_opcional_id: [
-          CAT_OPC_PROPRIA,
-          "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-        ],
-      }),
-    );
-    expect(r.ok).toBe(false);
-    expect(
-      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
-    ).toHaveLength(0);
-  });
-
-  it("lista com id que NÃO está associado à categoria (id alheio) → { ok:false }, zero UPDATE", async () => {
-    respostaPorTabela.categoria_produto_opcionais = {
-      data: [{ categoria_opcional_id: CAT_OPC_PROPRIA }],
-      error: null,
-    };
-    const r = await reordenarOpcionaisDaCategoriaAdmin(
-      LOJA_ALVO,
-      payload({ categoria_opcional_id: [CAT_OPC_PROPRIA, CAT_OPC_ALHEIA] }),
-    );
-    expect(r.ok).toBe(false);
-    expect(
-      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
-    ).toHaveLength(0);
-  });
-
-  it("propriedade hostil loja_id no payload é descartada ANTES do parse — grava sempre na loja-alvo da URL", async () => {
+  it("[211-A3] propriedade hostil loja_id no payload é DESCARTADA — a RPC recebe sempre a loja-alvo da URL", async () => {
     const r = await reordenarOpcionaisDaCategoriaAdmin(
       LOJA_ALVO,
       payload({ loja_id: LOJA_OUTRA }),
     );
     expect(r).toEqual({ ok: true });
-    const updates = ops.filter(
-      (o) => o.tabela === "categoria_produto_opcionais" && o.update,
-    );
-    for (const u of updates) {
-      expect(u.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
-      expect(u.filtros).not.toContainEqual(["loja_id", LOJA_OUTRA]);
-    }
+    expect(rpcGrupos()?.args.p_loja_id).toBe(LOJA_ALVO);
+    expect(JSON.stringify(rpcGrupos()?.args)).not.toContain(LOJA_OUTRA);
   });
 
-  it("lojaId inválido (não-uuid) na URL → { ok:false }, service_role nunca criado", async () => {
+  it("[211-A4] RN-5b: categoria_id (de produto) que não pertence à loja-alvo → { ok:false }, zero RPC", async () => {
+    respostaPorTabela.categorias = { data: null, error: null };
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  it("[211-A5] permutação incompleta / id alheio: a RPC recusa (P0001) → mensagem genérica, sem vazar detalhe", async () => {
+    // A checagem de permutação deixou de ser feita em JS (TOCTOU) e passou a
+    // viver dentro da transação — aqui só se prova o TRATAMENTO do erro.
+    respostaRpc = {
+      data: null,
+      error: { message: "ids nao formam a permutacao completa", code: "P0001" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(JSON.stringify(r)).not.toContain("permutacao");
+    expect(JSON.stringify(r)).not.toContain("P0001");
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("[211-A6] falha da RPC → registrarAcessoAdmin NÃO é chamado (trilha não registra sucesso que não houve)", async () => {
+    respostaRpc = { data: null, error: { message: "boom", code: "P0001" } };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
+    expect(registrarAcessoAdmin).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("[211-A7] lojaId inválido (não-uuid) na URL → { ok:false }, service_role nunca criado, zero RPC", async () => {
     const r = await reordenarOpcionaisDaCategoriaAdmin("nao-e-uuid", payload());
-    expect(r.ok).toBe(false);
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
     expect(createServiceClient).not.toHaveBeenCalled();
+    expect(chamadasRpc).toHaveLength(0);
   });
 
-  it("erro de banco na checagem de posse da categoria de produto (lança) → mensagem genérica, sem vazar detalhe", async () => {
-    // categoriaProdutoPertenceALoja lança quando o SELECT devolve error (não
-    // apenas `data: null`) — caminho de exceção diferente do "categoria
-    // inexistente" (RN-5b acima), capturado pelo catch genérico da action.
+  it("[211-A8] erro de banco na checagem de posse da categoria de produto (lança) → genérico, zero RPC", async () => {
     respostaPorTabela.categorias = { data: null, error: { message: "boom interno" } };
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
     expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
     expect(JSON.stringify(r)).not.toContain("boom interno");
+    expect(chamadasRpc).toHaveLength(0);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it("erro de banco no SELECT de permutação (categoria_produto_opcionais) → mensagem genérica, zero UPDATE", async () => {
-    respostaPorTabela.categoria_produto_opcionais = {
-      data: null,
-      error: { message: "boom select" },
-    };
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const r = await reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload());
-    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
-    expect(JSON.stringify(r)).not.toContain("boom select");
-    expect(
-      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
-    ).toHaveLength(0);
-    spy.mockRestore();
-  });
-
-  it("fail-closed: admin negado → PROPAGA, zero UPDATE", async () => {
+  it("[211-A9] fail-closed: admin negado → PROPAGA, zero RPC", async () => {
     verificarAdminSaaS.mockRejectedValueOnce(new Error("Acesso negado."));
     await expect(
       reordenarOpcionaisDaCategoriaAdmin(LOJA_ALVO, payload()),
     ).rejects.toThrow("Acesso negado.");
-    expect(
-      ops.filter((o) => o.tabela === "categoria_produto_opcionais" && o.update),
-    ).toHaveLength(0);
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  it("[211-A10] payload inválido (lista de 1, duplicata) → { ok:false }, zero RPC", async () => {
+    for (const ids of [[CAT_OPC_PROPRIA], [CAT_OPC_PROPRIA, CAT_OPC_PROPRIA]]) {
+      chamadasRpc = [];
+      const r = await reordenarOpcionaisDaCategoriaAdmin(
+        LOJA_ALVO,
+        payload({ categoria_opcional_id: ids }),
+      );
+      expect(r.ok, `ids ${JSON.stringify(ids)} deveriam ser reprovados`).toBe(false);
+      expect(chamadasRpc).toHaveLength(0);
+    }
   });
 });
+
+// ────────────────────── reordenarItensDoGrupoOpcionalAdmin ──────────────────
+/**
+ * Fase RED (TDD) da issue 215, camada 3 — o ESPELHO ADMIN da action do lojista.
+ *
+ * A action AINDA NÃO EXISTE: o import no topo deste arquivo falha e derruba o
+ * arquivo inteiro. Vermelho legítimo; nenhuma linha de produção aqui.
+ *
+ * O espelho existe porque as duas vias gravam a MESMA coluna com a MESMA regra —
+ * a única diferença é de onde vem a loja: `auth.uid()` no lojista, `lojaId` da URL
+ * admin aqui. O que este describe fecha, e que a suíte pglite não alcança:
+ * `p_loja_id` nunca pode vir do payload (é o [215-I4], onde nem `service_role`
+ * salva de escrever na loja errada se o argumento for escolhido pelo cliente).
+ */
+describe("reordenarItensDoGrupoOpcionalAdmin (Server Action — issue 215)", () => {
+  function payload(over: Record<string, unknown> = {}) {
+    return {
+      categoria_opcional_id: CAT_OPC_PROPRIA,
+      opcional_id: [ITEM_3, ITEM_1, ITEM_2],
+      ...over,
+    };
+  }
+
+  function rpcItens(): ChamadaRpc | undefined {
+    return chamadasRpc.find((c) => c.nome === "reordenar_itens_do_grupo_opcional");
+  }
+
+  it("[215-B1] caminho feliz: UMA RPC com nome e args exatos, na ordem do payload → { ok:true }", async () => {
+    const r = await reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: true });
+    expect(chamadasRpc).toHaveLength(1);
+    expect(chamadasRpc[0].nome).toBe("reordenar_itens_do_grupo_opcional");
+    expect(rpcItens()?.args).toEqual({
+      p_loja_id: LOJA_ALVO,
+      p_categoria_opcional_id: CAT_OPC_PROPRIA,
+      p_ids: [ITEM_3, ITEM_1, ITEM_2],
+    });
+  });
+
+  it("[215-B2] p_loja_id vem do lojaId da URL, NUNCA do payload (loja_id hostil é descartado)", async () => {
+    const r = await reordenarItensDoGrupoOpcionalAdmin(
+      LOJA_ALVO,
+      payload({ loja_id: LOJA_OUTRA }),
+    );
+    expect(r).toEqual({ ok: true });
+    expect(rpcItens()?.args.p_loja_id).toBe(LOJA_ALVO);
+    expect(JSON.stringify(rpcItens()?.args)).not.toContain(LOJA_OUTRA);
+  });
+
+  it("[215-B3] lojaId inválido (não-uuid) na URL → { ok:false }, service_role nunca criado, zero RPC", async () => {
+    const r = await reordenarItensDoGrupoOpcionalAdmin("nao-e-uuid", payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  it("[215-B4] fail-closed: admin negado → PROPAGA a exceção, zero RPC", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("Acesso negado."));
+    await expect(
+      reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, payload()),
+    ).rejects.toThrow("Acesso negado.");
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  it("[215-B5] grupo de OUTRA loja (buscarPorId escopado devolve null) → { ok:false }, zero RPC", async () => {
+    respostaPorTabela.opcionais_categorias = { data: null, error: null };
+    const r = await reordenarItensDoGrupoOpcionalAdmin(
+      LOJA_ALVO,
+      payload({ categoria_opcional_id: CAT_OPC_ALHEIA }),
+    );
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(chamadasRpc).toHaveLength(0);
+  });
+
+  it("[215-B6] o SELECT de posse do grupo é escopado por loja_id (wrapper escopo.buscarPorId)", async () => {
+    await reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, payload());
+    const posse = ops.find((o) => o.tabela === "opcionais_categorias" && o.selected);
+    expect(posse?.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
+    expect(posse?.filtros).toContainEqual(["id", CAT_OPC_PROPRIA]);
+  });
+
+  it("[215-B7] payload inválido (lista de 1, duplicata, uuid lixo) → { ok:false }, zero RPC", async () => {
+    const casos: unknown[] = [
+      payload({ opcional_id: [ITEM_1] }),
+      payload({ opcional_id: [ITEM_1, ITEM_1] }),
+      payload({ categoria_opcional_id: "nao-e-uuid" }),
+      payload({ opcional_id: [ITEM_1, "nao-e-uuid"] }),
+      {},
+    ];
+    for (const caso of casos) {
+      chamadasRpc = [];
+      const r = await reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, caso);
+      expect(r.ok, `payload ${JSON.stringify(caso)} deveria ser reprovado`).toBe(false);
+      expect(chamadasRpc).toHaveLength(0);
+    }
+  });
+
+  it("[215-B8] erro da RPC (P0001) → mensagem genérica, detalhe só no console.error do servidor", async () => {
+    respostaRpc = {
+      data: null,
+      error: { message: "ids nao formam a permutacao completa do grupo", code: "P0001" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, payload());
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar a ordem." });
+    expect(JSON.stringify(r)).not.toContain("permutacao");
+    expect(JSON.stringify(r)).not.toContain("P0001");
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("[215-B9] sucesso: registrarAcessoAdmin com acao 'opcional.item.reordenar' e entidadeId do grupo", async () => {
+    await reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, payload());
+    expect(registrarAcessoAdmin).toHaveBeenCalledTimes(1);
+    expect(registrarAcessoAdmin).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        lojaId: LOJA_ALVO,
+        acao: "opcional.item.reordenar",
+        entidadeId: CAT_OPC_PROPRIA,
+      }),
+    );
+  });
+
+  it("[215-B10] falha da RPC → registrarAcessoAdmin NÃO é chamado", async () => {
+    respostaRpc = { data: null, error: { message: "boom", code: "P0001" } };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, payload());
+    expect(registrarAcessoAdmin).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("[215-B11] nenhuma escrita direta em `opcionais` — a ordem só muda dentro da RPC", async () => {
+    await reordenarItensDoGrupoOpcionalAdmin(LOJA_ALVO, payload());
+    expect(opEscrita("opcionais")).toBeUndefined();
+  });
+});
+
+/**
+ * CONTRATO PARA A FASE GREEN (executar) — issue 215, via admin:
+ *
+ *   // src/app/admin/assinantes/actions/admin-opcionais.ts
+ *   export async function reordenarItensDoGrupoOpcionalAdmin(
+ *     lojaId: string,
+ *     payload: unknown,
+ *   ): Promise<Resultado>
+ *
+ * Sequência: `validarLojaIdAdmin(lojaId)` → `schemaReordenacaoItensDoGrupo
+ * .safeParse(descartarLojaId(payload))` → `prepararContextoAdmin(loja.lojaId)` →
+ * `categoriaOpcionalPertenceALoja(escopo, categoria_opcional_id)` →
+ * `svc.rpc("reordenar_itens_do_grupo_opcional", { p_loja_id: loja.lojaId,
+ *   p_categoria_opcional_id: categoria_opcional_id, p_ids: opcional_id })` →
+ * `registrarAcessoAdmin(svc, { lojaId: loja.lojaId, acao: "opcional.item.reordenar",
+ *   entidadeId: categoria_opcional_id })` → `revalidarLojaAdmin(loja.lojaId)`.
+ * Qualquer falha → `{ ok: false, erro: ERRO_ORDEM_ADMIN }` (constante já existente, :48).
+ *
+ * E em `reordenarOpcionaisDaCategoriaAdmin`: remover o SELECT de permutação e o
+ * loop de N `update` (:464-511), trocando por uma única
+ * `svc.rpc("reordenar_opcionais_da_categoria", { p_loja_id: loja.lojaId,
+ * p_categoria_id: categoria_id, p_ids: categoria_opcional_id })`.
+ *
+ * Casos que precisam passar: [211-A1]..[211-A10] e [215-B1]..[215-B11].
+ */
