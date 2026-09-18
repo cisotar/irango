@@ -1243,6 +1243,14 @@ export type Database = {
         Args: { p_ids: string[]; p_loja_id: string }
         Returns: number
       }
+      reordenar_itens_do_grupo_opcional: {
+        Args: {
+          p_categoria_opcional_id: string
+          p_ids: string[]
+          p_loja_id: string
+        }
+        Returns: number
+      }
       reordenar_opcionais_da_categoria: {
         Args: { p_categoria_id: string; p_ids: string[]; p_loja_id: string }
         Returns: number
