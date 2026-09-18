@@ -61,6 +61,9 @@ function dentroDaLista(html: string): string {
  * é cosmética: as classes do shadcn incluem `disabled:pointer-events-none`, e
  * procurar a substring "disabled" no markup cru daria falso positivo.
  */
+/** O `<p>` do status do próprio modo — vazio enquanto nada está em voo. */
+const RODAPE_STATUS = 'class="h-4 text-xs text-muted-foreground"';
+
 function botoesDeMover(html: string): string[] {
   return (html.match(/<button[^>]*aria-label="Mover [^"]*"[^>]*>/g) ?? []).map(
     (tag) => tag.replace(/\sclass="[^"]*"/g, ""),
@@ -124,9 +127,49 @@ describe("ReordenarOpcionaisDaCategoria — markup do modo (issue 209)", () => {
     expect(html.indexOf('role="status"')).toBeLessThan(html.indexOf("<ol"));
   });
 
-  it("anuncia a entrada no modo com o total de grupos", () => {
+  it("anuncia o total de grupos na ordem da vitrine", () => {
+    // Desde a 213 não existe mais "entrar no modo": a lista está sempre visível
+    // dentro do cartão da categoria de produto.
     const html = render([MOLHOS, QUEIJOS, BORDAS]);
-    expect(html).toContain("Modo reordenar ativado. 3 grupos de opcional.");
+    expect(html).toContain("3 grupos de opcional na ordem da vitrine.");
+    expect(html).not.toContain("Modo reordenar ativado");
+  });
+
+  it("o `prefixo` do grupo é renderizado ANTES da alça (slot do checkbox, 213)", () => {
+    // É onde o cartão encaixa o checkbox "remover deste cartão". Sem o slot, o
+    // checkbox só caberia fora da linha e a ordem de tabulação viraria
+    // alça → setas → kebab → checkbox, com a ação MAIS frequente por último.
+    const html = renderToStaticMarkup(
+      <ReordenarOpcionaisDaCategoria
+        categoriaProdutoId="cp-1"
+        grupos={[{ ...MOLHOS, prefixo: <span>PREFIXO-MOLHOS</span> }]}
+        onReordenar={async () => ({ ok: true })}
+      />,
+    );
+    expect(html).toContain("PREFIXO-MOLHOS");
+    expect(html.indexOf("PREFIXO-MOLHOS")).toBeLessThan(
+      html.indexOf('aria-label="Reordenar Molhos"'),
+    );
+  });
+
+  it("embutida no cartão do pai: sem `<Card>` próprio e sem status próprio", () => {
+    // Dois cartões aninhados desenhariam borda sobre borda, e dois textos de
+    // status diriam a mesma coisa duas vezes (o do pai é AGREGADO).
+    const html = renderToStaticMarkup(
+      <ReordenarOpcionaisDaCategoria
+        categoriaProdutoId="cp-1"
+        grupos={[MOLHOS, QUEIJOS]}
+        onReordenar={async () => ({ ok: true })}
+        semCartao
+        ocultarStatus
+      />,
+    );
+    expect(html).not.toContain('data-slot="card"');
+    expect(html).not.toContain(RODAPE_STATUS);
+    // O markup padrão continua trazendo os dois.
+    const padrao = render([MOLHOS, QUEIJOS]);
+    expect(padrao).toContain('data-slot="card"');
+    expect(padrao).toContain(RODAPE_STATUS);
   });
 
   it("alça e setas têm alvo de toque de 44px LITERAL", () => {
