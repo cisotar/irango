@@ -268,13 +268,15 @@ describe("208 RPC reordenar_opcionais_da_categoria — RLS real (pglite)", () =>
     await esperarBaselineIntacto();
   });
 
-  // ───────────────────────────── R2 — p_loja_id alheio (SECURITY INVOKER)
+  // ───────────────────────────── R2 — p_loja_id alheio (autoridade T2)
   it("[208-R2] dono A passando p_loja_id E p_categoria_id da loja B → P0001, nada muda em B", async () => {
-    // É o caso que prova `security invoker`: sob DEFINER a função rodaria com os
-    // privilégios do criador e este UPDATE PASSARIA — o dono A reescreveria a
-    // ordem da loja B só escolhendo o p_loja_id. A contagem bate (2 para 2,
-    // visível via cat_prod_opc_leitura_publica, loja B ativa); quem recusa é a
-    // RLS de ESCRITA: 0 linhas afetadas ≠ 2 → raise.
+    // Nasceu (208) como o caso que provava `security invoker`: quem recusava era
+    // a RLS de ESCRITA, por 0 linhas afetadas ≠ 2. Desde a 215 a função é
+    // `security definer` (20260918121000_rpc_reordenar_opcionais_da_categoria_definer.sql)
+    // e a RLS nem chega a ser avaliada — quem recusa agora é a trava T2 do
+    // corpo (`escopo negado`), que sobe ANTES de qualquer contagem ou UPDATE.
+    // A asserção não mudou porque o resultado observável é o mesmo (P0001,
+    // nada muda em B); o que mudou é o mecanismo que produz esse resultado.
     const code = await sqlstateDaFalha(() =>
       t.asUser(DONO_A, (db) => chamarRpc(db, c.lojaB, c.catB, [c.gB2, c.gB1])),
     );
@@ -478,7 +480,7 @@ describe("208 RPC reordenar_opcionais_da_categoria — RLS real (pglite)", () =>
  *     p_loja_id uuid, p_categoria_id uuid, p_ids uuid[]
  *   ) returns integer
  *     language plpgsql
- *     security invoker              -- NUNCA definer: [208-R2] é o teste que cai
+ *     security invoker              -- válido na GREEN da 208; a 215 reviu (ver R2)
  *     set search_path = public
  *
  *   1) cardinality(p_ids) = 0                    → raise (P0001)
