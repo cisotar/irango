@@ -153,6 +153,37 @@ async function falhaDe(fn: () => Promise<unknown>): Promise<Falha> {
   }
 }
 
+/**
+ * Igual a `asUser`/`asAnon`/`asService` (pglite.ts:141-153), mas SEM amarrar o
+ * `role` SQL efetivo ao claim `role` do JWT — achado do teste de mutação
+ * manual da 215 (auditoria pós-implementação): mutar T2 para
+ * `v_e_servico := auth.role() = 'service_role'` (removendo a 2ª conjunção)
+ * deixa toda esta suíte verde, porque `asService`/`asUser`/`asAnon` sempre
+ * mandam os dois sinais JUNTOS. Este helper forja a DIVERGÊNCIA entre eles — o
+ * cenário de forja/pool que a decisão D-A (plano da 215, alternativa (c)) diz
+ * que só aconteceria "num cenário de forja, onde o correto é negar".
+ */
+async function comSessaoEClaimDivergentes<T>(
+  t: TestDb,
+  roleSql: "anon" | "authenticated",
+  claims: Record<string, unknown>,
+  fn: (db: PGlite) => Promise<T>,
+): Promise<T> {
+  await t.db.exec("begin");
+  try {
+    await t.db.query(`set local role ${roleSql}`);
+    await t.db.query(`select set_config('request.jwt.claims', $1, true)`, [
+      JSON.stringify(claims),
+    ]);
+    const result = await fn(t.db);
+    await t.db.exec("commit");
+    return result;
+  } catch (err) {
+    await t.db.exec("rollback");
+    throw err;
+  }
+}
+
 /** Fonte de verdade (BYPASSRLS), em transação PRÓPRIA — nunca a que lançou. */
 async function ordemAtual(
   t: TestDb,
@@ -262,6 +293,28 @@ describe("211/215 reordenar_opcionais_da_categoria convertida para SECURITY DEFI
     );
     expect(r.rows).toHaveLength(1);
     expect(r.rows[0].prosecdef).toBe(true);
+  });
+
+  // ───────────────────────────── G4c (achado do teste de mutação manual, pós-215)
+  it("[211-G4c] SESSÃO SQL 'authenticated' com claim role FORJADO 'service_role' → T2 recusa pela via do dono", async () => {
+    // Espelho de [215-I18] para a função de GRUPOS. Divergência deliberada
+    // entre os dois sinais de T2 (só possível chamando `set local role` +
+    // `set_config('request.jwt.claims', ...)` DIRETO, nunca via asService/
+    // asUser/asAnon): role SQL efetivo 'authenticated', claim 'service_role'.
+    // Sem a 2ª conjunção de v_e_servico, T2 trataria isto como via de serviço
+    // e passaria sem checar dono_id — dono A não é dono da loja B.
+    const f = await falhaDe(() =>
+      comSessaoEClaimDivergentes(
+        t,
+        "authenticated",
+        { sub: DONO_A, role: "service_role" },
+        (db) => chamarRpc(db, c.lojaB, c.catB, [c.gb[1], c.gb[0]]),
+      ),
+    );
+    expect(f.code).toBe("P0001");
+    expect(f.message).toMatch(/escopo negado/);
+
+    await esperarBaselineIntacto();
   });
 
   // ───────────────────────────── G5 — ATOMICIDADE (o critério de aceite do 211)

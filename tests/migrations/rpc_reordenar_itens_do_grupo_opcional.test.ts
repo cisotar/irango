@@ -209,6 +209,39 @@ async function ordemDe(t: TestDb, ids: readonly string[]): Promise<number[]> {
   return ids.map((id) => porId.get(id) ?? -1);
 }
 
+/**
+ * Igual a `asUser`/`asAnon`/`asService` (pglite.ts:141-153), mas SEM amarrar o
+ * `role` SQL efetivo ao claim `role` do JWT — o teste de mutação manual da 215
+ * (auditoria pós-implementação) mostrou que isto é um buraco: mutar T2 para
+ * `v_e_servico := auth.role() = 'service_role'` (removendo a 2ª conjunção,
+ * `v_role_sessao not in ('authenticated','anon')`) deixa as 18 asserções deste
+ * arquivo TODAS verdes, porque `asService`/`asUser`/`asAnon` sempre mandam os
+ * dois sinais juntos. Este helper existe só para forjar a DIVERGÊNCIA entre os
+ * dois sinais (o cenário de forja/pool que a decisão D-A alternativa (c) do
+ * plano diz explicitamente que "só aconteceria num cenário de forja, onde o
+ * correto é negar") e provar que a 2ª conjunção é quem nega.
+ */
+async function comSessaoEClaimDivergentes<T>(
+  t: TestDb,
+  roleSql: "anon" | "authenticated",
+  claims: Record<string, unknown>,
+  fn: (db: PGlite) => Promise<T>,
+): Promise<T> {
+  await t.db.exec("begin");
+  try {
+    await t.db.query(`set local role ${roleSql}`);
+    await t.db.query(`select set_config('request.jwt.claims', $1, true)`, [
+      JSON.stringify(claims),
+    ]);
+    const result = await fn(t.db);
+    await t.db.exec("commit");
+    return result;
+  } catch (err) {
+    await t.db.exec("rollback");
+    throw err;
+  }
+}
+
 describe("215 RPC reordenar_itens_do_grupo_opcional — definer + RLS real (pglite)", () => {
   let t: TestDb;
   let c: Cenario;
@@ -520,6 +553,35 @@ describe("215 RPC reordenar_itens_do_grupo_opcional — definer + RLS real (pgli
     // UPDATE passaria e um usuário qualquer reordenaria a loja A.
     const f = await falhaDe(() =>
       t.asUser(TERCEIRO, (db) => chamarRpc(db, c.lojaA, c.gBordas, [c.i4, c.i1, c.i3, c.i2])),
+    );
+    expect(f.code).toBe("P0001");
+    expect(f.message).toMatch(/escopo negado/);
+
+    await esperarBaselineIntacto();
+  });
+
+  // ───────────────────────────── I18 (achado do teste de mutação manual, pós-215)
+  it("[215-I18] SESSÃO SQL 'authenticated' com claim role FORJADO 'service_role' → T2 recusa pela via do dono, não pela via de serviço", async () => {
+    // Divergência deliberada entre os DOIS sinais de T2: o role SQL efetivo
+    // (o que decide se BYPASSRLS realmente vale) fica 'authenticated', mas o
+    // claim do JWT mente 'service_role'. Só é possível fabricar isto chamando
+    // `set local role` e `set_config('request.jwt.claims', ...)` DIRETO (nunca
+    // via asService/asUser/asAnon, que sempre mandam os dois sinais JUNTOS) —
+    // é exatamente o cenário de forja/bug de pool que a decisão D-A (plano,
+    // alternativa (c)) cita como o único jeito de esses sinais divergirem, e
+    // que diz que o correto ali é NEGAR.
+    //
+    // Sem a 2ª conjunção de v_e_servico (`v_role_sessao not in
+    // ('authenticated','anon')`), auth.role() = 'service_role' bastaria e T2
+    // trataria isto como via de serviço — passando sem checar dono_id. Dono A
+    // não é dono da loja B: a via do dono TEM que recusar.
+    const f = await falhaDe(() =>
+      comSessaoEClaimDivergentes(
+        t,
+        "authenticated",
+        { sub: DONO_A, role: "service_role" },
+        (db) => chamarRpc(db, c.lojaB, c.gSucos, [c.s2, c.s1]),
+      ),
     );
     expect(f.code).toBe("P0001");
     expect(f.message).toMatch(/escopo negado/);
