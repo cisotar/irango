@@ -30,11 +30,12 @@ Arquiva-se por **entregável no disco**, nunca por menção em commit:
 6. Recomendação condicional dentro de um plano ("se o projeto voltar a precisar disso, o
    usuário decide") não é entregável e não impede o arquivamento.
 
-## Estado (triagem de 2026-09-08)
+## Estado (triagem de 2026-09-19)
 
-49 planos varridos: 47 arquivados, 2 abertos.
-
-| Aberto | Pendência |
-|---|---|
-| `loop-160-props-action-obrigatorias.md` | Fix não aplicado — 6 clients compartilhados ainda declaram a prop de Server Action como opcional com default para a action do lojista (`PerfilClient:84`, `HorariosClient:64`, `TemaClient:47`, `FormPagamento:38`, `UploadLogoLoja:51`, `GerenciarCategorias:42-43`). A issue original dimensionava 5. |
-| `verify-handoff-146-teto-itens.md` | Código pronto (`.max(50)` em `validacoes/pedido.ts` + `pedido.itens-cap.test.ts`), mas o procedimento E2E exige Postgres local e nunca rodou — sem commit posterior a `339bdf8`, critérios de PASS em branco. |
+Ambos os itens da triagem de 2026-09-08 foram entregues e arquivados desde então
+(`loop-160-props-action-obrigatorias.md` — série `feat(160)`; `verify-handoff-146-teto-itens.md`
+— PRs #111/#112). `plan/` (raiz) hoje só contém trabalho genuinamente aberto: `orquestrar`
+(agente e skill) agora inclui, no próprio plano gerado, um passo final de higiene que arquiva o
+loop em `plan/arquivo/` assim que o entregável estiver no disco — ver `.claude/agents/orquestrar.md`
+regra 8. Não repita a varredura manual completa sem motivo; confira `plan/` (raiz) para o que
+ainda está pendente.

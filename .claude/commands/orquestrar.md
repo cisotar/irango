@@ -19,3 +19,8 @@ Quando o plano voltar:
 
 1. Apresente-o ao usuário — agentes e skills envolvidos, ordem, travas, custo estimado.
 2. **Pare.** Só execute o plano após confirmação explícita. Plano aprovado para uma tarefa não autoriza a próxima.
+
+Ao executar um plano já aprovado (nesta sessão ou numa futura), o próprio arquivo do plano
+traz, como último passo do "Passo a passo da execução", a higiene de arquivar-se em
+`plan/arquivo/` via `git mv` assim que o entregável estiver no disco. Não pule esse passo —
+é o que mantém `plan/` mostrando só trabalho aberto.
