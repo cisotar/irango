@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.3.1 | **Atualizado:** 2026-09-18
+**Versão:** 0.3.2 | **Atualizado:** 2026-09-19
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -394,5 +394,4 @@ const items = order.order_items
 | `CAMINHO_PAINEL = "/painel/cardapio"` (`src/lib/actions/produto.ts:25`) aponta para rota que não existe | os 17 `revalidatePath` que o usam (9 em `produto.ts`, 8 em `opcional.ts`) são no-op silencioso; as telas só atualizam via `router.refresh()` do client. Corrigir muda o cache de 17 actions | achado na issue 175 — issue própria a abrir |
 | `atualizarCategoria`/`removerCategoria` (`produto.ts`) não escopam por `loja_id` explícito, confiam só na RLS | não é vulnerabilidade — PoC da auditoria da issue 175 provou `affectedRows: 0` em categoria alheia (o `USING` da RLS torna a linha invisível) — mas é defeito de qualidade: a UI mostra sucesso numa escrita que não ocorreu, e o `loja_id: loja.id` que `atualizarCategoria` grava vira sequestro de categoria alheia no dia em que a RLS for afrouxada | issue 178 |
 | `opcionais_categorias.ordem` com papel reduzido | desde a issue 208 só ordena a Biblioteca de opcionais no painel — deixou de ser a ordem da vitrine (`categoria_produto_opcionais.ordem` assumiu isso). Não é removida (exigiria mexer no CRUD de hoje); candidata a limpeza | sem issue aberta — decisão registrada na spec v0.2.0 |
-| `reordenarOpcionaisDaCategoriaAdmin` (`admin-opcionais.ts`) grava a ordem com N `update` sequenciais fora de transação | falha de rede no meio da sequência deixa posições parciais gravadas; `count: "exact"` (issue 208) fecha o TOCTOU mas não a atomicidade — o caminho do lojista é atômico (RPC), o admin não pode reusar essa RPC por ela ser `SECURITY INVOKER` | issue 211 |
 | `createServerClient` (`lib/supabase/server.ts`) sem o genérico `Database` | client do lojista destipado — `.rpc`/`.select`/`.insert` sem checagem do `tsc`; não é vulnerabilidade (PostgREST é fail-closed nessa classe de erro), é perda de sinal de CI, evidenciado na issue 208 (coluna `ordem` nova só quebrou `tsc` no caminho admin, tipado, não no do lojista) | issue 212 — fazer só depois do `db push` da 208 |

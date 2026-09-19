@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.2.4 | **Atualizado:** 2026-09-18
+**Versão:** 0.2.5 | **Atualizado:** 2026-09-19
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -129,6 +129,7 @@ Critério de aceite de toda tela. Referência: spec (forms com label, validaçã
 
 - **Alvo de toque ≥ 44×44px** em todo elemento interativo da vitrine mobile (botões "Adicionar", controles de quantidade, "Finalizar pedido"). Mesma régua vale no painel quando o controle depende de gesto de toque (ex.: alça de arrasto e setas de reordenar categoria, `LinhaCategoriaReordenavel.tsx`, issues 159/175). Quando a linha ganha um prefixo antes da alça (prop `prefixo`, ex.: checkbox — issue 213), o chrome soma ~44px a mais e sobra pouco espaço pro nome em 360px; a régua nesse caso é **comprimir, não estourar 44px**: prop `compacta` (derivada de `prefixo != null`, nunca ligada por default) esconde as setas ↑↓ abaixo de `sm` e move os comandos para o kebab. É opt-in por consumidor — a linha sem prefixo (ex.: categorias de produto, issue 175) não precisa comprimir e não muda.
   - **Valor literal, não a classe semântica do Tailwind.** A base de fonte do projeto é 120% (`html { font-size: 120% }`, §9), então `min-h-11` vira 52,8px (não é 44px, ainda que inofensivo) e `size="icon-sm"` do shadcn vira 33,6px (abaixo do mínimo — **proibido** em alvo de toque). Use `min-h-[44px] min-w-[44px]` literal.
+- **Nunca aninhar `DndContext`.** Uma lista reordenável que vive DENTRO de outra lista já arrastável (ex.: itens de um grupo de opcional dentro da lista de grupos, issue 216) não ganha handle de arrasto: o `pointerdown` da alça interna borbulharia para o sensor do `DndContext` externo. Nesse caso o `ModoReordenar` (`components/painel/ModoReordenar.tsx`) monta só em modo setas/teclado via a prop `semArrasto` — nenhum `DndContext`, nenhuma instrução de arrasto do dnd-kit, uma `aria-live` a menos na tela. Efeito colateral desejado: setas e teclado são testáveis sem Playwright/MCP de browser (não há nenhum nesta máquina, issue 176); gesto de toque não é.
 - **Contraste mínimo 4.5:1** para texto normal, 3:1 para texto grande. Atenção redobrada ao tema custom da loja — ver §4 ("Contraste do tema custom").
 - **Foco visível** em todo interativo: `focus-visible:ring-2` (**proposta** de padrão consistente, alinhado ao default do shadcn).
 - **Label em todo input.** Forms usam o componente `Form` do shadcn (react-hook-form), que já vincula `<label>` ao campo. Erro de validação com `aria-invalid` + `aria-describedby` apontando para a mensagem.
@@ -156,6 +157,7 @@ Fonte: spec (behaviors e camadas de segurança) e architecture.md §6.
 ### Confirmação destrutiva
 
 - Toda ação destrutiva no painel (remover produto, categoria, cupom, zona) usa **`AlertDialog`** do shadcn, deixando claro **o que** será excluído e seus efeitos (spec: "DialogConfirmacaoRemocao", remoção de categoria avisa que produtos ficam sem categoria).
+- **Exceção: dentro de outro `Dialog`/modal, a confirmação fica INLINE na própria linha, não em `AlertDialog` aninhado.** Um segundo overlay dentro do primeiro tem uma armadilha de teclado: `Escape` fechar o `AlertDialog` interno borbulha e fecha o modal externo junto (`LinhaItemOpcional.tsx`, issue 216/217 — o cartão de opcionais passou a abrir dentro de um modal em `/painel/produtos` na 217). O padrão: a linha troca de estado (`leitura` → `confirmando`, número/setas/kebab somem, aparece a pergunta com o texto do que será afetado) e o handler de teclado do estado `confirmando` chama `e.stopPropagation()` no `Escape`, cancelando só a confirmação. Vale para qualquer confirmação destrutiva que precise viver dentro de um `Dialog` já aberto.
 
 ### Reversibilidade na vitrine
 

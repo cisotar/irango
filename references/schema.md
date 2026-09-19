@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.1.18 | **Atualizado:** 2026-09-17
+**Versão:** 0.2.0 | **Atualizado:** 2026-09-19
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -331,6 +331,12 @@ CREATE TABLE opcionais (
   nome                  text NOT NULL,
   preco                 numeric(10,2) NOT NULL CHECK (preco >= 0),
   ativo                 boolean NOT NULL DEFAULT true,
+  -- Posição do item DENTRO do grupo de opcional (0-based). Escrita só em dois
+  -- pontos: criação (INSERT com max(ordem)+1 do grupo) e reordenação, só por
+  -- public.reordenar_itens_do_grupo_opcional (issue 215/216) — nunca por
+  -- update/upsert direto. A edição de nome/preço NÃO manda `ordem` (fix issue
+  -- 216: mandar o índice da linha corrompia a posição de itens nunca
+  -- reordenados, todos nascidos com `ordem` no default 0).
   ordem                 int NOT NULL DEFAULT 0,
   criado_em             timestamptz NOT NULL DEFAULT now(),
   atualizado_em         timestamptz NOT NULL DEFAULT now()
@@ -535,4 +541,6 @@ Valores válidos:
 - Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado (`itens_pedido.observacao` é da mesma família)
 - Tipos gerados automaticamente: `npx supabase gen types typescript > src/lib/database.types.ts`
 - **Operações multi-tabela atômicas com trava de concorrência** usam função Postgres `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon, authenticated` + `GRANT EXECUTE TO service_role`. Exemplo: `public.criar_pedido(...)` (migration `20260614003000_rpc_criar_pedido.sql`). Nunca INSERT direto da action quando atomicidade ou trava de linha for necessária.
-- **Escrita em lote com valor diferente por linha** (PostgREST não faz `update-many` heterogêneo) usa a mesma base — `SECURITY INVOKER` + `SET search_path = public` — mas `GRANT EXECUTE TO authenticated`, não `service_role`: a escrita é do lojista autenticado, autorizada pela RLS avaliada sob o invoker. Exemplos: `public.reordenar_categorias(...)` (migration `20260908120000_rpc_reordenar_categorias.sql`, permutação é da loja inteira) e `public.reordenar_opcionais_da_categoria(...)` (migration `20260917121000_rpc_reordenar_opcionais_da_categoria.sql`, issue 208 — permutação é do **par** loja+categoria de produto, e por isso recebe `categoria_id` como escopo extra vindo do cliente). Racional completo em `seguranca.md` §2.
+- **Escrita em lote com valor diferente por linha** (PostgREST não faz `update-many` heterogêneo) tem duas variantes, não uma regra só — ver `seguranca.md` §2 para o racional completo e as sete travas da segunda:
+  - **`SECURITY INVOKER`** quando só o lojista escreve e a RLS avaliada sob o invoker é a autoridade única. Único exemplo hoje: `public.reordenar_categorias(...)` (migration `20260908120000_rpc_reordenar_categorias.sql`, permutação é da loja inteira), `SET search_path = public` + `GRANT EXECUTE TO authenticated`.
+  - **`SECURITY DEFINER` + travas T1–T7 no corpo** (`SET search_path = public, pg_temp` + `GRANT EXECUTE TO authenticated, service_role`) quando a mesma função precisa servir também a via admin sob `service_role`, que tem `BYPASSRLS` e por isso nunca foi coberta pela RLS em nenhum dos dois modos. Exemplos: `public.reordenar_opcionais_da_categoria(...)` (migration `20260917121000_rpc_reordenar_opcionais_da_categoria.sql`, issue 208 — permutação do **par** loja+categoria de produto, `categoria_id` como escopo extra vindo do cliente; convertida de invoker para definer pela migration `20260918121000_rpc_reordenar_opcionais_da_categoria_definer.sql`, issue 215) e `public.reordenar_itens_do_grupo_opcional(...)` (migration `20260918120000_rpc_reordenar_itens_do_grupo_opcional.sql`, issue 215/216 — nova, permutação do **par** loja+grupo de opcional, inclusive itens `ativo = false`). Fail-open de `auth.role()` sem JWT corrigido por `20260918130000_rpc_ordem_t2_fail_closed.sql`.
