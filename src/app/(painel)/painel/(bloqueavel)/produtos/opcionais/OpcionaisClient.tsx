@@ -56,22 +56,22 @@ import {
   schemaOpcional,
 } from "@/lib/validacoes/opcional";
 import type {
-  criarCategoriaOpcional,
-  atualizarCategoriaOpcional,
-  removerCategoriaOpcional,
-  criarOpcional,
-  atualizarOpcional,
-  alternarOpcionalAtivo,
-  removerOpcional,
-  salvarAssociacaoOpcionais,
-  reordenarOpcionaisDaCategoria,
-  reordenarItensDoGrupoOpcional,
-} from "@/lib/actions/opcional";
-import type {
   CategoriaOpcional,
   Opcional,
 } from "@/lib/supabase/queries/opcionais";
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
+import type {
+  Associacao,
+  CategoriaProduto,
+  OpcionaisClientAcoes,
+} from "@/components/painel/contrato-opcionais";
+import {
+  agruparOpcionaisPorGrupo,
+  alcancePorGrupo as derivarAlcancePorGrupo,
+  contarItensPorGrupo,
+  ordemPorCategoria,
+  selecionadosPorCategoria,
+} from "@/lib/utils/derivar-associacao-opcionais";
 import {
   ehTeclaDeNavegacaoHorizontal,
   proximoIndicePorTecla,
@@ -83,42 +83,8 @@ type IdSecao = "biblioteca" | "por-categoria";
 /** Ordem física das abas — é o que ←/→/Home/End percorrem. */
 const ORDEM_ABAS: readonly IdSecao[] = ["biblioteca", "por-categoria"];
 
-export type CategoriaProduto = { id: string; nome: string };
-/** `ordem` (coluna da 208) é o que abre a lista na sequência da vitrine. */
-type Associacao = {
-  categoria_id: string;
-  categoria_opcional_id: string;
-  ordem: number;
-};
-
 /** 44px literal — `size="icon-sm"` daria 33,6px na base de 120% (design-system §5). */
 const ALVO_TOQUE = "min-h-[44px] min-w-[44px]";
-
-/**
- * Actions injetadas das 10 operações de opcionais. Todas OBRIGATÓRIAS (issue
- * 160): a page do painel passa as 10 do lojista, a via admin (137) passa as 10
- * variantes escopadas por `lojaId`. Sem default — omitir uma chave aqui quebra
- * o build em vez de cair na action do lojista (que resolve a loja por
- * `auth.uid()`) e gravar na loja errada. Tipadas via `typeof` (single-source,
- * espelha `ProdutosClient`).
- *
- * A 9ª (`reordenarOpcionaisDaCategoria`, issues 208/209) e a 10ª
- * (`reordenarItensDoGrupoOpcional`, issues 215/216) seguem a mesma regra: são
- * escrita de ordem escopada por loja, e um default aqui seria exatamente o bug
- * que a 160 existe para impedir.
- */
-export type OpcionaisClientAcoes = {
-  criarCategoriaOpcional: typeof criarCategoriaOpcional;
-  atualizarCategoriaOpcional: typeof atualizarCategoriaOpcional;
-  removerCategoriaOpcional: typeof removerCategoriaOpcional;
-  criarOpcional: typeof criarOpcional;
-  atualizarOpcional: typeof atualizarOpcional;
-  alternarOpcionalAtivo: typeof alternarOpcionalAtivo;
-  removerOpcional: typeof removerOpcional;
-  salvarAssociacaoOpcionais: typeof salvarAssociacaoOpcionais;
-  reordenarOpcionaisDaCategoria: typeof reordenarOpcionaisDaCategoria;
-  reordenarItensDoGrupoOpcional: typeof reordenarItensDoGrupoOpcional;
-};
 
 export type OpcionaisClientProps = {
   categoriasOpcional: CategoriaOpcional[];
@@ -975,88 +941,50 @@ function AssociacaoOpcionais({
 }) {
   const router = useRouter();
 
-  // Conjunto atual por categoria de produto → set de categoria_opcional_id.
-  const inicialPorProduto = useMemo(() => {
-    const mapa = new Map<string, Set<string>>();
-    for (const a of associacoes) {
-      const set = mapa.get(a.categoria_id) ?? new Set<string>();
-      set.add(a.categoria_opcional_id);
-      mapa.set(a.categoria_id, set);
-    }
-    return mapa;
-  }, [associacoes]);
+  /*
+    As cinco derivações são PURAS e moram em
+    `lib/utils/derivar-associacao-opcionais.ts` (issue 217): o mesmo cartão é
+    montado pelo modal de `/painel/produtos`, e duas cópias do comparador
+    `ordem || id` divergiriam em silêncio. Os `useMemo` ficam — o que saiu foi
+    o corpo.
+  */
+
+  /** Conjunto PERSISTIDO por categoria de produto → set de categoria_opcional_id. */
+  const inicialPorProduto = useMemo(
+    () => selecionadosPorCategoria(associacoes),
+    [associacoes],
+  );
+
+  /** `ordem` gravada (208). Vem SEMPRE das props: todo toggle e toda
+      reordenação terminam em `router.refresh()`, e é por aqui que a ordem
+      recém-gravada volta. */
+  const ordemPorProduto = useMemo(
+    () => ordemPorCategoria(associacoes),
+    [associacoes],
+  );
+
+  /** `categoria_opcional_id → itens do grupo` (216), ativos E inativos. */
+  const opcionaisPorGrupo = useMemo(
+    () => agruparOpcionaisPorGrupo(opcionais),
+    [opcionais],
+  );
+
+  /** `categoria_opcional_id → nº de itens`, para o `detalhe` de cada linha. */
+  const totalItensPorGrupo = useMemo(
+    () => contarItensPorGrupo(opcionaisPorGrupo),
+    [opcionaisPorGrupo],
+  );
 
   /*
-    `ordem` gravada (208) por categoria de produto → grupo de opcional. Vem
-    SEMPRE das props, nunca de estado: todo toggle e toda reordenação terminam
-    em `router.refresh()`, e é por aqui que a ordem recém-gravada volta.
+    ALCANCE (216): `categoria_opcional_id → nomes das categorias de PRODUTO que
+    usam o grupo`. Derivado de `associacoes` ⋈ `categoriasProduto`, ambas já
+    props e ambas dados RLS-escopados da própria loja: nenhuma leitura nova,
+    nenhum vetor cross-tenant.
   */
-  const ordemPorProduto = useMemo(() => {
-    const mapa = new Map<string, Map<string, number>>();
-    for (const a of associacoes) {
-      const porGrupo = mapa.get(a.categoria_id) ?? new Map<string, number>();
-      porGrupo.set(a.categoria_opcional_id, a.ordem);
-      mapa.set(a.categoria_id, porGrupo);
-    }
-    return mapa;
-  }, [associacoes]);
-
-  /*
-    `categoria_opcional_id → itens do grupo` (issue 216), ativos E inativos: a
-    RPC da 215 exige a permutação COMPLETA do par (loja, grupo), então a sanfona
-    precisa listar o inativo — ele ocupa posição real na ordem.
-
-    O comparador ESPELHA o de `buscarOpcionaisDoLojista` e o dos grupos no
-    cartão: `ordem` com desempate por `id`. Não é redundância — o mapa é
-    reagrupado aqui no cliente, e um `sort` estável sobre uma ordem já correta é
-    barato e protege a lista de uma futura mudança na query.
-
-    Nenhuma query nova: `opcionais` já é prop desta tela.
-  */
-  const opcionaisPorGrupo = useMemo(() => {
-    const mapa = new Map<string, Opcional[]>();
-    for (const o of opcionais) {
-      const lista = mapa.get(o.categoria_opcional_id) ?? [];
-      lista.push(o);
-      mapa.set(o.categoria_opcional_id, lista);
-    }
-    for (const lista of mapa.values()) {
-      lista.sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
-    }
-    return mapa;
-  }, [opcionais]);
-
-  /** `categoria_opcional_id → nº de itens`, só para o `detalhe` de cada linha. */
-  const totalItensPorGrupo = useMemo(() => {
-    const mapa = new Map<string, number>();
-    for (const [grupoId, lista] of opcionaisPorGrupo) {
-      mapa.set(grupoId, lista.length);
-    }
-    return mapa;
-  }, [opcionaisPorGrupo]);
-
-  /*
-    ALCANCE (issue 216): `categoria_opcional_id → nomes das categorias de
-    PRODUTO que usam o grupo`. Editar ou remover um item vale para todas elas —
-    a biblioteca é da loja, não existe "Coca só de Pães" — e é essa lista que a
-    UI usa para avisar no momento da ação.
-
-    Derivado de `associacoes` ⋈ `categoriasProduto`, ambas já props e ambas
-    dados RLS-escopados da própria loja: nenhuma leitura nova, nenhum vetor
-    cross-tenant.
-  */
-  const alcancePorGrupo = useMemo(() => {
-    const nomePorCategoria = new Map(categoriasProduto.map((c) => [c.id, c.nome]));
-    const mapa = new Map<string, string[]>();
-    for (const a of associacoes) {
-      const nome = nomePorCategoria.get(a.categoria_id);
-      if (nome == null) continue;
-      const nomes = mapa.get(a.categoria_opcional_id) ?? [];
-      nomes.push(nome);
-      mapa.set(a.categoria_opcional_id, nomes);
-    }
-    return mapa;
-  }, [associacoes, categoriasProduto]);
+  const alcancePorGrupo = useMemo(
+    () => derivarAlcancePorGrupo(associacoes, categoriasProduto),
+    [associacoes, categoriasProduto],
+  );
 
   return (
     <section id="por-categoria" role="tabpanel" aria-labelledby="aba-por-categoria">

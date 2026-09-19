@@ -44,11 +44,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-import {
-  OpcionaisClient,
-  type OpcionaisClientAcoes,
-  type OpcionaisClientProps,
-} from "./OpcionaisClient";
+import { OpcionaisClient, type OpcionaisClientProps } from "./OpcionaisClient";
+import type { OpcionaisClientAcoes } from "@/components/painel/contrato-opcionais";
 
 type Associacao = OpcionaisClientProps["associacoes"][number];
 import type {

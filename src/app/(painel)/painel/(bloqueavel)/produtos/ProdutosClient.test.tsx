@@ -54,6 +54,17 @@ function acoesBase(): AcoesProdutosClient {
     alternarExibirImagens: vi.fn(async () => ({ ok: true }) as const),
     reordenarCategorias: vi.fn(async () => ({ ok: true }) as const),
     salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
+    // [217] `AcoesProdutosClient` virou interseção com `OpcionaisClientAcoes`:
+    // o modal do cardápio monta o mesmo cartão de associação da página irmã.
+    criarCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
+    atualizarCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
+    removerCategoriaOpcional: vi.fn(async () => ({ ok: true }) as const),
+    criarOpcional: vi.fn(async () => ({ ok: true }) as const),
+    atualizarOpcional: vi.fn(async () => ({ ok: true }) as const),
+    alternarOpcionalAtivo: vi.fn(async () => ({ ok: true }) as const),
+    removerOpcional: vi.fn(async () => ({ ok: true }) as const),
+    reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
+    reordenarItensDoGrupoOpcional: vi.fn(async () => ({ ok: true }) as const),
   } as unknown as AcoesProdutosClient;
 }
 
@@ -84,6 +95,8 @@ function renderLista(produtos: Produto[]): string {
       categorias={[]}
       opcionaisPorCategoria={{}}
       categoriasOpcional={[]}
+      opcionais={[]}
+      associacoes={[]}
       acoes={acoesBase()}
     />,
   );
@@ -212,6 +225,8 @@ describe("injeção de acoes (issues 129 e 160)", () => {
           categorias={[]}
           opcionaisPorCategoria={{}}
           categoriasOpcional={[]}
+          opcionais={[]}
+          associacoes={[]}
           acoes={acoes}
         />,
       );
@@ -242,6 +257,8 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
         categorias={CATEGORIAS}
         opcionaisPorCategoria={{}}
         categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
         acoes={acoesBase()}
       />,
     );
@@ -298,6 +315,8 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
         categorias={categorias.map((c) => ({ ...c, exibir_imagens: true }))}
         opcionaisPorCategoria={{}}
         categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
         acoes={acoesBase()}
       />,
     );
@@ -366,6 +385,8 @@ describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 1
         acoes={acoesBase()}
         opcionaisPorCategoria={{}}
         categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
       />,
     );
     expect(html).toContain("Lanches");

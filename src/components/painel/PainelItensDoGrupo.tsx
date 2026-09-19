@@ -19,7 +19,7 @@ import {
 import type { StatusSalvamento } from "@/lib/utils/salvamento-coalescido";
 import type { OpcionalFormData } from "@/lib/validacoes/opcional";
 import type { Opcional } from "@/lib/supabase/queries/opcionais";
-import type { OpcionaisClientAcoes } from "@/app/(painel)/painel/(bloqueavel)/produtos/opcionais/OpcionaisClient";
+import type { OpcionaisClientAcoes } from "@/components/painel/contrato-opcionais";
 
 /**
  * Painel de ITENS de um grupo de opcional, aberto de dentro do cartão de

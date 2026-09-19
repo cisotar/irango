@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/accordion";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import { alternarAssociacaoOpcional } from "@/lib/utils/alternar-associacao-opcional";
 import type { StatusSalvamento } from "@/lib/utils/salvamento-coalescido";
 import type { CategoriaOpcional, Opcional } from "@/lib/supabase/queries/opcionais";
@@ -27,7 +28,7 @@ import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar
 import type {
   CategoriaProduto,
   OpcionaisClientAcoes,
-} from "@/app/(painel)/painel/(bloqueavel)/produtos/opcionais/OpcionaisClient";
+} from "@/components/painel/contrato-opcionais";
 
 /** 44px literal — `size="icon-sm"` daria 33,6px na base de 120% (design-system §5). */
 const ALVO_TOQUE = "min-h-[44px] min-w-[44px]";
@@ -84,6 +85,7 @@ export function CartaoAssociacaoOpcionais({
   totalItensPorGrupo,
   opcionaisPorGrupo,
   alcancePorGrupo,
+  cabecalhoFixo = false,
   onSalvo,
   acoes,
 }: {
@@ -98,6 +100,21 @@ export function CartaoAssociacaoOpcionais({
   opcionaisPorGrupo: Map<string, Opcional[]>;
   /** `categoria_opcional_id → nomes das categorias de PRODUTO que usam o grupo`. */
   alcancePorGrupo: Map<string, string[]>;
+  /**
+   * Opt-in (issue 217): gruda o cabeçalho no topo enquanto o corpo rola.
+   *
+   * Só vale quando o cartão tem um ANCESTRAL rolável — hoje, o corpo do modal
+   * de `/painel/produtos`. Em `/painel/produtos/opcionais` o cartão rola com a
+   * página inteira, então o `sticky` seria CSS morto: daí ser opt-in, e não
+   * padrão.
+   *
+   * `overflow-visible` no `<Card>` NÃO é decoração: a classe base do primitivo
+   * traz `overflow-hidden` (`ui/card.tsx`), que cria um scroll container
+   * próprio e faria o `sticky` grudar no box do próprio Card — o qual não rola.
+   * O resultado seria "pinado em nada", passando em todo teste e falhando na
+   * tela. `cn` (tailwind-merge) resolve o conflito na mesma família.
+   */
+  cabecalhoFixo?: boolean;
   onSalvo: () => void;
   acoes: OpcionaisClientAcoes;
 }) {
@@ -308,8 +325,13 @@ export function CartaoAssociacaoOpcionais({
       value={categoriaProduto.id}
       className="not-last:border-b-0"
     >
-      <Card>
-        <div className="flex items-center justify-between gap-2 border-b px-4 [&>h3]:min-w-0 [&>h3]:flex-1">
+      <Card className={cn(cabecalhoFixo && "overflow-visible")}>
+        <div
+          className={cn(
+            "flex items-center justify-between gap-2 border-b px-4 [&>h3]:min-w-0 [&>h3]:flex-1",
+            cabecalhoFixo && "sticky top-0 z-10 bg-card"
+          )}
+        >
           <AccordionTrigger className="min-h-[44px] font-heading text-base font-semibold text-foreground">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate">{categoriaProduto.nome}</span>

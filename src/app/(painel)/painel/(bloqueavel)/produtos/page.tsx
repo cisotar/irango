@@ -8,7 +8,11 @@ import {
   buscarOpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
-import { buscarCategoriasOpcional } from "@/lib/supabase/queries/opcionais";
+import {
+  buscarCategoriasOpcional,
+  buscarOpcionaisDoLojista,
+  buscarAssociacoesOpcional,
+} from "@/lib/supabase/queries/opcionais";
 import {
   removerProduto,
   alternarDisponibilidade,
@@ -21,7 +25,18 @@ import {
   alternarExibirImagens,
   reordenarCategorias,
 } from "@/lib/actions/produto";
-import { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
+import {
+  criarCategoriaOpcional,
+  atualizarCategoriaOpcional,
+  removerCategoriaOpcional,
+  criarOpcional,
+  atualizarOpcional,
+  alternarOpcionalAtivo,
+  removerOpcional,
+  salvarAssociacaoOpcionais,
+  reordenarOpcionaisDaCategoria,
+  reordenarItensDoGrupoOpcional,
+} from "@/lib/actions/opcional";
 import { enviarFotoProduto } from "@/lib/actions/upload";
 import { ProdutosClient } from "./ProdutosClient";
 
@@ -44,19 +59,34 @@ export default async function ProdutosPage(): Promise<ReactElement> {
   // `buscarOpcionaisPorCategoria` precisa dos ids já resolvidos de
   // `buscarCategorias`, então as duas rodam em sequência dentro do mesmo ramo do
   // `Promise.all`, preservando o paralelismo com `buscarProdutosDoLojista`.
-  const [produtos, { categorias, opcionaisPorCategoria }, categoriasOpcional] =
-    await Promise.all([
-      buscarProdutosDoLojista(supabase, loja.id),
-      (async () => {
-        const categorias = await buscarCategorias(supabase, loja.id);
-        const opcionaisPorCategoria = await buscarOpcionaisPorCategoria(
-          supabase,
-          categorias.map((c) => c.id),
-        );
-        return { categorias, opcionaisPorCategoria };
-      })(),
-      buscarCategoriasOpcional(supabase, loja.id),
-    ]);
+  // [217] O 4º e o 5º ramos alimentam o cartão de associação que o modal desta
+  // página monta. Não dá para derivá-los de `opcionaisPorCategoria`:
+  // `buscarOpcionaisPorCategoria` traz um sub-select estreito (sem `ativo`,
+  // `loja_id`, `descricao`) e — pior — DESCARTA grupo associado que ainda não
+  // tem item. Um grupo vazio que abrisse desmarcado seria apagado em silêncio no
+  // primeiro toggle de qualquer outro grupo, porque o toggle grava o conjunto
+  // inteiro. A fonte de verdade é `categoria_produto_opcionais`, lida aqui EM
+  // PARALELO — a latência da página não sobe.
+  const [
+    produtos,
+    { categorias, opcionaisPorCategoria },
+    categoriasOpcional,
+    opcionais,
+    associacoes,
+  ] = await Promise.all([
+    buscarProdutosDoLojista(supabase, loja.id),
+    (async () => {
+      const categorias = await buscarCategorias(supabase, loja.id);
+      const opcionaisPorCategoria = await buscarOpcionaisPorCategoria(
+        supabase,
+        categorias.map((c) => c.id),
+      );
+      return { categorias, opcionaisPorCategoria };
+    })(),
+    buscarCategoriasOpcional(supabase, loja.id),
+    buscarOpcionaisDoLojista(supabase, loja.id),
+    buscarAssociacoesOpcional(supabase, loja.id),
+  ]);
 
   return (
     <ProdutosClient
@@ -69,9 +99,16 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
-      categoriasOpcional={categoriasOpcional.map((c) => ({
-        id: c.id,
-        nome: c.nome,
+      // [217] Linhas INTEIRAS, não mais `{id, nome}`: o cartão de associação
+      // consome `CategoriaOpcional` completa.
+      categoriasOpcional={categoriasOpcional}
+      opcionais={opcionais}
+      // `ordem` (208) vai junto: é ela que abre a lista na sequência gravada.
+      // `buscarAssociacoesOpcional` já ordena.
+      associacoes={associacoes.map((a) => ({
+        categoria_id: a.categoria_id,
+        categoria_opcional_id: a.categoria_opcional_id,
+        ordem: a.ordem,
       }))}
       // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
       // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
@@ -87,7 +124,16 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         removerCategoria,
         alternarExibirImagens,
         reordenarCategorias,
+        criarCategoriaOpcional,
+        atualizarCategoriaOpcional,
+        removerCategoriaOpcional,
+        criarOpcional,
+        atualizarOpcional,
+        alternarOpcionalAtivo,
+        removerOpcional,
         salvarAssociacaoOpcionais,
+        reordenarOpcionaisDaCategoria,
+        reordenarItensDoGrupoOpcional,
       }}
     />
   );

@@ -25,7 +25,27 @@ import { revalidatePath } from "next/cache";
 
 export type ResultadoOpcional = { ok: true } | { ok: false; erro: string };
 
-const CAMINHO_PAINEL = "/painel/produtos/opcionais";
+/**
+ * As DUAS rotas do painel que enxergam opcionais. `/painel/produtos/opcionais` é
+ * a biblioteca; `/painel/produtos` passou a montar o MESMO cartão de associação
+ * dentro de um modal (issue 217) e exibe os chips de grupo por produto.
+ *
+ * Sem a segunda, o sintoma só aparece em runtime e só na TRAVESSIA: editar no
+ * modal e navegar para a rota irmã (ou o inverso) servia a entrada velha do
+ * Router Cache do cliente — "editei e não atualizou". Dentro do modal a tela
+ * atualiza de qualquer jeito, porque `onSalvo` chama `router.refresh()`.
+ *
+ * Ponto ÚNICO de edição quando aparecer o 3º caminho: um array repetido nos 10
+ * pontos de revalidação é a próxima divergência silenciosa.
+ */
+const CAMINHOS_PAINEL = [
+  "/painel/produtos/opcionais",
+  "/painel/produtos",
+] as const;
+
+function revalidarPainelDeProdutos(): void {
+  for (const caminho of CAMINHOS_PAINEL) revalidatePath(caminho);
+}
 
 /**
  * Mensagem ÚNICA para id alheio, lista incompleta, categoria de outra loja e
@@ -94,7 +114,7 @@ export async function criarCategoriaOpcional(
       console.error("[criarCategoriaOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar a categoria." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[criarCategoriaOpcional]", e);
@@ -126,7 +146,7 @@ export async function atualizarCategoriaOpcional(
       console.error("[atualizarCategoriaOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar a categoria." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[atualizarCategoriaOpcional]", e);
@@ -149,7 +169,7 @@ export async function removerCategoriaOpcional(
       console.error("[removerCategoriaOpcional]", error);
       return { ok: false, erro: "Não foi possível remover a categoria." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[removerCategoriaOpcional]", e);
@@ -188,7 +208,7 @@ export async function criarOpcional(
       console.error("[criarOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[criarOpcional]", e);
@@ -227,7 +247,7 @@ export async function atualizarOpcional(
       console.error("[atualizarOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[atualizarOpcional]", e);
@@ -250,7 +270,7 @@ export async function alternarOpcionalAtivo(
       console.error("[alternarOpcionalAtivo]", error);
       return { ok: false, erro: "Não foi possível atualizar o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[alternarOpcionalAtivo]", e);
@@ -268,7 +288,7 @@ export async function removerOpcional(id: string): Promise<ResultadoOpcional> {
       console.error("[removerOpcional]", error);
       return { ok: false, erro: "Não foi possível remover o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[removerOpcional]", e);
@@ -367,7 +387,7 @@ export async function salvarAssociacaoOpcionais(
       }
     }
 
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[salvarAssociacaoOpcionais]", e);
@@ -441,7 +461,7 @@ export async function reordenarOpcionaisDaCategoria(
 
     // A vitrine vai pelo slug da PRÓPRIA loja, nunca pela forma coringa
     // ("/loja/[slug]", "page"), que invalidaria o Router Cache de TODAS as lojas.
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     revalidatePath(`/loja/${loja.slug}`);
     return { ok: true };
   } catch (e) {
@@ -514,7 +534,7 @@ export async function reordenarItensDoGrupoOpcional(
 
     // Slug da PRÓPRIA loja, nunca a forma coringa ("/loja/[slug]", "page"), que
     // invalidaria o Router Cache de TODAS as lojas do marketplace.
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     revalidatePath(`/loja/${loja.slug}`);
     return { ok: true };
   } catch (e) {

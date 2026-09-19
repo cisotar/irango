@@ -245,14 +245,18 @@ describe("reordenarOpcionaisDaCategoria (Server Action — issue 208)", () => {
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
-  it("sucesso: revalidatePath do painel E do slug da PRÓPRIA loja, nunca a forma coringa", async () => {
+  it("sucesso: revalidatePath das DUAS rotas do painel E do slug da PRÓPRIA loja, nunca a forma coringa", async () => {
     await reordenarOpcionaisDaCategoria(payload());
     expect(revalidatePath).toHaveBeenCalledWith("/painel/produtos/opcionais");
+    // [217] `/painel/produtos` monta o MESMO cartão de associação dentro de um
+    // modal. Sem revalidar a rota irmã, a travessia entre as duas servia a
+    // entrada velha do Router Cache — "editei e não atualizou".
+    expect(revalidatePath).toHaveBeenCalledWith("/painel/produtos");
     expect(revalidatePath).toHaveBeenCalledWith(`/loja/${LOJA_SLUG}`);
     // A forma coringa invalidaria o Router Cache de TODAS as lojas do
     // marketplace a cada reordenação — nunca pode ser chamada assim.
     expect(revalidatePath).not.toHaveBeenCalledWith("/loja/[slug]", "page");
-    expect(revalidatePath).toHaveBeenCalledTimes(2);
+    expect(revalidatePath).toHaveBeenCalledTimes(3);
   });
 
   it("falha (RPC com erro): revalidatePath NÃO é chamado", async () => {
@@ -473,12 +477,14 @@ describe("reordenarItensDoGrupoOpcional (Server Action — issue 215)", () => {
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
-  it("[215-F13] sucesso: revalidatePath do painel E do slug da PRÓPRIA loja, nunca a forma coringa", async () => {
+  it("[215-F13] sucesso: revalidatePath das DUAS rotas do painel E do slug da PRÓPRIA loja, nunca a forma coringa", async () => {
     await reordenarItensDoGrupoOpcional(payload());
     expect(revalidatePath).toHaveBeenCalledWith("/painel/produtos/opcionais");
+    // [217] A rota irmã que passou a montar o cartão dentro de um modal.
+    expect(revalidatePath).toHaveBeenCalledWith("/painel/produtos");
     expect(revalidatePath).toHaveBeenCalledWith(`/loja/${LOJA_SLUG}`);
     expect(revalidatePath).not.toHaveBeenCalledWith("/loja/[slug]", "page");
-    expect(revalidatePath).toHaveBeenCalledTimes(2);
+    expect(revalidatePath).toHaveBeenCalledTimes(3);
   });
 
   it("[215-F14] falha (RPC com erro): revalidatePath NÃO é chamado", async () => {

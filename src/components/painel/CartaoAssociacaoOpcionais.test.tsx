@@ -22,7 +22,7 @@ import { CartaoAssociacaoOpcionais } from "./CartaoAssociacaoOpcionais";
 import type {
   CategoriaProduto,
   OpcionaisClientAcoes,
-} from "@/app/(painel)/painel/(bloqueavel)/produtos/opcionais/OpcionaisClient";
+} from "@/components/painel/contrato-opcionais";
 import type { CategoriaOpcional } from "@/lib/supabase/queries/opcionais";
 
 function categoriaOpcional(

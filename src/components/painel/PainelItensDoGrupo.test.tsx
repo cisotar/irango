@@ -15,7 +15,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { PainelItensDoGrupo } from "./PainelItensDoGrupo";
-import type { OpcionaisClientAcoes } from "@/app/(painel)/painel/(bloqueavel)/produtos/opcionais/OpcionaisClient";
+import type { OpcionaisClientAcoes } from "@/components/painel/contrato-opcionais";
 import type { Opcional } from "@/lib/supabase/queries/opcionais";
 
 function opcional(overrides: Partial<Opcional> = {}): Opcional {

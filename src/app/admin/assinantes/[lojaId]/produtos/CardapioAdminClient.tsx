@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { ProdutosClient } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import type { Categoria } from "@/components/painel/FormProduto";
 import type { Produto, OpcionaisPorCategoria } from "@/lib/supabase/queries/produtos";
+import type { ProdutosClientProps } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import { schemaReordenacaoCategorias } from "@/lib/validacoes/produto";
 import {
   criarCategoriaAdmin,
@@ -21,7 +22,18 @@ import {
   alternarOcultoAdmin,
 } from "@/app/admin/assinantes/actions/admin-produtos";
 import { enviarFotoProdutoAdmin } from "@/app/admin/assinantes/actions/admin-upload";
-import { salvarAssociacaoOpcionaisAdmin } from "@/app/admin/assinantes/actions/admin-opcionais";
+import {
+  criarCategoriaOpcionalAdmin,
+  atualizarCategoriaOpcionalAdmin,
+  removerCategoriaOpcionalAdmin,
+  criarOpcionalAdmin,
+  atualizarOpcionalAdmin,
+  alternarOpcionalAtivoAdmin,
+  removerOpcionalAdmin,
+  salvarAssociacaoOpcionaisAdmin,
+  reordenarOpcionaisDaCategoriaAdmin,
+  reordenarItensDoGrupoOpcionalAdmin,
+} from "@/app/admin/assinantes/actions/admin-opcionais";
 
 /**
  * Wrapper client da aba Cardápio do hub admin (issue 100). Reusa o
@@ -42,14 +54,15 @@ export function CardapioAdminClient({
   categorias,
   opcionaisPorCategoria,
   categoriasOpcional,
+  opcionais,
+  associacoes,
 }: {
   lojaSlug: string;
   lojaId: string;
   produtos: Produto[];
   categorias: Categoria[];
   opcionaisPorCategoria: OpcionaisPorCategoria;
-  categoriasOpcional: { id: string; nome: string }[];
-}) {
+} & Pick<ProdutosClientProps, "categoriasOpcional" | "opcionais" | "associacoes">) {
   // Foto: o `UploadFotoProduto` monta o FormData só com o arquivo (CAMPO_ARQUIVO).
   // A action admin lê `loja_id` do FormData; injetamos o `lojaId` da URL aqui.
   const enviarFotoProduto = useCallback(
@@ -72,6 +85,12 @@ export function CardapioAdminClient({
       // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
       categoriasOpcional={categoriasOpcional}
+      // [217] A biblioteca de itens e as linhas de associação alimentam o
+      // cartão dentro do modal. Nenhuma query nova no admin: o agregado
+      // `carregarOpcionaisAdmin` (132) já devolvia as duas — a page só passou a
+      // desestruturá-las.
+      opcionais={opcionais}
+      associacoes={associacoes}
       acoes={{
         criarCategoria: (payload) => criarCategoriaAdmin(lojaId, payload),
         atualizarCategoria: (id, payload) =>
@@ -105,6 +124,27 @@ export function CardapioAdminClient({
         enviarFotoProduto,
         salvarAssociacaoOpcionais: (payload) =>
           salvarAssociacaoOpcionaisAdmin(lojaId, payload),
+        // [217] As 9 do CRUD de opcionais, mesmas assinaturas do
+        // `OpcionaisAdminClient` (137): o modal do cardápio agora monta o mesmo
+        // cartão, e `acoes` é OBRIGATÓRIA sem default (issue 160) — omitir
+        // qualquer uma quebra o build em vez de cair na action do LOJISTA, que
+        // resolveria a loja por `auth.uid()` e gravaria na loja do admin logado.
+        criarCategoriaOpcional: (payload) =>
+          criarCategoriaOpcionalAdmin(lojaId, payload),
+        atualizarCategoriaOpcional: (id, payload) =>
+          atualizarCategoriaOpcionalAdmin(lojaId, id, payload),
+        removerCategoriaOpcional: (id) =>
+          removerCategoriaOpcionalAdmin(lojaId, id),
+        criarOpcional: (payload) => criarOpcionalAdmin(lojaId, payload),
+        atualizarOpcional: (id, payload) =>
+          atualizarOpcionalAdmin(lojaId, id, payload),
+        alternarOpcionalAtivo: (id, ativo) =>
+          alternarOpcionalAtivoAdmin(lojaId, id, ativo),
+        removerOpcional: (id) => removerOpcionalAdmin(lojaId, id),
+        reordenarOpcionaisDaCategoria: (payload) =>
+          reordenarOpcionaisDaCategoriaAdmin(lojaId, payload),
+        reordenarItensDoGrupoOpcional: (payload) =>
+          reordenarItensDoGrupoOpcionalAdmin(lojaId, payload),
       }}
     />
   );
