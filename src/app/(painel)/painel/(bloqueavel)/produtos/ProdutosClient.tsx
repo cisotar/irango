@@ -813,8 +813,15 @@ export function ProdutosClient({
 
           {/* O corpo ROLÁVEL — é ele que dá sentido ao `cabecalhoFixo`.
               `min-h-0` é o que deixa o `flex-1` encolher dentro do flex-col do
-              `DialogContent` em vez de estourar a altura. */}
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              `DialogContent` em vez de estourar a altura.
+
+              SEM `pt` aqui, e o respiro de topo vai no filho: `sticky top-0` se
+              ancora no PADDING BOX do container de scroll, então um `pt-4` no
+              próprio container empurraria o cabeçalho grudado 1rem para baixo e
+              deixaria uma faixa acima dele onde o conteúdo continua rolando
+              visível, cortado no meio da linha. Com o respiro no filho ele
+              rola embora normalmente e o cabeçalho gruda rente ao topo. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
             {categoriaOpcionaisAberta && (
               // `Accordion` é OBRIGATÓRIO: o cartão devolve um `AccordionItem`,
               // que sem raiz não renderiza. `key` zera o estado interno ao
@@ -822,7 +829,7 @@ export function ProdutosClient({
               <Accordion
                 multiple
                 defaultValue={[categoriaOpcionaisAberta.id]}
-                className="gap-4"
+                className="gap-4 pt-4"
               >
                 <CartaoAssociacaoOpcionais
                   key={categoriaOpcionaisAberta.id}
