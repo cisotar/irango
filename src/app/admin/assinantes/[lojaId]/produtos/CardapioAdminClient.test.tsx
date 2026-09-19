@@ -47,6 +47,17 @@ vi.mock("@/app/admin/assinantes/actions/admin-upload", () => ({
 
 vi.mock("@/app/admin/assinantes/actions/admin-opcionais", () => ({
   salvarAssociacaoOpcionaisAdmin: vi.fn(async () => ({ ok: true })),
+  // [217] As 9 restantes do CRUD de opcionais: o modal do cardápio monta o
+  // mesmo cartão de associação, e o wrapper admin tem de injetar TODAS.
+  criarCategoriaOpcionalAdmin: vi.fn(async () => ({ ok: true })),
+  atualizarCategoriaOpcionalAdmin: vi.fn(async () => ({ ok: true })),
+  removerCategoriaOpcionalAdmin: vi.fn(async () => ({ ok: true })),
+  criarOpcionalAdmin: vi.fn(async () => ({ ok: true })),
+  atualizarOpcionalAdmin: vi.fn(async () => ({ ok: true })),
+  alternarOpcionalAtivoAdmin: vi.fn(async () => ({ ok: true })),
+  removerOpcionalAdmin: vi.fn(async () => ({ ok: true })),
+  reordenarOpcionaisDaCategoriaAdmin: vi.fn(async () => ({ ok: true })),
+  reordenarItensDoGrupoOpcionalAdmin: vi.fn(async () => ({ ok: true })),
 }));
 
 import { CardapioAdminClient } from "./CardapioAdminClient";
@@ -66,6 +77,19 @@ const CHAVES_ESPERADAS = [
   "alternarOculto",
   "enviarFotoProduto",
   "salvarAssociacaoOpcionais",
+  // [217] `alternarExibirImagens` e `reordenarCategorias` já eram injetadas mas
+  // não estavam listadas; as 9 de opcionais entram com o cartão no modal.
+  "alternarExibirImagens",
+  "reordenarCategorias",
+  "criarCategoriaOpcional",
+  "atualizarCategoriaOpcional",
+  "removerCategoriaOpcional",
+  "criarOpcional",
+  "atualizarOpcional",
+  "alternarOpcionalAtivo",
+  "removerOpcional",
+  "reordenarOpcionaisDaCategoria",
+  "reordenarItensDoGrupoOpcional",
 ] as const;
 
 function renderizar(lojaId = LOJA_ALVO) {
@@ -77,6 +101,8 @@ function renderizar(lojaId = LOJA_ALVO) {
       categorias={[]}
       opcionaisPorCategoria={{}}
       categoriasOpcional={[]}
+      opcionais={[]}
+      associacoes={[]}
     />,
   );
 }
@@ -87,7 +113,7 @@ describe("CardapioAdminClient — paridade de injeção de acoes (achado 143)", 
     capturado.acoes = undefined;
   });
 
-  it("injeta as 10 actions do ProdutosClient — nenhuma cai no fallback do lojista", () => {
+  it("injeta as 21 actions do ProdutosClient — nenhuma cai no fallback do lojista", () => {
     renderizar();
     for (const chave of CHAVES_ESPERADAS) {
       expect(capturado.acoes?.[chave], `acoes.${chave} deveria estar definida`).toBeTypeOf(

@@ -4,6 +4,7 @@ import { useMemo, type ReactNode, type Ref } from "react";
 
 import {
   ModoReordenar,
+  type ContextoLinhaReordenavel,
   type ItemReordenavel,
   type ManipuladorModoReordenar,
 } from "@/components/painel/ModoReordenar";
@@ -68,6 +69,14 @@ export type ReordenarOpcionaisDaCategoriaProps = {
   aoMudarStatus?: (status: StatusSalvamento) => void;
   /** Toggle de checkbox em voo: alça e setas inertes (nunca `disabled`). */
   arrastoBloqueado?: boolean;
+  /**
+   * Pass-through para o `ModoReordenar` (issue 216). Quem sabe que a linha de
+   * grupo pode virar um disclosure com painel de itens é o CARTÃO, não esta
+   * casca — aqui ela só atravessa. Ausente = linha de sempre.
+   */
+  renderLinha?: (ctx: ContextoLinhaReordenavel) => ReactNode;
+  /** Pass-through: o cartão colapsa o painel de itens ao começar o arrasto. */
+  aoComecarArrasto?: () => void;
   ref?: Ref<ManipuladorModoReordenar>;
 };
 
@@ -79,6 +88,8 @@ export function ReordenarOpcionaisDaCategoria({
   ocultarStatus,
   aoMudarStatus,
   arrastoBloqueado,
+  renderLinha,
+  aoComecarArrasto,
   ref,
 }: ReordenarOpcionaisDaCategoriaProps) {
   const itens = useMemo<ItemReordenavel[]>(
@@ -100,6 +111,8 @@ export function ReordenarOpcionaisDaCategoria({
       ocultarStatus={ocultarStatus}
       aoMudarStatus={aoMudarStatus}
       arrastoBloqueado={arrastoBloqueado}
+      renderLinha={renderLinha}
+      aoComecarArrasto={aoComecarArrasto}
       mensagemInicial={
         `${grupos.length} grupos de opcional na ordem da vitrine. ` +
         "Use os botões mover para cima e mover para baixo."

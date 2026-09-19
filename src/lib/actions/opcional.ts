@@ -16,6 +16,7 @@ import {
   schemaOpcional,
   schemaAssociacaoCategoriaOpcional,
   schemaReordenacaoOpcionaisDaCategoria,
+  schemaReordenacaoItensDoGrupo,
 } from "@/lib/validacoes/opcional";
 import { planejarAssociacaoOpcionais } from "@/lib/utils/associacao-opcionais";
 import { createClient } from "@/lib/supabase/server";
@@ -24,7 +25,27 @@ import { revalidatePath } from "next/cache";
 
 export type ResultadoOpcional = { ok: true } | { ok: false; erro: string };
 
-const CAMINHO_PAINEL = "/painel/produtos/opcionais";
+/**
+ * As DUAS rotas do painel que enxergam opcionais. `/painel/produtos/opcionais` é
+ * a biblioteca; `/painel/produtos` passou a montar o MESMO cartão de associação
+ * dentro de um modal (issue 217) e exibe os chips de grupo por produto.
+ *
+ * Sem a segunda, o sintoma só aparece em runtime e só na TRAVESSIA: editar no
+ * modal e navegar para a rota irmã (ou o inverso) servia a entrada velha do
+ * Router Cache do cliente — "editei e não atualizou". Dentro do modal a tela
+ * atualiza de qualquer jeito, porque `onSalvo` chama `router.refresh()`.
+ *
+ * Ponto ÚNICO de edição quando aparecer o 3º caminho: um array repetido nos 10
+ * pontos de revalidação é a próxima divergência silenciosa.
+ */
+const CAMINHOS_PAINEL = [
+  "/painel/produtos/opcionais",
+  "/painel/produtos",
+] as const;
+
+function revalidarPainelDeProdutos(): void {
+  for (const caminho of CAMINHOS_PAINEL) revalidatePath(caminho);
+}
 
 /**
  * Mensagem ÚNICA para id alheio, lista incompleta, categoria de outra loja e
@@ -93,7 +114,7 @@ export async function criarCategoriaOpcional(
       console.error("[criarCategoriaOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar a categoria." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[criarCategoriaOpcional]", e);
@@ -125,7 +146,7 @@ export async function atualizarCategoriaOpcional(
       console.error("[atualizarCategoriaOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar a categoria." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[atualizarCategoriaOpcional]", e);
@@ -148,7 +169,7 @@ export async function removerCategoriaOpcional(
       console.error("[removerCategoriaOpcional]", error);
       return { ok: false, erro: "Não foi possível remover a categoria." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[removerCategoriaOpcional]", e);
@@ -187,7 +208,7 @@ export async function criarOpcional(
       console.error("[criarOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[criarOpcional]", e);
@@ -226,7 +247,7 @@ export async function atualizarOpcional(
       console.error("[atualizarOpcional]", error);
       return { ok: false, erro: "Não foi possível salvar o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[atualizarOpcional]", e);
@@ -249,7 +270,7 @@ export async function alternarOpcionalAtivo(
       console.error("[alternarOpcionalAtivo]", error);
       return { ok: false, erro: "Não foi possível atualizar o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[alternarOpcionalAtivo]", e);
@@ -267,7 +288,7 @@ export async function removerOpcional(id: string): Promise<ResultadoOpcional> {
       console.error("[removerOpcional]", error);
       return { ok: false, erro: "Não foi possível remover o opcional." };
     }
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[removerOpcional]", e);
@@ -366,7 +387,7 @@ export async function salvarAssociacaoOpcionais(
       }
     }
 
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     return { ok: true };
   } catch (e) {
     console.error("[salvarAssociacaoOpcionais]", e);
@@ -405,8 +426,12 @@ export async function reordenarOpcionaisDaCategoria(
   const { categoria_id, categoria_opcional_id } = parsed.data;
 
   try {
-    // 2) Client AUTENTICADO — `security invoker` mantém a RLS
-    //    `cat_prod_opc_escrita_propria` valendo dentro da função.
+    // 2) Client AUTENTICADO. Desde a issue 215 a função é `security definer`,
+    //    então a RLS `cat_prod_opc_escrita_propria` NÃO é mais a autoridade: a
+    //    autoridade é a trava T2 no corpo da função, que exige
+    //    `lojas.dono_id = auth.uid()` para o `p_loja_id` recebido. Ainda assim
+    //    o client aqui é o autenticado, nunca `service_role` — é o `auth.uid()`
+    //    da sessão que a T2 lê, e elevar aqui apagaria justamente esse sinal.
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) {
@@ -436,11 +461,84 @@ export async function reordenarOpcionaisDaCategoria(
 
     // A vitrine vai pelo slug da PRÓPRIA loja, nunca pela forma coringa
     // ("/loja/[slug]", "page"), que invalidaria o Router Cache de TODAS as lojas.
-    revalidatePath(CAMINHO_PAINEL);
+    revalidarPainelDeProdutos();
     revalidatePath(`/loja/${loja.slug}`);
     return { ok: true };
   } catch (e) {
     console.error("[reordenarOpcionaisDaCategoria]", e);
+    return { ok: false, erro: ERRO_ORDEM };
+  }
+}
+
+// ── Reordenação dos ITENS dentro de UM grupo de opcional (issue 215) ─────────
+
+/**
+ * Grava `ordem` normalizada 0..n-1 para TODOS os itens (`opcionais`) de UM grupo
+ * (`opcionais_categorias`), numa única instrução atômica.
+ *
+ * Irmã de `reordenarOpcionaisDaCategoria`, um nível abaixo na árvore, com as
+ * MESMAS garantias: isto é AUTORIZAÇÃO, não CRUD — o payload é uma lista de ids
+ * escolhida pelo cliente. `p_loja_id` vem SEMPRE de `buscarLojaDoDono`
+ * (auth.uid()), NUNCA do payload. Já `categoria_opcional_id` vem do payload — é
+ * o único parâmetro de escopo que não deriva do auth — e por isso passa por
+ * `categoriaOpcionalPertenceALoja` antes da RPC, além da trava T3
+ * (coerência loja↔grupo) dentro da própria RPC.
+ *
+ * O pre-check de posse dos ids fica deliberadamente na RPC: em JS ele seria
+ * TOCTOU (a lista pode mudar entre o SELECT e o UPDATE); dentro da transação,
+ * não. A RPC exige a PERMUTAÇÃO COMPLETA do par (loja, grupo) e confere o
+ * `row_count` — id alheio, inexistente, duplicado ou de outro grupo derruba a
+ * transação inteira, sem posição parcial gravada.
+ */
+export async function reordenarItensDoGrupoOpcional(
+  payload: unknown,
+): Promise<ResultadoOpcional> {
+  // 1) Forma ANTES de qualquer I/O. O parse devolve um objeto NOVO: propriedade
+  //    hostil pendurada pelo cliente (ex.: `loja_id`) não chega aos args da RPC.
+  const parsed = schemaReordenacaoItensDoGrupo.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: ERRO_ORDEM };
+  }
+  const { categoria_opcional_id, opcional_id } = parsed.data;
+
+  try {
+    // 2) Client AUTENTICADO — a função é `security definer` e lê `auth.uid()`
+    //    na trava T2; elevar a `service_role` aqui apagaria esse sinal.
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: ERRO_ORDEM };
+    }
+
+    // 3) O grupo veio do cliente — provar que é da PRÓPRIA loja (RN-O8).
+    const grupoOk = await categoriaOpcionalPertenceALoja(
+      supabase,
+      categoria_opcional_id,
+      loja.id,
+    );
+    if (!grupoOk) {
+      return { ok: false, erro: ERRO_ORDEM };
+    }
+
+    // 4) UMA ida ao banco, UMA instrução, atômica. A SEQUÊNCIA do payload é o
+    //    dado: `p_ids` vai na ordem recebida, sem normalização.
+    const { error } = await supabase.rpc("reordenar_itens_do_grupo_opcional", {
+      p_loja_id: loja.id,
+      p_categoria_opcional_id: categoria_opcional_id,
+      p_ids: opcional_id,
+    });
+    if (error) {
+      console.error("[reordenarItensDoGrupoOpcional]", error);
+      return { ok: false, erro: ERRO_ORDEM };
+    }
+
+    // Slug da PRÓPRIA loja, nunca a forma coringa ("/loja/[slug]", "page"), que
+    // invalidaria o Router Cache de TODAS as lojas do marketplace.
+    revalidarPainelDeProdutos();
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[reordenarItensDoGrupoOpcional]", e);
     return { ok: false, erro: ERRO_ORDEM };
   }
 }

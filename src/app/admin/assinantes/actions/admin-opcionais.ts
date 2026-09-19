@@ -28,6 +28,7 @@ import {
   schemaOpcional,
   schemaAssociacaoCategoriaOpcional,
   schemaReordenacaoOpcionaisDaCategoria,
+  schemaReordenacaoItensDoGrupo,
 } from "@/lib/validacoes/opcional";
 import { planejarAssociacaoOpcionais } from "@/lib/utils/associacao-opcionais";
 import {
@@ -431,16 +432,24 @@ export async function salvarAssociacaoOpcionaisAdmin(
  * Variante ADMIN de `reordenarOpcionaisDaCategoria` (issue 208), escopada pela
  * LOJA-ALVO da URL admin.
  *
- * NÃO reusa a RPC `reordenar_opcionais_da_categoria`: ela é `security invoker` e
- * a RLS do lojista (lojas.dono_id = auth.uid()) não vale para o admin do SaaS —
- * sob service_role a permutação e o `row_count` seriam checados contra um
- * conjunto que a RLS não filtra, e o isolamento passaria a depender só do
- * argumento. Aqui o isolamento vem do escopo explícito por `lojaId` em TODA
- * leitura e escrita.
+ * REUSA a RPC `reordenar_opcionais_da_categoria` desde a issue 215, que a tornou
+ * `security definer` e fechou o débito 211. Antes disso não dava: a função era
+ * `security invoker` e a RLS do lojista (`lojas.dono_id = auth.uid()`) não vale
+ * para o admin do SaaS, então sob `service_role` a permutação seria checada
+ * contra um conjunto que a RLS não filtra — e esta action gravava a ordem num
+ * LOOP de N `update` FORA de transação, deixando posições parciais quando uma
+ * falha caía no meio.
  *
- * Fail-closed igual à RPC: a lista tem que ser a PERMUTAÇÃO COMPLETA do par
- * (loja-alvo, categoria de produto). Subconjunto, id alheio ou duplicado →
- * nenhuma escrita.
+ * Agora a autoridade mora no corpo da função: a trava T2 aceita a via de
+ * serviço, e a T3 exige coerência loja↔categoria de produto INCLUSIVE sob
+ * `service_role`. O isolamento por tenant continua sendo o `p_loja_id`, que vem
+ * SEMPRE de `validarLojaIdAdmin(lojaId)` (a URL admin), NUNCA do payload.
+ *
+ * Fail-closed igual ao caminho do lojista: a lista tem que ser a PERMUTAÇÃO
+ * COMPLETA do par (loja-alvo, categoria de produto). Subconjunto, id alheio ou
+ * duplicado → a transação inteira cai, nenhuma escrita. O `count: "exact"` que o
+ * loop precisava ficou desnecessário: contagem e `update` rodam na MESMA
+ * transação, então a janela TOCTOU não existe mais.
  */
 export async function reordenarOpcionaisDaCategoriaAdmin(
   lojaId: string,
@@ -461,53 +470,16 @@ export async function reordenarOpcionaisDaCategoriaAdmin(
     const produtoOk = await categoriaProdutoPertenceALoja(escopo, categoria_id);
     if (!produtoOk) return { ok: false, erro: ERRO_ORDEM_ADMIN };
 
-    // Permutação completa do PAR (loja-alvo, categoria de produto).
-    const { data: associados, error: erroLeitura } = await svc
-      .from("categoria_produto_opcionais")
-      .select("categoria_opcional_id")
-      .eq("loja_id", loja.lojaId)
-      .eq("categoria_id", categoria_id);
-    if (erroLeitura) {
-      console.error("[reordenarOpcionaisDaCategoriaAdmin:select]", erroLeitura);
+    // UMA ida ao banco, UMA instrução, atômica. `ordem` é DERIVADA de
+    // `ordinality - 1` dentro da RPC — o cliente só mandou a sequência.
+    const { error } = await svc.rpc("reordenar_opcionais_da_categoria", {
+      p_loja_id: loja.lojaId,
+      p_categoria_id: categoria_id,
+      p_ids: categoria_opcional_id,
+    });
+    if (error) {
+      console.error("[reordenarOpcionaisDaCategoriaAdmin:rpc]", error);
       return { ok: false, erro: ERRO_ORDEM_ADMIN };
-    }
-
-    const noPar = new Set((associados ?? []).map((a) => a.categoria_opcional_id));
-    const cobreTudo =
-      noPar.size === categoria_opcional_id.length &&
-      categoria_opcional_id.every((id) => noPar.has(id));
-    if (!cobreTudo) return { ok: false, erro: ERRO_ORDEM_ADMIN };
-
-    // `ordem` é DERIVADA do índice no servidor — o cliente só mandou a sequência.
-    //
-    // NÃO usa `escopo.atualizar(tabela, id, patch)` de propósito, embora o wrapper
-    // exista e a tabela tenha `id` próprio: ele escopa por (loja_id, id), e aqui a
-    // identidade da linha é a TRIPLA (loja_id, categoria_id, categoria_opcional_id).
-    // Sob `service_role` a RLS está desligada, então o predicado explícito é a única
-    // trava — trocá-lo por (loja_id, id) afrouxaria a garantia no único caminho que
-    // não tem rede de proteção embaixo.
-    //
-    // `count: "exact"` é o que o wrapper daria de graça e o loop precisa ter: sem ele,
-    // uma linha removida entre o SELECT acima e este UPDATE afeta 0 linhas SEM erro, e
-    // a action devolveria { ok: true } com uma posição faltando (TOCTOU).
-    for (const [posicao, catOpcId] of categoria_opcional_id.entries()) {
-      const { error, count } = await svc
-        .from("categoria_produto_opcionais")
-        .update({ ordem: posicao }, { count: "exact" })
-        .eq("loja_id", loja.lojaId)
-        .eq("categoria_id", categoria_id)
-        .eq("categoria_opcional_id", catOpcId);
-      if (error) {
-        console.error("[reordenarOpcionaisDaCategoriaAdmin:update]", error);
-        return { ok: false, erro: ERRO_ORDEM_ADMIN };
-      }
-      if (count !== 1) {
-        console.error(
-          "[reordenarOpcionaisDaCategoriaAdmin:update] linhas afetadas inesperado",
-          { catOpcId, count },
-        );
-        return { ok: false, erro: ERRO_ORDEM_ADMIN };
-      }
     }
 
     registrarAcessoAdmin(svc, {
@@ -519,6 +491,65 @@ export async function reordenarOpcionaisDaCategoriaAdmin(
     return { ok: true };
   } catch (e) {
     console.error("[reordenarOpcionaisDaCategoriaAdmin]", e);
+    return { ok: false, erro: ERRO_ORDEM_ADMIN };
+  }
+}
+
+// ── Reordenação dos ITENS dentro de um grupo de opcional (issue 215) ─────────
+
+/**
+ * Variante ADMIN de `reordenarItensDoGrupoOpcional`, escopada pela LOJA-ALVO da
+ * URL admin. Espelho exato da via do lojista: as duas gravam a MESMA coluna com
+ * a MESMA regra, pela MESMA RPC — a única diferença é de onde vem a loja
+ * (`auth.uid()` lá, `lojaId` da URL aqui).
+ *
+ * `p_loja_id` vem SEMPRE de `validarLojaIdAdmin(lojaId)`, NUNCA do payload: sob
+ * `service_role` a RLS não filtra nada e a trava T2 reconhece a via de serviço,
+ * então o valor deste argumento é o ÚNICO escopo de tenant que resta. O
+ * `categoria_opcional_id` (do cliente) é provado como da LOJA-ALVO por SELECT
+ * escopado antes da RPC, e a trava T3 confere a mesma coerência dentro da
+ * transação.
+ */
+export async function reordenarItensDoGrupoOpcionalAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: ERRO_ORDEM_ADMIN };
+
+  const parsed = schemaReordenacaoItensDoGrupo.safeParse(descartarLojaId(payload));
+  if (!parsed.success) return { ok: false, erro: ERRO_ORDEM_ADMIN };
+
+  const { categoria_opcional_id, opcional_id } = parsed.data;
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // O grupo veio do cliente: provar que é da LOJA-ALVO (RN-O8).
+    const grupoOk = await categoriaOpcionalPertenceALoja(escopo, categoria_opcional_id);
+    if (!grupoOk) return { ok: false, erro: ERRO_ORDEM_ADMIN };
+
+    // UMA ida ao banco, UMA instrução, atômica. A SEQUÊNCIA do payload é o dado:
+    // `p_ids` vai na ordem recebida; `ordem` é derivada de `ordinality - 1`.
+    const { error } = await svc.rpc("reordenar_itens_do_grupo_opcional", {
+      p_loja_id: loja.lojaId,
+      p_categoria_opcional_id: categoria_opcional_id,
+      p_ids: opcional_id,
+    });
+    if (error) {
+      console.error("[reordenarItensDoGrupoOpcionalAdmin:rpc]", error);
+      return { ok: false, erro: ERRO_ORDEM_ADMIN };
+    }
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "opcional.item.reordenar",
+      entidadeId: categoria_opcional_id,
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[reordenarItensDoGrupoOpcionalAdmin]", e);
     return { ok: false, erro: ERRO_ORDEM_ADMIN };
   }
 }

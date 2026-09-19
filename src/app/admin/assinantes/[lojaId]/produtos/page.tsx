@@ -25,7 +25,9 @@ export default async function CardapioAdminPage({
   const { lojaId } = await params;
   const [
     { loja, categorias, produtos },
-    { opcionaisPorCategoria, categoriasOpcional },
+    // [217] `opcionais` e `associacoes` NÃO são query nova: o agregado já as
+    // carregava (carga-opcionais.ts) — a page só não as desestruturava.
+    { opcionaisPorCategoria, categoriasOpcional, opcionais, associacoes },
   ] = await Promise.all([
     carregarLojaAdmin(lojaId),
     carregarOpcionaisAdmin(lojaId),
@@ -42,9 +44,16 @@ export default async function CardapioAdminPage({
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
-      categoriasOpcional={categoriasOpcional.map((c) => ({
-        id: c.id,
-        nome: c.nome,
+      // Linhas INTEIRAS desde a 217 — o cartão de associação exige
+      // `CategoriaOpcional` completa, não mais o par `{id, nome}`.
+      categoriasOpcional={categoriasOpcional}
+      opcionais={opcionais}
+      // Shape estreito, como a `opcionais/page.tsx` do admin já faz. `ordem`
+      // (208) vai junto: é ela que abre a lista na sequência gravada.
+      associacoes={associacoes.map((a) => ({
+        categoria_id: a.categoria_id,
+        categoria_opcional_id: a.categoria_opcional_id,
+        ordem: a.ordem,
       }))}
     />
   );

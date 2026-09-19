@@ -257,7 +257,14 @@ function agruparOpcionaisPorCategoria(
     const cat = linha.opcionais_categorias;
     if (!cat) continue;
 
-    const opcionais = [...(cat.opcionais ?? [])].sort((a, b) => a.ordem - b.ordem);
+    // Desempate por `id`: `opcionais.ordem` é `int not null default 0`, então
+    // as linhas anteriores à 215 empatam TODAS em 0 e sem segundo critério a
+    // vitrine e o painel poderiam listá-las em ordens diferentes. Mesmo critério
+    // de `buscarOpcionaisDoLojista` e de `CartaoAssociacaoOpcionais` — painel e
+    // vitrine concordam byte a byte nas linhas legadas (216).
+    const opcionais = [...(cat.opcionais ?? [])].sort(
+      (a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id),
+    );
     if (opcionais.length === 0) continue; // grupo sem item visível (RLS escondeu todos)
 
     const grupos = (mapa[linha.categoria_id] ??= []);

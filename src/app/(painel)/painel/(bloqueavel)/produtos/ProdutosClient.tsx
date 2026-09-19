@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   EyeOff,
   MoreVertical,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,7 +32,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -63,6 +64,19 @@ import {
   ReordenarCategorias,
   type ManipuladorReordenarCategorias,
 } from "@/components/painel/ReordenarCategorias";
+import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
+import type {
+  Associacao,
+  CategoriaProduto,
+  OpcionaisClientAcoes,
+} from "@/components/painel/contrato-opcionais";
+import {
+  agruparOpcionaisPorGrupo,
+  contarItensPorGrupo,
+  selecionadosPorCategoria,
+  ordemPorCategoria,
+  alcancePorGrupo as derivarAlcancePorGrupo,
+} from "@/lib/utils/derivar-associacao-opcionais";
 import type {
   removerProduto as removerProdutoLojista,
   alternarDisponibilidade as alternarDisponibilidadeLojista,
@@ -75,15 +89,16 @@ import type {
   alternarExibirImagens as alternarExibirImagensLojista,
   reordenarCategorias as reordenarCategoriasLojista,
 } from "@/lib/actions/produto";
-import type { salvarAssociacaoOpcionais } from "@/lib/actions/opcional";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type {
   Produto,
   OpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
-
-type CategoriaOpcional = { id: string; nome: string };
+import type {
+  CategoriaOpcional,
+  Opcional,
+} from "@/lib/supabase/queries/opcionais";
 
 export type ProdutosClientProps = {
   lojaSlug: string;
@@ -96,18 +111,38 @@ export type ProdutosClientProps = {
    * inicial do seletor de associação no título da categoria.
    */
   opcionaisPorCategoria: OpcionaisPorCategoria;
-  /** Todas as categorias de opcional da loja, para o seletor por categoria. */
+  /** Todas as categorias de opcional da loja, LINHAS INTEIRAS (217). */
   categoriasOpcional: CategoriaOpcional[];
   /**
+   * Biblioteca de opcionais da loja (ativos E inativos), já ordenada. Alimenta
+   * a sanfona de itens do cartão dentro do modal (217). NÃO sai de
+   * `opcionaisPorCategoria`: aquele é um sub-select estreito da vitrine.
+   */
+  opcionais: Opcional[];
+  /**
+   * Linhas de `categoria_produto_opcionais` — a FONTE DE VERDADE da associação
+   * (217). `opcionaisPorCategoria` descarta grupo associado que ainda não tem
+   * item; usá-lo como seleção inicial apagaria essa associação em silêncio no
+   * primeiro toggle, porque o toggle grava o conjunto inteiro.
+   */
+  associacoes: Associacao[];
+  /**
    * Actions injetadas. Todas OBRIGATÓRIAS (issue 160): a page do painel passa
-   * as 12 do lojista, a via admin passa as 12 variantes escopadas por `lojaId`.
+   * as 21 do lojista, a via admin passa as 21 variantes escopadas por `lojaId`.
    * Sem default — omitir uma chave aqui quebra o build em vez de cair na action
    * do lojista (que resolve a loja por `auth.uid()`) e gravar na loja errada.
    */
   acoes: AcoesProdutosClient;
 };
 
-/** Contrato das 12 actions do cardápio. Fonte única do conjunto exigido. */
+/**
+ * Contrato das actions do cardápio. Fonte única do conjunto exigido.
+ *
+ * INTERSEÇÃO desde a 217: as 11 de produto/categoria/upload mais as 10 de
+ * opcionais (`salvarAssociacaoOpcionais` é comum às duas metades, daí 21 chaves
+ * distintas). O cartão de associação recebe `acoes` inteiro e tipa direto — sem
+ * montar um objeto novo, que seria mais uma lista para esquecer uma chave.
+ */
 export type AcoesProdutosClient = {
   removerProduto: typeof removerProdutoLojista;
   alternarDisponibilidade: typeof alternarDisponibilidadeLojista;
@@ -120,8 +155,7 @@ export type AcoesProdutosClient = {
   removerCategoria: typeof removerCategoriaLojista;
   alternarExibirImagens: typeof alternarExibirImagensLojista;
   reordenarCategorias: typeof reordenarCategoriasLojista;
-  salvarAssociacaoOpcionais: typeof salvarAssociacaoOpcionais;
-};
+} & OpcionaisClientAcoes;
 
 type GrupoProdutos = {
   id: string | null;
@@ -186,16 +220,50 @@ export function ProdutosClient({
   // Encanada no server (issue 105); consumida pela UI na issue 107.
   opcionaisPorCategoria,
   categoriasOpcional,
+  opcionais,
+  associacoes,
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
 
-  const {
-    removerProduto,
-    alternarDisponibilidade,
-    alternarOculto,
-    salvarAssociacaoOpcionais: salvarAssociacao,
-  } = acoes;
+  const { removerProduto, alternarDisponibilidade, alternarOculto } = acoes;
+
+  /*
+    [217] As cinco derivações do cartão de associação são PURAS e moram em
+    `lib/utils/derivar-associacao-opcionais.ts` — a mesma cópia que
+    `OpcionaisClient` usa. Duplicar aqui significaria duas cópias do comparador
+    `ordem || id` divergindo em silêncio.
+  */
+
+  /** `categoria_id (produto) → set de categoria_opcional_id` PERSISTIDOS. */
+  const inicialPorProduto = useMemo(
+    () => selecionadosPorCategoria(associacoes),
+    [associacoes],
+  );
+
+  /** `ordem` gravada (208) por categoria de produto. */
+  const ordemPorProduto = useMemo(
+    () => ordemPorCategoria(associacoes),
+    [associacoes],
+  );
+
+  /** `categoria_opcional_id → itens do grupo` (216), ativos E inativos. */
+  const opcionaisPorGrupo = useMemo(
+    () => agruparOpcionaisPorGrupo(opcionais),
+    [opcionais],
+  );
+
+  /** `categoria_opcional_id → nº de itens`, para o detalhe de cada linha. */
+  const totalItensPorGrupo = useMemo(
+    () => contarItensPorGrupo(opcionaisPorGrupo),
+    [opcionaisPorGrupo],
+  );
+
+  /** `categoria_opcional_id → nomes das categorias de PRODUTO que usam o grupo`. */
+  const alcancePorGrupo = useMemo(
+    () => derivarAlcancePorGrupo(associacoes, categorias),
+    [associacoes, categorias],
+  );
 
   // null => criar; Produto => editar. `formAberto` controla a abertura do
   // Sheet (mobile) ou Dialog (desktop) — uma árvore por vez, sem duplicar
@@ -210,9 +278,11 @@ export function ProdutosClient({
   >(null);
   const ehDesktop = useMediaQuery("(min-width: 768px)");
 
-  // Categoria de produto com o seletor de opcionais aberto (null => fechado).
+  // Categoria de produto com o modal de opcionais aberto (null => fechado).
+  // É `CategoriaProduto` (id NÃO-nulo), não `GrupoProdutos`: "Sem categoria"
+  // não tem linha em `categoria_produto_opcionais` e nem exibe o botão.
   const [categoriaOpcionaisAberta, setCategoriaOpcionaisAberta] =
-    useState<GrupoProdutos | null>(null);
+    useState<CategoriaProduto | null>(null);
 
   // Produto pendente de remoção (controla o AlertDialog).
   const [aRemover, setARemover] = useState<Produto | null>(null);
@@ -487,7 +557,13 @@ export function ProdutosClient({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setCategoriaOpcionaisAberta(grupo)}
+                          onClick={() => {
+                            if (grupo.id == null) return;
+                            setCategoriaOpcionaisAberta({
+                              id: grupo.id,
+                              nome: grupo.nome,
+                            });
+                          }}
                         >
                           <SlidersHorizontal className="size-4" />
                           Opcionais
@@ -695,45 +771,89 @@ export function ProdutosClient({
         </Sheet>
       )}
 
-      {/* Seletor de opcionais da categoria */}
-      <Sheet
+      {/*
+        Opcionais da categoria (217) — UM Dialog só, com classes responsivas,
+        nunca duas árvores sob `useMediaQuery`. O cartão de dentro carrega
+        estado pesado (seleção, grupo aberto, handle imperativo de reordenação e
+        um autosave com debounce de 500ms): remontá-lo na hidratação e a cada
+        cruzada de 768px DESCARTARIA o movimento pendente em silêncio. Molde:
+        `components/vitrine/ProdutoModal.tsx` — base full-bleed no mobile
+        (h-dvh/w-screen/rounded-none), `md:` restaura o box centralizado do
+        primitivo e alarga para `max-w-3xl`.
+      */}
+      <Dialog
         open={categoriaOpcionaisAberta !== null}
         onOpenChange={(aberto) => {
           if (!aberto) setCategoriaOpcionaisAberta(null);
         }}
       >
-        <SheetContent className="overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Opcionais de {categoriaOpcionaisAberta?.nome}</SheetTitle>
-            <SheetDescription>
-              Escolha quais categorias de opcional aparecem para os produtos
-              desta categoria.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="px-4 pb-4">
-            <Separator className="mb-4" />
+        <DialogContent
+          // O ✕ padrão é `absolute` sem z-index; o cabeçalho STICKY do cartão é
+          // `z-10` e o cobriria. Por isso o fechar vem no cabeçalho do Dialog.
+          showCloseButton={false}
+          className="top-0 left-0 h-dvh max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none p-0 md:top-1/2 md:left-1/2 md:h-[min(640px,calc(100dvh-2rem))] md:max-h-[calc(100dvh-2rem)] md:w-[calc(100vw-2rem)] md:max-w-3xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl"
+        >
+          <DialogHeader className="shrink-0 flex-row items-center justify-between gap-2 border-b pr-2">
+            {/* Título GENÉRICO de propósito: o nome da categoria é o cabeçalho
+                sticky do cartão, logo abaixo. Repeti-lo aqui seria a mesma
+                string duas vezes na mesma dobra. */}
+            <DialogTitle>Opcionais</DialogTitle>
+            <DialogDescription className="sr-only">
+              Escolha quais categorias de opcional aparecem para os produtos de
+              {" "}
+              {categoriaOpcionaisAberta?.nome}, e em que ordem.
+            </DialogDescription>
+            <DialogClose
+              render={<Button variant="ghost" size="icon-sm" />}
+              aria-label="Fechar"
+            >
+              <X aria-hidden className="size-4" />
+            </DialogClose>
+          </DialogHeader>
+
+          {/* O corpo ROLÁVEL — é ele que dá sentido ao `cabecalhoFixo`.
+              `min-h-0` é o que deixa o `flex-1` encolher dentro do flex-col do
+              `DialogContent` em vez de estourar a altura.
+
+              SEM `pt` aqui, e o respiro de topo vai no filho: `sticky top-0` se
+              ancora no PADDING BOX do container de scroll, então um `pt-4` no
+              próprio container empurraria o cabeçalho grudado 1rem para baixo e
+              deixaria uma faixa acima dele onde o conteúdo continua rolando
+              visível, cortado no meio da linha. Com o respiro no filho ele
+              rola embora normalmente e o cabeçalho gruda rente ao topo. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
             {categoriaOpcionaisAberta && (
-              <SeletorOpcionaisCategoria
-                key={categoriaOpcionaisAberta.id}
-                categoriaId={categoriaOpcionaisAberta.id as string}
-                categoriasOpcional={categoriasOpcional}
-                salvarAssociacao={salvarAssociacao}
-                selecionadosIniciais={
-                  new Set(
-                    (opcionaisPorCategoria[categoriaOpcionaisAberta.id ?? ""] ?? []).map(
-                      (g) => g.categoriaOpcionalId,
-                    ),
-                  )
-                }
-                onSalvo={() => {
-                  setCategoriaOpcionaisAberta(null);
-                  router.refresh();
-                }}
-              />
+              // `Accordion` é OBRIGATÓRIO: o cartão devolve um `AccordionItem`,
+              // que sem raiz não renderiza. `key` zera o estado interno ao
+              // trocar de categoria.
+              <Accordion
+                multiple
+                defaultValue={[categoriaOpcionaisAberta.id]}
+                className="gap-4 pt-4"
+              >
+                <CartaoAssociacaoOpcionais
+                  key={categoriaOpcionaisAberta.id}
+                  categoriaProduto={categoriaOpcionaisAberta}
+                  categoriasOpcional={categoriasOpcional}
+                  selecionadosIniciais={
+                    inicialPorProduto.get(categoriaOpcionaisAberta.id) ??
+                    new Set()
+                  }
+                  ordemPorGrupo={
+                    ordemPorProduto.get(categoriaOpcionaisAberta.id) ?? new Map()
+                  }
+                  totalItensPorGrupo={totalItensPorGrupo}
+                  opcionaisPorGrupo={opcionaisPorGrupo}
+                  alcancePorGrupo={alcancePorGrupo}
+                  cabecalhoFixo
+                  onSalvo={() => router.refresh()}
+                  acoes={acoes}
+                />
+              </Accordion>
             )}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirmação de remoção */}
       <AlertDialog.Root
@@ -772,87 +892,5 @@ export function ProdutosClient({
         </AlertDialog.Portal>
       </AlertDialog.Root>
     </main>
-  );
-}
-
-/**
- * Checkboxes de categorias de opcional aplicáveis a UMA categoria de produto.
- * Grava via `salvarAssociacaoOpcionais` (issue 089) — mesma action da tela
- * /painel/produtos/opcionais, sem lógica nova.
- */
-function SeletorOpcionaisCategoria({
-  categoriaId,
-  categoriasOpcional,
-  salvarAssociacao,
-  selecionadosIniciais,
-  onSalvo,
-}: {
-  categoriaId: string;
-  categoriasOpcional: CategoriaOpcional[];
-  salvarAssociacao: typeof salvarAssociacaoOpcionais;
-  selecionadosIniciais: Set<string>;
-  onSalvo: () => void;
-}) {
-  const [selecionados, setSelecionados] =
-    useState<Set<string>>(selecionadosIniciais);
-  const [salvando, startSalvar] = useTransition();
-
-  function alternar(catOpcId: string, marcado: boolean) {
-    setSelecionados((atual) => {
-      const proximo = new Set(atual);
-      if (marcado) {
-        proximo.add(catOpcId);
-      } else {
-        proximo.delete(catOpcId);
-      }
-      return proximo;
-    });
-  }
-
-  function salvar() {
-    startSalvar(async () => {
-      const r = await salvarAssociacao({
-        categoria_id: categoriaId,
-        categoria_opcional_id: Array.from(selecionados),
-      });
-      if (!r.ok) {
-        toast.error(r.erro);
-        return;
-      }
-      toast.success("Opcionais atualizados!");
-      onSalvo();
-    });
-  }
-
-  if (categoriasOpcional.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Crie categorias de opcional em &ldquo;Opcionais&rdquo; para poder
-        associá-las.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        {categoriasOpcional.map((catOpc) => (
-          <label
-            key={catOpc.id}
-            className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
-          >
-            <Checkbox
-              checked={selecionados.has(catOpc.id)}
-              onCheckedChange={(v) => alternar(catOpc.id, v === true)}
-            />
-            <span>{catOpc.nome}</span>
-          </label>
-        ))}
-      </div>
-      <Button className="w-full" disabled={salvando} onClick={salvar}>
-        {salvando && <Loader2 className="mr-2 size-4 animate-spin" />}
-        Salvar
-      </Button>
-    </div>
   );
 }

@@ -410,3 +410,57 @@ A única lacuna é de **ambiente, já registrada como issue 176** (`tasks/176-pl
 sem Playwright e sem MCP de browser, **nenhum agente consegue testar gesto de toque**. O plano
 não pede acréscimo nenhum para contornar — ele **projeta em volta** da lacuna, escolhendo
 setas e teclado na lista interna (D4), que são testáveis em Vitest.
+
+---
+
+## 10. Execução real (2026-09-18/19) — onde divergiu do plano
+
+Executado na branch `feat/opcionais-modal-por-categoria-de-produto`, 19 commits.
+As 4 issues entregues, mais o débito **211** fechado e a **218** aberta.
+
+### Três desvios de sequência
+
+1. **`tdd` ANTES de `migrar`**, não depois. O plano mandava `migrar` → `tdd`, o
+   que faria o teste nascer verde e violaria o mandato 3. Ordem invertida.
+2. **O `db push` caiu no MEIO da 215**, não no fim: sem os tipos gerados a
+   `supabase.rpc(...)` não compila, então `executar` não podia começar antes.
+3. **Dois `db push`, não um.** O segundo levou a correção do fail-open.
+
+### Dois bugs que o gate verde não pegaria
+
+O padrão vale mais que os bugs: **nas duas issues críticas, o defeito real não
+foi o que o plano previu, e quem achou foi a revisão adversarial — não a suíte.**
+
+- **215 — a trava T2 existia e nada provava que funcionava.** Teste de mutação:
+  afrouxar T2 deixava as 18 asserções verdes, porque `asService`/`asUser`/`asAnon`
+  sempre mandam os dois sinais juntos. Pior: o `auditar` achou que T2 era
+  **fail-OPEN** com `auth.role()` NULL, e o harness pglite escondia isso por ser
+  mais permissivo que a produção. Custou uma migration e um push a mais.
+- **216 — a mitigação foi escrita contra a armadilha errada.** O plano protegeu
+  "mandar a `ordem` velha", quando o problema era **escrever `ordem` na edição**:
+  a coluna nasce `default 0`, então todo grupo nunca reordenado tinha tudo em 0,
+  e editar o item do meio o jogava para o fim, inclusive na vitrine. Como o teste
+  de mutação mostrou que a disciplina não é testável sem jsdom, a saída foi
+  tornar o bug **impossível** (`ordem` opcional no schema, edição não manda).
+
+### Custo
+
+Acima do orçado (23 invocações). O excedente foi o ciclo de correção da 215 e a
+retomada da 217, e não a feature. Os cortes recomendados na §7 foram aplicados:
+`acelerar` não rodou.
+
+### O que o plano não previu e apareceu
+
+- `opcionaisPorCategoria` descarta grupo associado sem item, o que obrigou a
+  carregar **duas** queries na 217, não uma;
+- `useMediaQuery` foi rejeitado na 217: forkar remontaria o cartão a cada cruzada
+  de 768px, descartando movimento pendente no debounce;
+- `Card` tem `overflow-hidden` fixo, então o `sticky` exigiu prop opt-in;
+- o ✕ do Dialog ficaria sob o cabeçalho sticky (`z-10` cria contexto).
+
+### Faixa que NENHUM agente fechou
+
+Confirmado pela issue 176: sem Playwright e sem MCP de browser, ninguém aqui
+prova `sticky` grudando, ✕ clicável sobre ele, contraste nos dois temas, foco
+real, gesto de toque ou leitor de tela. Isso foi para o corpo do PR como
+pendência explícita, não como suposição.

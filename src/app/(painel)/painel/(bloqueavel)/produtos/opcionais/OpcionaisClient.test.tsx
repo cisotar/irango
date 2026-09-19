@@ -44,11 +44,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-import {
-  OpcionaisClient,
-  type OpcionaisClientAcoes,
-  type OpcionaisClientProps,
-} from "./OpcionaisClient";
+import { OpcionaisClient, type OpcionaisClientProps } from "./OpcionaisClient";
+import type { OpcionaisClientAcoes } from "@/components/painel/contrato-opcionais";
 
 type Associacao = OpcionaisClientProps["associacoes"][number];
 import type {
@@ -102,6 +99,8 @@ function acoesBase(): OpcionaisClientAcoes {
     // 9ª (issues 208/209). Sem ela o arquivo NÃO COMPILA — é essa quebra que
     // prova o critério da 160: omitir uma chave não cai na action do lojista.
     reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
+    // 10ª (issues 215/216) — mesma regra da 9ª.
+    reordenarItensDoGrupoOpcional: vi.fn(async () => ({ ok: true }) as const),
   };
 }
 

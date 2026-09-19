@@ -286,3 +286,197 @@ describe("enforcement CAMADA 3 — ESCOPO .eq (ou posse ancorada) em toda escrit
     });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Camada 4 — RPC: toda chamada `svc.rpc("fn", { … })` na via admin carrega
+// `p_loja_id`/`loja_id` DERIVADO do lojaId validado da URL. [issue 215]
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Fase RED (TDD) da issue 215. Esta camada nasce vermelha e por um motivo
+// preciso: a CAMADA 3 só enxerga `.from("t") … .update|delete|insert(`. A issue
+// 215 introduz a PRIMEIRA escrita admin por RPC do repositório
+// (`svc.rpc("reordenar_opcionais_da_categoria", …)` e
+// `svc.rpc("reordenar_itens_do_grupo_opcional", …)`), e uma escrita por RPC não
+// casa aquele padrão — ou seja, hoje ela não é vista por NENHUM `it()`. Sem esta
+// camada a 215 fecharia o débito 211 e abriria outro, invisível.
+//
+// Por que o guard exige o ARGUMENTO, e não a mera presença da chamada: sob
+// `service_role` a RLS não filtra nada e a nova RPC é `security definer` — a
+// trava T2 confere `p_loja_id` contra `lojas.dono_id`, mas sob `auth.role() =
+// 'service_role'` ela é dispensada de propósito (é o caso [215-I5], que faz a
+// via admin funcionar). Logo, na via admin o ÚNICO controle de tenant que resta
+// é o valor literal de `p_loja_id`. Um `p_loja_id: parsed.data.loja_id` — id
+// escolhido pelo cliente — reescreveria a ordem de qualquer loja do marketplace
+// sem tocar em nada que as camadas 2 e 3 vigiam.
+//
+// ANTI-VACUIDADE: um guard que não acha nada passa por ausência de asserção e é
+// pior do que não existir, porque dá sinal falso de cobertura. Por isso
+// [215-C1] exige ao menos 2 chamadas descobertas — as duas que a 215 entrega —
+// e [215-C2] exige que toda ocorrência textual de `.rpc(` seja legível pelo
+// parser (uma chamada em forma que a regex não lê ficaria fora do laço).
+//
+// LETALIDADE: [215-C4] planta as formas hostis contra o MESMO analisador usado
+// nos módulos reais e exige que ele as reprove.
+
+/**
+ * `.rpc("nome", { … })` com objeto de argumentos literal. Os args destas
+ * actions são planos (identificadores), então `[^}]*` basta e é o que mantém o
+ * parser legível; uma chamada com objeto aninhado deixaria de casar aqui e cai
+ * na rede de [215-C2].
+ */
+const CHAMADA_RPC = /\.rpc\s*\(\s*["'`]([^"'`]+)["'`]\s*,\s*\{([^}]*)\}/g;
+
+/** Qualquer `.rpc(` textual — a rede que impede chamada invisível ao parser. */
+const QUALQUER_RPC = /\.rpc\s*\(/g;
+
+type ChamadaRpc = { rotulo: string; fn: string; args: string; trecho: string };
+
+function chamadasRpcDe(rotulo: string, fonte: string): ChamadaRpc[] {
+  const re = new RegExp(CHAMADA_RPC.source, "g");
+  const out: ChamadaRpc[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fonte)) !== null) {
+    out.push({ rotulo, fn: m[1], args: m[2], trecho: m[0] });
+  }
+  return out;
+}
+
+function contarOcorrencias(fonte: string, re: RegExp): number {
+  return fonte.match(new RegExp(re.source, "g"))?.length ?? 0;
+}
+
+/** Valor textual do primeiro argumento cuja chave esteja em `chaves`. */
+function valorDoArgumento(args: string, chaves: string[]): string | null {
+  for (const par of args.split(",")) {
+    const i = par.indexOf(":");
+    if (i === -1) continue;
+    const chave = par.slice(0, i).trim();
+    if (chaves.includes(chave)) return par.slice(i + 1).trim();
+  }
+  return null;
+}
+
+/**
+ * As ÚNICAS origens aceitas para o id de tenant numa RPC admin:
+ *  - `loja.lojaId` — saída de `validarLojaIdAdmin(lojaId)` (z.guid da URL);
+ *  - `lojaId`      — o parâmetro da action, quando já validado no mesmo corpo.
+ *
+ * A comparação é do valor INTEIRO (`^…$`), não "contém": `parsed.data.lojaId`
+ * ou `payload.lojaId` casariam num teste por substring e é exatamente o vetor
+ * que esta camada existe para barrar.
+ */
+const ORIGEM_DERIVADA = /^(loja\.lojaId|lojaId)$/;
+
+function rpcEscopadaPorLoja(args: string): boolean {
+  const valor = valorDoArgumento(args, ["p_loja_id", "loja_id"]);
+  return valor != null && ORIGEM_DERIVADA.test(valor);
+}
+
+/**
+ * RPCs de LEITURA pura, que não escrevem e portanto não precisam do arg de
+ * tenant. Vazia de propósito: nenhuma existe hoje, e cada entrada futura exige
+ * revisão humana + motivo, igual às allowlists das camadas acima.
+ */
+const ALLOWLIST_RPC_LEITURA: { rotulo: string; fn: string }[] = [];
+
+function eLeituraAllowlistada(rotulo: string, fn: string): boolean {
+  return ALLOWLIST_RPC_LEITURA.some((a) => a.rotulo === rotulo && a.fn === fn);
+}
+
+const chamadasRpcAdmin = modulos.flatMap((mod) => chamadasRpcDe(mod.rotulo, mod.fonte));
+
+describe("enforcement CAMADA 4 — escopo de tenant em toda RPC admin", () => {
+  it("[215-C1] ANTI-VACUIDADE: a descoberta acha ao menos 2 chamadas svc.rpc na via admin", () => {
+    // Se esta contagem for 0, o laço de [215-C3] não gera NENHUM `it()` e a
+    // camada inteira vira verde por ausência de asserção.
+    expect(
+      chamadasRpcAdmin.length,
+      "esperava >= 2 chamadas svc.rpc descobertas nas actions admin " +
+        "(reordenar_opcionais_da_categoria + reordenar_itens_do_grupo_opcional, issue 215); " +
+        `encontradas: ${chamadasRpcAdmin.length} → o guard da CAMADA 4 está vazio e NÃO prova nada`,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("[215-C2] toda ocorrência textual de `.rpc(` é legível pelo parser desta camada", () => {
+    const ilegiveis = modulos
+      .map((mod) => ({
+        rotulo: mod.rotulo,
+        textuais: contarOcorrencias(mod.fonte, QUALQUER_RPC),
+        lidas: chamadasRpcDe(mod.rotulo, mod.fonte).length,
+      }))
+      .filter((m) => m.textuais !== m.lidas);
+    expect(
+      ilegiveis,
+      "chamada .rpc(...) em forma que a regex CHAMADA_RPC não lê (args fora de objeto literal, " +
+        `objeto aninhado): ficaria FORA do laço da camada 4:\n${JSON.stringify(ilegiveis, null, 2)}`,
+    ).toHaveLength(0);
+  });
+
+  for (const chamada of chamadasRpcAdmin) {
+    if (eLeituraAllowlistada(chamada.rotulo, chamada.fn)) continue;
+    it(`[215-C3] ${chamada.rotulo} → rpc("${chamada.fn}") passa p_loja_id derivado do lojaId validado`, () => {
+      expect(
+        rpcEscopadaPorLoja(chamada.args),
+        `rpc("${chamada.fn}") em ${chamada.rotulo} não passa p_loja_id/loja_id vindo de ` +
+          `loja.lojaId nem de lojaId. Sob service_role a RLS não filtra e a trava T2 é ` +
+          `dispensada — o valor deste argumento é o ÚNICO escopo de tenant que resta.\n` +
+          `args: {${chamada.args}}`,
+      ).toBe(true);
+    });
+  }
+
+  it("[215-C4] LETALIDADE: o analisador reprova as formas hostis e aprova a derivada", () => {
+    const hostis: { nome: string; fonte: string }[] = [
+      {
+        nome: "p_loja_id vindo do payload do cliente",
+        fonte: `const { error } = await svc.rpc("x", { p_loja_id: parsed.data.loja_id, p_ids: ids });`,
+      },
+      {
+        nome: "p_loja_id vindo de um objeto qualquer com sufixo lojaId",
+        fonte: `await svc.rpc("x", { p_loja_id: parsed.data.lojaId, p_ids: ids });`,
+      },
+      { nome: "sem argumento de tenant nenhum", fonte: `await svc.rpc("x", { p_ids: ids });` },
+      {
+        nome: "escopo por categoria em vez de loja",
+        fonte: `await svc.rpc("x", { p_categoria_id: categoria_id, p_ids: ids });`,
+      },
+    ];
+    for (const caso of hostis) {
+      const [chamada] = chamadasRpcDe("fixture.ts", caso.fonte);
+      expect(chamada, `fixture não casou a regex: ${caso.nome}`).toBeDefined();
+      expect(
+        rpcEscopadaPorLoja(chamada.args),
+        `a camada 4 DEIXOU PASSAR a forma hostil: ${caso.nome}`,
+      ).toBe(false);
+    }
+
+    const legitimas = [
+      `await svc.rpc("x", { p_loja_id: loja.lojaId, p_categoria_id: categoria_id, p_ids: ids });`,
+      `await svc.rpc("x", { p_ids: ids, p_loja_id: lojaId });`,
+    ];
+    for (const fonte of legitimas) {
+      const [chamada] = chamadasRpcDe("fixture.ts", fonte);
+      expect(chamada).toBeDefined();
+      expect(
+        rpcEscopadaPorLoja(chamada.args),
+        `a camada 4 reprovou uma chamada legítima: ${fonte}`,
+      ).toBe(true);
+    }
+  });
+});
+
+/**
+ * CONTRATO PARA A FASE GREEN (executar) — issue 215, camada 4:
+ *
+ * Nada a implementar AQUI: este arquivo é só guard. O que o GREEN precisa
+ * entregar para [215-C1] e [215-C3] ficarem verdes é, em
+ * `src/app/admin/assinantes/actions/admin-opcionais.ts`:
+ *
+ *   svc.rpc("reordenar_opcionais_da_categoria", { p_loja_id: loja.lojaId, … })
+ *   svc.rpc("reordenar_itens_do_grupo_opcional", { p_loja_id: loja.lojaId, … })
+ *
+ * — com `loja` = `validarLojaIdAdmin(lojaId)`. Qualquer outra origem para
+ * `p_loja_id` (payload, parsed.data, variável intermediária) é reprovada de
+ * propósito: se o GREEN precisar de uma origem nova, ela entra em
+ * `ORIGEM_DERIVADA` com revisão humana, nunca por afrouxamento da regex.
+ */

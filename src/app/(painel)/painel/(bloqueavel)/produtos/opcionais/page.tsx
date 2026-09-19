@@ -19,6 +19,7 @@ import {
   removerOpcional,
   salvarAssociacaoOpcionais,
   reordenarOpcionaisDaCategoria,
+  reordenarItensDoGrupoOpcional,
 } from "@/lib/actions/opcional";
 import { OpcionaisClient } from "./OpcionaisClient";
 
@@ -73,6 +74,7 @@ export default async function OpcionaisPage(): Promise<ReactElement> {
         removerOpcional,
         salvarAssociacaoOpcionais,
         reordenarOpcionaisDaCategoria,
+        reordenarItensDoGrupoOpcional,
       }}
     />
   );
