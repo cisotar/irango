@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
 import { Carrinho } from "@/components/vitrine/Carrinho";
@@ -14,19 +14,12 @@ type VitrineClientProps = {
 /**
  * Camada client da vitrine: dona do estado `open` do `Carrinho` (Sheet) e do FAB
  * fixo. O contador/total do FAB vêm de `useCarrinho` — preview de UX (o servidor
- * recalcula no checkout, seguranca.md §10).
+ * recalcula no checkout, seguranca.md §10). O Sheet só abre por clique explícito
+ * em "Ver carrinho" — adicionar item nunca abre sozinho.
  */
 export function VitrineClient({ lojaSlug }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
-
-  const prevTotalItens = useRef(totalItens);
-  useEffect(() => {
-    if (totalItens > prevTotalItens.current) {
-      setOpen(true);
-    }
-    prevTotalItens.current = totalItens;
-  }, [totalItens]);
 
   return (
     <>
