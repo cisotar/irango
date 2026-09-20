@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { partesNoFuso, paraMinutos } from "./fusoLoja";
+import { partesNoFuso, paraMinutos, instanteNoFuso } from "./fusoLoja";
 
 // Primitivo de fuso extraído de lojaAberta.ts (issue 222). Funções PURAS:
 // o instante vem SEMPRE do argumento, nunca de Date.now().
@@ -51,5 +51,47 @@ describe("paraMinutos", () => {
   it("é comparável com os minutos de partesNoFuso na mesma escala", () => {
     const { minutos } = partesNoFuso(new Date("2025-06-10T15:30:00Z"), SP);
     expect(minutos).toBe(paraMinutos("12:30"));
+  });
+});
+
+/**
+ * Fase RED da issue 230 — RN-03, o PRIMEIRO dos dois lugares de borda em que o
+ * fuso da loja entra: a ESCRITA. O lojista digita "31/12 23:59" num
+ * `datetime-local`; o que vai para `produtos.desconto_fim` é o instante absoluto
+ * correspondente NAQUELE fuso. A coluna é `timestamptz` e a comparação de
+ * vigência (`precoEfetivo`) segue sendo instante ↔ instante, sem fuso.
+ *
+ * `instanteNoFuso` é STUB (`throw "TODO: GREEN"`) — todo caso abaixo FALHA hoje.
+ */
+describe("instanteNoFuso (RN-03 — escrita do prazo no fuso da loja)", () => {
+  it('"31/12 23:59" em America/Sao_Paulo grava o instante correto (UTC-3)', () => {
+    // 2026-12-31T23:59 local em SP (sem horário de verão desde 2019) = UTC-03:00.
+    expect(instanteNoFuso("2026-12-31T23:59", SP)).toBe(
+      "2027-01-01T02:59:00.000Z",
+    );
+  });
+
+  it("usa o fuso RECEBIDO, não um offset fixo de -3 (Manaus é UTC-4)", () => {
+    // Prova que a conversão não é "-3h" hardcoded: mesmo horário local, outro
+    // fuso, outro instante. Sem esta asserção, a implementação errada passa.
+    expect(instanteNoFuso("2026-12-31T23:59", "America/Manaus")).toBe(
+      "2027-01-01T03:59:00.000Z",
+    );
+  });
+
+  it("não depende do fuso do runtime (meio de ano, os dois fusos)", () => {
+    expect(instanteNoFuso("2026-07-15T12:00", SP)).toBe(
+      "2026-07-15T15:00:00.000Z",
+    );
+    expect(instanteNoFuso("2026-07-15T12:00", "America/Manaus")).toBe(
+      "2026-07-15T16:00:00.000Z",
+    );
+  });
+
+  it("volta pelo mesmo primitivo: partesNoFuso do instante devolve os minutos locais digitados", () => {
+    // Ida e volta com o primitivo que já existe — se as duas pontas
+    // discordarem, uma das duas está errada.
+    const instante = new Date(instanteNoFuso("2026-12-31T23:59", SP));
+    expect(partesNoFuso(instante, SP).minutos).toBe(paraMinutos("23:59"));
   });
 });

@@ -57,3 +57,61 @@ export function paraMinutos(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
 }
+
+/**
+ * Converte o horário LOCAL digitado pelo lojista (`"YYYY-MM-DDTHH:MM"`, o valor
+ * nativo de um `<input type="datetime-local">`) no instante absoluto
+ * correspondente **no fuso da loja**, devolvido como ISO-8601 UTC.
+ *
+ * É um dos dois únicos lugares de borda onde o fuso entra (RN-03); a comparação
+ * de vigência continua instante ↔ instante, sem fuso nenhum.
+ *
+ * Sem offset fixo e sem tabela própria: o deslocamento do fuso é medido pelo
+ * PRÓPRIO Intl, na data em questão (então horário de verão, se o fuso tiver,
+ * sai de graça). Duas passadas porque o deslocamento depende do instante que
+ * estamos justamente procurando — a segunda corrige a borda em que o palpite
+ * cai do outro lado de uma virada de offset.
+ */
+export function instanteNoFuso(local: string, timezone: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (m == null) {
+    throw new Error("Horário local fora do formato YYYY-MM-DDTHH:MM");
+  }
+  const [ano, mes, dia, hora, minuto] = m.slice(1).map(Number);
+
+  // Palpite: lê o horário local COMO SE fosse UTC.
+  const palpite = Date.UTC(ano, mes - 1, dia, hora, minuto);
+  let ts = palpite - deslocamentoMs(palpite, timezone);
+  ts = palpite - deslocamentoMs(ts, timezone);
+  return new Date(ts).toISOString();
+}
+
+// Deslocamento do fuso (hora local − UTC), em ms, NO instante `ts`.
+function deslocamentoMs(ts: number, timezone: string): number {
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(ts));
+  const get = (tipo: string) =>
+    Number(partes.find((p) => p.type === tipo)?.value ?? "0");
+
+  let hora = get("hour");
+  // Mesma defesa de partesNoFuso: alguns runtimes emitem "24" na meia-noite.
+  if (hora === 24) hora = 0;
+
+  const comoUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    hora,
+    get("minute"),
+    get("second"),
+  );
+  return comoUtc - ts;
+}

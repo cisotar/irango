@@ -8,7 +8,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.hoisted(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://projeto-teste.supabase.co";
 });
-import { schemaCategoria, schemaProduto } from "./produto";
+import {
+  schemaCategoria,
+  schemaProduto,
+  mensagemDescontoMaiorQuePreco,
+} from "./produto";
 import { STORAGE_URL_PREFIX } from "./storage";
 
 // Contrato: validação isomórfica (form + Server Action). Espelha as constraints
@@ -240,5 +244,343 @@ describe("schemaCategoria", () => {
   it("rejeita ordem não inteira", () => {
     const r = schemaCategoria.safeParse({ ...categoriaValida, ordem: 2.5 });
     expect(r.success).toBe(false);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Fase RED da issue 230 — colunas de desconto no `schemaProduto` + a mensagem
+ * literal de D10.
+ *
+ * Contrato desta fatia (spec §RN-03..RN-07, D10):
+ *   - `desconto_ativo` boolean OBRIGATÓRIO (espelha `disponivel`/`oculto`: o
+ *     form sempre manda o valor explícito; o DEFAULT false vive no banco);
+ *   - `desconto_tipo` "percentual" | "fixo" | null;
+ *   - `desconto_valor` number | null — percentual em (0,100], fixo em (0,preco];
+ *   - `desconto_inicio`/`desconto_fim`: HORA LOCAL do lojista no formato do
+ *     `<input type="datetime-local">` ("YYYY-MM-DDTHH:MM") ou null. A conversão
+ *     para instante absoluto é da Server Action, que é quem conhece
+ *     `lojas.timezone` (RN-03) — o schema roda ANTES de qualquer I/O e por isso
+ *     NÃO pode depender do fuso;
+ *   - nada disso é opcional com default silencioso, e nada é STRIPADO: a action
+ *     faz `insert({ ...parsed.data })`, então o que o zod descartar some do
+ *     banco (é exatamente aí que RN-07 morreria).
+ *
+ * Os CHECKs da 219 são backstop; ESTA é a barreira legível.
+ * Hoje `schemaProduto` não conhece nenhum destes campos e
+ * `mensagemDescontoMaiorQuePreco` é STUB — todo caso abaixo FALHA.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+// Byte a byte, com o U+00A0 que o Intl pt-BR insere entre "R$" e o número
+// (`formatarMoeda`). Escrito com   explícito para que a asserção não
+// dependa de como o editor salvou o arquivo.
+const MSG_8_10 =
+  "Não dá para salvar: o preço novo (R$ 8,00) é menor que o desconto " +
+  "configurado (R$ 10,00). Reduza o desconto para no máximo R$ 8,00 " +
+  "ou desligue a promoção deste produto.";
+
+function comDesconto(over: Record<string, unknown> = {}) {
+  return {
+    ...produtoValido,
+    desconto_ativo: false,
+    desconto_tipo: null,
+    desconto_valor: null,
+    desconto_inicio: null,
+    desconto_fim: null,
+    ...over,
+  };
+}
+
+/** Mensagens de TODOS os issues do parse falho (a ordem não é contrato). */
+function mensagens(r: ReturnType<typeof schemaProduto.safeParse>): string[] {
+  return r.success ? [] : r.error.issues.map((i) => i.message);
+}
+
+describe("mensagemDescontoMaiorQuePreco (D10 / M7)", () => {
+  it("monta a frase literal, nomeando os dois números e as duas saídas", () => {
+    expect(mensagemDescontoMaiorQuePreco(8, 10)).toBe(MSG_8_10);
+  });
+
+  it("formata os dois valores com formatarMoeda (milhar e centavos)", () => {
+    expect(mensagemDescontoMaiorQuePreco(1234.5, 2000)).toBe(
+      "Não dá para salvar: o preço novo (R$ 1.234,50) é menor que o " +
+        "desconto configurado (R$ 2.000,00). Reduza o desconto para no " +
+        "máximo R$ 1.234,50 ou desligue a promoção deste produto.",
+    );
+  });
+});
+
+describe("schemaProduto — desconto: percentual (RN-04)", () => {
+  it("aceita percentual de 20", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: true,
+        desconto_tipo: "percentual",
+        desconto_valor: 20,
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("REJEITA percentual 101", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: true,
+        desconto_tipo: "percentual",
+        desconto_valor: 101,
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA percentual 0 e aceita 100 (limite (0,100], igual ao CHECK)", () => {
+    const zero = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: true,
+        desconto_tipo: "percentual",
+        desconto_valor: 0,
+      }),
+    );
+    expect(zero.success).toBe(false);
+
+    const cem = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: true,
+        desconto_tipo: "percentual",
+        desconto_valor: 100,
+      }),
+    );
+    expect(cem.success).toBe(true);
+  });
+
+  it("REJEITA percentual negativo", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: true,
+        desconto_tipo: "percentual",
+        desconto_valor: -10,
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA desconto_tipo fora do enum", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: true,
+        desconto_tipo: "cortesia",
+        desconto_valor: 10,
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("schemaProduto — desconto: fixo maior que o preço (RN-05/RN-06, D10)", () => {
+  it("REJEITA fixo > preco com a MENSAGEM LITERAL de D10", () => {
+    // preco 8,00 e desconto fixo 10,00 — o caso do design §8.2.
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        preco: 8,
+        desconto_ativo: true,
+        desconto_tipo: "fixo",
+        desconto_valor: 10,
+      }),
+    );
+    expect(r.success).toBe(false);
+    expect(mensagens(r)).toContain(MSG_8_10);
+  });
+
+  it("o issue de D10 aponta para desconto_valor (o form precisa da chave)", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        preco: 8,
+        desconto_ativo: true,
+        desconto_tipo: "fixo",
+        desconto_valor: 10,
+      }),
+    );
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    const issue = r.error.issues.find((i) => i.message === MSG_8_10);
+    expect(issue?.path[0]).toBe("desconto_valor");
+  });
+
+  it("aceita fixo IGUAL ao preco (limite (0, preco], igual ao CHECK)", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        preco: 8,
+        desconto_ativo: true,
+        desconto_tipo: "fixo",
+        desconto_valor: 8,
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("REJEITA fixo 0 (RN-05: valor fixo > 0)", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        preco: 8,
+        desconto_ativo: true,
+        desconto_tipo: "fixo",
+        desconto_valor: 0,
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("RN-06: baixar o preco abaixo do fixo já configurado é recusado MESMO DESLIGADO", () => {
+    // `produtos_desconto_fixo_check` NÃO depende de `desconto_ativo`. Se o zod
+    // só checasse com a promoção ligada, o lojista que desligou e baixou o preço
+    // levaria um 23514 cru em vez da mensagem de D10.
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        preco: 8,
+        desconto_ativo: false,
+        desconto_tipo: "fixo",
+        desconto_valor: 10,
+      }),
+    );
+    expect(r.success).toBe(false);
+    expect(mensagens(r)).toContain(MSG_8_10);
+  });
+
+  it("percentual 100 NÃO dispara a mensagem de D10 (ela é só do tipo fixo)", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        preco: 8,
+        desconto_ativo: true,
+        desconto_tipo: "percentual",
+        desconto_valor: 100,
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("schemaProduto — desconto: coerência de ligado (RN-07)", () => {
+  it("REJEITA desconto_ativo = true SEM tipo", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({ desconto_ativo: true, desconto_valor: 20 }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA desconto_ativo = true SEM valor", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({ desconto_ativo: true, desconto_tipo: "percentual" }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA desconto_ativo = true sem tipo NEM valor", () => {
+    const r = schemaProduto.safeParse(comDesconto({ desconto_ativo: true }));
+    expect(r.success).toBe(false);
+  });
+
+  it("aceita desligado com tudo NULL (o estado em que toda linha nasce)", () => {
+    const r = schemaProduto.safeParse(comDesconto());
+    expect(r.success).toBe(true);
+  });
+
+  it("RN-07: desligado PRESERVA tipo, valor e prazo no objeto parseado", () => {
+    // Se o zod estripar estes campos, `insert({ ...parsed.data })` apaga a
+    // promoção do lojista no banco — desligar viraria apagar.
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: false,
+        desconto_tipo: "percentual",
+        desconto_valor: 20,
+        desconto_inicio: "2026-12-01T00:00",
+        desconto_fim: "2026-12-31T23:59",
+      }),
+    );
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data).toMatchObject({
+      desconto_ativo: false,
+      desconto_tipo: "percentual",
+      desconto_valor: 20,
+    });
+  });
+
+  it("REJEITA desconto_ativo ausente (obrigatório, sem default silencioso)", () => {
+    const { desconto_ativo: _a, ...semAtivo } = comDesconto();
+    const r = schemaProduto.safeParse(semAtivo);
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("schemaProduto — desconto: prazo (RN-03)", () => {
+  it("aceita prazo aberto dos dois lados (null/null)", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_ativo: true,
+        desconto_tipo: "percentual",
+        desconto_valor: 20,
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("aceita só início, e só fim", () => {
+    const soInicio = schemaProduto.safeParse(
+      comDesconto({ desconto_inicio: "2026-12-01T00:00" }),
+    );
+    expect(soInicio.success).toBe(true);
+
+    const soFim = schemaProduto.safeParse(
+      comDesconto({ desconto_fim: "2026-12-31T23:59" }),
+    );
+    expect(soFim.success).toBe(true);
+  });
+
+  it("aceita fim > inicio", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_inicio: "2026-12-01T00:00",
+        desconto_fim: "2026-12-31T23:59",
+      }),
+    );
+    expect(r.success).toBe(true);
+  });
+
+  it("REJEITA desconto_fim IGUAL a desconto_inicio (janela vazia)", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_inicio: "2026-12-01T00:00",
+        desconto_fim: "2026-12-01T00:00",
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA desconto_fim ANTES de desconto_inicio", () => {
+    const r = schemaProduto.safeParse(
+      comDesconto({
+        desconto_inicio: "2026-12-31T23:59",
+        desconto_fim: "2026-12-01T00:00",
+      }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA instante absoluto no lugar da hora local (o fuso é da action)", () => {
+    // Aceitar um ISO com Z aqui faria o campo significar duas coisas
+    // diferentes conforme quem o preencheu — e a action converteria de novo.
+    const r = schemaProduto.safeParse(
+      comDesconto({ desconto_fim: "2026-12-31T23:59:00.000Z" }),
+    );
+    expect(r.success).toBe(false);
+  });
+
+  it("REJEITA data local malformada", () => {
+    expect(
+      schemaProduto.safeParse(comDesconto({ desconto_fim: "31/12/2026 23:59" }))
+        .success,
+    ).toBe(false);
+    expect(
+      schemaProduto.safeParse(comDesconto({ desconto_fim: "amanhã" })).success,
+    ).toBe(false);
   });
 });

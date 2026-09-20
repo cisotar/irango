@@ -16,7 +16,9 @@ import {
   schemaProduto,
   schemaCategoria,
   schemaReordenacaoCategorias,
+  ehMensagemDescontoMaiorQuePreco,
 } from "@/lib/validacoes/produto";
+import { instanteNoFuso } from "@/lib/utils/fusoLoja";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
@@ -27,6 +29,37 @@ export type ResultadoGestaoCategoria =
   | { ok: false; erro: string };
 
 const CAMINHO_PAINEL = "/painel/cardapio";
+
+type DadosProduto = ReturnType<typeof schemaProduto.parse>;
+
+/**
+ * Erro de parse → mensagem para o lojista. Regra de §14: só UMA mensagem de
+ * validação é promovida literal (a de D10, que nomeia os dois números e as
+ * duas saídas — o lojista não consegue agir sem ela). Todo o resto continua
+ * genérico, para não virar oráculo do schema.
+ */
+function erroDeParse(issues: readonly { message: string }[]): string {
+  const d10 = issues.find((i) => ehMensagemDescontoMaiorQuePreco(i.message));
+  return d10?.message ?? "Produto inválido.";
+}
+
+/**
+ * RN-03 — primeiro dos dois lugares de borda do fuso: a ESCRITA. O que o
+ * lojista digitou é HORA LOCAL; o que vai para as colunas `timestamptz` é o
+ * instante correspondente NO FUSO DA LOJA DO DONO (`lojas.timezone`, nunca do
+ * payload). `null`/ausente continua `null`/ausente — nenhuma data inventada.
+ */
+function comPrazosNoFuso(dados: DadosProduto, timezone: string): DadosProduto {
+  return {
+    ...dados,
+    ...(typeof dados.desconto_inicio === "string"
+      ? { desconto_inicio: instanteNoFuso(dados.desconto_inicio, timezone) }
+      : {}),
+    ...(typeof dados.desconto_fim === "string"
+      ? { desconto_fim: instanteNoFuso(dados.desconto_fim, timezone) }
+      : {}),
+  };
+}
 
 /**
  * Confere que a `categoria_id` informada pertence à PRÓPRIA loja do dono.
@@ -57,7 +90,7 @@ export async function criarProduto(
   //    negativo/NaN/>2 casas, nome vazio) nem chega ao banco.
   const parsed = schemaProduto.safeParse(payload);
   if (!parsed.success) {
-    return { ok: false, erro: "Produto inválido." };
+    return { ok: false, erro: erroDeParse(parsed.error.issues) };
   }
 
   try {
@@ -83,8 +116,13 @@ export async function criarProduto(
 
     const { error } = await supabase
       .from("produtos")
-      .insert({ ...parsed.data, loja_id: loja.id });
+      .insert({
+        ...comPrazosNoFuso(parsed.data, loja.timezone),
+        loja_id: loja.id,
+      });
     if (error) {
+      // Inclui o 23514 dos CHECKs de desconto (issue 219): o texto cru do
+      // Postgres fica no log, o lojista recebe a genérica (seguranca.md §14).
       console.error("[criarProduto]", error);
       return { ok: false, erro: "Não foi possível salvar o produto." };
     }
@@ -102,7 +140,7 @@ export async function atualizarProduto(
 ): Promise<ResultadoGestaoProduto> {
   const parsed = schemaProduto.safeParse(payload);
   if (!parsed.success) {
-    return { ok: false, erro: "Produto inválido." };
+    return { ok: false, erro: erroDeParse(parsed.error.issues) };
   }
 
   try {
@@ -127,9 +165,14 @@ export async function atualizarProduto(
     // oferecemos a opção) + escopo por id.
     const { error } = await supabase
       .from("produtos")
-      .update({ ...parsed.data, loja_id: loja.id })
+      .update({
+        ...comPrazosNoFuso(parsed.data, loja.timezone),
+        loja_id: loja.id,
+      })
       .eq("id", id);
     if (error) {
+      // Inclui o 23514 dos CHECKs de desconto (issue 219): o texto cru do
+      // Postgres fica no log, o lojista recebe a genérica (seguranca.md §14).
       console.error("[atualizarProduto]", error);
       return { ok: false, erro: "Não foi possível salvar o produto." };
     }
