@@ -15,13 +15,22 @@
  *  3. Se categoria_id informado: SELECT escopado por loja (posse); não achou →
  *     { ok:false } sem gravar.
  *  4. INSERT/UPDATE/DELETE/toggle em `produtos` via `escopo.*` (loja_id +id);
- *     loja_id gravado = lojaId, NUNCA do payload (injetado por último).
+ *     loja_id gravado = lojaId, NUNCA do payload (injetado por último). Prazo de
+ *     promoção convertido pelo fuso da LOJA-ALVO (RN-03) antes de gravar.
  *  5. revalidatePath admin + vitrine; registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico.
  *
  * REGRA: arquivo 'use server' só exporta funções async — tipos locais sem export.
  */
 
 import { schemaProduto } from "@/lib/validacoes/produto";
+// Contrato NEUTRO compartilhado com o caminho do LOJISTA (issue 241): a mensagem
+// de D10 e a conversão de prazo pelo fuso têm UMA fonte nos dois mundos — o
+// admin escreve com service_role (BYPASSRLS), então a paridade É a proteção.
+import {
+  erroDeParseProduto,
+  comPrazosNoFuso,
+  type DadosProduto,
+} from "@/lib/actions/produto-contrato";
 import {
   validarLojaIdAdmin,
   registrarAcessoAdmin,
@@ -29,6 +38,7 @@ import {
   revalidarLojaAdmin,
   type EscopoLoja,
 } from "@/lib/actions/admin-loja";
+import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
 
 type Resultado = { ok: true } | { ok: false; erro: string };
 
@@ -46,6 +56,28 @@ async function categoriaPertenceALoja(
   return data != null;
 }
 
+/**
+ * RN-03 no hub admin, pela MESMA `comPrazosNoFuso` do lojista: o fuso que
+ * converte o prazo digitado vem da LOJA-ALVO (`lojas.timezone`, lido por
+ * `lojaId` da URL), NUNCA do payload — o admin edita em nome do lojista e a
+ * promoção vale no fuso da loja dele. Só vai ao banco quando há prazo a
+ * converter (sem promoção com data, nenhum roundtrip). Loja-alvo sem linha →
+ * `null`, e a action recusa sem gravar.
+ */
+async function comPrazosDaLojaAlvo(
+  svc: Parameters<typeof registrarAcessoAdmin>[0],
+  lojaId: string,
+  dados: DadosProduto,
+): Promise<DadosProduto | null> {
+  const temPrazo =
+    typeof dados.desconto_inicio === "string" ||
+    typeof dados.desconto_fim === "string";
+  if (!temPrazo) return dados;
+  const loja = await buscarLojaAdminPorId(svc, lojaId);
+  if (loja == null) return null;
+  return comPrazosNoFuso(dados, loja.timezone);
+}
+
 export async function criarProdutoAdmin(
   lojaId: string,
   payload: unknown,
@@ -54,7 +86,9 @@ export async function criarProdutoAdmin(
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
   const parsed = schemaProduto.safeParse(payload);
-  if (!parsed.success) return { ok: false, erro: "Produto inválido." };
+  if (!parsed.success) {
+    return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
+  }
 
   // Fail-closed: prova de admin FORA do try → propaga, service só depois.
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
@@ -65,8 +99,12 @@ export async function criarProdutoAdmin(
       if (!pertence) return { ok: false, erro: "Categoria inválida." };
     }
 
+    // RN-03: prazo em hora local → instante no fuso da LOJA-ALVO.
+    const dados = await comPrazosDaLojaAlvo(svc, loja.lojaId, parsed.data);
+    if (dados == null) return { ok: false, erro: "Loja não encontrada." };
+
     // loja_id = lojaId da URL, injetado por último pelo wrapper (nunca do payload).
-    const { error } = await escopo.inserir("produtos", parsed.data);
+    const { error } = await escopo.inserir("produtos", dados);
     if (error) {
       console.error("[criarProdutoAdmin]", error);
       return { ok: false, erro: "Não foi possível salvar o produto." };
@@ -92,7 +130,9 @@ export async function atualizarProdutoAdmin(
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
   const parsed = schemaProduto.safeParse(payload);
-  if (!parsed.success) return { ok: false, erro: "Produto inválido." };
+  if (!parsed.success) {
+    return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
+  }
 
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
@@ -102,8 +142,12 @@ export async function atualizarProdutoAdmin(
       if (!pertence) return { ok: false, erro: "Categoria inválida." };
     }
 
+    // RN-03: prazo em hora local → instante no fuso da LOJA-ALVO.
+    const dados = await comPrazosDaLojaAlvo(svc, loja.lojaId, parsed.data);
+    if (dados == null) return { ok: false, erro: "Loja não encontrada." };
+
     // Escopo cross-loja (loja_id + id) pelo wrapper; loja_id não vai no patch.
-    const { error } = await escopo.atualizar("produtos", id, parsed.data);
+    const { error } = await escopo.atualizar("produtos", id, dados);
     if (error) {
       console.error("[atualizarProdutoAdmin]", error);
       return { ok: false, erro: "Não foi possível salvar o produto." };
