@@ -3,6 +3,8 @@ import type { ReactElement } from "react";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { formatarDataHora } from "@/lib/utils/formatarDataHora";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { totalDaLinha } from "@/lib/utils/calcularTotal";
+import { textoDePor } from "@/lib/utils/linhaItemPedido";
 import {
   freteConhecido,
   ROTULO_FRETE_A_COMBINAR_CURTO,
@@ -83,8 +85,17 @@ export function ReciboCliente({
           // SNAPSHOT (RN-O6): acréscimo dos opcionais entra no total da linha —
           // mesma aritmética de exibição do DetalhePedido, nunca recalculada dos
           // opcionais atuais do produto.
+          // [239/RN-20] `totalDaLinha` é a MESMA função que produz o subtotal
+          // cobrado: a linha do recibo passa a fechar com o subtotal impresso
+          // logo abaixo dela (2× R$ 50,00 + borda R$ 10,00 ⇒ R$ 110,00).
           const opcionais = mapearOpcionaisExibicao(item.itens_pedido_opcionais ?? []);
-          const acrescimo = opcionais.reduce((s, o) => s + o.preco * o.quantidade, 0);
+          const totalItem = totalDaLinha({
+            preco: item.preco,
+            quantidade: item.quantidade,
+            opcionais,
+          });
+          // [239/RN-14] Par UNITÁRIO; `null` ⇒ nada renderizado.
+          const dePor = textoDePor(item);
           return (
             <li key={item.id} className="text-sm">
               <div className="flex justify-between gap-2">
@@ -92,9 +103,15 @@ export function ReciboCliente({
                   {item.quantidade}× {item.nome}
                 </span>
                 <span className="shrink-0 tabular-nums">
-                  {formatarMoeda((item.preco + acrescimo) * item.quantidade)}
+                  {formatarMoeda(totalItem)}
                 </span>
               </div>
+              {/* Térmica (design §11.3): a hierarquia do par é por TAMANHO
+                  (text-xs), POSIÇÃO (linha própria, indentada, sob o nome) e
+                  pela palavra "de" — nunca por cor (no papel cinza é preto) e
+                  nunca por `line-through`, que some em 203dpi. Nunca disputa a
+                  linha com o total, que já está alinhado à direita. */}
+              {dePor && <p className="pl-3 text-xs">{dePor}</p>}
               {/* COM preço (comportamento default) — recibo do cliente é financeiro. */}
               <ListaOpcionaisItem opcionais={opcionais} />
               {/* Observação do item (issue 171): texto do cliente via JSX,

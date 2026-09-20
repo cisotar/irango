@@ -57,7 +57,19 @@ export function ComandaCozinha({ pedido }: { pedido: PedidoComItens }): ReactEle
                 <span className="border border-black px-1.5 font-black">
                   {item.quantidade}×
                 </span>
-                <span className="font-bold uppercase">{item.nome}</span>
+                {/* [240/D12/RN-14-a] Selo de promoção DENTRO do próprio
+                    elemento do nome, depois dele: mesmo tamanho, SEM negrito,
+                    separado por um espaço — não compete com nome e quantidade,
+                    que é o que a cozinha lê. NENHUM valor em reais, percentual
+                    ou código de cupom (RN-P1 não é revertida). Os colchetes não
+                    são decoração: o `]` impede que um dígito vizinho encoste em
+                    PROMO e forme `PROMO10` por acidente de markup. */}
+                <span className="font-bold uppercase">
+                  {item.nome}
+                  {item.preco_original != null && (
+                    <span className="font-normal">{" [PROMO]"}</span>
+                  )}
+                </span>
               </div>
               {/* `ocultarPreco`: opcionais sem valor monetário no DOM (RN-P1). */}
               <ListaOpcionaisItem opcionais={opcionais} ocultarPreco />

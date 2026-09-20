@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { totalDaLinha } from "@/lib/utils/calcularTotal";
+import { textoDePor } from "@/lib/utils/linhaItemPedido";
 import {
   freteConhecido,
   ROTULO_FRETE_A_COMBINAR,
@@ -196,13 +198,19 @@ export function DetalhePedido({
                 // SNAPSHOT autoritativo (RN-O6): mesmo cálculo da confirmação —
                 // acréscimo dos opcionais entra no total da linha, nunca recalculado
                 // dos opcionais atuais do produto.
+                // [239/RN-20] O total da linha sai de `totalDaLinha`, a MESMA
+                // função que produz `calcularSubtotal` — a linha fecha com o
+                // subtotal do próprio documento.
                 const opcionais = mapearOpcionaisExibicao(
                   item.itens_pedido_opcionais ?? [],
                 );
-                const acrescimo = opcionais.reduce(
-                  (s, o) => s + o.preco * o.quantidade,
-                  0,
-                );
+                const totalItem = totalDaLinha({
+                  preco: item.preco,
+                  quantidade: item.quantidade,
+                  opcionais,
+                });
+                // [239/RN-14] Par UNITÁRIO; `null` ⇒ nada renderizado.
+                const dePor = textoDePor(item);
                 return (
                   <li key={item.id} className="px-6 py-3 text-sm">
                     <div className="flex items-center justify-between gap-3">
@@ -213,11 +221,12 @@ export function DetalhePedido({
                         {item.nome}
                       </span>
                       <span className="text-foreground">
-                        {formatarMoeda(
-                          (item.preco + acrescimo) * item.quantidade,
-                        )}
+                        {formatarMoeda(totalItem)}
                       </span>
                     </div>
+                    {dePor && (
+                      <p className="text-xs text-muted-foreground">{dePor}</p>
+                    )}
                     <ListaOpcionaisItem opcionais={opcionais} />
                     {/* Observação do cliente (snapshot imutável, issue 171):
                         texto do cliente renderizado via JSX — auto-escapado por
