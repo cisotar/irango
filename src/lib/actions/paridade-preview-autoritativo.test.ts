@@ -255,6 +255,96 @@ describe("[228/RN-11/D5-b] preview e autoritativo dizem o MESMO número", () => 
     expect(preview).toBe(cobrado);
   });
 
+  // Auditoria 228/229 nº 1: o preview condicionava o gate RN-O4 a
+  // `produto.categoria_id != null` e o autoritativo não. Com produto SEM
+  // categoria e opcional ativo da MESMA loja fora da allowlist, o preview
+  // devolvia `ok:true` (subtotal 60) e o pedido recusava com erro genérico.
+  // Este teste exige a recusa nos DOIS lados.
+  it("produto SEM categoria + opcional: preview e autoritativo RECUSAM o mesmo carrinho", async () => {
+    mesmoBanco(true);
+    // O produto do carrinho perde a categoria; a allowlist fica vazia.
+    buscarProdutosPorIds.mockResolvedValue([produtoRow({ categoria_id: null })]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+
+    const carrinho = [
+      {
+        produto_id: REFRI,
+        quantidade: 1,
+        opcionais: [{ opcional_id: OPC_BORDA, quantidade: 1 }],
+      },
+    ];
+
+    const preview = await revisarCarrinhoAction({ loja_id: LOJA_A, itens: carrinho });
+    const pedido = await criarPedido({
+      loja_id: LOJA_A,
+      tipo_entrega: "retirada",
+      itens: carrinho,
+      forma_pagamento: "pix",
+      nome_cliente: "Fulano",
+    });
+
+    expect(preview.ok).toBe(false);
+    expect("erro" in pedido).toBe(true);
+    // O autoritativo nunca chegou à RPC — nada foi gravado dos dois lados.
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("loja SUSPENSA: preview e autoritativo recusam — o preview não vira vitrine de loja bloqueada", async () => {
+    mesmoBanco(false);
+    buscarLojaParaPedido.mockResolvedValue({
+      id: LOJA_A,
+      nome: "Loja A",
+      ativo: false,
+      horarios: HORARIOS_SEMPRE,
+      timezone: "America/Sao_Paulo",
+      assinatura_status: "bloqueada",
+      assinatura_fim_periodo: "2020-01-01T00:00:00.000Z",
+      taxa_entrega_fora_zona: null,
+      whatsapp: null,
+      whatsapp_envio_automatico: false,
+    });
+
+    const preview = await revisarCarrinhoAction({
+      loja_id: LOJA_A,
+      codigo: "PROMO10",
+      itens: itens(false),
+    });
+    const pedido = await criarPedido({
+      loja_id: LOJA_A,
+      tipo_entrega: "retirada",
+      itens: itens(false),
+      forma_pagamento: "pix",
+      nome_cliente: "Fulano",
+      codigo_cupom: "PROMO10",
+    });
+
+    expect(preview.ok).toBe(false);
+    expect("erro" in pedido).toBe(true);
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("código de cupom de 2 caracteres: a MESMA régua derruba os dois payloads", async () => {
+    mesmoBanco(false);
+
+    const preview = await revisarCarrinhoAction({
+      loja_id: LOJA_A,
+      codigo: "AB",
+      itens: itens(false),
+    });
+    const pedido = await criarPedido({
+      loja_id: LOJA_A,
+      tipo_entrega: "retirada",
+      itens: itens(false),
+      forma_pagamento: "pix",
+      nome_cliente: "Fulano",
+      codigo_cupom: "AB",
+    });
+
+    expect(preview.ok).toBe(false);
+    expect("erro" in pedido).toBe(true);
+    expect(buscarCupomPorCodigo).not.toHaveBeenCalled();
+  });
+
   it("RN-10-d: o SUBTOTAL do preview é o mesmo que o pedido grava (R$ 140,00)", async () => {
     mesmoBanco(true);
     const r = await revisarCarrinhoAction({

@@ -15,7 +15,8 @@ import { describe, it, expect } from "vitest";
 //   - expira_em: data futura ou null (NULL = sem expiração)
 //   - ativo: boolean
 //
-// FORA DA RESPONSABILIDADE (Server Action validarCupom / 013, banco / 032):
+// FORA DA RESPONSABILIDADE (`validarUsoCupom`, chamada por
+// `revisarCarrinhoAction` e por `criarPedido`; banco / 032):
 //   validade no momento do USO (ativo/expirado/usos/mínimo atendido), unicidade
 //   de (loja_id, codigo). Aqui validamos só a forma do dado a persistir.
 import { cupomSchema } from "./cupom";

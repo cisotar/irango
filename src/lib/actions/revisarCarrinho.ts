@@ -9,14 +9,18 @@
 // DERIVADOS do banco pela MESMA cadeia do autoritativo `criarPedido`
 // (RN-11 / D5-b):
 //
-//   verificarRateLimit → zod .strict() → buscarProdutosPorIds → precoEfetivo
+//   verificarRateLimit → zod .strict() → buscarLojaParaPedido +
+//     assinaturaPermiteAcesso → buscarProdutosPorIds → precoEfetivo
 //     → buscarOpcionaisPorIds → buscarOpcionaisPorCategoria → derivarBasesCupom
 //     → validarUsoCupom → calcularDesconto
 //
 // Preview que aplica regra MAIS GENEROSA que o autoritativo é oráculo
-// (seguranca.md §10-A): por isso os gates de produto (existe/disponível/
-// não-oculto/da loja) e de opcional (existe/ativo/da loja/categoria associada)
-// são os mesmos de `pedido.ts`, e não um subconjunto.
+// (seguranca.md §10-A): por isso os gates de loja (existe/ativa/assinatura), de
+// produto (existe/disponível/não-oculto/da loja) e de opcional (existe/ativo/
+// da loja/categoria associada) são os mesmos de `pedido.ts`, e não um
+// subconjunto. A ÚNICA diferença deliberada é `lojaAberta`, que o preview não
+// aplica: horário não é segredo e revisar o carrinho com a loja fechada é UX
+// legítima.
 //
 // Os três estados de RN-10-e chegam DECIDIDOS ao componente: ele ramifica, e
 // nunca compara `baseElegivel` com `subtotal` no browser.
@@ -31,6 +35,11 @@ import {
   buscarOpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
 import { buscarCupomPorCodigo } from "@/lib/supabase/queries/entregaPagamento";
+import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
+import {
+  assinaturaPermiteAcesso,
+  type StatusAssinatura,
+} from "@/lib/utils/assinatura";
 import { schemaRevisarCarrinho } from "@/lib/validacoes/revisarCarrinho";
 import { precoEfetivo } from "@/lib/utils/precoEfetivo";
 import {
@@ -89,7 +98,12 @@ export async function revisarCarrinhoAction(
 
     // Onda única de leituras independentes. O cupom só é buscado quando o
     // cliente enviou um código — sem código não existe consulta de cupom.
-    const [produtos, opcionaisBanco, cupom] = await Promise.all([
+    const [loja, produtos, opcionaisBanco, cupom] = await Promise.all([
+      // Gates de LOJA (paridade com `pedido.ts:92-107`): sem eles, quem guardou
+      // um `produto_id` de loja suspensa obtinha preço e status de promoção
+      // dela pelo preview. `lojaAberta` de propósito NÃO entra: horário não é
+      // segredo, e revisar o carrinho antes de a loja abrir é UX legítima.
+      buscarLojaParaPedido(svc, dados.loja_id),
       buscarProdutosPorIds(svc, ids),
       buscarOpcionaisPorIds(svc, opcionalIds),
       // Busca SEMPRE escopada por (loja_id, codigo) via service_role: cupom de
@@ -98,6 +112,18 @@ export async function revisarCarrinhoAction(
         ? buscarCupomPorCodigo(svc, dados.loja_id, dados.codigo)
         : Promise.resolve(null),
     ]);
+
+    if (
+      loja == null ||
+      !loja.ativo ||
+      !assinaturaPermiteAcesso(
+        loja.assinatura_status as StatusAssinatura,
+        new Date(loja.assinatura_fim_periodo ?? 0),
+        agora,
+      )
+    ) {
+      return { ok: false, mensagem: ERRO_GENERICO };
+    }
 
     const porId = new Map(produtos.map((p) => [p.id, p]));
     const opcionalPorId = new Map(opcionaisBanco.map((o) => [o.id, o]));
@@ -144,12 +170,18 @@ export async function revisarCarrinhoAction(
         const opcional = opcionalPorId.get(escolhido.opcional_id);
         // RN-O5 (inexistente/inativo) · RN-O3 (cross-loja) · RN-O4 (categoria
         // não associada ao produto) — os mesmos três gates do autoritativo.
+        // `permitidas` é vazio quando o produto NÃO tem categoria — e um
+        // produto sem categoria não autoriza opcional nenhum. A condicional
+        // `produto.categoria_id != null` que existia aqui tornava o preview
+        // MAIS GENEROSO que `pedido.ts:219`: ele confirmava preço e existência
+        // de um adicional que o autoritativo recusa, e o cliente via um
+        // subtotal que o pedido rejeitava com erro genérico. Byte a byte com
+        // o autoritativo, portanto (§10-A).
         if (
           opcional == null ||
           !opcional.ativo ||
           opcional.loja_id !== dados.loja_id ||
-          (produto.categoria_id != null &&
-            !permitidas.has(opcional.categoria_opcional_id))
+          !permitidas.has(opcional.categoria_opcional_id)
         ) {
           return { ok: false, mensagem: ERRO_GENERICO };
         }

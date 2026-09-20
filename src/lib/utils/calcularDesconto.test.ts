@@ -21,7 +21,8 @@ import {
 //                BASE, não o subtotal — RN-10-b)
 //   - resultado ecoa `baseElegivel` nos dois ramos (D-4)
 //
-// FORA DA RESPONSABILIDADE (caller / Server Action 013 validarCupom):
+// FORA DA RESPONSABILIDADE (callers: `revisarCarrinhoAction` e `criarPedido`,
+// via a função pura `validarUsoCupom`):
 //   validade temporal (expira_em < agora), ativo=false, usos_contagem >=
 //   usos_maximos, escopo de loja (loja_id). Essas validações exigem "agora",
 //   estado de uso e RLS — não pertencem a uma função pura de cálculo. Por isso

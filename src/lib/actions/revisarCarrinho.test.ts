@@ -17,7 +17,7 @@
 // A paridade numérica com `criarPedido` vive em
 // `paridade-preview-autoritativo.test.ts` (é um teste de DUAS actions).
 //
-// Padrão de mocks: igual a pedido.test.ts / cupomPreview.test.ts — service.ts é
+// Padrão de mocks: igual a pedido.test.ts — service.ts é
 // `server-only`; cada query é um vi.fn() injetado por vi.mock. Nada de banco
 // aqui: isto é ORQUESTRAÇÃO.
 
@@ -53,6 +53,11 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
   buscarCupomPorCodigo: (...a: unknown[]) => buscarCupomPorCodigo(...a),
 }));
 
+const buscarLojaParaPedido = vi.fn();
+vi.mock("@/lib/supabase/queries/lojas", () => ({
+  buscarLojaParaPedido: (...a: unknown[]) => buscarLojaParaPedido(...a),
+}));
+
 import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { revisarCarrinhoAction } from "./revisarCarrinho";
 
@@ -64,13 +69,43 @@ const REFRI = "aaaaaaaa-0000-0000-0000-000000000002"; // R$ 50,00 · sem descont
 const PROD_B = "bbbbbbbb-0000-0000-0000-000000000001"; // produto da LOJA B
 const OPC_BORDA = "ffffffff-0000-0000-0000-000000000001"; // R$ 10,00 · loja A
 const OPC_B = "ffffffff-0000-0000-0000-0000000000b1"; // opcional da LOJA B
+const CAT_PROD = "dddddddd-0000-0000-0000-000000000001"; // categoria do produto
 const CAT_OPC = "eeeeeeee-0000-0000-0000-000000000001";
+
+/** Loja ativa, com assinatura em dia — os gates de `pedido.ts:92-107`, que o
+ *  preview passou a aplicar (auditoria 228/229 nº 2). */
+function lojaRow(over: Record<string, unknown> = {}) {
+  return {
+    id: LOJA_A,
+    nome: "Loja A",
+    ativo: true,
+    assinatura_status: "ativa",
+    assinatura_fim_periodo: "2099-01-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+/** Allowlist RN-O4: a categoria do produto autoriza a categoria do opcional. */
+const ALLOWLIST = {
+  [CAT_PROD]: [
+    {
+      categoriaOpcionalId: CAT_OPC,
+      categoriaOpcionalNome: "Bordas",
+      ordem: 0,
+      opcionais: [],
+    },
+  ],
+};
 
 function produtoRow(over: Partial<Tables<"produtos">> = {}): Tables<"produtos"> {
   return {
     id: REFRI,
     loja_id: LOJA_A,
-    categoria_id: null,
+    // Com `categoria_id: null` o produto NÃO autoriza opcional nenhum (mesmo
+    // gate de `pedido.ts:219`). O fixture padrão tem categoria para os casos de
+    // RN-10-d exercitarem a allowlist de verdade, e não a divergência que a
+    // auditoria fechou. Os NÚMEROS não mudam: RN-10-d segue R$ 6,00.
+    categoria_id: CAT_PROD,
     nome: "Refrigerante",
     descricao: null,
     preco: 50.0,
@@ -163,6 +198,7 @@ function carrinhoRN10d(qtdPizza = 1) {
 }
 
 function bancoRN10a() {
+  buscarLojaParaPedido.mockResolvedValue(lojaRow());
   buscarProdutosPorIds.mockResolvedValue([feijoadaComDesconto(), produtoRow()]);
   buscarOpcionaisPorIds.mockResolvedValue([]);
   buscarOpcionaisPorCategoria.mockResolvedValue({});
@@ -170,9 +206,10 @@ function bancoRN10a() {
 }
 
 function bancoRN10d() {
+  buscarLojaParaPedido.mockResolvedValue(lojaRow());
   buscarProdutosPorIds.mockResolvedValue([feijoadaComDesconto(), produtoRow()]);
   buscarOpcionaisPorIds.mockResolvedValue([opcionalRow()]);
-  buscarOpcionaisPorCategoria.mockResolvedValue({});
+  buscarOpcionaisPorCategoria.mockResolvedValue(ALLOWLIST);
   buscarCupomPorCodigo.mockResolvedValue(cupomRow());
 }
 
@@ -188,6 +225,8 @@ beforeEach(() => {
   vi.mocked(rateLimitMod.verificarRateLimit).mockResolvedValue({
     permitido: true,
   } as Awaited<ReturnType<typeof rateLimitMod.verificarRateLimit>>);
+  // Loja saudável por padrão: cada teste que exercita o gate de loja sobrescreve.
+  buscarLojaParaPedido.mockResolvedValue(lojaRow());
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -617,6 +656,155 @@ describe("[228] revisarCarrinhoAction — rate limit e erro interno", () => {
     expect((r as { mensagem: string }).mensagem).not.toContain("db.internal");
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Correções da auditoria 228/229 — paridade de gates com `pedido.ts`.
+describe("[auditoria 228/229] o preview aplica os MESMOS gates do autoritativo", () => {
+  it("produto SEM categoria não autoriza opcional nenhum (RN-O4, paridade com pedido.ts:219)", async () => {
+    // O cenário exato da prova do auditor: produto R$ 50,00 sem categoria e
+    // opcional R$ 10,00 ATIVO, da MESMA loja, fora de qualquer allowlist.
+    // Antes: preview dizia `ok:true` com subtotal 60 e o pedido recusava.
+    buscarProdutosPorIds.mockResolvedValue([produtoRow({ categoria_id: null })]);
+    buscarOpcionaisPorIds.mockResolvedValue([opcionalRow()]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+    buscarCupomPorCodigo.mockResolvedValue(cupomRow({ pedido_minimo: 0 }));
+
+    const r = await revisarCarrinhoAction({
+      loja_id: LOJA_A,
+      itens: [
+        { produto_id: REFRI, quantidade: 1, opcionais: [{ opcional_id: OPC_BORDA, quantidade: 1 }] },
+      ],
+    });
+
+    expect(r.ok).toBe(false);
+    expect((r as { mensagem: string }).mensagem).toContain("Não foi possível revisar o carrinho");
+  });
+
+  it("opcional de categoria NÃO associada ao produto é recusado, mesmo com o produto categorizado", async () => {
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ categoria_opcional_id: "eeeeeeee-0000-0000-0000-0000000000ff" }),
+    ]);
+    buscarOpcionaisPorCategoria.mockResolvedValue(ALLOWLIST);
+    buscarCupomPorCodigo.mockResolvedValue(cupomRow({ pedido_minimo: 0 }));
+
+    const r = await revisarCarrinhoAction({
+      loja_id: LOJA_A,
+      itens: [
+        { produto_id: REFRI, quantidade: 1, opcionais: [{ opcional_id: OPC_BORDA, quantidade: 1 }] },
+      ],
+    });
+
+    expect(r.ok).toBe(false);
+  });
+
+  it("loja INATIVA ⇒ recusa genérica, sem revelar preço nem promoção (paridade pedido.ts:93)", async () => {
+    bancoRN10a();
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ ativo: false }));
+
+    const r = await revisarCarrinhoAction(carrinhoRN10a());
+
+    expect(r.ok).toBe(false);
+    expect((r as { mensagem: string }).mensagem).toContain("Não foi possível revisar o carrinho");
+    expect((r as { mensagem: string }).mensagem).not.toContain("80");
+  });
+
+  it("assinatura BLOQUEADA ⇒ recusa genérica (paridade pedido.ts:96-104)", async () => {
+    bancoRN10a();
+    buscarLojaParaPedido.mockResolvedValue(
+      lojaRow({ assinatura_status: "bloqueada", assinatura_fim_periodo: "2020-01-01T00:00:00.000Z" }),
+    );
+
+    const r = await revisarCarrinhoAction(carrinhoRN10a());
+
+    expect(r.ok).toBe(false);
+  });
+
+  it("loja INEXISTENTE ⇒ recusa genérica", async () => {
+    bancoRN10a();
+    buscarLojaParaPedido.mockResolvedValue(null);
+
+    expect((await revisarCarrinhoAction(carrinhoRN10a())).ok).toBe(false);
+  });
+
+  it("loja FECHADA no horário NÃO derruba a revisão — horário não é segredo (UX legítima)", async () => {
+    // `lojaAberta` é a única diferença deliberada: o preview não a aplica, e por
+    // isso `lojaRow()` nem precisa de `horarios`/`timezone`.
+    bancoRN10a();
+    const r = ok(await revisarCarrinhoAction(carrinhoRN10a()));
+    expect(r.subtotal).toBe(130);
+  });
+
+  it("código de cupom com menos de 3 caracteres é rejeitado no preview, como em `criarPedido`", async () => {
+    bancoRN10a();
+    const r = await revisarCarrinhoAction(carrinhoRN10a({ codigo: "AB" }));
+    expect(r.ok).toBe(false);
+    // Régua única `codigoCupomSchema`: o preview não pode aceitar um código que
+    // o autoritativo derruba com erro genérico (beco sem saída).
+    expect(buscarCupomPorCodigo).not.toHaveBeenCalled();
+  });
+
+  it("código de cupom acima de 20 caracteres nem chega ao `.eq(\"codigo\", …)`", async () => {
+    bancoRN10a();
+    const r = await revisarCarrinhoAction(carrinhoRN10a({ codigo: "A".repeat(2000) }));
+    expect(r.ok).toBe(false);
+    expect(buscarCupomPorCodigo).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cobertura reposta: os casos de cupom EXPIRADO e ESGOTADO vinham do
+// `cupomPreview.test.ts`, apagado com o endpoint antigo.
+describe("[228] cupom expirado e esgotado ⇒ mesma recusa genérica do inexistente", () => {
+  function carrinhoSimples() {
+    return {
+      loja_id: LOJA_A,
+      codigo: "PROMO10",
+      itens: [{ produto_id: REFRI, quantidade: 1 }],
+    };
+  }
+
+  async function veredito(cupom: Tables<"cupons"> | null) {
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    buscarOpcionaisPorIds.mockResolvedValue([]);
+    buscarOpcionaisPorCategoria.mockResolvedValue({});
+    buscarCupomPorCodigo.mockResolvedValue(cupom);
+    return ok(await revisarCarrinhoAction(carrinhoSimples()));
+  }
+
+  it("cupom EXPIRADO: `valido:false` e o carrinho continua revisado", async () => {
+    const r = await veredito(
+      cupomRow({ pedido_minimo: 0, expira_em: "2020-01-01T00:00:00.000Z" }),
+    );
+
+    expect(r.cupom).toMatchObject({ valido: false });
+    expect((r.cupom as { mensagem: string }).mensagem).toBe("Cupom inválido ou não encontrado.");
+    expect(r.subtotal).toBe(50);
+  });
+
+  it("cupom ESGOTADO (usos_contagem >= usos_maximos): `valido:false`, mesma string", async () => {
+    const r = await veredito(
+      cupomRow({ pedido_minimo: 0, usos_maximos: 5, usos_contagem: 5 }),
+    );
+
+    expect(r.cupom).toMatchObject({ valido: false });
+    expect((r.cupom as { mensagem: string }).mensagem).toBe("Cupom inválido ou não encontrado.");
+    expect(r.subtotal).toBe(50);
+  });
+
+  it("expirado, esgotado e inexistente são INDISTINGUÍVEIS byte a byte (§6)", async () => {
+    const expirado = await veredito(
+      cupomRow({ pedido_minimo: 0, expira_em: "2020-01-01T00:00:00.000Z" }),
+    );
+    const esgotado = await veredito(
+      cupomRow({ pedido_minimo: 0, usos_maximos: 1, usos_contagem: 1 }),
+    );
+    const inexistente = await veredito(null);
+
+    expect(expirado.cupom).toEqual(esgotado.cupom);
+    expect(expirado.cupom).toEqual(inexistente.cupom);
   });
 });
 

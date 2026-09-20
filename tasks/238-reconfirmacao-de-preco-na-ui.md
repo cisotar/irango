@@ -73,3 +73,21 @@ pop-up de desculpa.
 - [ ] recusa do servidor ⇒ `revisarCarrinhoAction` ⇒ diálogo ⇒ segundo clique ⇒ pedido criado pelo
       preço do banco, ponta a ponta;
 - [ ] `npx tsc --noEmit` → `npm run lint` → `npm test` → `npm run build`.
+
+## Nota herdada da auditoria de 228/229 (commit `1f0ff07`)
+
+A trava de RN-12-a existe e está testada em `criarPedido`, mas hoje é **código morto em
+produção**: nenhum componente envia `promocaoExibida`. `grep` em `src/components`, `src/hooks` e
+`src/app` devolve zero ocorrências, e `checkout/estado.ts` não inclui o campo no payload.
+
+Esta issue prevê que o segundo clique envie `promocaoExibida: false`, mas nada diz quem envia
+`true` no primeiro. Sem isso a trava nunca dispara, e o cliente que viu um preço promocional que
+expirou entre o carrinho e o envio paga o preço cheio sem ser avisado — exatamente o que D11
+existe para impedir.
+
+**Escopo a acrescentar:** `montarPayloadPedido` envia `promocaoExibida: item.temDesconto`, a
+partir do que a vitrine de fato mostrou. Se a 237 for implementada antes, o campo entra lá.
+
+**Residual conhecido, que não é bug:** a trava é um booleano, então só detecta "tinha promoção e
+não tem mais". Promoção que muda de 50% para 10% entre o carrinho e o envio passa, e o cliente
+paga mais do que viu. A loja nunca perde. Está assim por decisão de spec.

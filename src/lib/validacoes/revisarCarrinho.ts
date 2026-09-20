@@ -14,7 +14,7 @@
 import { z } from "zod";
 
 import { MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
-import { cupomSchema } from "@/lib/validacoes/cupom";
+import { codigoCupomSchema } from "@/lib/validacoes/cupom";
 
 const schemaOpcionalRevisao = z
   .object({
@@ -36,9 +36,11 @@ const schemaItemRevisao = z
 export const schemaRevisarCarrinho = z
   .object({
     loja_id: z.guid(),
-    // Mesma normalização do cadastro (trim + uppercase + [A-Z0-9]): "promo10"
-    // digitado no checkout casa o "PROMO10" gravado.
-    codigo: cupomSchema.shape.codigo.optional(),
+    // FONTE ÚNICA `codigoCupomSchema` (trim + uppercase + [A-Z0-9]{3,20}): a
+    // MESMA régua do cadastro e do autoritativo. "promo10" digitado no checkout
+    // casa o "PROMO10" gravado, e um código que o preview aceita é um código
+    // que `criarPedido` também aceita.
+    codigo: codigoCupomSchema.optional(),
     itens: z.array(schemaItemRevisao).min(1).max(MAX_ITENS_PEDIDO),
   })
   .strict();

@@ -11,6 +11,7 @@ import { z } from "zod";
 
 import { LIMITE_OBSERVACAO, MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import { normalizarObservacao } from "@/lib/utils/normalizarObservacao";
+import { codigoCupomSchema } from "@/lib/validacoes/cupom";
 
 // [167] Observação de texto livre (item e pedido) — MESMO contrato nos dois.
 // Normaliza ANTES de medir (transform → pipe): controles, bidi, CRLF e padding
@@ -92,15 +93,12 @@ export const schemaPayloadPedido = z
     // condicional: obrigatório quando tipo_entrega='entrega', ignorado em 'retirada'.
     endereco_entrega: schemaEnderecoEntrega.optional(),
     forma_pagamento: z.enum(["pix", "dinheiro", "link", "cartao"]),
-    // Normaliza p/ maiúsculas igual ao cupomSchema (cupons são gravados upper).
-    // Sem isso, "promo10" no checkout não casaria o cupom "PROMO10" do banco e o
-    // desconto do preview seria silenciosamente perdido no pedido (paridade preview↔real).
-    codigo_cupom: z
-      .string()
-      .trim()
-      .toUpperCase()
-      .pipe(z.string().regex(/^[A-Z0-9]{3,20}$/))
-      .optional(),
+    // FONTE ÚNICA `codigoCupomSchema` (trim + uppercase + [A-Z0-9]{3,20}) —
+    // a MESMA do cadastro e do preview. Sem a normalização, "promo10" no
+    // checkout não casaria o cupom "PROMO10" do banco e o desconto do preview
+    // seria silenciosamente perdido no pedido (paridade preview↔real); sem a
+    // régua COMPARTILHADA, um código que o preview aceita derruba o pedido.
+    codigo_cupom: codigoCupomSchema.optional(),
     // troco_para: informativo ao lojista (RN-C3) — positivo se presente.
     // NÃO entra em nenhum cálculo; servidor persiste mas ignora no total.
     troco_para: z.number().positive().optional(),

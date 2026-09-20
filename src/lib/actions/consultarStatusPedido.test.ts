@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
 
-// --- Mocks de I/O externo (mesmo padrão de cupomPreview.test.ts) ---
+// --- Mocks de I/O externo (mesmo padrão de revisarCarrinho.test.ts) ---
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 const verificarRateLimit = vi.fn(async (..._args: unknown[]) => ({
   permitido: true,
