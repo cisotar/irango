@@ -225,12 +225,17 @@ export type MontarPayloadArgs = {
   estado: EstadoWizard;
   idempotencyKey: string;
   /**
-   * (238/D11) `true` no SEGUNDO clique, depois de o cliente ver o de/para e o
-   * novo total: todo item passa a afirmar `promocaoExibida: false`, que é o
-   * que faz o pedido passar pela trava de RN-12-a. A tela mostrou o preço
-   * novo, então nenhuma linha afirma mais ter visto promoção.
+   * (238/D11) Índices das linhas que o cliente RECONFIRMOU no segundo clique,
+   * depois de ver o de/para e o novo total. SÓ elas passam a afirmar
+   * `promocaoExibida: false` — que é o que faz o pedido passar pela trava de
+   * RN-12-a.
+   *
+   * Por índice, e não um booleano global (achado do `auditar`): zerar a flag de
+   * TODAS as linhas desarmaria a trava do servidor para um item cuja promoção
+   * terminou DEPOIS de o diálogo abrir, e ele seria cobrado cheio sem nunca ter
+   * aparecido no de/para.
    */
-  revisaoConfirmada?: boolean;
+  indicesReconfirmados?: readonly number[];
 };
 
 /**
@@ -245,13 +250,13 @@ export function montarPayloadPedido({
   itens,
   estado,
   idempotencyKey,
-  revisaoConfirmada = false,
+  indicesReconfirmados = [],
 }: MontarPayloadArgs) {
   return {
     loja_id: lojaId,
     tipo_entrega: estado.tipoEntrega as "retirada" | "entrega",
     idempotency_key: idempotencyKey,
-    itens: itens.map((i) => ({
+    itens: itens.map((i, indice) => ({
       produto_id: i.produtoId,
       quantidade: i.quantidade,
       // Opcionais: só opcional_id + quantidade (RN-O2). O servidor valida loja,
@@ -267,11 +272,12 @@ export function montarPayloadPedido({
       // Observação por item (168): texto puro, sem nada monetário. O servidor
       // normaliza/mede de novo (schemaObservacao) e o recálculo é cego a ela.
       ...(i.observacao ? { observacao: i.observacao } : {}),
-      // (238/RN-12-a) Booleano de EXIBIÇÃO — nada monetário. Depois do segundo
-      // clique a tela JÁ mostrou o preço novo, então nenhuma linha afirma ter
-      // visto promoção: `false` em todas, e é isso que destrava o envio.
+      // (238/RN-12-a) Booleano de EXIBIÇÃO — nada monetário. A linha que o
+      // diálogo mostrou já teve o preço novo na tela, então deixa de afirmar
+      // que viu promoção (`false`) e destrava o envio. As demais seguem
+      // afirmando `true`: a trava do servidor continua armada para elas.
       ...(i.promocaoExibida === true
-        ? { promocaoExibida: !revisaoConfirmada }
+        ? { promocaoExibida: !indicesReconfirmados.includes(indice) }
         : {}),
     })),
     forma_pagamento: estado.formaPagamento,

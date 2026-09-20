@@ -95,11 +95,21 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "criarPedido",
         "fretePreview",
         "login",
+        "revisarCarrinho",
         "salvarLogoLoja",
         "salvarPerfil",
         "statusPedido",
         "validarCupom",
       ].sort(),
+    );
+  });
+
+  // Achado do `auditar`: a revisão automática do carrinho não pode gastar a
+  // cota de validação de cupom — balde estourado sumia com um cupom VÁLIDO.
+  it("a revisão do carrinho tem balde PRÓPRIO, separado do cupom", () => {
+    expect(LIMITES.revisarCarrinho).not.toBe(LIMITES.validarCupom);
+    expect(LIMITES.revisarCarrinho.limite).toBeGreaterThanOrEqual(
+      LIMITES.validarCupom.limite,
     );
   });
 });

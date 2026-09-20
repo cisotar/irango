@@ -2,7 +2,13 @@
 
 import { describe, it, expect } from "vitest";
 
-import { assinaturaCarrinho, itensParaRevisao } from "./itensRevisao";
+import {
+  assinaturaCarrinho,
+  ATRASO_REVISAO_MS,
+  chaveRevisao,
+  itensParaRevisao,
+  revisaoFrescaDe,
+} from "./itensRevisao";
 import type { ItemCarrinho } from "@/types/dominio";
 
 const P1 = "11111111-1111-4111-8111-111111111111";
@@ -54,5 +60,48 @@ describe("assinaturaCarrinho", () => {
     const a = assinaturaCarrinho([ITEM]);
     expect(assinaturaCarrinho([{ ...ITEM, preco: 999, observacao: "z" }])).toBe(a);
     expect(assinaturaCarrinho([{ ...ITEM, quantidade: 3 }])).not.toBe(a);
+  });
+});
+
+describe("[auditar 5] chaveRevisao — o código de cupom entra na dedupe", () => {
+  it("mesmo carrinho, cupom diferente ⇒ chaves diferentes", () => {
+    expect(chaveRevisao([ITEM], "PIZZA10")).not.toBe(chaveRevisao([ITEM]));
+  });
+
+  // Antes: `validarCupom(codigo)` revisava, `aplicarCupom` mudava a dep do
+  // efeito e uma SEGUNDA chamada idêntica saía logo atrás.
+  it("aplicar o cupom recém-validado NÃO produz uma chave nova", () => {
+    const daValidacao = chaveRevisao([ITEM], "PIZZA10");
+    const doEfeitoDepoisDeAplicar = chaveRevisao([ITEM], "PIZZA10");
+    expect(doEfeitoDepoisDeAplicar).toBe(daValidacao);
+  });
+
+  it("null e string vazia são a mesma ausência de cupom", () => {
+    expect(chaveRevisao([ITEM], null)).toBe(chaveRevisao([ITEM], ""));
+  });
+});
+
+describe("[auditar 1/2] revisaoFrescaDe — número do servidor só com carrinho de agora", () => {
+  const dados = { subtotal: 160 };
+
+  it("chave igual ⇒ fresca (é o subtotal que vai para a tela)", () => {
+    const chave = chaveRevisao([ITEM]);
+    expect(revisaoFrescaDe({ chave, dados }, chave)).toBe(dados);
+  });
+
+  it("carrinho mudou depois da resposta ⇒ NÃO é fresca", () => {
+    const chave = chaveRevisao([ITEM]);
+    const agora = chaveRevisao([{ ...ITEM, quantidade: 3 }]);
+    expect(revisaoFrescaDe({ chave, dados }, agora)).toBeNull();
+  });
+
+  it("nunca houve resposta ⇒ null", () => {
+    expect(revisaoFrescaDe(null, chaveRevisao([ITEM]))).toBeNull();
+  });
+});
+
+describe("[auditar 3] o debounce da revisão automática existe e é curto", () => {
+  it("meio segundo: colapsa a rajada do `+` sem parecer travado", () => {
+    expect(ATRASO_REVISAO_MS).toBe(500);
   });
 });

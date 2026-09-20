@@ -796,15 +796,38 @@ describe("[238/RN-12-a] promocaoExibida — do carrinho ao payload", () => {
     expect("promocaoExibida" in payload.itens[1]).toBe(false);
   });
 
-  it("SEGUNDO clique (`revisaoConfirmada`) ⇒ a mesma linha afirma `false`", () => {
+  it("SEGUNDO clique (linha reconfirmada) ⇒ a mesma linha afirma `false`", () => {
     const payload = montarPayloadPedido({
       lojaId: LOJA_ID,
       itens: [COM_PROMO].map(itemCarrinhoParaPayload),
       estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
       idempotencyKey: "44444444-4444-4444-8444-444444444444",
-      revisaoConfirmada: true,
+      indicesReconfirmados: [0],
     });
     expect(payload.itens[0].promocaoExibida).toBe(false);
+  });
+
+  // Achado do `auditar`: o segundo clique zerava a flag de TODAS as linhas. Se
+  // a promoção de OUTRO item terminasse entre o diálogo abrir e o clique, ele
+  // seria cobrado cheio sem nunca ter aparecido no de/para.
+  it("o segundo clique NÃO desarma a trava das linhas que o diálogo não mostrou", () => {
+    const OUTRA_COM_PROMO: ItemCarrinho = {
+      produtoId: OPCIONAL_ID,
+      nome: "Pizza do dia",
+      preco: 40,
+      quantidade: 1,
+      temDesconto: true,
+    };
+    const payload = montarPayloadPedido({
+      lojaId: LOJA_ID,
+      itens: [COM_PROMO, OUTRA_COM_PROMO].map(itemCarrinhoParaPayload),
+      estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+      // Só a linha 0 apareceu no diálogo.
+      indicesReconfirmados: [0],
+    });
+    expect(payload.itens[0].promocaoExibida).toBe(false);
+    expect(payload.itens[1].promocaoExibida).toBe(true);
   });
 
   it("o campo passa pelo schema `.strict()` sem abrir porta para dinheiro", () => {

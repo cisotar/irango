@@ -28,6 +28,11 @@ export const LIMITES = {
   cadastro: { limite: 5, janela: "1 m" },
   criarPedido: { limite: 10, janela: "1 m" },
   validarCupom: { limite: 20, janela: "1 m" },
+  // Balde PRÓPRIO da revisão do carrinho (achado do `auditar`): ela é
+  // automática (dispara a cada mudança do carrinho, com debounce) e antes
+  // consumia a cota de `validarCupom`. Compartilhar o balde fazia o cliente
+  // perder o cupom do resumo — que continua válido — por conta de UX.
+  revisarCarrinho: { limite: 30, janela: "1 m" },
   fretePreview: { limite: 20, janela: "1 m" },
   salvarPerfil: { limite: 10, janela: "1 m" },
   salvarLogoLoja: { limite: 10, janela: "1 m" },

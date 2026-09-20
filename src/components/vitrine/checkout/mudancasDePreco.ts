@@ -21,14 +21,23 @@ export type LinhaExibida = {
   precoExibido: number;
 };
 
+/**
+ * Uma linha mudada CARREGA O ÍNDICE dela no carrinho. É esse índice que o
+ * segundo clique usa para limpar `promocaoExibida` SÓ das linhas que o diálogo
+ * mostrou (achado do `auditar`): zerar a flag de todas desarmaria a trava do
+ * servidor para um item cuja promoção terminou DEPOIS de o diálogo abrir.
+ */
+export type LinhaMudada = MudancaItem & { indice: number };
+
 export type MudancasDePreco = {
   /** Cliente pagaria MAIS do que viu ⇒ reconfirmação explícita. */
-  subiram: MudancaItem[];
+  subiram: LinhaMudada[];
   /** Cliente paga MENOS do que viu ⇒ só avisa, o pedido segue. */
-  cairam: MudancaItem[];
+  cairam: LinhaMudada[];
 };
 
-const VAZIO: MudancasDePreco = { subiram: [], cairam: [] };
+/** Identidade estável: entra em dep array de efeito/memo sem disparar render. */
+export const SEM_MUDANCAS: MudancasDePreco = { subiram: [], cairam: [] };
 
 /**
  * Pareia POR ÍNDICE: `revisarCarrinhoAction` devolve uma linha por item
@@ -40,15 +49,16 @@ export function detectarMudancasDePreco(
   exibidas: readonly LinhaExibida[],
   revisadas: readonly LinhaRevisada[],
 ): MudancasDePreco {
-  if (exibidas.length !== revisadas.length) return VAZIO;
+  if (exibidas.length !== revisadas.length) return SEM_MUDANCAS;
 
-  const subiram: MudancaItem[] = [];
-  const cairam: MudancaItem[] = [];
+  const subiram: LinhaMudada[] = [];
+  const cairam: LinhaMudada[] = [];
 
   for (const [i, exibida] of exibidas.entries()) {
     const agora = revisadas[i].precoEfetivo;
     if (agora === exibida.precoExibido) continue;
-    const mudanca: MudancaItem = {
+    const mudanca: LinhaMudada = {
+      indice: i,
       nome: exibida.nome,
       de: exibida.precoExibido,
       para: agora,

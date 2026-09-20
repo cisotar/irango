@@ -28,6 +28,7 @@ import { useEnviarPedido } from "./useEnviarPedido";
 import {
   podeConfirmar,
   SEM_REVISAO,
+  totalPreviewEstimado,
   type EstadoRevisao,
   type EstadoWizard,
   type FormaPagamentoWizard,
@@ -79,6 +80,8 @@ export type EtapaPagamentoProps = {
   revisao?: EstadoRevisao;
   /** [238/D11] `criarPedido` pediu revisão — o wizard abre o diálogo. */
   onRevisaoNecessaria?: () => void;
+  /** [238/D11] Linhas que o cliente já reconfirmou no diálogo de preço. */
+  indicesReconfirmados?: readonly number[];
   onEstadoChange: (patch: Partial<EstadoWizard>) => void;
   onVoltar: () => void;
   /**
@@ -105,6 +108,7 @@ export function EtapaPagamento({
   freteStatus = "ocioso",
   revisao = SEM_REVISAO,
   onRevisaoNecessaria,
+  indicesReconfirmados,
   onEstadoChange,
   onVoltar,
   variante = "wizard",
@@ -114,7 +118,9 @@ export function EtapaPagamento({
   const formaSelecionada = formasPagamento.find(
     (f) => f.tipo === estado.formaPagamento,
   );
-  const totalPreview = Math.max(0, subtotal - desconto) + frete;
+  // Mesma fórmula do resumo e do diálogo de reconfirmação (238): três telas
+  // exibindo o mesmo total não podem compor três contas diferentes.
+  const totalPreview = totalPreviewEstimado(subtotal, desconto, frete);
 
   // Submit compartilhado (mobile + desktop) — fonte única do payload (006).
   const { enviar, enviando } = useEnviarPedido({
@@ -125,6 +131,7 @@ export function EtapaPagamento({
     onEstadoChange,
     preAbrirWhatsapp,
     onRevisaoNecessaria,
+    indicesReconfirmados,
   });
 
   async function copiarChave(chave: string) {

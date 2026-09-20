@@ -29,7 +29,7 @@ describe("[238] detectarMudancasDePreco", () => {
       [linha(P1, 100)],
     );
     expect(r.subiram).toEqual([
-      { nome: "Feijoada completa", de: 80, para: 100 },
+      { indice: 0, nome: "Feijoada completa", de: 80, para: 100 },
     ]);
     expect(r.cairam).toEqual([]);
   });
@@ -39,7 +39,9 @@ describe("[238] detectarMudancasDePreco", () => {
       [{ nome: "Feijoada completa", precoExibido: 100 }],
       [linha(P1, 80, true)],
     );
-    expect(r.cairam).toEqual([{ nome: "Feijoada completa", de: 100, para: 80 }]);
+    expect(r.cairam).toEqual([
+      { indice: 0, nome: "Feijoada completa", de: 100, para: 80 },
+    ]);
     expect(r.subiram).toEqual([]);
   });
 
@@ -63,8 +65,23 @@ describe("[238] detectarMudancasDePreco", () => {
       [linha(P1, 100), linha(P1, 80, true)],
     );
     expect(r.subiram).toEqual([
-      { nome: "Pizza (sem borda)", de: 80, para: 100 },
+      { indice: 0, nome: "Pizza (sem borda)", de: 80, para: 100 },
     ]);
+    expect(r.cairam).toEqual([]);
+  });
+
+  // O índice existe para o segundo clique limpar `promocaoExibida` SÓ das
+  // linhas que o diálogo mostrou (achado do `auditar`).
+  it("a linha mudada carrega o ÍNDICE dela no carrinho", () => {
+    const r = detectarMudancasDePreco(
+      [
+        { nome: "Refrigerante", precoExibido: 8 },
+        { nome: "Feijoada completa", precoExibido: 80 },
+        { nome: "Pudim", precoExibido: 12 },
+      ],
+      [linha(P2, 8), linha(P1, 100), linha(P2, 20)],
+    );
+    expect(r.subiram.map((l) => l.indice)).toEqual([1, 2]);
     expect(r.cairam).toEqual([]);
   });
 

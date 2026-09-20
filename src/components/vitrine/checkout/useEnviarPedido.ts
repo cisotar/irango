@@ -88,6 +88,13 @@ export type UsarEnviarPedidoArgs = {
    * cliente. Sem handler, cai no toast genérico de sempre.
    */
   onRevisaoNecessaria?: () => void;
+  /**
+   * [238/D11] Índices das linhas JÁ reconfirmadas pelo cliente no diálogo de
+   * preço. Default do envio: um clique posterior (outra árvore, outra etapa)
+   * continua carregando o consentimento que já foi dado, sem zerar a flag das
+   * linhas que o diálogo não mostrou.
+   */
+  indicesReconfirmados?: readonly number[];
 };
 
 export function useEnviarPedido({
@@ -98,16 +105,17 @@ export function useEnviarPedido({
   onEstadoChange,
   preAbrirWhatsapp = false,
   onRevisaoNecessaria,
+  indicesReconfirmados = [],
 }: UsarEnviarPedidoArgs) {
   const [enviando, startEnvio] = useTransition();
   const router = useRouter();
 
   /**
-   * [238] `revisaoConfirmada` chega por ARGUMENTO, não por prop: o segundo
-   * clique acontece no mesmo tick do `setState` que marca a revisão como
-   * confirmada, e uma prop lida aqui ainda traria o valor antigo.
+   * [238] As linhas reconfirmadas chegam por ARGUMENTO, não só por prop: o
+   * segundo clique acontece no mesmo tick do `setState` que registra a
+   * reconfirmação, e uma prop lida aqui ainda traria o valor antigo.
    */
-  function enviar(opcoes?: { revisaoConfirmada?: boolean }) {
+  function enviar(opcoes?: { indicesReconfirmados?: readonly number[] }) {
     if (estado.formaPagamento == null) {
       toast.error("Escolha uma forma de pagamento.");
       return;
@@ -127,7 +135,8 @@ export function useEnviarPedido({
       itens,
       estado,
       idempotencyKey,
-      revisaoConfirmada: opcoes?.revisaoConfirmada ?? false,
+      indicesReconfirmados:
+        opcoes?.indicesReconfirmados ?? indicesReconfirmados,
     });
 
     // [163] Preview best-effort: só barra se o schema JÁ chegou. Ausente, o

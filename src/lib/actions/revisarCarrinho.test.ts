@@ -626,7 +626,7 @@ describe("[228] revisarCarrinhoAction — `.strict()` e teto de cardinalidade (C
 
 // ═══════════════════════════════════════════════════════════════════════════
 describe("[228] revisarCarrinhoAction — rate limit e erro interno", () => {
-  it("rate limit bloqueado ⇒ recusa, na MESMA chave que já existe (~20/min por IP)", async () => {
+  it("rate limit bloqueado ⇒ recusa, em BALDE PRÓPRIO (não o do cupom)", async () => {
     bancoRN10a();
     vi.mocked(rateLimitMod.verificarRateLimit).mockResolvedValue({
       permitido: false,
@@ -635,9 +635,15 @@ describe("[228] revisarCarrinhoAction — rate limit e erro interno", () => {
     const r = await revisarCarrinhoAction(carrinhoRN10a());
 
     expect(r.ok).toBe(false);
+    // Achado do `auditar`: compartilhar o balde de `validarCupom` fazia a
+    // revisão automática esgotar a cota e sumir com um cupom VÁLIDO do resumo.
     expect(rateLimitMod.verificarRateLimit).toHaveBeenCalledWith(
-      "validarCupom",
+      "revisarCarrinho",
       "203.0.113.7",
+    );
+    expect(rateLimitMod.verificarRateLimit).not.toHaveBeenCalledWith(
+      "validarCupom",
+      expect.anything(),
     );
     expect(buscarProdutosPorIds).not.toHaveBeenCalled();
   });
