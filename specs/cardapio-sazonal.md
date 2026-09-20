@@ -1,6 +1,6 @@
 # Spec: Cardápio sazonal
 
-**Versão:** 0.3.0 | **Atualizado:** 2026-09-20
+**Versão:** 0.4.0 | **Atualizado:** 2026-09-20
 
 > **Fatia B de duas.** Esta spec fecha o **calendário**: a entidade cardápio, os dois modos de
 > vigência (recorrente e prazo fixo), a ação em lote no painel e o que acontece com o produto
@@ -42,6 +42,16 @@
 >
 > **A migration continua sendo expand puro, sem backfill** (RN-14) — o default `'menu'` preserva
 > exatamente o comportamento de hoje para os produtos que já existem.
+>
+> ### O que mudou na v0.4.0
+>
+> **Prévia da ação em lote, vinda do servidor (RN-09-a).** É mecanismo, não regra de negócio:
+> D2 continua idêntico. O `desenhar` (`plan/design-promocoes-e-vigencia.md` §10.2 e §12, item 6,
+> mecanismo M8) exigiu que a confirmação do lote mostre **quantos e quais** produtos a ação atinge,
+> com o número **dentro do rótulo do botão**, e que essa contagem **nunca** seja feita no cliente —
+> a seleção pode estar velha ou conter id de outra loja, e só o servidor resolve nomes sob RLS. A
+> v0.3.0 não tinha onde isso morar. Entrou como RN-09-a, um behavior em "Produtos do painel" e uma
+> asserção a mais no RED da fatia 5. Nada mais mudou.
 >
 > ### O que mudou na v0.3.0
 >
@@ -620,6 +630,11 @@ mesmo desenho: estado no pai, linha troca de aparência, uma barra de ação apa
   **recusado** (RN-14); a Server Action devolve a mensagem legível e o trigger é o backstop.
 - [ ] **Devolver ao menu um produto exclusivo.** Sempre permitido — é a saída de qualquer estado
   preso. Garantido em: **Server Action + RLS**.
+- [ ] **Ver, antes de confirmar, quantos e quais produtos a ação vai atingir** — o diálogo de
+  confirmação só existe depois que a prévia chega do servidor, e o número vai dentro do rótulo do
+  botão ("Aplicar a 12 produtos"). Garantido em: **Server Action** (`preverLoteAction`: contagem e
+  nomes resolvidos sob RLS a partir dos ids selecionados; o cliente não envia número nenhum e não
+  conta nada) — RN-09-a.
 - [ ] **Não conseguir aplicar cardápio a produto de outra loja**, nem mandando o id no meio da lista.
   Garantido em: **FK composta (banco) + RLS + Server Action** — RN-09. **Fatia crítica.**
 - [ ] **Não conseguir mudar a `visibilidade` de produto de outra loja.** Garantido em: **RLS**
@@ -1540,6 +1555,35 @@ O lojista da Loja A manda a lista `[p1, p2, pB, p3]`, onde `pB` é produto da Lo
 
 → Camada: **FK composta (banco) + RLS + Server Action + zod**. **Fatia crítica.**
 
+**RN-09-a — A prévia da ação em lote vem do servidor; o cliente nunca conta.** Antes de gravar, o
+diálogo de confirmação (`plan/design-promocoes-e-vigencia.md` §10.2, mecanismo M8) precisa dizer
+*"Adicionar 12 produtos"*, nomear até três e contar o resto. Esse número **não** pode sair do
+`Set<produtoId>` do cliente: a seleção pode estar velha (o catálogo mudou noutro dispositivo) ou
+conter id de outra loja, e o nome do produto é dado que só o servidor resolve sob RLS.
+
+```ts
+// lib/actions/cardapio.ts — mesma família das actions de lote; NÃO grava nada
+preverLoteAction(entrada: { produto_ids: string[] } | { categoria_id: string })
+  : { ok: true; total: number; nomes: string[] } | { ok: false; erro: string }
+```
+
+- **Mesmo zod da gravação**: `.max(200)`, sem duplicata, array novo produzido pelo parse — uma
+  forma, dois consumidores, nunca um schema paralelo.
+- **`loja_id` de `buscarLojaDoDono`**, nunca do payload. A leitura é `select id, nome from produtos
+  where id in (...) and loja_id = <própria>` — id alheio ou inexistente **simplesmente não volta**,
+  sem mensagem distinta e sem contagem de "ignorados" (anti-oráculo, `seguranca.md` §14). A
+  gravação continua sendo quem recusa a operação inteira (RN-09); a prévia só mostra o que é seu.
+- `nomes` limitado a **6** (o desktop mostra 6, o mobile 3 — `desenhar` §10.3); `total` é a contagem
+  inteira. Para `categoria_id`, a contagem é dos produtos da categoria **agora** (mesma leitura
+  que a RPC fará no `insert ... select`; a diferença entre a prévia e o gravado é a janela TOCTOU
+  que RN-10 já aceita e que a confirmação diz em voz alta: *"Produtos criados depois não entram
+  sozinhos"*).
+- **Preview de UX**: nenhuma decisão depende do número. O botão de confirmar recebe `previa`
+  **obrigatória** e não existe antes de ela chegar (M8) — sem jsdom, prop obrigatória é a única
+  trava possível para "não confirmar sobre contagem do cliente".
+
+→ Camada: **Server Action** (contagem e nomes) + **cliente (UX)** (a frase e o rótulo do botão).
+
 **RN-10 — "Categoria inteira" é expandida DENTRO da transação.** A Server Action manda
 `(loja_id, cardapio_id, categoria_id)` para `aplicar_cardapio_em_categoria`; o `insert ... select`
 lê os produtos da categoria no mesmo instante em que grava. Inclui produtos `oculto` e
@@ -1795,7 +1839,7 @@ antes de qualquer código de produção.
 | 2 | **`vigenciaCardapio.ts` — `cardapioAberto` + `avaliarVigenciaDoProduto`** (puras, fuso da loja, união, **RN-13**) | **SIM** | é a função que decide o que é vendável **e o que existe**. Os cenários 1 e 2 literais; **o caso de quarta dia 15 com `{sáb,dom}`+`{1,15}` ⇒ ABERTO** (RN-02, OU); eixo vazio ⇒ sem restrição; início inclusivo / fim exclusivo nos dois modos; inativo ignorado; **`'menu'` ⇒ sempre dentro, sem nem ler cardápio**; união (cenário 4); **RN-13: os quatro desfechos, inclusive `'cardapio'` + desligado ⇒ some**; `partesNoFuso` **consumido** do módulo `fusoLoja.ts`, sem segunda cópia |
 | 3 | **Extensão do contrato de catálogo** — `projetarProdutoVitrine`/`projetarCatalogoVitrine` compondo `compravel`, **filtrando por RN-13** e aplicando a precedência do motivo | **SIM** | é o contrato que o Spec A nomeou. `compravel === disponivel && dentroDaJanela`; cenário 3 (precedência `fora_da_janela` > `esgotado`); `oculto` nem chega; **produto sumido não está na lista devolvida, e a categoria que ficou vazia não é devolvida por `agruparCatalogo`**; `visibilidade` **ausente** do objeto projetado, como as colunas cruas de vigência; rótulo presente para **todo** produto com motivo `"fora_da_janela"` |
 | 4 | **Recusa do servidor em `criarPedido`** (D4) | **SIM** | **a UI não é a proteção.** Payload forjado com produto fora da janela ⇒ **pedido inteiro** recusado, antes da RPC, sem gravar nada; produto dentro da janela passa; cardápio inativo não bloqueia; falha de leitura de cardápio ⇒ recusa (fail-closed) |
-| 5 | **Ação em lote — Server Actions + `aplicar_cardapio_em_categoria`** | **SIM** | lista de ids vinda do cliente = IDOR. `produto_id` da Loja B ⇒ **operação inteira** recusada, nada gravado nas duas lojas, afirmando `cardapio_produtos_produto_fk` **e** o fragmento da mensagem da action; `cardapio_id` alheio idem; `p_loja_id` forjado ⇒ `loja alheia`; `p_categoria_id` alheio ⇒ `categoria fora da loja`; teto de 200 ids; reaplicar é idempotente |
+| 5 | **Ação em lote — Server Actions + `aplicar_cardapio_em_categoria`** | **SIM** | lista de ids vinda do cliente = IDOR. `produto_id` da Loja B ⇒ **operação inteira** recusada, nada gravado nas duas lojas, afirmando `cardapio_produtos_produto_fk` **e** o fragmento da mensagem da action; `cardapio_id` alheio idem; `p_loja_id` forjado ⇒ `loja alheia`; `p_categoria_id` alheio ⇒ `categoria fora da loja`; teto de 200 ids; reaplicar é idempotente; **RN-09-a:** `preverLoteAction` com `[p1, pB]` devolve `total = 1` e só o nome de `p1` — o id da Loja B não aparece na prévia e não produz mensagem distinta |
 | 6 | **Preview = autoritativo para vigência** (`revisarCarrinhoAction`, estende o Spec A) | **SIM** | preview mais generoso que o autoritativo é oráculo (`seguranca.md` §10-A). A revisão e `criarPedido` dão **o mesmo veredito** para o mesmo carrinho e o mesmo `agora`; `produto_id` de outra loja recusado, fragmento afirmado |
 | 7 | `calcularFimDoPreset` (diário/semanal/mensal + clamp de fim de mês) | NÃO | pura, mas com armadilha real: `31/01 → 28/02`, `31/01/2028 → 29/02`, `10/10 + semanal → 17/10 00:00` |
 | 8 | `descreverVigencia` + `proximaAbertura` + escolha determinística entre N cardápios | NÃO | muda **qual frase verdadeira** aparece, nunca se o produto vende |
