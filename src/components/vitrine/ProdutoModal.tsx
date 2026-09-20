@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { PrecoProduto } from "@/components/vitrine/PrecoProduto";
 import { SecaoOpcionais } from "@/components/vitrine/SecaoOpcionais";
+import { SeloDesconto } from "@/components/vitrine/SeloDesconto";
 import { achatarOpcionaisEscolhidos } from "@/components/vitrine/escolhasOpcionais";
 import { LIMITE_OBSERVACAO, MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import {
@@ -308,7 +310,10 @@ export function ProdutoModal({
               type="button"
               aria-label="Fechar detalhes do produto"
               onClick={() => onOpenChange(false)}
-              className="absolute right-3 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white hover:bg-white/25"
+              // 44×44 LITERAL (design-system §5): `size-7` dava 33,6px na base
+              // de 120% do projeto — abaixo da régua de alvo de toque. O ✕
+              // continua pequeno DENTRO do alvo.
+              className="absolute right-3 top-1/2 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white hover:bg-white/25"
             >
               {/* X sem depender de lib aqui (a faixa é nossa) */}
               <span aria-hidden className="text-sm font-black leading-none">
@@ -344,15 +349,22 @@ export function ProdutoModal({
               </div>
             ) : null}
 
-            {/* Selo de esgotado — centralizado, nos dois layouts */}
-            {!disponivel ? (
-              <div className="flex justify-center px-4 pb-4 pt-1">
-                <span
-                  role="status"
-                  className="w-fit rounded-full border-[1.5px] border-[#8B4513]/40 bg-[#8B4513] px-3 py-1 text-xs font-bold uppercase tracking-wide text-white"
-                >
-                  ✕ Esgotado
-                </span>
+            {/* Selos — centralizados, nos dois layouts, ACIMA do bloco de
+                quantidade e ABAIXO da descrição: um lugar só (233, design §3.4).
+                Esgotado e promoção podem coexistir: são fatos independentes (o
+                produto acabou; o preço está reduzido), e cada um tem texto
+                próprio — nunca cor sozinha. */}
+            {!disponivel || produto.seloDesconto ? (
+              <div className="flex flex-wrap items-center justify-center gap-2 px-4 pb-4 pt-1">
+                {!disponivel ? (
+                  <span
+                    role="status"
+                    className="w-fit rounded-full border-[1.5px] border-white/25 bg-indisponivel-fundo px-3 py-1 text-xs font-bold uppercase tracking-wide text-indisponivel-texto"
+                  >
+                    ✕ Esgotado
+                  </span>
+                ) : null}
+                <SeloDesconto rotulo={produto.seloDesconto} ancoragem="inline" />
               </div>
             ) : null}
 
@@ -385,10 +397,19 @@ export function ProdutoModal({
                     >
                       Unidades
                     </p>
+                    {/* O preço unitário sai de `PrecoProduto` — o modal não
+                        formata preço por conta própria (M1). Em promoção o par
+                        "de/por" aparece aqui mesmo, sem aritmética nova: o
+                        subtotal do rodapé já parte de `precoEfetivo`. */}
                     <p className="mt-0.5 text-xs text-[var(--texto-muted)]">
-                      {disponivel
-                        ? `Cada unidade · ${formatarMoeda(produto.precoEfetivo)}`
-                        : "Produto indisponível no momento"}
+                      {disponivel ? (
+                        <>
+                          Cada unidade ·{" "}
+                          <PrecoProduto produto={produto} tamanho="modal" />
+                        </>
+                      ) : (
+                        "Produto indisponível no momento"
+                      )}
                     </p>
                   </div>
                   <div

@@ -28,6 +28,21 @@
   --sombra-suave: rgba(0, 0, 0, 0.1);
   --sombra-media: rgba(0, 0, 0, 0.15);
 
+  /* Promoção ativa (selo de desconto na vitrine). Cor de SISTEMA — nunca sai do
+     tema da loja (design-system §8). Mesmo trio verde que o BadgeStatus
+     "Aberto agora" já usa e que o ResumoValores usa no desconto: nenhuma cor
+     nova, só promoção a token. Contraste #166534 sobre #dcfce7 ≈ 7:1 — AA e
+     AAA para texto normal; o par medido é sempre (texto do selo × fundo do
+     selo), nunca × foto. */
+  --promo-fundo: #dcfce7;
+  --promo-texto: #166534;
+  --promo-borda: #86efac;
+
+  /* Indisponível (pílula "Esgotado"). Mesmo preto que o CardProduto e o
+     ItemProdutoLista já imprimem; contraste #ffffff sobre #111111 ≈ 18,9:1. */
+  --indisponivel-fundo: #111111;
+  --indisponivel-texto: #ffffff;
+
   /* Altura REAL da barra sticky da vitrine, medida em runtime por
      CatalogoVitrine (ResizeObserver) e publicada aqui. 0px = não há barra
      (catálogo vazio, ou qualquer rota fora da vitrine). NUNCA chutar um
@@ -79,6 +94,11 @@
   --color-borda-nav: var(--borda-nav);
   --color-cinza-medio: var(--cinza-medio);
   --color-cinza-claro: var(--cinza-claro);
+  --color-promo-fundo: var(--promo-fundo);
+  --color-promo-texto: var(--promo-texto);
+  --color-promo-borda: var(--promo-borda);
+  --color-indisponivel-fundo: var(--indisponivel-fundo);
+  --color-indisponivel-texto: var(--indisponivel-texto);
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
     Ubuntu, sans-serif;
