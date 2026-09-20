@@ -26,6 +26,8 @@ export type CamposPerfil = {
   /** WhatsApp NACIONAL como está na máscara; ganha o prefixo `55` aqui. */
   whatsapp: string;
   envioAutomatico: boolean;
+  /** Preferência operacional (issue 231): exibir o modal de promoções na vitrine. */
+  mostrarModalPromocoes: boolean;
   enderecoCep: string;
   enderecoRua: string;
   enderecoNumero: string;
@@ -51,6 +53,10 @@ export function montarPayloadPerfil(campos: CamposPerfil) {
     // Booleano SEMPRE presente (nunca spread condicional): com `...(x ? … : {})`
     // o `false` seria omitido e o lojista jamais conseguiria DESLIGAR o envio.
     whatsapp_envio_automatico: campos.envioAutomatico,
+    // (231) Mesmo contrato: SEMPRE presente. Com spread condicional o lojista
+    // nunca conseguiria DESLIGAR o modal de promoções — a chave ausente faz
+    // `montarPatchPerfil` preservar o valor gravado.
+    modal_promocoes: campos.mostrarModalPromocoes,
     ...(campos.enderecoCep.trim() ? { endereco_cep: campos.enderecoCep.trim() } : {}),
     ...(campos.enderecoRua.trim() ? { endereco_rua: campos.enderecoRua.trim() } : {}),
     ...(campos.enderecoNumero.trim()

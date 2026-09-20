@@ -22,6 +22,8 @@ export type DadosPerfil = {
   endereco_estado?: string | null;
   /** Preferência operacional (issue 122): envio automático do pedido no WhatsApp. */
   whatsapp_envio_automatico?: boolean;
+  /** Preferência operacional (issue 231): exibir o modal de promoções na vitrine. */
+  modal_promocoes?: boolean;
 };
 
 /**
@@ -48,6 +50,10 @@ export function montarPatchPerfil(
   // `false` PRECISA ser gravado; ausente PRECISA preservar o valor no banco.
   if (d.whatsapp_envio_automatico !== undefined)
     patch.whatsapp_envio_automatico = d.whatsapp_envio_automatico;
+  // Preferência operacional (issue 231): MESMA regra — `!== undefined`, nunca
+  // truthiness. `false` é justamente o valor que o lojista grava ao DESLIGAR o
+  // modal de promoções; um `if (d.modal_promocoes)` o engoliria em silêncio.
+  if (d.modal_promocoes !== undefined) patch.modal_promocoes = d.modal_promocoes;
   return patch;
 }
 
