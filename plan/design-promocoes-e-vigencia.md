@@ -1,16 +1,34 @@
 # Design de UI/UX — Descontos, pratos promocionais e cardápio sazonal
 
-**Autor:** agente `desenhar` · **Data:** 2026-09-19 · **Branch:** `docs/specs-descontos-promocoes-cardapio`
+**Versão:** v2 · **Autor:** agente `desenhar` · **Data:** 2026-09-20 ·
+**Branch:** `docs/specs-descontos-promocoes-cardapio`
 **Entra como:** passo 4 do `plan/loop-descontos-promocoes-cardapio-sazonal.md`.
-**Insumos:** o plano do loop (D1–D11), `specs/desconto-por-produto-e-pratos-promocionais.md`
-(**Spec A, aprovado**) e `references/design-system.md`.
+**Insumos:** `plan/loop-descontos-promocoes-cardapio-sazonal.md` §0 (D1–D7 e invariantes),
+`specs/desconto-por-produto-e-pratos-promocionais.md` (**Spec A v0.4.0**, dono do contrato de
+catálogo), `specs/cardapio-sazonal.md` (**Spec B v0.3.0**) e `references/design-system.md`.
 
+> **O que mudou da v1 para a v2.** A v1 foi escrita em 19/09 contra o Spec A v0.1/0.2 e o plano com
+> D1–D11. Desde então os specs fecharam **D12 a D16** e responderam **todos** os seis pedidos de
+> contrato e os sete buracos de regra que a v1 tinha aberto. Consequências:
+> - **§12 deixou de ser uma lista de pedidos** e virou a tabela *pedido → decisão do spec → efeito no
+>   desenho*; **§13 deixou de ser uma lista de buracos** e virou a tabela equivalente das sete regras
+>   que faltavam. Nenhuma das duas continua em aberto.
+> - **M9 e §7.1 foram reescritos:** o `revisaoId` foi **recusado** e substituído por
+>   `promocaoExibida` (Spec A, RN-12-a). A garantia de servidor continua; o mecanismo mudou.
+> - **§4.2 e §9.2 tinham dois conflitos explícitos com o Spec B** (botão "+" fora do DOM; botão
+>   "Último dia do mês"). **O spec venceu nos dois.**
+> - **§13 passou a ser o que o Spec B delega ao desenho** (D16, D14, RN-12, D12), e os nomes de
+>   componente foram alinhados ao Spec A (§0.1).
+> - Os marcadores "pendente" de §4.3, §9.2 e §9.6 **saíram** — as regras existem.
+>
 > **O que este documento decide e o que não decide.**
 > Ele decide **forma**: anatomia de componente, hierarquia, copy não fixada, tokens, alvo de toque,
-> ordem de leitura, foco e anúncio de leitor de tela. Ele **não** decide regra de negócio: D1–D11 e o
-> Spec A estão fechados. Onde o desenho encostou num buraco da regra, o buraco está **apontado** em
-> §13, não preenchido.
-> A copy dos três estados do cupom já está fixada em **RN-10-e** e é **transcrita**, nunca reescrita.
+> ordem de leitura, foco e anúncio de leitor de tela. Ele **não** decide regra de negócio: **D1–D16 e
+> os dois specs são contrato fechado**. Regra de precedência: **em conflito, o spec vence** — o
+> desenho decide forma, nunca regra. O que ainda não tem resposta está em
+> §16 "Pendências para o spec", com o caso concreto, e não foi preenchido aqui.
+> A copy dos três estados do cupom já está fixada em **RN-10-e** e é **transcrita**, nunca reescrita;
+> o mesmo vale para a copy de `visibilidade` e do diálogo de desligar, fixadas pelo Spec B.
 
 ---
 
@@ -38,8 +56,21 @@
 **Justificativa (1 linha):** todo primitivo necessário já existe (`Dialog`, `Switch`, `RadioGroup`,
 `Checkbox`, `Badge`, `Card`, `Accordion`, `Menu`), o padrão visual de "aparece mas não compra" já
 existe em duas variantes divergentes que este trabalho **consolida**, e as três criações
-(`PrecoProduto`, `SeloVitrine`, `ModalPromocoes`) existem justamente para que a mesma regra não seja
+(`PrecoProduto`, `SeloDesconto`, `ModalPromocoes`) existem justamente para que a mesma regra não seja
 reescrita em quatro superfícies.
+
+### 0.1 Nomes — alinhamento com o Spec A (uma linha por nome)
+
+O Spec A nomeia componentes; o desenho os batizava de outro jeito. **O spec vence.** A tabela existe
+para o `quebrar` decidir sem ambiguidade — nenhum nome fica com duas grafias no repositório.
+
+| Nome na v1 do desenho | Nome adotado | Decisão (1 linha) |
+|---|---|---|
+| `SeloVitrine` (chip de promoção **e** de indisponibilidade) | **`SeloDesconto`** (Spec A §Componentes) | ADOTA o nome do spec e **perde o tom `indisponivel`**: o Spec B manda literalmente *"nenhum estilo novo: mesma pill, mesma opacidade, mesmo `disabled`"* para o não-comprável, então indisponibilidade **não vira componente** — vira token (§2) aplicado à pílula que cada superfície já tem. |
+| `linhaDePor.ts` (módulo puro do par de/por) | **`LinhaItemPedido`** (Spec A §Componentes da confirmação) | ADOTA o nome do spec para o helper compartilhado. Como a mesma regra serve o WhatsApp (texto plano, sem React), o helper é um **módulo** `lib/utils/linhaItemPedido.ts` exportando `parDePor` e `textoDePor` — nome do spec, forma testável sem jsdom (M5). |
+| `PrecoProduto` | **`PrecoProduto`** | MANTIDO: nenhum spec nomeia o par de preços, então não há conflito a resolver — é nome novo, não nome divergente. |
+| `ModalPromocoes`, `decisaoModalPromocoes` | idem | MANTIDOS: são exatamente os nomes que o Spec A já usa (RN-16, §Componentes). |
+| `SeloVitrine tom="indisponivel"` no `ProdutoModal` | — | REMOVIDO como componente; o selo central do modal continua onde está e só troca o `#8B4513` pelos tokens `--indisponivel-*` (§2). É consolidação de **hex**, não de markup — o que o Spec B proíbe é estilo novo, não hex unificado. |
 
 ### O que é reuso puro
 
@@ -48,7 +79,8 @@ reescrita em quatro superfícies.
 | Modal com foco preso, ESC e clique-fora | `ui/dialog.tsx` (Base UI) | `ModalPromocoes` e a reconfirmação de preço usam `Dialog`; nada de modal ad-hoc (design-system §5) |
 | Ligar/desligar promoção; "definir prazo" | `ui/switch.tsx`, `ui/checkbox.tsx` | bloco Promoção do `FormProduto` |
 | Escolher percentual × reais; escolher modo de vigência | `ui/radio-group.tsx` | dois `RadioGroup`, nenhum `Select` novo |
-| Chip/selo com cor de sistema + texto | `ui/badge.tsx` + o princípio de `BadgeStatus` (design-system §8) | `SeloVitrine` |
+| Chip/selo com cor de sistema + texto | `ui/badge.tsx` + o princípio de `BadgeStatus` (design-system §8) | `SeloDesconto` |
+| Estado ao vivo do cardápio no painel ("Aberto agora", "Expirado") | `BadgeStatus` (design-system §7, §8) — **o Spec B manda reusar** | §13.3, sem componente novo |
 | Lista densa do painel virando card-list no mobile | `ProdutosClient` (Accordion + Card + `flex-wrap`/`order-*`) | modo seleção e cardápio entram **dentro** desse layout |
 | Copy que precisa ser testada sem DOM | `lib/utils/alcance-do-grupo.ts` | 4 módulos de copy pura novos, mesmo formato |
 | Texto de erro por veredito, sem culpar o cliente | `ModalFreteIndisponivel.textos()` | a reconfirmação de preço (D11) copia essa forma |
@@ -101,7 +133,7 @@ quem escreve o componente, **o desenho mudou**. Estes nove pontos são contrato 
 
 | # | Erro que ficaria solto | Mudança de desenho | Onde |
 |---|---|---|---|
-| **M1** | selo e preço riscado implementados 4× (card, lista, modal, busca) e divergindo | **um** `PrecoProduto` e **um** `SeloVitrine`; nenhuma superfície formata preço por conta própria. A busca é coberta de graça porque reusa card e linha | §3 |
+| **M1** | selo e preço riscado implementados 4× (card, lista, modal, busca) e divergindo | **um** `PrecoProduto` e **um** `SeloDesconto`; nenhuma superfície formata preço por conta própria. A busca é coberta de graça porque reusa card e linha | §3 |
 | **M2** | prop opcional com default silencioso (`disponivel?: boolean` → `?? true`), que já produz o bug real acima | as superfícies passam a receber **um objeto obrigatório** `produto: ProdutoVitrine`, não campos avulsos. Campo faltando vira erro de `tsc`, não "R$ NaN" nem "disponível por engano" | §3, §4 |
 | **M3** | componente decidindo se há desconto (`precoEfetivo < preco`) e refazendo a regra no browser | `temDesconto`, `seloDesconto` (rótulo **pronto**) e `compravel`/`motivoNaoCompravel` chegam **decididos do servidor**; o componente só ramifica em booleano | §3, §4 |
 | **M4** | componente escolhendo o estado A/B/C do cupom comparando `baseElegivel` com `subtotal` — reimplementação da regra monetária no cliente | a Server Action devolve `estadoCupom` como **union discriminada**; o componente nunca compara números | §6 |
@@ -109,13 +141,14 @@ quem escreve o componente, **o desenho mudou**. Estes nove pontos são contrato 
 | **M6** | painel e vitrine descrevendo a **mesma** vigência com palavras diferentes ("sáb e dom" vs. "fim de semana") | **um** módulo `lib/utils/descreverVigencia.ts` produz a prévia do painel **e** o rótulo "quando volta" do selo da vitrine | §9, §4 |
 | **M7** | mensagem do D10 com um texto no cliente e outro no servidor | a mensagem é montada por **uma** função pura exportada, consumida pelo `superRefine` do `schemaProduto` (que já é isomórfico) — form e Server Action não têm como divergir | §8 |
 | **M8** | ação em lote confirmada sobre uma contagem do cliente (seleção velha, produto de outra loja, catálogo mudado noutro dispositivo) | o botão de confirmar recebe `previa` **obrigatória, vinda do servidor**; sem `previa` ele nem existe. E o número vai **dentro do rótulo do botão** ("Aplicar a 12 produtos") | §10 |
-| **M9** | "segundo clique explícito" do D11 virando um `disabled` que alguém reabilita | o CTA de envio é **removido do DOM** enquanto a reconfirmação está aberta, o gate entra em `podeConfirmar` (`checkout/estado.ts`, função pura já existente e já testada) e o envio exige um **token de revisão** do servidor | §7 |
+| **M9** | "segundo clique explícito" do D11 virando um `disabled` que alguém reabilita — e, pior, a garantia morando **só** no componente, que este repo não sabe testar | o CTA de envio é **removido do DOM** enquanto a reconfirmação está aberta, o gate entra em `podeConfirmar` (`checkout/estado.ts`, função pura já existente e já testada) e **cada item do payload carrega `promocaoExibida: boolean`** (Spec A, **RN-12-a**), que o servidor compara com o `temDesconto` real do banco: `true` afirmado × `false` apurado ⇒ **recusa**. A UI pode esquecer o segundo clique; o servidor não deixa passar | §7.1 |
 
 Três observações que valem para os nove:
 
 1. **Toda copy nova vira função pura em `lib/utils/`.** É o único jeito de testar texto neste repo.
-   Quatro módulos: `copiaCupom.ts`, `copiaRevisaoPreco.ts`, `descreverVigencia.ts`,
-   `copiaLotePromocao.ts`.
+   Cinco módulos: `copiaCupom.ts`, `copiaRevisaoPreco.ts`, `descreverVigencia.ts`,
+   `copiaLotePromocao.ts` e `copiaCardapioPainel.ts` (os rótulos de estado do cardápio e o aviso de
+   RN-12 — §13.3, §13.4).
 2. **Nenhuma prop nova de valor monetário tem default.** Se o servidor não mandou, o bloco não é
    renderizado — nunca calculado no cliente (§12).
 3. **Nenhum componente novo lê `window` direto.** `localStorage`, `scrollY` e o instante `agora`
@@ -194,7 +227,7 @@ de tamanho a mais.
 
 ```
 components/vitrine/PrecoProduto.tsx      — o par de preços, apresentação pura
-components/vitrine/SeloVitrine.tsx       — o chip (promoção OU indisponibilidade)
+components/vitrine/SeloDesconto.tsx      — o chip de PROMOÇÃO (nome do Spec A, §0.1)
 lib/utils/rotuloPrecoAcessivel.ts        — a frase que o leitor de tela ouve (pura)
 ```
 
@@ -250,18 +283,24 @@ export function rotuloPrecoAcessivel(p: {
 > `rotuloPrecoAcessivel` — a **mesma** função. Mesma correção vale para o `aria-label` do botão "+"
 > do `CardProduto` (`CardProduto.tsx:91-93`): `Adicionar ${nome} ao carrinho, ${rotuloPrecoAcessivel(...)}`.
 
-#### `SeloVitrine`
+#### `SeloDesconto`
 
 ```tsx
-type SeloVitrineProps = {
-  /** "promocao": verde de sistema. "indisponivel": preto de sistema. */
-  tom: "promocao" | "indisponivel";
-  /** Texto PRONTO, vindo do servidor. `null` ⇒ o componente devolve null. */
+type SeloDescontoProps = {
+  /** Texto PRONTO, vindo do servidor (`ProdutoVitrine.seloDesconto`).
+   *  `null` ⇒ o componente devolve null. */
   rotulo: string | null;
   /** "foto" (sobreposto à imagem) | "inline" (no fluxo de texto). Obrigatório. */
   ancoragem: "foto" | "inline";
 };
 ```
+
+> **Por que não há prop `tom`.** A v1 tinha um componente com dois tons (promoção e
+> indisponibilidade). O Spec B fechou o não-comprável como *"nenhum estilo novo: mesma pill, mesma
+> opacidade, mesmo `disabled`, mesmo padrão de `aria-label`. Só o texto muda."* — então a
+> indisponibilidade **não** ganha componente: ela continua na pílula que `CardProduto` já imprime, e
+> o que este documento unifica é o **hex** dela (§2, tokens `--indisponivel-*`). Um componente a
+> menos, e o Spec B respeitado na letra.
 
 **`rotulo: string | null` com o `return null` DENTRO do componente** (M3): não existe um `{x && ...}`
 para alguém esquecer em uma das quatro superfícies. Uma decisão, um lugar.
@@ -269,11 +308,15 @@ para alguém esquecer em uma das quatro superfícies. Uma decisão, um lugar.
 Classes:
 
 ```
-promocao   : bg-promo-fundo text-promo-texto border-[1.5px] border-promo-borda
-indisponivel: bg-indisponivel-fundo text-indisponivel-texto border-[1.5px] border-white/25
-comum      : rounded-full px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide
-             whitespace-nowrap shadow-[0_2px_10px_rgba(0,0,0,0.25)]
+SeloDesconto   : bg-promo-fundo text-promo-texto border-[1.5px] border-promo-borda
+                 rounded-full px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide
+                 whitespace-nowrap shadow-[0_2px_10px_rgba(0,0,0,0.25)]
 ancoragem=foto : absolute z-[2]  (posição dada pelo consumidor)
+
+pílula de indisponível (NÃO é componente — é a pílula que o CardProduto já imprime,
+só trocando o hex pelos tokens de §2):
+                 bg-indisponivel-fundo text-indisponivel-texto border-[1.5px] border-white/25
+                 + o mesmo rounded-full/px/py/text-xs acima
 ```
 
 O selo **não é interativo** — não é botão, não tem `title`, não tem tooltip. Um chip que só existe no
@@ -338,7 +381,7 @@ mobile (full-screen) — cabeçalho na cor primária da loja
 │  Descrição do prato… ver mais                 │
 │                                               │
 │            ┌────────────────────┐             │
-│            │       -20%         │             │  ← SeloVitrine inline, centrado
+│            │       -20%         │             │  ← SeloDesconto inline, centrado
 │            └────────────────────┘             │
 │         De R$ 100,00 por R$ 80,00             │  ← PrecoProduto tamanho="modal"
 │                                               │
@@ -393,52 +436,99 @@ há o padrão consolidado de §Gate de reuso, com outro rótulo.
 ### 4.1 O que o servidor decide (M3)
 
 ```ts
+// No objeto (contrato de catálogo do Spec A, estendido pelo Spec B):
 compravel: boolean                    // false ⇒ aparece, sem botão de compra
 motivoNaoCompravel: "esgotado" | "fora_da_janela" | null
-rotuloNaoCompravel: string | null     // ⚠️ CAMPO NOVO — ver §12, item 1
+
+// AO LADO do objeto, no mesmo retorno de projetarCatalogoVitrine (Spec B, RN-06):
+rotulosVigencia: Record<string, string>   // produto_id → frase pronta do selo
 ```
 
-O terceiro campo é o que o desenho exige e o contrato ainda não promete: **"Só aos sábados e domingos"
-é texto de calendário e não pode ser formatado no browser** (M6). O componente faz um `switch` sobre
-`motivoNaoCompravel` para escolher o **tom** e imprime `rotuloNaoCompravel` como **texto**.
+🔴 **A v1 pediu um campo `rotuloNaoCompravel` no objeto. O Spec B recusou — e a recusa é melhor que
+o pedido.** A regra 2 do contrato de catálogo proíbe campo novo em `ProdutoVitrine`, então o rótulo
+viaja **num mapa `produto_id → rótulo`**, devolvido pela **mesma** função que devolve os produtos
+(RN-06): não existe caminho de código que produza o produto marcado sem produzir o rótulo dele, e o
+mapa é imune ao filtro da busca porque é chaveado por id — exatamente como `opcionaisPorCategoria` já
+faz nesta mesma cadeia de componentes. O que o desenho precisava está garantido: **a frase continua
+vindo pronta do servidor**, formatada no fuso da loja, e o componente só a imprime.
 
-Precedência entre `esgotado` e `fora_da_janela` é **do servidor** (regra 3 do contrato de catálogo do
-Spec A) — a UI nunca compõe dois motivos e nunca mostra dois selos de indisponibilidade.
+Consequências de forma, e são três:
+
+1. `SecaoCatalogo` recebe `rotulosVigencia` como prop **obrigatória**, ao lado de
+   `opcionaisPorCategoria` (Spec B, §Componentes). Prop obrigatória, de novo, porque sem jsdom o
+   `tsc` é a única trava.
+2. **Fallback de render:** chave ausente ⇒ o selo imprime **"Indisponível no momento"**. Na vitrine
+   isso é puramente defensivo — por RN-13, todo produto que chega marcado **tem** uma volta a
+   anunciar. Na **revisão do carrinho** é caso real de negócio: ver §13.7.
+3. A precedência entre `esgotado` e `fora_da_janela` é **do servidor** e está fechada no Spec B
+   (RN-05): **`fora_da_janela` ganha**. A UI nunca compõe dois motivos e nunca mostra dois selos.
 
 ### 4.2 Tratamento único, quatro superfícies
 
 | Superfície | Tratamento |
 |---|---|
-| `CardProduto` | overlay `bg-black/35` + `[backdrop-filter:grayscale(1)]` sobre a foto, `card-body opacity-60`, `SeloVitrine tom="indisponivel" ancoragem="foto"` no rodapé-centro com `rotuloNaoCompravel`, botão "+" **removido do DOM** (não `disabled`) |
-| `ItemProdutoLista` | **novidade**: a linha ganha o selo inline, o preço fica em `--texto-muted` sem `--cor-destaque`, e o texto do preço não é riscado (não há promoção aqui, há indisponibilidade) |
+| `CardProduto` | overlay `bg-black/35` + `[backdrop-filter:grayscale(1)]` sobre a foto, `card-body opacity-60`, a **pílula que já existe** no rodapé-centro com o rótulo vindo de `rotulosVigencia`, botão "+" **`disabled` e com `pointer-events-none`** (ver o conflito resolvido abaixo) |
+| `ItemProdutoLista` | **novidade**: a linha ganha a mesma pílula, inline, o preço fica em `--texto-muted` sem `--cor-destaque`, e o texto do preço não é riscado (não há promoção aqui, há indisponibilidade) |
 | `ProdutoModal` | selo centralizado no mesmo lugar do "Esgotado" de hoje, imagem em grayscale, seção de quantidade e de observação ocultas, CTA `Produto indisponível` desabilitado (é o padrão que já existe, `ProdutoModal.tsx:378-388`) |
 | Busca | de graça, pelo mesmo motivo de §3.5 |
 
-Dois desvios deliberados do que está no código hoje, ambos **CONSOLIDAR**:
+#### 🔴 Conflito resolvido — o botão "+" fica `disabled`, e o card continua abrindo o modal
 
-1. **O botão "+" do card sai do DOM em vez de ficar `disabled`.** Um "+" cinza desabilitado convida o
-   toque e não responde; o cliente toca duas vezes e conclui que o site travou. Sem botão, o card
-   inteiro continua abrindo o modal (item 2), que é onde a explicação mora.
-2. 🔴 **O card não-comprável passa a ser clicável e abre o modal.** Hoje
-   `CardProduto` zera o `onClick` quando `!disponivel` (`CardProduto.tsx:46`) enquanto
-   `ItemProdutoLista` sempre abre — e abre com o estado errado (o bug de §Gate de reuso). Com D4 isso
-   deixa de ser detalhe: **o motivo ("Só aos sábados e domingos") não cabe na pílula do card em 360px**,
-   e o único lugar onde ele cabe inteiro é o modal. Um produto marcado que não abre é um beco sem
-   saída. A adição continua impossível — o modal não-comprável não tem CTA de adicionar.
+**A v1 mandava remover o "+" do DOM. O Spec B diz o contrário, com todas as letras:** *"Nenhum estilo
+novo: mesma pill, mesma opacidade, **mesmo `disabled`**, mesmo padrão de `aria-label`. Só o texto
+muda."* **O spec vence: o botão fica no DOM, `disabled`.**
+
+O que a v1 estava protegendo continua valendo — um "+" cinza que não responde faz o cliente tocar
+duas vezes e concluir que o site travou — mas a saída não é remover o botão. É esta, e ela é
+compatível com a letra do Spec B:
+
+```tsx
+// CardProduto — produto não comprável
+<button
+  disabled
+  aria-label={`${produto.nome} — ${rotulo}`}   // "Feijoada — Só aos sábados e domingos"
+  className="pointer-events-none …"            // ← a peça que resolve o conflito
+>
+  +
+</button>
+```
+
+1. **`disabled`** — é o que o Spec B pede, e é o que impede a adição. Botão `disabled` não é
+   focável nem dispara `click`; a UI não é a proteção de qualquer jeito (o servidor recusa, RN-08).
+2. **`pointer-events-none`** — sem isso, o toque **morre no botão**: navegador nenhum propaga
+   `click` de elemento `disabled`, então o dedo que cai sobre o "+" não abre o modal e a tela parece
+   travada, que é exatamente o dano que a v1 queria evitar. Com ele, o toque **atravessa** para o
+   card, que abre o modal, que é onde a explicação mora. **Uma classe compra o comportamento inteiro
+   sem tirar o botão do DOM.**
+3. **O rótulo do motivo vai no `aria-label` do botão**, que é o *"mesmo padrão de `aria-label`"* que o
+   Spec B manda preservar: quem usa leitor de tela ouve o motivo no mesmo lugar onde o vidente vê a
+   pílula.
+
+🔴 **E a exigência que a v1 acertou continua de pé: o card não-comprável ABRE o modal.** Hoje
+`CardProduto` zera o `onClick` quando `!disponivel` (`CardProduto.tsx:46`) enquanto
+`ItemProdutoLista` sempre abre — e abre com o estado errado (o bug de D13/RN-19). Com D4 isso deixa
+de ser detalhe: **"Só aos sábados e domingos, das 11:00 às 15:00" não cabe na pílula do card em
+360px**, e o único lugar onde ele cabe inteiro é o modal. Um produto marcado que não abre é um beco
+sem saída — a mesma classe de erro que D13 manda fechar. A adição continua impossível: o modal
+não-comprável não tem CTA de adicionar (Spec B: *"o modal de um produto fora da janela abre — o
+cliente pode querer ler a descrição — mas não adiciona nada"*).
 
 ### 4.3 Copy do rótulo
 
-Produzida por `descreverVigencia.ts::rotuloVoltaQuando` (M6, §9.5), **no servidor**. Forma curta,
-porque divide espaço com uma foto em 168px:
+Produzida por `descreverVigencia.ts::rotuloVoltaQuando` (M6, §9.5), **no servidor**, e entregue ao
+componente pelo mapa `rotulosVigencia` (§4.1). Forma curta, porque divide espaço com uma foto em
+168px:
 
 | Configuração | Rótulo |
 |---|---|
 | dias da semana | `Só aos sábados e domingos` |
 | dias da semana + horário | `Sáb e dom, 11:00–15:00` |
 | dias do mês | `Só nos dias 1 e 15` |
+| dias da semana **+** dias do mês | `Sáb, dom, dia 1 e dia 15` — os dois eixos **somam** (Spec B, RN-02: **OU**) |
 | só horário | `Só das 11:00 às 15:00` |
 | prazo fixo ainda não começado | `A partir de 22/09` |
-| prazo fixo já encerrado | *não se aplica* — ver §13, buraco 4 |
+| prazo fixo já encerrado | **não existe rótulo, porque não existe card**: o produto `visibilidade = 'cardapio'` **some da vitrine** (Spec B, RN-13) e o `'menu'` nunca recebe este motivo (RN-05) |
+| produto em N cardápios fechados | o rótulo do que **abre mais cedo** — escolha determinística do servidor por `proximaAbertura`, desempate por `nome` e `id` (Spec B, RN-07). A UI **nunca** escolhe |
 | esgotado | `Esgotado` |
 
 Regra de tamanho: **no máximo 32 caracteres**. Acima disso a pílula quebra em duas linhas sobre a foto
@@ -651,7 +741,8 @@ As três saídas, **literais de RN-10-e**:
 360px · dentro da coluna do wizard
 
   Subtotal                                 R$ 140,00
-  Você economizou                        − R$  20,00   ← desconto de PRODUTO (§12 item 2)
+  Você economizou                        − R$  20,00   ← desconto de PRODUTO; `economiaProdutos`
+                                                          vem pronto do servidor (§12, concedido)
   ───────────────────────────────────────────────────
   Cupom PROMO10                          − R$   6,00
    ↳ Não acumula com promoção: o desconto valeu
@@ -711,9 +802,12 @@ Tokens e hierarquia:
 2. **Fechado por padrão**, `<button aria-expanded aria-controls>` de 44px + região revelada. A vitrine
    é mobile-first e o resumo já é denso (design-system §1). Não é `Accordion` do shadcn: um
    disclosure de uma linha dentro de um resumo financeiro não justifica o chrome do primitivo.
-3. **Só existe se o servidor mandar os dois números.** Ver §12, item 3. Se o Spec A recusar a
-   ampliação de contrato, **o disclosure é removido do desenho** — ele **não** é calculado no cliente,
-   em nenhuma hipótese. A frase obrigatória do estado B sobrevive sozinha.
+3. **Os dois números vêm do servidor — e o Spec A CONCEDEU.** `derivarBasesCupom` passa a devolver
+   `baseProdutos` e `baseOpcionais` junto com `baseElegivel`, com a invariante
+   `baseElegivel === arred2(baseProdutos + baseOpcionais)` travada no RED da fatia crítica 3
+   (RN-10-e). Custo declarado pelo spec: **zero** — a função já somava as duas parcelas, só não as
+   devolvia. O disclosure **não** é calculado no cliente, em nenhuma hipótese; se os números não
+   vierem, ele não é renderizado e a frase obrigatória do estado B sobrevive sozinha (§12).
 
 Por que vale a pena: o cliente vê 10% de um pedido de R$ 140,00 virar R$ 6,00. A frase diz "sobre
 R$ 60,00", mas é justamente a parcela **"adicionais incluídos"** que ele erraria se tentasse conferir
@@ -804,10 +898,33 @@ atualizados na tela. Fechar nunca é sinônimo de confirmar.
    checkout deve consultar `podeConfirmar` — nunca reimplementar a lógica no componente."* A condição
    nova (`revisaoConfirmada`) entra **lá**, uma vez, e cobre mobile e desktop de uma vez — que hoje
    são duas árvores diferentes (`variante: "wizard" | "desktop"`).
-3. **O envio carrega um token de revisão do servidor** (§12, item 4). Se o componente esquecer de
-   pedir o segundo clique, o servidor recusa por token ausente/vencido. Assim a proteção deixa de
-   depender de disciplina de componente — que é o que a **exigência 5** manda fazer sempre que não há
-   como testar o DOM.
+3. 🔴 **O envio carrega `promocaoExibida` por item — e é o servidor que fecha a porta** (Spec A,
+   **RN-12-a**). A v1 pediu um token de revisão (`revisaoId`); **o Spec A recusou o mecanismo e
+   adotou o objetivo**, com um booleano de exibição assimétrico que não precisa de HMAC, de tabela
+   nova nem de round-trip a mais. O que o `executar` implementa:
+
+   ```ts
+   // payload de criarPedido — zod .strict(), SEM nenhum campo monetário (inalterado)
+   itens: [{ produto_id, quantidade, opcionais, promocaoExibida: boolean }]
+   ```
+
+   `promocaoExibida` é a afirmação do cliente **sobre o que a tela mostrou**, nunca sobre quanto
+   custa. `criarPedido` compara com o `temDesconto` real do banco:
+
+   | Cliente afirmou | Servidor apurou | Ação |
+   |---|---|---|
+   | `true` | `true` | segue |
+   | `false` | `false` | segue |
+   | `false` | `true` | **segue** — a promoção começou no caminho, o cliente paga **menos** que viu (§7.2) |
+   | `true` | `false` | **RECUSA** com código de revisão — é o caso desta tela |
+
+   **Como isso amarra o desenho:** o card do produto em promoção é a única coisa que pode fazer o
+   componente enviar `true`; quando a recusa volta, o checkout chama `revisarCarrinhoAction`, abre
+   **este** diálogo, e o segundo clique envia `promocaoExibida: false` — o que prova que a tela
+   mostrou o preço novo. **A UI pode esquecer o segundo clique; o pedido não passa mesmo assim.**
+   Três propriedades que o desenho pode confiar sem teste de DOM: o campo **só sabe recusar** (não
+   existe valor que barateie o pedido), **ausente ⇒ `false`** (fail-closed, cliente antigo durante o
+   deploy segue pelo preço do banco) e **nenhum número monetário novo trafega** do cliente.
 
 ### 7.2 Preço CAIU — só avisa, o pedido segue
 
@@ -974,13 +1091,13 @@ Na linha do produto (`ProdutosClient.tsx:600-611`), ao lado do `badgeStatus(p)` 
   └───┘
 ```
 
-- O chip de promoção usa o **mesmo `Badge`** do painel (não o `SeloVitrine`, que é da vitrine e carrega
+- O chip de promoção usa o **mesmo `Badge`** do painel (não o `SeloDesconto`, que é da vitrine e carrega
   cores de sistema pensadas para foto). `variant="secondary"` + `text-promo-texto`.
 - O rótulo inclui o fim do prazo quando existe (`-20% até 30/09`) e não inclui quando não existe
   (`-20%`). É a informação que o lojista procura ao abrir a tela: *"ainda está valendo?"*.
 - 🔴 **`promocaoVigente` e o rótulo são projetados no Server Component da página**, não derivados no
   `ProdutosClient`. Calcular "está vigente agora" no browser duplicaria RN-03 e usaria o relógio do
-  dispositivo. Não é campo novo de banco — é exigência de projeção (§12, item 5).
+  dispositivo. Não é campo novo de banco — é exigência de projeção no Server Component (§12).
 
 ---
 
@@ -1044,7 +1161,9 @@ e/ou faixa de horário diária").
   │   8  9 10 11 12 13 14                        │
   │  …                                           │
   │  29 30 31                                    │
-  │  [ Último dia do mês ]                       │
+  │                                              │
+  │  O dia 31 não existe em todo mês. Nos meses  │  ← nota que só aparece
+  │  de 30 dias, este cardápio não aparece.      │     quando 31 está marcado
   └──────────────────────────────────────────────┘
 
   ┌─ Horário do dia ──────────────── opcional ───┐
@@ -1063,29 +1182,44 @@ e/ou faixa de horário diária").
   `aria-label`. Um checkbox de 16px com rótulo ao lado não dá alvo de 44px numa grade dessas sem
   duplicar a altura.
 - **"Nenhum dia marcado = todos os dias"** é dito **antes**, não descoberto depois. É a pergunta que o
-  lojista faz na primeira vez que abre a tela.
-- 🔴 **Dias da semana + dias do mês ao mesmo tempo:** ver §13, **buraco 1**. D3 diz "e/ou" e não
-  define se as duas dimensões se combinam por E ou por OU. A UI **não decide isso sozinha** — ela
-  **expõe** o resultado na frase de prévia e mostra um aviso não-bloqueante quando as duas estão
-  preenchidas.
+  lojista faz na primeira vez que abre a tela. **Cuidado de implementação:** "nenhum dia marcado" é
+  *sem restrição por esse eixo*, e o Spec B (RN-02) proíbe os **três** eixos vazios ao mesmo tempo —
+  ver §9.6.
+- 🔴 **Dias da semana + dias do mês ao mesmo tempo: é OU, e a regra está fechada** (Spec B, **RN-02**;
+  era o buraco 1 da v1). Os dois eixos **somam** dias; o horário filtra **dentro** deles. O caso que
+  separa as leituras: `{sáb, dom}` + `{1, 15}` numa **quarta-feira, dia 15** ⇒ **ABERTO**.
+  Consequências de forma, e são as duas que a v1 já tinha preparado — agora sem aviso de ambiguidade:
+  - **o aviso não-bloqueante SAI.** Não há nada de ambíguo a avisar; um aviso sobre uma regra fechada
+    só ensina o lojista a ignorar avisos;
+  - **a prévia diz a regra por extenso**, que é onde ela fica verificável:
+    *"Aparece todo sábado e domingo, e também todo dia 1 e dia 15."* A conjunção **"e também"** é
+    obrigatória — ela é a diferença de 4 dias contra ~120 no ano, escrita em português.
 
 ### 9.3 Modo B — Período com data de fim
 
 ```
   ┌─ Duração ────────────────────────────────────┐
-  │  [ Hoje ]  [ 7 dias ]  [ 30 dias ]           │  ← chips 44px, aria-pressed
-  │  [ Escolher as datas ]                       │
+  │  [ 1 dia ]  [ 7 dias ]  [ 1 mês ]            │  ← chips 44px, aria-pressed
+  │  [ Escolher as datas ]                       │     (diario / semanal / mensal)
   └──────────────────────────────────────────────┘
 
   Começa em   [ 19/09/2026 ]  [ 11:00 ]
-  Termina em  [ 26/09/2026 ]  [ 11:00 ]
+  Termina em  26/09/2026, 11:00                   ← LEITURA quando há preset
   Fuso da loja: America/Sao_Paulo (GMT-3)
 ```
 
-- **Presets preenchem os campos e não os travam.** Um preset é um atalho, não um modo — depois de
-  clicar em "7 dias" o lojista ainda pode mexer na hora do fim. Ao aplicar um preset, o foco vai para
-  o campo **"Termina em"**, para que a mudança seja vista onde ela aconteceu.
-- Os chips carregam `aria-pressed`; editar uma data à mão desmarca todos (vira "Escolher as datas").
+- 🔴 **Com preset, "Termina em" é LEITURA, não campo.** Corrigido contra a v1, que dizia que o preset
+  "preenche e não trava". O Spec B (**RN-04**) é explícito: com `diario`, `semanal` ou `mensal`, a
+  Server Action **recalcula `prazo_fim` a partir de `prazo_inicio` + preset e descarta o `fim` que
+  veio do cliente**. Um campo editável cujo valor o servidor joga fora é uma mentira de UI — o
+  lojista digitaria 23:59 e receberia 11:00 sem explicação. Só **"Escolher as datas"**
+  (`customizado`) abre o campo de fim para edição.
+- **Os quatro chips são os quatro presets do banco**, um para um (`diario`, `semanal`, `mensal`,
+  `customizado`), com `aria-pressed`. Nomeados em português de lojista ("1 dia", "7 dias", "1 mês"),
+  nunca com o literal do schema.
+- **A data de fim mostrada com preset vem da mesma função pura do servidor**
+  (`calcularFimDoPreset`, isomórfica, RN-04) — inclusive o clamp de fim de mês: `31/01 + 1 mês` é
+  **28/02**, e a prévia tem de dizer 28/02, não 03/03. Nunca uma segunda fórmula no browser.
 - **Mesma decisão de `type="date"` + `type="time"` de §8.1**, pelo mesmo motivo de fuso.
 - Data de início no passado é permitida (o lojista lança um cardápio "desde ontem") — mas a prévia
   diz `Está aparecendo desde 18/09`.
@@ -1151,22 +1285,37 @@ Tabela de redações (contrato de copy do módulo):
 | sáb+dom, 11–15 | `Aparece todo sábado e domingo, das 11:00 às 15:00.` | `Sáb e dom, 11:00–15:00` |
 | seg a sex, 11–15 | `Aparece de segunda a sexta, das 11:00 às 15:00.` | `Seg a sex, 11:00–15:00` |
 | dias 1 e 15 | `Aparece todo dia 1 e dia 15 do mês.` | `Só nos dias 1 e 15` |
-| último dia do mês | `Aparece no último dia de cada mês.` | `Só no último dia do mês` |
+| sáb+dom **e** dias 1 e 15 | `Aparece todo sábado e domingo, e também todo dia 1 e dia 15.` | `Sáb, dom, dia 1 e dia 15` |
+| dia 31 marcado | `Aparece todo dia 31 — nos meses de 30 dias, não aparece.` | `Só no dia 31` |
 | só horário | `Aparece todo dia, das 11:00 às 15:00.` | `Só das 11:00 às 15:00` |
-| nenhuma dimensão | `Aparece sempre — este cardápio não tem janela.` ⚠️ | — |
 | prazo fixo futuro | `Aparece de 22/09, 11:00 até 29/09, 11:00.` | `A partir de 22/09` |
 | prazo fixo em curso | `Está aparecendo desde 18/09 e some em 29/09, às 11:00.` | — |
-| prazo fixo encerrado | `Terminou em 29/09. Este cardápio não aparece mais.` | ver §13, buraco 4 |
+| prazo fixo encerrado | `Terminou em 29/09. Este cardápio não aparece mais.` | **não existe** — o produto exclusivo some (RN-13) e o do menu não recebe o motivo (RN-05) |
+
+**Duas linhas da v1 saíram da tabela, e é o spec que as tira:**
+
+- **"último dia do mês"** — o Spec B põe *"regras de calendário além de dia-da-semana e dia-do-mês"*
+  explicitamente em **Fora do Escopo (v1)**, nomeando "último dia do mês" como exemplo. A frase não
+  tem configuração que a produza, então a redação não existe.
+- **"nenhuma dimensão"** (`Aparece sempre — este cardápio não tem janela`) — o estado **não pode ser
+  gravado**: o CHECK `cardapios_recorrente_tem_eixo` o recusa no banco (RN-02). Uma frase para um
+  estado impossível é código morto que um dia alguém "reativa".
 
 ### 9.6 Validação do form (o que bloqueia o salvar)
 
-| Situação | Tratamento |
-|---|---|
-| Modo A com **nenhuma** das três dimensões preenchida | **bloqueia**, com a mensagem: *"Escolha pelo menos um dia da semana, um dia do mês ou um horário. Sem nada marcado, este cardápio aparece sempre e não é sazonal."* — marcado como **recomendação de desenho pendente de confirmação no Spec B** (§13, buraco 2) |
-| Modo A com dias da semana **e** dias do mês | **não bloqueia.** Aviso não-bloqueante sob a prévia, nomeando o resultado da regra que o Spec B fixar (§13, buraco 1) |
-| Horário `fim <= início` (ex.: 22:00 → 02:00) | ver §13, **buraco 3** — `lojaAberta` não trata virada de meia-noite hoje. Enquanto a regra não existir: **bloqueia**, com *"O horário de fim precisa ser depois do de início."* |
-| Modo B com `fim <= início` | **bloqueia**: *"A data de fim precisa ser depois da de início."* (espelha o CHECK `produtos_desconto_prazo_check` do Spec A) |
-| Dia 31 escolhido em mês de 30 dias | ver §13, **buraco 5** |
+**Toda linha desta tabela é espelho de um CHECK do banco** (Spec B, §Modelos de Dados). O form é a
+primeira barreira com mensagem legível; a autoridade é o `zod` + o CHECK, e `23514` vira mensagem
+genérica na UI com detalhe no log (`seguranca.md` §14). Nenhuma linha aqui é recomendação do desenho.
+
+| Situação | Tratamento | Trava no banco |
+|---|---|---|
+| Modo A com **nenhuma** das três dimensões preenchida | **bloqueia**: *"Escolha pelo menos um dia da semana, um dia do mês ou um horário. Sem nada marcado, este cardápio aparece sempre e não é sazonal."* | `cardapios_recorrente_tem_eixo` (RN-02) — recusa `NULL` **e** `'{}'` |
+| Modo A com dias da semana **e** dias do mês | **não bloqueia, e não avisa.** É **OU** por regra fechada (RN-02): a prévia diz *"…e também…"* (§9.2) | — (combinação válida) |
+| Horário `fim <= início` (ex.: 22:00 → 02:00) | **bloqueia**: *"O horário de fim precisa ser depois do de início."* A janela que cruza a meia-noite está **fora do escopo v1** por decisão do Spec B, recusada por CHECK — não é regra faltando | `cardapios_hora_ordem` + `cardapios_hora_par` |
+| Modo B com `fim <= início` | **bloqueia**: *"A data de fim precisa ser depois da de início."* | `cardapios_prazo_ordem` |
+| Modo B sem `fim` | **bloqueia**: prazo fixo exige o par completo | `cardapios_prazo_obrigatorio` |
+| Dia 31 marcado | **não bloqueia** — é configuração válida. A prévia diz o efeito: *"Aparece todo dia 31 — nos meses de 30 dias, não aparece."* (RN-02: *"não casa em meses de 30 dias; é a leitura literal e é o que o preview tem de dizer ao lojista"*) | `cardapios_dias_mes_dominio` (1..31) |
+| Preset de prazo fixo (diário/semanal/mensal) | o campo "Termina em" vira **leitura**, não entrada: o `fim` é **recalculado no servidor** e o que o cliente mandar é descartado (RN-04). Só "Escolher as datas" aceita o fim digitado | — |
 
 Toda mensagem: `aria-invalid` + `aria-describedby` no controle, bloco com `role="alert"`, foco no
 bloco ao falhar o submit — o mesmo padrão de §8.3, uma vez, em toda tela nova deste trabalho.
@@ -1246,14 +1395,14 @@ vitrine mostra para todos os clientes.
 │  aparecendo na vitrine, marcados e sem botão  │
 │  de compra.                                   │
 │                                               │
-│  São os 12 produtos de Pizzas de hoje.        │  ← ver §13, buraco 6
+│  São os 12 produtos de Pizzas de hoje.        │  ← foto, não vínculo (RN-10)
 │  Produtos criados depois não entram sozinhos. │
 │                                               │
 │  [ Adicionar 12 produtos ]  [ Cancelar ]      │
 └───────────────────────────────────────────────┘
 ```
 
-**Cinco travas, por ordem de importância:**
+**Seis travas, por ordem de importância:**
 
 1. 🔴 **O número vai DENTRO do rótulo do botão** — `Adicionar 12 produtos`, nunca "Confirmar". É o
    ponto onde o lojista percebe que selecionou a categoria errada, porque o número está sob o dedo.
@@ -1269,7 +1418,23 @@ vitrine mostra para todos os clientes.
 4. **A consequência é dita em português, não deduzida.** "continuam aparecendo na vitrine, marcados e
    sem botão de compra" é D4 explicado para quem vai apertar o botão. Um lojista que acha que o
    produto vai *sumir* configura a loja errada.
-5. **Reversibilidade sem pilha de undo.** Não há "desfazer" em v1 — não está no contrato. O que há é a
+   > ⚠️ **Com D14, esta frase depende da `visibilidade` dos produtos selecionados, e o diálogo tem de
+   > dizer os dois casos quando os dois existem** (mesma forma do diálogo de desligar, §13.4):
+   > *"N produtos **do menu** continuam aparecendo e vendendo fora da janela. M produtos **de
+   > cardápio** só aparecem quando este cardápio estiver aberto."* Os dois números vêm da mesma
+   > `previa` do servidor — nunca contados no cliente.
+5. **"Categoria inteira" é FOTO, e a frase pode afirmar isso** (era o buraco 6 da v1; fechado pelo
+   Spec B, **RN-10**). A expansão acontece **dentro da transação**, na RPC
+   `aplicar_cardapio_em_categoria` (`insert ... select`), justamente para não ser TOCTOU — e o que
+   ela grava são **vínculos produto↔cardápio**, um por produto existente naquele instante. Não existe
+   vínculo cardápio↔categoria no modelo, então produto criado depois **não** entra sozinho, e a frase
+   *"São os 12 produtos de Pizzas de hoje. Produtos criados depois não entram sozinhos."* deixa de
+   ser exposição de ambiguidade e passa a ser **descrição do que o botão faz**.
+   > Detalhe de forma que vem junto: a RPC inclui produto `oculto` e `disponivel = false` (RN-10), e
+   > o diálogo **não** os esconde da contagem. Se os 12 incluem 2 ocultos, a frase diz
+   > *"2 deles estão ocultos e continuam ocultos"* — senão o lojista reabre um produto meses depois e
+   > descobre que ele herdou uma janela que ninguém lembra de ter aplicado.
+6. **Reversibilidade sem pilha de undo.** Não há "desfazer" em v1 — não está no contrato. O que há é a
    **mesma ação ao contrário**: o mesmo modo seleção, com a ação `Remover do cardápio`, e o mesmo
    diálogo de alcance. Isso é dito na confirmação? Não — seria ruído. É garantido pela simetria da
    tela: a ação inversa está no mesmo menu, com o mesmo nome invertido.
@@ -1297,7 +1462,8 @@ scroll horizontal aparece em nenhum breakpoint (design-system §9).
 ### 11.1 Uma regra, um helper (RN-14)
 
 ```ts
-// lib/utils/linhaDePor.ts — PURA (M5). RN-14: "cinco superfícies, uma regra".
+// lib/utils/linhaItemPedido.ts — helper LinhaItemPedido (nome do Spec A, §0.1).
+// PURA (M5). RN-14: "cinco superfícies, uma regra".
 export function parDePor(item: { preco: number; preco_original: number | null; quantidade: number })
   : { teve: boolean; de: string; por: string; sufixo: string } | null;
 
@@ -1305,16 +1471,22 @@ export function textoDePor(item): string | null;   // variante de TEXTO PLANO (W
 ```
 
 - `preco_original === null` ⇒ devolve `null` ⇒ **nada é renderizado**. Nenhuma superfície tem um `if`
-  próprio sobre `preco_original` — a decisão mora no helper (M3, mesmo espírito do `rotulo: string |
-  null` do `SeloVitrine`).
-- 🔴 **O par é sempre o preço UNITÁRIO.** O total da linha nas quatro superfícies é
-  `(item.preco + acréscimo dos opcionais) × quantidade` (`DetalhePedido.tsx:215-217`,
-  `ReciboCliente.tsx:92-94`, `whatsappPedido.ts:80`, `confirmacao/page.tsx:173`) — um par de/para em
-  cima desse número teria de decidir o que fazer com o acréscimo e com a quantidade, e seria
-  aritmética monetária nova em cinco lugares. Unitário não decide nada: é literalmente
-  `produtos.preco` e `precoEfetivo` como o banco gravou.
+  próprio sobre `preco_original` — a decisão mora no helper (M3, mesmo espírito do
+  `rotulo: string | null` do `SeloDesconto`).
+- 🔴 **O par é sempre o preço UNITÁRIO — e agora por mérito, não por desvio.** A v1 mantinha o par
+  fora da aritmética de linha porque essa aritmética estava **errada**. **D15/RN-20 consertou a
+  conta**: `totalDaLinha` passa a ser a mesma função que produz `calcularSubtotal`
+  (`(preco × qtd) + Σ opcionais`, opcional somando **uma vez por linha**), com a invariante
+  `Σ totalDaLinha === calcularSubtotal` travada em teste. O par continua unitário pelas três razões
+  que o Spec A dá em RN-14: é o que D7 diz literalmente, é o número que o cliente reconhece do card
+  da vitrine, e um par de linha misturaria quantidade, desconto e opcionais num par só.
+- **As quatro superfícies passam a consumir `totalDaLinha`** — é requisito do Spec A (RN-20), não
+  opção deste desenho, e **corrigir só uma das quatro está errado mesmo que a tela fique certa**.
+  Efeito visível: `2× Pizza R$ 50,00 + borda R$ 10,00` passa a imprimir **R$ 110,00** (o cobrado), e
+  não R$ 120,00. A linha do recibo passa a fechar com o subtotal do próprio recibo.
 - Por isso o `sufixo`: com `quantidade > 1`, o par imprime `/un.` para que ninguém leia o preço de
-  tabela como total da linha.
+  tabela como total da linha. Com RN-20 aplicada, o par unitário e o total da linha convivem na mesma
+  linha, ambos corretos: `2× Pizza · de R$ 50,00 por R$ 40,00 · R$ 90,00`.
 
 ### 11.2 As superfícies
 
@@ -1324,7 +1496,7 @@ export function textoDePor(item): string | null;   // variante de TEXTO PLANO (W
 | `DetalhePedido` (tela do painel) | idem, `text-muted-foreground` | `DetalhePedido.tsx:205-220` |
 | `ReciboCliente` (térmica 80mm) | ver §11.3 | `ReciboCliente.tsx:82-95` |
 | `whatsappPedido` (texto plano) | `- 1x Feijoada completa — R$ 80,00 (de R$ 100,00)` | `whatsappPedido.ts:79-83` |
-| `ComandaCozinha` (térmica 80mm) | 🔴 **conflito com RN-P1 — ver §13, buraco 7** | `ComandaCozinha.tsx` |
+| `ComandaCozinha` (térmica 80mm) | **selo `[PROMO]`, nenhum valor** (D12, RN-14-a) — ver §13.6 | `ComandaCozinha.tsx:52` |
 | `paraLinhaPedido` / `TabelaPedidos` | **não muda** — ver §11.4 | `lib/utils/paraLinhaPedido.ts` |
 
 **WhatsApp em texto plano:** parênteses, **não** `~tachado~`. A mensagem é montada com
@@ -1381,191 +1553,414 @@ passar a mostrar economia (não é requisito de D7 — ver §Fora do Escopo)"*.
 
 ---
 
-## 12. Números que o desenho pede e que o servidor ainda não manda
+## 12. Pedido → decisão do spec → efeito no desenho
 
-> **Mandato 1 + exigência 6:** nenhum valor monetário é calculado no cliente. Cada item abaixo é
-> **mudança de contrato** e volta para o spec — não se resolve no componente. Para cada um há uma
-> **degradação declarada**: o que a UI faz se o contrato **não** for ampliado. Em nenhum caso a
-> degradação é "calcular no cliente".
+> A v1 terminava com duas listas em aberto: **seis números que o desenho pedia** (§12) e **sete
+> buracos de regra** (§13). Os specs responderam **todos**. As duas tabelas abaixo substituem as duas
+> listas: cada linha é um pedido da v1, a decisão que o spec tomou e o que muda neste documento.
+> **Nada aqui está pendente.** O que restou sem resposta está em §16.
 
-| # | Campo que falta | Quem consome | Por que não pode ser derivado no cliente | Se o spec recusar |
-|---|---|---|---|---|
-| **1** | `rotuloNaoCompravel: string \| null` no contrato de catálogo | selo de D4, nas 4 superfícies (§4) | "Só aos sábados e domingos" é texto de calendário no **fuso da loja**; derivá-lo no browser significaria mandar a configuração de vigência crua para o cliente e reimplementar `descreverVigencia` lá — o oposto da regra 6 do contrato de catálogo ("as colunas cruas não trafegam") | o selo imprime só `Indisponível` e D4 deixa de cumprir "selo explicando quando volta". **Bloqueante para D4.** Pertence ao **Spec B** (§13) |
-| **2** | `economiaProdutos: number` no retorno de `revisarCarrinhoAction` | linha "Você economizou" (§6.3) | o carrinho guarda só o **preço efetivo** (`useCarrinho`); o preço de tabela não está no cliente, e colocá-lo lá criaria um segundo número monetário no `sessionStorage` | a linha "Você economizou" **não é renderizada**. O resto do resumo não muda |
-| **3** | `baseProdutos: number` e `baseOpcionais: number` no estado `parcial` | disclosure "Como calculamos" (§6.4) | separar a base em duas parcelas é a mesma regra por componente de RN-09-a; refazê-la no browser é a duplicação que D5-b proíbe | o disclosure **sai do desenho**. A frase obrigatória de RN-10-e (estado B) continua intacta |
-| **4** | token/versão de revisão (`revisaoId`) devolvido por `revisarCarrinhoAction` e exigido por `criarPedido` | reconfirmação de preço (§7.1, M9) | é o que transforma "a UI pediu segundo clique" em invariante de servidor. Sem ele, D11 depende de disciplina de componente — e não há teste de DOM aqui | as três travas de UI (CTA removido do DOM, gate em `podeConfirmar`, número no rótulo) continuam; a garantia deixa de ser estrutural e vira convenção. **Recomendação forte de aceitar** |
-| **5** | projeção `promocaoVigente: boolean` + `rotuloPromocao: string \| null` na page de `/painel/produtos` | chip de promoção na lista (§8.4) | "vigente agora" é RN-03; no browser usaria o relógio do dispositivo | o chip mostra só "Em promoção", sem o prazo. Não é campo de banco novo — é projeção no Server Component |
-| **6** | `previa: { total: number; nomes: string[] }` na Server Action de lote | confirmação da ação em lote (§10.2, M8) | a contagem do cliente pode estar velha ou conter id de outra loja; só o servidor resolve nomes sob RLS | **bloqueante**: sem `previa` a confirmação não pode afirmar o alcance, e D2 vira a ação perigosa que o enunciado pede para evitar. Pertence ao **Spec B** |
+### 12.1 Os seis pedidos de contrato da v1
 
-Dois campos **já promessa do Spec A** e portanto fora desta lista: `estadoCupom` (A/B/C decidido no
-servidor, RN-10-e) e `seloDesconto` (rótulo pronto, contrato de catálogo).
+| # | Pedido da v1 | Decisão do spec | Efeito no desenho |
+|---|---|---|---|
+| **1** | `rotuloNaoCompravel: string \| null` **dentro** do `ProdutoVitrine` | **RECUSADO** (Spec B, **RN-06**, e regra 2 do contrato de catálogo: o ponto de extensão é `compravel` + `motivoNaoCompravel`, **e só ele**). O rótulo viaja num mapa `rotulosVigencia: Record<produto_id, string>`, devolvido pela **mesma** função que devolve os produtos | **§4.1 reescrito.** O objetivo foi atendido — a frase continua pronta, do servidor, no fuso da loja. `SecaoCatalogo` recebe `rotulosVigencia` como prop **obrigatória**; o fallback de chave ausente é `"Indisponível no momento"` (§13.7). A forma é melhor que a pedida: o mapa é imune ao filtro da busca porque é chaveado por id |
+| **2** | `economiaProdutos: number` no retorno de `revisarCarrinhoAction` | **CONCEDIDO** (Spec A, **RN-10-e**): o carrinho guarda só o preço efetivo, e pôr o preço de tabela no `sessionStorage` criaria um segundo número monetário no browser sem necessidade | **§6.3 mantido.** A linha "Você economizou R$ X,XX" existe. Se o número não vier, a linha **não é renderizada** — nunca calculada no cliente |
+| **3** | `baseProdutos` e `baseOpcionais` no estado `parcial` | **CONCEDIDO** (Spec A, **RN-10-e**): `derivarBasesCupom` já somava as duas parcelas; passa a devolvê-las. Custo declarado: **zero**. Invariante `baseElegivel === arred2(baseProdutos + baseOpcionais)` no RED da fatia crítica 3 | **§6.4 mantido e destravado.** O disclosure "Como calculamos" existe, fechado por padrão, só no estado B. Some do desenho a frase "se o Spec A recusar" |
+| **4** | Token de revisão (`revisaoId`) devolvido por `revisarCarrinhoAction` e exigido por `criarPedido` | **RECUSADO o mecanismo, ACEITO o objetivo** (Spec A, **RN-12-a** e §Fora do Escopo): entra `promocaoExibida: boolean` por item — booleano de exibição, assimétrico, sem HMAC, sem tabela nova, sem round-trip. *"Se um dia a reconfirmação precisar cobrir mais do que promoção, o token volta à mesa."* | **M9 e §7.1 reescritos.** A garantia continua sendo de **servidor**, não de componente: `true` afirmado × `false` apurado ⇒ recusa. As três travas de UI continuam (CTA fora do DOM, gate em `podeConfirmar`, número no rótulo do botão), agora com o servidor atrás delas |
+| **5** | Projeção `promocaoVigente` + `rotuloPromocao` na page de `/painel/produtos` | **CONCEDIDO como projeção de Server Component** (Spec A, §Páginas — não é campo de banco, é o que a página projeta antes de entregar ao `ProdutosClient`) | **§8.4 mantido.** O chip da lista mostra `-20% até 30/09`; "vigente agora" **nunca** é derivado no browser (usaria o relógio do dispositivo, contra RN-03) |
+| **6** | `previa: { total, nomes }` na Server Action de lote | **CONCEDIDO, e com mais garantias do que o pedido** (Spec B, **RN-09**/**RN-10**): a contagem e os nomes vêm do servidor sob RLS, e a escrita é um `upsert` homogêneo numa transação — id de outra loja viola `cardapio_produtos_produto_fk` e **derruba a operação inteira** | **§10.2 mantido e ampliado.** O diálogo não existe sem `previa`. Ganhou duas frases novas: os **dois números de D14** (do menu × exclusivos) e o aviso de produto oculto incluído pela RPC de categoria |
+
+### 12.2 Os sete buracos de regra da v1
+
+| # | Buraco da v1 | Decisão do spec | Efeito no desenho |
+|---|---|---|---|
+| **1** | dias da semana **E** dias do mês: interseção ou união? (diferença de 4 dias contra ~120 no ano) | **OU — regra fechada** (Spec B, **RN-02**). `{sáb,dom}` + `{1,15}` numa **quarta dia 15** ⇒ **ABERTO**. Os dois eixos acrescentam dias; o horário filtra dentro deles | **§9.2 e §9.5.** O **aviso não-bloqueante saiu** — não há ambiguidade a avisar. A prévia passa a dizer a regra por extenso, com a conjunção **"e também"**, que é onde os 120 dias ficam verificáveis |
+| **2** | modo "repete sempre" sem nenhuma dimensão marcada | **PROIBIDO no banco**: CHECK `cardapios_recorrente_tem_eixo`, recusando `NULL` **e** `'{}'`; a Server Action normaliza array vazio para NULL (Spec B, RN-02) | **§9.6 deixou de ser recomendação.** A mensagem do form é a primeira barreira de um estado que o banco **não aceita**; o marcador "pendente" saiu. E a redação `Aparece sempre — este cardápio não tem janela` **saiu de §9.5**: é frase para um estado impossível |
+| **3** | faixa de horário cruzando a meia-noite (22:00 → 02:00) | **FORA DO ESCOPO v1, por CHECK** (`cardapios_hora_ordem`), com erro explícito no form. O Spec B registra que o mesmo buraco existe hoje em `lojas.horarios` e lá é **mudo** — aqui é diagnosticável | **§9.6.** O bloqueio deixa de ser provisório ("enquanto a regra não existir") e passa a ser espelho de um CHECK. A pergunta de produto embutida (00:30 de domingo ainda é "sábado"?) **não precisa de resposta**, porque a configuração não é gravável |
+| **4** | o que acontece quando o prazo fixo **termina** | **D14 + RN-13**: uma pergunta só decide — *existe próxima abertura conhecida?* Sem ela, o produto `visibilidade = 'cardapio'` **some da vitrine**; o produto `'menu'` **nunca some e nunca deixa de vender** | **§4.3 e §9.5.** A linha "prazo fixo encerrado" deixa de precisar de rótulo: **não há card**. A v1 tinha desenhado para a leitura (a) ("volta a ser produto normal"), que é o que D14 confirma **para o produto do menu** e nega para o exclusivo. O selo genérico continua existindo, mas só na revisão do carrinho (§13.7) |
+| **5** | dia 31 em mês de 30 dias | **Não casa, e é a leitura literal** (Spec B, RN-02: *"é o que o preview tem de dizer ao lojista"*) | **§9.2, §9.5 e §9.6.** O botão "Último dia do mês" **saiu** (Fora do Escopo v1 do Spec B nomeia "último dia do mês" entre as regras de calendário recusadas) e foi substituído por uma **nota de efeito** ao lado da grade e por uma redação própria na prévia |
+| **6** | "aplicar a uma categoria inteira" é foto ou vínculo? | **FOTO** (Spec B, **RN-10**): `insert ... select` **dentro** da transação, via RPC `aplicar_cardapio_em_categoria`, gravando vínculo por produto. Não existe relação cardápio↔categoria no modelo | **§10.2, trava 5.** A frase *"São os 12 produtos de Pizzas de hoje. Produtos criados depois não entram sozinhos."* deixa de expor ambiguidade e passa a **descrever o que o botão faz**. Acrescentada a nota de produto oculto, que a RPC inclui de propósito |
+| **7** | D7 na comanda da cozinha colide com RN-P1 | **D12: selo, nunca valor.** `[PROMO]` depois do nome, **sem nenhum valor em reais**; RN-P1 **não é revertida** e os três testes de `ComandaCozinha.test.tsx:135-151` continuam verdes **sem edição** | **§11.2 e §13.6.** A recomendação da v1 foi acatada na direção certa: o par de/por não vai para a comanda. `ComandaCozinha.tsx` **sai** da lista "não tocar" e entra na de modificar, com um `it` novo que afirma o selo **e** a ausência de `R$` no mesmo teste |
+
+### 12.3 Dois achados da v1 que viraram requisito
+
+| Achado | Onde foi parar |
+|---|---|
+| Bug vivo de `disponivel` (modal se acha disponível; linha de lista sempre clicável) | **D13 / RN-19** — requisito do Spec A, corrigido **neste trabalho**, com o `tsc` como trava (M2) |
+| Total de linha exibido ≠ cobrado quando `quantidade > 1` e há opcional | **D15 / RN-20** — era "dívida encostada" na v1; virou **fatia crítica 8** do Spec A, com `totalDaLinha` única e a invariante `Σ totalDaLinha === calcularSubtotal` no RED (§11.1) |
 
 ---
 
-## 13. Buracos de regra que o desenho revelou
+## 13. O que o Spec B delega ao desenho
 
-> D1–D11 e o Spec A estão fechados. Nada abaixo foi preenchido — está **apontado**, com o caso
-> numérico ou o cenário concreto em que as leituras divergem, para o dono do produto decidir. Os
-> buracos 1 a 6 são do **cardápio sazonal** e caem no `specs/cardapio-sazonal.md` (que outro agente
-> está escrevendo agora — **não tocado por este documento**). O buraco 7 é do Spec A.
+> O Spec B fecha a regra e diz, em quatro pontos, que **a forma é deste documento**: o cabeçalho e o
+> tratamento da seção de destaque (D16), o caso de muitas seções abertas, os rótulos e cores de
+> estado do cardápio no painel (`BadgeStatus`) e a copy do que já está fixado. Nada abaixo inventa
+> regra: cada item cita a regra que está obedecendo.
 
-### Buraco 1 — dias da semana **E** dias do mês: interseção ou união? (D3) 🔴
+### 13.1 D16 — a seção de destaque do cardápio aberto
 
-D3 diz "dias da semana, **e/ou** dias do mês, **e/ou** faixa de horário". Um lojista marca
-**sábado e domingo** e **dias 1 e 15**.
+```
+360px · topo do catálogo, ANTES da primeira categoria
 
-- Leitura **E** (interseção): aparece só quando um dia 1 ou 15 **cai** num sábado ou domingo — em 2026
-  isso acontece em ~4 dias no ano inteiro. O lojista quase certamente não quis isso.
-- Leitura **OU** (união): aparece em todo sábado, todo domingo, todo dia 1 e todo dia 15 — ~120 dias
-  no ano.
+  ┌───────────────────────────────────────────────┐
+  │  Cardápio de Inverno          Até domingo     │ ← h2 + rótulo de janela
+  │  ──────────────────────────                   │
+  │  ┌──────────┐  ┌──────────┐                   │
+  │  │  [foto]  │  │  [foto]  │                   │ ← MESMA grade do catálogo
+  │  │ Lasanha  │  │  Sopa    │                   │   grid-cols-2 md:3 xl:4
+  │  │ R$ 48,00 │  │ R$ 32,00 │                   │
+  │  └──────────┘  └──────────┘                   │
+  └───────────────────────────────────────────────┘
 
-**A diferença entre as duas leituras é de 4 dias contra 120.** É a maior divergência de toda a
-feature, e a UI não tem como escondê-la: a frase da prévia muda por completo. O horário é claramente
-um **E** (ele recorta o dia), então o buraco é só entre as duas dimensões de dia.
-**A UI está desenhada para os dois resultados** (§9.2, §9.6): a prévia imprime a frase que a regra
-escolhida produzir, e um aviso não-bloqueante aparece quando as duas dimensões estão preenchidas.
+  ┌─ Massas ──────────────────────────────────────┐ ← a Lasanha aparece AQUI
+  │  ┌──────────┐  ┌──────────┐                   │   também (D16-a)
+```
 
-### Buraco 2 — modo "repete sempre" sem nenhuma dimensão marcada (D3)
+**Sete decisões de forma, e o porquê de cada uma:**
 
-Nenhum dia da semana, nenhum dia do mês, nenhum horário: o cardápio "recorrente" aparece **sempre** —
-ou seja, o lojista criou uma entidade sazonal que não é sazonal, e os produtos dentro dela ficam
-indistinguíveis de produtos sem cardápio (D2: "produto que não está em nenhum cardápio é sempre
-visível"). D3 não diz se isso é válido. §9.6 **recomenda** bloquear com mensagem, e marca a
-recomendação como pendente.
+1. **A seção é a mesma `<section>` das categorias, com o cabeçalho em `<h2>`** — mesmo peso, mesmo
+   espaçamento, mesma grade (`grid-cols-2 md:grid-cols-3 xl:grid-cols-4`, design-system §9, **padrão
+   fixo**). O Spec B diz que a seção de destaque renderiza como **grid** porque é vitrine; fazer dela
+   um carrossel ou uma faixa com scroll horizontal criaria um terceiro layout de catálogo e esconderia
+   produto atrás de um gesto — contra o design-system §9 ("nenhum scroll horizontal").
+2. **O nome do cardápio é o texto do lojista, sem prefixo.** Nada de "Cardápio: Cardápio de Inverno".
+   O lojista já nomeia; a UI não redecora. `TextoRealcado` **não** se aplica aqui (a busca não alcança
+   o destaque, RN-16).
+3. **Um rótulo de janela à direita do nome, curto, e é o único texto que o cabeçalho acrescenta.**
+   `Até domingo` (prazo fixo em curso) · `Hoje, até as 15:00` (recorrente com horário) ·
+   `Hoje` (recorrente sem horário). Sai de **`descreverVigencia`**, o mesmo módulo de M6 — **nunca**
+   uma quarta redação de calendário escrita no componente. Limite: **20 caracteres**, senão quebra ao
+   lado do nome em 360px.
+   > **Por que dizer a janela aqui:** a seção **some sozinha** quando o cardápio fecha. Sem o rótulo,
+   > o cliente que voltar às 15:01 não tem como saber que aquilo era temporário e não um erro.
+4. **Nenhum badge de estado.** A seção só existe quando o cardápio está **aberto** (RN-15); um
+   "Aberto agora" ali seria sempre verdadeiro, e badge sempre verdadeiro é ruído. O estado com badge
+   é assunto do **painel** (§13.3).
+5. **Âncora e pílula do trilho**, exatamente como o Spec B fixou em RN-16:
+   - `id` da `<section>` e `href` do chip saem da **mesma** função, `ancoraSecao(secao, indice)`, que
+     despacha para `ancoraCardapio(id)` (`cardapio-<uuid>`) ou para a `ancoraCategoria` **intocada**.
+     Prefixos disjuntos por construção;
+   - **a pílula é visualmente idêntica à de categoria.** Mesma altura de 44px, mesmo `aria-current`,
+     mesmo scrollspy. A única diferença é a **posição**: as de destaque vêm **primeiro**, na ordem
+     das seções (`cardapios.ordem` → `nome` → `id`);
+   - o rótulo da pílula é o **nome do cardápio**, truncado por `max-w` com reticências — nunca
+     abreviado por regra própria, que produziria "Card. de Inv." em uma tela e outro corte na outra;
+   - `MINIMO_CATEGORIAS = 3` passa a contar as seções de destaque junto (RN-15, item 5): o trilho
+     existe quando há o que navegar.
+6. **`scroll-margin-top` igual ao das categorias.** A seção fica sob a barra fixa da vitrine pela
+   mesma medida; um destaque que ancora dois pixels diferente do resto denuncia que é um caminho de
+   código separado — e é o tipo de coisa que ninguém corrige depois.
+7. **Produto de categoria "ocultar" aparece no destaque sem foto**, com o mesmo placeholder de
+   gradiente que o grid já usa. É consequência direta da correção de RN-06 (o `foto_url` passa a ser
+   zerado **por produto**, dentro da projeção): o produto viaja com **um** `foto_url` para onde for, e
+   a URL escondida não volta ao payload pela segunda seção.
 
-### Buraco 3 — faixa de horário que cruza a meia-noite (D3) 🔴
+**Acessibilidade da duplicata.** O mesmo produto aparece duas vezes na página. Três consequências, e
+nenhuma delas é "esconder de leitor de tela":
 
-"Cardápio da madrugada, 22:00 → 02:00". `lojaAberta.ts` — o primitivo que D3 manda reusar — usa
-`minutos >= abre && minutos < fecha`, que **não trata virada de dia**: 23:00 não satisfaz
-`23:00 >= 22:00 && 23:00 < 02:00`. E há uma pergunta de produto embutida: às 00:30 de domingo, o
-cardápio de "sábado 22:00–02:00" ainda está valendo (é a madrugada de sábado) ou já não (é domingo)?
-**São duas regras diferentes**, e nenhuma está escrita. §9.6 bloqueia `fim <= início` enquanto não
-houver decisão.
+- o `<h2>` do destaque dá **contexto**: quem navega por cabeçalhos ouve "Cardápio de Inverno" antes
+  dos cards, e entende por que a Lasanha volta a aparecer em "Massas";
+- **nada é `aria-hidden`.** Esconder a cópia do destaque tiraria do cliente cego o caminho que o
+  lojista criou de propósito;
+- o **id de DOM** é escopado por seção (`idNaSecao`, RN-16), então nenhum `aria-labelledby` futuro
+  pode apontar para dois elementos. A `key` do React **não muda** — `key` é local ao laço, e trocá-la
+  remontaria o card à toa (RN-16).
 
-### Buraco 4 — o que acontece com o produto quando o prazo fixo **termina** (D3 + D4)
+### 13.2 Muitas seções de destaque abertas ao mesmo tempo
 
-D4 fixa o comportamento **fora da janela** de um recorrente: aparece marcado, com selo dizendo quando
-volta. Mas um cardápio de **prazo fixo encerrado** nunca volta. O selo "quando volta" não tem o que
-dizer. Três leituras possíveis: (a) o produto volta a ser um produto normal e comprável, porque o
-cardápio expirou e deixou de reger qualquer coisa; (b) continua aparecendo marcado como indisponível
-para sempre; (c) some da vitrine. **A UI está desenhada para (a)** — é a única em que `rotuloVoltaQuando`
-tem um valor sensato (nenhum) — mas a decisão não é do desenho.
+O Spec B **não impõe teto** ("um teto arbitrário esconderia um cardápio que o lojista ligou de
+propósito") e manda explicitamente o `desenhar` tratar o caso. **O desenho também não inventa teto —
+ele ataca o sintoma, que é o catálogo empurrado para baixo.** Quatro medidas, todas de forma:
 
-### Buraco 5 — dia 31 em mês de 30 dias (D3)
+1. **A seção de destaque mostra no máximo 6 produtos e depois uma linha de continuação.**
+   `[ Ver os 14 produtos do Cardápio de Inverno ]`, um botão de 44px que **rola até a categoria** e
+   não abre nada. Seis é o que cabe em três linhas de duas colunas em 360px sem que a primeira
+   categoria saia da tela. O corte é **de render**, não de dado: os outros produtos continuam na
+   categoria deles, que é a casa deles (D16-a).
+   > **Por que isto não é o "filtro por cardápio" recusado pelo Spec B:** não muda a navegação, não
+   > esconde nada e não é subtrativo — é a mesma vitrine, com menos rolagem antes do cardápio comum.
+2. **A partir da terceira seção aberta, as seções seguintes entram colapsadas**, com cabeçalho
+   visível e conteúdo revelado por um `<button aria-expanded aria-controls>` de 44px. Cabeçalho e
+   âncora continuam existindo, então a pílula do trilho **nunca** leva a uma seção que não existe.
+   Três é o número de cabeçalhos que cabem acima da dobra em 360px sem esconder o catálogo.
+3. **O trilho não estoura.** Ele já rola horizontalmente e já tem `MINIMO_CATEGORIAS`; com seis
+   cardápios abertos as pílulas de destaque ocupariam a largura inteira antes da primeira categoria.
+   Regra: **as pílulas de destaque não podem ocupar mais que ~70% da largura visível do trilho**; a
+   partir daí o trilho começa rolado o suficiente para mostrar **a última pílula de destaque e a
+   primeira de categoria juntas** — o cliente vê que existe catálogo além do destaque.
+4. **Nada disso é decidido no cliente por medição.** "Quantas seções abertas" é um número que o SSR
+   já tem (`cardapiosAbertos.length`, RN-06). Medir largura no browser para decidir layout é o tipo
+   de coisa que quebra na hidratação e não é testável aqui.
 
-"Todo dia 31" num mês que tem 30: o cardápio simplesmente não aparece naquele mês, ou cai no último
-dia? A UI oferece um botão **"Último dia do mês"** separado (§9.2) justamente para que o lojista possa
-expressar a intenção sem depender dessa regra — mas se ele escolher 31 mesmo assim, a regra precisa
-existir.
+> **Nota para o `acelerar`, não para o `executar`:** o Spec B já registra que o catálogo duplicado
+> tem custo de payload e pede medição **depois** do `executar`. O corte de 6 acima reduz o render,
+> **não** o payload — e reduzir payload por corte seria decidir no servidor o que o cliente pode
+> buscar, o que a regra da busca (RN-16) não permite.
 
-### Buraco 6 — "aplicar a uma categoria inteira" é foto ou vínculo? (D2) 🔴
+### 13.3 Estado do cardápio no painel — `BadgeStatus`, sem cor nova
 
-D2 diz que o painel precisa permitir *"aplicar a uma categoria inteira"*. Duas leituras, com
-consequências opostas:
+O Spec B manda reusar `BadgeStatus` e diz que *"os rótulos/cores exatos são do agente `desenhar`"*.
+**Nenhuma cor nova é inventada:** os quatro estados caem no mapa semântico que o design-system §8 já
+fixou, e cada um leva **cor + texto**, nunca cor sozinha (WCAG 1.4.1).
 
-- **(a) Foto:** seleciona os produtos que estão na categoria **agora**; produto criado depois **não**
-  entra sozinho.
-- **(b) Vínculo:** o cardápio passa a apontar para a **categoria**; todo produto criado nela depois
-  herda a janela automaticamente.
+| Estado do cardápio | Texto exibido | Cor (§8) | Racional |
+|---|---|---|---|
+| aberto agora | **`Aberto agora`** | **verde** | é literalmente o mesmo rótulo e o mesmo significado do status da loja na vitrine (§8.1): disponível neste instante. Reusar a palavra é o ponto — o lojista já aprendeu o que ela quer dizer |
+| fechado, com próxima abertura | **`Abre sábado às 11:00`** | **cinza/neutro** | mesma razão do "Fechado" da loja: **ausência de atividade, não erro**. O horário vem de `proximaAbertura` (RN-07), no fuso da loja, do servidor |
+| prazo fixo terminando | **`Expira em 3 dias`** | **âmbar** | mesma semântica de `pendente` em §8.2: **requer ação do lojista**. Aparece a partir de 7 dias do fim; abaixo de 24h vira `Expira hoje às 23:59` |
+| expirado ou desligado sem volta | **`Expirado`** / **`Desligado`** | **cinza/neutro** | é estado terminal, não falha. O vermelho fica **fora**: nada quebrou, e vermelho num cardápio de temporada encerrada ensina o lojista a ignorar vermelho. O que precisa de atenção é o **aviso de RN-12** ao lado (§13.4), que é âmbar e traz número |
 
-(b) é uma relação de dados nova (cardápio→categoria, além de cardápio→produto) e muda o modelo. A UI
-está desenhada para **(a)** — que é a leitura literal de "selecionar vários produtos de uma vez e/ou
-aplicar a uma categoria inteira" — e a confirmação **diz isso em voz alta**: *"São os 12 produtos de
-Pizzas de hoje. Produtos criados depois não entram sozinhos."* Essa frase existe exatamente para
-expor a ambiguidade ao lojista; se o spec decidir (b), a frase é removida e a confirmação passa a
-dizer o contrário.
+Quatro regras que valem para os quatro:
 
-### Buraco 7 — 🔴 D7 na comanda da cozinha colide com RN-P1, que já é regra implementada e testada
+1. **O texto carrega a informação inteira.** Nenhum estado depende da cor para ser entendido — é o
+   critério do próprio `BadgeStatus` (design-system §8).
+2. **"Aberto agora" ganha a frase de efeito que o Spec B pediu:** logo abaixo do badge, em
+   `text-xs text-texto-muted`, *"aparecendo como seção no topo da sua loja"*. É RN-12 ao contrário —
+   o lojista precisa saber o que o cliente está vendo.
+3. **O estado é SSR, recalculado a cada render.** Nunca um `setInterval` que "atualiza o badge": um
+   relógio no browser diria a hora do dispositivo, e o Spec B é explícito que o cliente (aqui, o
+   painel) **nunca** decide se um cardápio está aberto.
+4. **`aria-label` completo quando o rótulo é abreviado.** `Abre sábado às 11:00` já é autoexplicativo;
+   `Expira em 3 dias` ganha `aria-label="Expira em 3 dias, em 23/09 às 23:59"`.
 
-D7 diz: *"Comanda, painel e mensagem de WhatsApp mostram 'de R$ 100,00 por R$ 80,00'"*. O Spec A
-repete `ComandaCozinha` na lista de superfícies. **Mas a comanda de cozinha tem, hoje, uma regra
-contrária, explícita e verde:**
+### 13.4 O aviso de RN-12 — o único lugar onde o sumiço é observável
 
-- `src/components/painel/ComandaCozinha.tsx:17-22` — *"RN-P1: **ZERO informação financeira** — nenhum
-  preço unitário/linha, subtotal, desconto, taxa, total nem forma de pagamento"*;
-- `src/components/painel/ComandaCozinha.test.tsx:135-151` — testes verdes que afirmam
-  `expect(render()).not.toContain("R$")` e que o HTML **não contém** a palavra `"desconto"`, nem o
-  código do cupom (*"estratégia comercial não vaza para a cozinha"*);
-- a origem é `specs/arquivo/4-impressao-pedido.md` §RN-P1 — spec já entregue.
+Com D14, o produto exclusivo de um cardápio expirado **some da vitrine** e o lojista não tem como
+descobrir isso olhando a loja. O Spec B diz: *"o painel é o único lugar do sistema onde esse estado é
+observável"*. Por isso este aviso **não é um toast e não é dispensável**.
 
-Colocar "de R$ 100,00 por R$ 80,00" na comanda **derruba esses testes**. E a trava de regressão do
-próprio plano do loop diz: *"Teste antigo ajustado para caber no código novo é sinal de regressão, não
-de progresso."*
+```
+/painel/cardapios — na linha do cardápio
 
-**Recomendação (não decisão):** o par de/por **não** vai para a `ComandaCozinha`; ele vai para o
-`ReciboCliente`, que é o documento térmico financeiro. Quem monta o prato precisa do item e da
-quantidade, não do preço — RN-14 já reconhece isso ao dizer que *"na comanda da cozinha, o preço de
-tabela é secundário; o par não pode competir com o nome e a quantidade"*, o que, levado a sério, é um
-argumento para ele não estar lá.
-Se o dono do produto quiser D7 na comanda, isso é uma **reversão de RN-P1** e precisa ser decidida no
-spec, com os testes de RN-P1 reescritos deliberadamente — nunca ajustados de passagem por uma issue
-de UI.
+  ┌───────────────────────────────────────────────┐
+  │  Cardápio de Inverno            [ Expirado ]  │
+  │                                               │
+  │  ⚠ 4 produtos sumiram da vitrine              │ ← âmbar, texto + ícone
+  │    Eles são exclusivos deste cardápio.        │
+  │    Outros 7 produtos do menu continuam        │ ← o segundo número
+  │    aparecendo e vendendo normalmente.         │
+  │                                               │
+  │  [ Religar o cardápio ]                       │ ← as duas saídas, 44px
+  │  [ Devolver os 4 ao menu ]                    │
+  └───────────────────────────────────────────────┘
+```
 
-### Observação adicional (não é buraco de regra, é dívida que este trabalho encosta)
+1. 🔴 **Os dois números aparecem sempre que os dois existem**, e nesta ordem: **primeiro o que
+   sumiu**, depois o que continua vendendo. O número que dói vem antes do número que tranquiliza —
+   invertido, o lojista lê "7 continuam vendendo" e fecha a tela.
+2. **Os dois vêm de `contarProdutosEscondidos`** (função pura, RN-12), não de contagem no componente.
+   É preview de UX: nenhuma decisão depende do número, mas ele é **testável sem jsdom**, que é a única
+   forma de travar texto neste repo.
+3. **As duas saídas são as que o spec nomeia** — religar/estender o cardápio, ou devolver os produtos
+   ao menu — e **nenhuma das duas roda sozinha**. "Devolver os 4 ao menu" abre o `AlertDialog` de
+   confirmação nomeando os 4; o sistema **nunca** converte `visibilidade` por conta própria (RN-12:
+   *"um conversor automático venderia sopa de cebola em dezembro"*).
+4. **Âmbar, não vermelho** — mesma razão de §13.3: requer ação, não é falha. Ícone **+ texto**, nunca
+   só a cor.
+5. **O mesmo aviso, reduzido, na linha do produto em `/painel/produtos`:**
+   *"sumiu da vitrine — o cardápio Cardápio de Inverno expirou"*, com o mesmo âmbar e o mesmo par de
+   saídas no kebab da linha.
 
-O total de linha exibido em `DetalhePedido`, `ReciboCliente`, `whatsappPedido` e na confirmação é
-`(preco + Σ opcionais) × quantidade`, enquanto `calcularSubtotal` (`lib/utils/calcularTotal.ts`,
-issue 090) documenta que *"opcionais somam UMA vez por linha, sem multiplicar pela quantidade do
-produto"*. As duas aritméticas divergem quando `quantidade > 1` e há opcional. **Este documento não
-toca nisso** (o par de/por é unitário justamente para não encostar, §11.1), mas o `executar` e o
-`auditar` vão passar por essas linhas e é melhor saberem antes.
+**Os dois diálogos que carregam os mesmos dois números** (copy fixada pelo Spec B, transcrita):
+
+| Gesto | O diálogo diz | Desfecho |
+|---|---|---|
+| **Desligar** o cardápio (`Switch`) | *"N produtos **do menu** continuam aparecendo e vendendo normalmente."* + *"M produtos são **exclusivos deste cardápio** e vão **sumir da vitrine**."* | **permitido** — é o gesto legítimo de guardar o cardápio de inverno até o ano que vem. Reversível com um clique, e listado no aviso acima |
+| **Remover** o cardápio | as mesmas duas frases + a saída a um clique **"converter os M para o menu"** | **RECUSADO** enquanto existir exclusivo (RN-14). A recusa não é um beco: a saída está **dentro** do diálogo |
+
+- `AlertDialog` nos dois (design-system §6: ação destrutiva sempre diz o que será afetado).
+- O `Switch` de desligar **não** pode ter ajuda dizendo "os produtos voltam a vender" — é exatamente
+  a frase que RN-03 proíbe, porque é falsa para o exclusivo.
+- A recusa da remoção aparece **no mesmo diálogo**, não como toast depois do clique: o lojista precisa
+  ver o motivo e a saída no lugar onde tomou a decisão.
+
+### 13.5 D14 — `visibilidade` no form e na lista
+
+**Copy fixada pelo Spec B, transcrita, não reescrita.**
+
+```
+  ┌─ Onde este produto aparece ───────────────────┐
+  │  (•) Aparece sempre no meu menu               │  ← RadioGroup, itens 44px
+  │      Continua vendendo mesmo quando um        │
+  │      cardápio dele fecha ou expira.           │
+  │                                               │
+  │  ( ) Só aparece quando um cardápio dele       │
+  │      estiver aberto                           │
+  │      Fora da temporada, ele some da vitrine.  │
+  └───────────────────────────────────────────────┘
+```
+
+1. **`RadioGroup`, não `Switch`.** São duas opções nomeadas, ambas legítimas e permanentes — não é
+   ligar/desligar. Mesma escolha de §8.1 para percentual × reais, e é o que o Spec B já prevê
+   (*"um `RadioGroup` de duas opções"*). `Select` continua não existindo em `components/ui/`.
+2. **As duas primeiras linhas são literais do Spec B** (*"Aparece sempre no meu menu"* × *"Só aparece
+   quando um cardápio dele estiver aberto"*) — copy que o lojista consegue verificar sozinho, nunca
+   `'menu'`/`'cardapio'`. A segunda linha de cada opção é deste desenho e diz **a consequência**, que
+   é o que a escolha realmente decide.
+3. **O default é "Aparece sempre no meu menu"**, igual ao default da coluna e ao `zod`
+   (`z.enum(["menu","cardapio"]).default("menu")`). Form antigo e payload sem o campo continuam
+   produzindo o comportamento de hoje.
+4. 🔴 **Marcar "só no cardápio" num produto que não está em nenhum cardápio é RECUSADO** (RN-14,
+   trigger no banco). O form não esconde a opção — ele **explica a recusa e oferece a saída**:
+   *"Este produto não está em nenhum cardápio. Escolha um cardápio antes, ou deixe-o no menu."* com o
+   atalho `[ Escolher um cardápio ]`. Esconder a opção produziria a pior versão do erro: o lojista
+   procura um controle que sumiu.
+5. **Badge na lista de produtos**, ao lado do `badgeStatus(p)` que já existe:
+   `Badge variant="secondary"` com **`Exclusivo de cardápio`** — e **nada** para o produto do menu,
+   que é o default e não merece ruído em toda linha. O badge é texto + cor de sistema (nunca cor do
+   tema), como o Spec B pede.
+6. **Na lista de produtos do cardápio** (`SeletorProdutosDoCardapio`), o mesmo badge aparece por
+   produto: é essa diferença que decide o que acontece quando o cardápio fechar, e é onde o lojista
+   está olhando quando decide.
+
+### 13.6 D12 — o selo `[PROMO]` na comanda da cozinha
+
+```
+  via térmica da COMANDA (80mm) — ZERO informação financeira (RN-P1)
+
+  2× Pizza Margherita [PROMO]
+     + Borda recheada
+     Obs: sem cebola
+
+  1× Refrigerante
+```
+
+1. **`[PROMO]`, depois do nome, dentro do mesmo elemento** — rótulo fixado por **RN-14-a**, não
+   escolhido aqui. **Nenhum valor em reais, nenhum percentual, nenhum código de cupom.**
+2. **Os colchetes não são decoração:** o `]` impede que um dígito vizinho encoste em `PROMO` e forme
+   `PROMO10` por acidente de markup — a linha já renderiza `{item.quantidade}×` num `<span>` ao lado.
+3. **Forma no papel:** mesmo tamanho do nome, **sem negrito**, separado por um espaço. Na térmica não
+   existe cor e `line-through` some (§11.3); o selo vive de **posição e literal**. Ele **não** pode
+   competir com nome e quantidade, que é o que a cozinha lê.
+4. **Se for preciso texto acessível, é *"Item em promoção"***, nunca *"Item com desconto"*: a palavra
+   `desconto` entra no HTML pelo `aria-label` e **derruba o teste 2** de RN-P1.
+5. **O teste novo é um `it` só, com as duas asserções juntas** (`toContain("[PROMO]")` **e**
+   `not.toContain("R$")`), exatamente como RN-14-a manda — separadas, alguém conserta uma e a outra
+   fica órfã.
+
+### 13.7 O fallback "Indisponível no momento" na revisão do carrinho
+
+Na vitrine, este texto é **defensivo**: por RN-13, todo produto que chega marcado tem uma volta a
+anunciar. Na **revisão do carrinho** ele é **caso real de negócio** — o item da temporada encerrada
+existe no carrinho de alguém e não tem data para prometer (RN-06, RN-13).
+
+```
+  EtapaItens — linha bloqueada
+
+  ┌───────────────────────────────────────────────┐
+  │  Sopa de cebola                               │
+  │  Indisponível no momento                      │ ← texto, não badge de erro
+  │  R̶$̶ ̶3̶2̶,̶0̶0̶                       [ Remover ] │ ← 44px, ação óbvia
+  └───────────────────────────────────────────────┘
+
+  [ Finalizar pedido ]   ← BLOQUEADO enquanto houver linha assim
+```
+
+1. **A linha nunca é omitida.** O Spec B é explícito: *"item que a revisão não encontra no banco é
+   tratado como não comprável, nunca ignorado"* — sumir da conta seria alterar o carrinho do cliente
+   por omissão. O preço da linha fica riscado e **fora do subtotal**.
+2. **"Indisponível no momento", e só.** Sem "erro", sem "desculpe", sem vermelho, sem `role="alert"` —
+   mesma regra de copy de §7. O produto saiu de temporada; não é falha e não é culpa do cliente.
+3. **A saída é uma só e está na linha:** `[ Remover ]`, 44×44, com `aria-label` completo
+   (*"Remover Sopa de cebola do carrinho"*). Não há "tentar de novo" — não existe tentativa que
+   mude o resultado.
+4. **O bloqueio mora em `podeConfirmar`** (`checkout/estado.ts`), com a condição nova *"nenhum item
+   bloqueado"* (Spec B, §Componentes do checkout), **uma vez**, cobrindo wizard e desktop. O botão
+   desabilitado é cortesia; a autoridade é `criarPedido` (RN-08).
+5. **Anúncio uma vez, não por linha:** um `role="status" aria-live="polite"` no topo da etapa —
+   *"1 item não está disponível agora e precisa ser removido."* — em vez de cada linha gritar
+   sozinha.
 
 ---
 
 ## 14. Inventário — o que o `executar` cria, modifica e não toca
+
+> Atualizado para a v2: nomes do Spec A (§0.1), `ComandaCozinha` saiu de "não tocar" (D12),
+> `calcularTotal.ts` saiu de "não tocar" (D15/RN-20) e entraram as superfícies do Spec B.
 
 ### Criar
 
 | Arquivo | O quê | Mecanismo |
 |---|---|---|
 | `components/vitrine/PrecoProduto.tsx` | par de preços, 4 superfícies | M1, M2 |
-| `components/vitrine/SeloVitrine.tsx` | chip promoção / indisponível | M1, M3 |
+| `components/vitrine/SeloDesconto.tsx` | chip de **promoção** (nome do Spec A; sem tom de indisponibilidade — §0.1) | M1, M3 |
 | `components/vitrine/ModalPromocoes.tsx` | modal de abertura (D6) | §5 |
-| `components/vitrine/decisaoModalPromocoes.ts` | decisão pura (já prevista em RN-16) | §5.2 |
+| `components/vitrine/decisaoModalPromocoes.ts` | decisão pura (RN-16 do Spec A) | §5.2 |
 | `lib/utils/rotuloPrecoAcessivel.ts` | frase do leitor de tela | M1 |
 | `lib/utils/copiaCupom.ts` | as 3 redações literais de RN-10-e | **M5** |
 | `lib/utils/copiaRevisaoPreco.ts` | textos do D11, sem linguagem de erro | M5 |
-| `lib/utils/descreverVigencia.ts` | prévia do painel **e** rótulo da vitrine | **M6** |
-| `lib/utils/copiaLotePromocao.ts` | pergunta e rótulo de confirmação do lote | M5, M8 |
-| `lib/utils/linhaDePor.ts` | par de/por, 4 superfícies (RN-14) | M3 |
+| `lib/utils/descreverVigencia.ts` | prévia do painel, rótulo da vitrine **e** o rótulo de janela do cabeçalho de D16 (§13.1) | **M6** |
+| `lib/utils/copiaLotePromocao.ts` | pergunta e rótulo de confirmação do lote, incluindo os **dois números de D14** (§10.2) | M5, M8 |
+| `lib/utils/linhaItemPedido.ts` | helper `LinhaItemPedido` — par de/por, 4 superfícies (RN-14) | M3 |
+| `lib/utils/copiaCardapioPainel.ts` | rótulos de `BadgeStatus` (§13.3) e o aviso de RN-12 com os dois números (§13.4) — **pura, testável sem jsdom**, como `contarProdutosEscondidos` exige | M5, M6 |
 | `components/ui/alert-dialog.tsx` | **via `npx shadcn add alert-dialog`** — não escrever à mão | §Gate |
 
 ### Modificar
 
-`CardProduto`, `ItemProdutoLista`, `ProdutoModal`, `SecaoCatalogo`, `VitrineClient`,
+**Spec A:** `CardProduto`, `ItemProdutoLista`, `ProdutoModal`, `SecaoCatalogo`, `VitrineClient`,
 `checkout/ResumoValores`, `checkout/EtapaItens`, `checkout/estado.ts` (`podeConfirmar`),
 `Carrinho`, `painel/FormProduto`, `painel/ProdutosClient`, `painel/DetalhePedido`,
 `painel/ReciboCliente`, `lib/utils/whatsappPedido.ts`,
 `(publica)/loja/[slug]/confirmacao/page.tsx`, `app/globals.css` (5 tokens),
 `(painel)/painel/(bloqueavel)/configuracoes/perfil` (toggle do modal).
 
+**Entraram na v2:**
+
+| Arquivo | Por quê |
+|---|---|
+| `components/painel/ComandaCozinha.tsx` | **D12** — selo `[PROMO]` depois do nome, sem valor (§13.6). Os três testes de RN-P1 continuam **sem edição**; entra **um `it` novo** |
+| `lib/utils/calcularTotal.ts` | **D15/RN-20** — `totalDaLinha` extraída ao lado de `calcularSubtotal`, consumida pelas 4 superfícies. Critério: a suíte atual passa **sem edição** |
+| `components/vitrine/CatalogoVitrine.tsx` | **D16** — prop `secoesDestaque` **separada** de `categorias` (trava de RN-16) |
+| `components/vitrine/NavCategorias.tsx` | **D16** — pílulas de destaque primeiro; `CategoriaNavegavel` ganha `tipo` (§13.1) |
+| `lib/utils/ancoraCategoria.ts` | **D16** — ganha `ancoraCardapio` e o despachante `ancoraSecao`; a função atual fica **intocada, byte a byte** |
+| `app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient.tsx` | modo seleção (D2) **+** badge `Exclusivo de cardápio` e o aviso reduzido de RN-12 (§13.4, §13.5) |
+
+**Telas novas do Spec B, cuja forma este documento define:** `/painel/cardapios` (`CardapiosClient`,
+§13.3 e §13.4) e `/painel/cardapios/[cardapioId]` (`FormVigencia` + `PreviewVigencia` +
+`SeletorProdutosDoCardapio`, §9).
+
 ### Não tocar
 
 - `components/ui/*` — gerados pelo CLI (o único acréscimo é gerar `alert-dialog`).
-- `ComandaCozinha.tsx` e seus testes — até o buraco 7 ser decidido no spec.
-- `paraLinhaPedido.ts` / `TabelaPedidos` — §11.4.
-- `lib/utils/calcularTotal.ts` — reusado sem alteração (o que muda é o `preco` que entra).
-- As regras `@media print` de `globals.css` — o par de/por é markup comum dentro de bloco existente.
-- `specs/cardapio-sazonal.md` — em escrita por outro agente nesta mesma sessão.
+- `ComandaCozinha.test.tsx` — os três testes de RN-P1 continuam verdes **sem edição**; o teste novo
+  é **acrescentado**, nunca substitui (RN-14-a).
+- `paraLinhaPedido.ts` / `TabelaPedidos` — §11.4 (o Spec A confirma a exclusão).
+- `agruparCatalogo` além da generalização de tipo — a suíte atual passa **sem edição** (RN-15).
+- `filtrarCatalogo` / `contarProdutos` — a seção de destaque **nunca** entra na lista que eles
+  recebem; a trava é ausência, não filtro (RN-16).
+- `ancoraCategoria` (a função atual) e a `key` dos cards — RN-16.
+- As regras `@media print` de `globals.css` — o par de/por e o `[PROMO]` são markup comum dentro de
+  bloco existente.
+- `specs/*` — contrato fechado; em conflito, o spec vence e o desenho se ajusta (§0, §12).
 
 ### Ordem sugerida (o que destrava o quê)
 
-1. Tokens (`globals.css`) + `SeloVitrine` + `PrecoProduto` + `rotuloPrecoAcessivel` — destrava as 4
+1. Tokens (`globals.css`) + `SeloDesconto` + `PrecoProduto` + `rotuloPrecoAcessivel` — destrava as 4
    superfícies da vitrine de uma vez.
-2. `SecaoCatalogo` passando o **objeto inteiro** (M2) — fecha o bug de `disponivel` de passagem.
-3. `linhaDePor` + as 4 superfícies de exibição (D7).
-4. `FormProduto` (bloco Promoção + superfície de erro do D10) — depende do `superRefine` do
+2. `SecaoCatalogo` passando o **objeto inteiro** (M2) — fecha o bug de `disponivel` (D13/RN-19) de
+   passagem.
+3. `totalDaLinha` (RN-20) **antes** de `LinhaItemPedido` — o par de/por convive com um total que já
+   está certo (§11.1).
+4. `LinhaItemPedido` + as 4 superfícies de exibição (D7) + `[PROMO]` na comanda (D12, §13.6).
+5. `FormProduto` (bloco Promoção + superfície de erro do D10) — depende do `superRefine` do
    `schemaProduto`.
-5. `copiaCupom` + `ResumoValores` + `EtapaItens` — depende do `estadoCupom` da Server Action.
-6. `ModalPromocoes` + `decisaoModalPromocoes` + toggle no perfil.
-7. `copiaRevisaoPreco` + `podeConfirmar` (D11) — depende do token de revisão (§12, item 4).
-8. `descreverVigencia` + form de vigência + lote (D2/D3) — depende do Spec B.
+6. `copiaCupom` + `ResumoValores` + `EtapaItens` — depende do `estadoCupom` da Server Action.
+7. `ModalPromocoes` + `decisaoModalPromocoes` + toggle no perfil.
+8. `copiaRevisaoPreco` + `podeConfirmar` (D11) — depende de `promocaoExibida` no payload (RN-12-a).
+9. `descreverVigencia` + form de vigência (§9) + lote (§10) — Spec B, fatias 8 a 13.
+10. `visibilidade` no form e na lista (D14, §13.5) → aviso de RN-12 (§13.4) → seção de destaque e
+    pílulas (D16, §13.1 e §13.2). **§13.1 depois de §4**: as duas tocam `SecaoCatalogo` e
+    `CardProduto`, e o Spec B é explícito que as fatias 14 e 19 **nunca** andam em paralelo.
 
 ---
 
 ## 15. Checklist de aceite deste desenho
 
-Marcável por leitura de código, já que não há teste de DOM neste repo:
+Marcável por leitura de código, já que não há teste de DOM neste repo.
+
+**Vitrine e preço (Spec A):**
 
 - [ ] `grep -r "precoEfetivo <" src/components/` **não devolve nada** — nenhum componente decide se há
       desconto (M3).
@@ -1575,13 +1970,63 @@ Marcável por leitura de código, já que não há teste de DOM neste repo:
       proibido na vitrine (§6.4).
 - [ ] `grep -rn "setTimeout\|onPointerDown\|onTouchStart" src/components/vitrine/ModalPromocoes.tsx`
       **não devolve nada** (§5.1, §5.2).
-- [ ] `grep -rn "cor-primaria\|cor-destaque\|cor-fundo" src/components/vitrine/SeloVitrine.tsx`
+- [ ] `grep -rn "cor-primaria\|cor-destaque\|cor-fundo" src/components/vitrine/SeloDesconto.tsx`
       **não devolve nada** — o selo não lê o tema da loja (§2).
 - [ ] `grep -rn "min-h-11\|size=\"icon-sm\"" ` nos arquivos novos **não devolve nada** — 44px literal
       (design-system §5).
 - [ ] as três frases de RN-10-e existem **literais** em `lib/utils/copiaCupom.ts` e têm teste que as
       afirma byte a byte.
-- [ ] `descreverVigencia.ts` é importado **pelo painel e pela projeção da vitrine** (M6).
-- [ ] `ComandaCozinha.test.tsx` continua verde **sem edição** (§13, buraco 7).
-- [ ] `plan/design-promocoes-e-vigencia.md` não introduziu nenhuma regra de negócio nova — os sete
-      buracos estão em §13, apontados, não preenchidos.
+- [ ] `grep -rn "SeloVitrine\|linhaDePor" src/` **não devolve nada** — os nomes da v1 não chegaram ao
+      código; valem `SeloDesconto` e `LinhaItemPedido` (§0.1).
+
+**Vigência e cardápio (Spec B):**
+
+- [ ] `descreverVigencia.ts` é importado **pelo painel, pela projeção da vitrine e pelo cabeçalho da
+      seção de destaque** — três consumidores, uma redação (M6, §13.1).
+- [ ] `grep -rn "Último dia do mês" src/` **não devolve nada** — está em Fora do Escopo v1 do Spec B
+      (§9.2, §12.2 buraco 5).
+- [ ] o botão "+" do card não-comprável está **`disabled`** (Spec B) **e** com `pointer-events-none`,
+      e o card continua abrindo o modal (§4.2).
+- [ ] `filtrarCatalogo` e `contarProdutos` são chamados **só** com `categorias` — a seção de destaque
+      não aparece em nenhuma chamada dos dois (RN-16).
+- [ ] nenhum componente monta `id={produto.id}` — o único produtor de id de DOM é `idNaSecao`
+      (RN-16).
+- [ ] o `Switch` de desligar cardápio **não** contém a frase "voltam a vender" em lugar nenhum
+      (RN-03, §13.4).
+- [ ] o aviso de RN-12 imprime **os dois números**, e os dois vêm de `contarProdutosEscondidos`
+      (§13.4).
+- [ ] a copy das duas opções de `visibilidade` é **literal** do Spec B (§13.5).
+
+**Pedido e impressão:**
+
+- [ ] `ComandaCozinha.test.tsx` — os três testes de RN-P1 continuam verdes **sem edição**, e existe
+      **um `it` novo** com `toContain("[PROMO]")` e `not.toContain("R$")` juntos (§13.6).
+- [ ] `grep -rn "preco_original" src/components/ src/app/` só aparece **dentro** de
+      `lib/utils/linhaItemPedido.ts` — nenhuma superfície tem `if` próprio (§11.1).
+- [ ] as quatro superfícies de total de linha chamam `totalDaLinha`; `calcularTotal.test.ts` passa
+      **sem edição** e a invariante `Σ totalDaLinha === calcularSubtotal` tem teste (RN-20).
+- [ ] o payload de `criarPedido` ganhou **só** `promocaoExibida: boolean` por item — nenhum campo
+      monetário novo, `.strict()` intacto (RN-12-a, M9).
+
+**Do documento:**
+
+- [ ] este desenho **não introduziu nenhuma regra de negócio nova**: §12 mostra, linha a linha, qual
+      spec decidiu o quê, e o que sobrou está em §16 com o caso concreto.
+- [ ] nenhum conflito com os specs continua aberto: os dois de §4.2 e §9.2 foram resolvidos **a favor
+      do spec**.
+
+---
+
+## 16. Pendências para o spec
+
+> Regra do documento: se algo continua sem resposta nos specs, ele é **listado aqui com o caso
+> concreto**, nunca preenchido no desenho. Nenhum item abaixo bloqueia o `quebrar`: todos têm uma
+> degradação declarada, e nenhuma delas é "decidir no componente".
+
+| # | O caso concreto | Por que o desenho não decide | O que a UI faz enquanto não há resposta |
+|---|---|---|---|
+| **P1** | **Cabeçalho da seção de destaque quando o cardápio abre e fecha no mesmo dia.** "Almoço executivo", seg–sex 11:00–15:00, olhado às 14:58: o rótulo de §13.1 diz `Hoje, até as 15:00`. Às 15:01 a seção **some** com o cliente olhando a tela (a vitrine é dado vivo, sem cache, e a próxima navegação rerenderiza). O cliente que tinha a Lasanha na tela vê a seção sumir sem explicação | "avisar que a seção vai fechar" é **regra de produto** (quantos minutos antes? avisa ou não avisa?), não forma. Inventar um aviso de 10 minutos seria criar comportamento que nenhum D cobre | Nada: a seção some. O produto continua **na categoria dele** (D16-a), e se estiver fora da janela aparece **marcado**, com o selo de quando volta (D4) — o cliente não fica sem caminho, só sem aviso prévio |
+| **P2** | **Ordem entre "Expira em 3 dias" e o aviso de RN-12 quando os dois valem.** Cardápio de prazo fixo que expira em 2 dias **e** já tem produtos exclusivos sumidos de um período anterior desligado. §13.3 e §13.4 definem os dois elementos, mas não qual manda quando aparecem juntos na mesma linha | é prioridade de atenção do lojista — pergunta de produto, não de layout | Os dois aparecem: badge âmbar `Expira em 2 dias` **e**, abaixo, o aviso de RN-12 com os dois números. Nada é escondido; o que falta é saber se um deles deveria calar o outro |
+| **P3** | **Teto de produtos por seção de destaque.** §13.2 corta o render em **6 produtos** + `[ Ver os 14 produtos ]`. O Spec B recusa **teto de seções**, mas não fala de teto de **produtos dentro** de uma seção | 6 é decisão de forma (cabe em 360px sem empurrar a primeira categoria) e está dentro do que o desenho decide — **mas** se o dono do produto entender que o destaque tem de mostrar o cardápio inteiro, isso é regra de produto e o corte sai | O corte de 6 fica, com o botão de continuação que **rola até a categoria** e não esconde dado nenhum |
+| **P4** | **`descontoFim` no contrato de catálogo não tem consumidor na vitrine.** O Spec A declara o campo como "só exibição", e este desenho **não o usa** em nenhuma das quatro superfícies: "-20%" cabe na pílula, "-20% até 30/09" não cabe em 168px | acrescentar "até 30/09" ao selo da vitrine é decisão de produto (urgência ajuda a vender? polui?), e o campo já trafega ao cliente de qualquer jeito | O selo da vitrine mostra só a economia; **o prazo aparece no painel**, na lista de produtos (`-20% até 30/09`, §8.4), que é onde o lojista pergunta "ainda está valendo?" |
+
