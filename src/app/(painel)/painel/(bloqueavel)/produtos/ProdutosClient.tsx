@@ -621,7 +621,12 @@ export function ProdutosClient({
                           className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
                         >
                           <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
-                          <div className="min-w-0 flex-1">
+                          {/* `sm:min-w-[14rem]` é o piso do nome no desktop. Sem
+                              ele, a lista de opcionais (que não encolhe) comia a
+                              linha inteira e o nome virava "X - b..". No mobile a
+                              lista é `w-full` e quebra sozinha, por isso lá o
+                              nome já tinha a largura toda. */}
+                          <div className="min-w-0 flex-1 sm:min-w-[14rem]">
                             {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
                                 cabe em duas linhas em vez de sumir. */}
                             <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
@@ -694,7 +699,7 @@ export function ProdutosClient({
                               opcionaisPorCategoria[p.categoria_id ?? ""] ?? [];
                             if (gruposOpcionais.length === 0) return null;
                             return (
-                              <ul className="order-4 flex w-full flex-wrap gap-1.5 sm:order-3 sm:w-auto">
+                              <ul className="order-4 flex w-full min-w-0 shrink flex-wrap gap-1.5 sm:order-3 sm:w-auto">
                                 {gruposOpcionais
                                   .slice()
                                   .sort((a, b) => a.ordem - b.ordem)
