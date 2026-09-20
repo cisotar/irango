@@ -1,6 +1,9 @@
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { totalDaLinha } from "@/lib/utils/calcularTotal";
+import { textoDePor } from "@/lib/utils/linhaItemPedido";
+import { mapearOpcionaisExibicao } from "@/lib/utils/rotulosPedido";
 import {
   freteConhecido,
   ROTULO_FRETE_A_COMBINAR_CURTO,
@@ -72,20 +75,30 @@ export function montarLinkWhatsappPedido(
   if (!numeroLimpo) return null;
 
   const linhasItens = pedido.itens_pedido.flatMap((item) => {
-    const opcionais = item.itens_pedido_opcionais ?? [];
-    const acrescimo = opcionais.reduce(
-      (s, o) => s + o.preco_snapshot * o.quantidade,
-      0,
+    // [239] Opcionais pelo mapper único (`mapearOpcionaisExibicao`) — nenhum
+    // campo do snapshot lido na mão — e o total da linha por `totalDaLinha`
+    // (RN-20), a MESMA função que produz o subtotal cobrado. O par de/por é
+    // UNITÁRIO e vem do helper (RN-14): em texto plano usa PARÊNTESES, nunca
+    // `~tachado~` (marcação do WhatsApp numa string que carrega texto livre do
+    // cliente seria superfície nova sem ganho de leitura).
+    const opcionais = mapearOpcionaisExibicao(
+      item.itens_pedido_opcionais ?? [],
     );
-    const totalItem = (item.preco + acrescimo) * item.quantidade;
+    const totalItem = totalDaLinha({
+      preco: item.preco,
+      quantidade: item.quantidade,
+      opcionais,
+    });
+    const dePor = textoDePor(item);
     return [
-      `- ${item.quantidade}x ${item.nome} — ${formatarMoeda(totalItem)}`,
+      `- ${item.quantidade}x ${item.nome} — ${formatarMoeda(totalItem)}${dePor ? ` (${dePor})` : ""}`,
       ...opcionais.map(
-        (o) =>
-          `  + ${o.nome_snapshot} (${o.quantidade}x) — ${formatarMoeda(o.preco_snapshot)}`,
+        (o) => `  + ${o.nome} (${o.quantidade}x) — ${formatarMoeda(o.preco)}`,
       ),
       // Texto livre do cliente: só entra citado (ver `citarTextoCliente`).
-      ...(item.observacao ? [`  obs: ${citarTextoCliente(item.observacao)}`] : []),
+      ...(item.observacao
+        ? [`  obs: ${citarTextoCliente(item.observacao)}`]
+        : []),
     ];
   });
 
@@ -150,7 +163,10 @@ export function montarLinkWhatsappPedido(
     linhas.push(`Obs.: ${citarTextoCliente(pedido.observacoes)}`);
   }
 
-  linhas.push("", `Localize este pedido no painel pelo nº ${formatarNumeroPedido(pedido.id)}.`);
+  linhas.push(
+    "",
+    `Localize este pedido no painel pelo nº ${formatarNumeroPedido(pedido.id)}.`,
+  );
 
   const mensagem = linhas.join("\n");
   return {

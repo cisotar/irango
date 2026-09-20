@@ -81,6 +81,20 @@ export type UsarEnviarPedidoArgs = {
    * fechada e nada é enviado.
    */
   preAbrirWhatsapp?: boolean;
+  /**
+   * [238/D11] `criarPedido` recusou com `codigo: "revisao_necessaria"`: a
+   * promoção de algum item terminou entre o carrinho e o envio (RN-12-a).
+   * Não é erro e não se repete o envio — a UI reconfirma o preço com o
+   * cliente. Sem handler, cai no toast genérico de sempre.
+   */
+  onRevisaoNecessaria?: () => void;
+  /**
+   * [238/D11] Índices das linhas JÁ reconfirmadas pelo cliente no diálogo de
+   * preço. Default do envio: um clique posterior (outra árvore, outra etapa)
+   * continua carregando o consentimento que já foi dado, sem zerar a flag das
+   * linhas que o diálogo não mostrou.
+   */
+  indicesReconfirmados?: readonly number[];
 };
 
 export function useEnviarPedido({
@@ -90,11 +104,18 @@ export function useEnviarPedido({
   estado,
   onEstadoChange,
   preAbrirWhatsapp = false,
+  onRevisaoNecessaria,
+  indicesReconfirmados = [],
 }: UsarEnviarPedidoArgs) {
   const [enviando, startEnvio] = useTransition();
   const router = useRouter();
 
-  function enviar() {
+  /**
+   * [238] As linhas reconfirmadas chegam por ARGUMENTO, não só por prop: o
+   * segundo clique acontece no mesmo tick do `setState` que registra a
+   * reconfirmação, e uma prop lida aqui ainda traria o valor antigo.
+   */
+  function enviar(opcoes?: { indicesReconfirmados?: readonly number[] }) {
     if (estado.formaPagamento == null) {
       toast.error("Escolha uma forma de pagamento.");
       return;
@@ -114,6 +135,8 @@ export function useEnviarPedido({
       itens,
       estado,
       idempotencyKey,
+      indicesReconfirmados:
+        opcoes?.indicesReconfirmados ?? indicesReconfirmados,
     });
 
     // [163] Preview best-effort: só barra se o schema JÁ chegou. Ausente, o
@@ -145,6 +168,12 @@ export function useEnviarPedido({
       }
       if ("erro" in resultado) {
         aba.concluir(null);
+        // [238/D11] Preço subiu: nem repetir o envio, nem erro genérico — a
+        // tela mostra o de/para e pede o segundo clique explícito.
+        if (resultado.codigo === "revisao_necessaria" && onRevisaoNecessaria) {
+          onRevisaoNecessaria();
+          return;
+        }
         toast.error(resultado.erro);
         return;
       }

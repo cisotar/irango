@@ -20,6 +20,7 @@ import {
   precisaCalcularFrete,
   ESTADO_INICIAL,
   itemCarrinhoParaPayload,
+  SEM_REVISAO,
   type EstadoWizard,
 } from "./estado";
 import { readFileSync } from "node:fs";
@@ -723,5 +724,123 @@ describe("[180-B] podeConfirmar — frete a combinar libera a conclusão", () =>
       formaPagamento: "pix",
     });
     expect(podeConfirmar(e, "entrega", "indisponivel")).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+//  [238/D11/M9] Reconfirmação de preço — o gate mora em `podeConfirmar`, uma
+//  vez, e o payload carrega `promocaoExibida`, que é o que faz a trava de
+//  RN-12-a sair do papel.
+// ────────────────────────────────────────────────────────────────────────────
+describe("[238/M9 trava 2] podeConfirmar — revisão pendente bloqueia", () => {
+  const PRONTO = estado({ tipoEntrega: "retirada", formaPagamento: "pix" });
+
+  it("revisão pendente e NÃO confirmada → false (mesmo com tudo preenchido)", () => {
+    expect(
+      podeConfirmar(PRONTO, "retirada", "ocioso", {
+        pendente: true,
+        confirmada: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("revisão pendente e CONFIRMADA (segundo clique) → true", () => {
+    expect(
+      podeConfirmar(PRONTO, "retirada", "ocioso", {
+        pendente: true,
+        confirmada: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("sem revisão em curso → o gate de sempre, inalterado", () => {
+    expect(podeConfirmar(PRONTO, "retirada", "ocioso")).toBe(true);
+    expect(podeConfirmar(PRONTO, "retirada", "ocioso", SEM_REVISAO)).toBe(true);
+  });
+
+  it("revisão confirmada NÃO atropela os outros gates", () => {
+    const semPagamento = estado({ tipoEntrega: "retirada" });
+    expect(
+      podeConfirmar(semPagamento, "retirada", "ocioso", {
+        pendente: true,
+        confirmada: true,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("[238/RN-12-a] promocaoExibida — do carrinho ao payload", () => {
+  const COM_PROMO: ItemCarrinho = {
+    produtoId: PRODUTO_ID,
+    nome: "Feijoada completa",
+    preco: 80,
+    quantidade: 1,
+    temDesconto: true,
+  };
+  const SEM_PROMO: ItemCarrinho = {
+    produtoId: OPCIONAL_ID,
+    nome: "Refrigerante",
+    preco: 8,
+    quantidade: 1,
+  };
+
+  it("a vitrine mostrou promoção ⇒ a linha do payload afirma `true`", () => {
+    const payload = montarPayloadPedido({
+      lojaId: LOJA_ID,
+      itens: [COM_PROMO, SEM_PROMO].map(itemCarrinhoParaPayload),
+      estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+    });
+    expect(payload.itens[0].promocaoExibida).toBe(true);
+    // Fail-closed: linha sem promoção NÃO carrega a chave (ausente ⇒ false).
+    expect("promocaoExibida" in payload.itens[1]).toBe(false);
+  });
+
+  it("SEGUNDO clique (linha reconfirmada) ⇒ a mesma linha afirma `false`", () => {
+    const payload = montarPayloadPedido({
+      lojaId: LOJA_ID,
+      itens: [COM_PROMO].map(itemCarrinhoParaPayload),
+      estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+      indicesReconfirmados: [0],
+    });
+    expect(payload.itens[0].promocaoExibida).toBe(false);
+  });
+
+  // Achado do `auditar`: o segundo clique zerava a flag de TODAS as linhas. Se
+  // a promoção de OUTRO item terminasse entre o diálogo abrir e o clique, ele
+  // seria cobrado cheio sem nunca ter aparecido no de/para.
+  it("o segundo clique NÃO desarma a trava das linhas que o diálogo não mostrou", () => {
+    const OUTRA_COM_PROMO: ItemCarrinho = {
+      produtoId: OPCIONAL_ID,
+      nome: "Pizza do dia",
+      preco: 40,
+      quantidade: 1,
+      temDesconto: true,
+    };
+    const payload = montarPayloadPedido({
+      lojaId: LOJA_ID,
+      itens: [COM_PROMO, OUTRA_COM_PROMO].map(itemCarrinhoParaPayload),
+      estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+      // Só a linha 0 apareceu no diálogo.
+      indicesReconfirmados: [0],
+    });
+    expect(payload.itens[0].promocaoExibida).toBe(false);
+    expect(payload.itens[1].promocaoExibida).toBe(true);
+  });
+
+  it("o campo passa pelo schema `.strict()` sem abrir porta para dinheiro", () => {
+    const payload = montarPayloadPedido({
+      lojaId: LOJA_ID,
+      itens: [COM_PROMO].map(itemCarrinhoParaPayload),
+      estado: estado({ tipoEntrega: "retirada", formaPagamento: "pix" }),
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+    });
+    expect(schemaPayloadPedido.safeParse(payload).success).toBe(true);
+    const serializado = JSON.stringify(payload);
+    for (const proibido of ["preco", "subtotal", "desconto", "total", "taxa_entrega"]) {
+      expect(serializado).not.toContain(`"${proibido}"`);
+    }
   });
 });

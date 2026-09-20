@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useCarrinho, linhaCarrinhoId } from "@/hooks/useCarrinho";
+import { useRevisaoCarrinho } from "@/hooks/useRevisaoCarrinho";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
@@ -22,10 +23,29 @@ export type CarrinhoProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lojaSlug: string;
+  /** [237] Loja da vitrine — a gaveta revisa o carrinho no servidor para
+   *  exibir "Você economizou". Sem ela, a linha não existe. */
+  lojaId?: string | null;
 };
 
-export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
+export function Carrinho({
+  open,
+  onOpenChange,
+  lojaSlug,
+  lojaId = null,
+}: CarrinhoProps) {
   const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho();
+
+  // [237] `economiaProdutos` vem PRONTO do servidor — o carrinho guarda só o
+  // preço efetivo (RN-12) e não tem como somar a economia sozinho. A revisão
+  // só roda com a gaveta ABERTA e é deduplicada pela assinatura do carrinho
+  // (o rate limit por IP é compartilhado com o cupom).
+  const { revisao } = useRevisaoCarrinho({
+    lojaId: lojaId ?? "",
+    itens,
+    ativo: open && lojaId != null,
+  });
+  const economiaProdutos = revisao?.economiaProdutos ?? null;
 
   const vazio = itens.length === 0;
 
@@ -142,6 +162,14 @@ export function Carrinho({ open, onOpenChange, lojaSlug }: CarrinhoProps) {
                 <span>Subtotal</span>
                 <span>{formatarMoeda(subtotal)}</span>
               </div>
+              {/* Sem o número do servidor, a linha simplesmente não existe —
+                  nunca é calculada aqui (237). */}
+              {economiaProdutos != null && economiaProdutos > 0 && (
+                <div className="flex justify-between text-sm font-semibold text-promo-texto">
+                  <span>Você economizou</span>
+                  <span>−&nbsp;{formatarMoeda(economiaProdutos)}</span>
+                </div>
+              )}
               <Button
                 className="min-h-11 bg-[var(--cor-primaria)] text-white hover:bg-[var(--cor-primaria)]/90"
                 nativeButton={false}

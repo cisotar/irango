@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { partesNoFuso, paraMinutos, instanteNoFuso } from "./fusoLoja";
+import {
+  partesNoFuso,
+  paraMinutos,
+  instanteNoFuso,
+  diaNoFuso,
+  rotuloFusoLoja,
+} from "./fusoLoja";
 
 // Primitivo de fuso extraído de lojaAberta.ts (issue 222). Funções PURAS:
 // o instante vem SEMPRE do argumento, nunca de Date.now().
@@ -27,7 +33,10 @@ describe("partesNoFuso", () => {
 
   it("não depende do fuso do runtime: o mesmo instante em fusos diferentes difere", () => {
     const instante = new Date("2025-06-10T15:30:00Z");
-    expect(partesNoFuso(instante, "UTC")).toEqual({ diaIndex: 2, minutos: 15 * 60 + 30 });
+    expect(partesNoFuso(instante, "UTC")).toEqual({
+      diaIndex: 2,
+      minutos: 15 * 60 + 30,
+    });
     expect(partesNoFuso(instante, "America/Manaus")).toEqual({
       diaIndex: 2,
       minutos: 11 * 60 + 30,
@@ -36,8 +45,12 @@ describe("partesNoFuso", () => {
 
   it("cobre domingo (índice 0) e sábado (índice 6)", () => {
     // 2025-06-08 é domingo; 2025-06-14 é sábado.
-    expect(partesNoFuso(new Date("2025-06-08T12:00:00Z"), "UTC").diaIndex).toBe(0);
-    expect(partesNoFuso(new Date("2025-06-14T12:00:00Z"), "UTC").diaIndex).toBe(6);
+    expect(partesNoFuso(new Date("2025-06-08T12:00:00Z"), "UTC").diaIndex).toBe(
+      0,
+    );
+    expect(partesNoFuso(new Date("2025-06-14T12:00:00Z"), "UTC").diaIndex).toBe(
+      6,
+    );
   });
 });
 
@@ -93,5 +106,38 @@ describe("instanteNoFuso (RN-03 — escrita do prazo no fuso da loja)", () => {
     // discordarem, uma das duas está errada.
     const instante = new Date(instanteNoFuso("2026-12-31T23:59", SP));
     expect(partesNoFuso(instante, SP).minutos).toBe(paraMinutos("23:59"));
+  });
+});
+
+describe("diaNoFuso", () => {
+  it("devolve AAAA-MM-DD, nunca DD/MM/AAAA", () => {
+    expect(diaNoFuso(new Date("2026-09-20T15:00:00Z"), SP)).toBe("2026-09-20");
+  });
+
+  it("é o dia da LOJA, não o do UTC: 02:00Z ainda é ontem em São Paulo", () => {
+    expect(diaNoFuso(new Date("2026-09-21T02:00:00Z"), SP)).toBe("2026-09-20");
+  });
+
+  it("duas lojas em fusos diferentes podem estar em dias diferentes", () => {
+    const instante = new Date("2026-09-21T02:00:00Z");
+    expect(diaNoFuso(instante, SP)).toBe("2026-09-20");
+    expect(diaNoFuso(instante, "Asia/Tokyo")).toBe("2026-09-21");
+  });
+
+  it("vira o dia exatamente na meia-noite local", () => {
+    // 03:00Z = 00:00 em São Paulo (UTC-3).
+    expect(diaNoFuso(new Date("2026-09-21T02:59:00Z"), SP)).toBe("2026-09-20");
+    expect(diaNoFuso(new Date("2026-09-21T03:00:00Z"), SP)).toBe("2026-09-21");
+  });
+});
+
+describe("rotuloFusoLoja", () => {
+  it("nomeia o fuso E o deslocamento — a linha que o form exibe", () => {
+    expect(
+      rotuloFusoLoja("America/Sao_Paulo", new Date("2026-09-20T15:00:00Z")),
+    ).toBe("America/Sao_Paulo (GMT-3)");
+    expect(rotuloFusoLoja("UTC", new Date("2026-09-20T15:00:00Z"))).toBe(
+      "UTC (GMT+0)",
+    );
   });
 });

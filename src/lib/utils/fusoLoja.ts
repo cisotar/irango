@@ -40,7 +40,8 @@ export function partesNoFuso(agora: Date, timezone: string): PartesNoFuso {
     hour12: false,
   });
   const partes = fmt.formatToParts(agora);
-  const get = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  const get = (tipo: string) =>
+    partes.find((p) => p.type === tipo)?.value ?? "";
 
   const diaIndex = MAPA_DIA[get("weekday")] ?? 0;
 
@@ -114,4 +115,82 @@ function deslocamentoMs(ts: number, timezone: string): number {
     get("second"),
   );
   return comoUtc - ts;
+}
+
+/**
+ * Dia civil da loja no formato ISO `"YYYY-MM-DD"`, no fuso `timezone`.
+ *
+ * É o "hoje" que o modal de promoções compara com a última visualização
+ * gravada no dispositivo (RN-16): o cliente que vira a meia-noite no PRÓPRIO
+ * fuso não deve reabrir o modal de uma loja onde ainda é o mesmo dia — por isso
+ * o dia sai daqui, no servidor, e nunca do relógio do navegador.
+ *
+ * `en-CA` porque é o locale cujo formato numérico já é `AAAA-MM-DD` (mesmo
+ * truque de `metricasPedidos.chaveDia`, que é fixo em São Paulo e por isso não
+ * serve a uma loja com fuso próprio). O formatter é criado por chamada: o fuso
+ * é parâmetro, não constante.
+ */
+export function diaNoFuso(agora: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(agora);
+}
+
+/**
+ * SEGUNDO lugar de borda do fuso (RN-03) — a LEITURA, espelho exato de
+ * `instanteNoFuso`. Converte o instante absoluto gravado em `timestamptz`
+ * (ISO-8601) para o horário LOCAL da loja no formato `"YYYY-MM-DDTHH:MM"`,
+ * que é o que o formulário de produto exibe e devolve ao schema.
+ *
+ * Sem este espelho o prazo gravado voltaria ao form como ISO UTC: o lojista
+ * leria um horário que não é o dele e o `schemaProduto` recusaria o valor de
+ * volta (o regex só aceita hora local, sem offset).
+ *
+ * Mesma política de `partesNoFuso`/`deslocamentoMs`: toda a aritmética é do
+ * Intl, nada escrito à mão — horário de verão sai de graça.
+ */
+export function horaLocalNoFuso(instanteIso: string, timezone: string): string {
+  const instante = new Date(instanteIso);
+  if (!Number.isFinite(instante.getTime())) {
+    throw new Error("Instante inválido para conversão ao fuso da loja");
+  }
+
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(instante);
+  const get = (tipo: string) =>
+    partes.find((p) => p.type === tipo)?.value ?? "";
+
+  // Mesma defesa das duas funções acima: alguns runtimes emitem "24" na
+  // meia-noite, que o `<input type="time">` recusaria.
+  const hora = get("hour") === "24" ? "00" : get("hour");
+
+  return `${get("year")}-${get("month")}-${get("day")}T${hora}:${get("minute")}`;
+}
+
+/**
+ * Rótulo legível do fuso da loja (ex.: `America/Sao_Paulo (GMT-3)`), para a
+ * linha obrigatória ao lado dos campos de prazo da promoção (design §8.1).
+ *
+ * `agora` entra por parâmetro pelo mesmo motivo do resto do módulo: o
+ * deslocamento depende do instante (horário de verão), e o relógio que vale é
+ * o do SERVIDOR — o rótulo é montado no Server Component e desce pronto.
+ */
+export function rotuloFusoLoja(timezone: string, agora: Date): string {
+  const nome = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    timeZoneName: "shortOffset",
+  })
+    .formatToParts(agora)
+    .find((p) => p.type === "timeZoneName")?.value;
+  return nome ? `${timezone} (${nome})` : timezone;
 }

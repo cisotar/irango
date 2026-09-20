@@ -26,10 +26,15 @@ import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { ResumoValores } from "./ResumoValores";
 import { useEnviarPedido } from "./useEnviarPedido";
 import {
+  podeConfirmar,
+  SEM_REVISAO,
+  totalPreviewEstimado,
+  type EstadoRevisao,
   type EstadoWizard,
   type FormaPagamentoWizard,
   type TipoPagamento,
 } from "./estado";
+import type { EstadoCupom } from "@/lib/actions/revisarCarrinho-contrato";
 
 const SECAO =
   "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
@@ -65,6 +70,18 @@ export type EtapaPagamentoProps = {
   subtotal: number;
   desconto: number;
   frete: number;
+  /** [237] Estado A/B/C do cupom, decidido no servidor. */
+  cupom?: EstadoCupom | null;
+  /** [237] Economia de produto, pronta do servidor. */
+  economiaProdutos?: number | null;
+  /** Status do cálculo de frete — entra no gate único `podeConfirmar`. */
+  freteStatus?: string;
+  /** [238/D11] Reconfirmação de preço: gate e remoção do CTA do DOM (M9). */
+  revisao?: EstadoRevisao;
+  /** [238/D11] `criarPedido` pediu revisão — o wizard abre o diálogo. */
+  onRevisaoNecessaria?: () => void;
+  /** [238/D11] Linhas que o cliente já reconfirmou no diálogo de preço. */
+  indicesReconfirmados?: readonly number[];
   onEstadoChange: (patch: Partial<EstadoWizard>) => void;
   onVoltar: () => void;
   /**
@@ -86,6 +103,12 @@ export function EtapaPagamento({
   subtotal,
   desconto,
   frete,
+  cupom = null,
+  economiaProdutos = null,
+  freteStatus = "ocioso",
+  revisao = SEM_REVISAO,
+  onRevisaoNecessaria,
+  indicesReconfirmados,
   onEstadoChange,
   onVoltar,
   variante = "wizard",
@@ -95,7 +118,9 @@ export function EtapaPagamento({
   const formaSelecionada = formasPagamento.find(
     (f) => f.tipo === estado.formaPagamento,
   );
-  const totalPreview = Math.max(0, subtotal - desconto) + frete;
+  // Mesma fórmula do resumo e do diálogo de reconfirmação (238): três telas
+  // exibindo o mesmo total não podem compor três contas diferentes.
+  const totalPreview = totalPreviewEstimado(subtotal, desconto, frete);
 
   // Submit compartilhado (mobile + desktop) — fonte única do payload (006).
   const { enviar, enviando } = useEnviarPedido({
@@ -105,6 +130,8 @@ export function EtapaPagamento({
     estado,
     onEstadoChange,
     preAbrirWhatsapp,
+    onRevisaoNecessaria,
+    indicesReconfirmados,
   });
 
   async function copiarChave(chave: string) {
@@ -121,12 +148,14 @@ export function EtapaPagamento({
   // "limite atingido" e o servidor (167) é quem corta/rejeita.
   const contadorObservacoes = derivarContadorObservacao(estado.observacoes);
 
+  // Gate ÚNICO do submit (design-system §9): a condição de reconfirmação de
+  // preço (238/M9 trava 2) mora em `podeConfirmar`, nunca aqui.
   const podeEnviar =
     lojaAberta &&
     !enviando &&
     estado.nome.trim().length > 0 &&
-    estado.formaPagamento != null &&
-    itens.length > 0;
+    itens.length > 0 &&
+    podeConfirmar(estado, estado.tipoEntrega, freteStatus, revisao);
 
   return (
     <section
@@ -309,7 +338,8 @@ export function EtapaPagamento({
             <div className="p-4">
               <ResumoValores
                 subtotal={subtotal}
-                desconto={desconto}
+                cupom={cupom}
+                economiaProdutos={economiaProdutos}
                 frete={frete}
                 total={totalPreview}
                 mostrarFrete={estado.tipoEntrega === "entrega"}
@@ -318,16 +348,22 @@ export function EtapaPagamento({
           </div>
 
           <div className="flex flex-col gap-2.5">
-            <Button
-              type="button"
-              size="lg"
-              className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
-              disabled={!podeEnviar}
-              onClick={enviar}
-            >
-              {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
-              {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
-            </Button>
+            {/* [238/M9 trava 1] Enquanto a reconfirmação está aberta o CTA sai
+                do DOM — não fica `disabled`: botão desabilitado depende de um
+                booleano que um `setState` fora de ordem reabilita; botão
+                ausente não tem como ser clicado. */}
+            {!revisao.pendente && (
+              <Button
+                type="button"
+                size="lg"
+                className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+                disabled={!podeEnviar}
+                onClick={() => enviar()}
+              >
+                {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"

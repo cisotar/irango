@@ -68,10 +68,11 @@ const CUPOM_GENERICO = "Cupom inválido ou não encontrado.";
 export async function revisarCarrinhoAction(
   entrada: unknown,
 ): Promise<ResultadoRevisarCarrinho> {
-  // (0) Rate limit por IP antes de qualquer I/O — a MESMA chave/janela que o
-  //     preview de cupom já usava (~20/min por IP, issue 052).
+  // (0) Rate limit por IP antes de qualquer I/O, em BALDE PRÓPRIO: a revisão é
+  //     automática e não pode gastar a cota de `validarCupom` (achado do
+  //     `auditar` — balde estourado tirava o cupom válido do resumo).
   const ip = extrairIp(await headers());
-  if (!(await verificarRateLimit("validarCupom", ip)).permitido) {
+  if (!(await verificarRateLimit("revisarCarrinho", ip)).permitido) {
     return { ok: false, mensagem: ERRO_GENERICO };
   }
 

@@ -104,8 +104,12 @@ describe("086 SecaoCatalogo — propaga `disponivel` ao CardProduto", () => {
       <SecaoCatalogo categorias={categoriasFixture()} />,
     );
 
-    // O disponível mantém o aria-label de adicionar (contrato não regride).
-    expect(html).toContain('aria-label="Adicionar Coca Gelada ao carrinho"');
+    // O disponível mantém o aria-label de adicionar, agora com o preço que o
+    // leitor de tela precisa ouvir (233 — `rotuloPrecoAcessivel`). Sem desconto
+    // a frase é só o preço efetivo: nada de "de/por" inventado.
+    expect(html).toContain(
+      'aria-label="Adicionar Coca Gelada ao carrinho, R$\u00a05,00"',
+    );
     expect(html).not.toContain('aria-label="Coca Gelada esgotado"');
   });
 });
@@ -157,7 +161,7 @@ describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista p
 
     // CardProduto expõe o botão "Adicionar X ao carrinho" (contrato do grid).
     expect(html).toContain(
-      'aria-label="Adicionar Coxinha de frango ao carrinho"',
+      'aria-label="Adicionar Coxinha de frango ao carrinho, R$\u00a08,50"',
     );
   });
 
@@ -302,7 +306,9 @@ describe("SecaoCatalogo (200) — realce do trecho casado", () => {
       <SecaoCatalogo categorias={categoriasPao(false)} termo="pao" />,
     );
 
-    expect(grid).toContain('aria-label="Adicionar Pão na chapa ao carrinho"');
+    expect(grid).toContain(
+      'aria-label="Adicionar Pão na chapa ao carrinho, R$\u00a06,00"',
+    );
     expect(lista).toContain('aria-label="Ver detalhes de Pão na chapa,');
   });
 });

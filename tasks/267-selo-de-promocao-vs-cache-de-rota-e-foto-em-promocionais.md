@@ -32,7 +32,13 @@ A guarda estática de cache que a 224 deixou (`catalogoVitrine.test.ts`) faz `gr
 2. Estender a guarda estática para cobrir `next.config.ts`, qualquer que seja a decisão — hoje
    ninguém percebe se esse número mudar.
 
-## Item B — `_promocionais` preserva `foto_url` que a RN-3 anula no outro ramo
+## Item B — RESOLVIDO na issue 234 ✔
+
+_Mantido aqui como registro. A 234 passou a derivar os promocionais de `categoriasComProdutos`,
+que é a lista onde a RN-3 já zerou a `foto_url`, em vez da lista crua. O modal mostra foto, então
+sem isso a URL que o catálogo esconde trafegaria por outra porta._
+
+### Descrição original
 
 `src/app/(publica)/loja/[slug]/page.tsx` anula `foto_url` quando a categoria tem
 `exibir_imagens === false` — a URL não pode trafegar, não basta não renderizar (RN-3, issue 201).

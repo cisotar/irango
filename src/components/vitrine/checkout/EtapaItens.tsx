@@ -17,7 +17,11 @@ import { Input } from "@/components/ui/input";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
-import { revisarCarrinhoAction } from "@/lib/actions/revisarCarrinho";
+import { fraseCupom } from "@/lib/utils/copiaCupom";
+import type {
+  EstadoCupom,
+  ResultadoRevisarCarrinho,
+} from "@/lib/actions/revisarCarrinho-contrato";
 import type { ItemCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
@@ -32,11 +36,14 @@ const SECAO_TITULO =
   "border-b border-cinza-medio bg-cinza-claro px-4 py-3.5 text-[0.78rem] font-bold uppercase tracking-[1px] text-texto-muted";
 
 export type EtapaItensProps = {
-  lojaId: string;
   itens: ItemCarrinho[];
   subtotal: number;
   desconto: number;
   codigoCupom: string | null;
+  /** [237] Estado A/B/C do cupom, JÁ decidido no servidor. */
+  cupom: EstadoCupom | null;
+  /** [237] Economia de PRODUTO, pronta do servidor. `null` ⇒ linha some. */
+  economiaProdutos: number | null;
   /** id = linhaCarrinhoId(produtoId, opcionais, observacao) — distingue linhas com opcionais OU observações diferentes (168). */
   onIncrementar: (linhaId: string) => void;
   onDecrementar: (linhaId: string) => void;
@@ -45,8 +52,13 @@ export type EtapaItensProps = {
    * Se implementar um botão de "remover rápido" no futuro, isso vai fazer sentido.
    */
   onRemover: (linhaId: string) => void;
-  /** Aplica/remove cupom: código + desconto preview confirmados pelo servidor. */
-  onAplicarCupom: (codigo: string, descontoPreview: number) => void;
+  /**
+   * [237] Revisa o carrinho com o código digitado. A chamada mora no
+   * CheckoutWizard (fonte única da revisão) — aqui só se lê o veredito.
+   */
+  onValidarCupom: (codigo: string) => Promise<ResultadoRevisarCarrinho>;
+  /** Aplica o cupom: o estado inteiro, como o servidor o devolveu. */
+  onAplicarCupom: (estado: EstadoCupom) => void;
   onRemoverCupom: () => void;
   onContinuar: () => void;
   /**
@@ -57,14 +69,16 @@ export type EtapaItensProps = {
 };
 
 export function EtapaItens({
-  lojaId,
   itens,
   subtotal,
   desconto,
   codigoCupom,
+  cupom,
+  economiaProdutos,
   onIncrementar,
   onDecrementar,
   // onRemover: a remoção acontece via decremento até zero nesta etapa (126)
+  onValidarCupom,
   onAplicarCupom,
   onRemoverCupom,
   onContinuar,
@@ -87,24 +101,7 @@ export function EtapaItens({
     startValidacao(async () => {
       // Só ids e quantidades atravessam a fronteira (seguranca.md §10): o preço
       // de cada linha vem do banco, dentro da action.
-      const r = await revisarCarrinhoAction({
-        loja_id: lojaId,
-        codigo: cod,
-        itens: itens.map((item) => ({
-          produto_id: item.produtoId,
-          quantidade: item.quantidade,
-          ...(item.opcionais && item.opcionais.length > 0
-            ? {
-                opcionais: item.opcionais
-                  .filter((o) => o.quantidade > 0)
-                  .map((o) => ({
-                    opcional_id: o.opcionalId,
-                    quantidade: o.quantidade,
-                  })),
-              }
-            : {}),
-        })),
-      });
+      const r = await onValidarCupom(cod);
 
       if (!r.ok || r.cupom == null) {
         setMensagemCupom(r.ok ? MENSAGEM_ERRO_CUPOM : r.mensagem);
@@ -119,14 +116,17 @@ export function EtapaItens({
         return;
       }
 
-      // Os três estados chegam DECIDIDOS do servidor: aqui só se lê o número.
+      // Os três estados chegam DECIDIDOS do servidor: aqui só se ramifica.
       const estado = r.cupom.estadoCupom;
-      const descontoServidor = estado.estado === "zero" ? 0 : estado.desconto;
       setMensagemCupom(
-        `Cupom aplicado! Desconto de ${formatarMoeda(descontoServidor)} no subtotal.`,
+        estado.estado === "zero"
+          ? // Estado C: a redação literal de RN-10-e, do módulo puro. Nunca
+            // "Desconto de R$ 0,00" — o número sequer existe na união.
+            (fraseCupom(estado) ?? "")
+          : `Cupom aplicado! Desconto de ${formatarMoeda(estado.desconto)} no subtotal.`,
       );
       setCupomValido(true);
-      onAplicarCupom(estado.codigo, descontoServidor);
+      onAplicarCupom(estado);
     });
   }
 
@@ -328,7 +328,8 @@ export function EtapaItens({
             <div className="p-4">
               <ResumoValores
                 subtotal={subtotal}
-                desconto={desconto}
+                cupom={cupom}
+                economiaProdutos={economiaProdutos}
                 frete={0}
                 total={totalPreview}
                 mostrarFrete={false}

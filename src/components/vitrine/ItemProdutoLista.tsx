@@ -6,9 +6,11 @@ import {
   ROTULO_ESGOTADO,
   rotuloAcessivelEsgotado,
 } from "@/components/vitrine/rotuloEsgotado";
+import { PrecoProduto } from "@/components/vitrine/PrecoProduto";
+import { SeloDesconto } from "@/components/vitrine/SeloDesconto";
 import { TextoRealcado } from "@/components/vitrine/TextoRealcado";
 import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
-import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { rotuloPrecoAcessivel } from "@/lib/utils/rotuloPrecoAcessivel";
 
 type ItemProdutoListaProps = {
   /**
@@ -42,15 +44,22 @@ type ItemProdutoListaProps = {
  * opcionais, montar o carrinho e só ser recusado no fim pelo servidor). O par
  * textual do estado é o MESMO do `CardProduto` (`rotuloEsgotado.ts`).
  *
- * O preço exibido é o EFETIVO. Selo e preço riscado são das issues 232/233.
+ * O preço exibido é o EFETIVO e vem de `PrecoProduto` — a linha NÃO formata
+ * preço por conta própria (M1). Em promoção o par riscado/efetivo empilha à
+ * direita (`text-right`) e o selo entra numa SEGUNDA linha sob o nome, nunca
+ * espremido entre o nome e a linha pontilhada, que é a identidade visual desta
+ * variante (233, design §3.3). Produto esgotado E em promoção mostra os dois —
+ * o selo herda a mesma opacidade do resto da linha.
+ *
+ * Alvo de toque `min-h-[44px]` LITERAL: a base do projeto é `font-size: 120%`,
+ * onde `min-h-11` viraria 52,8px acidentais (design-system §5).
  */
 export function ItemProdutoLista({
   produto,
   termo,
   onSelecionar,
 }: ItemProdutoListaProps) {
-  const { nome, precoEfetivo, compravel } = produto;
-  const precoFormatado = formatarMoeda(precoEfetivo);
+  const { nome, compravel, seloDesconto } = produto;
 
   const aoTeclar = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -63,6 +72,14 @@ export function ItemProdutoLista({
   // realce é visual e o leitor deve ouvir o nome inteiro.
   const nomeRealcado = <TextoRealcado texto={nome} termo={termo} />;
 
+  // Segunda linha da linha: só existe quando há promoção (o próprio
+  // `SeloDesconto` devolve `null` sem rótulo — M3, uma decisão num lugar só).
+  const segundaLinha = seloDesconto ? (
+    <div className="mt-1 flex">
+      <SeloDesconto rotulo={seloDesconto} ancoragem="inline" />
+    </div>
+  ) : null;
+
   const tracejado = (
     <span
       aria-hidden
@@ -72,28 +89,26 @@ export function ItemProdutoLista({
 
   if (!compravel) {
     return (
-      <div className="flex min-h-11 items-baseline gap-2 border-b border-cinza-medio px-4 py-3 last:border-b-0">
+      <div className="flex min-h-[44px] flex-col justify-center border-b border-cinza-medio px-4 py-3 last:border-b-0">
         {/* O visual fica marcado como decorativo e a linha inteira é anunciada
             uma vez só, pelo texto acessível — sem repetir nome + "Esgotado". */}
-        <span
-          aria-hidden
-          className="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold text-texto opacity-60"
-        >
-          {nomeRealcado}
-        </span>
-        {tracejado}
-        <span
-          aria-hidden
-          className="flex-shrink-0 text-sm font-extrabold text-texto-muted opacity-60 [font-variant-numeric:tabular-nums]"
-        >
-          {precoFormatado}
-        </span>
-        <span
-          aria-hidden
-          className="flex-shrink-0 whitespace-nowrap rounded-full bg-[#111111] px-2.5 py-0.5 text-[0.625rem] font-extrabold tracking-wide text-white uppercase"
-        >
-          {ROTULO_ESGOTADO}
-        </span>
+        <div aria-hidden className="flex items-baseline gap-2 opacity-60">
+          <span className="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold text-texto">
+            {nomeRealcado}
+          </span>
+          {tracejado}
+          <span className="flex-shrink-0">
+            <PrecoProduto produto={produto} tamanho="lista" />
+          </span>
+          <span className="flex-shrink-0 whitespace-nowrap rounded-full bg-indisponivel-fundo px-2.5 py-0.5 text-[0.625rem] font-extrabold tracking-wide text-indisponivel-texto uppercase">
+            {ROTULO_ESGOTADO}
+          </span>
+        </div>
+        {segundaLinha ? (
+          <div aria-hidden className="opacity-60">
+            {segundaLinha}
+          </div>
+        ) : null}
         <span className="sr-only">{rotuloAcessivelEsgotado(nome)}</span>
       </div>
     );
@@ -103,18 +118,23 @@ export function ItemProdutoLista({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Ver detalhes de ${nome}, ${precoFormatado}`}
+      // Sem `rotuloPrecoAcessivel` o cliente cego ouviria SÓ o preço cheio e
+      // nunca saberia da promoção (233).
+      aria-label={`Ver detalhes de ${nome}, ${rotuloPrecoAcessivel(produto)}`}
       onClick={onSelecionar}
       onKeyDown={aoTeclar}
-      className="flex min-h-11 cursor-pointer items-baseline gap-2 border-b border-cinza-medio px-4 py-3 last:border-b-0 hover:bg-cinza-claro focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-destaque"
+      className="flex min-h-[44px] cursor-pointer flex-col justify-center border-b border-cinza-medio px-4 py-3 last:border-b-0 hover:bg-cinza-claro focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-destaque"
     >
-      <span className="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold text-texto">
-        {nomeRealcado}
-      </span>
-      {tracejado}
-      <span className="flex-shrink-0 text-sm font-extrabold text-destaque [font-variant-numeric:tabular-nums]">
-        {precoFormatado}
-      </span>
+      <div className="flex items-baseline gap-2">
+        <span className="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold text-texto">
+          {nomeRealcado}
+        </span>
+        {tracejado}
+        <span className="flex-shrink-0">
+          <PrecoProduto produto={produto} tamanho="lista" />
+        </span>
+      </div>
+      {segundaLinha}
     </div>
   );
 }

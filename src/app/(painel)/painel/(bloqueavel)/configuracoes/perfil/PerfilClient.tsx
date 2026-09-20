@@ -115,6 +115,13 @@ export function PerfilClient({
     inicial.whatsapp_envio_automatico,
   );
 
+  // (236) Modal de promoções na abertura da vitrine (D6/RN-16). Preferência de
+  // UI, irmã do envio automático: quem decide MONTAR o modal é a vitrine, a
+  // partir da coluna — este estado só viaja no payload.
+  const [mostrarModalPromocoes, setMostrarModalPromocoes] = useState(
+    inicial.modal_promocoes,
+  );
+
   // Endereço da loja (issue 009). Coords NÃO entram no form (derivadas no
   // servidor, issue 008). Pré-preenchido a partir do `inicial`.
   const [enderecoCep, setEnderecoCep] = useState(inicial.endereco_cep ?? "");
@@ -211,7 +218,7 @@ export function PerfilClient({
       envioAutomatico,
       // (231) Sem UI ainda (issue 236): reemite o valor que veio do banco, de
       // modo que salvar o perfil não muda a preferência.
-      mostrarModalPromocoes: inicial.modal_promocoes,
+      mostrarModalPromocoes,
       enderecoCep,
       enderecoRua,
       enderecoNumero,
@@ -272,7 +279,9 @@ export function PerfilClient({
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-6">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-foreground">Status da vitrine</span>
+              <span className="font-medium text-foreground">
+                Status da vitrine
+              </span>
               {publicado ? (
                 <Badge variant="secondary">No ar</Badge>
               ) : (
@@ -398,6 +407,45 @@ export function PerfilClient({
               )}
             </div>
 
+            {/* Modal de promoções na abertura da vitrine (issue 236, D6).
+                Mesma família visual do toggle acima — layout, espaçamento e
+                `aria` já resolvidos ali. Sem `disabled`: não há pré-requisito
+                de cadastro, e a coluna nasce `true` (migration 220). */}
+            <div className="space-y-1">
+              <div className="flex min-h-11 items-center justify-between gap-3">
+                <Label
+                  htmlFor="perfil-modal-promocoes"
+                  className="cursor-pointer"
+                >
+                  Mostrar promoções ao abrir a loja
+                </Label>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {mostrarModalPromocoes ? "Ligado" : "Desligado"}
+                  </span>
+                  <Switch
+                    id="perfil-modal-promocoes"
+                    checked={mostrarModalPromocoes}
+                    onCheckedChange={(v) =>
+                      setMostrarModalPromocoes(v === true)
+                    }
+                    aria-describedby="perfil-modal-promocoes-ajuda"
+                  />
+                </div>
+              </div>
+
+              {/* A SEGUNDA frase é obrigatória: sem ela o lojista liga o
+                  toggle, não vê modal nenhum (porque não tem promoção ativa) e
+                  abre chamado. */}
+              <p
+                id="perfil-modal-promocoes-ajuda"
+                className="text-xs text-muted-foreground"
+              >
+                Na primeira visita do dia, o cliente vê um aviso com os pratos
+                em promoção. Se não houver promoção ativa, nada aparece.
+              </p>
+            </div>
+
             <div className="space-y-1">
               <Label htmlFor="perfil-telefone">Telefone (opcional)</Label>
               <IMaskInput
@@ -439,8 +487,8 @@ export function PerfilClient({
               </div>
               {!slugValido && (
                 <p className="text-xs text-destructive">
-                  O link deve ter de 3 a 60 caracteres, apenas letras minúsculas,
-                  números e hífens.
+                  O link deve ter de 3 a 60 caracteres, apenas letras
+                  minúsculas, números e hífens.
                 </p>
               )}
               {slugValido && slugMudou && (

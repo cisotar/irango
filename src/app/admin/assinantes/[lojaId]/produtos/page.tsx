@@ -2,6 +2,11 @@ import type { ReactElement } from "react";
 
 import { carregarLojaAdmin } from "../carga";
 import { carregarOpcionaisAdmin } from "../carga-opcionais";
+import {
+  projetarPromocaoDoPainel,
+  type PromocaoDoPainel,
+} from "@/lib/utils/promocaoPainel";
+import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { CardapioAdminClient } from "./CardapioAdminClient";
 
 /**
@@ -33,6 +38,16 @@ export default async function CardapioAdminPage({
     carregarOpcionaisAdmin(lojaId),
   ]);
 
+  // [235] Mesma projeção do painel do lojista, com o fuso da LOJA-ALVO: o admin
+  // edita em nome do lojista e não pode ver "vigente agora" por outro relógio.
+  const agora = new Date();
+  const promocoes: Record<string, PromocaoDoPainel> = Object.fromEntries(
+    produtos.map((p) => [
+      p.id,
+      projetarPromocaoDoPainel(p, agora, loja.timezone),
+    ]),
+  );
+
   return (
     <CardapioAdminClient
       lojaSlug={loja.slug}
@@ -44,6 +59,8 @@ export default async function CardapioAdminPage({
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
+      promocoes={promocoes}
+      fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
       // Linhas INTEIRAS desde a 217 — o cartão de associação exige
       // `CategoriaOpcional` completa, não mais o par `{id, nome}`.
       categoriasOpcional={categoriasOpcional}

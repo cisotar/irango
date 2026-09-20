@@ -283,3 +283,36 @@ describe("ComandaCozinha — observação por item", () => {
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Selo [PROMO] (issue 240 / D12, RN-14-a) — a marca de promoção SEM nenhum
+// valor. As duas asserções vivem no MESMO `it` de propósito: separadas, alguém
+// "conserta" uma e a outra fica órfã.
+// ---------------------------------------------------------------------------
+
+describe("ComandaCozinha — selo [PROMO] (D12, RN-14-a)", () => {
+  function comPrecoOriginal(preco_original: number | null): PedidoComItens {
+    return pedido({
+      itens_pedido: [
+        {
+          id: "item-promo",
+          nome: "Feijoada completa",
+          preco: 80,
+          preco_original,
+          quantidade: 2,
+          itens_pedido_opcionais: [],
+        },
+      ],
+    } as unknown as Partial<PedidoComItens>);
+  }
+
+  it("item com preco_original: mostra [PROMO] e NENHUM valor em reais", () => {
+    const html = render(comPrecoOriginal(100));
+    expect(html).toContain("[PROMO]");
+    expect(html).not.toContain("R$");
+  });
+
+  it("item sem preco_original (NULL): nenhum selo", () => {
+    expect(render(comPrecoOriginal(null))).not.toContain("[PROMO]");
+  });
+});

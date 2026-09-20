@@ -3,12 +3,7 @@ import { redirect } from "next/navigation";
 import { CheckCircle, MessageCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
@@ -19,6 +14,9 @@ import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
 import { listarFormasPagamento } from "@/lib/supabase/queries/entregaPagamento";
 import { resolverAcaoConfirmacao } from "@/lib/utils/confirmacao";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import { totalDaLinha } from "@/lib/utils/calcularTotal";
+import { textoDePor } from "@/lib/utils/linhaItemPedido";
+import { mapearOpcionaisExibicao } from "@/lib/utils/rotulosPedido";
 import {
   freteConhecido,
   ROTULO_FRETE_A_COMBINAR,
@@ -165,12 +163,20 @@ export default async function ConfirmacaoPage({
               // SNAPSHOT autoritativo (RN-O6): nome/preço do momento do pedido,
               // lidos por token (server-side) — NUNCA recalculados dos opcionais
               // atuais. O total do pedido (ped.total) é o final do servidor.
-              const opcionais = item.itens_pedido_opcionais ?? [];
-              const acrescimo = opcionais.reduce(
-                (s, o) => s + o.preco_snapshot * o.quantidade,
-                0,
+              // [239/RN-20] O total da LINHA sai de `totalDaLinha`, a mesma
+              // função que produz `calcularSubtotal`: 2× pizza R$ 50,00 + borda
+              // R$ 10,00 imprime R$ 110,00 (o cobrado), nunca R$ 120,00.
+              const opcionais = mapearOpcionaisExibicao(
+                item.itens_pedido_opcionais ?? [],
               );
-              const totalItem = (item.preco + acrescimo) * item.quantidade;
+              const totalItem = totalDaLinha({
+                preco: item.preco,
+                quantidade: item.quantidade,
+                opcionais,
+              });
+              // [239/RN-14] Par UNITÁRIO de/por; `null` quando não houve
+              // promoção ⇒ nada renderizado (a decisão mora no helper).
+              const dePor = textoDePor(item);
               return (
                 <div key={item.id} className="flex flex-col gap-0.5">
                   <div className="flex justify-between text-sm">
@@ -179,14 +185,10 @@ export default async function ConfirmacaoPage({
                     </span>
                     <span>{formatarMoeda(totalItem)}</span>
                   </div>
-                  <ListaOpcionaisItem
-                    opcionais={opcionais.map((o) => ({
-                      id: o.id,
-                      nome: o.nome_snapshot,
-                      preco: o.preco_snapshot,
-                      quantidade: o.quantidade,
-                    }))}
-                  />
+                  {dePor && (
+                    <p className="text-xs text-muted-foreground">{dePor}</p>
+                  )}
+                  <ListaOpcionaisItem opcionais={opcionais} />
                   {/* [197] Observação livre do comprador ("sem cebola"): já
                       gravada em `itens_pedido.observacao` (167/168) e até aqui
                       nunca renderizada nas telas do comprador. */}
@@ -211,7 +213,9 @@ export default async function ConfirmacaoPage({
             )}
             <div className="flex justify-between">
               <dt className="text-muted-foreground">
-                {ped.tipo_entrega === "retirada" ? "Taxa de entrega" : "Entrega"}
+                {ped.tipo_entrega === "retirada"
+                  ? "Taxa de entrega"
+                  : "Entrega"}
               </dt>
               <dd>
                 {/* [180-B] "a combinar" é distinguível de frete GRÁTIS: a
@@ -273,13 +277,17 @@ export default async function ConfirmacaoPage({
             <p className="text-muted-foreground">Forma de pagamento</p>
             <p className="font-medium">{rotuloForma(ped.forma_pagamento)}</p>
             {/* Troco — só exibe em dinheiro com troco_para preenchido */}
-            {ped.forma_pagamento === "dinheiro" && ped.troco_para && ped.troco_para > 0 && (
-              <p className="mt-1 text-sm font-medium">
-                Troco para {formatarMoeda(ped.troco_para)}
-              </p>
-            )}
+            {ped.forma_pagamento === "dinheiro" &&
+              ped.troco_para &&
+              ped.troco_para > 0 && (
+                <p className="mt-1 text-sm font-medium">
+                  Troco para {formatarMoeda(ped.troco_para)}
+                </p>
+              )}
             {instrucao ? (
-              <p className="mt-1 rounded-md bg-muted p-3 text-sm">{instrucao}</p>
+              <p className="mt-1 rounded-md bg-muted p-3 text-sm">
+                {instrucao}
+              </p>
             ) : (
               instrucaoPadrao(ped.forma_pagamento, ped.troco_para) && (
                 <p className="mt-1 rounded-md bg-muted p-3 text-sm">

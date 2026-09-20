@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { useCarrinho } from "@/hooks/useCarrinho";
@@ -23,13 +24,35 @@ import { EtapaItens } from "./EtapaItens";
 import { EtapaEntrega } from "./EtapaEntrega";
 import { EtapaPagamento } from "./EtapaPagamento";
 import { ResumoValores } from "./ResumoValores";
+import { ModalRevisaoPreco } from "./ModalRevisaoPreco";
 import { useEnviarPedido } from "./useEnviarPedido";
+import {
+  detectarMudancasDePreco,
+  SEM_MUDANCAS,
+  type LinhaMudada,
+} from "./mudancasDePreco";
+import {
+  chaveMudancas,
+  decidirReconfirmacao,
+  CHAVE_SEM_MUDANCA,
+  MSG_REVISAO_FALHOU,
+  MSG_REVISAO_SEM_MUDANCA,
+} from "./reconfirmacaoPreco";
+import { useRevisaoCarrinho } from "@/hooks/useRevisaoCarrinho";
+import { textosRevisao } from "@/lib/utils/copiaRevisaoPreco";
+import type {
+  EstadoCupom,
+  ResultadoRevisarCarrinho,
+} from "@/lib/actions/revisarCarrinho-contrato";
 import {
   ESTADO_INICIAL,
   itemCarrinhoParaPayload,
   lerEstadoWizard,
   podeConfirmar,
   salvarEstadoWizard,
+  SEM_REVISAO,
+  totalPreviewEstimado,
+  type EstadoRevisao,
   type EstadoWizard,
   type FormaPagamentoWizard,
   type ItemPayload,
@@ -90,7 +113,6 @@ export function CheckoutWizard({
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [etapa]);
-  const [descontoPreview, setDescontoPreview] = useState(0);
   const [fretePreview, setFretePreview] = useState(0);
   // Status do cálculo de frete (ocioso/calculando/ok/indisponivel/erro) — gate
   // podeConfirmar no desktop empilhado (006). No mobile o gate vive em cada etapa.
@@ -153,6 +175,99 @@ export function CheckoutWizard({
     setEstado((atual) => ({ ...atual, ...p }));
   }, []);
 
+  // ─────────────── [237/238] Revisão do carrinho, no servidor ────────────────
+  // Fonte ÚNICA dos números derivados do banco (RN-11 / D5-b): subtotal,
+  // economia de produto, estado A/B/C do cupom e os preços por linha que
+  // detectam o que mudou entre o carrinho e o envio (RN-12, camada 1).
+  // Nenhum deles é calculado aqui.
+  const { revisao, revisaoFresca, revisar } = useRevisaoCarrinho({
+    lojaId,
+    itens,
+    codigoCupom: estado.codigoCupom,
+    ativo: montado && itens.length > 0,
+  });
+
+  // O estado do cupom chega DECIDIDO: o wizard só lê (M4).
+  const estadoCupom: EstadoCupom | null =
+    revisao?.cupom != null && revisao.cupom.valido
+      ? revisao.cupom.estadoCupom
+      : null;
+  // Um único número de desconto, lido do estado do servidor — não há cópia
+  // local a divergir.
+  const descontoPreview =
+    estadoCupom == null || estadoCupom.estado === "zero"
+      ? 0
+      : estadoCupom.desconto;
+  const economiaProdutos = revisao?.economiaProdutos ?? null;
+
+  // [238] O subtotal que a tela mostra é o do SERVIDOR quando ele descreve o
+  // carrinho de agora. `subtotalPreview` (soma dos preços gravados no carrinho)
+  // só cobre a janela em que a revisão ainda não voltou.
+  const subtotalExibido = revisaoFresca?.subtotal ?? subtotalPreview;
+
+  // O que a TELA mostrou por linha — um lado da comparação de exibição.
+  const linhasExibidas = useMemo(
+    () => itens.map((i) => ({ nome: i.nome, precoExibido: i.preco })),
+    [itens],
+  );
+
+  // Comparação de EXIBIÇÃO (238): os dois lados são números do servidor — o
+  // preço efetivo que a vitrine gravou no carrinho e o do banco agora. SÓ com
+  // revisão FRESCA: parear o carrinho de agora com números calculados para um
+  // carrinho anterior nomearia a linha errada e mostraria o total velho.
+  const mudancas = useMemo(
+    () =>
+      revisaoFresca
+        ? detectarMudancasDePreco(linhasExibidas, revisaoFresca.itens)
+        : SEM_MUDANCAS,
+    [linhasExibidas, revisaoFresca],
+  );
+
+  // [238/D11] A reconfirmação SEMPRE nasce de números frescos: o conteúdo do
+  // diálogo é congelado aqui, no instante em que ele abre. `null` = fechado.
+  const [reconfirmacao, setReconfirmacao] = useState<{
+    itens: LinhaMudada[];
+    total: number;
+  } | null>(null);
+  // Rodada de aumentos já MOSTRADA ao cliente: sem isso, fechar o diálogo o
+  // reabriria no render seguinte (as mesmas linhas continuam subidas).
+  const [chaveMostrada, setChaveMostrada] = useState<string | null>(null);
+  const [revisaoConfirmada, setRevisaoConfirmada] = useState(false);
+  const revisaoPendente = reconfirmacao !== null;
+  // Efêmero de propósito: nunca vai para o sessionStorage (um segundo clique
+  // restaurado depois de um refresh seria um clique que ninguém deu).
+  const revisaoDoGate: EstadoRevisao = {
+    pendente: revisaoPendente,
+    confirmada: revisaoConfirmada,
+  };
+
+  // [238/D11] O servidor recusou com `revisao_necessaria`: busca os preços do
+  // banco AGORA. Quem ABRE o diálogo é o efeito de reconfirmação abaixo, com o
+  // estado já fresco — aqui nada abre, porque aqui o dado ainda pode ser o
+  // velho. Revisão que não voltou ⇒ toast genérico e NENHUM CTA de envio: o
+  // cliente jamais clica num total que não é o que será cobrado.
+  const aoRevisaoNecessaria = useCallback(() => {
+    setRevisaoConfirmada(false);
+    setReconfirmacao(null);
+    void revisar(estado.codigoCupom).then((r) => {
+      const subiram = r.ok
+        ? detectarMudancasDePreco(linhasExibidas, r.itens).subiram
+        : [];
+      const decisao = decidirReconfirmacao({ ok: r.ok, subiram });
+      if (decisao === "falhou") toast.error(MSG_REVISAO_FALHOU);
+      else if (decisao === "seguir") toast.info(MSG_REVISAO_SEM_MUDANCA);
+      // "abrir": a rodada volta a ser inédita e o efeito abre o diálogo com os
+      // números frescos.
+      else setChaveMostrada(null);
+    });
+  }, [revisar, estado.codigoCupom, linhasExibidas]);
+
+  // Linhas que o cliente JÁ reconfirmou: viajam no payload de qualquer envio
+  // posterior (mobile ou desktop), e só elas deixam de afirmar promoção.
+  const [indicesReconfirmados, setIndicesReconfirmados] = useState<number[]>(
+    [],
+  );
+
   // Submit do CTA da coluna sticky desktop — mesma fonte única do mobile (006).
   const { enviar, enviando } = useEnviarPedido({
     lojaId,
@@ -161,7 +276,31 @@ export function CheckoutWizard({
     estado,
     onEstadoChange: patch,
     preAbrirWhatsapp,
+    onRevisaoNecessaria: aoRevisaoNecessaria,
+    indicesReconfirmados,
   });
+
+  // Tudo pronto para enviar, IGNORANDO a reconfirmação: mesmo predicado único
+  // (`podeConfirmar`), nenhuma condição reimplementada aqui.
+  const prontoParaEnviar =
+    lojaAberta &&
+    estado.nome.trim().length > 0 &&
+    itens.length > 0 &&
+    podeConfirmar(estado, estado.tipoEntrega, freteStatusPreview, SEM_REVISAO);
+
+  // Segundo clique EXPLÍCITO, sobre o número novo: as linhas do diálogo passam
+  // a afirmar `promocaoExibida: false`, que é o que destrava a trava de RN-12-a
+  // no servidor. As OUTRAS seguem afirmando `true` — a trava continua armada.
+  const confirmarRevisao = useCallback(() => {
+    const indices = reconfirmacao?.itens.map((i) => i.indice) ?? [];
+    setIndicesReconfirmados(indices);
+    setReconfirmacao(null);
+    setRevisaoConfirmada(true);
+    // O diálogo pode ter aberto sozinho (preço subiu no meio do checkout), com
+    // o pedido ainda incompleto: aí o consentimento fica registrado e o cliente
+    // segue pelo CTA de sempre. Nunca há um segundo portão de submit.
+    if (prontoParaEnviar) enviar({ indicesReconfirmados: indices });
+  }, [enviar, reconfirmacao, prontoParaEnviar]);
 
   // Handlers estáveis: FormEndereco/EtapaEntrega têm essas props no dep array de
   // um useEffect — ref nova a cada render dispararia loop de render infinito.
@@ -189,20 +328,58 @@ export function CheckoutWizard({
     estado.tipoEntrega !== "retirada" && freteStatusPreview === "a_combinar"
       ? "a_combinar"
       : fretePreviewEfetivo;
-  const totalPreview =
-    Math.max(0, subtotalPreview - descontoPreview) + fretePreviewEfetivo;
+  // [238] Um único total na tela, sempre sobre o subtotal do BANCO quando há
+  // revisão fresca — `subtotalPreview` (preços do carrinho local) é só o
+  // fallback de enquanto a revisão não voltou.
+  const totalPreview = totalPreviewEstimado(
+    subtotalExibido,
+    descontoPreview,
+    fretePreviewEfetivo,
+  );
+  // [238/D11 "preço caiu"] Faixa persistente, sem botão e sem bloqueio.
+  const avisoPrecoCaiu =
+    mudancas.cairam.length > 0
+      ? textosRevisao({
+          direcao: "caiu",
+          itens: mudancas.cairam,
+          novoTotal: totalPreview,
+        })
+      : null;
 
-  // Handlers de cupom (compartilhados entre as duas árvores).
+  /* eslint-disable react-hooks/set-state-in-effect */
+  // [238/D11] Preço que SUBIU pede reconfirmação — tenha o servidor recusado o
+  // envio ou não. Antes, subir o valor de uma promoção que continua ativa (ou o
+  // preço de um item sem promoção) passava mudo: o cliente via a diferença no
+  // resumo e nada acontecia, enquanto preço que CAI já ganhava faixa de aviso.
+  // Abre uma vez por rodada de aumentos: lista vazia nunca abre nada.
+  useEffect(() => {
+    const chave = chaveMudancas(mudancas.subiram);
+    if (chave === CHAVE_SEM_MUDANCA) return;
+    if (chave === chaveMostrada) return;
+    setChaveMostrada(chave);
+    setRevisaoConfirmada(false);
+    setReconfirmacao({ itens: mudancas.subiram, total: totalPreview });
+  }, [mudancas, totalPreview, chaveMostrada]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Revisa o carrinho com o código digitado — a chamada da Server Action mora
+  // AQUI, uma vez, para as duas árvores.
+  const validarCupom = useCallback(
+    (codigo: string): Promise<ResultadoRevisarCarrinho> => revisar(codigo),
+    [revisar],
+  );
+
+  // Handlers de cupom (compartilhados entre as duas árvores). O DESCONTO não
+  // é guardado: ele é lido do `estadoCupom` que o servidor devolveu — um único
+  // número, uma única fonte (D5-b).
   const aplicarCupom = useCallback(
-    (codigo: string, desconto: number) => {
-      patch({ codigoCupom: codigo });
-      setDescontoPreview(desconto);
+    (estadoDoCupom: EstadoCupom) => {
+      patch({ codigoCupom: estadoDoCupom.codigo });
     },
     [patch],
   );
   const removerCupom = useCallback(() => {
     patch({ codigoCupom: null });
-    setDescontoPreview(0);
   }, [patch]);
 
   // Carrinho vazio → manda de volta para a loja (UX).
@@ -229,14 +406,16 @@ export function CheckoutWizard({
     <div className="px-4 py-4">
       {etapa === 1 && (
         <EtapaItens
-          lojaId={lojaId}
           itens={itens}
-          subtotal={subtotalPreview}
+          subtotal={subtotalExibido}
           desconto={descontoPreview}
           codigoCupom={estado.codigoCupom}
+          cupom={estadoCupom}
+          economiaProdutos={economiaProdutos}
           onIncrementar={incrementar}
           onDecrementar={decrementar}
           onRemover={remover}
+          onValidarCupom={validarCupom}
           onAplicarCupom={aplicarCupom}
           onRemoverCupom={removerCupom}
           onContinuar={() => setEtapa(2)}
@@ -246,8 +425,10 @@ export function CheckoutWizard({
       {etapa === 2 && (
         <EtapaEntrega
           lojaId={lojaId}
-          subtotal={subtotalPreview}
+          subtotal={subtotalExibido}
           desconto={descontoPreview}
+          cupom={estadoCupom}
+          economiaProdutos={economiaProdutos}
           aceitaEntrega={aceitaEntrega}
           tipoEntrega={estado.tipoEntrega}
           endereco={estado.endereco}
@@ -271,8 +452,14 @@ export function CheckoutWizard({
           formasPagamento={formasPagamento}
           itens={itensPayload}
           estado={estado}
-          subtotal={subtotalPreview}
+          subtotal={subtotalExibido}
           desconto={descontoPreview}
+          cupom={estadoCupom}
+          economiaProdutos={economiaProdutos}
+          freteStatus={freteStatusPreview}
+          revisao={revisaoDoGate}
+          onRevisaoNecessaria={aoRevisaoNecessaria}
+          indicesReconfirmados={indicesReconfirmados}
           frete={fretePreviewEfetivo}
           onEstadoChange={patch}
           onVoltar={() => setEtapa(2)}
@@ -285,11 +472,14 @@ export function CheckoutWizard({
   // Layout desktop (≥ md): 3 seções empilhadas à esquerda + resumo sticky à
   // direita. UM estado compartilhado; CTA gated por podeConfirmar (006).
   const confirmarHabilitado =
-    lojaAberta &&
+    prontoParaEnviar &&
     !enviando &&
-    estado.nome.trim().length > 0 &&
-    itens.length > 0 &&
-    podeConfirmar(estado, estado.tipoEntrega, freteStatusPreview);
+    podeConfirmar(
+      estado,
+      estado.tipoEntrega,
+      freteStatusPreview,
+      revisaoDoGate,
+    );
 
   const layoutDesktop = (
     <div className="mx-auto w-full max-w-6xl px-4 py-5">
@@ -298,14 +488,16 @@ export function CheckoutWizard({
         <div className="flex min-w-0 flex-col gap-4">
           <EtapaItens
             variante="desktop"
-            lojaId={lojaId}
             itens={itens}
-            subtotal={subtotalPreview}
+            subtotal={subtotalExibido}
             desconto={descontoPreview}
             codigoCupom={estado.codigoCupom}
+            cupom={estadoCupom}
+            economiaProdutos={economiaProdutos}
             onIncrementar={incrementar}
             onDecrementar={decrementar}
             onRemover={remover}
+            onValidarCupom={validarCupom}
             onAplicarCupom={aplicarCupom}
             onRemoverCupom={removerCupom}
             onContinuar={() => {}}
@@ -313,8 +505,10 @@ export function CheckoutWizard({
           <EtapaEntrega
             variante="desktop"
             lojaId={lojaId}
-            subtotal={subtotalPreview}
+            subtotal={subtotalExibido}
             desconto={descontoPreview}
+            cupom={estadoCupom}
+            economiaProdutos={economiaProdutos}
             aceitaEntrega={aceitaEntrega}
             tipoEntrega={estado.tipoEntrega}
             endereco={estado.endereco}
@@ -336,8 +530,14 @@ export function CheckoutWizard({
             formasPagamento={formasPagamento}
             itens={itensPayload}
             estado={estado}
-            subtotal={subtotalPreview}
+            subtotal={subtotalExibido}
             desconto={descontoPreview}
+            cupom={estadoCupom}
+            economiaProdutos={economiaProdutos}
+            freteStatus={freteStatusPreview}
+            revisao={revisaoDoGate}
+            onRevisaoNecessaria={aoRevisaoNecessaria}
+            indicesReconfirmados={indicesReconfirmados}
             frete={fretePreviewEfetivo}
             onEstadoChange={patch}
             onVoltar={() => {}}
@@ -356,22 +556,27 @@ export function CheckoutWizard({
             </h2>
             <div className="p-4">
               <ResumoValores
-                subtotal={subtotalPreview}
-                desconto={descontoPreview}
+                subtotal={subtotalExibido}
+                cupom={estadoCupom}
+                economiaProdutos={economiaProdutos}
+                avisoPrecoCaiu={avisoPrecoCaiu}
                 frete={freteResumo}
                 total={totalPreview}
                 mostrarFrete={estado.tipoEntrega === "entrega"}
               />
-              <Button
-                type="button"
-                size="lg"
-                className="mt-4 h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
-                disabled={!confirmarHabilitado}
-                onClick={enviar}
-              >
-                {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
-                {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
-              </Button>
+              {/* [238/M9 trava 1] Reconfirmação aberta ⇒ o CTA SAI DO DOM. */}
+              {!revisaoPendente && (
+                <Button
+                  type="button"
+                  size="lg"
+                  className="mt-4 h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+                  disabled={!confirmarHabilitado}
+                  onClick={() => enviar()}
+                >
+                  {enviando && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  {lojaAberta ? "Confirmar pedido" : "Loja fechada"}
+                </Button>
+              )}
             </div>
           </div>
         </aside>
@@ -432,6 +637,17 @@ export function CheckoutWizard({
       </nav>
 
       {ehDesktop ? layoutDesktop : wizardMobile}
+
+      {/* [238/D11] Uma única instância para as DUAS árvores: o segundo clique
+          é o mesmo em mobile e desktop. */}
+      <ModalRevisaoPreco
+        aberto={reconfirmacao !== null}
+        itens={reconfirmacao?.itens ?? []}
+        novoTotal={reconfirmacao?.total ?? totalPreview}
+        enviando={enviando}
+        onConfirmar={confirmarRevisao}
+        onVoltar={() => setReconfirmacao(null)}
+      />
     </div>
   );
 }

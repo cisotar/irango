@@ -31,7 +31,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { ProdutosClient } from "./ProdutosClient";
-import type { AcoesProdutosClient } from "./ProdutosClient";
+import type {
+  AcoesProdutosClient,
+  ProdutosClientProps,
+} from "./ProdutosClient";
 import type { Produto } from "@/lib/supabase/queries/produtos";
 
 /**
@@ -94,6 +97,8 @@ function renderLista(produtos: Produto[]): string {
       produtos={produtos}
       categorias={[]}
       opcionaisPorCategoria={{}}
+      promocoes={{}}
+      fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
       categoriasOpcional={[]}
       opcionais={[]}
       associacoes={[]}
@@ -110,19 +115,25 @@ describe("badgeStatus — precedência Oculto > Esgotado > Disponível", () => {
   });
 
   it("oculto=true, disponivel=false → badge 'Oculto' (nunca 'Esgotado')", () => {
-    const html = renderLista([produtoBase({ oculto: true, disponivel: false })]);
+    const html = renderLista([
+      produtoBase({ oculto: true, disponivel: false }),
+    ]);
     expect(html).toContain("Oculto");
     expect(html).not.toContain(">Esgotado<");
   });
 
   it("oculto=false, disponivel=false → badge 'Esgotado' (nunca 'Oculto')", () => {
-    const html = renderLista([produtoBase({ oculto: false, disponivel: false })]);
+    const html = renderLista([
+      produtoBase({ oculto: false, disponivel: false }),
+    ]);
     expect(html).toContain("Esgotado");
     expect(html).not.toContain("Oculto");
   });
 
   it("oculto=false, disponivel=true → badge 'Disponível' (nunca 'Oculto' nem 'Esgotado')", () => {
-    const html = renderLista([produtoBase({ oculto: false, disponivel: true })]);
+    const html = renderLista([
+      produtoBase({ oculto: false, disponivel: true }),
+    ]);
     expect(html).toContain("Disponível");
     expect(html).not.toContain("Oculto");
     expect(html).not.toContain("Esgotado");
@@ -224,6 +235,8 @@ describe("injeção de acoes (issues 129 e 160)", () => {
           produtos={produtos}
           categorias={[]}
           opcionaisPorCategoria={{}}
+          promocoes={{}}
+          fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
           categoriasOpcional={[]}
           opcionais={[]}
           associacoes={[]}
@@ -256,6 +269,8 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
         produtos={produtos}
         categorias={CATEGORIAS}
         opcionaisPorCategoria={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -314,6 +329,8 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
         produtos={produtos}
         categorias={categorias.map((c) => ({ ...c, exibir_imagens: true }))}
         opcionaisPorCategoria={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -357,7 +374,10 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
 
   it("só produtos soltos, 0 categorias → botão NÃO renderiza", () => {
     // O grupo sintético "Sem categoria" não é ordenável.
-    const html = renderComNCategorias([], [produtoBase({ categoria_id: null })]);
+    const html = renderComNCategorias(
+      [],
+      [produtoBase({ categoria_id: null })],
+    );
     expect(html).toContain("Sem categoria");
     expect(html).not.toContain("Reordenar categorias");
   });
@@ -384,6 +404,8 @@ describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 1
         ]}
         acoes={acoesBase()}
         opcionaisPorCategoria={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -393,5 +415,59 @@ describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 1
     // "Bebidas" não pode aparecer em lugar NENHUM do HTML: nem como card, nem
     // vazando por engano do modo reordenar (que aqui está desligado).
     expect(html).not.toContain("Bebidas");
+  });
+});
+
+describe("ProdutosClient — chip de promoção vigente (issue 235, design §8.4)", () => {
+  function renderComPromocoes(
+    produtos: Produto[],
+    promocoes: ProdutosClientProps["promocoes"],
+  ): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={[]}
+        opcionaisPorCategoria={{}}
+        promocoes={promocoes}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
+        acoes={acoesBase()}
+      />,
+    );
+  }
+
+  const produto = produtoBase({ id: "p1", nome: "Feijoada" });
+
+  it("imprime o rótulo tal como o servidor o projetou, com a cor de promoção", () => {
+    const markup = renderComPromocoes([produto], {
+      p1: {
+        vigente: true,
+        rotulo: "-20% até 30/09",
+        inicioLocal: null,
+        fimLocal: "2026-09-30T23:59",
+      },
+    });
+    expect(markup).toContain("-20% até 30/09");
+    expect(markup).toContain("text-promo-texto");
+  });
+
+  it("sem promoção vigente, nenhum chip — o cliente não inventa vigência", () => {
+    const markup = renderComPromocoes([produto], {
+      p1: {
+        vigente: false,
+        rotulo: null,
+        inicioLocal: null,
+        fimLocal: "2026-09-30T23:59",
+      },
+    });
+    expect(markup).not.toContain("text-promo-texto");
+  });
+
+  it("produto ausente do mapa não quebra o render", () => {
+    expect(() => renderComPromocoes([produto], {})).not.toThrow();
   });
 });

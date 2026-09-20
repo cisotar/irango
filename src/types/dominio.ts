@@ -31,4 +31,12 @@ export type ItemCarrinho = {
    * autoridade (schemaObservacao normaliza e mede o teto de novo).
    */
   observacao?: string;
+  /**
+   * (238/RN-12-a) O que a VITRINE MOSTROU nesta linha: `true` quando o produto
+   * foi adicionado exibindo selo e par "de/por". Não é campo monetário — o
+   * carrinho continua guardando só o preço EFETIVO (RN-12) — e é a única fonte
+   * de `promocaoExibida` no payload do pedido. Ausente ⇒ tratado como `false`
+   * (carrinho de sessão anterior nunca cai na recusa).
+   */
+  temDesconto?: boolean;
 };
