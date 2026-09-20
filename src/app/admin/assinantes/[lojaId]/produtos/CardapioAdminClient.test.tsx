@@ -100,6 +100,8 @@ function renderizar(lojaId = LOJA_ALVO) {
       produtos={[]}
       categorias={[]}
       opcionaisPorCategoria={{}}
+      promocoes={{}}
+      fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
       categoriasOpcional={[]}
       opcionais={[]}
       associacoes={[]}
@@ -116,9 +118,10 @@ describe("CardapioAdminClient — paridade de injeção de acoes (achado 143)", 
   it("injeta as 21 actions do ProdutosClient — nenhuma cai no fallback do lojista", () => {
     renderizar();
     for (const chave of CHAVES_ESPERADAS) {
-      expect(capturado.acoes?.[chave], `acoes.${chave} deveria estar definida`).toBeTypeOf(
-        "function",
-      );
+      expect(
+        capturado.acoes?.[chave],
+        `acoes.${chave} deveria estar definida`,
+      ).toBeTypeOf("function");
     }
   });
 
@@ -130,15 +133,17 @@ describe("CardapioAdminClient — paridade de injeção de acoes (achado 143)", 
     ) => unknown;
     await alternarOculto("produto-1", true);
 
-    expect(alternarOcultoAdmin).toHaveBeenCalledWith(LOJA_ALVO, "produto-1", true);
+    expect(alternarOcultoAdmin).toHaveBeenCalledWith(
+      LOJA_ALVO,
+      "produto-1",
+      true,
+    );
   });
 
   it("alternarDisponibilidade(id, disponivel) chama alternarDisponibilidadeAdmin(lojaId, id, disponivel)", async () => {
     renderizar();
-    const alternarDisponibilidade = capturado.acoes?.alternarDisponibilidade as (
-      id: string,
-      disponivel: boolean,
-    ) => unknown;
+    const alternarDisponibilidade = capturado.acoes
+      ?.alternarDisponibilidade as (id: string, disponivel: boolean) => unknown;
     await alternarDisponibilidade("produto-2", false);
 
     expect(alternarDisponibilidadeAdmin).toHaveBeenCalledWith(

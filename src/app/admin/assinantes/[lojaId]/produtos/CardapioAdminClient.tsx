@@ -4,7 +4,10 @@ import { useCallback } from "react";
 
 import { ProdutosClient } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import type { Categoria } from "@/components/painel/FormProduto";
-import type { Produto, OpcionaisPorCategoria } from "@/lib/supabase/queries/produtos";
+import type {
+  Produto,
+  OpcionaisPorCategoria,
+} from "@/lib/supabase/queries/produtos";
 import type { ProdutosClientProps } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import { schemaReordenacaoCategorias } from "@/lib/validacoes/produto";
 import {
@@ -56,13 +59,24 @@ export function CardapioAdminClient({
   categoriasOpcional,
   opcionais,
   associacoes,
+  promocoes,
+  fusoLojaRotulo,
 }: {
   lojaSlug: string;
   lojaId: string;
   produtos: Produto[];
   categorias: Categoria[];
   opcionaisPorCategoria: OpcionaisPorCategoria;
-} & Pick<ProdutosClientProps, "categoriasOpcional" | "opcionais" | "associacoes">) {
+} & Pick<
+  ProdutosClientProps,
+  // [235] `promocoes`/`fusoLojaRotulo` são projeção do SERVER COMPONENT admin
+  // (com o fuso da loja-alvo) — o wrapper só repassa, sem derivar nada.
+  | "categoriasOpcional"
+  | "opcionais"
+  | "associacoes"
+  | "promocoes"
+  | "fusoLojaRotulo"
+>) {
   // Foto: o `UploadFotoProduto` monta o FormData só com o arquivo (CAMPO_ARQUIVO).
   // A action admin lê `loja_id` do FormData; injetamos o `lojaId` da URL aqui.
   const enviarFotoProduto = useCallback(
@@ -79,6 +93,8 @@ export function CardapioAdminClient({
       lojaId={lojaId}
       produtos={produtos}
       categorias={categorias}
+      promocoes={promocoes}
+      fusoLojaRotulo={fusoLojaRotulo}
       // Opcionais reais da loja-alvo (loader 132). Guard 122-129: habilitar
       // `categoriasOpcional` reais EXIGE injetar `salvarAssociacaoOpcionais`
       // admin no `acoes` (abaixo) na MESMA mudança — a prop é OBRIGATÓRIA

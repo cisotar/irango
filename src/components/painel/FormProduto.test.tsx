@@ -27,7 +27,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-import { FormProduto, type ProdutoInicial } from "@/components/painel/FormProduto";
+import {
+  FormProduto,
+  type ProdutoInicial,
+} from "@/components/painel/FormProduto";
+import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 
 const CATEGORIAS = [{ id: "c1", nome: "Lanches", exibir_imagens: true }];
 
@@ -43,6 +47,7 @@ function renderForm(inicial?: ProdutoInicial): string {
       inicial={inicial}
       lojaSlug="loja-teste"
       lojaId="loja-1"
+      fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
       onCriar={vi.fn(async () => ({ ok: true }) as const)}
       onAtualizar={vi.fn(async () => ({ ok: true }) as const)}
       onEnviarFoto={vi.fn(async () => ({ ok: true, url: "" }) as never)}
@@ -68,11 +73,15 @@ function checkedDoOculto(html: string): string {
 }
 
 /**
- * Extrai o aria-checked do PRIMEIRO checkbox (span role=checkbox) do HTML —
- * no form, é sempre "Disponível na vitrine" (renderizado antes de "Ocultar").
+ * Extrai o aria-checked do checkbox "Disponível na vitrine".
+ *
+ * Ancorado no RÓTULO, não na POSIÇÃO: até a issue 235 ele era o primeiro
+ * `role="checkbox"` do form, mas o bloco Promoção introduziu "Definir um prazo"
+ * antes dele. Âncora posicional quebra a cada campo novo; o rótulo, não.
  */
 function checkedDoDisponivel(html: string): string {
-  const inicioTag = html.indexOf('role="checkbox"');
+  const rotulo = html.indexOf("Disponível na vitrine");
+  const inicioTag = html.lastIndexOf('role="checkbox"', rotulo);
   const antesTag = html.lastIndexOf("<span", inicioTag);
   const fimTag = html.indexOf(">", antesTag);
   const tag = html.slice(antesTag, fimTag);
@@ -103,19 +112,34 @@ describe("FormProduto — checkbox 'Ocultar da vitrine' (issue 088)", () => {
   });
 
   it("RN-1: oculto=true e disponivel=true SIMULTANEAMENTE — controles são independentes, nenhum força o outro", () => {
-    const html = renderForm({ id: "p1", nome: "X", oculto: true, disponivel: true });
+    const html = renderForm({
+      id: "p1",
+      nome: "X",
+      oculto: true,
+      disponivel: true,
+    });
     expect(checkedDoDisponivel(html)).toBe("true");
     expect(checkedDoOculto(html)).toBe("true");
   });
 
   it("RN-1: oculto=true e disponivel=false SIMULTANEAMENTE — nenhum eixo é acoplado ao outro", () => {
-    const html = renderForm({ id: "p1", nome: "X", oculto: true, disponivel: false });
+    const html = renderForm({
+      id: "p1",
+      nome: "X",
+      oculto: true,
+      disponivel: false,
+    });
     expect(checkedDoDisponivel(html)).toBe("false");
     expect(checkedDoOculto(html)).toBe("true");
   });
 
   it("RN-1: disponivel=false NÃO deve forçar oculto=true — produto indisponível mas não oculto continua com oculto=false", () => {
-    const html = renderForm({ id: "p1", nome: "X", oculto: false, disponivel: false });
+    const html = renderForm({
+      id: "p1",
+      nome: "X",
+      oculto: false,
+      disponivel: false,
+    });
     expect(checkedDoDisponivel(html)).toBe("false");
     expect(checkedDoOculto(html)).toBe("false");
   });
@@ -139,8 +163,12 @@ describe("FormProduto — checkbox 'Ocultar da vitrine' (issue 088)", () => {
  */
 function opcoesSelecionadas(html: string): string[] {
   const selectInicio = html.indexOf('id="produto-categoria"');
-  if (selectInicio === -1) throw new Error("select de categoria não encontrado");
-  const trecho = html.slice(selectInicio, html.indexOf("</select>", selectInicio));
+  if (selectInicio === -1)
+    throw new Error("select de categoria não encontrado");
+  const trecho = html.slice(
+    selectInicio,
+    html.indexOf("</select>", selectInicio),
+  );
   return [...trecho.matchAll(/<option([^>]*)>/g)]
     .filter((m) => m[1].includes("selected"))
     .map((m) => m[1].match(/value="([^"]*)"/)?.[1] ?? "");
@@ -162,5 +190,87 @@ describe("FormProduto — categoria pré-selecionada ao criar (spec botao-novo-p
     // ambas equivalem a select vazio; o que NÃO pode é "c1" vir marcada.
     expect(selecionadas).not.toContain("c1");
     expect(html).toContain("Criar produto");
+  });
+});
+
+describe("FormProduto — bloco Promoção (issue 235, RN-07 / D1)", () => {
+  const COM_PROMOCAO: ProdutoInicial = {
+    id: "p1",
+    nome: "Feijoada",
+    preco: 100,
+    ordem: 0,
+    desconto_ativo: true,
+    desconto_tipo: "percentual",
+    desconto_valor: 20,
+    desconto_inicio: "2026-09-19T11:00",
+    desconto_fim: "2026-09-30T23:59",
+  };
+
+  it("o bloco entra DEPOIS de Preço e ANTES de Categoria (o erro de D10 cita os dois)", () => {
+    const markup = renderForm(COM_PROMOCAO);
+    const preco = markup.indexOf('id="produto-preco"');
+    const promocao = markup.indexOf('id="produto-desconto-ativo"');
+    const categoria = markup.indexOf('id="produto-categoria"');
+    expect(preco).toBeGreaterThan(-1);
+    expect(promocao).toBeGreaterThan(preco);
+    expect(categoria).toBeGreaterThan(promocao);
+  });
+
+  it("promoção LIGADA: tipo, valor e os dois prazos chegam preenchidos em hora local", () => {
+    const markup = renderForm(COM_PROMOCAO);
+    expect(markup).toContain('value="20"');
+    expect(markup).toContain('value="2026-09-19"');
+    expect(markup).toContain('value="11:00"');
+    expect(markup).toContain('value="2026-09-30"');
+    expect(markup).toContain('value="23:59"');
+    // Prévia via `precoEfetivo`, nunca uma segunda fórmula.
+    expect(markup).toContain('aria-live="polite"');
+    expect(markup).toContain(
+      `Na vitrine: De ${formatarMoeda(100)} por ${formatarMoeda(80)}`,
+    );
+  });
+
+  it("🔴 RN-07 — DESLIGADA, os campos continuam na tela com os valores salvos", () => {
+    const markup = renderForm({ ...COM_PROMOCAO, desconto_ativo: false });
+
+    // Nada sumiu: o valor e os dois prazos seguem renderizados...
+    expect(markup).toContain('id="produto-desconto-valor"');
+    expect(markup).toContain('value="20"');
+    expect(markup).toContain('value="2026-09-30"');
+    // ...só que inertes, esmaecidos, e com a frase que explica que ficam salvos.
+    expect(markup).toContain("opacity-60");
+    expect(markup).toContain(
+      "Promoção desligada. Os valores ficam salvos para quando você ligar de novo.",
+    );
+    expect(markup).toMatch(/id="produto-desconto-valor"[^>]*disabled=""/);
+    // Desligada não há desconto: a prévia mostra o preço cheio.
+    expect(markup).toContain(`Na vitrine: ${formatarMoeda(100)}`);
+  });
+
+  it("produto sem promoção nenhuma: bloco presente, nenhum radio marcado, sem prazo", () => {
+    const markup = renderForm({ id: "p2", nome: "Pão", preco: 5, ordem: 0 });
+    expect(markup).toContain("Produto em promoção");
+    // Nenhum dos dois radios de tipo vem marcado: o produto nunca teve
+    // desconto configurado, e o form não escolhe um tipo por ele.
+    const radios = markup.slice(
+      markup.indexOf('id="produto-desconto-tipo-rotulo"'),
+      markup.indexOf('id="produto-desconto-valor"'),
+    );
+    expect(radios).toContain('role="radio"');
+    expect(radios).not.toContain('aria-checked="true"');
+    expect(markup).toContain("Sem prazo, a promoção vale até você desligar.");
+  });
+
+  it("a mensagem de D10 NÃO mora neste componente (o texto vem do módulo puro)", () => {
+    expect(renderForm(COM_PROMOCAO)).not.toContain("Não dá para salvar");
+  });
+
+  it("a linha de fuso é adjacente aos campos de prazo e é descrição deles", () => {
+    const markup = renderForm(COM_PROMOCAO);
+    expect(markup).toContain(
+      "Horários no fuso da loja: America/Sao_Paulo (GMT-3)",
+    );
+    expect(markup).toContain('id="produto-desconto-fuso"');
+    expect(markup).toContain('aria-describedby="produto-desconto-fuso"');
   });
 });

@@ -38,6 +38,11 @@ import {
   reordenarItensDoGrupoOpcional,
 } from "@/lib/actions/opcional";
 import { enviarFotoProduto } from "@/lib/actions/upload";
+import {
+  projetarPromocaoDoPainel,
+  type PromocaoDoPainel,
+} from "@/lib/utils/promocaoPainel";
+import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { ProdutosClient } from "./ProdutosClient";
 
 /**
@@ -88,6 +93,18 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     buscarAssociacoesOpcional(supabase, loja.id),
   ]);
 
+  // [235] Vigência da promoção e rótulo do chip PROJETADOS AQUI, no servidor.
+  // Um único `agora` para a página inteira (duas linhas nunca discordam sobre
+  // que instante é este) e o fuso da LOJA, não o do dispositivo — derivar isso
+  // no `ProdutosClient` duplicaria RN-03 e usaria o relógio do cliente.
+  const agora = new Date();
+  const promocoes: Record<string, PromocaoDoPainel> = Object.fromEntries(
+    produtos.map((p) => [
+      p.id,
+      projetarPromocaoDoPainel(p, agora, loja.timezone),
+    ]),
+  );
+
   return (
     <ProdutosClient
       lojaSlug={loja.slug}
@@ -99,6 +116,8 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
+      promocoes={promocoes}
+      fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
       // [217] Linhas INTEIRAS, não mais `{id, nome}`: o cartão de associação
       // consome `CategoriaOpcional` completa.
       categoriasOpcional={categoriasOpcional}

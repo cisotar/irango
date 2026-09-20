@@ -95,6 +95,7 @@ import type {
   Produto,
   OpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
+import type { PromocaoDoPainel } from "@/lib/utils/promocaoPainel";
 import type {
   CategoriaOpcional,
   Opcional,
@@ -126,6 +127,16 @@ export type ProdutosClientProps = {
    * primeiro toggle, porque o toggle grava o conjunto inteiro.
    */
   associacoes: Associacao[];
+  /**
+   * Promoção de cada produto (`produto.id → projeção`), PROJETADA NO SERVER
+   * COMPONENT (issue 235, design §8.4). Não é campo novo de banco nem derivação
+   * do cliente: decidir "está vigente agora" aqui duplicaria RN-03 e usaria o
+   * relógio do dispositivo, que a loja não controla. Produto ausente do mapa =
+   * sem promoção.
+   */
+  promocoes: Record<string, PromocaoDoPainel>;
+  /** Linha de fuso pronta do servidor, repassada ao `FormProduto` (§8.1). */
+  fusoLojaRotulo: string;
   /**
    * Actions injetadas. Todas OBRIGATÓRIAS (issue 160): a page do painel passa
    * as 21 do lojista, a via admin passa as 21 variantes escopadas por `lojaId`.
@@ -222,6 +233,8 @@ export function ProdutosClient({
   categoriasOpcional,
   opcionais,
   associacoes,
+  promocoes,
+  fusoLojaRotulo,
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
@@ -292,9 +305,7 @@ export function ProdutosClient({
   const [alternandoOculto, startAlternarOculto] = useTransition();
   // Id do produto em transição em cada eixo — evita travar a lista inteira
   // ao togglar um único produto (cada linha desabilita só o próprio controle).
-  const [idAlternandoDisp, setIdAlternandoDisp] = useState<string | null>(
-    null,
-  );
+  const [idAlternandoDisp, setIdAlternandoDisp] = useState<string | null>(null);
   const [idAlternandoOculto, setIdAlternandoOculto] = useState<string | null>(
     null,
   );
@@ -448,6 +459,7 @@ export function ProdutosClient({
       onCriar={acoes.criarProduto}
       onAtualizar={acoes.atualizarProduto}
       onEnviarFoto={acoes.enviarFotoProduto}
+      fusoLojaRotulo={fusoLojaRotulo}
       inicial={
         emEdicao
           ? {
@@ -459,6 +471,18 @@ export function ProdutosClient({
               disponivel: emEdicao.disponivel,
               foto_url: emEdicao.foto_url,
               ordem: emEdicao.ordem,
+              // RN-07: o form recebe a promoção INTEIRA, inclusive desligada.
+              // Os dois prazos vêm em hora LOCAL da loja, já convertidos pelo
+              // Server Component — nada de fuso é feito no browser.
+              desconto_ativo: emEdicao.desconto_ativo,
+              desconto_tipo:
+                emEdicao.desconto_tipo === "percentual" ||
+                emEdicao.desconto_tipo === "fixo"
+                  ? emEdicao.desconto_tipo
+                  : null,
+              desconto_valor: emEdicao.desconto_valor,
+              desconto_inicio: promocoes[emEdicao.id]?.inicioLocal ?? null,
+              desconto_fim: promocoes[emEdicao.id]?.fimLocal ?? null,
             }
           : categoriaNovoProduto != null
             ? // Sem `id` => FormProduto permanece em modo criar (RN-1);
@@ -484,7 +508,10 @@ export function ProdutosClient({
           <Button onClick={() => void sairDoModoReordenar()}>Concluir</Button>
         ) : (
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button variant="outline" onClick={() => setCategoriasAbertas(true)}>
+            <Button
+              variant="outline"
+              onClick={() => setCategoriasAbertas(true)}
+            >
               Categorias
             </Button>
             <Button onClick={abrirCriar}>
@@ -492,10 +519,7 @@ export function ProdutosClient({
               Novo produto
             </Button>
             {podeReordenar && (
-              <Button
-                variant="outline"
-                onClick={() => setModoReordenar(true)}
-              >
+              <Button variant="outline" onClick={() => setModoReordenar(true)}>
                 <ArrowUpDown className="size-4" />
                 Reordenar categorias
               </Button>
@@ -608,6 +632,17 @@ export function ProdutosClient({
                                 {formatarMoeda(p.preco)}
                               </span>
                               {badgeStatus(p)}
+                              {/* Chip de promoção VIGENTE. O rótulo inteiro
+                                  (`-20% até 30/09`) vem projetado do servidor;
+                                  aqui não há derivação de vigência nenhuma. */}
+                              {promocoes[p.id]?.rotulo != null && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-promo-texto"
+                                >
+                                  {promocoes[p.id].rotulo}
+                                </Badge>
+                              )}
                             </div>
                           </div>
 
@@ -700,7 +735,9 @@ export function ProdutosClient({
                               variant="outline"
                               size="sm"
                               className="min-h-[44px] flex-1 sm:flex-none"
-                              disabled={alternandoDisp && idAlternandoDisp === p.id}
+                              disabled={
+                                alternandoDisp && idAlternandoDisp === p.id
+                              }
                               aria-label={
                                 p.disponivel
                                   ? `Marcar ${p.nome} como esgotado`
@@ -708,7 +745,9 @@ export function ProdutosClient({
                               }
                               onClick={() => alternarDispon(p)}
                             >
-                              {p.disponivel ? "Marcar esgotado" : "Disponibilizar"}
+                              {p.disponivel
+                                ? "Marcar esgotado"
+                                : "Disponibilizar"}
                             </Button>
                           </div>
                         </div>
@@ -799,8 +838,7 @@ export function ProdutosClient({
                 string duas vezes na mesma dobra. */}
             <DialogTitle>Opcionais</DialogTitle>
             <DialogDescription className="sr-only">
-              Escolha quais categorias de opcional aparecem para os produtos de
-              {" "}
+              Escolha quais categorias de opcional aparecem para os produtos de{" "}
               {categoriaOpcionaisAberta?.nome}, e em que ordem.
             </DialogDescription>
             <DialogClose
@@ -840,7 +878,8 @@ export function ProdutosClient({
                     new Set()
                   }
                   ordemPorGrupo={
-                    ordemPorProduto.get(categoriaOpcionaisAberta.id) ?? new Map()
+                    ordemPorProduto.get(categoriaOpcionaisAberta.id) ??
+                    new Map()
                   }
                   totalItensPorGrupo={totalItensPorGrupo}
                   opcionaisPorGrupo={opcionaisPorGrupo}

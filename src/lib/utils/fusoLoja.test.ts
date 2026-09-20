@@ -4,6 +4,7 @@ import {
   paraMinutos,
   instanteNoFuso,
   diaNoFuso,
+  rotuloFusoLoja,
 } from "./fusoLoja";
 
 // Primitivo de fuso extraído de lojaAberta.ts (issue 222). Funções PURAS:
@@ -32,7 +33,10 @@ describe("partesNoFuso", () => {
 
   it("não depende do fuso do runtime: o mesmo instante em fusos diferentes difere", () => {
     const instante = new Date("2025-06-10T15:30:00Z");
-    expect(partesNoFuso(instante, "UTC")).toEqual({ diaIndex: 2, minutos: 15 * 60 + 30 });
+    expect(partesNoFuso(instante, "UTC")).toEqual({
+      diaIndex: 2,
+      minutos: 15 * 60 + 30,
+    });
     expect(partesNoFuso(instante, "America/Manaus")).toEqual({
       diaIndex: 2,
       minutos: 11 * 60 + 30,
@@ -41,8 +45,12 @@ describe("partesNoFuso", () => {
 
   it("cobre domingo (índice 0) e sábado (índice 6)", () => {
     // 2025-06-08 é domingo; 2025-06-14 é sábado.
-    expect(partesNoFuso(new Date("2025-06-08T12:00:00Z"), "UTC").diaIndex).toBe(0);
-    expect(partesNoFuso(new Date("2025-06-14T12:00:00Z"), "UTC").diaIndex).toBe(6);
+    expect(partesNoFuso(new Date("2025-06-08T12:00:00Z"), "UTC").diaIndex).toBe(
+      0,
+    );
+    expect(partesNoFuso(new Date("2025-06-14T12:00:00Z"), "UTC").diaIndex).toBe(
+      6,
+    );
   });
 });
 
@@ -120,5 +128,16 @@ describe("diaNoFuso", () => {
     // 03:00Z = 00:00 em São Paulo (UTC-3).
     expect(diaNoFuso(new Date("2026-09-21T02:59:00Z"), SP)).toBe("2026-09-20");
     expect(diaNoFuso(new Date("2026-09-21T03:00:00Z"), SP)).toBe("2026-09-21");
+  });
+});
+
+describe("rotuloFusoLoja", () => {
+  it("nomeia o fuso E o deslocamento — a linha que o form exibe", () => {
+    expect(
+      rotuloFusoLoja("America/Sao_Paulo", new Date("2026-09-20T15:00:00Z")),
+    ).toBe("America/Sao_Paulo (GMT-3)");
+    expect(rotuloFusoLoja("UTC", new Date("2026-09-20T15:00:00Z"))).toBe(
+      "UTC (GMT+0)",
+    );
   });
 });

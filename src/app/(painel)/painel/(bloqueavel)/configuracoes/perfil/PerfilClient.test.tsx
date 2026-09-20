@@ -129,7 +129,10 @@ function renderizar(
       publicado={false}
       podePublicar
       logoUrlInicial={null}
-      onSalvar={vi.fn(async () => ({ ok: true as const, geocodificado: false }))}
+      onSalvar={vi.fn(async () => ({
+        ok: true as const,
+        geocodificado: false,
+      }))}
       onDefinirPublicacao={vi.fn(async () => ({ ok: true as const }))}
       {...acoesLogoLojista()}
       {...props}
@@ -194,11 +197,15 @@ describe("PerfilClient — toggle de envio automático do WhatsApp (issue 123)",
 
     expect(markup).toContain('role="switch"');
     expect(markup).toContain('aria-checked="true"');
-    expect(markup).not.toContain("Cadastre um WhatsApp para ativar o envio automático.");
+    expect(markup).not.toContain(
+      "Cadastre um WhatsApp para ativar o envio automático.",
+    );
     // Habilitado: nem `aria-disabled` no `role="switch"`, nem `disabled` no
     // `<input type="checkbox">` oculto que o Base UI renderiza com o nosso `id`.
     expect(markup).not.toContain('aria-disabled="true"');
-    expect(markup).not.toContain('<input disabled="" id="perfil-whatsapp-envio-automatico"');
+    expect(markup).not.toContain(
+      '<input disabled="" id="perfil-whatsapp-envio-automatico"',
+    );
     // A11y (design: "a string é montada condicionalmente e nunca deve
     // referenciar um id que não está no DOM"): habilitado, o describedby cita
     // SÓ o id da ajuda (sem o id do motivo, que não existe aqui) — e esse id
@@ -224,12 +231,16 @@ describe("PerfilClient — toggle de envio automático do WhatsApp (issue 123)",
       inicial: { whatsapp: null, whatsapp_envio_automatico: true },
     });
 
-    expect(markup).toContain("Cadastre um WhatsApp para ativar o envio automático.");
+    expect(markup).toContain(
+      "Cadastre um WhatsApp para ativar o envio automático.",
+    );
     expect(markup).toContain('id="perfil-whatsapp-envio-automatico-motivo"');
     // Desabilitado de fato: o root `role="switch"` sai da tabulação e o input
     // oculto carrega `disabled` — nada é submetível/alternável.
     expect(markup).toContain('aria-disabled="true"');
-    expect(markup).toContain('<input disabled="" id="perfil-whatsapp-envio-automatico"');
+    expect(markup).toContain(
+      '<input disabled="" id="perfil-whatsapp-envio-automatico"',
+    );
     // A dica de bloqueio é anunciada junto do texto auxiliar.
     expect(markup).toContain(
       'aria-describedby="perfil-whatsapp-envio-automatico-ajuda perfil-whatsapp-envio-automatico-motivo"',
@@ -248,7 +259,9 @@ describe("PerfilClient — toggle de envio automático do WhatsApp (issue 123)",
       inicial: { whatsapp: "5511999", whatsapp_envio_automatico: true },
     });
 
-    expect(markup).toContain("Cadastre um WhatsApp para ativar o envio automático.");
+    expect(markup).toContain(
+      "Cadastre um WhatsApp para ativar o envio automático.",
+    );
   });
 
   it("associa o rótulo ao controle por `htmlFor` (o `id` do Base UI vai para o input oculto) e não duplica com `aria-label`", () => {
@@ -260,6 +273,36 @@ describe("PerfilClient — toggle de envio automático do WhatsApp (issue 123)",
     expect(markup).toContain(
       "Enviar a mensagem de WhatsApp automaticamente ao confirmar o pedido",
     );
-    expect(markup).not.toContain("aria-label=\"Enviar a mensagem");
+    expect(markup).not.toContain('aria-label="Enviar a mensagem');
+  });
+});
+
+describe("PerfilClient — toggle do modal de promoções (issue 236, D6/RN-16)", () => {
+  /** Recorta o `role="switch"` do modal a partir do id que o Base UI propaga. */
+  function trechoDoSwitch(markup: string): string {
+    const i = markup.indexOf('id="perfil-modal-promocoes"');
+    expect(i).toBeGreaterThan(-1);
+    // O root `role="switch"` vem ANTES do input oculto que carrega o id.
+    const inicio = markup.lastIndexOf("<button", i);
+    return markup.slice(inicio, i + 200);
+  }
+
+  it("reflete a coluna LIGADA (loja nova nasce com DEFAULT true)", () => {
+    const markup = renderizar({ inicial: { modal_promocoes: true } });
+    expect(trechoDoSwitch(markup)).toContain('aria-checked="true"');
+    expect(markup).toContain("Mostrar promoções ao abrir a loja");
+  });
+
+  it("reflete a coluna DESLIGADA — `false` do SSR não vira `true` por default", () => {
+    const markup = renderizar({ inicial: { modal_promocoes: false } });
+    expect(trechoDoSwitch(markup)).toContain('aria-checked="false"');
+  });
+
+  it("a segunda frase da ajuda está na tela (a que evita o chamado 'liguei e não aparece nada')", () => {
+    const markup = renderizar();
+    expect(markup).toContain("Se não houver promoção ativa, nada aparece.");
+    // A ajuda é anunciada junto do switch, e o id citado existe de fato.
+    expect(markup).toContain('aria-describedby="perfil-modal-promocoes-ajuda"');
+    expect(markup).toContain('id="perfil-modal-promocoes-ajuda"');
   });
 });
