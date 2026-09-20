@@ -113,6 +113,11 @@ export function SecaoCatalogo({
         // servidor a partir do banco (seguranca.md §10).
         preco: produtoSelecionado.precoEfetivo,
         fotoUrl: fotoSegura(produtoSelecionado.foto_url) ?? undefined,
+        // (238/RN-12-a) O que a VITRINE MOSTROU: só aqui existe essa
+        // informação — o carrinho guarda o preço efetivo e não saberia dizer
+        // se ele veio de promoção. É a origem de `promocaoExibida` no payload,
+        // e sem ela a trava do servidor nunca dispara.
+        ...(produtoSelecionado.temDesconto ? { temDesconto: true } : {}),
         ...(opcionais.length > 0 ? { opcionais } : {}),
         ...(observacao ? { observacao } : {}),
       },

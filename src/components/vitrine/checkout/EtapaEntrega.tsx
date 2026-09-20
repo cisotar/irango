@@ -22,6 +22,7 @@ import {
   type ResultadoFretePreview,
 } from "@/lib/actions/frete";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import type { EstadoCupom } from "@/lib/actions/revisarCarrinho-contrato";
 import { ResumoValores } from "./ResumoValores";
 import {
   VEREDITO_CEP_NAO_EXISTE,
@@ -35,7 +36,12 @@ import {
   type EstadoRetry,
 } from "./retryFrete";
 import { ROTULO_FRETE_A_COMBINAR } from "@/lib/utils/rotuloFrete";
-import { chaveFrete, precisaCalcularFrete, type TipoEntrega } from "./estado";
+import {
+  chaveFrete,
+  precisaCalcularFrete,
+  totalPreviewEstimado,
+  type TipoEntrega,
+} from "./estado";
 
 const SECAO =
   "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
@@ -46,6 +52,10 @@ export type EtapaEntregaProps = {
   lojaId: string;
   subtotal: number;
   desconto: number;
+  /** [237] Estado A/B/C do cupom, decidido no servidor. */
+  cupom?: EstadoCupom | null;
+  /** [237] Economia de produto, pronta do servidor. */
+  economiaProdutos?: number | null;
   /** false se a loja não aceita entrega (sem zonas e sem fallback fora-de-zona). */
   aceitaEntrega: boolean;
   tipoEntrega: TipoEntrega;
@@ -103,6 +113,8 @@ export function EtapaEntrega({
   lojaId,
   subtotal,
   desconto,
+  cupom = null,
+  economiaProdutos = null,
   aceitaEntrega,
   tipoEntrega,
   endereco,
@@ -254,9 +266,11 @@ export function EtapaEntrega({
       : frete.status === "a_combinar"
         ? "a_combinar"
         : 0;
-  const totalPreview =
-    Math.max(0, subtotal - desconto) +
-    (typeof fretePreview === "number" ? fretePreview : 0);
+  const totalPreview = totalPreviewEstimado(
+    subtotal,
+    desconto,
+    typeof fretePreview === "number" ? fretePreview : 0,
+  );
 
   // Pode avançar: deve ter selecionado um tipo; retirada = ok; entrega exige endereço + frete.
   const podeAvancar = tipoSelecionado
@@ -414,7 +428,8 @@ export function EtapaEntrega({
             <div className="p-4">
               <ResumoValores
                 subtotal={subtotal}
-                desconto={desconto}
+                cupom={cupom}
+                economiaProdutos={economiaProdutos}
                 frete={fretePreview}
                 total={totalPreview}
               />

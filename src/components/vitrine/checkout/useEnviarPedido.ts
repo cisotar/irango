@@ -81,6 +81,13 @@ export type UsarEnviarPedidoArgs = {
    * fechada e nada é enviado.
    */
   preAbrirWhatsapp?: boolean;
+  /**
+   * [238/D11] `criarPedido` recusou com `codigo: "revisao_necessaria"`: a
+   * promoção de algum item terminou entre o carrinho e o envio (RN-12-a).
+   * Não é erro e não se repete o envio — a UI reconfirma o preço com o
+   * cliente. Sem handler, cai no toast genérico de sempre.
+   */
+  onRevisaoNecessaria?: () => void;
 };
 
 export function useEnviarPedido({
@@ -90,11 +97,17 @@ export function useEnviarPedido({
   estado,
   onEstadoChange,
   preAbrirWhatsapp = false,
+  onRevisaoNecessaria,
 }: UsarEnviarPedidoArgs) {
   const [enviando, startEnvio] = useTransition();
   const router = useRouter();
 
-  function enviar() {
+  /**
+   * [238] `revisaoConfirmada` chega por ARGUMENTO, não por prop: o segundo
+   * clique acontece no mesmo tick do `setState` que marca a revisão como
+   * confirmada, e uma prop lida aqui ainda traria o valor antigo.
+   */
+  function enviar(opcoes?: { revisaoConfirmada?: boolean }) {
     if (estado.formaPagamento == null) {
       toast.error("Escolha uma forma de pagamento.");
       return;
@@ -114,6 +127,7 @@ export function useEnviarPedido({
       itens,
       estado,
       idempotencyKey,
+      revisaoConfirmada: opcoes?.revisaoConfirmada ?? false,
     });
 
     // [163] Preview best-effort: só barra se o schema JÁ chegou. Ausente, o
@@ -145,6 +159,12 @@ export function useEnviarPedido({
       }
       if ("erro" in resultado) {
         aba.concluir(null);
+        // [238/D11] Preço subiu: nem repetir o envio, nem erro genérico — a
+        // tela mostra o de/para e pede o segundo clique explícito.
+        if (resultado.codigo === "revisao_necessaria" && onRevisaoNecessaria) {
+          onRevisaoNecessaria();
+          return;
+        }
         toast.error(resultado.erro);
         return;
       }

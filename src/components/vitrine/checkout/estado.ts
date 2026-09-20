@@ -58,6 +58,22 @@ export const ESTADO_INICIAL: EstadoWizard = {
 };
 
 /**
+ * (238/D11) Estado da reconfirmação de preço. Fora do `EstadoWizard` de
+ * propósito: é efêmero (vale para ESTA tentativa de envio) e não deve
+ * sobreviver no sessionStorage — um `confirmada: true` restaurado depois de um
+ * refresh seria um segundo clique que ninguém deu.
+ */
+export type EstadoRevisao = {
+  /** Diálogo de "o preço subiu" aberto/aguardando o segundo clique. */
+  pendente: boolean;
+  /** O cliente clicou no CTA que carrega o NOVO total. */
+  confirmada: boolean;
+};
+
+/** Default de `podeConfirmar`: nenhuma revisão em curso. */
+export const SEM_REVISAO: EstadoRevisao = { pendente: false, confirmada: false };
+
+/**
  * Gate único de confirmação do pedido (issue 001/006). Derivado do estado, NÃO
  * da máquina de etapas — no desktop empilhado as 3 seções renderizam juntas e
  * só este predicado decide se o botão "Confirmar pedido" habilita.
@@ -76,7 +92,15 @@ export function podeConfirmar(
   estado: EstadoWizard,
   tipoEntrega: TipoEntrega,
   freteStatus: string,
+  revisao: EstadoRevisao = SEM_REVISAO,
 ): boolean {
+  // (238/M9 trava 2) A reconfirmação de preço de D11 entra AQUI, uma vez só,
+  // cobrindo wizard mobile e desktop — nunca reimplementada no componente
+  // (design-system §9). Enquanto há revisão pendente sem o segundo clique,
+  // nenhum caminho de UI confirma. A garantia dura é de servidor (RN-12-a):
+  // este gate existe para o cliente não ser levado a um pedido mais caro por
+  // um clique que ele deu achando outra coisa.
+  if (revisao.pendente && !revisao.confirmada) return false;
   if (estado.formaPagamento == null) return false;
   if (tipoEntrega == null) return false;
   if (tipoEntrega === "retirada") return true;
@@ -126,6 +150,20 @@ export function precisaCalcularFrete(
   return chaveAtual !== chaveCalculada;
 }
 
+/**
+ * Total ESTIMADO do resumo (preview de UX). Uma única fórmula para o resumo, o
+ * diálogo de reconfirmação e a faixa de "preço caiu" (238): três lugares
+ * exibindo o mesmo total não podem compor três contas diferentes. Continua
+ * sendo preview — `criarPedido` recalcula tudo do banco (seguranca.md §10).
+ */
+export function totalPreviewEstimado(
+  subtotal: number,
+  desconto: number,
+  frete: number,
+): number {
+  return Math.max(0, subtotal - desconto) + frete;
+}
+
 /** Item do carrinho na fronteira do builder — só intenção, NUNCA preço. */
 export type ItemPayload = {
   produtoId: string;
@@ -137,6 +175,13 @@ export type ItemPayload = {
    * o recálculo de valor é estruturalmente cego a ela.
    */
   observacao?: string;
+  /**
+   * (238/RN-12-a) O que a vitrine MOSTROU para esta linha. Booleano de
+   * EXIBIÇÃO, não campo monetário: assimétrico, só sabe RECUSAR o pedido
+   * (`true` afirmado × `false` apurado ⇒ o servidor recusa o pedido inteiro) e
+   * nunca faz o servidor cobrar menos.
+   */
+  promocaoExibida?: boolean;
 };
 
 /**
@@ -166,6 +211,11 @@ export function itemCarrinhoParaPayload(item: ItemCarrinho): ItemPayload {
     // DevTools) traria texto cru e derrubaria o checkout INTEIRO no teto do
     // servidor, com mensagem genérica. Idempotente, custo desprezível.
     ...(item.observacao ? { observacao: canonizarObservacao(item.observacao) } : {}),
+    // (238/RN-12-a) A afirmação de EXIBIÇÃO viaja junto com a intenção. Sem
+    // ela a trava do servidor é código morto e o cliente que viu um preço
+    // promocional expirado pagaria o cheio sem ser avisado — exatamente o que
+    // D11 existe para impedir. Ausente/false ⇒ chave omitida (fail-closed).
+    ...(item.temDesconto === true ? { promocaoExibida: true } : {}),
   };
 }
 
@@ -174,6 +224,13 @@ export type MontarPayloadArgs = {
   itens: ItemPayload[];
   estado: EstadoWizard;
   idempotencyKey: string;
+  /**
+   * (238/D11) `true` no SEGUNDO clique, depois de o cliente ver o de/para e o
+   * novo total: todo item passa a afirmar `promocaoExibida: false`, que é o
+   * que faz o pedido passar pela trava de RN-12-a. A tela mostrou o preço
+   * novo, então nenhuma linha afirma mais ter visto promoção.
+   */
+  revisaoConfirmada?: boolean;
 };
 
 /**
@@ -188,6 +245,7 @@ export function montarPayloadPedido({
   itens,
   estado,
   idempotencyKey,
+  revisaoConfirmada = false,
 }: MontarPayloadArgs) {
   return {
     loja_id: lojaId,
@@ -209,6 +267,12 @@ export function montarPayloadPedido({
       // Observação por item (168): texto puro, sem nada monetário. O servidor
       // normaliza/mede de novo (schemaObservacao) e o recálculo é cego a ela.
       ...(i.observacao ? { observacao: i.observacao } : {}),
+      // (238/RN-12-a) Booleano de EXIBIÇÃO — nada monetário. Depois do segundo
+      // clique a tela JÁ mostrou o preço novo, então nenhuma linha afirma ter
+      // visto promoção: `false` em todas, e é isso que destrava o envio.
+      ...(i.promocaoExibida === true
+        ? { promocaoExibida: !revisaoConfirmada }
+        : {}),
     })),
     forma_pagamento: estado.formaPagamento,
     nome_cliente: estado.nome.trim(),

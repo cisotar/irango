@@ -12,6 +12,8 @@ import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 
 type VitrineClientProps = {
   lojaSlug: string;
+  /** [237] Id da loja — a gaveta revisa o carrinho no servidor (economia). */
+  lojaId: string;
   /** Pratos em promoção, derivados do catálogo no SSR (RN-15). */
   promocoes: ProdutoVitrine[];
   /** `lojas.modal_promocoes` (SSR, via `vitrine_lojas`). */
@@ -28,6 +30,7 @@ type VitrineClientProps = {
  */
 export function VitrineClient({
   lojaSlug,
+  lojaId,
   promocoes,
   modalPromocoes,
   diaDeHojeNaLoja,
@@ -74,7 +77,12 @@ export function VitrineClient({
         </nav>
       )}
 
-      <Carrinho open={open} onOpenChange={setOpen} lojaSlug={lojaSlug} />
+      <Carrinho
+        open={open}
+        onOpenChange={setOpen}
+        lojaSlug={lojaSlug}
+        lojaId={lojaId}
+      />
 
       {/* Trava 7 (design §5.2): renderizado INCONDICIONALMENTE — quem devolve
           `null` quando não há promoção ou o lojista desligou o modal é o

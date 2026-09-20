@@ -270,6 +270,7 @@ export default async function VitrinePage({ params }: PageProps) {
 
         <VitrineClient
           lojaSlug={slug}
+          lojaId={lojaId}
           promocoes={promocionais}
           modalPromocoes={loja.modal_promocoes ?? true}
           diaDeHojeNaLoja={diaDeHojeNaLoja}
