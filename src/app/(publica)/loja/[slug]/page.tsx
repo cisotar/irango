@@ -199,19 +199,14 @@ export default async function VitrinePage({ params }: PageProps) {
     // exibir_imagens decide grid (true) vs. lista textual (false) na vitrine.
     // Grupo "Outros" (categoria null) cai em true → grid (RN-5).
     exibir_imagens: grupo.categoria?.exibir_imagens ?? true,
+    // O `ProdutoVitrine` INTEIRO desce às superfícies (225) — sem remontar campo
+    // a campo, que era onde comprabilidade e preço efetivo caíam no chão (D13).
     produtos: grupo.produtos.map((p) => ({
-      id: p.id,
-      nome: p.nome,
-      descricao: p.descricao,
-      preco: p.preco,
-      // RN-3: em categoria "ocultar", a foto NÃO trafega ao cliente — zerada aqui
-      // no SSR, não só escondida no render (o payload RSC não carrega a URL).
+      ...p,
+      // RN-3 (issue 201) — NÃO é adaptador: em categoria "ocultar", a foto não
+      // trafega ao cliente. Zerada aqui no SSR, não só escondida no render (o
+      // payload RSC não carrega a URL).
       foto_url: grupo.categoria?.exibir_imagens === false ? null : p.foto_url,
-      categoria_id: p.categoria_id,
-      // Adaptador TEMPORÁRIO para as props atuais das superfícies: os campos
-      // saem todos do `ProdutoVitrine`, nunca mais da row crua. A troca das
-      // props por `produto: ProdutoVitrine` é da issue 225.
-      disponivel: p.compravel,
     })),
   }));
 

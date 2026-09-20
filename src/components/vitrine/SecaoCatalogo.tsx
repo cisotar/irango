@@ -13,20 +13,8 @@ import { useCarrinho } from "@/hooks/useCarrinho";
 import { ancoraCategoria } from "@/lib/utils/ancoraCategoria";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
+import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
 import type { OpcionalCarrinho } from "@/types/dominio";
-
-/** Produto no shape que a vitrine renderiza (subconjunto de produtos). */
-export type ProdutoCatalogo = {
-  id: string;
-  nome: string;
-  descricao: string | null;
-  preco: number;
-  foto_url: string | null;
-  /** Categoria de produto — usada para resolver os opcionais (issue 087). */
-  categoria_id: string | null;
-  /** false → renderiza "esgotado" no card (RN-3, RN-4); produto oculto nem chega aqui. */
-  disponivel: boolean;
-};
 
 /** Uma categoria (ou "Outros") com seus produtos disponíveis. */
 export type CategoriaComProdutos = {
@@ -40,7 +28,12 @@ export type CategoriaComProdutos = {
    * Decisão já resolvida no servidor — aqui só espelha, sem toggle client-side.
    */
   exibir_imagens?: boolean;
-  produtos: ProdutoCatalogo[];
+  /**
+   * Contrato de catálogo (224/225): o objeto INTEIRO, produzido no servidor.
+   * Não existe mais shape reduzido nem campo com default — é essa troca que
+   * torna o D13 impossível de reintroduzir.
+   */
+  produtos: ProdutoVitrine[];
 };
 
 type SecaoCatalogoProps = {
@@ -86,13 +79,12 @@ export function SecaoCatalogo({
     useState<ProdutoModalDados | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
 
-  const abrirModal = (produto: ProdutoCatalogo) => {
+  // Repassa o `ProdutoVitrine` INTEIRO — nunca mais um objeto remontado campo a
+  // campo. Era a remontagem parcial que deixava comprabilidade (e agora preço
+  // efetivo) caírem no chão em silêncio no caminho do modal (D13).
+  const abrirModal = (produto: ProdutoVitrine) => {
     setProdutoSelecionado({
-      id: produto.id,
-      nome: produto.nome,
-      descricao: produto.descricao,
-      preco: produto.preco,
-      fotoUrl: produto.foto_url,
+      ...produto,
       gruposOpcionais: produto.categoria_id
         ? opcionaisPorCategoria[produto.categoria_id]
         : undefined,
@@ -115,8 +107,12 @@ export function SecaoCatalogo({
       {
         produtoId: produtoSelecionado.id,
         nome: produtoSelecionado.nome,
-        preco: produtoSelecionado.preco,
-        fotoUrl: fotoSegura(produtoSelecionado.fotoUrl) ?? undefined,
+        // PREVIEW do carrinho: o preço EFETIVO, a mesma fonte que alimenta o
+        // subtotal do modal — senão o preview do carrinho divergiria do preview
+        // do modal em todo produto em promoção. Autoritativo é o recálculo do
+        // servidor a partir do banco (seguranca.md §10).
+        preco: produtoSelecionado.precoEfetivo,
+        fotoUrl: fotoSegura(produtoSelecionado.foto_url) ?? undefined,
         ...(opcionais.length > 0 ? { opcionais } : {}),
         ...(observacao ? { observacao } : {}),
       },
@@ -164,8 +160,7 @@ export function SecaoCatalogo({
               {categoria.produtos.map((produto) => (
                 <ItemProdutoLista
                   key={produto.id}
-                  nome={produto.nome}
-                  preco={produto.preco}
+                  produto={produto}
                   termo={termo}
                   onSelecionar={() => abrirModal(produto)}
                 />
@@ -176,12 +171,7 @@ export function SecaoCatalogo({
               {categoria.produtos.map((produto) => (
                 <CardProduto
                   key={produto.id}
-                  id={produto.id}
-                  nome={produto.nome}
-                  descricao={produto.descricao}
-                  preco={produto.preco}
-                  fotoUrl={produto.foto_url}
-                  disponivel={produto.disponivel}
+                  produto={produto}
                   termo={termo}
                   // Em vez de adicionar direto, abre o modal de detalhe do produto.
                   onAdicionar={() => abrirModal(produto)}
