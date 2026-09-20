@@ -20,6 +20,7 @@ import {
   type MotivoInvalido,
 } from "@/lib/utils/validarUsoCupom";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
+import { derivarBasesCupom } from "@/lib/utils/derivarBasesCupom";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarCupomPorCodigo } from "@/lib/supabase/queries/entregaPagamento";
 
@@ -167,9 +168,22 @@ export async function validarCupom(
     // 5) Valor do desconto (PREVIEW sobre o subtotal recebido).
     //    cupons.tipo é `string` no tipo gerado, mas o CHECK do banco garante
     //    o enum; estreitamos para o contrato de calcularDesconto.
+    // (228) Endpoint sem caller; a 228 o remove ou o funde em
+    //   revisarCarrinhoAction.
+    // Esta action recebe um SUBTOTAL já somado, não as linhas do carrinho: a
+    //   única linha sintética abaixo é a tradução honesta disso — nada em
+    //   promoção ⇒ baseElegivel === subtotal, EXATO (estado A de RN-10-e).
+    //   As bases saem de `derivarBasesCupom`, único produtor de `BasesDesconto`.
+    const bases = derivarBasesCupom([
+      {
+        precoProduto: { precoEfetivo: subtotal, temDesconto: false },
+        quantidade: 1,
+        opcionais: [],
+      },
+    ]);
     const { desconto } = calcularDesconto(
       { ...cupom, tipo: cupom.tipo as "percentual" | "fixo" },
-      subtotal,
+      bases,
     );
     return { valido: true, desconto };
   } catch (e) {

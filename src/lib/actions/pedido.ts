@@ -31,7 +31,7 @@ import {
   buscarCupomPorCodigo,
   type ZonaVitrine,
 } from "@/lib/supabase/queries/entregaPagamento";
-import { calcularSubtotal, calcularTotal } from "@/lib/utils/calcularTotal";
+import { calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
 import {
   resolverCepServidor,
@@ -40,6 +40,10 @@ import {
 import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
 import { classificarFrete } from "@/lib/utils/freteDegradado";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
+import {
+  derivarBasesCupom,
+  type ComponentesLinha,
+} from "@/lib/utils/derivarBasesCupom";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
 import {
@@ -156,16 +160,17 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       preco: number;
       quantidade: number;
       // [167] texto livre por item — PERSISTÊNCIA APENAS. Não existe em
-      // itensCalculo (abaixo): o recálculo de valor é estruturalmente cego a
+      // `componentes` (abaixo): o recálculo de valor é estruturalmente cego a
       // ela (seguranca.md §10).
       observacao?: string;
       opcionais?: OpcionalSnapshot[];
     }[] = [];
-    const itensCalculo: {
-      preco: number;
-      quantidade: number;
-      opcionais?: { preco: number; quantidade: number }[];
-    }[] = [];
+    // As LINHAS do carrinho decompostas em componentes: a MESMA estrutura
+    // alimenta o subtotal e a base elegível do cupom (via derivarBasesCupom),
+    // então as duas não podem divergir. Quando a 229 aplicar `precoEfetivo`,
+    // `precoProduto` passa a receber o resultado inteiro — preço e flag juntos,
+    // pelo tipo, sem chance de aplicar um e esquecer o outro.
+    const componentes: ComponentesLinha[] = [];
 
     for (const item of dados.itens) {
       const produto = porId.get(item.produto_id);
@@ -219,14 +224,20 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         ...(item.observacao ? { observacao: item.observacao } : {}),
         ...(opcionaisSnapshot.length > 0 ? { opcionais: opcionaisSnapshot } : {}),
       });
-      itensCalculo.push({
-        preco: produto.preco,
+      componentes.push({
+        // (229) Este recálculo ainda cobra `produto.preco` de tabela: nenhum
+        // componente recebeu desconto ⇒ temDesconto: false. A 229 troca esta
+        // linha por `precoEfetivo(produto, agora)` — o objeto INTEIRO.
+        precoProduto: { precoEfetivo: produto.preco, temDesconto: false },
         quantidade: item.quantidade,
-        ...(opcionaisCalculo.length > 0 ? { opcionais: opcionaisCalculo } : {}),
+        opcionais: opcionaisCalculo,
       });
     }
 
-    const subtotal = calcularSubtotal(itensCalculo);
+    // Um único cálculo para os dois números: `bases.subtotal` É
+    // `calcularSubtotal` das mesmas linhas (derivarBasesCupom não recalcula).
+    const bases = derivarBasesCupom(componentes);
+    const subtotal = bases.subtotal;
 
     // (5) Frete autoritativo (RN-C2): retirada → frete 0, servidor ignora endereço.
     //     Entrega → calcularFrete com zonas do banco. Fora de área → recusa.
@@ -360,7 +371,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       if (cupom != null && validarUsoCupom(cupom, subtotal, new Date()).valido) {
         const r = calcularDesconto(
           { ...cupom, tipo: cupom.tipo as "percentual" | "fixo" },
-          subtotal,
+          bases,
         );
         if (r.aplicado) {
           desconto = r.desconto;

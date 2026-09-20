@@ -25,6 +25,7 @@ import { z } from "zod";
 import { cupomSchema } from "@/lib/validacoes/cupom";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
+import { derivarBasesCupom } from "@/lib/utils/derivarBasesCupom";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarCupomPorCodigo } from "@/lib/supabase/queries/entregaPagamento";
 
@@ -105,9 +106,22 @@ export async function validarCupomAction(
 
     // 5) Cálculo do desconto (RN-C1: base = subtotal dos produtos, nunca frete).
     //    cupons.tipo é `string` no tipo gerado; estreitamos ao enum do schema.
+    // (228) Esta action é substituída por revisarCarrinhoAction, que monta as
+    //   bases a partir das LINHAS reais do carrinho.
+    // Esta action recebe um SUBTOTAL já somado, não as linhas do carrinho: a
+    //   única linha sintética abaixo é a tradução honesta disso — nada em
+    //   promoção ⇒ baseElegivel === subtotal, EXATO (estado A de RN-10-e).
+    //   As bases saem de `derivarBasesCupom`, único produtor de `BasesDesconto`.
+    const bases = derivarBasesCupom([
+      {
+        precoProduto: { precoEfetivo: subtotal, temDesconto: false },
+        quantidade: 1,
+        opcionais: [],
+      },
+    ]);
     const { desconto } = calcularDesconto(
       { ...cupom, tipo: cupom.tipo as "percentual" | "fixo" },
-      subtotal,
+      bases,
     );
 
     return {
