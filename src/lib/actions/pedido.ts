@@ -40,6 +40,7 @@ import {
 import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
 import { classificarFrete } from "@/lib/utils/freteDegradado";
 import { calcularDesconto } from "@/lib/utils/calcularDesconto";
+import { precoEfetivo } from "@/lib/utils/precoEfetivo";
 import {
   derivarBasesCupom,
   type ComponentesLinha,
@@ -53,9 +54,16 @@ import {
 
 export type ResultadoCriarPedido =
   | { pedidoId: string; token_acesso: string; whatsappHref: string | null }
-  | { erro: string };
+  // `codigo` DISTINGUE a recusa de RN-12-a do erro genérico: o checkout precisa
+  // saber que deve revisar o carrinho e mostrar o de/para (238), e não repetir
+  // o mesmo envio. Ausente em toda outra recusa.
+  | { erro: string; codigo?: "revisao_necessaria" };
 
 const ERRO_GENERICO = "Não foi possível criar o pedido. Tente novamente.";
+// RN-12-a: o cliente afirmou ter visto promoção num item que NÃO está mais em
+// promoção — pagaria MAIS do que viu. D11 exige reconfirmação explícita, e a
+// garantia é de SERVIDOR: nenhum componente precisa ser confiável para isso.
+const ERRO_REVISAO = "Os preços do seu carrinho mudaram. Revise o pedido antes de confirmar.";
 
 export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedido> {
   // (0) Rate limit por IP antes de qualquer I/O (incl. safeParse): payload
@@ -75,6 +83,10 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
 
   try {
     const svc = createServiceClient();
+    // (229) UM instante por request: a vigência de toda promoção do pedido e a
+    // do cupom são avaliadas no MESMO `agora`. Duas leituras de relógio abrem
+    // a janela para um item entrar em promoção no meio do próprio recálculo.
+    const agora = new Date();
 
     // (2) Loja: existe? ativa? assinatura permite? aberta no horário? (autoritativo)
     const loja = await buscarLojaParaPedido(svc, dados.loja_id);
@@ -157,7 +169,10 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     const itensSnapshot: {
       produto_id: string;
       nome: string;
+      /** preço EFETIVO pago (já com o desconto de produto aplicado — D7). */
       preco: number;
+      /** preço de TABELA; chave AUSENTE quando não houve desconto (RN-13). */
+      preco_original?: number;
       quantidade: number;
       // [167] texto livre por item — PERSISTÊNCIA APENAS. Não existe em
       // `componentes` (abaixo): o recálculo de valor é estruturalmente cego a
@@ -167,9 +182,9 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     }[] = [];
     // As LINHAS do carrinho decompostas em componentes: a MESMA estrutura
     // alimenta o subtotal e a base elegível do cupom (via derivarBasesCupom),
-    // então as duas não podem divergir. Quando a 229 aplicar `precoEfetivo`,
-    // `precoProduto` passa a receber o resultado inteiro — preço e flag juntos,
-    // pelo tipo, sem chance de aplicar um e esquecer o outro.
+    // então as duas não podem divergir. `precoProduto` recebe o resultado
+    // INTEIRO de `precoEfetivo` (229) — preço e flag juntos, pelo tipo, sem
+    // chance de aplicar um e esquecer o outro.
     const componentes: ComponentesLinha[] = [];
 
     for (const item of dados.itens) {
@@ -214,21 +229,44 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         opcionaisCalculo.push({ preco: opcional.preco, quantidade: escolhido.quantidade });
       }
 
+      // (229/D8) O desconto de produto VIRA PREÇO aqui, pela fonte única
+      // `precoEfetivo` — a mesma que a vitrine e `revisarCarrinhoAction` usam.
+      const preco = precoEfetivo(produto, agora);
+
+      // (229/RN-12-a) A matriz do "segundo clique", ASSIMÉTRICA de propósito:
+      //   true × true   → segue        false × false → segue
+      //   false × true  → segue (o cliente paga MENOS do que viu; D11: preço
+      //                   que cai só avisa)
+      //   true × false  → RECUSA o PEDIDO INTEIRO, antes da RPC.
+      // Ausente ⇒ false (`!== true`): cliente antigo na janela de deploy nunca
+      // cai na recusa e segue pelo preço do banco, que é a regra de sempre.
+      // Por isso o campo não é superfície de ataque de valor: não existe valor
+      // que o cliente possa enviar aqui para pagar menos.
+      if (item.promocaoExibida === true && !preco.temDesconto) {
+        return { erro: ERRO_REVISAO, codigo: "revisao_necessaria" };
+      }
+
       itensSnapshot.push({
         produto_id: produto.id,
         nome: produto.nome,
-        preco: produto.preco,
+        // (229/D7) `preco` = o que o cliente PAGA (efetivo).
+        preco: preco.precoEfetivo,
         quantidade: item.quantidade,
+        // (229/RN-13) `preco_original` = o preço de TABELA do banco, e só
+        // quando houve desconto: sem promoção a chave é OMITIDA e a RPC grava
+        // NULL (um par "de R$ 100,00 por R$ 100,00" não é um de/para). Sai de
+        // `produtos.preco`, NUNCA de aritmética inversa sobre o efetivo.
+        ...(preco.temDesconto ? { preco_original: produto.preco } : {}),
         // [167] já normalizada pelo zod (ponto único de verdade); vazia ->
         // chave omitida, para a RPC gravar NULL.
         ...(item.observacao ? { observacao: item.observacao } : {}),
         ...(opcionaisSnapshot.length > 0 ? { opcionais: opcionaisSnapshot } : {}),
       });
       componentes.push({
-        // (229) Este recálculo ainda cobra `produto.preco` de tabela: nenhum
-        // componente recebeu desconto ⇒ temDesconto: false. A 229 troca esta
-        // linha por `precoEfetivo(produto, agora)` — o objeto INTEIRO.
-        precoProduto: { precoEfetivo: produto.preco, temDesconto: false },
+        // (229) O resultado INTEIRO de `precoEfetivo`: preço e flag são UM
+        // valor. É o que impede cobrar o preço com desconto e ainda deixar o
+        // produto promocional dentro da base elegível do cupom (D5).
+        precoProduto: preco,
         quantidade: item.quantidade,
         opcionais: opcionaisCalculo,
       });
@@ -368,15 +406,21 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     let cupomCodigo: string | null = null;
     if (dados.codigo_cupom) {
       const cupom = await buscarCupomPorCodigo(svc, dados.loja_id, dados.codigo_cupom);
-      if (cupom != null && validarUsoCupom(cupom, subtotal, new Date()).valido) {
+      if (cupom != null && validarUsoCupom(cupom, subtotal, agora).valido) {
         const r = calcularDesconto(
           { ...cupom, tipo: cupom.tipo as "percentual" | "fixo" },
           bases,
         );
         if (r.aplicado) {
           desconto = r.desconto;
-          cupomId = cupom.id;
-          cupomCodigo = cupom.codigo;
+          // (229/RN-10.3) O cupom só é CONSUMIDO quando descontou dinheiro de
+          // verdade. Carrinho 100% promocional dá base elegível zero: com
+          // `p_cupom_id` preenchido a RPC incrementaria `usos_contagem` e o
+          // cliente perderia um uso que não recebeu.
+          if (r.desconto > 0) {
+            cupomId = cupom.id;
+            cupomCodigo = cupom.codigo;
+          }
         }
       }
     }

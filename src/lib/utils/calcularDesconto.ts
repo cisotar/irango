@@ -3,8 +3,8 @@
 //   - `subtotal`     → régua do pedido_minimo (D5-a), nunca a base do cálculo;
 //   - `baseElegivel` → base do percentual E teto do clamp (D5/D9): só o que
 //                      NÃO recebeu desconto de produto. Cupom não acumula.
-// Validade temporal/ativo/usos/escopo de loja são do caller (Server Action
-// 013 validarCupom), que recalcula no servidor.
+// Validade temporal/ativo/usos/escopo de loja são do caller (as Server Actions
+// `revisarCarrinhoAction` e `criarPedido`), que recalculam no servidor.
 import type { Tables } from "@/lib/database.types";
 import { arredondar } from "./arredondar";
 
@@ -13,8 +13,9 @@ import { arredondar } from "./arredondar";
  * `tipo` estreitado ao enum do schema (cupons.tipo CHECK IN ('percentual','fixo')).
  *
  * Deliberadamente NÃO inclui ativo/expira_em/usos_maximos/usos_contagem/loja_id:
- * validade temporal, limite de uso e escopo de loja são do caller / Server Action
- * 013 (validarCupom), que recalcula no servidor e não confia no cliente.
+ * validade temporal, limite de uso e escopo de loja são do caller
+ * (`revisarCarrinhoAction` / `criarPedido`), que recalcula no servidor e não
+ * confia no cliente.
  */
 export type CupomCalculo = Pick<Tables<"cupons">, "valor" | "pedido_minimo"> & {
   tipo: "percentual" | "fixo";

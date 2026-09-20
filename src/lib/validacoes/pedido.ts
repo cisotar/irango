@@ -41,6 +41,13 @@ const schemaItemPedido = z
     // campo. Declarar NÃO afrouxa o .strict(): qualquer outro campo (preco,
     // total, ...) continua barrado.
     observacao: schemaObservacao.optional(),
+    // (229/RN-12-a) `promocaoExibida`: booleano de EXIBIÇÃO, não campo
+    // monetário. Declarar NÃO afrouxa o .strict() — preco/subtotal/desconto/
+    // total seguem barrados. A assimetria é a prova de que não é superfície de
+    // ataque de valor: mentir `false` faz o pedido seguir pelo preço do banco
+    // (com desconto, como sempre); mentir `true` RECUSA o pedido. Ausente ⇒
+    // tratado como false na Server Action (fail-closed por default).
+    promocaoExibida: z.boolean().optional(),
     // opcionais: [083] cliente envia apenas opcional_id + quantidade — NUNCA
     // preco/nome. .strict() no objeto bloqueia injeção de valores monetários (RN-O2).
     opcionais: z

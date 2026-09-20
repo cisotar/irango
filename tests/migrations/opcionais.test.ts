@@ -341,11 +341,14 @@ describe("080 opcionais — CHECKs de valor, UNIQUE e RLS por loja", () => {
     );
     expect(r.affectedRows).toBe(0);
     const conf = await t.asService((db) =>
-      db.query<{ preco: string }>(`select preco from public.opcionais where id = $1`, [
+      db.query<{ preco: number }>(`select preco from public.opcionais where id = $1`, [
         ids.opcAtivoA,
       ]),
     );
-    expect(conf.rows[0].preco).toBe("8.00");
+    // (229) `numeric` chega como NÚMERO — o harness passou a espelhar o
+    // PostgREST (parser OID 1700 em tests/helpers/pglite.ts). A asserção é a
+    // mesma: a linha da loja A continua intacta, com preço 8.
+    expect(conf.rows[0].preco).toBe(8);
   });
 
   it("[6c] dono A ATUALIZA o próprio opcional (1 afetada + persistiu) — sanity da escrita própria", async () => {

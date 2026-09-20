@@ -3,9 +3,10 @@
 // Etapa 1 do wizard (issue 076): revisão dos itens + cupom.
 //
 // Itens vêm do useCarrinho (sessionStorage). Alterar quantidade reflete no
-// preview imediatamente. Cupom é validado via Server Action validarCupomAction
-// (073), que retorna só { valido, desconto_preview, mensagem } — o cliente
-// nunca decide o desconto. Preview é UX; o servidor recalcula tudo (071).
+// preview imediatamente. O cupom é revisado por `revisarCarrinhoAction` (228),
+// que recebe só ids + quantidades e devolve o desconto JÁ decidido do banco —
+// o cliente não manda subtotal nenhum e não decide o desconto. Preview é UX; o
+// servidor recalcula tudo de novo em `criarPedido` (071).
 
 import { useState, useTransition } from "react";
 import Image from "next/image";
@@ -16,12 +17,14 @@ import { Input } from "@/components/ui/input";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
-import { validarCupomAction } from "@/lib/actions/cupomPreview";
+import { revisarCarrinhoAction } from "@/lib/actions/revisarCarrinho";
 import type { ItemCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId } from "@/hooks/useCarrinho";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
 import { ResumoValores } from "./ResumoValores";
+
+const MENSAGEM_ERRO_CUPOM = "Não foi possível validar o cupom. Tente novamente.";
 
 const SECAO =
   "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
@@ -82,14 +85,48 @@ export function EtapaItens({
       return;
     }
     startValidacao(async () => {
-      const r = await validarCupomAction(lojaId, cod, subtotal);
-      setMensagemCupom(r.mensagem);
-      setCupomValido(r.valido);
-      if (r.valido) {
-        onAplicarCupom(cod.toUpperCase(), r.desconto_preview);
-      } else {
+      // Só ids e quantidades atravessam a fronteira (seguranca.md §10): o preço
+      // de cada linha vem do banco, dentro da action.
+      const r = await revisarCarrinhoAction({
+        loja_id: lojaId,
+        codigo: cod,
+        itens: itens.map((item) => ({
+          produto_id: item.produtoId,
+          quantidade: item.quantidade,
+          ...(item.opcionais && item.opcionais.length > 0
+            ? {
+                opcionais: item.opcionais
+                  .filter((o) => o.quantidade > 0)
+                  .map((o) => ({
+                    opcional_id: o.opcionalId,
+                    quantidade: o.quantidade,
+                  })),
+              }
+            : {}),
+        })),
+      });
+
+      if (!r.ok || r.cupom == null) {
+        setMensagemCupom(r.ok ? MENSAGEM_ERRO_CUPOM : r.mensagem);
+        setCupomValido(false);
         onRemoverCupom();
+        return;
       }
+      if (!r.cupom.valido) {
+        setMensagemCupom(r.cupom.mensagem);
+        setCupomValido(false);
+        onRemoverCupom();
+        return;
+      }
+
+      // Os três estados chegam DECIDIDOS do servidor: aqui só se lê o número.
+      const estado = r.cupom.estadoCupom;
+      const descontoServidor = estado.estado === "zero" ? 0 : estado.desconto;
+      setMensagemCupom(
+        `Cupom aplicado! Desconto de ${formatarMoeda(descontoServidor)} no subtotal.`,
+      );
+      setCupomValido(true);
+      onAplicarCupom(estado.codigo, descontoServidor);
     });
   }
 

@@ -1,6 +1,7 @@
 // Schema de validação da FORMA do cupom no cadastro/edição (FormCupom +
 // Server Action de criar/editar). Valida o dado a persistir — NÃO a validade
-// no momento do uso (isso é da Server Action validarCupom / 013).
+// no momento do uso (isso é de `validarUsoCupom`, chamada por
+// `revisarCarrinhoAction` e por `criarPedido`).
 //
 // Defesa em profundidade: a regra percentual 1..100 aqui é a 1ª barreira
 // (impede persistir 150%); o clamp em calcularDesconto (020) é a 2ª.

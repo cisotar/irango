@@ -12,7 +12,7 @@ import { z } from "zod";
  */
 
 // z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
-// RFC-4122 (espelha cupomUso.ts/checkout.ts) — coerente com o tipo `uuid` do PG.
+// RFC-4122 (espelha pedido.ts/checkout.ts) — coerente com o tipo `uuid` do PG.
 export const iniciarAssinaturaSchema = z
   .object({ plano_id: z.guid() })
   .strict();

@@ -122,7 +122,16 @@ export async function createTestDb(): Promise<TestDb> {
   // objetos `Date` distintos (`toBe`/`Object.is` falha mesmo com valor igual) —
   // divergindo do client real. OIDs: timestamptz=1184, timestamp=1114, date=1082.
   const passthrough = (v: string) => v;
-  const db = new PGlite({ parsers: { 1184: passthrough, 1114: passthrough, 1082: passthrough } });
+  // (229) MESMA fidelidade para `numeric` (OID 1700): o PostgREST serializa
+  // numeric como NÚMERO JSON, e é como `number` que ele chega em
+  // `Tables<"produtos">["preco"]`. O default do pglite é string, e string em
+  // aritmética monetária passa por coerção silenciosa (`"25.00" * 2`) até
+  // encontrar uma guarda que exige número de verdade (`precoEfetivo`) — aí o
+  // harness reprova código correto. Harness que mente sobre o tipo do dinheiro
+  // é pior que harness ausente.
+  const db = new PGlite({
+    parsers: { 1184: passthrough, 1114: passthrough, 1082: passthrough, 1700: Number },
+  });
   await db.exec(BOOTSTRAP_SQL);
 
   for (const file of migrationFiles()) {
