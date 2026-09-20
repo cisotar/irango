@@ -167,14 +167,22 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     await t.close();
   });
 
-  // ───────────────── buscarCatalogoPublico → produtos, role anon
-  // 086: o SELECT anon espelha o filtro que a função EMITE — `oculto = false`,
-  // NÃO mais `disponivel = true`. Assim a camada 1 prova o comportamento de dados
-  // do novo contrato (esgotado não-oculto aparece; oculto some).
-  it("[1] anon lê produtos NÃO-OCULTOS de loja ATIVA incl. esgotado (filtro loja_id + oculto=false) — 086", async () => {
+  // ───────────────── buscarProdutosPublicos → vitrine_produtos, role anon
+  //
+  // 265: estes casos espelham o SQL que `buscarProdutosPublicos` passa a EMITIR.
+  // O objeto vira `public.vitrine_produtos`, com select NOMEADO (nunca `*`) e
+  // SEM `.eq("oculto", false)` — a view não projeta `oculto`; o filtro vive no
+  // WHERE dela (D6). Espelhar `select * from produtos ... and oculto = false`
+  // aqui passaria a testar um SQL que a produção não emite mais.
+  const COLUNAS_PRODUTO_PUBLICO =
+    "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +
+    "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim";
+
+  it("[1] anon lê produtos da loja ATIVA pela VIEW, incl. esgotado (filtro loja_id, sem oculto) — 265 · [2a]", async () => {
     const r = await t.asAnon((db) =>
       db.query<{ id: string; disponivel: boolean }>(
-        `select * from public.produtos where loja_id = $1 and oculto = false order by ordem`,
+        `select ${COLUNAS_PRODUTO_PUBLICO} from public.vitrine_produtos
+          where loja_id = $1 order by ordem`,
         [c.lojaA],
       ),
     );
@@ -185,12 +193,13 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     expect(esgotado.disponivel).toBe(false);
   });
 
-  it("[1b] o filtro oculto=false BARRA o produto oculto por si (anti-falso-verde via asService)", async () => {
-    // Prova que a NEGAÇÃO é por filtro/policy, não por dado ausente: o produto
-    // oculto EXISTE (asService), mas o SELECT do contrato não o retorna.
+  it("[1b] o WHERE da VIEW barra o produto oculto por si (anti-falso-verde via asService) — 265 · [2b]", async () => {
+    // Prova que a NEGAÇÃO é do WHERE da view, não do WHERE do teste nem de dado
+    // ausente: o produto oculto EXISTE (asService) e a query não o filtra.
     const r = await t.asAnon((db) =>
       db.query<{ id: string }>(
-        `select * from public.produtos where loja_id = $1 and oculto = false order by ordem`,
+        `select ${COLUNAS_PRODUTO_PUBLICO} from public.vitrine_produtos
+          where loja_id = $1 order by ordem`,
         [c.lojaA],
       ),
     );
@@ -198,29 +207,38 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     expect(await existeProdutoViaService(t, c.prodAOculto)).toBe(true);
   });
 
-  it("[2] anon LÊ produto INDISPONÍVEL não-oculto de loja ativa → 1 linha (vitrine mostra 'esgotado')", async () => {
-    // Novo contrato (issue 083 / RN-2): leitura pública passou a filtrar por
-    // `oculto = false`, não mais por `disponivel = true`. Produto esgotado
-    // não-oculto de loja ativa segue no catálogo público.
+  it("[2] anon LÊ produto INDISPONÍVEL não-oculto pela VIEW → 1 linha; base 0 — 265 · [1a]/[2c]", async () => {
+    // Esgotado não-oculto de loja ativa segue no catálogo público — pela view.
+    const base = await t.asAnon((db) =>
+      db.query(`select id from public.produtos where id = $1`, [c.prodAIndisp]),
+    );
+    expect(base.rows.length).toBe(0);
+
     const r = await t.asAnon((db) =>
-      db.query(`select * from public.produtos where id = $1`, [c.prodAIndisp]),
+      db.query(
+        `select ${COLUNAS_PRODUTO_PUBLICO} from public.vitrine_produtos where id = $1`,
+        [c.prodAIndisp],
+      ),
     );
     expect(r.rows.length).toBe(1);
     expect(await existeProdutoViaService(t, c.prodAIndisp)).toBe(true);
   });
 
-  it("[3] anon NÃO lê produto disponível de loja INATIVA → 0 linhas (loja_esta_ativa)", async () => {
+  it("[3] anon NÃO lê produto de loja INATIVA pela VIEW → 0 linhas (loja_esta_ativa) — 265 · [2b]", async () => {
     const r = await t.asAnon((db) =>
-      db.query(`select * from public.produtos where id = $1`, [c.prodInativa]),
+      db.query(
+        `select ${COLUNAS_PRODUTO_PUBLICO} from public.vitrine_produtos where id = $1`,
+        [c.prodInativa],
+      ),
     );
     expect(r.rows.length).toBe(0);
     expect(await existeProdutoViaService(t, c.prodInativa)).toBe(true);
   });
 
-  it("[4] anon NÃO vê produto de OUTRA loja nem o OCULTO ao consultar a loja A (086)", async () => {
+  it("[4] anon NÃO vê produto de OUTRA loja nem o OCULTO ao consultar a loja A — 265 · [2a]", async () => {
     const r = await t.asAnon((db) =>
       db.query<{ id: string }>(
-        `select * from public.produtos where loja_id = $1 and oculto = false`,
+        `select ${COLUNAS_PRODUTO_PUBLICO} from public.vitrine_produtos where loja_id = $1`,
         [c.lojaA],
       ),
     );
@@ -274,26 +292,36 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
     expect(r.rows.map((x) => x.id)).toEqual([c.prodInativa]);
   });
 
-  it("[9] dono A LÊ produto INDISPONÍVEL não-oculto de B porque é catálogo público → 1 linha", async () => {
-    // Novo contrato (issue 083 / RN-2): produtos_leitura_publica passou a filtrar
-    // por `oculto = false`. O produto esgotado não-oculto de B (loja ativa) é
-    // catálogo público — dono A o vê como qualquer anon veria na vitrine de B,
-    // não por canal privilegiado. O dado PRIVADO cross-tenant agora é gate por
-    // `oculto = true` (ver rls_produtos_oculto.test.ts).
-    const r = await t.asUser(DONO_A, (db) =>
+  it("[9] dono A NÃO lê produto de B na TABELA; lê pela VIEW — 265 · [1b]/[2a]", async () => {
+    // Contrato da issue 265: `produtos_leitura_publica` morreu. O catálogo
+    // público passa a sair só por `public.vitrine_produtos`, que projeta 14
+    // colunas e mascara promoção não vigente. Na TABELA, dono A não vê nada de
+    // B — é o que fecha o vazamento do calendário promocional.
+    const naBase = await t.asUser(DONO_A, (db) =>
       db.query(`select * from public.produtos where id = $1`, [c.prodBIndisp]),
     );
-    expect(r.rows.length).toBe(1);
+    expect(naBase.rows.length).toBe(0);
     expect(await existeProdutoViaService(t, c.prodBIndisp)).toBe(true);
+
+    const naView = await t.asUser(DONO_A, (db) =>
+      db.query<{ id: string }>(`select id from public.vitrine_produtos where id = $1`, [
+        c.prodBIndisp,
+      ]),
+    );
+    expect(naView.rows.map((x) => x.id)).toEqual([c.prodBIndisp]);
   });
 
-  it("[9b] produto DISPONÍVEL de loja ativa é público — visível a qualquer autenticado (NÃO é vazamento)", async () => {
-    // Documenta que produtos_leitura_publica é por design: prodB (disponível, loja
-    // ativa) é catálogo público; dono A o enxerga pela policy pública, não por posse.
-    const r = await t.asUser(DONO_A, (db) =>
+  it("[9b] produto DISPONÍVEL de loja ativa é público pela VIEW, não pela tabela — 265 · [1b]/[2a]", async () => {
+    // O catálogo de B continua público — mas pela projeção, não pela linha crua.
+    const naBase = await t.asUser(DONO_A, (db) =>
       db.query<{ id: string }>(`select * from public.produtos where id = $1`, [c.prodB]),
     );
-    expect(r.rows.map((x) => x.id)).toEqual([c.prodB]);
+    expect(naBase.rows.length).toBe(0);
+
+    const naView = await t.asUser(DONO_A, (db) =>
+      db.query<{ id: string }>(`select id from public.vitrine_produtos where id = $1`, [c.prodB]),
+    );
+    expect(naView.rows.map((x) => x.id)).toEqual([c.prodB]);
   });
 
   it("[10] dono A NÃO lê categorias da loja de B → 0 linhas", async () => {

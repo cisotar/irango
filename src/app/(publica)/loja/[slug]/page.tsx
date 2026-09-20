@@ -156,6 +156,9 @@ export default async function VitrinePage({ params }: PageProps) {
   // Categorias e produtos só dependem de `lojaId` — buscados em paralelo, e o
   // agrupamento (em memória) acontece depois (issue 207, F4). Ambos DEPOIS do
   // gate de assinatura: loja inválida não dispara query de catálogo.
+  // 265: `buscarProdutosPublicos` lê a view definer `public.vitrine_produtos`,
+  // que já projeta as colunas públicas e mascara desconto não-vigente (RN-03) —
+  // a tabela base não é mais legível por anon/authenticated.
   const [categorias, produtos] = await Promise.all([
     buscarCategorias(db, lojaId),
     buscarProdutosPublicos(db, lojaId),
