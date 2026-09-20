@@ -181,6 +181,12 @@ function produtoRow(over: Partial<Tables<"produtos">> = {}): Tables<"produtos"> 
     oculto: false,
     ordem: 0,
     foto_url: null,
+    // [219] produto sem promoção configurada: é assim que toda linha nasce.
+    desconto_ativo: false,
+    desconto_tipo: null,
+    desconto_valor: null,
+    desconto_inicio: null,
+    desconto_fim: null,
     criado_em: "2026-01-01T00:00:00.000Z",
     atualizado_em: "2026-01-01T00:00:00.000Z",
     ...over,
