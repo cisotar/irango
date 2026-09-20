@@ -694,3 +694,177 @@ describe("reordenarCategorias (Server Action — issue 175, autorização em lot
  *   Casos que precisam passar: [A1]..[A11] aqui e [R1]..[R7] em
  *   tests/migrations/rpc_reordenar_categorias.test.ts.
  */
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Fase RED da issue 230 — a Server Action grava as cinco colunas de desconto.
+ *
+ * O que estas asserções travam, e que nenhuma outra camada trava:
+ *   1. RN-03 — o prazo digitado é HORA LOCAL; quem converte para instante é a
+ *      action, usando `lojas.timezone` da loja do DONO (nunca do payload) e
+ *      `instanteNoFuso` de `lib/utils/fusoLoja.ts` (aritmética de fuso única);
+ *   2. RN-07 — desligar PRESERVA tipo, valor e prazo na escrita;
+ *   3. D10 — a mensagem de VALIDAÇÃO chega ao lojista literal (é o único texto
+ *      de erro promovido: o resto continua genérico);
+ *   4. §14 — `23514` do CHECK vira mensagem genérica + log, nunca texto cru.
+ *
+ * `instanteNoFuso` é STUB e a action ainda não conhece desconto: tudo FALHA.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const MSG_D10_8_10 =
+  "Não dá para salvar: o preço novo (R$ 8,00) é menor que o desconto " +
+  "configurado (R$ 10,00). Reduza o desconto para no máximo R$ 8,00 " +
+  "ou desligue a promoção deste produto.";
+
+/** A loja do dono COM fuso — `lojas.timezone` é o insumo de RN-03. */
+function lojaComFuso(timezone = "America/Sao_Paulo") {
+  return { ...lojaDoDono(), timezone };
+}
+
+function payloadComDesconto(over: Record<string, unknown> = {}) {
+  return payloadProduto({
+    desconto_ativo: true,
+    desconto_tipo: "percentual",
+    desconto_valor: 20,
+    desconto_inicio: null,
+    desconto_fim: null,
+    ...over,
+  });
+}
+
+describe("criarProduto/atualizarProduto — desconto (issue 230)", () => {
+  beforeEach(() => {
+    buscarLojaDoDono.mockResolvedValue(lojaComFuso());
+  });
+
+  it("RN-03: '31/12 23:59' numa loja America/Sao_Paulo grava o instante correto", async () => {
+    const r = await criarProduto(
+      payloadComDesconto({
+        desconto_inicio: "2026-12-01T00:00",
+        desconto_fim: "2026-12-31T23:59",
+      }),
+    );
+    expect(r).toEqual({ ok: true });
+    const insert = opEscrita("produtos")?.insert;
+    expect(insert?.desconto_fim).toBe("2027-01-01T02:59:00.000Z");
+    expect(insert?.desconto_inicio).toBe("2026-12-01T03:00:00.000Z");
+  });
+
+  it("RN-03: o fuso usado é o da LOJA DO DONO, não um offset fixo", async () => {
+    buscarLojaDoDono.mockResolvedValue(lojaComFuso("America/Manaus"));
+    await criarProduto(payloadComDesconto({ desconto_fim: "2026-12-31T23:59" }));
+    expect(opEscrita("produtos")?.insert?.desconto_fim).toBe(
+      "2027-01-01T03:59:00.000Z",
+    );
+  });
+
+  it("ATAQUE: timezone vindo no payload é IGNORADO (vale o da loja do dono)", async () => {
+    const r = await criarProduto({
+      ...payloadComDesconto({ desconto_fim: "2026-12-31T23:59" }),
+      timezone: "UTC",
+      loja_id: LOJA_OUTRA,
+    });
+    expect(r).toEqual({ ok: true });
+    const insert = opEscrita("produtos")?.insert;
+    expect(insert?.desconto_fim).toBe("2027-01-01T02:59:00.000Z");
+    expect(insert?.loja_id).toBe(LOJA_DONO);
+    expect(insert?.timezone).toBeUndefined();
+  });
+
+  it("prazo null continua null (sem conversão, sem data inventada)", async () => {
+    await criarProduto(payloadComDesconto());
+    const insert = opEscrita("produtos")?.insert;
+    expect(insert?.desconto_inicio).toBeNull();
+    expect(insert?.desconto_fim).toBeNull();
+  });
+
+  it("RN-07: desligar PRESERVA tipo, valor e prazo no UPDATE", async () => {
+    const r = await atualizarProduto(
+      "produto-1",
+      payloadComDesconto({
+        desconto_ativo: false,
+        desconto_tipo: "fixo",
+        desconto_valor: 5,
+        desconto_inicio: "2026-12-01T00:00",
+        desconto_fim: "2026-12-31T23:59",
+      }),
+    );
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update).toMatchObject({
+      desconto_ativo: false,
+      desconto_tipo: "fixo",
+      desconto_valor: 5,
+      desconto_inicio: "2026-12-01T03:00:00.000Z",
+      desconto_fim: "2027-01-01T02:59:00.000Z",
+    });
+  });
+
+  it("D10: fixo > preco é RECUSADO com a mensagem literal, SEM tocar no banco", async () => {
+    const r = await criarProduto(
+      payloadComDesconto({
+        preco: 8,
+        desconto_tipo: "fixo",
+        desconto_valor: 10,
+      }),
+    );
+    expect(r).toEqual({ ok: false, erro: MSG_D10_8_10 });
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  it("D10 vale também no UPDATE (baixar o preço abaixo do fixo configurado)", async () => {
+    const r = await atualizarProduto(
+      "produto-1",
+      payloadComDesconto({
+        preco: 8,
+        desconto_tipo: "fixo",
+        desconto_valor: 10,
+      }),
+    );
+    expect(r).toEqual({ ok: false, erro: MSG_D10_8_10 });
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  it("percentual 101 é RECUSADO com a mensagem genérica, SEM tocar no banco", async () => {
+    // Só a frase de D10 é promovida ao lojista; o resto segue genérico.
+    const r = await criarProduto(payloadComDesconto({ desconto_valor: 101 }));
+    expect(r).toEqual({ ok: false, erro: "Produto inválido." });
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  it("desconto_ativo = true sem tipo/valor é RECUSADO SEM tocar no banco", async () => {
+    const r = await criarProduto(
+      payloadComDesconto({ desconto_tipo: null, desconto_valor: null }),
+    );
+    expect(r.ok).toBe(false);
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  it("desconto_fim <= desconto_inicio é RECUSADO SEM tocar no banco", async () => {
+    const r = await criarProduto(
+      payloadComDesconto({
+        desconto_inicio: "2026-12-31T23:59",
+        desconto_fim: "2026-12-01T00:00",
+      }),
+    );
+    expect(r.ok).toBe(false);
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  it("§14: 23514 do CHECK vira mensagem genérica + log, nunca o texto cru", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: {
+        code: "23514",
+        message:
+          'new row for relation "produtos" violates check constraint "produtos_desconto_fixo_check"',
+      },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await criarProduto(payloadComDesconto());
+    expect(r.ok).toBe(false);
+    const texto = JSON.stringify(r);
+    expect(texto).not.toContain("produtos_desconto_fixo_check");
+    expect(texto).not.toContain("check constraint");
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});

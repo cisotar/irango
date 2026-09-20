@@ -40,6 +40,13 @@ export const schemaPerfil = z
     // Um default aqui sobrescreveria a escolha do lojista em todo save que não
     // mandasse o campo.
     whatsapp_envio_automatico: z.boolean().optional(),
+    // Preferência operacional (issue 231): opcional e SEM `.default`, pelo mesmo
+    // motivo acima — o DEFAULT vive na coluna (migration 220) e um default aqui
+    // sobrescreveria a escolha do lojista em todo save sem o campo. Estar no
+    // shape também é o que faz o caminho ADMIN funcionar: `admin-perfil.ts`
+    // deriva as chaves de `schemaPerfil.shape`, então coluna fora do shape seria
+    // descartada em silêncio (com `ok: true` e a preferência sumindo).
+    modal_promocoes: z.boolean().optional(),
   })
   .strict();
 

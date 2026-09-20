@@ -32,6 +32,7 @@ const CAMPOS_BASE: CamposPerfil = {
   telefone: "",
   whatsapp: "",
   envioAutomatico: true,
+  mostrarModalPromocoes: true,
   enderecoCep: "",
   enderecoRua: "",
   enderecoNumero: "",
@@ -113,12 +114,10 @@ describe("montarPayloadPerfil — normalização dos campos", () => {
     ]) {
       expect(Object.keys(payload)).not.toContain(chave);
     }
-    // Só sobram os obrigatórios + o booleano sempre presente.
-    expect(Object.keys(payload).sort()).toEqual([
-      "nome",
-      "slug",
-      "whatsapp_envio_automatico",
-    ]);
+    // Só sobram os obrigatórios + os DOIS booleanos sempre presentes (231).
+    expect(Object.keys(payload).sort()).toEqual(
+      ["nome", "slug", "whatsapp_envio_automatico", "modal_promocoes"].sort(),
+    );
   });
 
   it("campo de endereço só com espaços conta como vazio (é omitido, não vira string em branco)", () => {

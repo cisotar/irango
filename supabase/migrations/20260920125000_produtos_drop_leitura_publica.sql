@@ -1,0 +1,50 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Issue 265 — migration B (CONTRACT): remove o SELECT público da tabela base
+-- `public.produtos`. A leitura pública passa a ser EXCLUSIVAMENTE pela projeção
+-- `public.vitrine_produtos` (20260920124000, migration A).
+-- Spec: specs/desconto-por-produto-e-pratos-promocionais.md (RN-03, RN-07) ·
+--       `seguranca.md` §2 (produtos) e §19.
+--
+-- ⚠ GATE HUMANO 2 — NÃO PUSHAR JUNTO COM A MIGRATION A.
+--   `npx supabase db push` aplica TODAS as migrations pendentes. Se esta for
+--   aplicada antes do deploy do código que lê `vitrine_produtos`
+--   (`buscarProdutosPublicos`), `select * from produtos` do SSR devolve 0
+--   linhas para anon/authenticated e a vitrine cai em "Esta loja ainda não tem
+--   produtos." — SEM erro, sem log, sem CI vermelho. Ordem obrigatória (D3):
+--   push A → gen types → código → merge/deploy do PR → SÓ ENTÃO push B.
+--   `npx supabase migration list` deve mostrar esta migration com Remote VAZIO
+--   até o deploy; o /pr é avisado dessa exceção.
+--
+-- O QUE MORRE: `produtos_leitura_publica`
+--   using (oculto = false and public.loja_esta_ativa(produtos.loja_id))
+--   — sem cláusula `TO`, valia para `anon` E `authenticated`, entregando a
+--   linha inteira (inclusive `desconto_*` da 219) a qualquer cliente e a
+--   qualquer lojista concorrente logado. Seu predicado vive agora, literal, no
+--   WHERE de `vitrine_produtos`.
+--
+-- O QUE FICA (intocado): `produtos_leitura_propria` (dono lê os próprios,
+-- inclusive oculto e a configuração completa de desconto — painel),
+-- `produtos_escrita_propria` (CRUD do dono), e o bypass do `service_role`
+-- (`criarPedido`/`revisarCarrinhoAction`/hub admin leem a TABELA: o recálculo
+-- autoritativo precisa ver oculto, disponivel, loja inativa e a config inteira).
+--
+-- Efeito após aplicar: `anon` e `asUser(DONO_A)` lendo `public.produtos` da
+-- loja B ⇒ 0 linhas; `/rest/v1/produtos` com a anon key ⇒ `[]`.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+drop policy if exists "produtos_leitura_publica" on public.produtos;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ROLLBACK (manual, fora da migration — nunca automático)
+--
+-- Recria a policy LITERAL da 20260621099000. Janela segura: a qualquer momento
+-- — não perde dado (só reabre a leitura pública da base, inclusive das colunas
+-- de desconto). Reverter esta ANTES de reverter a migration A e o código.
+--
+--   create policy "produtos_leitura_publica"
+--     on public.produtos for select
+--     using (
+--       oculto = false
+--       and public.loja_esta_ativa(produtos.loja_id)
+--     );
+-- ─────────────────────────────────────────────────────────────────────────────

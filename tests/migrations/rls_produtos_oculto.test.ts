@@ -160,17 +160,34 @@ describe("083 RLS produtos.oculto — leitura pública por oculto = false", () =
     await t.close();
   });
 
-  it("[oculto-1] anon LÊ produto disponivel=true, oculto=false de loja ativa (1 linha)", async () => {
+  // 265 · [1] + [2a]: a leitura pública de `produtos` deixa de existir (migration
+  // B derruba `produtos_leitura_publica`) e passa a ser `public.vitrine_produtos`.
+  // O contrato de VISIBILIDADE de 083 não muda — muda o OBJETO que o anon lê.
+  // Cada caso vira um PAR: 0 linhas na base + o resultado antigo na view.
+  it("[oculto-1] anon LÊ produto disponivel=true, oculto=false de loja ativa — pela VIEW (1 linha); base 0", async () => {
+    const base = await t.asAnon((db) =>
+      db.query(`select id from public.produtos where id = $1`, [ids.prodVisivel]),
+    );
+    expect(base.rows.length).toBe(0); // 265 · [1]: sem SELECT público na tabela
+
     const r = await t.asAnon((db) =>
-      db.query<{ id: string }>(`select id from public.produtos where id = $1`, [ids.prodVisivel]),
+      db.query<{ id: string }>(`select id from public.vitrine_produtos where id = $1`, [
+        ids.prodVisivel,
+      ]),
     );
     expect(r.rows.length).toBe(1);
     expect(r.rows[0].id).toBe(ids.prodVisivel);
   });
 
-  it("[oculto-2] anon LÊ produto disponivel=false, oculto=false de loja ativa (1 linha — NOVO comportamento)", async () => {
+  it("[oculto-2] anon LÊ produto disponivel=false, oculto=false pela VIEW (1 linha); base 0", async () => {
+    // 265 · [2a]/[2c]: esgotado não-oculto continua na vitrine (agora pela view).
+    const base = await t.asAnon((db) =>
+      db.query(`select id from public.produtos where id = $1`, [ids.prodIndispNaoOculto]),
+    );
+    expect(base.rows.length).toBe(0); // 265 · [1]
+
     const r = await t.asAnon((db) =>
-      db.query<{ id: string }>(`select id from public.produtos where id = $1`, [
+      db.query<{ id: string }>(`select id from public.vitrine_produtos where id = $1`, [
         ids.prodIndispNaoOculto,
       ]),
     );
@@ -178,27 +195,41 @@ describe("083 RLS produtos.oculto — leitura pública por oculto = false", () =
     expect(await existeId(t, "produtos", ids.prodIndispNaoOculto)).toBe(true);
   });
 
-  it("[oculto-3] anon NÃO lê produto oculto=true, disponivel=true de loja ativa (0 linhas; existe via service)", async () => {
+  it("[oculto-3] anon NÃO lê produto oculto=true, disponivel=true de loja ativa (0 na base E na view)", async () => {
     const r = await t.asAnon((db) =>
       db.query(`select id from public.produtos where id = $1`, [ids.prodOcultoDisp]),
     );
     expect(r.rows.length).toBe(0);
+    // 265 · [2b]: o `where oculto = false` da view é o predicado LITERAL da
+    // policy que morreu — a negação precisa valer nos dois objetos.
+    const view = await t.asAnon((db) =>
+      db.query(`select id from public.vitrine_produtos where id = $1`, [ids.prodOcultoDisp]),
+    );
+    expect(view.rows.length).toBe(0);
     expect(await existeId(t, "produtos", ids.prodOcultoDisp)).toBe(true);
   });
 
-  it("[oculto-4] anon NÃO lê produto oculto=true, disponivel=false de loja ativa (0 linhas; existe via service)", async () => {
+  it("[oculto-4] anon NÃO lê produto oculto=true, disponivel=false de loja ativa (0 na base E na view)", async () => {
     const r = await t.asAnon((db) =>
       db.query(`select id from public.produtos where id = $1`, [ids.prodOcultoIndisp]),
     );
     expect(r.rows.length).toBe(0);
+    const view = await t.asAnon((db) =>
+      db.query(`select id from public.vitrine_produtos where id = $1`, [ids.prodOcultoIndisp]),
+    );
+    expect(view.rows.length).toBe(0); // 265 · [2b]
     expect(await existeId(t, "produtos", ids.prodOcultoIndisp)).toBe(true);
   });
 
-  it("[oculto-5] anon NÃO lê produto oculto=false de loja INATIVA (0 linhas; existe via service)", async () => {
+  it("[oculto-5] anon NÃO lê produto oculto=false de loja INATIVA (0 na base E na view)", async () => {
     const r = await t.asAnon((db) =>
       db.query(`select id from public.produtos where id = $1`, [ids.prodLojaInativa]),
     );
     expect(r.rows.length).toBe(0);
+    const view = await t.asAnon((db) =>
+      db.query(`select id from public.vitrine_produtos where id = $1`, [ids.prodLojaInativa]),
+    );
+    expect(view.rows.length).toBe(0); // 265 · [2b]: loja_esta_ativa no WHERE da view
     expect(await existeId(t, "produtos", ids.prodLojaInativa)).toBe(true);
   });
 
@@ -207,6 +238,12 @@ describe("083 RLS produtos.oculto — leitura pública por oculto = false", () =
       db.query(`select id from public.produtos where id = $1`, [ids.prodOcultoLojaInativa]),
     );
     expect(r.rows.length).toBe(0);
+    const view = await t.asAnon((db) =>
+      db.query(`select id from public.vitrine_produtos where id = $1`, [
+        ids.prodOcultoLojaInativa,
+      ]),
+    );
+    expect(view.rows.length).toBe(0); // 265 · [2b]: AND, não OR, também no WHERE da view
     expect(await existeId(t, "produtos", ids.prodOcultoLojaInativa)).toBe(true);
   });
 
@@ -237,8 +274,13 @@ describe("083 RLS produtos.oculto — leitura pública por oculto = false", () =
       return r.rows[0].id;
     });
     expect(await ocultoAtual(t, novoId)).toBe(false);
-    const anon = await t.asAnon((db) =>
+    // 265 · [1] + [2a]: a visibilidade ao anon passa a ser medida na view.
+    const naBase = await t.asAnon((db) =>
       db.query(`select id from public.produtos where id = $1`, [novoId]),
+    );
+    expect(naBase.rows.length).toBe(0);
+    const anon = await t.asAnon((db) =>
+      db.query(`select id from public.vitrine_produtos where id = $1`, [novoId]),
     );
     expect(anon.rows.length).toBe(1);
   });

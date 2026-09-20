@@ -17,6 +17,7 @@ import {
   buscarOpcionaisPorCategoria,
   buscarProdutosPublicos,
 } from "@/lib/supabase/queries/produtos";
+import { projetarProdutoVitrine } from "@/lib/utils/catalogoVitrine";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
 import type { Horarios } from "@/lib/utils/lojaAberta";
@@ -156,11 +157,28 @@ export default async function VitrinePage({ params }: PageProps) {
   // Categorias e produtos só dependem de `lojaId` — buscados em paralelo, e o
   // agrupamento (em memória) acontece depois (issue 207, F4). Ambos DEPOIS do
   // gate de assinatura: loja inválida não dispara query de catálogo.
+  // 265: `buscarProdutosPublicos` lê a view definer `public.vitrine_produtos`,
+  // que já projeta as colunas públicas e mascara desconto não-vigente (RN-03) —
+  // a tabela base não é mais legível por anon/authenticated.
   const [categorias, produtos] = await Promise.all([
     buscarCategorias(db, lojaId),
     buscarProdutosPublicos(db, lojaId),
   ]);
-  const grupos = agruparCatalogo(produtos, categorias);
+  // Contrato de catálogo (224): UM objeto por produto, produzido no servidor e
+  // fonte única de preço/selo/comprabilidade. `agora` injetado — a vigência da
+  // promoção é avaliada por request, e é por isso que esta página NÃO pode ser
+  // cacheada (ver o bloco de `carregarLoja`): catálogo cacheado serve promoção
+  // expirada.
+  const agora = new Date();
+  const produtosVitrine = produtos.map((produto) =>
+    projetarProdutoVitrine(produto, agora),
+  );
+  const grupos = agruparCatalogo(produtosVitrine, categorias);
+
+  // RN-15: "pratos promocionais" é DERIVADO do catálogo que a página já
+  // carregou — zero query nova, zero tabela nova. Quem consome a lista (selo,
+  // seção e modal de promoções) são as issues 233/234; aqui nasce a derivação.
+  const _promocionais = produtosVitrine.filter((p) => p.temDesconto);
 
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
   // opcionais ativos de loja ativa. Buscados pelas categorias do catálogo.
@@ -181,16 +199,14 @@ export default async function VitrinePage({ params }: PageProps) {
     // exibir_imagens decide grid (true) vs. lista textual (false) na vitrine.
     // Grupo "Outros" (categoria null) cai em true → grid (RN-5).
     exibir_imagens: grupo.categoria?.exibir_imagens ?? true,
+    // O `ProdutoVitrine` INTEIRO desce às superfícies (225) — sem remontar campo
+    // a campo, que era onde comprabilidade e preço efetivo caíam no chão (D13).
     produtos: grupo.produtos.map((p) => ({
-      id: p.id,
-      nome: p.nome,
-      descricao: p.descricao,
-      preco: p.preco,
-      // RN-3: em categoria "ocultar", a foto NÃO trafega ao cliente — zerada aqui
-      // no SSR, não só escondida no render (o payload RSC não carrega a URL).
+      ...p,
+      // RN-3 (issue 201) — NÃO é adaptador: em categoria "ocultar", a foto não
+      // trafega ao cliente. Zerada aqui no SSR, não só escondida no render (o
+      // payload RSC não carrega a URL).
       foto_url: grupo.categoria?.exibir_imagens === false ? null : p.foto_url,
-      categoria_id: p.categoria_id,
-      disponivel: p.disponivel,
     })),
   }));
 

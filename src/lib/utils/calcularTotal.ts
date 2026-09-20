@@ -1,7 +1,7 @@
-// STUB TDD — implementação real é da fase GREEN (executar). Só a assinatura
-// existe para que o type-check compile e o RED falhe nas ASSERÇÕES (e não em
-// ERR_MODULE_NOT_FOUND, que mascararia os casos). Tipos via Pick<Tables<...>>.
+// Aritmética autoritativa de valor do pedido (012 / 226). Tipos via
+// Pick<Tables<...>> — o preço vem do banco, nunca do cliente.
 import type { Tables } from "@/lib/database.types";
+import { arredondar } from "./arredondar";
 
 /** Um opcional (adicional/extra) de um item do pedido. */
 export interface OpcionalCalculo {
@@ -33,25 +33,27 @@ export interface ResultadoTotal {
   total: number;
 }
 
-/** Arredonda a 2 casas evitando float drift (ex.: 0.1 + 0.2). */
-function arredondar(valor: number): number {
-  return Math.round(valor * 100) / 100;
+/** Total COBRADO de uma linha do pedido: (preco × qtd) + Σ(opcional.preco ×
+ *  opcional.qtd). Opcional soma UMA vez por linha (090), sem multiplicar pela
+ *  quantidade do produto. Invariante: Σ totalDaLinha === calcularSubtotal. */
+export function totalDaLinha({
+  preco,
+  quantidade,
+  opcionais,
+}: ItemCalculo): number {
+  const somaOpcionais = (opcionais ?? []).reduce(
+    (s, op) => s + arredondar(op.preco * op.quantidade),
+    0,
+  );
+  // Opcional é por linha (090): qtd do produto multiplica só o preço do
+  // produto; os opcionais somam UMA vez, fora dessa multiplicação.
+  return arredondar(arredondar(preco * quantidade) + somaOpcionais);
 }
 
 export function calcularSubtotal(itens: ItemCalculo[]): number {
-  const subtotal = itens.reduce((acc, { preco, quantidade, opcionais }) => {
-    const somaOpcionais = opcionais
-      ? opcionais.reduce(
-          (s, op) => s + arredondar(op.preco * op.quantidade),
-          0,
-        )
-      : 0;
-    // Opcional é por linha (090): qtd do produto multiplica só o preço do
-    // produto; os opcionais somam UMA vez, fora dessa multiplicação.
-    const totalProduto = arredondar(preco * quantidade);
-    return acc + arredondar(totalProduto + somaOpcionais);
-  }, 0);
-  return arredondar(subtotal);
+  // Expressa em termos de totalDaLinha para que a invariante
+  // `Σ totalDaLinha === calcularSubtotal` seja estrutural, não coincidência.
+  return arredondar(itens.reduce((acc, item) => acc + totalDaLinha(item), 0));
 }
 
 export function calcularTotal({

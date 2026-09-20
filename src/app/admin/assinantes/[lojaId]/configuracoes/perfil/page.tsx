@@ -30,6 +30,7 @@ export default async function PerfilConfiguracaoAdminPage({
         telefone: loja.telefone,
         whatsapp: loja.whatsapp,
         whatsapp_envio_automatico: loja.whatsapp_envio_automatico,
+        modal_promocoes: loja.modal_promocoes,
         endereco_cep: loja.endereco_cep,
         endereco_rua: loja.endereco_rua,
         endereco_numero: loja.endereco_numero,

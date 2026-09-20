@@ -22,6 +22,7 @@ import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
+import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
 import type { OpcionalCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId, useCarrinho } from "@/hooks/useCarrinho";
 
@@ -29,15 +30,17 @@ import { linhaCarrinhoId, useCarrinho } from "@/hooks/useCarrinho";
 // toggle-imagens-por-categoria.md) — sem customização, sem campo novo.
 const EMOJI_SEM_FOTO = "🍽️";
 
-/** Produto exibido no modal — subconjunto do modelo `produtos` + grupos de opcional. */
-export type ProdutoModalDados = {
-  id: string;
-  nome: string;
-  descricao: string | null;
-  preco: number;
-  fotoUrl: string | null;
-  /** false → selo "Esgotado" + CTA desabilitado. Default true. */
-  disponivel?: boolean;
+/**
+ * Produto exibido no modal — o `ProdutoVitrine` INTEIRO (contrato de catálogo,
+ * 224/225) mais os grupos de opcional resolvidos no SSR.
+ *
+ * O shape reduzido de antes tinha comprabilidade OPCIONAL, e o modal a
+ * completava com um default silencioso: campo ausente virava "disponível", o
+ * cliente montava um carrinho inteiro e só era recusado no fim pelo servidor
+ * (D13). Agora campo faltando é erro de compilação — não há mais default a
+ * aplicar.
+ */
+export type ProdutoModalDados = ProdutoVitrine & {
   /** Grupos de opcional disponíveis (SSR, issue 081). Vazio/ausente = sem seção. */
   gruposOpcionais?: GrupoOpcional[];
 };
@@ -137,8 +140,9 @@ export function ProdutoModal({
 
   if (!produto) return null;
 
-  const disponivel = produto.disponivel ?? true;
-  const foto = fotoSegura(produto.fotoUrl);
+  // Comprabilidade vem PRONTA do contrato — sem default, sem inferência.
+  const disponivel = produto.compravel;
+  const foto = fotoSegura(produto.foto_url);
   const grupos = produto.gruposOpcionais ?? [];
   // Opcionais escolhidos (qtd > 0) achatados a partir dos GRUPOS (dado), não do que
   // está visível na tela — grupo recolhido na sanfona (210) com qtd > 0 continua
@@ -153,7 +157,9 @@ export function ProdutoModal({
   // Estético; o servidor recalcula do banco no checkout (seguranca.md §10).
   const subtotal = calcularSubtotal([
     {
-      preco: produto.preco,
+      // Preço EFETIVO: é o que o cliente paga agora. Nenhuma aritmética nova
+      // aqui — só troca o campo que alimenta o `calcularSubtotal` de sempre.
+      preco: produto.precoEfetivo,
       quantidade,
       opcionais: opcionaisEscolhidos.map((o) => ({
         preco: o.preco,
@@ -381,7 +387,7 @@ export function ProdutoModal({
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--texto-muted)]">
                       {disponivel
-                        ? `Cada unidade · ${formatarMoeda(produto.preco)}`
+                        ? `Cada unidade · ${formatarMoeda(produto.precoEfetivo)}`
                         : "Produto indisponível no momento"}
                     </p>
                   </div>

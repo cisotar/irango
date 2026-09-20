@@ -1,4 +1,5 @@
 import type { Tables } from "@/lib/database.types";
+import { arredondar } from "./arredondar";
 
 // Linhas do banco, reusando tipos gerados (não redefinir o shape do banco à mão).
 type Zona = Pick<Tables<"zonas_entrega">, "id" | "tipo" | "ativo">;
@@ -65,11 +66,6 @@ export function normalizarBairro(valor: string): string {
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase()
     .replace(/\s+/g, " ");
-}
-
-/** numeric(10,2): 2 casas, neutraliza float drift. Retorna number (não string). */
-function arredondar(valor: number): number {
-  return Math.round(valor * 100) / 100;
 }
 
 /** Verdadeiro se a zona ativa+com-taxa atende o endereço informado. */

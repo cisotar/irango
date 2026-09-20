@@ -17,6 +17,12 @@ import {
   schemaCategoria,
   schemaReordenacaoCategorias,
 } from "@/lib/validacoes/produto";
+// Contrato NEUTRO compartilhado com o caminho ADMIN (issue 241): mensagem de
+// D10 e conversão de prazo pelo fuso têm UMA fonte, não duas cópias.
+import {
+  erroDeParseProduto,
+  comPrazosNoFuso,
+} from "@/lib/actions/produto-contrato";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
@@ -57,7 +63,7 @@ export async function criarProduto(
   //    negativo/NaN/>2 casas, nome vazio) nem chega ao banco.
   const parsed = schemaProduto.safeParse(payload);
   if (!parsed.success) {
-    return { ok: false, erro: "Produto inválido." };
+    return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
   }
 
   try {
@@ -83,8 +89,13 @@ export async function criarProduto(
 
     const { error } = await supabase
       .from("produtos")
-      .insert({ ...parsed.data, loja_id: loja.id });
+      .insert({
+        ...comPrazosNoFuso(parsed.data, loja.timezone),
+        loja_id: loja.id,
+      });
     if (error) {
+      // Inclui o 23514 dos CHECKs de desconto (issue 219): o texto cru do
+      // Postgres fica no log, o lojista recebe a genérica (seguranca.md §14).
       console.error("[criarProduto]", error);
       return { ok: false, erro: "Não foi possível salvar o produto." };
     }
@@ -102,7 +113,7 @@ export async function atualizarProduto(
 ): Promise<ResultadoGestaoProduto> {
   const parsed = schemaProduto.safeParse(payload);
   if (!parsed.success) {
-    return { ok: false, erro: "Produto inválido." };
+    return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
   }
 
   try {
@@ -127,9 +138,14 @@ export async function atualizarProduto(
     // oferecemos a opção) + escopo por id.
     const { error } = await supabase
       .from("produtos")
-      .update({ ...parsed.data, loja_id: loja.id })
+      .update({
+        ...comPrazosNoFuso(parsed.data, loja.timezone),
+        loja_id: loja.id,
+      })
       .eq("id", id);
     if (error) {
+      // Inclui o 23514 dos CHECKs de desconto (issue 219): o texto cru do
+      // Postgres fica no log, o lojista recebe a genérica (seguranca.md §14).
       console.error("[atualizarProduto]", error);
       return { ok: false, erro: "Não foi possível salvar o produto." };
     }

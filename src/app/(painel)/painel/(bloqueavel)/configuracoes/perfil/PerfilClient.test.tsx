@@ -89,6 +89,7 @@ const INICIAL: PerfilInicial = {
   telefone: null,
   whatsapp: null,
   whatsapp_envio_automatico: true,
+  modal_promocoes: true,
   endereco_cep: null,
   endereco_rua: null,
   endereco_numero: null,

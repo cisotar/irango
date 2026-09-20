@@ -38,6 +38,13 @@ export type PerfilInicial = {
    * valor real — um `?? true` aqui seria um segundo default fora do banco.
    */
   whatsapp_envio_automatico: boolean;
+  /**
+   * Preferência de exibir o modal de promoções na vitrine (issue 231).
+   * Obrigatório pelo MESMO motivo acima: a coluna é `NOT NULL DEFAULT true`
+   * (migration 220), então o SSR sempre traz um valor real. O toggle é a issue
+   * 236; até lá o valor só faz round-trip pelo payload, sem alterar a coluna.
+   */
+  modal_promocoes: boolean;
   endereco_cep: string | null;
   endereco_rua: string | null;
   endereco_numero: string | null;
@@ -202,6 +209,9 @@ export function PerfilClient({
       telefone,
       whatsapp,
       envioAutomatico,
+      // (231) Sem UI ainda (issue 236): reemite o valor que veio do banco, de
+      // modo que salvar o perfil não muda a preferência.
+      mostrarModalPromocoes: inicial.modal_promocoes,
       enderecoCep,
       enderecoRua,
       enderecoNumero,

@@ -55,6 +55,8 @@ function lojaFake(overrides: Partial<LojaPublica>): LojaPublica {
     timezone: "America/Sao_Paulo",
     whatsapp: null,
     whatsapp_envio_automatico: true,
+    // [220] modal de promoções nasce ligado (D6).
+    modal_promocoes: true,
   };
   return { ...base, ...overrides };
 }

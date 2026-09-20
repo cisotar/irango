@@ -290,6 +290,7 @@ export type Database = {
           observacao: string | null
           pedido_id: string
           preco: number
+          preco_original: number | null
           produto_id: string | null
           quantidade: number
         }
@@ -299,6 +300,7 @@ export type Database = {
           observacao?: string | null
           pedido_id: string
           preco: number
+          preco_original?: number | null
           produto_id?: string | null
           quantidade: number
         }
@@ -308,6 +310,7 @@ export type Database = {
           observacao?: string | null
           pedido_id?: string
           preco?: number
+          preco_original?: number | null
           produto_id?: string | null
           quantidade?: number
         }
@@ -324,6 +327,13 @@ export type Database = {
             columns: ["produto_id"]
             isOneToOne: false
             referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "itens_pedido_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_produtos"
             referencedColumns: ["id"]
           },
         ]
@@ -396,6 +406,7 @@ export type Database = {
           latitude: number | null
           logo_url: string | null
           longitude: number | null
+          modal_promocoes: boolean
           modulo_impressao_a4: boolean
           modulo_impressao_termica: boolean
           nome: string
@@ -434,6 +445,7 @@ export type Database = {
           latitude?: number | null
           logo_url?: string | null
           longitude?: number | null
+          modal_promocoes?: boolean
           modulo_impressao_a4?: boolean
           modulo_impressao_termica?: boolean
           nome: string
@@ -472,6 +484,7 @@ export type Database = {
           latitude?: number | null
           logo_url?: string | null
           longitude?: number | null
+          modal_promocoes?: boolean
           modulo_impressao_a4?: boolean
           modulo_impressao_termica?: boolean
           nome?: string
@@ -762,6 +775,11 @@ export type Database = {
           atualizado_em: string
           categoria_id: string | null
           criado_em: string
+          desconto_ativo: boolean
+          desconto_fim: string | null
+          desconto_inicio: string | null
+          desconto_tipo: string | null
+          desconto_valor: number | null
           descricao: string | null
           disponivel: boolean
           foto_url: string | null
@@ -776,6 +794,11 @@ export type Database = {
           atualizado_em?: string
           categoria_id?: string | null
           criado_em?: string
+          desconto_ativo?: boolean
+          desconto_fim?: string | null
+          desconto_inicio?: string | null
+          desconto_tipo?: string | null
+          desconto_valor?: number | null
           descricao?: string | null
           disponivel?: boolean
           foto_url?: string | null
@@ -790,6 +813,11 @@ export type Database = {
           atualizado_em?: string
           categoria_id?: string | null
           criado_em?: string
+          desconto_ativo?: boolean
+          desconto_fim?: string | null
+          desconto_inicio?: string | null
+          desconto_tipo?: string | null
+          desconto_valor?: number | null
           descricao?: string | null
           disponivel?: boolean
           foto_url?: string | null
@@ -1028,6 +1056,7 @@ export type Database = {
           horarios: Json | null
           id: string | null
           logo_url: string | null
+          modal_promocoes: boolean | null
           nome: string | null
           slug: string | null
           taxa_entrega_fora_zona: number | null
@@ -1050,6 +1079,7 @@ export type Database = {
           horarios?: Json | null
           id?: string | null
           logo_url?: string | null
+          modal_promocoes?: boolean | null
           nome?: string | null
           slug?: string | null
           taxa_entrega_fora_zona?: number | null
@@ -1072,6 +1102,7 @@ export type Database = {
           horarios?: Json | null
           id?: string | null
           logo_url?: string | null
+          modal_promocoes?: boolean | null
           nome?: string | null
           slug?: string | null
           taxa_entrega_fora_zona?: number | null
@@ -1082,6 +1113,79 @@ export type Database = {
           whatsapp_envio_automatico?: boolean | null
         }
         Relationships: []
+      }
+      vitrine_produtos: {
+        Row: {
+          categoria_id: string | null
+          desconto_ativo: boolean | null
+          desconto_fim: string | null
+          desconto_inicio: string | null
+          desconto_tipo: string | null
+          desconto_valor: number | null
+          descricao: string | null
+          disponivel: boolean | null
+          foto_url: string | null
+          id: string | null
+          loja_id: string | null
+          nome: string | null
+          ordem: number | null
+          preco: number | null
+        }
+        Insert: {
+          categoria_id?: string | null
+          desconto_ativo?: never
+          desconto_fim?: never
+          desconto_inicio?: never
+          desconto_tipo?: never
+          desconto_valor?: never
+          descricao?: string | null
+          disponivel?: boolean | null
+          foto_url?: string | null
+          id?: string | null
+          loja_id?: string | null
+          nome?: string | null
+          ordem?: number | null
+          preco?: number | null
+        }
+        Update: {
+          categoria_id?: string | null
+          desconto_ativo?: never
+          desconto_fim?: never
+          desconto_inicio?: never
+          desconto_tipo?: never
+          desconto_valor?: never
+          descricao?: string | null
+          disponivel?: boolean | null
+          foto_url?: string | null
+          id?: string | null
+          loja_id?: string | null
+          nome?: string | null
+          ordem?: number | null
+          preco?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "produtos_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "produtos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "produtos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
@@ -1135,6 +1239,15 @@ export type Database = {
               token_acesso: string
             }[]
           }
+      desconto_vigente: {
+        Args: {
+          p_agora: string
+          p_ativo: boolean
+          p_fim: string
+          p_inicio: string
+        }
+        Returns: boolean
+      }
       garantir_loja_do_dono: {
         Args: { p_dono_id: string; p_email: string; p_versao_termos?: string }
         Returns: string
@@ -1171,6 +1284,7 @@ export type Database = {
           latitude: number | null
           logo_url: string | null
           longitude: number | null
+          modal_promocoes: boolean
           modulo_impressao_a4: boolean
           modulo_impressao_termica: boolean
           nome: string
@@ -1218,6 +1332,7 @@ export type Database = {
           latitude: number | null
           logo_url: string | null
           longitude: number | null
+          modal_promocoes: boolean
           modulo_impressao_a4: boolean
           modulo_impressao_termica: boolean
           nome: string

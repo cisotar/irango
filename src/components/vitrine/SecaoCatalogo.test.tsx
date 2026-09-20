@@ -28,31 +28,54 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { ancoraCategoria } from "@/lib/utils/ancoraCategoria";
 
-import {
-  SecaoCatalogo,
-  type CategoriaComProdutos,
-  type ProdutoCatalogo,
-} from "./SecaoCatalogo";
+import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
+
+import { SecaoCatalogo, type CategoriaComProdutos } from "./SecaoCatalogo";
+
+/**
+ * Fixture do contrato de catálogo (224/225). As ASSERÇÕES abaixo são as mesmas
+ * de sempre — só o SHAPE do produto mudou, de campos avulsos para o
+ * `ProdutoVitrine` inteiro. Sem desconto vigente, `precoEfetivo === preco`, e é
+ * por isso que todo preço esperado nos testes continua idêntico.
+ */
+function produtoVitrine(over: Partial<ProdutoVitrine> = {}): ProdutoVitrine {
+  const preco = over.preco ?? 5;
+  return {
+    id: "p-1",
+    nome: "Produto",
+    descricao: null,
+    foto_url: null,
+    categoria_id: null,
+    preco,
+    precoEfetivo: preco,
+    temDesconto: false,
+    seloDesconto: null,
+    descontoFim: null,
+    compravel: true,
+    motivoNaoCompravel: null,
+    ...over,
+  };
+}
 
 function categoriasFixture(): CategoriaComProdutos[] {
-  const disponivel: ProdutoCatalogo = {
+  const disponivel: ProdutoVitrine = produtoVitrine({
     id: "p-disp",
     nome: "Coca Gelada",
     descricao: null,
     preco: 5,
     foto_url: null,
     categoria_id: "cat-bebidas",
-    disponivel: true,
-  };
-  const esgotado: ProdutoCatalogo = {
+  });
+  const esgotado: ProdutoVitrine = produtoVitrine({
     id: "p-esg",
     nome: "Suco Esgotado",
     descricao: null,
     preco: 7,
     foto_url: null,
     categoria_id: "cat-bebidas",
-    disponivel: false,
-  };
+    compravel: false,
+    motivoNaoCompravel: "esgotado",
+  });
   return [
     {
       id: "cat-bebidas",
@@ -95,24 +118,22 @@ describe("086 SecaoCatalogo — propaga `disponivel` ao CardProduto", () => {
  */
 describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista por grupo", () => {
   function categoriasComToggle(): CategoriaComProdutos[] {
-    const salgado: ProdutoCatalogo = {
+    const salgado: ProdutoVitrine = produtoVitrine({
       id: "p-salgado",
       nome: "Coxinha de frango",
       descricao: null,
       preco: 8.5,
       foto_url: null,
       categoria_id: "cat-salgados",
-      disponivel: true,
-    };
-    const bebida: ProdutoCatalogo = {
+    });
+    const bebida: ProdutoVitrine = produtoVitrine({
       id: "p-bebida",
       nome: "Suco de laranja 500ml",
       descricao: null,
       preco: 9,
       foto_url: "https://exemplo.com/suco.jpg",
       categoria_id: "cat-bebidas",
-      disponivel: true,
-    };
+    });
     return [
       {
         id: "cat-salgados",
@@ -168,15 +189,14 @@ describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista p
  */
 describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", () => {
   function categoriasComGrupoSemId(): CategoriaComProdutos[] {
-    const produto: ProdutoCatalogo = {
+    const produto: ProdutoVitrine = produtoVitrine({
       id: "p-1",
       nome: "Pão na chapa",
       descricao: null,
       preco: 6,
       foto_url: null,
       categoria_id: null,
-      disponivel: true,
-    };
+    });
     return [
       { id: null, nome: "Outros", produtos: [produto] },
       { id: "cat-doces", nome: "Doces", produtos: [produto] },
@@ -232,15 +252,14 @@ describe("SecaoCatalogo (200) — realce do trecho casado", () => {
         nome: "Pães",
         exibir_imagens: exibirImagens,
         produtos: [
-          {
+          produtoVitrine({
             id: "p-pao",
             nome: "Pão na chapa",
             descricao: null,
             preco: 6,
             foto_url: null,
             categoria_id: "cat-paes",
-            disponivel: true,
-          },
+          }),
         ],
       },
     ];

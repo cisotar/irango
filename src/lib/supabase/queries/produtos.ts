@@ -4,9 +4,12 @@ import type { Database, Tables } from "@/lib/database.types";
 import type { Categoria } from "./categorias";
 
 /**
- * Queries reusáveis de `produtos` para vitrine e painel. RLS já isola (seguranca.md §2):
- *  - produtos_leitura_publica: oculto=false AND loja_esta_ativa(loja_id);
- *  - produtos_leitura_propria: dono vê os próprios (incl. indisponíveis).
+ * Queries reusáveis de `produtos` para vitrine e painel (seguranca.md §2, §19):
+ *  - VITRINE: lê a VIEW definer `public.vitrine_produtos` (265), que projeta as
+ *    14 colunas públicas e mascara desconto não-vigente. A tabela base NÃO tem
+ *    mais SELECT público (`drop policy produtos_leitura_publica`);
+ *  - produtos_leitura_propria: dono vê os próprios (incl. indisponíveis/ocultos);
+ *  - `service_role` (recálculo autoritativo de pedido) lê a TABELA, nunca a view.
  * Funções recebem o `client` por parâmetro (role escolhida pelo caller).
  * Propagam `error` (§14); `[]` = sem linha, nunca mascara erro.
  */
@@ -36,23 +39,64 @@ export type GrupoOpcional = {
 /** Mapa categoria_id (de produto) → grupos de opcional disponíveis. */
 export type OpcionaisPorCategoria = Record<string, GrupoOpcional[]>;
 
+/**
+ * Projeção PÚBLICA de produto (issue 265): o que `public.vitrine_produtos`
+ * devolve a `anon`/`authenticated`. É um subconjunto estrutural de `Produto`
+ * (mesmos tipos, sem `oculto`/`criado_em`/`atualizado_em`), então continua
+ * satisfazendo os consumidores que só leem colunas de vitrine.
+ *
+ * As cinco colunas de desconto chegam MASCARADAS POR VIGÊNCIA pela view
+ * (`desconto_vigente(..., now())`, RN-03): promoção desligada, agendada para o
+ * futuro ou já terminada sai como `desconto_ativo = false` + os outros quatro
+ * campos `NULL` (D5). A view NÃO calcula dinheiro — preço efetivo é `precoEfetivo`.
+ */
+export type ProdutoPublico = Pick<
+  Produto,
+  | "id"
+  | "loja_id"
+  | "categoria_id"
+  | "nome"
+  | "descricao"
+  | "preco"
+  | "disponivel"
+  | "ordem"
+  | "foto_url"
+  | "desconto_ativo"
+  | "desconto_tipo"
+  | "desconto_valor"
+  | "desconto_inicio"
+  | "desconto_fim"
+>;
+
+/**
+ * Lista EXATA (14 colunas, ordem fixa) da projeção pública — §Contratos de Dados
+ * da 265. Select NOMEADO por decisão (D4): `select("*")` numa view definer volta
+ * a vazar qualquer coluna que uma migration futura (244/245) acrescente sem
+ * revisão do contrato TS.
+ */
+export const COLUNAS_PRODUTO_PUBLICO =
+  "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +
+  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim";
+
 /** Grupo do catálogo público: uma categoria (ou "Outros") + seus produtos. */
-export type GrupoCatalogo = {
+export type GrupoCatalogo<T = ProdutoPublico> = {
   /** id do grupo: id da categoria, ou null para "Outros". */
   id: string | null;
   /** nome do grupo (nome da categoria, ou "Outros"). */
   nome: string;
   /** categoria associada (null no grupo "Outros"). */
   categoria: Categoria | null;
-  produtos: Produto[];
+  produtos: T[];
 };
 
 /**
- * Produtos visíveis na vitrine: NÃO-ocultos (`oculto=false`) da loja, ordenados
- * por `ordem`. Produtos indisponíveis (`disponivel=false`) NÃO-ocultos ENTRAM no
- * resultado (renderizam como "esgotado" — RN-3, RN-4); o campo `disponivel` vem
- * no objeto via `select("*")`. O filtro `.eq("oculto", false)` é defesa em
- * profundidade sobre a RLS 083 (§9.4), não a substitui.
+ * Produtos visíveis na vitrine, lidos da VIEW `public.vitrine_produtos` (265) —
+ * nunca da tabela base, que desde a migration B não tem mais SELECT público.
+ * A view já aplica o predicado literal da policy que substituiu
+ * (`oculto = false and loja_esta_ativa(loja_id)`), então NÃO existe mais
+ * `.eq("oculto", false)`: a coluna não está na projeção (D6) e filtrar por ela
+ * daria 42703. Produtos indisponíveis (`disponivel=false`) ENTRAM no resultado
+ * (renderizam como "esgotado" — RN-3, RN-4).
  *
  * Só a QUERY: o agrupamento por categoria é `agruparCatalogo` (função pura). A
  * separação existe para que a vitrine possa buscar produtos e categorias em
@@ -62,15 +106,17 @@ export type GrupoCatalogo = {
 export async function buscarProdutosPublicos(
   client: Client,
   lojaId: string,
-): Promise<Produto[]> {
+): Promise<ProdutoPublico[]> {
   const { data, error } = await client
-    .from("produtos")
-    .select("*")
+    .from("vitrine_produtos")
+    .select(COLUNAS_PRODUTO_PUBLICO)
     .eq("loja_id", lojaId)
-    .eq("oculto", false)
     .order("ordem", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as Produto[];
+  // `Tables<"vitrine_produtos">` nasce toda-nullable (view), mas o WHERE e as
+  // colunas NOT NULL da base garantem os tipos de `ProdutoPublico`; o drift
+  // view ↔ tipo é travado por teste de lista de colunas no pglite (D4).
+  return (data ?? []) as unknown as ProdutoPublico[];
 }
 
 /**
@@ -85,12 +131,17 @@ export async function buscarProdutosPublicos(
  * não filtra, só `oculto`. O painel enxerga as categorias vazias por
  * `buscarCategorias`, não por aqui.
  */
-export function agruparCatalogo(
-  produtos: Produto[],
+export function agruparCatalogo<
+  // Default = ProdutoPublico: o catálogo público é o caller canônico, e sem ele
+  // uma chamada sem candidato de inferência cairia na CONSTRAINT (só `id` e
+  // `categoria_id`), estreitando o tipo dos grupos sem que ninguém peça.
+  T extends { id: string; categoria_id: string | null } = ProdutoPublico,
+>(
+  produtos: T[],
   categorias: Categoria[] = [],
-): GrupoCatalogo[] {
+): GrupoCatalogo<T>[] {
   // Um grupo por categoria, na ordem das categorias.
-  const grupos: GrupoCatalogo[] = categorias.map((categoria) => ({
+  const grupos: GrupoCatalogo<T>[] = categorias.map((categoria) => ({
     id: categoria.id,
     nome: categoria.nome,
     categoria,
@@ -99,7 +150,7 @@ export function agruparCatalogo(
   const porId = new Map(grupos.map((g) => [g.id, g]));
 
   // Grupo "Outros" (categoria_id null) materializado só se houver produto, e no FIM.
-  let outros: GrupoCatalogo | null = null;
+  let outros: GrupoCatalogo<T> | null = null;
 
   for (const produto of produtos) {
     const grupo = produto.categoria_id ? porId.get(produto.categoria_id) : undefined;
@@ -127,7 +178,7 @@ export async function buscarCatalogoPublico(
   client: Client,
   lojaId: string,
   categorias: Categoria[] = [],
-): Promise<GrupoCatalogo[]> {
+): Promise<GrupoCatalogo<ProdutoPublico>[]> {
   return agruparCatalogo(await buscarProdutosPublicos(client, lojaId), categorias);
 }
 

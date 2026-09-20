@@ -168,20 +168,45 @@ describe("112 vitrine_lojas SELECT-only (revoke de escrita anônima)", () => {
 type ArquivoMigration = { nome: string; conteudo: string };
 
 const normaliza = (s: string) => s.toLowerCase().replace(/\s+/g, " ");
-const criaVitrine = (c: string) => normaliza(c).includes("create view public.vitrine_lojas");
-const revogaEscritaVitrine = (c: string) =>
-  normaliza(c).includes("revoke insert, update, delete on public.vitrine_lojas");
+
+/**
+ * 265: o scanner passa a ser PARAMETRIZADO pelo nome da view — `vitrine_produtos`
+ * nasce sob a mesma regra de §19 ("toda view definer pública é SELECT-only") e
+ * copiar a função seria criar uma segunda fonte da mesma trava.
+ * O default `"vitrine_lojas"` preserva os chamadores existentes.
+ *
+ * Duas formas de revoke são aceitas, ambas satisfazendo §19:
+ *  - `revoke insert, update, delete on public.<view>` (o que a 20260702140000 fez);
+ *  - `revoke all on public.<view>` (o que a migration A da 265 faz, junto do
+ *    `grant select` — forma mais forte, cobre TRUNCATE/TRIGGER/REFERENCES).
+ */
+const criaVitrine = (c: string, nomeView = "vitrine_lojas") =>
+  normaliza(c).includes(`create view public.${nomeView}`);
+const revogaEscritaVitrine = (c: string, nomeView = "vitrine_lojas") => {
+  const n = normaliza(c);
+  return (
+    n.includes(`revoke insert, update, delete on public.${nomeView}`) ||
+    n.includes(`revoke all on public.${nomeView}`)
+  );
+};
 
 /** Arquivos que criam a view SEM revoke de escrita no próprio arquivo ou em posterior. */
-function violacoesRevokeVitrine(arquivos: ArquivoMigration[]): string[] {
+function violacoesRevokeVitrine(arquivos: ArquivoMigration[], nomeView = "vitrine_lojas"): string[] {
   const ordenados = [...arquivos].sort((a, b) => a.nome.localeCompare(b.nome));
   return ordenados
     .filter(
       (a, i) =>
-        criaVitrine(a.conteudo) &&
-        !ordenados.slice(i).some((posterior) => revogaEscritaVitrine(posterior.conteudo)),
+        criaVitrine(a.conteudo, nomeView) &&
+        !ordenados
+          .slice(i)
+          .some((posterior) => revogaEscritaVitrine(posterior.conteudo, nomeView)),
     )
     .map((a) => a.nome);
+}
+
+/** Arquivos de migration que (re)criam a view — usado para travar o vácuo. */
+function criadorasDeVitrine(arquivos: ArquivoMigration[], nomeView: string): string[] {
+  return arquivos.filter((a) => criaVitrine(a.conteudo, nomeView)).map((a) => a.nome);
 }
 
 function migrationsReais(): ArquivoMigration[] {
@@ -190,7 +215,7 @@ function migrationsReais(): ArquivoMigration[] {
     .map((nome) => ({ nome, conteudo: readFileSync(join(MIGRATIONS_DIR, nome), "utf8") }));
 }
 
-describe("112 guarda estática — create view vitrine_lojas exige revoke de escrita", () => {
+describe("112/265 guarda estática — create view de vitrine exige revoke de escrita", () => {
   // RED sintético (fixtures — nunca muta migrations reais): prova que o scanner
   // DETECTA a omissão antes de confiarmos no verde do estado real do repo.
   it("[G1] scanner detecta drop+create SEM revoke posterior (fixture sintética)", () => {
@@ -228,12 +253,49 @@ describe("112 guarda estática — create view vitrine_lojas exige revoke de esc
       },
     ];
     expect(violacoesRevokeVitrine(arquivoPosterior)).toEqual([]);
+
+    // 265: `revoke all` é a forma que a migration A usa (mais forte que
+    // insert/update/delete — cobre TRUNCATE/TRIGGER/REFERENCES). O scanner tem
+    // de aceitá-la, ou a migration correta seria reportada como violação.
+    const revokeAll: ArquivoMigration[] = [
+      {
+        nome: "20990101000000_cria_view.sql",
+        conteudo: `create view public.vitrine_produtos as select 1;
+                   revoke all on public.vitrine_produtos from anon, authenticated;
+                   grant select on public.vitrine_produtos to anon, authenticated;`,
+      },
+    ];
+    expect(violacoesRevokeVitrine(revokeAll, "vitrine_produtos")).toEqual([]);
+
+    // ...e tem de FLAGRAR a criação sem revoke nenhum para a view nova.
+    const semRevoke: ArquivoMigration[] = [
+      {
+        nome: "20990101000000_cria_view.sql",
+        conteudo: `create view public.vitrine_produtos as select 1;
+                   grant select on public.vitrine_produtos to anon, authenticated;`,
+      },
+    ];
+    expect(violacoesRevokeVitrine(semRevoke, "vitrine_produtos")).toEqual([
+      "20990101000000_cria_view.sql",
+    ]);
   });
 
   it("[G3] estado real do repo: toda (re)criação de vitrine_lojas tem revoke posterior", () => {
     // RED hoje: 001500/005000/006000/013000 criam a view e NENHUMA migration
     // contém o revoke — a fase GREEN (20260702140000) zera esta lista.
     expect(violacoesRevokeVitrine(migrationsReais())).toEqual([]);
+  });
+
+  // ── 265 (fase RED) ────────────────────────────────────────────────────────
+  // `vitrine_produtos` (migration A da 265) é a SEGUNDA view definer pública do
+  // projeto e cai sob a mesma regra de seguranca.md §19. Duas asserções, porque
+  // "nenhuma violação" sozinha ficaria VERDE POR VÁCUO enquanto a view não
+  // existe: primeiro exigimos que ALGUMA migration a crie, depois que toda
+  // criação tenha revoke de escrita no próprio arquivo ou em posterior.
+  it("[G4] vitrine_produtos: existe migration que a cria E toda criação tem revoke (265)", () => {
+    const reais = migrationsReais();
+    expect(criadorasDeVitrine(reais, "vitrine_produtos")).not.toEqual([]);
+    expect(violacoesRevokeVitrine(reais, "vitrine_produtos")).toEqual([]);
   });
 });
 

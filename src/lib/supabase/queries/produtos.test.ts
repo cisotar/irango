@@ -86,26 +86,56 @@ function makeClient(terminal: Terminal) {
 }
 
 // ───────────────────────── buscarCatalogoPublico
+/**
+ * 265: a lista EXATA de colunas da projeção pública (§Contratos de Dados da
+ * issue). O select passa a ser NOMEADO — `select("*")` numa view definer volta a
+ * vazar toda coluna que a 244/245 acrescentarem sem revisão do contrato TS.
+ */
+const COLUNAS_PRODUTO_PUBLICO =
+  "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +
+  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim";
+
 describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
-  it("consulta a TABELA produtos filtrando por loja_id e oculto=false, ordenado por ordem (086)", async () => {
+  it("consulta a VIEW vitrine_produtos filtrando por loja_id, ordenado por ordem — 265", async () => {
     const { client, calls } = makeClient({ data: [], error: null });
 
     await buscarCatalogoPublico(client, "loja-1");
 
-    expect(calls.from).toHaveBeenCalledWith("produtos");
+    // MUDANÇA DE CONTRATO (265 · [1]/[2a]): a tabela base perde o SELECT público
+    // (`drop policy produtos_leitura_publica`), então ler `produtos` como
+    // anon/authenticated devolveria 0 linhas — catálogo vazio, SEM erro.
+    expect(calls.from).toHaveBeenCalledWith("vitrine_produtos");
+    expect(calls.from).not.toHaveBeenCalledWith("produtos");
+    expect(calls.select).toHaveBeenCalledWith(COLUNAS_PRODUTO_PUBLICO);
     expect(calls.eq).toHaveBeenCalledWith("loja_id", "loja-1");
-    // 086: defesa em profundidade — a função aplica `oculto = false` por si (2ª camada).
-    expect(calls.eq).toHaveBeenCalledWith("oculto", false);
     expect(calls.order).toHaveBeenCalledWith("ordem", { ascending: true });
   });
 
-  it("NÃO filtra mais por disponivel=true — esgotado não-oculto entra no catálogo (086 / RN-3, RN-4)", async () => {
+  it("NÃO filtra mais por oculto=false — a view não projeta a coluna (265 · D6)", async () => {
+    const { client, calls } = makeClient({ data: [], error: null });
+
+    await buscarCatalogoPublico(client, "loja-1");
+
+    // `oculto` está AUSENTE da projeção: filtrar por ela pelo PostgREST daria
+    // 42703 em runtime. O filtro vive no WHERE da view.
+    expect(calls.eq).not.toHaveBeenCalledWith("oculto", false);
+  });
+
+  it("NÃO filtra por disponivel=true — esgotado não-oculto entra no catálogo (RN-3, RN-4)", async () => {
     const { client, calls } = makeClient({ data: [], error: null });
 
     await buscarCatalogoPublico(client, "loja-1");
 
     // A vitrine mostra "esgotado"; filtrar disponivel esconderia o produto (regressão).
     expect(calls.eq).not.toHaveBeenCalledWith("disponivel", true);
+  });
+
+  it("NÃO usa select('*') na view — o contrato de colunas é explícito (265 · D4)", async () => {
+    const { client, calls } = makeClient({ data: [], error: null });
+
+    await buscarCatalogoPublico(client, "loja-1");
+
+    expect(calls.select).not.toHaveBeenCalledWith("*");
   });
 
   it("agrupa produtos por categoria e mantém a ordem das categorias", async () => {
@@ -703,18 +733,24 @@ describe("207 agruparCatalogo — função pura (fetch/agrupamento separados)", 
 
 // ───────────────────────── buscarProdutosPublicos (issue 207 — só a query)
 describe("207 buscarProdutosPublicos — só a query (sem agrupamento)", () => {
-  it("consulta produtos filtrando loja_id + oculto=false, ordenado por ordem, e devolve a lista CRUA (sem agrupar)", async () => {
+  it("consulta a VIEW vitrine_produtos por loja_id, ordenado por ordem, e devolve a lista CRUA — 265", async () => {
+    // As linhas carregam as cinco colunas de desconto JÁ MASCARADAS pela view
+    // (265 · [3]): quando a promoção não está vigente, chegam false/NULL.
     const rows = [
-      { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", preco: 5, disponivel: true, ordem: 0 },
-      { id: "p2", loja_id: "loja-1", categoria_id: "cat-lanches", nome: "X-Burguer", preco: 20, disponivel: true, ordem: 1 },
+      { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", descricao: null, preco: 5, disponivel: true, ordem: 0, foto_url: null, desconto_ativo: false, desconto_tipo: null, desconto_valor: null, desconto_inicio: null, desconto_fim: null },
+      { id: "p2", loja_id: "loja-1", categoria_id: "cat-lanches", nome: "X-Burguer", descricao: null, preco: 20, disponivel: true, ordem: 1, foto_url: null, desconto_ativo: true, desconto_tipo: "percentual", desconto_valor: 10, desconto_inicio: null, desconto_fim: null },
     ];
     const { client, calls } = makeClient({ data: rows, error: null });
 
     const out = await buscarProdutosPublicos(client, "loja-1");
 
-    expect(calls.from).toHaveBeenCalledWith("produtos");
+    // 265 · [1]/[2a]: a tabela base não tem mais SELECT público.
+    expect(calls.from).toHaveBeenCalledWith("vitrine_produtos");
+    expect(calls.from).not.toHaveBeenCalledWith("produtos");
+    expect(calls.select).toHaveBeenCalledWith(COLUNAS_PRODUTO_PUBLICO);
     expect(calls.eq).toHaveBeenCalledWith("loja_id", "loja-1");
-    expect(calls.eq).toHaveBeenCalledWith("oculto", false);
+    // 265 · D6: a view não projeta `oculto` — filtrar por ela daria 42703.
+    expect(calls.eq).not.toHaveBeenCalledWith("oculto", false);
     expect(calls.order).toHaveBeenCalledWith("ordem", { ascending: true });
     // Sem agrupamento: devolve a lista plana tal como veio do PostgREST.
     expect(out).toEqual(rows);
