@@ -1,14 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
 import { Carrinho } from "@/components/vitrine/Carrinho";
+import { ID_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
+import { ModalPromocoes } from "@/components/vitrine/ModalPromocoes";
 import { useCarrinho } from "@/hooks/useCarrinho";
+import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 
 type VitrineClientProps = {
   lojaSlug: string;
+  /** Pratos em promoção, derivados do catálogo no SSR (RN-15). */
+  promocoes: ProdutoVitrine[];
+  /** `lojas.modal_promocoes` (SSR, via `vitrine_lojas`). */
+  modalPromocoes: boolean;
+  /** "YYYY-MM-DD" no fuso da LOJA, derivado no servidor (RN-16). */
+  diaDeHojeNaLoja: string;
 };
 
 /**
@@ -17,9 +26,23 @@ type VitrineClientProps = {
  * recalcula no checkout, seguranca.md §10). O Sheet só abre por clique explícito
  * em "Ver carrinho" — adicionar item nunca abre sozinho.
  */
-export function VitrineClient({ lojaSlug }: VitrineClientProps) {
+export function VitrineClient({
+  lojaSlug,
+  promocoes,
+  modalPromocoes,
+  diaDeHojeNaLoja,
+}: VitrineClientProps) {
   const [open, setOpen] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
+
+  // Destino do foco quando o `ModalPromocoes` fecha (234, design §5.3). O
+  // `<main>` é renderizado por um IRMÃO client, então a referência é resolvida
+  // pelo `id` compartilhado (`layoutVitrine.ts`) depois da montagem — nunca
+  // durante o render, e nunca no SSR.
+  const destinoFoco = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    destinoFoco.current = document.getElementById(ID_MAIN_VITRINE);
+  }, []);
 
   return (
     <>
@@ -52,6 +75,20 @@ export function VitrineClient({ lojaSlug }: VitrineClientProps) {
       )}
 
       <Carrinho open={open} onOpenChange={setOpen} lojaSlug={lojaSlug} />
+
+      {/* Trava 7 (design §5.2): renderizado INCONDICIONALMENTE — quem devolve
+          `null` quando não há promoção ou o lojista desligou o modal é o
+          próprio componente. Duas guardas seria uma a mais para alguém
+          remover. `localStorage` só é tocado dentro do `ModalPromocoes`, por
+          `decisaoModalPromocoes`, sempre em try/catch (RN-18). */}
+      <ModalPromocoes
+        promocoes={promocoes}
+        lojaSlug={lojaSlug}
+        toggleDaLoja={modalPromocoes}
+        diaDeHojeNaLoja={diaDeHojeNaLoja}
+        storage={typeof window === "undefined" ? null : window.localStorage}
+        destinoFoco={destinoFoco}
+      />
     </>
   );
 }

@@ -31,3 +31,16 @@ export const CLASSES_MAIN_VITRINE = `${ESCADA_LARGURA_VITRINE} px-4 py-6 pb-28`;
  * oscilação sem mudar o alvo de toque de nenhum dos dois.
  */
 export const ALTURA_SLOT_BARRA = "min-h-[60px]";
+
+/**
+ * `id` do `<main>` da vitrine. Existe porque o `<main>` é renderizado pelo
+ * `CatalogoVitrine` (ou pela própria `page.tsx`, no catálogo vazio) enquanto
+ * quem precisa de uma referência a ele — o `destinoFoco` do `ModalPromocoes`,
+ * issue 234 — vive no `VitrineClient`, que é IRMÃO e não ancestral. Dois
+ * clientes irmãos sob um Server Component não compartilham ref, e um contexto
+ * só para isso seria mais peça do que o problema tem.
+ *
+ * O `<main>` também leva `tabIndex={-1}`: é o alvo do foco quando o modal
+ * fecha, e elemento não focável não recebe foco programático.
+ */
+export const ID_MAIN_VITRINE = "conteudo-vitrine";

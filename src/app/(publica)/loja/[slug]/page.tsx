@@ -4,7 +4,10 @@ import { cache } from "react";
 
 import { CatalogoVitrine } from "@/components/vitrine/CatalogoVitrine";
 import { HeaderLoja } from "@/components/vitrine/HeaderLoja";
-import { CLASSES_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
+import {
+  CLASSES_MAIN_VITRINE,
+  ID_MAIN_VITRINE,
+} from "@/components/vitrine/layoutVitrine";
 // `import type` explícito: é TIPO, apagado na compilação. Importar um VALOR de
 // um módulo 'use client' aqui viraria referência de cliente (issue 201, D1).
 import type { CategoriaComProdutos } from "@/components/vitrine/SecaoCatalogo";
@@ -20,6 +23,7 @@ import {
 import { projetarProdutoVitrine } from "@/lib/utils/catalogoVitrine";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
+import { diaNoFuso } from "@/lib/utils/fusoLoja";
 import type { Horarios } from "@/lib/utils/lojaAberta";
 import {
   assinaturaPermiteAcesso,
@@ -175,11 +179,6 @@ export default async function VitrinePage({ params }: PageProps) {
   );
   const grupos = agruparCatalogo(produtosVitrine, categorias);
 
-  // RN-15: "pratos promocionais" é DERIVADO do catálogo que a página já
-  // carregou — zero query nova, zero tabela nova. Quem consome a lista (selo,
-  // seção e modal de promoções) são as issues 233/234; aqui nasce a derivação.
-  const _promocionais = produtosVitrine.filter((p) => p.temDesconto);
-
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
   // opcionais ativos de loja ativa. Buscados pelas categorias do catálogo.
   // NUNCA buscado no client. Preços aqui são PREVIEW (servidor recalcula — §10).
@@ -210,6 +209,20 @@ export default async function VitrinePage({ params }: PageProps) {
     })),
   }));
 
+  // RN-15: "pratos promocionais" é DERIVADO do catálogo que a página já
+  // carregou — zero query nova, zero tabela nova. Filtra sobre
+  // `categoriasComProdutos`, e não sobre `produtosVitrine`, porque é ali que a
+  // RN-3 já zerou a `foto_url` de categoria com `exibir_imagens = false`: o
+  // modal (234) mostra foto, e a lista crua faria a URL que o catálogo esconde
+  // trafegar ao cliente por outra porta.
+  const promocionais = categoriasComProdutos
+    .flatMap((c) => c.produtos)
+    .filter((p) => p.temDesconto);
+
+  // "Hoje" da LOJA (RN-16), no servidor: o cliente que vira a meia-noite no
+  // próprio fuso não reabre o modal de uma loja onde ainda é o mesmo dia.
+  const diaDeHojeNaLoja = diaNoFuso(agora, loja.timezone ?? "America/Sao_Paulo");
+
   // Grupo sem produto visível já não vem de `agruparCatalogo` (issue 177),
   // então lista vazia = loja sem nada a mostrar.
   const temVazio = categoriasComProdutos.length === 0;
@@ -235,7 +248,7 @@ export default async function VitrinePage({ params }: PageProps) {
             do `px-4`/escada do main) — issue 201, D5. Exatamente UM `<main>`
             por render em cada ramo. */}
         {temVazio ? (
-          <main className={CLASSES_MAIN_VITRINE}>
+          <main id={ID_MAIN_VITRINE} tabIndex={-1} className={CLASSES_MAIN_VITRINE}>
             <div className="flex flex-col items-center gap-3 py-20 text-center">
               <span aria-hidden className="text-4xl">
                 📦
@@ -255,7 +268,12 @@ export default async function VitrinePage({ params }: PageProps) {
           />
         )}
 
-        <VitrineClient lojaSlug={slug} />
+        <VitrineClient
+          lojaSlug={slug}
+          promocoes={promocionais}
+          modalPromocoes={loja.modal_promocoes ?? true}
+          diaDeHojeNaLoja={diaDeHojeNaLoja}
+        />
       </div>
     </>
   );

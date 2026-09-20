@@ -24,6 +24,7 @@ import {
 import {
   CLASSES_MAIN_VITRINE,
   ESCADA_LARGURA_VITRINE,
+  ID_MAIN_VITRINE,
 } from "@/components/vitrine/layoutVitrine";
 import {
   VAR_ALTURA_BARRA,
@@ -186,7 +187,13 @@ export function CatalogoVitrine({
         {anuncio}
       </p>
 
-      <main className={CLASSES_MAIN_VITRINE}>
+      {/* `id` + `tabIndex={-1}`: alvo do `destinoFoco` do `ModalPromocoes`
+          (234). Sem ser focável, o foco do modal fechado cairia no `<body>`. */}
+      <main
+        id={ID_MAIN_VITRINE}
+        tabIndex={-1}
+        className={`${CLASSES_MAIN_VITRINE} focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[var(--cor-primaria)]`}
+      >
         {semResultado ? (
           // Nunca tela em branco.
           <EstadoVazioBusca termo={termo} aoLimpar={limpar} />

@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { partesNoFuso, paraMinutos, instanteNoFuso } from "./fusoLoja";
+import {
+  partesNoFuso,
+  paraMinutos,
+  instanteNoFuso,
+  diaNoFuso,
+} from "./fusoLoja";
 
 // Primitivo de fuso extraído de lojaAberta.ts (issue 222). Funções PURAS:
 // o instante vem SEMPRE do argumento, nunca de Date.now().
@@ -93,5 +98,27 @@ describe("instanteNoFuso (RN-03 — escrita do prazo no fuso da loja)", () => {
     // discordarem, uma das duas está errada.
     const instante = new Date(instanteNoFuso("2026-12-31T23:59", SP));
     expect(partesNoFuso(instante, SP).minutos).toBe(paraMinutos("23:59"));
+  });
+});
+
+describe("diaNoFuso", () => {
+  it("devolve AAAA-MM-DD, nunca DD/MM/AAAA", () => {
+    expect(diaNoFuso(new Date("2026-09-20T15:00:00Z"), SP)).toBe("2026-09-20");
+  });
+
+  it("é o dia da LOJA, não o do UTC: 02:00Z ainda é ontem em São Paulo", () => {
+    expect(diaNoFuso(new Date("2026-09-21T02:00:00Z"), SP)).toBe("2026-09-20");
+  });
+
+  it("duas lojas em fusos diferentes podem estar em dias diferentes", () => {
+    const instante = new Date("2026-09-21T02:00:00Z");
+    expect(diaNoFuso(instante, SP)).toBe("2026-09-20");
+    expect(diaNoFuso(instante, "Asia/Tokyo")).toBe("2026-09-21");
+  });
+
+  it("vira o dia exatamente na meia-noite local", () => {
+    // 03:00Z = 00:00 em São Paulo (UTC-3).
+    expect(diaNoFuso(new Date("2026-09-21T02:59:00Z"), SP)).toBe("2026-09-20");
+    expect(diaNoFuso(new Date("2026-09-21T03:00:00Z"), SP)).toBe("2026-09-21");
   });
 });

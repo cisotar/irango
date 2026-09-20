@@ -115,3 +115,25 @@ function deslocamentoMs(ts: number, timezone: string): number {
   );
   return comoUtc - ts;
 }
+
+/**
+ * Dia civil da loja no formato ISO `"YYYY-MM-DD"`, no fuso `timezone`.
+ *
+ * É o "hoje" que o modal de promoções compara com a última visualização
+ * gravada no dispositivo (RN-16): o cliente que vira a meia-noite no PRÓPRIO
+ * fuso não deve reabrir o modal de uma loja onde ainda é o mesmo dia — por isso
+ * o dia sai daqui, no servidor, e nunca do relógio do navegador.
+ *
+ * `en-CA` porque é o locale cujo formato numérico já é `AAAA-MM-DD` (mesmo
+ * truque de `metricasPedidos.chaveDia`, que é fixo em São Paulo e por isso não
+ * serve a uma loja com fuso próprio). O formatter é criado por chamada: o fuso
+ * é parâmetro, não constante.
+ */
+export function diaNoFuso(agora: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(agora);
+}
