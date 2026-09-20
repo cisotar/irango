@@ -290,6 +290,7 @@ export type Database = {
           observacao: string | null
           pedido_id: string
           preco: number
+          preco_original: number | null
           produto_id: string | null
           quantidade: number
         }
@@ -299,6 +300,7 @@ export type Database = {
           observacao?: string | null
           pedido_id: string
           preco: number
+          preco_original?: number | null
           produto_id?: string | null
           quantidade: number
         }
@@ -308,6 +310,7 @@ export type Database = {
           observacao?: string | null
           pedido_id?: string
           preco?: number
+          preco_original?: number | null
           produto_id?: string | null
           quantidade?: number
         }
