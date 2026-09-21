@@ -19,6 +19,8 @@ function linha(
     preco: 100,
     precoEfetivo,
     temDesconto,
+    compravel: true,
+    motivoNaoCompravel: null,
   };
 }
 

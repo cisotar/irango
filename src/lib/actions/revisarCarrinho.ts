@@ -36,6 +36,11 @@ import {
 } from "@/lib/supabase/queries/produtos";
 import { buscarCupomPorCodigo } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
+import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
+import {
+  avaliarVigenciaDoProduto,
+  visibilidadeDe,
+} from "@/lib/utils/vigenciaCardapio";
 import {
   assinaturaPermiteAcesso,
   type StatusAssinatura,
@@ -99,7 +104,7 @@ export async function revisarCarrinhoAction(
 
     // Onda única de leituras independentes. O cupom só é buscado quando o
     // cliente enviou um código — sem código não existe consulta de cupom.
-    const [loja, produtos, opcionaisBanco, cupom] = await Promise.all([
+    const [loja, produtos, opcionaisBanco, cupom, cardapios] = await Promise.all([
       // Gates de LOJA (paridade com `pedido.ts:92-107`): sem eles, quem guardou
       // um `produto_id` de loja suspensa obtinha preço e status de promoção
       // dela pelo preview. `lojaAberta` de propósito NÃO entra: horário não é
@@ -112,6 +117,10 @@ export async function revisarCarrinhoAction(
       dados.codigo
         ? buscarCupomPorCodigo(svc, dados.loja_id, dados.codigo)
         : Promise.resolve(null),
+      // (252) EXATAMENTE a mesma query da 249 — nunca uma segunda leitura com
+      // outro filtro. É essa identidade estrutural, e não o cuidado de quem
+      // escreveu, que garante a paridade preview ↔ autoritativo (§10-A).
+      buscarCardapiosComProdutos(svc, dados.loja_id),
     ]);
 
     if (
@@ -148,10 +157,30 @@ export async function revisarCarrinhoAction(
 
     for (const item of dados.itens) {
       const produto = porId.get(item.produto_id);
-      // MESMO gate de `criarPedido`: inexistente, indisponível, oculto ou de
-      // outra loja derruba a revisão inteira (vetor IDOR/cross-loja).
+      // (252) O item que a revisão NÃO ENCONTRA no banco vira linha BLOQUEADA,
+      // nunca omitida: sumir da conta seria alterar o carrinho do cliente por
+      // omissão. Sem row não há preço do banco, e inventar número é o oposto do
+      // mandato 1 — a linha nasce com preço ZERO e fica FORA do subtotal e da
+      // economia, então esse zero nunca chega a um total.
+      if (produto == null) {
+        linhas.push({
+          produto_id: item.produto_id,
+          quantidade: item.quantidade,
+          preco: 0,
+          precoEfetivo: 0,
+          temDesconto: false,
+          compravel: false,
+          // `esgotado` e não `fora_da_janela`: o produto não existe mais, e
+          // `fora_da_janela` prometeria uma volta que ninguém pode cumprir.
+          motivoNaoCompravel: "esgotado",
+        });
+        continue;
+      }
+      // MESMO gate de `criarPedido` para indisponível, oculto ou de outra loja:
+      // derruba a revisão inteira (vetor IDOR/cross-loja). Deliberadamente NÃO
+      // fundido com o ramo acima: rebaixar o id do tenant vizinho a linha
+      // bloqueada confirmaria ao atacante que ele EXISTE em outra loja (§6).
       if (
-        produto == null ||
         !produto.disponivel ||
         produto.oculto === true ||
         produto.loja_id !== dados.loja_id
@@ -195,17 +224,38 @@ export async function revisarCarrinhoAction(
       // O desconto de produto vira PREÇO aqui (D8) — fonte única `precoEfetivo`.
       const preco = precoEfetivo(produto, agora);
 
-      componentes.push({
-        precoProduto: preco,
-        quantidade: item.quantidade,
-        opcionais: opcionaisCalculo,
-      });
+      // (252/RN-06) A MESMA função pura do SSR da vitrine e de `criarPedido`,
+      // com o MESMO `agora` e o `timezone` da LOJA — o cliente não manda
+      // horário, janela, cardápio nem `visibilidade`.
+      const vigencia = avaliarVigenciaDoProduto(
+        { visibilidade: visibilidadeDe(produto) },
+        cardapios.cardapiosPorProduto.get(produto.id) ?? [],
+        agora,
+        loja.timezone,
+      );
+      // `disponivel` aqui é sempre true (o gate acima já derrubou o contrário):
+      // a composição fica explícita para espelhar `projetarProdutoVitrine`.
+      const compravel = produto.disponivel && vigencia.dentroDaJanela;
+
       linhas.push({
         produto_id: produto.id,
         quantidade: item.quantidade,
         preco: produto.preco,
         precoEfetivo: preco.precoEfetivo,
         temDesconto: preco.temDesconto,
+        compravel,
+        motivoNaoCompravel: compravel ? null : "fora_da_janela",
+      });
+
+      // Linha bloqueada não entra no subtotal, na base do cupom nem na
+      // economia: o que o cliente não pode comprar, ele não paga — e é isso
+      // que mantém o preview idêntico ao autoritativo, que recusa o pedido.
+      if (!compravel) continue;
+
+      componentes.push({
+        precoProduto: preco,
+        quantidade: item.quantidade,
+        opcionais: opcionaisCalculo,
       });
       economiaBruta += (produto.preco - preco.precoEfetivo) * item.quantidade;
     }

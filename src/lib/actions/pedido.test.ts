@@ -49,6 +49,16 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarLojaParaPedido: (...a: unknown[]) => buscarLojaParaPedido(...a),
 }));
 
+// (249/252) A onda de leituras de `criarPedido`/`revisarCarrinhoAction` passou a
+// incluir os cardápios da loja. Loja sem cardápio nenhum = o comportamento que
+// estes testes já descreviam (todo produto é `visibilidade: 'menu'`).
+vi.mock("@/lib/supabase/queries/cardapios", () => ({
+  buscarCardapiosComProdutos: async () => ({
+    cardapios: [],
+    cardapiosPorProduto: new Map(),
+  }),
+}));
+
 const buscarProdutosPorIds = vi.fn();
 // [085] Leituras de opcionais do BANCO usadas pelo recálculo autoritativo:
 //  - buscarOpcionaisPorIds(client, ids): linhas de `opcionais` por id, trazendo
