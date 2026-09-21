@@ -319,3 +319,61 @@ describe("partirPorTermo", () => {
     ).toBe(false);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [262] A busca é VERIFICADA, não reescrita: o filtro é estritamente
+// SUBTRATIVO e o produto que sobra é a MESMA referência que veio do SSR.
+//
+// É a trava contra o modo de falha que a issue nomeia: se alguém re-montar um
+// shape reduzido aqui, o estado "fora da janela" some, o selo desaparece e o
+// botão de compra VOLTA — só no resultado de busca, onde ninguém olha.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("262 filtrarCatalogo — o produto filtrado mantém a comprabilidade", () => {
+  const foraDaJanela: CategoriaComProdutos[] = [
+    {
+      id: "cat-pratos",
+      nome: "Pratos",
+      exibir_imagens: true,
+      produtos: [
+        {
+          id: "p-feijoada",
+          nome: "Feijoada completa",
+          descricao: "com couve",
+          preco: 100,
+          foto_url: null,
+          categoria_id: "cat-pratos",
+          precoEfetivo: 100,
+          temDesconto: false,
+          seloDesconto: null,
+          descontoFim: null,
+          compravel: false,
+          motivoNaoCompravel: "fora_da_janela",
+        },
+      ],
+    },
+  ];
+
+  it("mantém `compravel === false` e o motivo `fora_da_janela`", () => {
+    const [categoria] = filtrarCatalogo(foraDaJanela, "feijoada");
+    expect(categoria.produtos).toHaveLength(1);
+    expect(categoria.produtos[0].compravel).toBe(false);
+    expect(categoria.produtos[0].motivoNaoCompravel).toBe("fora_da_janela");
+  });
+
+  it("devolve a MESMA referência de produto — nada é remontado campo a campo", () => {
+    const [categoria] = filtrarCatalogo(foraDaJanela, "feijoada");
+    expect(categoria.produtos[0]).toBe(foraDaJanela[0].produtos[0]);
+  });
+
+  it("o mapa `rotulosVigencia` é chaveado por id ⇒ a busca não o alcança", () => {
+    // Não é um filtro que alguém possa esquecer de aplicar: o rótulo nem passa
+    // por `filtrarCatalogo`. O id do produto filtrado continua o mesmo, então
+    // a chave continua resolvendo.
+    const rotulos: Record<string, string> = {
+      "p-feijoada": "Sáb e dom, 11:00–15:00",
+    };
+    const [categoria] = filtrarCatalogo(foraDaJanela, "feijoada");
+    expect(rotulos[categoria.produtos[0].id]).toBe("Sáb e dom, 11:00–15:00");
+  });
+});

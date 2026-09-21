@@ -97,6 +97,10 @@ function payloadProduto(over: Record<string, unknown> = {}) {
     categoria_id: null,
     disponivel: true,
     oculto: false,
+    // [Auditoria 260/261] `schemaProdutoUpdate` EXIGE `visibilidade`: sem ela o
+    // UPDATE (inclusive o admin, sob service_role) gravaria `'menu'` por
+    // default num produto exclusivo de cardápio.
+    visibilidade: "menu",
     ordem: 0,
     ...over,
   };
@@ -292,6 +296,12 @@ describe("241 — nenhum patch admin montado por spread do payload", () => {
     "categoria_id",
     "disponivel",
     "oculto",
+    // [261] D14 — `schemaProduto` ganhou `visibilidade` com `.default("menu")`,
+    // então ela chega ao INSERT/UPDATE mesmo num payload que não a manda. O
+    // caminho admin escreve o MESMO campo que o do lojista (paridade), e a
+    // recusa de RN-14 vale igual lá: o trigger é SECURITY DEFINER e não
+    // depende de role.
+    "visibilidade",
     "ordem",
     "foto_url",
     "desconto_ativo",
@@ -365,5 +375,56 @@ describe("241 — escopo cross-tenant do caminho admin", () => {
     );
     // Nenhum filtro aponta para a loja alheia.
     expect(escrita?.filtros.some(([, v]) => v === LOJA_OUTRA)).toBe(false);
+  });
+});
+
+// ── PARIDADE 4: `visibilidade` ausente no UPDATE não é decidida pelo sistema ──
+//
+// [Auditoria 260/261] O hub admin escreve com `service_role` (BYPASSRLS): aqui
+// a paridade com o caminho do lojista É a proteção. Um payload legado sem
+// `visibilidade`, sob o schema de INSERT, gravaria `'menu'` por default em cima
+// de um produto exclusivo de cardápio — o admin teria convertido a declaração
+// do lojista sem pedir, e nenhuma RLS o impediria.
+describe("auditoria 260/261 — UPDATE admin sem `visibilidade` não toca a coluna", () => {
+  function semVisibilidade() {
+    const payload: Record<string, unknown> = payloadProduto();
+    delete payload.visibilidade;
+    return payload;
+  }
+
+  it("nenhum patch carrega a chave `visibilidade` (e nada é gravado)", async () => {
+    const r = await atualizarProdutoAdmin(
+      LOJA_ALVO,
+      PRODUTO_ID,
+      semVisibilidade(),
+    );
+
+    expect(r.ok).toBe(false);
+    expect(opEscrita("produtos")).toBeUndefined();
+    for (const op of ops) {
+      expect(op.update ?? {}).not.toHaveProperty("visibilidade");
+      expect(op.insert ?? {}).not.toHaveProperty("visibilidade");
+    }
+  });
+
+  it("com o campo explícito, o admin grava exatamente o que veio", async () => {
+    const r = await atualizarProdutoAdmin(LOJA_ALVO, PRODUTO_ID, {
+      ...payloadProduto(),
+      visibilidade: "cardapio",
+    });
+
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update).toMatchObject({
+      visibilidade: "cardapio",
+    });
+  });
+
+  it("o INSERT admin continua aceitando a ausência (default da COLUNA)", async () => {
+    const r = await criarProdutoAdmin(LOJA_ALVO, semVisibilidade());
+
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.insert).toMatchObject({
+      visibilidade: "menu",
+    });
   });
 });

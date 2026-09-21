@@ -15,6 +15,11 @@ import { PrecoProduto } from "@/components/vitrine/PrecoProduto";
 import { SecaoOpcionais } from "@/components/vitrine/SecaoOpcionais";
 import { SeloDesconto } from "@/components/vitrine/SeloDesconto";
 import { achatarOpcionaisEscolhidos } from "@/components/vitrine/escolhasOpcionais";
+import {
+  rotuloAcessivelNaoCompravel,
+  rotuloCtaNaoCompravel,
+  rotuloNaoCompravel,
+} from "@/components/vitrine/rotuloEsgotado";
 import { LIMITE_OBSERVACAO, MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import {
   ajudaObservacao,
@@ -45,6 +50,13 @@ const EMOJI_SEM_FOTO = "🍽️";
 export type ProdutoModalDados = ProdutoVitrine & {
   /** Grupos de opcional disponíveis (SSR, issue 081). Vazio/ausente = sem seção. */
   gruposOpcionais?: GrupoOpcional[];
+  /**
+   * [262] A frase de "quando volta", pronta do servidor
+   * (`rotulosVigencia[produto.id]`). O modal é o ÚNICO lugar onde ela cabe
+   * inteira em 360px — por isso o card não comprável abre daqui (design §4.2).
+   * Ausente ⇒ "Indisponível no momento".
+   */
+  rotuloIndisponivel?: string;
 };
 
 type ProdutoModalProps = {
@@ -142,8 +154,13 @@ export function ProdutoModal({
 
   if (!produto) return null;
 
-  // Comprabilidade vem PRONTA do contrato — sem default, sem inferência.
+  // Comprabilidade vem PRONTA do contrato — sem default, sem inferência. O
+  // motivo (esgotado × fora da janela) também: o modal nunca avalia janela.
   const disponivel = produto.compravel;
+  const rotuloIndisponivel = rotuloNaoCompravel(
+    produto.motivoNaoCompravel,
+    produto.rotuloIndisponivel,
+  );
   const foto = fotoSegura(produto.foto_url);
   const grupos = produto.gruposOpcionais ?? [];
   // Opcionais escolhidos (qtd > 0) achatados a partir dos GRUPOS (dado), não do que
@@ -361,7 +378,7 @@ export function ProdutoModal({
                     role="status"
                     className="w-fit rounded-full border-[1.5px] border-white/25 bg-indisponivel-fundo px-3 py-1 text-xs font-bold uppercase tracking-wide text-indisponivel-texto"
                   >
-                    ✕ Esgotado
+                    ✕ {rotuloIndisponivel}
                   </span>
                 ) : null}
                 <SeloDesconto rotulo={produto.seloDesconto} ancoragem="inline" />
@@ -408,7 +425,7 @@ export function ProdutoModal({
                           <PrecoProduto produto={produto} tamanho="modal" />
                         </>
                       ) : (
-                        "Produto indisponível no momento"
+                        rotuloIndisponivel
                       )}
                     </p>
                   </div>
@@ -551,10 +568,16 @@ export function ProdutoModal({
                 <Button
                   type="button"
                   disabled
-                  aria-label="Produto esgotado — não é possível adicionar ao carrinho"
+                  aria-label={`${rotuloAcessivelNaoCompravel(
+                    produto.nome,
+                    produto.motivoNaoCompravel,
+                    produto.rotuloIndisponivel,
+                  )} — não é possível adicionar ao carrinho`}
                   className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white disabled:bg-[#9a9a9a]"
                 >
-                  Produto esgotado
+                  {/* Rótulo CURTO: a frase de vigência inteira mora no selo
+                      central e no `aria-label` — nunca num botão. */}
+                  {rotuloCtaNaoCompravel(produto.motivoNaoCompravel)}
                 </Button>
               ) : null}
               <Button

@@ -17,10 +17,7 @@ import {
 } from "@/components/vitrine/BuscaProdutos";
 import { criarAnunciadorBusca } from "@/components/vitrine/anunciadorBusca";
 import { NavCategorias } from "@/components/vitrine/NavCategorias";
-import {
-  SecaoCatalogo,
-  type CategoriaComProdutos,
-} from "@/components/vitrine/SecaoCatalogo";
+import { SecaoCatalogo } from "@/components/vitrine/SecaoCatalogo";
 import {
   CLASSES_MAIN_VITRINE,
   ESCADA_LARGURA_VITRINE,
@@ -36,10 +33,41 @@ import {
 } from "@/components/vitrine/resumoBusca";
 import { filtrarCatalogo, normalizarBusca } from "@/lib/utils/buscarProdutos";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
+import type { SecaoVitrine } from "@/lib/utils/catalogoVitrine";
+
+/**
+ * Default hoisted: um `[]` literal na desestruturação seria uma referência NOVA
+ * a cada render e invalidaria o `useMemo` das seções em toda tecla digitada
+ * (mesmo achado do `acelerar` que hoisted `ESTILO_ANCORA_CATEGORIA`).
+ */
+const SEM_DESTAQUE: SecaoVitrine[] = [];
 
 type CatalogoVitrineProps = {
-  categorias: CategoriaComProdutos[];
+  /** As seções de CATEGORIA — a única lista que a busca enxerga. */
+  categorias: SecaoVitrine[];
+  /**
+   * [263/D16/RN-16] As seções de DESTAQUE dos cardápios ABERTOS agora, prontas
+   * de `agruparPorCardapio` (248) no servidor.
+   *
+   * Prop **separada** de `categorias`, e é ESSA separação que é a trava:
+   * `filtrarCatalogo` e `contarProdutos` recebem só `categorias`, então não
+   * existe chamada em que o destaque entre. Um filtro seria uma linha que
+   * alguém esquece — e, sem jsdom, não seria travável por teste de componente.
+   * Assim o erro cai no `tsc`, primeiro passo do CI.
+   *
+   * Consequência que importa mais que a duplicata visual: o `ResumoBusca`, que
+   * anuncia o total em região viva `aria-live`, não passa a mentir.
+   */
+  secoesDestaque?: SecaoVitrine[];
+  /** [263] `cardapio_id → rótulo de janela`, repassado intacto (design §13.1). */
+  rotulosJanela?: Record<string, string>;
   opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
+  /**
+   * [262] Repassado intacto ao `SecaoCatalogo`. Este componente não lê nem
+   * reescreve o mapa: a frase vem pronta do servidor (247/254) e chaveada por
+   * id, então o filtro da busca (que é subtrativo) não a alcança.
+   */
+  rotulosVigencia: Record<string, string>;
 };
 
 /**
@@ -55,7 +83,10 @@ type CatalogoVitrineProps = {
  */
 export function CatalogoVitrine({
   categorias,
+  secoesDestaque = SEM_DESTAQUE,
+  rotulosJanela,
   opcionaisPorCategoria,
+  rotulosVigencia,
 }: CatalogoVitrineProps) {
   const barraRef = useRef<HTMLDivElement>(null);
   const temBarra = categorias.length > 0;
@@ -90,6 +121,19 @@ export function CatalogoVitrine({
   );
   const total = useMemo(() => contarProdutos(filtradas), [filtradas]);
   const semResultado = emBusca && total === 0;
+
+  // [263/D16] O destaque entra APENAS aqui, no ramo `emBusca === false` — o
+  // MESMO booleano que já decide trilho × `ResumoBusca` e já desmonta a nav
+  // (D2 da 202). Nenhum estado novo, nenhuma condição nova, e nenhuma
+  // combinação possível de chip de destaque sem seção correspondente.
+  //
+  // UMA lista para os dois consumidores (trilho e catálogo): é o que garante
+  // que o `indice` que produz a âncora da <section> seja o mesmo que produz o
+  // `href` do chip, agora que as seções de destaque deslocam as categorias.
+  const secoes = useMemo(
+    () => (emBusca ? filtradas : [...secoesDestaque, ...filtradas]),
+    [emBusca, filtradas, secoesDestaque],
+  );
 
   // Um anúncio por PARADA de digitação, não um por tecla. Mecânica em módulo
   // neutro (`anunciadorBusca.ts`), aqui só o fio com o React.
@@ -164,10 +208,7 @@ export function CatalogoVitrine({
             {emBusca ? (
               <ResumoBusca total={total} termo={termo} aoLimpar={limpar} />
             ) : (
-              <NavCategorias
-                categorias={categorias}
-                alturaBarra={alturaBarra}
-              />
+              <NavCategorias categorias={secoes} alturaBarra={alturaBarra} />
             )}
           </div>
         </div>
@@ -199,8 +240,10 @@ export function CatalogoVitrine({
           <EstadoVazioBusca termo={termo} aoLimpar={limpar} />
         ) : (
           <SecaoCatalogo
-            categorias={filtradas}
+            secoes={secoes}
             opcionaisPorCategoria={opcionaisPorCategoria}
+            rotulosVigencia={rotulosVigencia}
+            rotulosJanela={rotulosJanela}
             termo={termo}
           />
         )}

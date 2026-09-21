@@ -2,11 +2,14 @@ import type { ReactElement } from "react";
 
 import { carregarLojaAdmin } from "../carga";
 import { carregarOpcionaisAdmin } from "../carga-opcionais";
+import { carregarCardapiosAdmin } from "../carga-cardapios";
 import {
   projetarPromocaoDoPainel,
   type PromocaoDoPainel,
 } from "@/lib/utils/promocaoPainel";
 import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
+import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
+import type { CardapiosPorProduto } from "@/components/painel/contrato-lote";
 import { CardapioAdminClient } from "./CardapioAdminClient";
 
 /**
@@ -33,9 +36,14 @@ export default async function CardapioAdminPage({
     // [217] `opcionais` e `associacoes` NÃO são query nova: o agregado já as
     // carregava (carga-opcionais.ts) — a page só não as desestruturava.
     { opcionaisPorCategoria, categoriasOpcional, opcionais, associacoes },
+    // [Auditoria 260/261] Leitura dos cardápios da loja-alvo. Sem ela o
+    // `FormProduto` afirmaria "não está em nenhum cardápio" para um produto que
+    // está em dois — e o admin escreve sob `service_role`.
+    cardapiosDaLoja,
   ] = await Promise.all([
     carregarLojaAdmin(lojaId),
     carregarOpcionaisAdmin(lojaId),
+    carregarCardapiosAdmin(lojaId),
   ]);
 
   // [235] Mesma projeção do painel do lojista, com o fuso da LOJA-ALVO: o admin
@@ -45,6 +53,19 @@ export default async function CardapioAdminPage({
     produtos.map((p) => [
       p.id,
       projetarPromocaoDoPainel(p, agora, loja.timezone),
+    ]),
+  );
+
+  // O MESMO `agora` do bloco acima e o fuso da LOJA-ALVO: o admin edita em nome
+  // do lojista e não pode ver "aberto agora" por outro relógio.
+  const cardapiosPorProduto: CardapiosPorProduto = Object.fromEntries(
+    [...cardapiosDaLoja.cardapiosPorProduto].map(([produtoId, lista]) => [
+      produtoId,
+      lista.map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        abertoAgora: cardapioAberto(c, agora, loja.timezone),
+      })),
     ]),
   );
 
@@ -59,6 +80,7 @@ export default async function CardapioAdminPage({
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
+      cardapiosPorProduto={cardapiosPorProduto}
       promocoes={promocoes}
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
       // Linhas INTEIRAS desde a 217 — o cartão de associação exige

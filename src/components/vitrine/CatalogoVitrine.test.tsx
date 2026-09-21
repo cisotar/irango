@@ -10,13 +10,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CatalogoVitrine } from "./CatalogoVitrine";
-import type { CategoriaComProdutos } from "./SecaoCatalogo";
+import type { SecaoVitrine } from "@/lib/utils/catalogoVitrine";
 
 /** N categorias com um produto cada — o gate da nav (RN-4) conta CATEGORIAS. */
-function varias(quantidade: number): CategoriaComProdutos[] {
+function varias(quantidade: number): SecaoVitrine[] {
   return Array.from({ length: quantidade }, (_, indice) => ({
     id: `cat-${indice}`,
     nome: `Categoria ${indice}`,
+    tipo: "categoria" as const,
     produtos: [
       {
         id: `p-${indice}`,
@@ -36,11 +37,12 @@ function varias(quantidade: number): CategoriaComProdutos[] {
   }));
 }
 
-function categorias(): CategoriaComProdutos[] {
+function categorias(): SecaoVitrine[] {
   return [
     {
       id: "cat-bebidas",
       nome: "Bebidas",
+      tipo: "categoria",
       produtos: [
         {
           id: "p-1",
@@ -64,7 +66,7 @@ function categorias(): CategoriaComProdutos[] {
 describe("201 CatalogoVitrine — barra sticky e main do catálogo", () => {
   it("com ao menos uma categoria, renderiza a barra sticky E o <main>", () => {
     const html = renderToStaticMarkup(
-      <CatalogoVitrine categorias={categorias()} />,
+      <CatalogoVitrine rotulosVigencia={{}} categorias={categorias()} />,
     );
 
     expect(html).toContain("sticky top-0 z-30");
@@ -74,7 +76,7 @@ describe("201 CatalogoVitrine — barra sticky e main do catálogo", () => {
   });
 
   it("catálogo vazio (RN-4): sem barra, mas o <main> continua", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={[]} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={[]} />);
 
     expect(html).not.toContain("sticky");
     expect(html).toContain("<main");
@@ -82,7 +84,7 @@ describe("201 CatalogoVitrine — barra sticky e main do catálogo", () => {
 
   it("as seções saem com o scroll-margin medido, sem a antiga classe fixa", () => {
     const html = renderToStaticMarkup(
-      <CatalogoVitrine categorias={categorias()} />,
+      <CatalogoVitrine rotulosVigencia={{}} categorias={categorias()} />,
     );
 
     expect(html).toContain("scroll-margin-top:calc(var(--altura-barra)");
@@ -93,13 +95,13 @@ describe("201 CatalogoVitrine — barra sticky e main do catálogo", () => {
   });
 
   it("203: com 3+ categorias a barra traz a nav de categorias", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={varias(3)} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={varias(3)} />);
 
     expect(html).toContain('<nav aria-label="Categorias do cardápio"');
   });
 
   it("203: com 2 categorias a barra existe, mas sem nav (RN-4)", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={varias(2)} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={varias(2)} />);
 
     expect(html).toContain("sticky top-0 z-30");
     expect(html).not.toContain("<nav");
@@ -108,7 +110,7 @@ describe("201 CatalogoVitrine — barra sticky e main do catálogo", () => {
 
 describe("202 CatalogoVitrine — modo busca no primeiro render", () => {
   it("a barra traz o campo de busca acima do trilho", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={varias(3)} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={varias(3)} />);
 
     expect(html).toContain('role="search"');
     expect(html.indexOf('role="search"')).toBeLessThan(
@@ -117,13 +119,13 @@ describe("202 CatalogoVitrine — modo busca no primeiro render", () => {
   });
 
   it("a busca existe mesmo onde a nav não se justifica (o gate de 3 é da nav)", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={varias(2)} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={varias(2)} />);
 
     expect(html).toContain('role="search"');
   });
 
   it("a região viva é ÚNICA, existe vazia e fica FORA da barra medida (D3)", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={varias(3)} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={varias(3)} />);
 
     // Uma só, nunca aninhada (4.1.3).
     expect(html.match(/role="status"/g)).toHaveLength(1);
@@ -139,7 +141,7 @@ describe("202 CatalogoVitrine — modo busca no primeiro render", () => {
   });
 
   it("com termo vazio o <main> segue com o catálogo íntegro, sem estado vazio", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={varias(3)} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={varias(3)} />);
 
     expect(html).toContain("Produto 0");
     expect(html).toContain("Produto 2");
@@ -150,7 +152,7 @@ describe("202 CatalogoVitrine — modo busca no primeiro render", () => {
   });
 
   it("com termo vazio nenhum <mark> é montado (o realce da 200 fica inerte)", () => {
-    const html = renderToStaticMarkup(<CatalogoVitrine categorias={varias(3)} />);
+    const html = renderToStaticMarkup(<CatalogoVitrine rotulosVigencia={{}} categorias={varias(3)} />);
 
     expect(html).not.toContain("<mark");
   });

@@ -82,6 +82,10 @@ export const SEM_REVISAO: EstadoRevisao = { pendente: false, confirmada: false }
  * preenchido + frete RESOLVIDO)). Em entrega, frete "calculando",
  * "indisponivel", "erro" ou "ocioso" mantém o botão bloqueado.
  *
+ * (262) "Nenhum item bloqueado" é a condição mais nova: item que a revisão
+ * devolve como não comprável (esgotado ou fora da janela do cardápio) trava o
+ * submit até ser removido do carrinho.
+ *
  * (180-B) "a_combinar" TAMBÉM libera: um pedido a combinar é um pedido válido —
  * o comprador conclui normalmente e o frete é definido no chat com a loja.
  * Manter só "ok" prenderia o cliente exatamente no cenário que a issue existe
@@ -93,7 +97,15 @@ export function podeConfirmar(
   tipoEntrega: TipoEntrega,
   freteStatus: string,
   revisao: EstadoRevisao = SEM_REVISAO,
+  temItemBloqueado: boolean = false,
 ): boolean {
+  // (262/design §13.7 item 4) A condição "nenhum item bloqueado" entra AQUI,
+  // uma vez, cobrindo wizard mobile e desktop — nunca reimplementada no
+  // componente (design-system §9). `temItemBloqueado` é um veredito do
+  // SERVIDOR (`LinhaRevisada.compravel`, 252), nunca uma avaliação de janela
+  // feita no browser. Default `false`: sem revisão fresca nada é afirmado, e a
+  // autoridade continua sendo `criarPedido` (RN-08).
+  if (temItemBloqueado) return false;
   // (238/M9 trava 2) A reconfirmação de preço de D11 entra AQUI, uma vez só,
   // cobrindo wizard mobile e desktop — nunca reimplementada no componente
   // (design-system §9). Enquanto há revisão pendente sem o segundo clique,

@@ -24,9 +24,15 @@ import type {
 } from "@/lib/actions/revisarCarrinho-contrato";
 import type { ItemCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId } from "@/hooks/useCarrinho";
+import { rotuloNaoCompravel } from "@/components/vitrine/rotuloEsgotado";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
 import { ResumoValores } from "./ResumoValores";
+import {
+  anuncioItensBloqueados,
+  SEM_BLOQUEIOS,
+  type ItemBloqueado,
+} from "./itensBloqueados";
 
 const MENSAGEM_ERRO_CUPOM = "Não foi possível validar o cupom. Tente novamente.";
 
@@ -44,12 +50,19 @@ export type EtapaItensProps = {
   cupom: EstadoCupom | null;
   /** [237] Economia de PRODUTO, pronta do servidor. `null` ⇒ linha some. */
   economiaProdutos: number | null;
+  /**
+   * [262] Linhas que a revisão do servidor devolveu NÃO compráveis (252), por
+   * índice do carrinho. Vazio ⇒ a etapa renderiza exatamente como antes.
+   * Nenhuma janela é avaliada aqui: o veredito e o motivo chegam prontos.
+   */
+  bloqueados?: readonly ItemBloqueado[];
   /** id = linhaCarrinhoId(produtoId, opcionais, observacao) — distingue linhas com opcionais OU observações diferentes (168). */
   onIncrementar: (linhaId: string) => void;
   onDecrementar: (linhaId: string) => void;
   /**
-   * @deprecated Código morto — nunca é chamado. A remoção acontece decrementando até zero.
-   * Se implementar um botão de "remover rápido" no futuro, isso vai fazer sentido.
+   * [262/design §13.7 item 3] A saída da linha BLOQUEADA, e a única: não há
+   * "tentar de novo", porque não existe tentativa que mude o resultado. Na
+   * linha comprável a remoção continua sendo decrementar até zero.
    */
   onRemover: (linhaId: string) => void;
   /**
@@ -75,9 +88,10 @@ export function EtapaItens({
   codigoCupom,
   cupom,
   economiaProdutos,
+  bloqueados = SEM_BLOQUEIOS,
   onIncrementar,
   onDecrementar,
-  // onRemover: a remoção acontece via decremento até zero nesta etapa (126)
+  onRemover,
   onValidarCupom,
   onAplicarCupom,
   onRemoverCupom,
@@ -90,6 +104,9 @@ export function EtapaItens({
   const [validando, startValidacao] = useTransition();
 
   const totalPreview = Math.max(0, subtotal - desconto);
+  // Mapa índice → bloqueio. O pareamento por índice é de `detectarItensBloqueados`
+  // (módulo puro): aqui só se lê.
+  const bloqueioPorIndice = new Map(bloqueados.map((b) => [b.indice, b]));
 
   function aplicarCupom() {
     const cod = codigo.trim();
@@ -148,8 +165,21 @@ export function EtapaItens({
       {/* Seção: Itens */}
       <div className={SECAO}>
         <h2 className={SECAO_TITULO}>Itens do pedido</h2>
+        {/* [262/design §13.7 item 5] Anúncio UMA VEZ, no topo da etapa — em vez
+            de cada linha gritar sozinha. `role="status"`, nunca `alert`: o
+            produto saiu de temporada ou acabou, não é falha do cliente. */}
+        {bloqueados.length > 0 && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="border-b border-cinza-medio bg-cinza-claro px-4 py-3 text-xs text-texto-muted"
+          >
+            {anuncioItensBloqueados(bloqueados.length)}
+          </p>
+        )}
         <div className="divide-y divide-cinza-medio">
-          {itens.map((item) => {
+          {itens.map((item, indice) => {
+            const bloqueio = bloqueioPorIndice.get(indice);
             const linhaId = linhaCarrinhoId(
               item.produtoId,
               item.opcionais,
@@ -191,51 +221,88 @@ export function EtapaItens({
                     <p className="truncate text-[0.88rem] font-bold text-texto">
                       {item.nome}
                     </p>
-                    <p className="text-[0.75rem] text-texto-muted">
-                      {formatarMoeda(item.preco)} / unidade
-                    </p>
+                    {bloqueio ? (
+                      // Texto, não badge de erro: sem vermelho, sem ícone, sem
+                      // `role="alert"` (design §13.7 item 2). O rótulo sai do
+                      // MESMO módulo das quatro superfícies da vitrine — aqui
+                      // sem "quando volta", porque o item de temporada
+                      // encerrada não tem data a prometer (§13.7).
+                      <p className="text-[0.75rem] text-texto-muted">
+                        {rotuloNaoCompravel(bloqueio.motivo)}
+                      </p>
+                    ) : (
+                      <p className="text-[0.75rem] text-texto-muted">
+                        {formatarMoeda(item.preco)} / unidade
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex shrink-0 flex-col items-end gap-2">
-                    <span
-                      className="text-[0.92rem] font-black text-[var(--cor-destaque)]"
-                      aria-label={`Preço total deste item: ${formatarMoeda(subtotalItem)}`}
-                    >
-                      {formatarMoeda(subtotalItem)}
-                    </span>
-                    <div
-                      className="flex items-center"
-                      role="group"
-                      aria-label={`Quantidade de ${item.nome}`}
-                    >
+                    {/* Linha bloqueada: o preço fica RISCADO e fora do subtotal
+                        — que já vem do servidor sem ela (252). Nada é somado
+                        nem subtraído deste lado. */}
+                    {bloqueio ? (
+                      <s
+                        className="text-[0.92rem] font-black text-texto-muted"
+                        aria-label={`Item indisponível, ${formatarMoeda(subtotalItem)} fora do total`}
+                      >
+                        {formatarMoeda(subtotalItem)}
+                      </s>
+                    ) : (
+                      <span
+                        className="text-[0.92rem] font-black text-[var(--cor-destaque)]"
+                        aria-label={`Preço total deste item: ${formatarMoeda(subtotalItem)}`}
+                      >
+                        {formatarMoeda(subtotalItem)}
+                      </span>
+                    )}
+                    {bloqueio ? (
                       <Button
                         type="button"
                         variant="outline"
-                        size="icon"
-                        className="size-8 rounded-r-none border-borda-nav bg-cinza-claro text-destructive hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
-                        aria-label={`Diminuir ${item.nome}`}
-                        onClick={() => onDecrementar(linhaId)}
+                        // 44px LITERAL (design-system §5): a base de fonte do
+                        // projeto é 120%, então `min-h-11` viraria 52,8px.
+                        className="min-h-[44px] min-w-[44px] border-borda-nav bg-cinza-claro px-3 text-xs font-bold"
+                        aria-label={`Remover ${item.nome} do carrinho`}
+                        onClick={() => onRemover(linhaId)}
                       >
-                        <Minus className="size-3.5" aria-hidden />
+                        Remover
                       </Button>
+                    ) : (
                       <div
-                        className="flex size-8 items-center justify-center border-y border-borda-nav bg-white text-sm font-bold tabular-nums"
-                        aria-live="polite"
-                        aria-atomic="true"
+                        className="flex items-center"
+                        role="group"
+                        aria-label={`Quantidade de ${item.nome}`}
                       >
-                        {item.quantidade}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="size-8 rounded-r-none border-borda-nav bg-cinza-claro text-destructive hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                          aria-label={`Diminuir ${item.nome}`}
+                          onClick={() => onDecrementar(linhaId)}
+                        >
+                          <Minus className="size-3.5" aria-hidden />
+                        </Button>
+                        <div
+                          className="flex size-8 items-center justify-center border-y border-borda-nav bg-white text-sm font-bold tabular-nums"
+                          aria-live="polite"
+                          aria-atomic="true"
+                        >
+                          {item.quantidade}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="size-8 rounded-l-none border-borda-nav bg-cinza-claro hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                          aria-label={`Aumentar ${item.nome}`}
+                          onClick={() => onIncrementar(linhaId)}
+                        >
+                          <Plus className="size-3.5" aria-hidden />
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-8 rounded-l-none border-borda-nav bg-cinza-claro hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
-                        aria-label={`Aumentar ${item.nome}`}
-                        onClick={() => onIncrementar(linhaId)}
-                      >
-                        <Plus className="size-3.5" aria-hidden />
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 </div>
 
@@ -341,7 +408,9 @@ export function EtapaItens({
             type="button"
             size="lg"
             className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
-            disabled={itens.length === 0}
+            // [262] Item bloqueado trava o AVANÇO, não só o submit final: o
+            // cliente não monta endereço e pagamento para ser recusado no fim.
+            disabled={itens.length === 0 || bloqueados.length > 0}
             onClick={onContinuar}
           >
             Continuar

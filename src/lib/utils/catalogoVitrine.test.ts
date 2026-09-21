@@ -3,15 +3,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  agruparPorCardapio,
   projetarProdutoVitrine,
   // [247] RED — AINDA NÃO IMPLEMENTADOS (stub de assinatura em ./catalogoVitrine.ts).
   projetarCatalogoVitrine,
-  ROTULO_VIGENCIA_PROVISORIO,
   type ProdutoParaVitrine,
   type ProdutoVitrine,
 } from "./catalogoVitrine";
 import type { CardapioVigencia } from "./vigenciaCardapio";
 import { instanteNoFuso } from "./fusoLoja";
+import { rotuloVoltaQuando } from "./descreverVigencia";
 import { agruparCatalogo, type ProdutoPublico } from "@/lib/supabase/queries/produtos";
 import type { Categoria } from "@/lib/supabase/queries/categorias";
 
@@ -740,7 +741,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
     expect(esgotado.id in rotulosVigencia).toBe(false);
   });
 
-  it("o rótulo é a constante PROVISÓRIA `ROTULO_VIGENCIA_PROVISORIO` (TEMP 254)", () => {
+  it("[254] o rótulo é a frase REAL do cardápio que abre mais cedo (RN-07)", () => {
     const marcado = base({
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5",
       visibilidade: "cardapio",
@@ -752,13 +753,15 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
       agora: TERCA,
       timezone: SP,
     });
-    // Duas asserções de propósito:
-    //  1. a IDENTIDADE com a constante — `grep -rn ROTULO_VIGENCIA_PROVISORIO src/`
-    //     acha este teste quando a issue 254 for remover o provisório;
-    //  2. o TEXTO literal — a troca por `descreverVigencia` (RN-07) QUEBRA este
-    //     teste, então ela é obrigatória e visível, nunca silenciosa.
-    expect(rotulosVigencia[marcado.id]).toBe(ROTULO_VIGENCIA_PROVISORIO);
-    expect(rotulosVigencia[marcado.id]).toBe("Indisponível no momento");
+    // A 247 afirmava aqui o provisório "Indisponível no momento", pelo nome e
+    // pelo texto, para que a troca fosse obrigatória e visível. A 254 fez a
+    // troca: o texto agora é o de `rotuloVoltaQuando` para o FIM_DE_SEMANA
+    // (sáb+dom, 11:00–15:00) numa terça — a volta real, e não um genérico.
+    expect(rotulosVigencia[marcado.id]).toBe(
+      rotuloVoltaQuando(FIM_DE_SEMANA, SP),
+    );
+    expect(rotulosVigencia[marcado.id]).toBe("Sáb e dom, 11:00–15:00");
+    expect(rotulosVigencia[marcado.id]).not.toBe("Indisponível no momento");
   });
 
   it("cardapiosAbertos traz só os ativos ABERTOS agora, e preserva `ordem` (D4)", () => {
@@ -815,13 +818,26 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
   });
 });
 
-describe("247 — guarda estática: o provisório do rótulo é rastreável", () => {
+describe("247/254 — guarda estática: o provisório do rótulo NÃO sobreviveu", () => {
   const fonte = readFileSync(FONTE_CONTRATO, "utf8");
 
-  it("a constante existe, é exportada e carrega o marcador TEMP(254)", () => {
-    // Sem o marcador, o provisório vira permanente em silêncio (risco R2).
-    expect(fonte).toMatch(/export const ROTULO_VIGENCIA_PROVISORIO/);
-    expect(fonte).toContain("TEMP(254)");
+  // Montados por partes de propósito: o critério de aceite da 254 é que
+  // `grep -rn` por qualquer um dos dois volte VAZIO em `src/` — e um teste que
+  // os escrevesse por extenso seria justamente o resultado que sobra no grep.
+  const CONSTANTE_PROVISORIA = ["ROTULO", "VIGENCIA", "PROVISORIO"].join("_");
+  const MARCADOR = `TEMP(${254})`;
+
+  it("nem a constante provisória nem o marcador de dívida existem mais", () => {
+    // O inverso exato da guarda da 247: enquanto o provisório vivia, o marcador
+    // era obrigatório; entregue a 254, é a PRESENÇA dele que vira regressão.
+    expect(fonte).not.toContain(CONSTANTE_PROVISORIA);
+    expect(fonte).not.toContain(MARCADOR);
+  });
+
+  it("o rótulo vem de `descreverVigencia` — uma redação, sem texto solto aqui", () => {
+    expect(fonte).toMatch(/from\s+"\.\/descreverVigencia"/);
+    // Nenhuma frase de vigência escrita à mão neste arquivo (M6).
+    expect(fonte).not.toContain('"Indisponível no momento"');
   });
 
   it("`MotivoNaoCompravel` ACRESCENTA 'fora_da_janela' sem remover 'esgotado'", () => {
@@ -837,5 +853,289 @@ describe("247 — guarda estática: o provisório do rótulo é rastreável", ()
     expect(corpo).not.toContain("Intl.");
     expect(corpo).not.toContain("getDay(");
     expect(corpo).not.toMatch(/\bas\s+CardapioVigencia\b/);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [248] D16 puro — `agruparPorCardapio`, ordem determinística e o `foto_url`
+// zerado POR PRODUTO. Cenário 8 da spec, literal.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("248 — foto_url é propriedade do PRODUTO, não do grupo (RN-06)", () => {
+  const CAT_OCULTA = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
+  const CAT_MOSTRA = "dddddddd-dddd-4ddd-8ddd-ddddddddddd2";
+  const mapa = new Map([
+    [CAT_OCULTA, false],
+    [CAT_MOSTRA, true],
+  ]);
+
+  it("categoria 'ocultar' ⇒ foto_url null já na projeção", () => {
+    const v = projetarProdutoVitrine(
+      base({ categoria_id: CAT_OCULTA }),
+      [],
+      AGORA,
+      TZ,
+      mapa,
+    );
+    expect(v.foto_url).toBe(null);
+  });
+
+  it("categoria que EXIBE imagens ⇒ a URL passa intacta", () => {
+    const v = projetarProdutoVitrine(
+      base({ categoria_id: CAT_MOSTRA }),
+      [],
+      AGORA,
+      TZ,
+      mapa,
+    );
+    expect(v.foto_url).toBe("https://cdn.exemplo.test/feijoada.jpg");
+  });
+
+  it("produto SEM categoria ('Outros') e categoria fora do mapa seguem com foto (RN-5)", () => {
+    expect(
+      projetarProdutoVitrine(base({ categoria_id: null }), [], AGORA, TZ, mapa)
+        .foto_url,
+    ).not.toBe(null);
+    expect(
+      projetarProdutoVitrine(
+        base({ categoria_id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd9" }),
+        [],
+        AGORA,
+        TZ,
+        mapa,
+      ).foto_url,
+    ).not.toBe(null);
+  });
+
+  it("sem o mapa (recálculo/painel) o objeto é byte a byte o de antes", () => {
+    expect(projetarProdutoVitrine(base(), [], AGORA, TZ, undefined)).toEqual(
+      projetarProdutoVitrine(base(), [], AGORA, TZ),
+    );
+  });
+
+  it("a MESMA referência sai da projeção ⇒ a duplicata de render não pode carregar a URL", () => {
+    // O ponto de segurança da 248: com o zeramento por GRUPO, uma segunda
+    // seção (destaque, D16-a) copiaria o produto cru e traria a foto de volta.
+    // Com ele dentro da projeção, existe UM objeto e UM `foto_url`.
+    const { produtos } = projetarCatalogoVitrine({
+      produtos: [base({ categoria_id: CAT_OCULTA, visibilidade: "menu" })],
+      cardapiosPorProduto: new Map(),
+      agora: AGORA,
+      timezone: TZ,
+      exibirImagensPorCategoria: mapa,
+    });
+    expect(produtos[0].foto_url).toBe(null);
+  });
+});
+
+describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
+  type CardapioDaLoja = CardapioVigencia & { ordem: number };
+
+  const CAT_MASSAS = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+  const CAT_SOPAS = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2";
+
+  const categoriasCenario8: Categoria[] = [
+    {
+      id: CAT_MASSAS,
+      loja_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      nome: "Massas",
+      ordem: 1,
+      exibir_imagens: true,
+      criado_em: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: CAT_SOPAS,
+      loja_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      nome: "Sopas",
+      ordem: 2,
+      exibir_imagens: true,
+      criado_em: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+
+  /** "Cardápio de Inverno" ABERTO agora — recorrente sem restrição de dia. */
+  const INVERNO_ABERTO: CardapioDaLoja = {
+    id: "c0000000-0000-4000-8000-00000000c8a1",
+    nome: "Cardápio de Inverno",
+    ativo: true,
+    modo: "recorrente",
+    dias_semana: null,
+    dias_mes: null,
+    hora_inicio: null,
+    hora_fim: null,
+    prazo_inicio: null,
+    prazo_fim: null,
+    ordem: 1,
+  };
+
+  const LASANHA = base({
+    id: "c8000000-0000-4000-8000-000000000001",
+    nome: "Lasanha",
+    categoria_id: CAT_MASSAS,
+    visibilidade: "menu",
+  });
+  const NHOQUE = base({
+    id: "c8000000-0000-4000-8000-000000000002",
+    nome: "Nhoque",
+    categoria_id: CAT_MASSAS,
+    visibilidade: "menu",
+  });
+  const SOPA_CEBOLA = base({
+    id: "c8000000-0000-4000-8000-000000000003",
+    nome: "Sopa de cebola",
+    categoria_id: CAT_SOPAS,
+    visibilidade: "cardapio",
+  });
+
+  const vinculos = new Map<string, CardapioDaLoja[]>([
+    [LASANHA.id, [INVERNO_ABERTO]],
+    [SOPA_CEBOLA.id, [INVERNO_ABERTO]],
+  ]);
+
+  function projetarCenario8() {
+    return projetarCatalogoVitrine<CardapioDaLoja>({
+      produtos: [LASANHA, NHOQUE, SOPA_CEBOLA],
+      cardapiosPorProduto: vinculos,
+      agora: SABADO,
+      timezone: SP,
+    });
+  }
+
+  it("cenário 8 — 3 produtos, 3 seções, 5 cards", () => {
+    const { produtos, cardapiosAbertos } = projetarCenario8();
+    const destaque = agruparPorCardapio(produtos, cardapiosAbertos, vinculos);
+    const categoriasSecoes = agruparCatalogo(produtos, categoriasCenario8);
+
+    expect(produtos).toHaveLength(3);
+    expect(destaque.map((s) => s.nome)).toEqual(["Cardápio de Inverno"]);
+    expect(destaque[0].produtos.map((p) => p.nome)).toEqual([
+      "Lasanha",
+      "Sopa de cebola",
+    ]);
+    expect(categoriasSecoes.map((g) => g.nome)).toEqual(["Massas", "Sopas"]);
+    // 5 cards: 2 no destaque + 2 em Massas + 1 em Sopas.
+    const cards =
+      destaque[0].produtos.length +
+      categoriasSecoes.reduce((n, g) => n + g.produtos.length, 0);
+    expect(cards).toBe(5);
+  });
+
+  it("cenário 8 — a duplicata é de RENDER: a MESMA referência nas duas seções", () => {
+    const { produtos, cardapiosAbertos } = projetarCenario8();
+    const destaque = agruparPorCardapio(produtos, cardapiosAbertos, vinculos);
+    const massas = agruparCatalogo(produtos, categoriasCenario8)[0];
+
+    const noDestaque = destaque[0].produtos.find((p) => p.nome === "Lasanha");
+    const naCategoria = massas.produtos.find((p) => p.nome === "Lasanha");
+    expect(noDestaque).toBe(naCategoria);
+  });
+
+  it("a seção carrega o discriminante `tipo: \"cardapio\"`", () => {
+    const { produtos, cardapiosAbertos } = projetarCenario8();
+    expect(
+      agruparPorCardapio(produtos, cardapiosAbertos, vinculos)[0].tipo,
+    ).toBe("cardapio");
+  });
+
+  it("NENHUM produto de seção de destaque está fora da janela (propriedade)", () => {
+    const { produtos, cardapiosAbertos } = projetarCenario8();
+    const secoes = agruparPorCardapio(produtos, cardapiosAbertos, vinculos);
+    for (const secao of secoes) {
+      for (const produto of secao.produtos) {
+        expect(produto.motivoNaoCompravel).not.toBe("fora_da_janela");
+      }
+    }
+  });
+
+  it("produto ESGOTADO aparece na seção de destaque, com o motivo 'esgotado'", () => {
+    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+      produtos: [{ ...LASANHA, disponivel: false }],
+      cardapiosPorProduto: new Map([[LASANHA.id, [INVERNO_ABERTO]]]),
+      agora: SABADO,
+      timezone: SP,
+    });
+    const secao = agruparPorCardapio(produtos, cardapiosAbertos, vinculos)[0];
+    expect(secao.produtos.map((p) => p.nome)).toEqual(["Lasanha"]);
+    expect(secao.produtos[0].compravel).toBe(false);
+    expect(secao.produtos[0].motivoNaoCompravel).toBe("esgotado");
+  });
+
+  it("produto em DOIS cardápios abertos sai nas DUAS seções (D16-a)", () => {
+    const VERAO: CardapioDaLoja = {
+      ...INVERNO_ABERTO,
+      id: "c0000000-0000-4000-8000-00000000c8a2",
+      nome: "Cardápio de Verão",
+      ordem: 2,
+    };
+    const dois = new Map<string, CardapioDaLoja[]>([
+      [LASANHA.id, [INVERNO_ABERTO, VERAO]],
+    ]);
+    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+      produtos: [LASANHA],
+      cardapiosPorProduto: dois,
+      agora: SABADO,
+      timezone: SP,
+    });
+    const secoes = agruparPorCardapio(produtos, cardapiosAbertos, dois);
+    expect(secoes.map((s) => s.nome)).toEqual([
+      "Cardápio de Inverno",
+      "Cardápio de Verão",
+    ]);
+    expect(secoes.every((s) => s.produtos.length === 1)).toBe(true);
+  });
+
+  it("seção de destaque VAZIA não é emitida (regra da 177, reaplicada)", () => {
+    // O cardápio está aberto, mas o produto dele saiu do catálogo (RN-13).
+    const { cardapiosAbertos } = projetarCenario8();
+    expect(agruparPorCardapio([], cardapiosAbertos, vinculos)).toEqual([]);
+  });
+
+  it("nenhum cardápio aberto ⇒ nenhuma seção de destaque", () => {
+    const { produtos } = projetarCenario8();
+    expect(agruparPorCardapio(produtos, [], vinculos)).toEqual([]);
+  });
+
+  it("ordem `ordem → nome → id`, com EMPATE nos dois primeiros critérios", () => {
+    const semana = (
+      id: string,
+      nome: string,
+      ordem: number,
+    ): CardapioDaLoja => ({ ...INVERNO_ABERTO, id, nome, ordem });
+
+    // ordem 1 aparece antes de ordem 2; dentro de ordem 1 o nome decide; com
+    // nome IGUAL, o id decide.
+    const b1 = semana("c0000000-0000-4000-8000-0000000000b1", "Bistrô", 1);
+    const a2 = semana("c0000000-0000-4000-8000-0000000000a2", "Almoço", 2);
+    const z1 = semana("c0000000-0000-4000-8000-0000000000z1", "Bistrô", 1);
+    const a1 = semana("c0000000-0000-4000-8000-0000000000a1", "Almoço", 1);
+
+    const vinculosOrdem = new Map<string, CardapioDaLoja[]>([
+      [LASANHA.id, [b1, a2, z1, a1]],
+    ]);
+    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+      produtos: [LASANHA],
+      cardapiosPorProduto: vinculosOrdem,
+      agora: SABADO,
+      timezone: SP,
+    });
+
+    expect(
+      agruparPorCardapio(produtos, cardapiosAbertos, vinculosOrdem).map(
+        (s) => s.id,
+      ),
+    ).toEqual([a1.id, b1.id, z1.id, a2.id]);
+  });
+
+  it("foto_url de categoria 'ocultar' é null TAMBÉM na seção de destaque", () => {
+    const mapa = new Map([[CAT_SOPAS, false]]);
+    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+      produtos: [SOPA_CEBOLA],
+      cardapiosPorProduto: vinculos,
+      agora: SABADO,
+      timezone: SP,
+      exibirImagensPorCategoria: mapa,
+    });
+    const secao = agruparPorCardapio(produtos, cardapiosAbertos, vinculos)[0];
+    expect(secao.produtos[0].foto_url).toBe(null);
   });
 });

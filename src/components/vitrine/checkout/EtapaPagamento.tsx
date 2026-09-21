@@ -82,6 +82,11 @@ export type EtapaPagamentoProps = {
   onRevisaoNecessaria?: () => void;
   /** [238/D11] Linhas que o cliente já reconfirmou no diálogo de preço. */
   indicesReconfirmados?: readonly number[];
+  /**
+   * [262] Há item que a revisão do servidor devolveu NÃO comprável (252).
+   * Entra no gate único `podeConfirmar` — nunca numa condição própria daqui.
+   */
+  temItemBloqueado?: boolean;
   onEstadoChange: (patch: Partial<EstadoWizard>) => void;
   onVoltar: () => void;
   /**
@@ -109,6 +114,7 @@ export function EtapaPagamento({
   revisao = SEM_REVISAO,
   onRevisaoNecessaria,
   indicesReconfirmados,
+  temItemBloqueado = false,
   onEstadoChange,
   onVoltar,
   variante = "wizard",
@@ -155,7 +161,13 @@ export function EtapaPagamento({
     !enviando &&
     estado.nome.trim().length > 0 &&
     itens.length > 0 &&
-    podeConfirmar(estado, estado.tipoEntrega, freteStatus, revisao);
+    podeConfirmar(
+      estado,
+      estado.tipoEntrega,
+      freteStatus,
+      revisao,
+      temItemBloqueado,
+    );
 
   return (
     <section

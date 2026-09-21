@@ -15,6 +15,7 @@ function categorias(quantidade: number): CategoriaNavegavel[] {
   return Array.from({ length: quantidade }, (_, indice) => ({
     id: `id-${indice}`,
     nome: `Categoria ${indice}`,
+    tipo: "categoria" as const,
   }));
 }
 
@@ -50,7 +51,7 @@ describe("203 NavCategorias — gate, árvore acessível e âncoras", () => {
 
   it("categoria sem id (grupo Outros) usa a âncora por índice", () => {
     const html = render([
-      { id: null, nome: "Outros" },
+      { id: null, nome: "Outros", tipo: "categoria" },
       ...categorias(2),
     ]);
 
@@ -82,7 +83,7 @@ describe("203 NavCategorias — gate, árvore acessível e âncoras", () => {
 
   it("o nome da categoria é escapado pelo JSX, nunca injetado como HTML", () => {
     const html = render([
-      { id: "id-x", nome: "<img src=x onerror=alert(1)>" },
+      { id: "id-x", nome: "<img src=x onerror=alert(1)>", tipo: "categoria" },
       ...categorias(2),
     ]);
 

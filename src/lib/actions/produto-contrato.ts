@@ -46,6 +46,67 @@ export function erroDeParseProduto(
  * a do dono no painel, a LOJA-ALVO no hub admin; NUNCA do payload).
  * `null`/ausente continua `null`/ausente — nenhuma data inventada.
  */
+/**
+ * [261] RN-14 — a recusa de marcar como exclusivo um produto que não está em
+ * nenhum cardápio, escrita para quem vai agir. A frase é a literal do design
+ * §13.5: ela nomeia o problema E a saída, e é a MESMA nos dois lugares onde
+ * `visibilidade` é escrita (o `FormProduto` e a barra de ação em lote).
+ *
+ * Não é erro interno e por isso não vira mensagem genérica (`seguranca.md`
+ * §14): é uma regra de negócio que o lojista precisa ler para resolver — a
+ * mesma classe da mensagem de D10.
+ */
+export const MSG_EXCLUSIVO_SEM_CARDAPIO =
+  "Este produto não está em nenhum cardápio. Escolha um cardápio antes, ou deixe-o no menu.";
+
+/**
+ * O fragmento LITERAL que o constraint trigger de 20260920131000 levanta no
+ * COMMIT, com errcode 23000. Ele é o BACKSTOP que vale inclusive sob
+ * `service_role` (BYPASSRLS) — por isso o reconhecedor mora aqui, no módulo
+ * neutro que o caminho do lojista e o do admin compartilham, e não numa cópia
+ * por action.
+ *
+ * Igual ao de `lib/actions/cardapio.ts`, que trata a outra ponta do mesmo
+ * trigger (apagar o último vínculo de um exclusivo).
+ */
+const FRAGMENTO_TRIGGER_EXCLUSIVO = "produto exclusivo sem cardapio";
+
+/** `integrity_constraint_violation` — o errcode que o trigger usa (D8). */
+const ERRCODE_TRIGGER_EXCLUSIVO = "23000";
+
+/**
+ * Erro do banco que é, na verdade, a recusa legível de RN-14.
+ *
+ * O reconhecimento exige o PAR: `23000` (o errcode que o trigger levanta com
+ * `using errcode = 'integrity_constraint_violation'`) **e** o fragmento
+ * literal. Só o fragmento bastaria para qualquer erro de outra origem que o
+ * contivesse — um nome de produto, um texto de cupom — virar a frase de RN-14 e
+ * mandar o lojista escolher um cardápio que não resolveria nada.
+ */
+export function ehErroDeExclusivoSemCardapio(erro: unknown): boolean {
+  if (erro == null || typeof erro !== "object") return false;
+  const e = erro as { code?: unknown; message?: unknown };
+  return (
+    e.code === ERRCODE_TRIGGER_EXCLUSIVO &&
+    typeof e.message === "string" &&
+    e.message.includes(FRAGMENTO_TRIGGER_EXCLUSIVO)
+  );
+}
+
+/**
+ * Erro de ESCRITA de produto → mensagem para quem salvou. A recusa de RN-14
+ * vira a frase acionável; todo o resto (23514 dos CHECKs de desconto, falha de
+ * rede, qualquer outro código) continua genérico, com o texto cru só no log.
+ */
+export function erroDeEscritaDeProduto(
+  erro: unknown,
+  generica: string,
+): string {
+  return ehErroDeExclusivoSemCardapio(erro)
+    ? MSG_EXCLUSIVO_SEM_CARDAPIO
+    : generica;
+}
+
 export function comPrazosNoFuso(
   dados: DadosProduto,
   timezone: string,

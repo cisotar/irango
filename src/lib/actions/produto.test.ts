@@ -39,6 +39,9 @@ const LOJA_DONO = "11111111-1111-1111-1111-111111111111"; // loja do auth.uid()
 const LOJA_OUTRA = "22222222-2222-2222-2222-222222222222"; // loja de outro dono
 const CAT_PROPRIA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // categoria da loja do dono
 const CAT_ALHEIA = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; // categoria de outra loja
+// [Auditoria 260/261] `id` de produto agora passa por `z.guid()` nas quatro
+// actions antigas (antes ia cru ao banco): os fixtures usam UUID de verdade.
+const PRODUTO_ID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
 
 // Captura do que cada operação manda ao banco, por TABELA tocada.
 type Op = {
@@ -140,6 +143,8 @@ import {
   // Issue 175 (fase GREEN): a action existe, então o resolvedor por namespace
   // que o RED usava vira import direto — a ausência agora seria erro de tipo.
   reordenarCategorias,
+  // [261] D14 em lote.
+  definirVisibilidadeEmProdutos,
 } from "./produto";
 import type { ResultadoGestaoCategoria } from "./produto";
 
@@ -157,6 +162,10 @@ function payloadProduto(over: Record<string, unknown> = {}) {
     // Issue 085: schemaProduto passa a exigir `oculto` (boolean). Incluído na
     // base para manter os payloads dos testes existentes válidos.
     oculto: false,
+    // [Auditoria 260/261] `schemaProdutoUpdate` EXIGE `visibilidade`: sem ela o
+    // UPDATE gravaria `'menu'` por default num produto exclusivo de cardápio.
+    // Na base para manter válidos os payloads de UPDATE dos testes existentes.
+    visibilidade: "menu",
     ordem: 0,
     ...over,
   };
@@ -297,14 +306,14 @@ describe("criarProduto (Server Action — gestão do lojista)", () => {
 
 describe("atualizarProduto (Server Action — gestão do lojista)", () => {
   it("valida e atualiza o produto escopado por id via client autenticado", async () => {
-    const r = await atualizarProduto("produto-1", payloadProduto({ preco: 30 }));
+    const r = await atualizarProduto(PRODUTO_ID, payloadProduto({ preco: 30 }));
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update).toBeDefined();
-    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", "produto-1"]);
+    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", PRODUTO_ID]);
   });
 
   it("ATAQUE: update NÃO troca loja_id para outra loja", async () => {
-    await atualizarProduto("produto-1", {
+    await atualizarProduto(PRODUTO_ID, {
       ...payloadProduto(),
       loja_id: LOJA_OUTRA,
     });
@@ -314,14 +323,14 @@ describe("atualizarProduto (Server Action — gestão do lojista)", () => {
   });
 
   it("ATAQUE: preço negativo no update rejeitado SEM tocar no banco", async () => {
-    const r = await atualizarProduto("produto-1", payloadProduto({ preco: -1 }));
+    const r = await atualizarProduto(PRODUTO_ID, payloadProduto({ preco: -1 }));
     expect(r.ok).toBe(false);
     expect(opEscrita("produtos")).toBeUndefined();
   });
 
   // foto_url removida no form chega como "" → persiste null no update (072).
   it('foto_url "" (remoção da foto) persiste como null no update', async () => {
-    const r = await atualizarProduto("produto-1", payloadProduto({ foto_url: "" }));
+    const r = await atualizarProduto(PRODUTO_ID, payloadProduto({ foto_url: "" }));
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update?.foto_url).toBeNull();
   });
@@ -329,7 +338,7 @@ describe("atualizarProduto (Server Action — gestão do lojista)", () => {
   it("ATAQUE: trocar para categoria_id de OUTRA loja é rejeitado no update", async () => {
     respostaPorTabela.categorias = { data: null, error: null };
     const r = await atualizarProduto(
-      "produto-1",
+      PRODUTO_ID,
       payloadProduto({ categoria_id: CAT_ALHEIA }),
     );
     expect(r.ok).toBe(false);
@@ -338,7 +347,7 @@ describe("atualizarProduto (Server Action — gestão do lojista)", () => {
 
   // oculto (issue 085): persiste via `...parsed.data` no update.
   it("oculto=true persiste no update via parsed.data", async () => {
-    const r = await atualizarProduto("produto-1", payloadProduto({ oculto: true }));
+    const r = await atualizarProduto(PRODUTO_ID, payloadProduto({ oculto: true }));
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update?.oculto).toBe(true);
   });
@@ -346,17 +355,17 @@ describe("atualizarProduto (Server Action — gestão do lojista)", () => {
 
 describe("alternarDisponibilidade (toggle público de visibilidade)", () => {
   it("atualiza apenas o flag disponivel escopado por id, via client autenticado", async () => {
-    const r = await alternarDisponibilidade("produto-1", false);
+    const r = await alternarDisponibilidade(PRODUTO_ID, false);
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update?.disponivel).toBe(false);
-    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", "produto-1"]);
+    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", PRODUTO_ID]);
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
   // Regressão (RN-6-b, issue 085): disponibilidade e visibilidade são flags
   // SEPARADAS. alternarDisponibilidade não pode escrever `oculto`.
   it("alternarDisponibilidade NÃO escreve oculto", async () => {
-    await alternarDisponibilidade("produto-1", false);
+    await alternarDisponibilidade(PRODUTO_ID, false);
     expect(opEscrita("produtos")?.update).not.toHaveProperty("oculto");
   });
 });
@@ -365,17 +374,17 @@ describe("alternarOculto (toggle de visibilidade na vitrine — issue 085)", () 
   // Contrato espelhado de alternarDisponibilidade: client AUTENTICADO, escopo
   // por id, sem service_role, erro genérico. Escreve APENAS `oculto` (RN-6-b).
   it("atualiza apenas o flag oculto escopado por id, via client autenticado", async () => {
-    const r = await alternarOculto("produto-1", true);
+    const r = await alternarOculto(PRODUTO_ID, true);
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update?.oculto).toBe(true);
     // Não mexe em disponivel (flag independente).
     expect(opEscrita("produtos")?.update).not.toHaveProperty("disponivel");
-    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", "produto-1"]);
+    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", PRODUTO_ID]);
     expect(createClient).toHaveBeenCalledTimes(1);
   });
 
   it("NÃO usa service_role (escrita do lojista passa pela RLS autenticada)", async () => {
-    await alternarOculto("produto-1", true);
+    await alternarOculto(PRODUTO_ID, true);
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
@@ -383,7 +392,7 @@ describe("alternarOculto (toggle de visibilidade na vitrine — issue 085)", () 
   // comum é tratar `oculto: false` como falsy e cair num branch de default —
   // este teste garante que `false` é gravado explicitamente, não perdido.
   it("oculto=false (reexibir produto) grava false, não é tratado como ausente", async () => {
-    const r = await alternarOculto("produto-1", false);
+    const r = await alternarOculto(PRODUTO_ID, false);
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update?.oculto).toBe(false);
   });
@@ -394,7 +403,7 @@ describe("alternarOculto (toggle de visibilidade na vitrine — issue 085)", () 
       error: { message: "senha postgres XYZ", code: "XX000" },
     };
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const r = await alternarOculto("produto-1", true);
+    const r = await alternarOculto(PRODUTO_ID, true);
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).not.toContain("senha");
     spy.mockRestore();
@@ -407,21 +416,36 @@ describe("alternarOculto (toggle de visibilidade na vitrine — issue 085)", () 
   // service_role, que bypassaria a RLS) e é escopada por `.eq("id", id)`. O
   // isolamento real (linha alheia não muda) é coberto por teste de integração
   // RLS no Supabase local, se/quando a suíte de integração de produtos existir.
-  it("ATAQUE: produto de OUTRA loja — escrita passa pelo client autenticado escopada por id (RLS isola no banco)", async () => {
-    const idAlheio = "produto-de-outra-loja";
+  it("ATAQUE: produto de OUTRA loja — escrita passa pelo client autenticado escopada por id E loja_id (RLS isola no banco)", async () => {
+    // UUID válido de uma linha de outra loja: o `z.guid()` da auditoria barra
+    // lixo ANTES do banco, então o ataque realista usa um id bem formado.
+    const idAlheio = "ffffffff-ffff-ffff-ffff-ffffffffffff";
     await alternarOculto(idAlheio, true);
     expect(createServiceClient).not.toHaveBeenCalled();
     expect(createClient).toHaveBeenCalledTimes(1);
     expect(opEscrita("produtos")?.filtros).toContainEqual(["id", idAlheio]);
+    // [Auditoria 260/261] Escopo DUPLO: a loja vem de `buscarLojaDoDono`
+    // (auth.uid()), nunca do argumento — a RLS deixou de ser a única trava.
+    expect(opEscrita("produtos")?.filtros).toContainEqual([
+      "loja_id",
+      LOJA_DONO,
+    ]);
+  });
+
+  it("[Auditoria 260/261] id que não é UUID não vira ida ao banco", async () => {
+    const r = await alternarOculto("produto-de-outra-loja", true);
+    expect(r.ok).toBe(false);
+    expect(opEscrita("produtos")).toBeUndefined();
+    expect(createClient).not.toHaveBeenCalled();
   });
 });
 
 describe("removerProduto (Server Action — gestão do lojista)", () => {
   it("deleta o produto escopado por id via client autenticado (RLS isola por dono)", async () => {
-    const r = await removerProduto("produto-1");
+    const r = await removerProduto(PRODUTO_ID);
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.deleted).toBe(true);
-    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", "produto-1"]);
+    expect(opEscrita("produtos")?.filtros).toContainEqual(["id", PRODUTO_ID]);
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 });
@@ -779,7 +803,7 @@ describe("criarProduto/atualizarProduto — desconto (issue 230)", () => {
 
   it("RN-07: desligar PRESERVA tipo, valor e prazo no UPDATE", async () => {
     const r = await atualizarProduto(
-      "produto-1",
+      PRODUTO_ID,
       payloadComDesconto({
         desconto_ativo: false,
         desconto_tipo: "fixo",
@@ -812,7 +836,7 @@ describe("criarProduto/atualizarProduto — desconto (issue 230)", () => {
 
   it("D10 vale também no UPDATE (baixar o preço abaixo do fixo configurado)", async () => {
     const r = await atualizarProduto(
-      "produto-1",
+      PRODUTO_ID,
       payloadComDesconto({
         preco: 8,
         desconto_tipo: "fixo",
@@ -866,5 +890,247 @@ describe("criarProduto/atualizarProduto — desconto (issue 230)", () => {
     expect(texto).not.toContain("check constraint");
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+/**
+ * [261] `definirVisibilidadeEmProdutos` — D14 em lote.
+ *
+ * O que estes testes travam, na ordem da importância:
+ *  1. `loja_id` sai de `buscarLojaDoDono`, NUNCA do payload, e vai como filtro
+ *     explícito no UPDATE além da RLS;
+ *  2. `visibilidade` é a ÚNICA coluna escrita;
+ *  3. UMA instrução para a lista inteira (tudo ou nada) — nenhum UPDATE por id;
+ *  4. a recusa de RN-14 vira frase acionável; o resto segue genérico;
+ *  5. lixo não vira ida ao banco.
+ */
+describe("definirVisibilidadeEmProdutos (D14 em lote — issue 261)", () => {
+  const P1 = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  const P2 = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
+  it("escreve só `visibilidade`, escopado pela loja do DONO", async () => {
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1, P2],
+      visibilidade: "cardapio",
+    });
+
+    expect(r).toEqual({ ok: true });
+    const op = opEscrita("produtos");
+    expect(op?.update).toEqual({ visibilidade: "cardapio" });
+    expect(op?.filtros).toContainEqual(["loja_id", LOJA_DONO]);
+    expect(op?.filtros).toContainEqual(["id", [P1, P2]]);
+    // Uma instrução só: o lote é tudo ou nada.
+    expect(ops.filter((o) => o.tabela === "produtos" && o.update)).toHaveLength(
+      1,
+    );
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  it("`loja_id` no payload não sobrevive ao `.strict()` e não vira escrita", async () => {
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "menu",
+      loja_id: LOJA_OUTRA,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(ops).toHaveLength(0);
+  });
+
+  it("lixo não vira ida ao banco (id fora do formato, lista vazia, enum inválido)", async () => {
+    for (const payload of [
+      { produto_ids: ["nao-e-uuid"], visibilidade: "menu" },
+      { produto_ids: [], visibilidade: "menu" },
+      { produto_ids: [P1], visibilidade: "invisivel" },
+      { produto_ids: [P1, P1], visibilidade: "menu" },
+      null,
+    ]) {
+      ops = [];
+      const r = await definirVisibilidadeEmProdutos(payload);
+      expect(r.ok).toBe(false);
+      expect(ops).toHaveLength(0);
+      expect(buscarLojaDoDono).not.toHaveBeenCalled();
+    }
+  });
+
+  it("a recusa de RN-14 chega legível, com a saída na própria frase", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: {
+        code: "23000",
+        message:
+          "produto exclusivo sem cardapio: cccccccc-cccc-cccc-cccc-cccccccccccc",
+      },
+    };
+
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "cardapio",
+    });
+
+    expect(r).toEqual({
+      ok: false,
+      erro: "Este produto não está em nenhum cardápio. Escolha um cardápio antes, ou deixe-o no menu.",
+    });
+  });
+
+  it("qualquer outra falha de banco segue genérica (§14)", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: {
+        code: "42501",
+        message: 'permission denied for table "produtos"',
+      },
+    };
+
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "menu",
+    });
+
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar o produto." });
+    // O texto cru do Postgres não vaza para a tela.
+    expect(r.ok === false && r.erro).not.toContain("permission denied");
+  });
+});
+
+/**
+ * [Auditoria 260/261] O UPDATE nunca escreve `visibilidade` que o lojista não
+ * mandou.
+ *
+ * `visibilidade` é DECLARAÇÃO do lojista: a issue 255 a trata como invariante
+ * (`removerCardapio` recusa em vez de converter). O `.default("menu")` do
+ * schema de INSERT, aplicado a um UPDATE que grava a linha inteira, transformava
+ * um payload sem o campo numa conversão silenciosa `cardapio → menu` — um prato
+ * de temporada voltando a vender o ano inteiro, calado.
+ *
+ * Fail-closed: o payload sem o campo é RECUSADO no parse, antes de qualquer I/O.
+ * Nenhum patch sai, e portanto nenhum patch carrega a chave.
+ */
+describe("atualizarProduto — `visibilidade` ausente não é decidida pelo sistema", () => {
+  function semVisibilidade() {
+    const payload: Record<string, unknown> = payloadProduto();
+    delete payload.visibilidade;
+    return payload;
+  }
+
+  it("UPDATE sem `visibilidade` NÃO grava a coluna (nenhum patch a contém)", async () => {
+    const r = await atualizarProduto(PRODUTO_ID, semVisibilidade());
+
+    expect(r.ok).toBe(false);
+    // A prova direta: nenhuma escrita em `produtos` e, em nenhuma delas, a chave.
+    expect(opEscrita("produtos")).toBeUndefined();
+    for (const op of ops) {
+      expect(op.update ?? {}).not.toHaveProperty("visibilidade");
+      expect(op.insert ?? {}).not.toHaveProperty("visibilidade");
+    }
+  });
+
+  it("com o campo explícito, a declaração do lojista é gravada como veio", async () => {
+    const r = await atualizarProduto(
+      PRODUTO_ID,
+      payloadProduto({ visibilidade: "cardapio" }),
+    );
+
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update).toMatchObject({
+      visibilidade: "cardapio",
+    });
+  });
+
+  it("o INSERT continua aceitando a ausência (o default é da COLUNA)", async () => {
+    const r = await criarProduto(semVisibilidade());
+
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.insert).toMatchObject({
+      visibilidade: "menu",
+    });
+  });
+});
+
+/**
+ * [Auditoria 260/261] As quatro actions antigas ganharam o contrato das novas:
+ * `z.guid()` no `id` que chega FORA do payload e `.eq("loja_id")` explícito
+ * além da RLS. A RLS já cobria a travessia entre lojas — isto tira a assimetria.
+ */
+describe("CRUD antigo de produto — id validado e escopo duplo", () => {
+  const ALHEIO = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+
+  it("id fora do formato UUID não vira ida ao banco (as quatro actions)", async () => {
+    const chamadas: Array<() => Promise<{ ok: boolean }>> = [
+      () => atualizarProduto("produto-1", payloadProduto()),
+      () => removerProduto("produto-1"),
+      () => alternarDisponibilidade("produto-1", false),
+      () => alternarOculto("produto-1", true),
+    ];
+    for (const chamada of chamadas) {
+      ops = [];
+      vi.clearAllMocks();
+      const r = await chamada();
+      expect(r.ok).toBe(false);
+      expect(ops).toHaveLength(0);
+      expect(createClient).not.toHaveBeenCalled();
+      expect(createServiceClient).not.toHaveBeenCalled();
+    }
+  });
+
+  it("toda escrita filtra por `loja_id` da loja do DONO, além do id", async () => {
+    for (const chamada of [
+      () => atualizarProduto(ALHEIO, payloadProduto()),
+      () => removerProduto(ALHEIO),
+      () => alternarDisponibilidade(ALHEIO, false),
+      () => alternarOculto(ALHEIO, true),
+    ]) {
+      ops = [];
+      await chamada();
+      const op = opEscrita("produtos");
+      expect(op?.filtros).toContainEqual(["id", ALHEIO]);
+      expect(op?.filtros).toContainEqual(["loja_id", LOJA_DONO]);
+      // A loja vem do `auth.uid()`, nunca do argumento.
+      expect(op?.filtros).not.toContainEqual(["loja_id", LOJA_OUTRA]);
+    }
+  });
+});
+
+/**
+ * [Auditoria 260/261] O reconhecedor de RN-14 exige o PAR `23000` + fragmento.
+ * Só o fragmento faria qualquer erro de outra origem que o contivesse (o nome
+ * de um produto, por exemplo) virar a frase de RN-14, mandando o lojista
+ * escolher um cardápio que não resolveria nada.
+ */
+describe("RN-14 — o errcode faz parte do reconhecimento", () => {
+  const P1 = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+
+  it("fragmento SEM o 23000 continua genérico", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: {
+        code: "42501",
+        message: "permission denied: produto exclusivo sem cardapio",
+      },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "cardapio",
+    });
+    spy.mockRestore();
+
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar o produto." });
+  });
+
+  it("23000 SEM o fragmento também continua genérico", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: { code: "23000", message: "some other integrity violation" },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "cardapio",
+    });
+    spy.mockRestore();
+
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar o produto." });
   });
 });

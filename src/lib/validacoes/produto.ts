@@ -25,6 +25,28 @@ const prazoLocal = z
   .nullable()
   .optional();
 
+/**
+ * [261] D14 — o domínio de `produtos.visibilidade`, declarado UMA vez. É o
+ * mesmo enum consumido pelo `FormProduto` (um produto), pela ação em lote
+ * (`schemaVisibilidadeEmLote`, N produtos) e pelas Server Actions dos dois
+ * mundos: não existe segunda lista de valores válidos no projeto.
+ *
+ * `'menu'` × `'cardapio'` são jargão de schema e NÃO aparecem na tela — a copy
+ * que o lojista lê é a de `plan/design-promocoes-e-vigencia.md` §13.5.
+ */
+export const visibilidadeProduto = z.enum(["menu", "cardapio"]);
+
+/**
+ * Teto de cardinalidade de QUALQUER lista de ids que o cliente manda (CWE-770,
+ * o mesmo motivo do `.max()` de `pedido.ts`). Declarado UMA vez porque a UI
+ * precisa do MESMO número para explicar a recusa antes de disparar a prévia —
+ * um teto que só existe no zod vira "não foi possível" sem saída.
+ */
+export const TETO_LOTE = 200;
+
+/** O tipo estreito de D14, para quem consome sem passar pelo parse. */
+export type Visibilidade = z.infer<typeof visibilidadeProduto>;
+
 // Campos do produto. O `superRefine` de desconto vive logo abaixo, separado,
 // para que este objeto continue legível (e o diff das colunas novas, mínimo).
 const camposProduto = z.object({
@@ -39,6 +61,16 @@ const camposProduto = z.object({
   // espelhando `disponivel`: o form sempre envia o valor explícito; o DEFAULT
   // false vive no banco (RN-7). Separado de `disponivel` (RN-6-b).
   oculto: z.boolean(),
+  // [261] D14 — ONDE o produto aparece. `.default("menu")` é o MESMO default
+  // da coluna (migration 20260920130000) e vale SÓ NO INSERT: produto novo sem
+  // o campo nasce no menu, como a coluna faria sozinha.
+  //
+  // 🔴 No UPDATE este default seria o sistema mudando `visibilidade` por conta
+  // própria — o invariante que a 255 declara impossível e que `removerCardapio`
+  // defende RECUSANDO em vez de converter. Por isso o UPDATE usa
+  // `schemaProdutoUpdate` (abaixo), onde o campo é OBRIGATÓRIO.
+  // Eixo INDEPENDENTE de `oculto` e de `disponivel` — ver RN-05/D14.
+  visibilidade: visibilidadeProduto.default("menu"),
   ordem: z.number().int().min(0),
   // foto_url (issue 072): camada autoritativa anti-injeção de URL — renderizada
   // como <Image src> na vitrine pública. `preprocess` normaliza "" (form sem
@@ -67,7 +99,15 @@ const camposProduto = z.object({
   desconto_fim: prazoLocal,
 });
 
-export const schemaProduto = camposProduto.superRefine((v, ctx) => {
+/**
+ * As regras de desconto, extraídas para que `schemaProduto` (INSERT) e
+ * `schemaProdutoUpdate` (UPDATE) compartilhem UMA cópia. Os dois diferem
+ * apenas na obrigatoriedade de `visibilidade` — nada mais pode divergir.
+ */
+function refinarDesconto(
+  v: z.infer<typeof camposProduto>,
+  ctx: z.RefinementCtx,
+): void {
   const enviouBloco =
     v.desconto_ativo !== undefined ||
     v.desconto_tipo !== undefined ||
@@ -144,7 +184,35 @@ export const schemaProduto = camposProduto.superRefine((v, ctx) => {
       message: "O fim da promoção deve ser depois do início",
     });
   }
-});
+}
+
+/** A linha INTEIRA do produto, para o INSERT (`visibilidade` tem default). */
+export const schemaProduto = camposProduto.superRefine(refinarDesconto);
+
+/**
+ * [Auditoria 260/261] A linha inteira do produto para o **UPDATE**.
+ *
+ * Idêntica ao `schemaProduto` em tudo, menos em `visibilidade`: aqui o campo é
+ * OBRIGATÓRIO, espelhando `schemaVisibilidadeEmLote`. O UPDATE das actions
+ * grava a linha inteira (`update({ ...parsed.data })`), então um default aqui
+ * faria um payload sem o campo REESCREVER `'menu'` por cima de um produto que
+ * era `'cardapio'` — um prato de temporada voltaria a vender o ano inteiro, em
+ * silêncio, inclusive pelo caminho admin sob `service_role` (BYPASSRLS).
+ *
+ * Fail-closed: payload sem `visibilidade` é RECUSADO no parse, ANTES de
+ * qualquer I/O — nenhum UPDATE sai, e a coluna não é tocada. O sistema nunca
+ * muda `visibilidade` por conta própria; quem declara é sempre o lojista.
+ */
+export const schemaProdutoUpdate = camposProduto
+  .extend({ visibilidade: visibilidadeProduto })
+  .superRefine(refinarDesconto);
+
+/**
+ * O `id` do PRODUTO quando ele chega sozinho, fora do payload (`atualizarProduto`,
+ * `removerProduto`, `alternarDisponibilidade`, `alternarOculto`). Mesmo contrato
+ * de `schemaIdCardapio`: lixo não vira ida ao banco.
+ */
+export const schemaIdProduto = z.guid();
 
 export const schemaCategoria = z.object({
   nome: z.string().trim().min(1),
@@ -166,10 +234,36 @@ export const schemaCategoria = z.object({
 export const schemaReordenacaoCategorias = z
   .array(z.guid())
   .min(2)
-  .max(200)
+  .max(TETO_LOTE)
   .refine((ids) => new Set(ids).size === ids.length, {
     message: "Ids repetidos na reordenação",
   });
+
+/**
+ * [261] D14 em LOTE — a forma do payload da barra de ação de `/painel/produtos`.
+ *
+ * Herda o contrato de `schemaLoteDeProdutos` (`lib/validacoes/cardapio.ts`),
+ * que é o mesmo de `schemaReordenacaoCategorias`: `.strict()` (um `loja_id`
+ * pendurado no payload não sobrevive ao parse — a loja é SEMPRE derivada de
+ * `auth.uid()`), `z.guid()` em todo id, `.max(200)` de cardinalidade
+ * (CWE-770), `.min(1)` porque escrever em zero produto é chamada sem efeito, e
+ * sem duplicata (a seleção é um CONJUNTO).
+ *
+ * `visibilidade` reusa `visibilidadeProduto`: o lote não tem uma segunda
+ * definição do domínio de D14.
+ */
+export const schemaVisibilidadeEmLote = z
+  .object({
+    produto_ids: z
+      .array(z.guid())
+      .min(1)
+      .max(TETO_LOTE)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Ids repetidos na seleção",
+      }),
+    visibilidade: visibilidadeProduto,
+  })
+  .strict();
 
 /**
  * Mensagem literal de D10 (M7 do design §8.2): nomeia os DOIS números e as

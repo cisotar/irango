@@ -95,9 +95,14 @@ const _montagemParcialDeveFalhar: ProdutoDaSecao = {
 /** E o objeto INTEIRO, que hoje é recusado, passa a ser o único aceito. */
 const _secaoAceitaProdutoVitrine: ProdutoDaSecao = PRODUTO;
 
-/** `CardProduto`: um objeto obrigatório, zero campo avulso com default. */
+/**
+ * `CardProduto`: um objeto obrigatório, zero campo avulso com default — mais
+ * `idNaSecao` (263/RN-16), que também é obrigatório: com a duplicata de D16-a,
+ * um `produto.id` cru viraria id repetido no DOM.
+ */
 const _propsCard: ComponentProps<typeof CardProduto> = {
   produto: PRODUTO,
+  idNaSecao: "cat-x:p-1",
   onAdicionar: () => {},
 };
 
@@ -178,11 +183,31 @@ function ocorrencias(agulha: string): string[] {
   );
 }
 
+/**
+ * O critério de aceite da 225 escreveu `grep -rn "disponivel?:"`, mas o que ele
+ * PROÍBE é um CAMPO chamado `disponivel` declarado opcional. A fronteira de
+ * palavra entra porque a issue 262 estreou a prop `rotuloIndisponivel?:`, cujo
+ * final casa a agulha crua por acidente de substring — e um falso positivo que
+ * obriga a renomear prop legítima é uma guarda que treina a equipe a afrouxá-la.
+ * A proibição original continua exata: `disponivel?:` com qualquer coisa que
+ * não seja letra antes (início de linha, espaço, `{`) ainda derruba a suíte.
+ */
+function ocorrenciasDeCampoOpcional(campo: string): string[] {
+  const padrao = new RegExp(`(?:^|[^A-Za-z])${campo}\\?:`);
+  return fontesDaVitrine().flatMap(({ arquivo, texto }) =>
+    texto
+      .split("\n")
+      .map((linha, i) => ({ linha, n: i + 1 }))
+      .filter(({ linha }) => padrao.test(linha))
+      .map(({ linha, n }) => `${arquivo}:${n}: ${linha.trim()}`),
+  );
+}
+
 describe("225 — guardas estáticas do critério de aceite", () => {
   it('`grep -rn "disponivel?:" src/components/vitrine/` não devolve nada', () => {
     // Campo opcional é o que deixa a superfície compilar sem o dado. Nenhuma
     // das quatro superfícies pode voltar a declará-lo.
-    expect(ocorrencias("disponivel?:")).toEqual([]);
+    expect(ocorrenciasDeCampoOpcional("disponivel")).toEqual([]);
   });
 
   it('`grep -rn "?? true" src/components/vitrine/ProdutoModal.tsx` não devolve nada', () => {

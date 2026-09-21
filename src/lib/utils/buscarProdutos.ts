@@ -78,15 +78,21 @@ function casaTexto(texto: string | null, termoNormalizado: string): boolean {
  * Nunca muta a entrada. Termo vazio/so-espacos/so-acento -> devolve a MESMA
  * referencia de `categorias` (deixa o `useMemo` do consumidor comparar por identidade).
  * Estritamente subtrativo: jamais faz aparecer produto ausente do payload do SSR.
+ *
+ * [263] Genérica em `T extends CategoriaComProdutos` — mudança NULA em runtime,
+ * como a de `agruparCatalogo`: é só o que faz o `tipo` de `SecaoVitrine` (248)
+ * sobreviver ao filtro, em vez de ser apagado para `CategoriaComProdutos`. A
+ * seção de DESTAQUE continua jamais entrando nesta função (RN-16): a trava é a
+ * prop separada em `CatalogoVitrine`, não um filtro aqui dentro.
  */
-export function filtrarCatalogo(
-  categorias: CategoriaComProdutos[],
+export function filtrarCatalogo<T extends CategoriaComProdutos>(
+  categorias: T[],
   termo: string,
-): CategoriaComProdutos[] {
+): T[] {
   const alvo = normalizarBusca(termo);
   if (alvo === "") return categorias;
 
-  const resultado: CategoriaComProdutos[] = [];
+  const resultado: T[] = [];
   for (const categoria of categorias) {
     const produtos = categoria.produtos.filter(
       (produto) =>

@@ -129,6 +129,10 @@ function payloadProduto(over: Record<string, unknown> = {}) {
     // exigir `oculto` (boolean). Incluído na base para manter os payloads dos
     // testes admin válidos sob o schema mais estrito.
     oculto: false,
+    // [Auditoria 260/261] `schemaProdutoUpdate` EXIGE `visibilidade`: sem ela o
+    // UPDATE (inclusive o admin, sob service_role) gravaria `'menu'` por
+    // default num produto exclusivo de cardápio.
+    visibilidade: "menu",
     ordem: 0,
     ...over,
   };

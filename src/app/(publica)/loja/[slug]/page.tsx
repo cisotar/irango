@@ -8,9 +8,7 @@ import {
   CLASSES_MAIN_VITRINE,
   ID_MAIN_VITRINE,
 } from "@/components/vitrine/layoutVitrine";
-// `import type` explícito: é TIPO, apagado na compilação. Importar um VALOR de
-// um módulo 'use client' aqui viraria referência de cliente (issue 201, D1).
-import type { CategoriaComProdutos } from "@/components/vitrine/SecaoCatalogo";
+
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
 import { createClient } from "@/lib/supabase/server";
 import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
@@ -21,7 +19,12 @@ import {
   buscarOpcionaisPorCategoria,
   buscarProdutosPublicos,
 } from "@/lib/supabase/queries/produtos";
-import { projetarCatalogoVitrine } from "@/lib/utils/catalogoVitrine";
+import {
+  agruparPorCardapio,
+  projetarCatalogoVitrine,
+  type SecaoVitrine,
+} from "@/lib/utils/catalogoVitrine";
+import { rotuloJanelaDestaque } from "@/lib/utils/descreverVigencia";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
 import { diaNoFuso } from "@/lib/utils/fusoLoja";
@@ -187,14 +190,48 @@ export default async function VitrinePage({ params }: PageProps) {
   // lista ainda é uma lista — e a regra "grupo sem produto visível não é
   // devolvido" (issue 177, dentro de `agruparCatalogo`) passa a cobrir a
   // categoria esvaziada pela temporada de graça, sem código de agrupamento novo.
+  //
+  // 248/RN-06: o zeramento de `foto_url` em categoria "ocultar" entra AQUI, na
+  // projeção, e não mais por grupo depois do agrupamento. A URL escondida vira
+  // PROPRIEDADE DO PRODUTO: ele viaja com um `foto_url` só para onde for
+  // (categoria, lista de promocionais, seção de destaque da 263), e nenhuma
+  // superfície nova pode reintroduzir o vazamento que a issue 201 fechou.
   const agora = new Date();
-  const { produtos: produtosVitrine } = projetarCatalogoVitrine({
+  const exibirImagensPorCategoria = new Map(
+    categorias.map((c) => [c.id, c.exibir_imagens !== false]),
+  );
+  const {
+    produtos: produtosVitrine,
+    rotulosVigencia,
+    cardapiosAbertos,
+  } = projetarCatalogoVitrine({
     produtos,
     cardapiosPorProduto,
     agora,
     timezone: timezoneLoja,
+    exibirImagensPorCategoria,
   });
   const grupos = agruparCatalogo(produtosVitrine, categorias);
+
+  // [263/D16/RN-15] As seções de DESTAQUE saem da MESMA lista projetada que as
+  // categorias — é isso que faz os dois cards do mesmo produto carregarem a
+  // MESMA referência de objeto e, portanto, dizerem sempre a mesma coisa.
+  // Nenhuma janela é reavaliada aqui: `cardapiosAbertos` já veio decidido uma
+  // vez por request, e `agruparPorCardapio` (248) já ordena e já descarta seção
+  // vazia. Cardápio que fecha ⇒ a seção some sozinha, sem ninguém publicar nada.
+  const secoesDestaque = agruparPorCardapio(
+    produtosVitrine,
+    cardapiosAbertos,
+    cardapiosPorProduto,
+  );
+  // O rótulo de janela do cabeçalho (design §13.1 item 3), redigido pelo mesmo
+  // módulo das outras três frases de vigência (M6) — no fuso da LOJA.
+  const rotulosJanela: Record<string, string> = Object.fromEntries(
+    cardapiosAbertos.map((c) => [
+      c.id,
+      rotuloJanelaDestaque(c, agora, timezoneLoja),
+    ]),
+  );
 
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
   // opcionais ativos de loja ativa. Buscados pelas categorias do catálogo.
@@ -209,29 +246,31 @@ export default async function VitrinePage({ params }: PageProps) {
 
   const tema = resolverTema(loja.tema);
 
-  const categoriasComProdutos: CategoriaComProdutos[] = grupos.map((grupo) => ({
+  // [263] `SecaoVitrine`, não mais `CategoriaComProdutos`: um campo a mais
+  // (`tipo`), que é o que permite ao despachante `ancoraSecao` pedir a âncora
+  // certa sem que ninguém precise adivinhar a espécie da seção.
+  const categoriasComProdutos: SecaoVitrine[] = grupos.map((grupo) => ({
     id: grupo.id,
     nome: grupo.nome,
+    tipo: "categoria",
     // exibir_imagens decide grid (true) vs. lista textual (false) na vitrine.
     // Grupo "Outros" (categoria null) cai em true → grid (RN-5).
     exibir_imagens: grupo.categoria?.exibir_imagens ?? true,
     // O `ProdutoVitrine` INTEIRO desce às superfícies (225) — sem remontar campo
     // a campo, que era onde comprabilidade e preço efetivo caíam no chão (D13).
-    produtos: grupo.produtos.map((p) => ({
-      ...p,
-      // RN-3 (issue 201) — NÃO é adaptador: em categoria "ocultar", a foto não
-      // trafega ao cliente. Zerada aqui no SSR, não só escondida no render (o
-      // payload RSC não carrega a URL).
-      foto_url: grupo.categoria?.exibir_imagens === false ? null : p.foto_url,
-    })),
+    // 248: a MESMA referência que saiu da projeção, sem cópia e sem remendo de
+    // `foto_url` — a URL de categoria "ocultar" já veio `null` de lá.
+    produtos: grupo.produtos,
   }));
 
   // RN-15: "pratos promocionais" é DERIVADO do catálogo que a página já
-  // carregou — zero query nova, zero tabela nova. Filtra sobre
-  // `categoriasComProdutos`, e não sobre `produtosVitrine`, porque é ali que a
-  // RN-3 já zerou a `foto_url` de categoria com `exibir_imagens = false`: o
-  // modal (234) mostra foto, e a lista crua faria a URL que o catálogo esconde
-  // trafegar ao cliente por outra porta.
+  // carregou — zero query nova, zero tabela nova.
+  //
+  // 248: a passagem por `categoriasComProdutos` deixou de ser a GUARDA da RN-3
+  // (a `foto_url` de categoria "ocultar" já está `null` no PRODUTO, dentro da
+  // projeção) e passou a ser só a ordem de exibição do modal — agrupada por
+  // categoria, como o cliente vê o cardápio. A URL escondida não volta por
+  // aqui nem por nenhuma superfície futura.
   const promocionais = categoriasComProdutos
     .flatMap((c) => c.produtos)
     .filter((p) => p.temDesconto);
@@ -282,6 +321,15 @@ export default async function VitrinePage({ params }: PageProps) {
           <CatalogoVitrine
             categorias={categoriasComProdutos}
             opcionaisPorCategoria={opcionaisPorCategoria}
+            // [262/RN-06] O mapa desce junto com os produtos, do MESMO retorno:
+            // é o que garante que nenhum produto marcado chegue à tela sem a
+            // frase que diz quando ele volta.
+            rotulosVigencia={rotulosVigencia}
+            // [263/RN-16] Lista SEPARADA: `filtrarCatalogo` e `contarProdutos`
+            // nunca a recebem, então a busca não pode duplicar card nem o
+            // `ResumoBusca` passar a mentir. Não é filtro — é ausência.
+            secoesDestaque={secoesDestaque}
+            rotulosJanela={rotulosJanela}
           />
         )}
 

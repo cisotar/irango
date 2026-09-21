@@ -14,14 +14,18 @@
 
 import {
   schemaProduto,
+  schemaProdutoUpdate,
+  schemaIdProduto,
   schemaCategoria,
   schemaReordenacaoCategorias,
+  schemaVisibilidadeEmLote,
 } from "@/lib/validacoes/produto";
 // Contrato NEUTRO compartilhado com o caminho ADMIN (issue 241): mensagem de
 // D10 e conversão de prazo pelo fuso têm UMA fonte, não duas cópias.
 import {
   erroDeParseProduto,
   comPrazosNoFuso,
+  erroDeEscritaDeProduto,
 } from "@/lib/actions/produto-contrato";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
@@ -33,6 +37,9 @@ export type ResultadoGestaoCategoria =
   | { ok: false; erro: string };
 
 const CAMINHO_PAINEL = "/painel/cardapio";
+
+/** A genérica de escrita de produto, declarada uma vez (`seguranca.md` §14). */
+const MSG_SALVAR_PRODUTO = "Não foi possível salvar o produto.";
 
 /**
  * Confere que a `categoria_id` informada pertence à PRÓPRIA loja do dono.
@@ -97,13 +104,15 @@ export async function criarProduto(
       // Inclui o 23514 dos CHECKs de desconto (issue 219): o texto cru do
       // Postgres fica no log, o lojista recebe a genérica (seguranca.md §14).
       console.error("[criarProduto]", error);
-      return { ok: false, erro: "Não foi possível salvar o produto." };
+      // [261] A recusa de RN-14 (23000 + fragmento do trigger) é a ÚNICA que
+      // vira frase acionável; o resto segue genérico.
+      return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR_PRODUTO) };
     }
     revalidatePath(CAMINHO_PAINEL);
     return { ok: true };
   } catch (e) {
     console.error("[criarProduto]", e);
-    return { ok: false, erro: "Não foi possível salvar o produto." };
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR_PRODUTO) };
   }
 }
 
@@ -111,7 +120,17 @@ export async function atualizarProduto(
   id: string,
   payload: unknown,
 ): Promise<ResultadoGestaoProduto> {
-  const parsed = schemaProduto.safeParse(payload);
+  // `id` chega FORA do payload e por isso escapava do zod: lixo virava ida ao
+  // banco. Mesmo contrato de `atualizarCardapio` — parse ANTES de qualquer I/O.
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: MSG_SALVAR_PRODUTO };
+  }
+
+  // 🔴 `schemaProdutoUpdate`, NÃO `schemaProduto`: no UPDATE `visibilidade` é
+  // obrigatória. Com o default do INSERT, um payload sem o campo gravaria
+  // `'menu'` por cima de um produto exclusivo de cardápio — o sistema mudando
+  // a declaração do lojista sozinho (ver o comentário em validacoes/produto.ts).
+  const parsed = schemaProdutoUpdate.safeParse(payload);
   if (!parsed.success) {
     return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
   }
@@ -135,35 +154,53 @@ export async function atualizarProduto(
     }
 
     // loja_id reafirmado como o do dono (a RLS rejeitaria troca, mas nem
-    // oferecemos a opção) + escopo por id.
+    // oferecemos a opção) + escopo por id E por loja_id: o mesmo cinto e
+    // suspensório das actions de lote, que não delegam o escopo só à RLS.
     const { error } = await supabase
       .from("produtos")
       .update({
         ...comPrazosNoFuso(parsed.data, loja.timezone),
         loja_id: loja.id,
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       // Inclui o 23514 dos CHECKs de desconto (issue 219): o texto cru do
       // Postgres fica no log, o lojista recebe a genérica (seguranca.md §14).
       console.error("[atualizarProduto]", error);
-      return { ok: false, erro: "Não foi possível salvar o produto." };
+      // [261] A recusa de RN-14 (23000 + fragmento do trigger) é a ÚNICA que
+      // vira frase acionável; o resto segue genérico.
+      return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR_PRODUTO) };
     }
     revalidatePath(CAMINHO_PAINEL);
     return { ok: true };
   } catch (e) {
     console.error("[atualizarProduto]", e);
-    return { ok: false, erro: "Não foi possível salvar o produto." };
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR_PRODUTO) };
   }
 }
 
 export async function removerProduto(
   id: string,
 ): Promise<ResultadoGestaoProduto> {
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: "Não foi possível remover o produto." };
+  }
+
   try {
     const supabase = await createClient();
-    // RLS produtos_escrita_propria impede deletar produto de outra loja.
-    const { error } = await supabase.from("produtos").delete().eq("id", id);
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // RLS produtos_escrita_propria impede deletar produto de outra loja; o
+    // `.eq("loja_id")` explícito é a mesma defesa em profundidade das actions
+    // novas — escopo não fica só na RLS.
+    const { error } = await supabase
+      .from("produtos")
+      .delete()
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[removerProduto]", error);
       return { ok: false, erro: "Não foi possível remover o produto." };
@@ -180,13 +217,25 @@ export async function alternarDisponibilidade(
   id: string,
   disponivel: boolean,
 ): Promise<ResultadoGestaoProduto> {
+  if (typeof disponivel !== "boolean") {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+
   try {
     const supabase = await createClient();
-    // Toggle escopado por id; RLS isola por dono.
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // Toggle escopado por id E loja_id; a RLS continua isolando por dono.
     const { error } = await supabase
       .from("produtos")
       .update({ disponivel })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[alternarDisponibilidade]", error);
       return { ok: false, erro: "Não foi possível atualizar o produto." };
@@ -203,14 +252,27 @@ export async function alternarOculto(
   id: string,
   oculto: boolean,
 ): Promise<ResultadoGestaoProduto> {
+  if (typeof oculto !== "boolean") {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+
   try {
     const supabase = await createClient();
-    // Toggle de VISIBILIDADE escopado por id; RLS produtos_escrita_propria
-    // isola por dono. NÃO mexe em `disponivel` (RN-6-b).
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // Toggle de VISIBILIDADE (`oculto`) escopado por id E loja_id; a RLS
+    // produtos_escrita_propria continua isolando por dono. NÃO mexe em
+    // `disponivel` (RN-6-b) nem em `visibilidade` (D14).
     const { error } = await supabase
       .from("produtos")
       .update({ oculto })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[alternarOculto]", error);
       return { ok: false, erro: "Não foi possível atualizar o produto." };
@@ -389,5 +451,61 @@ export async function reordenarCategorias(
   } catch (e) {
     console.error("[reordenarCategorias]", e);
     return { ok: false, erro: "Não foi possível salvar a ordem." };
+  }
+}
+
+/**
+ * [261] D14 em LOTE — a declaração de `visibilidade` para N produtos de uma
+ * vez. É o MESMO campo, o MESMO domínio (`visibilidadeProduto`) e a MESMA
+ * recusa legível (`erroDeEscritaDeProduto`) que o `FormProduto` usa ao salvar
+ * um produto: a barra de ação não tem uma segunda regra de D14.
+ *
+ * 🔴 Por que UMA instrução para a lista inteira, e não um UPDATE por id:
+ *  - tudo ou nada. O trigger de RN-14 é DEFERIDO e só recusa no COMMIT; um
+ *    UPDATE por id gravaria os bons, falharia num deles e deixaria o lojista
+ *    com metade do lote aplicada e nenhuma forma de saber qual metade;
+ *  - anti-oráculo (`seguranca.md` §14). O `.eq("loja_id")` explícito, além da
+ *    RLS `produtos_escrita_propria`, faz id de outra loja e id inexistente
+ *    caírem no MESMO lugar: nenhuma linha casa e a resposta é byte a byte a
+ *    mesma. Nenhuma contagem de "ignorados" volta ao cliente.
+ *
+ * `visibilidade` é a ÚNICA coluna escrita — o sistema nunca mexe em nada mais
+ * do produto aqui, e nunca muda `visibilidade` por conta própria: converter é
+ * gesto do lojista, sempre.
+ */
+export async function definirVisibilidadeEmProdutos(
+  payload: unknown,
+): Promise<ResultadoGestaoProduto> {
+  const parsed = schemaVisibilidadeEmLote.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: MSG_SALVAR_PRODUTO };
+  }
+  const { produto_ids, visibilidade } = parsed.data;
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) return { ok: false, erro: "Loja não encontrada." };
+
+    const { error } = await supabase
+      .from("produtos")
+      .update({ visibilidade })
+      .eq("loja_id", loja.id)
+      .in("id", produto_ids);
+    if (error) {
+      console.error("[definirVisibilidadeEmProdutos]", error);
+      return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR_PRODUTO) };
+    }
+
+    // Os três caminhos REAIS (RN-11), como em `lib/actions/cardapio.ts`:
+    // `CAMINHO_PAINEL` acima aponta para uma rota que não existe (débito
+    // conhecido, `architecture.md` §10) e não é reusado aqui de propósito.
+    revalidatePath("/painel/produtos");
+    revalidatePath("/painel/cardapios");
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[definirVisibilidadeEmProdutos]", e);
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR_PRODUTO) };
   }
 }

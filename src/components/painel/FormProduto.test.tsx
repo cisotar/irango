@@ -40,11 +40,21 @@ const CATEGORIAS = [{ id: "c1", nome: "Lanches", exibir_imagens: true }];
  * default apontando para a action do lojista): o `ProdutosClient` repassa as do
  * seu `acoes`, preenchido pela page do painel ou pelo wrapper admin.
  */
-function renderForm(inicial?: ProdutoInicial): string {
+function renderForm(
+  inicial?: ProdutoInicial,
+  // [Auditoria 260/261] OBRIGATÓRIA no componente: o default `= []` mentia no
+  // hub admin ("não está em nenhum cardápio" para quem está em dois).
+  cardapiosDoProduto: readonly { id: string; nome: string }[] = [],
+  // Mundo do LOJISTA por default; o teste de rota injetada passa `null` para
+  // afirmar o mundo admin. Default só existe no helper, nunca no componente.
+  hrefCardapios: string | null = "/painel/cardapios",
+): string {
   return renderToStaticMarkup(
     <FormProduto
       categorias={CATEGORIAS}
       inicial={inicial}
+      cardapiosDoProduto={cardapiosDoProduto}
+      hrefCardapios={hrefCardapios}
       lojaSlug="loja-teste"
       lojaId="loja-1"
       fusoLojaRotulo="America/Sao_Paulo (GMT-3)"

@@ -3,8 +3,8 @@
 import type { KeyboardEvent } from "react";
 
 import {
-  ROTULO_ESGOTADO,
-  rotuloAcessivelEsgotado,
+  rotuloAcessivelNaoCompravel,
+  rotuloNaoCompravel,
 } from "@/components/vitrine/rotuloEsgotado";
 import { PrecoProduto } from "@/components/vitrine/PrecoProduto";
 import { SeloDesconto } from "@/components/vitrine/SeloDesconto";
@@ -22,6 +22,12 @@ type ItemProdutoListaProps = {
   produto: ProdutoVitrine;
   /** Termo de busca ativo (200). Ausente/vazio → nome renderiza como antes. */
   termo?: string;
+  /**
+   * [262] A frase de "quando volta", pronta do servidor
+   * (`rotulosVigencia[produto.id]`). Chave ausente ⇒ "Indisponível no momento"
+   * (design §4.1) — nunca pílula em branco.
+   */
+  rotuloIndisponivel?: string;
   /** Abre o mesmo modal de produto que o CardProduto usa (reuso, sem duplicar lógica). */
   onSelecionar: () => void;
 };
@@ -57,9 +63,10 @@ type ItemProdutoListaProps = {
 export function ItemProdutoLista({
   produto,
   termo,
+  rotuloIndisponivel,
   onSelecionar,
 }: ItemProdutoListaProps) {
-  const { nome, compravel, seloDesconto } = produto;
+  const { nome, compravel, motivoNaoCompravel, seloDesconto } = produto;
 
   const aoTeclar = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -91,8 +98,13 @@ export function ItemProdutoLista({
     return (
       <div className="flex min-h-[44px] flex-col justify-center border-b border-cinza-medio px-4 py-3 last:border-b-0">
         {/* O visual fica marcado como decorativo e a linha inteira é anunciada
-            uma vez só, pelo texto acessível — sem repetir nome + "Esgotado". */}
-        <div aria-hidden className="flex items-baseline gap-2 opacity-60">
+            uma vez só, pelo texto acessível — sem repetir nome + "Esgotado".
+            `flex-wrap` (262): a frase de vigência é longa e, em 360px, cai para
+            a linha de baixo INTEIRA em vez de truncar. Aqui não há modal para
+            onde mandar o cliente ler o resto (a linha não comprável não abre,
+            D13) — então nada pode ser cortado. Com "Esgotado" nada quebra e a
+            linha é exatamente a de 225. */}
+        <div aria-hidden className="flex flex-wrap items-baseline gap-2 opacity-60">
           <span className="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold text-texto">
             {nomeRealcado}
           </span>
@@ -100,8 +112,10 @@ export function ItemProdutoLista({
           <span className="flex-shrink-0">
             <PrecoProduto produto={produto} tamanho="lista" />
           </span>
+          {/* MESMA pílula de 225, MESMOS tokens `--indisponivel-*` — só o
+              texto muda (D4). Nunca a cor do tema da loja. */}
           <span className="flex-shrink-0 whitespace-nowrap rounded-full bg-indisponivel-fundo px-2.5 py-0.5 text-[0.625rem] font-extrabold tracking-wide text-indisponivel-texto uppercase">
-            {ROTULO_ESGOTADO}
+            {rotuloNaoCompravel(motivoNaoCompravel, rotuloIndisponivel)}
           </span>
         </div>
         {segundaLinha ? (
@@ -109,7 +123,9 @@ export function ItemProdutoLista({
             {segundaLinha}
           </div>
         ) : null}
-        <span className="sr-only">{rotuloAcessivelEsgotado(nome)}</span>
+        <span className="sr-only">
+          {rotuloAcessivelNaoCompravel(nome, motivoNaoCompravel, rotuloIndisponivel)}
+        </span>
       </div>
     );
   }

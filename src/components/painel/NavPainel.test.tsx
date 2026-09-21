@@ -148,6 +148,57 @@ describe("NavPainel — default (lojista, sem contexto)", () => {
   });
 });
 
+/**
+ * `rotasAusentes` — o item existe no menu do lojista e é OMITIDO sob uma base
+ * que não tem a rota. Sem isso, "Cardápios" apareceria no hub admin apontando
+ * para `/admin/assinantes/[lojaId]/cardapios`, que não tem `page.tsx`: link
+ * nascido 404, o mesmo defeito de `/painel/configuracoes` (issue 194/F3).
+ */
+describe("NavPainel — rotasAusentes", () => {
+  it("o lojista vê Cardápios no menu", () => {
+    const html = render("/painel");
+    expect(links(html).map((l) => l.href)).toContain("/painel/cardapios");
+    expect(html).toContain("Cardápios");
+  });
+
+  it("acende Cardápios na própria rota e em sub-rota /painel/cardapios/[id]", () => {
+    const naRaiz = links(render("/painel/cardapios")).find(
+      (l) => l.href === "/painel/cardapios",
+    );
+    expect(naRaiz?.ativo).toBe(true);
+
+    const emSub = links(render("/painel/cardapios/abc-123")).find(
+      (l) => l.href === "/painel/cardapios",
+    );
+    expect(emSub?.ativo).toBe(true);
+  });
+
+  it("some sob a base admin, que não tem a rota", () => {
+    const ctx: ContextoNav = {
+      basePath: "/admin/assinantes/L1",
+      rotasAusentes: ["cardapios"],
+    };
+    const hrefs = links(render("/admin/assinantes/L1", ctx)).map((l) => l.href);
+
+    expect(hrefs).not.toContain("/admin/assinantes/L1/cardapios");
+    // E some SÓ ele: o resto do menu continua inteiro.
+    expect(hrefs).toContain("/admin/assinantes/L1/pedidos");
+    expect(hrefs).toContain("/admin/assinantes/L1/produtos");
+    expect(hrefs).toContain("/admin/assinantes/L1/cupons");
+  });
+
+  it("vale também no mobile (Sheet), que lê a MESMA ListaNav", () => {
+    const ctx: ContextoNav = {
+      basePath: "/admin/assinantes/L1",
+      rotasAusentes: ["cardapios"],
+    };
+    expect(renderMobile("/admin/assinantes/L1", ctx)).not.toContain(
+      "/admin/assinantes/L1/cardapios",
+    );
+    expect(renderMobile("/painel")).toContain("/painel/cardapios");
+  });
+});
+
 describe("NavPainel — contexto admin", () => {
   const ctxAdmin: ContextoNav = { basePath: "/admin/assinantes/L1" };
 
