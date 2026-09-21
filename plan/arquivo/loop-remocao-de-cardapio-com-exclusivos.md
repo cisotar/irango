@@ -140,3 +140,19 @@ Um agente escreve um spec curto que fecha as três escolhas do lojista e decide 
 ## 8. Lacunas
 
 Nenhuma. Todo passo é coberto por agente, skill ou primitivo já existente, e as duas peças de escrita em produto (`removerProduto`, `alternarOculto`) já existem nos dois mundos. Um único ponto fica em aberto por decisão consciente: **RPC `security definer` vs. sequência de dois requests**, delegado ao `especificar` no passo 2, com a recomendação e o critério de desempate já registrados na §0 — se a atomicidade for julgada inegociável, o plano ganha `migrar` + `npx supabase db push` sob autorização explícita do usuário.
+
+---
+
+## 9. Resultado da execução (2026-09-21)
+
+- Passos 1–10 executados em ~2h20, dentro da estimativa (2h15–2h45), 8 invocações de
+  agente, 5 opus, zero fable — confirma o corte de custo proposto no plano.
+- Decisão D1 confirmada pelo `especificar`: sequência de dois requests, sem RPC, sem
+  migration. Nenhuma parada de `db push`.
+- `tdd` único capturou um achado sério: hoje um `modo` desconhecido de remoção seguia
+  destrutivo em silêncio (RED do critério 7). Corrigido na fase GREEN.
+- `auditar` único (backend + contrato + UI): zero crítico/alto, 1 MÉDIA corrigida no
+  ciclo (rastro de auditoria do admin dependia do sucesso do request 2), 2 BAIXA — uma
+  virou `tasks/286` (TOCTOU da cascata), a outra é ruído de UX sem risco, documentada
+  no próprio relatório do agente.
+- PR #147 aberto, CI verde. Merge é do usuário.
