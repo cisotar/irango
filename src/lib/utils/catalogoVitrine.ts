@@ -10,6 +10,12 @@ import {
   visibilidadeDe,
   type CardapioVigencia,
 } from "./vigenciaCardapio";
+import {
+  escolherCardapioParaRotulo,
+  proximaAbertura,
+  rotuloVoltaQuando,
+  ROTULO_SEM_VOLTA,
+} from "./descreverVigencia";
 
 /**
  * Entrada da projeção. A spec escreveu `produto: Produto`, mas depois da issue
@@ -54,12 +60,6 @@ export type ProdutoVitrine = {
 
 /** v1 tinha um membro só. O Spec B (247) ACRESCENTA; não remove nem renomeia. */
 export type MotivoNaoCompravel = "esgotado" | "fora_da_janela";
-
-// Texto provisório do rótulo de vigência. Valor e nome fixados pelo plano
-// técnico (D3): o critério de aceite desta issue é ESTRUTURAL (existe rótulo
-// para todo motivo `fora_da_janela`), não sobre o texto.
-// TEMP(254): trocar por descreverVigencia do cardápio que abre mais cedo (RN-07).
-export const ROTULO_VIGENCIA_PROVISORIO = "Indisponível no momento";
 
 /**
  * Projeção do catálogo. PURA; `agora` injetado (determinismo no teste, e
@@ -154,6 +154,18 @@ export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
   const produtos: ProdutoVitrine[] = [];
   const rotulosVigencia: Record<string, string> = {};
 
+  // 254/RN-07 — "quando volta" é calculado UMA VEZ POR CARDÁPIO por request,
+  // nunca por produto: a varredura adiante do recorrente é cara e uma loja tem
+  // poucos cardápios, enquanto o mesmo cardápio serve dezenas de produtos.
+  const aberturaPorCardapio = new Map<string, Date | null>();
+  const proxima = (cardapio: C): Date | null => {
+    const memoizado = aberturaPorCardapio.get(cardapio.id);
+    if (memoizado !== undefined) return memoizado;
+    const valor = proximaAbertura(cardapio, agora, timezone);
+    aberturaPorCardapio.set(cardapio.id, valor);
+    return valor;
+  };
+
   for (const produto of entradaProdutos) {
     const cardapios = cardapiosPorProduto.get(produto.id) ?? [];
     const vigencia = avaliarVigenciaDoProduto(
@@ -168,7 +180,15 @@ export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
     produtos.push(projetado);
     // O par produto-marcado/rótulo é indivisível: nasce no MESMO passo.
     if (projetado.motivoNaoCompravel === "fora_da_janela") {
-      rotulosVigencia[projetado.id] = ROTULO_VIGENCIA_PROVISORIO;
+      // 254/RN-07 — de N cardápios fechados, a frase é a do que ABRE MAIS
+      // CEDO, por escada determinística (`proximaAbertura` → `nome` → `id`). A
+      // UI nunca escolhe, e o texto desce pronto do servidor. Sem volta
+      // conhecida, o fallback defensivo de render (design §4.1): por RN-13 o
+      // produto de cardápio nesse estado nem chega aqui.
+      const dono = escolherCardapioParaRotulo(cardapios, proxima);
+      rotulosVigencia[projetado.id] = dono
+        ? rotuloVoltaQuando(dono, timezone)
+        : ROTULO_SEM_VOLTA;
     }
   }
 

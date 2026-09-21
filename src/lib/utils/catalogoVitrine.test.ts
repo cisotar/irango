@@ -6,12 +6,12 @@ import {
   projetarProdutoVitrine,
   // [247] RED — AINDA NÃO IMPLEMENTADOS (stub de assinatura em ./catalogoVitrine.ts).
   projetarCatalogoVitrine,
-  ROTULO_VIGENCIA_PROVISORIO,
   type ProdutoParaVitrine,
   type ProdutoVitrine,
 } from "./catalogoVitrine";
 import type { CardapioVigencia } from "./vigenciaCardapio";
 import { instanteNoFuso } from "./fusoLoja";
+import { rotuloVoltaQuando } from "./descreverVigencia";
 import { agruparCatalogo, type ProdutoPublico } from "@/lib/supabase/queries/produtos";
 import type { Categoria } from "@/lib/supabase/queries/categorias";
 
@@ -740,7 +740,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
     expect(esgotado.id in rotulosVigencia).toBe(false);
   });
 
-  it("o rótulo é a constante PROVISÓRIA `ROTULO_VIGENCIA_PROVISORIO` (TEMP 254)", () => {
+  it("[254] o rótulo é a frase REAL do cardápio que abre mais cedo (RN-07)", () => {
     const marcado = base({
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5",
       visibilidade: "cardapio",
@@ -752,13 +752,15 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
       agora: TERCA,
       timezone: SP,
     });
-    // Duas asserções de propósito:
-    //  1. a IDENTIDADE com a constante — `grep -rn ROTULO_VIGENCIA_PROVISORIO src/`
-    //     acha este teste quando a issue 254 for remover o provisório;
-    //  2. o TEXTO literal — a troca por `descreverVigencia` (RN-07) QUEBRA este
-    //     teste, então ela é obrigatória e visível, nunca silenciosa.
-    expect(rotulosVigencia[marcado.id]).toBe(ROTULO_VIGENCIA_PROVISORIO);
-    expect(rotulosVigencia[marcado.id]).toBe("Indisponível no momento");
+    // A 247 afirmava aqui o provisório "Indisponível no momento", pelo nome e
+    // pelo texto, para que a troca fosse obrigatória e visível. A 254 fez a
+    // troca: o texto agora é o de `rotuloVoltaQuando` para o FIM_DE_SEMANA
+    // (sáb+dom, 11:00–15:00) numa terça — a volta real, e não um genérico.
+    expect(rotulosVigencia[marcado.id]).toBe(
+      rotuloVoltaQuando(FIM_DE_SEMANA, SP),
+    );
+    expect(rotulosVigencia[marcado.id]).toBe("Sáb e dom, 11:00–15:00");
+    expect(rotulosVigencia[marcado.id]).not.toBe("Indisponível no momento");
   });
 
   it("cardapiosAbertos traz só os ativos ABERTOS agora, e preserva `ordem` (D4)", () => {
@@ -815,13 +817,26 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
   });
 });
 
-describe("247 — guarda estática: o provisório do rótulo é rastreável", () => {
+describe("247/254 — guarda estática: o provisório do rótulo NÃO sobreviveu", () => {
   const fonte = readFileSync(FONTE_CONTRATO, "utf8");
 
-  it("a constante existe, é exportada e carrega o marcador TEMP(254)", () => {
-    // Sem o marcador, o provisório vira permanente em silêncio (risco R2).
-    expect(fonte).toMatch(/export const ROTULO_VIGENCIA_PROVISORIO/);
-    expect(fonte).toContain("TEMP(254)");
+  // Montados por partes de propósito: o critério de aceite da 254 é que
+  // `grep -rn` por qualquer um dos dois volte VAZIO em `src/` — e um teste que
+  // os escrevesse por extenso seria justamente o resultado que sobra no grep.
+  const CONSTANTE_PROVISORIA = ["ROTULO", "VIGENCIA", "PROVISORIO"].join("_");
+  const MARCADOR = `TEMP(${254})`;
+
+  it("nem a constante provisória nem o marcador de dívida existem mais", () => {
+    // O inverso exato da guarda da 247: enquanto o provisório vivia, o marcador
+    // era obrigatório; entregue a 254, é a PRESENÇA dele que vira regressão.
+    expect(fonte).not.toContain(CONSTANTE_PROVISORIA);
+    expect(fonte).not.toContain(MARCADOR);
+  });
+
+  it("o rótulo vem de `descreverVigencia` — uma redação, sem texto solto aqui", () => {
+    expect(fonte).toMatch(/from\s+"\.\/descreverVigencia"/);
+    // Nenhuma frase de vigência escrita à mão neste arquivo (M6).
+    expect(fonte).not.toContain('"Indisponível no momento"');
   });
 
   it("`MotivoNaoCompravel` ACRESCENTA 'fora_da_janela' sem remover 'esgotado'", () => {
