@@ -23,6 +23,17 @@ type CardProdutoProps = {
    * por isso o realce da busca (200) cobre só o `nome`.
    */
   produto: ProdutoVitrine;
+  /**
+   * [263/RN-16] O id de DOM do card, ESCOPADO PELA SEÇÃO — produzido só por
+   * `idNaSecao(ancoraSecao(secao, indice), produto.id)`.
+   *
+   * Obrigatório, e é aí que está a trava: com D16-a o mesmo produto aparece na
+   * seção de destaque do cardápio E na categoria dele, então um `produto.id`
+   * cru aqui produziria id repetido na página. Sem jsdom, id duplicado no DOM
+   * não é detectável por teste de render — com o prop obrigatório, passar o id
+   * cru não compila, e o erro cai no `tsc`, primeiro passo do CI.
+   */
+  idNaSecao: string;
   /** Termo de busca ativo (200). Ausente/vazio → nome renderiza como antes. */
   termo?: string;
   /**
@@ -62,6 +73,7 @@ type CardProdutoProps = {
  */
 export function CardProduto({
   produto,
+  idNaSecao,
   termo,
   rotuloIndisponivel,
   onAdicionar,
@@ -74,6 +86,10 @@ export function CardProduto({
 
   return (
     <article
+      // [263/RN-16] Único id de DOM do card, sempre escopado pela seção. É
+      // emitido (e não só recebido) de propósito: é o que torna a unicidade
+      // observável no HTML que os testes deste repo conseguem ler.
+      id={idNaSecao}
       // O card SEMPRE abre o modal, comprável ou não (262): um card marcado que
       // não abre é beco sem saída — a mesma classe de erro que o D13 fechou.
       onClick={onAdicionar}

@@ -47,6 +47,10 @@ import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
 import { descreverVigencia } from "@/lib/utils/descreverVigencia";
 import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
 import {
+  diagnosticarSumico,
+  type SumicoDoProduto,
+} from "@/lib/utils/contarProdutosEscondidos";
+import {
   aplicarCardapioEmProdutos,
   aplicarCardapioEmCategoria,
   tirarDeCardapio,
@@ -143,6 +147,22 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       ]),
     );
 
+  // [264/RN-12] O aviso reduzido da linha do produto (design §13.4 item 5). O
+  // MESMO predicado da tela de cardápios — um produto não pode estar sumido
+  // numa e presente na outra —, derivado no servidor com o fuso da loja.
+  // Só entra no mapa o produto que de fato sumiu: o objeto é esparso de
+  // propósito, e uma linha sem entrada não pinta aviso nenhum.
+  const sumicos: Record<string, SumicoDoProduto> = {};
+  for (const p of produtos) {
+    const sumico = diagnosticarSumico(
+      p,
+      cardapiosDaLoja.cardapiosPorProduto.get(p.id) ?? [],
+      agora,
+      loja.timezone,
+    );
+    if (sumico !== null) sumicos[p.id] = sumico;
+  }
+
   return (
     <ProdutosClient
       lojaSlug={loja.slug}
@@ -159,6 +179,9 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       // [261] LEITURA, não ação: vive fora do `lote` porque o hub admin também
       // a recebe (o `FormProduto` depende dela para não mentir sobre cardápio).
       cardapiosPorProduto={cardapiosPorProduto}
+      // [264] LEITURA, preview de UX: o produto que sumiu da vitrine e o
+      // cardápio a quem o sumiço é atribuído. Nenhuma decisão depende disto.
+      sumicos={sumicos}
       // [260][261] O modo de seleção só existe no painel do LOJISTA: estas
       // Server Actions derivam a loja de `auth.uid()` e não têm variante
       // admin (ver a prop `lote` do `ProdutosClient`).

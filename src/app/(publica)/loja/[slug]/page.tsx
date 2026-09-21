@@ -8,9 +8,7 @@ import {
   CLASSES_MAIN_VITRINE,
   ID_MAIN_VITRINE,
 } from "@/components/vitrine/layoutVitrine";
-// `import type` explícito: é TIPO, apagado na compilação. Importar um VALOR de
-// um módulo 'use client' aqui viraria referência de cliente (issue 201, D1).
-import type { CategoriaComProdutos } from "@/components/vitrine/SecaoCatalogo";
+
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
 import { createClient } from "@/lib/supabase/server";
 import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
@@ -21,7 +19,12 @@ import {
   buscarOpcionaisPorCategoria,
   buscarProdutosPublicos,
 } from "@/lib/supabase/queries/produtos";
-import { projetarCatalogoVitrine } from "@/lib/utils/catalogoVitrine";
+import {
+  agruparPorCardapio,
+  projetarCatalogoVitrine,
+  type SecaoVitrine,
+} from "@/lib/utils/catalogoVitrine";
+import { rotuloJanelaDestaque } from "@/lib/utils/descreverVigencia";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
 import { diaNoFuso } from "@/lib/utils/fusoLoja";
@@ -197,7 +200,11 @@ export default async function VitrinePage({ params }: PageProps) {
   const exibirImagensPorCategoria = new Map(
     categorias.map((c) => [c.id, c.exibir_imagens !== false]),
   );
-  const { produtos: produtosVitrine, rotulosVigencia } = projetarCatalogoVitrine({
+  const {
+    produtos: produtosVitrine,
+    rotulosVigencia,
+    cardapiosAbertos,
+  } = projetarCatalogoVitrine({
     produtos,
     cardapiosPorProduto,
     agora,
@@ -205,6 +212,26 @@ export default async function VitrinePage({ params }: PageProps) {
     exibirImagensPorCategoria,
   });
   const grupos = agruparCatalogo(produtosVitrine, categorias);
+
+  // [263/D16/RN-15] As seções de DESTAQUE saem da MESMA lista projetada que as
+  // categorias — é isso que faz os dois cards do mesmo produto carregarem a
+  // MESMA referência de objeto e, portanto, dizerem sempre a mesma coisa.
+  // Nenhuma janela é reavaliada aqui: `cardapiosAbertos` já veio decidido uma
+  // vez por request, e `agruparPorCardapio` (248) já ordena e já descarta seção
+  // vazia. Cardápio que fecha ⇒ a seção some sozinha, sem ninguém publicar nada.
+  const secoesDestaque = agruparPorCardapio(
+    produtosVitrine,
+    cardapiosAbertos,
+    cardapiosPorProduto,
+  );
+  // O rótulo de janela do cabeçalho (design §13.1 item 3), redigido pelo mesmo
+  // módulo das outras três frases de vigência (M6) — no fuso da LOJA.
+  const rotulosJanela: Record<string, string> = Object.fromEntries(
+    cardapiosAbertos.map((c) => [
+      c.id,
+      rotuloJanelaDestaque(c, agora, timezoneLoja),
+    ]),
+  );
 
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
   // opcionais ativos de loja ativa. Buscados pelas categorias do catálogo.
@@ -219,9 +246,13 @@ export default async function VitrinePage({ params }: PageProps) {
 
   const tema = resolverTema(loja.tema);
 
-  const categoriasComProdutos: CategoriaComProdutos[] = grupos.map((grupo) => ({
+  // [263] `SecaoVitrine`, não mais `CategoriaComProdutos`: um campo a mais
+  // (`tipo`), que é o que permite ao despachante `ancoraSecao` pedir a âncora
+  // certa sem que ninguém precise adivinhar a espécie da seção.
+  const categoriasComProdutos: SecaoVitrine[] = grupos.map((grupo) => ({
     id: grupo.id,
     nome: grupo.nome,
+    tipo: "categoria",
     // exibir_imagens decide grid (true) vs. lista textual (false) na vitrine.
     // Grupo "Outros" (categoria null) cai em true → grid (RN-5).
     exibir_imagens: grupo.categoria?.exibir_imagens ?? true,
@@ -294,6 +325,11 @@ export default async function VitrinePage({ params }: PageProps) {
             // é o que garante que nenhum produto marcado chegue à tela sem a
             // frase que diz quando ele volta.
             rotulosVigencia={rotulosVigencia}
+            // [263/RN-16] Lista SEPARADA: `filtrarCatalogo` e `contarProdutos`
+            // nunca a recebem, então a busca não pode duplicar card nem o
+            // `ResumoBusca` passar a mentir. Não é filtro — é ausência.
+            secoesDestaque={secoesDestaque}
+            rotulosJanela={rotulosJanela}
           />
         )}
 

@@ -95,9 +95,14 @@ const _montagemParcialDeveFalhar: ProdutoDaSecao = {
 /** E o objeto INTEIRO, que hoje é recusado, passa a ser o único aceito. */
 const _secaoAceitaProdutoVitrine: ProdutoDaSecao = PRODUTO;
 
-/** `CardProduto`: um objeto obrigatório, zero campo avulso com default. */
+/**
+ * `CardProduto`: um objeto obrigatório, zero campo avulso com default — mais
+ * `idNaSecao` (263/RN-16), que também é obrigatório: com a duplicata de D16-a,
+ * um `produto.id` cru viraria id repetido no DOM.
+ */
 const _propsCard: ComponentProps<typeof CardProduto> = {
   produto: PRODUTO,
+  idNaSecao: "cat-x:p-1",
   onAdicionar: () => {},
 };
 

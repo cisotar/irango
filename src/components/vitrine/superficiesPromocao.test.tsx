@@ -28,6 +28,16 @@ import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
 import { CardProduto } from "./CardProduto";
 import { ItemProdutoLista } from "./ItemProdutoLista";
 import { SecaoCatalogo, type CategoriaComProdutos } from "./SecaoCatalogo";
+import type { SecaoVitrine } from "@/lib/utils/catalogoVitrine";
+
+/**
+ * [263] As fixtures continuam descrevendo CATEGORIAS — é o mesmo objeto de
+ * sempre. `SecaoCatalogo` passou a exigir o discriminante `tipo` (SecaoVitrine),
+ * então ele é acrescentado aqui, num lugar só, em vez de espalhado por cada
+ * literal: o que os testes abaixo afirmam não mudou.
+ */
+const comoSecoes = (categorias: CategoriaComProdutos[]): SecaoVitrine[] =>
+  categorias.map((categoria) => ({ ...categoria, tipo: "categoria" }));
 
 /** Espaço do `Intl` em `R$ 80,00` é NBSP — comparar byte a byte exige o literal. */
 const NBSP = " ";
@@ -65,7 +75,7 @@ const PROMOCAO_ESGOTADA = produto({
 });
 
 const card = (p: ProdutoVitrine) =>
-  renderToStaticMarkup(<CardProduto produto={p} onAdicionar={() => {}} />);
+  renderToStaticMarkup(<CardProduto idNaSecao="cat-x:p-1" produto={p} onAdicionar={() => {}} />);
 const linha = (p: ProdutoVitrine) =>
   renderToStaticMarkup(<ItemProdutoLista produto={p} onSelecionar={() => {}} />);
 
@@ -189,7 +199,7 @@ describe("233 SecaoCatalogo — grid, lista e o caminho da busca", () => {
 
   it("a promoção chega ao grid de cards", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo rotulosVigencia={{}} categorias={categorias(true)} />,
+      <SecaoCatalogo rotulosVigencia={{}} secoes={comoSecoes(categorias(true))} />,
     );
     expect(html).toContain("-20%");
     expect(html).toContain(`R$${NBSP}80,00`);
@@ -197,7 +207,7 @@ describe("233 SecaoCatalogo — grid, lista e o caminho da busca", () => {
 
   it("a promoção chega à lista textual", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo rotulosVigencia={{}} categorias={categorias(false)} />,
+      <SecaoCatalogo rotulosVigencia={{}} secoes={comoSecoes(categorias(false))} />,
     );
     expect(html).toContain("-20%");
     expect(html).toContain(`R$${NBSP}80,00`);

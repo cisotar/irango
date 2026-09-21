@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import {
+  AlertTriangle,
   ArrowUpDown,
   Pencil,
   Plus,
@@ -74,6 +75,11 @@ import type {
   CardapiosPorProduto,
 } from "@/components/painel/contrato-lote";
 import { visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
+import type { SumicoDoProduto } from "@/lib/utils/contarProdutosEscondidos";
+import {
+  avisoNaLinhaDoProduto,
+  rotuloReligarOuEstender,
+} from "@/lib/utils/copiaCardapioPainel";
 import type {
   Associacao,
   CategoriaProduto,
@@ -163,6 +169,15 @@ export type ProdutosClientProps = {
    * Separada de `lote` de propósito — ver `CardapiosPorProduto`.
    */
   cardapiosPorProduto: CardapiosPorProduto;
+  /**
+   * [264/RN-12] `produto.id → por que ele sumiu da vitrine`, derivado no Server
+   * Component pelo MESMO predicado de `/painel/cardapios`. Esparso: só o
+   * produto que de fato sumiu tem entrada, e o resto da lista não ganha ruído.
+   *
+   * Opcional porque o hub admin não o projeta — ausente ⇒ nenhum aviso, nunca
+   * um aviso errado. Preview de UX: nenhuma decisão depende dele.
+   */
+  sumicos?: Record<string, SumicoDoProduto>;
   /**
    * Actions injetadas. Todas OBRIGATÓRIAS (issue 160): a page do painel passa
    * as 21 do lojista, a via admin passa as 21 variantes escopadas por `lojaId`.
@@ -277,11 +292,33 @@ export function ProdutosClient({
   fusoLojaRotulo,
   lote,
   cardapiosPorProduto,
+  sumicos = {},
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
 
   const { removerProduto, alternarDisponibilidade, alternarOculto } = acoes;
+
+  /**
+   * [264] Devolve ESTE produto ao menu — a segunda saída do aviso de RN-12.
+   * Reusa a action de lote da 261 (`definirVisibilidadeEmProdutos`) com uma
+   * lista de um: nenhuma Server Action nova, e o `loja_id` continua saindo de
+   * `buscarLojaDoDono` dentro dela. Só existe no painel do lojista, onde `lote`
+   * existe — no hub admin a action gravaria na loja errada (issue 251).
+   */
+  async function devolverAoMenu(produto: Produto): Promise<void> {
+    if (lote == null) return;
+    const resultado = await lote.acoes.definirVisibilidade({
+      produto_ids: [produto.id],
+      visibilidade: "menu",
+    });
+    if (!resultado.ok) {
+      toast.error(resultado.erro);
+      return;
+    }
+    toast.success(`${produto.nome} voltou para o menu.`);
+    router.refresh();
+  }
 
   /*
     [217] As cinco derivações do cartão de associação são PURAS e moram em
@@ -884,6 +921,27 @@ export function ProdutosClient({
                                 ))}
                               </ul>
                             )}
+                            {/* [264/RN-12] O aviso REDUZIDO: com D14 este
+                                produto sumiu da vitrine e o painel é o único
+                                lugar onde isso é observável. Âmbar, nunca
+                                vermelho: requer ação, não é falha. A frase vem
+                                do módulo puro de copy — nenhum texto de estado
+                                escrito aqui. */}
+                            {sumicos[p.id] && (
+                              <p
+                                role="alert"
+                                className="mt-1 flex items-center gap-1.5 text-xs text-amber-700"
+                              >
+                                <AlertTriangle
+                                  aria-hidden
+                                  className="size-3.5 shrink-0"
+                                />
+                                {avisoNaLinhaDoProduto(
+                                  sumicos[p.id].cardapio,
+                                  sumicos[p.id].ativo,
+                                )}
+                              </p>
+                            )}
                           </div>
 
                           {/* Editar/Remover consolidados no kebab: elimina os dois
@@ -921,6 +979,32 @@ export function ProdutosClient({
                                       <Pencil aria-hidden className="size-4" />
                                       Editar
                                     </MenuItem>
+                                    {/* [264/§13.4 item 5] O MESMO par de saídas
+                                        do aviso de `/painel/cardapios`, aqui no
+                                        kebab. Nenhuma das duas roda sozinha, e
+                                        devolver ao menu mexe só NESTE produto —
+                                        o sistema nunca converte `visibilidade`
+                                        por conta própria. */}
+                                    {sumicos[p.id] && (
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        onClick={() =>
+                                          router.push("/painel/cardapios")
+                                        }
+                                      >
+                                        {rotuloReligarOuEstender(
+                                          sumicos[p.id].ativo,
+                                        )}
+                                      </MenuItem>
+                                    )}
+                                    {sumicos[p.id] && lote != null && (
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        onClick={() => void devolverAoMenu(p)}
+                                      >
+                                        Devolver ao menu
+                                      </MenuItem>
+                                    )}
                                     <MenuItem
                                       className="min-h-[44px]"
                                       aria-label={`Remover ${p.nome}`}

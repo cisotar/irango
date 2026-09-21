@@ -10,13 +10,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CatalogoVitrine } from "./CatalogoVitrine";
-import type { CategoriaComProdutos } from "./SecaoCatalogo";
+import type { SecaoVitrine } from "@/lib/utils/catalogoVitrine";
 
 /** N categorias com um produto cada — o gate da nav (RN-4) conta CATEGORIAS. */
-function varias(quantidade: number): CategoriaComProdutos[] {
+function varias(quantidade: number): SecaoVitrine[] {
   return Array.from({ length: quantidade }, (_, indice) => ({
     id: `cat-${indice}`,
     nome: `Categoria ${indice}`,
+    tipo: "categoria" as const,
     produtos: [
       {
         id: `p-${indice}`,
@@ -36,11 +37,12 @@ function varias(quantidade: number): CategoriaComProdutos[] {
   }));
 }
 
-function categorias(): CategoriaComProdutos[] {
+function categorias(): SecaoVitrine[] {
   return [
     {
       id: "cat-bebidas",
       nome: "Bebidas",
+      tipo: "categoria",
       produtos: [
         {
           id: "p-1",

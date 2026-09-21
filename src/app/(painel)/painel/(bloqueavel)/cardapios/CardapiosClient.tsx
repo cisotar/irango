@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactElement } from "react";
 import { toast } from "sonner";
-import { Pencil, Plus } from "lucide-react";
+import { AlertTriangle, Pencil, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +23,13 @@ import {
   frasesDoImpacto,
   rotuloConverter,
 } from "@/components/painel/frasesCardapio";
+import {
+  FRASE_CONFIRMAR_DEVOLUCAO,
+  avisoCardapioEscondendo,
+  rotuloDevolverAoMenu,
+  rotuloReligarOuEstender,
+  tituloDevolverAoMenu,
+} from "@/lib/utils/copiaCardapioPainel";
 import type { EstadoCardapio } from "@/lib/utils/estadoCardapioPainel";
 
 /** A régua de `design-system.md` §5: valor LITERAL, nunca a classe
@@ -41,6 +48,16 @@ export type LinhaCardapio = {
   menu: number;
   /** Exclusivos que sumiriam da vitrine (D14). */
   exclusivos: number;
+  /**
+   * [264/RN-12] Os dois números do aviso, de `contarProdutosEscondidos` —
+   * PREVIEW DE UX recalculado no servidor a cada request. Nenhuma decisão
+   * depende deles; o cliente não os envia de volta.
+   */
+  escondidos: { doMenu: number; sumidos: number };
+  /** Os nomes dos sumidos, para o `AlertDialog` NOMEAR quem será devolvido. */
+  nomesEscondidos: string[];
+  /** Os ids correspondentes, na mesma ordem — o conjunto exato a converter. */
+  idsEscondidos: string[];
 };
 
 export type AcoesCardapios = {
@@ -54,11 +71,21 @@ export type AcoesCardapios = {
   converter: (
     cardapioId: string,
   ) => Promise<{ ok: true } | { ok: false; erro: string }>;
+  /**
+   * [264] Devolve ao menu EXATAMENTE os produtos nomeados no diálogo. O
+   * `loja_id` sai de `buscarLojaDoDono` dentro da action e a RLS decide; a
+   * lista de ids é só o recorte. Nada é convertido sem este gesto — o sistema
+   * não mexe em venda por conta própria (RN-12).
+   */
+  devolverAoMenu: (
+    payload: unknown,
+  ) => Promise<{ ok: true } | { ok: false; erro: string }>;
 };
 
 type Confirmacao =
   | { tipo: "desligar"; linha: LinhaCardapio }
-  | { tipo: "remover"; linha: LinhaCardapio };
+  | { tipo: "remover"; linha: LinhaCardapio }
+  | { tipo: "devolver"; linha: LinhaCardapio };
 
 type Recusa = { mensagem: string; exclusivos: number };
 
@@ -124,6 +151,25 @@ export function CardapiosClient({
         return;
       }
       toast.success("Cardápio removido.");
+      fechar();
+      router.refresh();
+    } finally {
+      setPendente(false);
+    }
+  }
+
+  async function devolverAoMenu(linha: LinhaCardapio): Promise<void> {
+    setPendente(true);
+    try {
+      const resultado = await acoes.devolverAoMenu({
+        produto_ids: linha.idsEscondidos,
+        visibilidade: "menu",
+      });
+      if (!resultado.ok) {
+        toast.error(resultado.erro);
+        return;
+      }
+      toast.success("Produtos devolvidos ao menu.");
       fechar();
       router.refresh();
     } finally {
@@ -212,6 +258,12 @@ export function CardapiosClient({
                   </label>
                 </div>
 
+                <AvisoEscondendo
+                  linha={linha}
+                  aoReligar={() => void ligar(linha, true)}
+                  aoDevolver={() => setConfirmacao({ tipo: "devolver", linha })}
+                />
+
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
@@ -251,19 +303,31 @@ export function CardapiosClient({
                 <AlertDialogTitle>
                   {confirmacao.tipo === "desligar"
                     ? `Desligar “${confirmacao.linha.nome}”?`
-                    : `Remover “${confirmacao.linha.nome}”?`}
+                    : confirmacao.tipo === "remover"
+                      ? `Remover “${confirmacao.linha.nome}”?`
+                      : tituloDevolverAoMenu(
+                          confirmacao.linha.escondidos.sumidos,
+                        )}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {confirmacao.tipo === "desligar"
                     ? "O cardápio sai do ar, mas dias, horários e prazo continuam gravados: um clique traz tudo de volta."
-                    : "O cardápio e os vínculos dele com os produtos são apagados. Os produtos continuam existindo."}
+                    : confirmacao.tipo === "remover"
+                      ? "O cardápio e os vínculos dele com os produtos são apagados. Os produtos continuam existindo."
+                      : FRASE_CONFIRMAR_DEVOLUCAO}
                 </AlertDialogDescription>
               </AlertDialogHeader>
 
+              {/* [264] A devolução NOMEIA os produtos afetados (design §13.4
+                  item 3): confirmação destrutiva sempre diz o que será
+                  mexido. Nos outros dois gestos, as frases de impacto de 256. */}
               <ul className="flex list-disc flex-col gap-1 pl-4 text-sm">
-                {frasesDoImpacto(
-                  confirmacao.linha.menu,
-                  confirmacao.linha.exclusivos,
+                {(confirmacao.tipo === "devolver"
+                  ? confirmacao.linha.nomesEscondidos
+                  : frasesDoImpacto(
+                      confirmacao.linha.menu,
+                      confirmacao.linha.exclusivos,
+                    )
                 ).map((frase) => (
                   <li key={frase}>{frase}</li>
                 ))}
@@ -293,26 +357,109 @@ export function CardapiosClient({
                 <AlertDialogCancel className={ALVO}>Cancelar</AlertDialogCancel>
                 <Button
                   type="button"
-                  variant="destructive"
+                  variant={
+                    confirmacao.tipo === "devolver" ? "default" : "destructive"
+                  }
                   className={ALVO}
                   disabled={pendente}
                   onClick={() => {
                     if (confirmacao.tipo === "desligar") {
                       void confirmarDesligar(confirmacao.linha);
-                    } else {
+                    } else if (confirmacao.tipo === "remover") {
                       void confirmarRemover(confirmacao.linha);
+                    } else {
+                      void devolverAoMenu(confirmacao.linha);
                     }
                   }}
                 >
                   {confirmacao.tipo === "desligar"
                     ? "Desligar cardápio"
-                    : "Remover cardápio"}
+                    : confirmacao.tipo === "remover"
+                      ? "Remover cardápio"
+                      : rotuloDevolverAoMenu(
+                          confirmacao.linha.escondidos.sumidos,
+                        )}
                 </Button>
               </AlertDialogFooter>
             </>
           ) : null}
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+/**
+ * [264/RN-12] O aviso de cardápio expirado ou desligado escondendo produtos.
+ *
+ * **Âmbar, nunca vermelho** (design §13.4 item 4): requer ação do lojista, não
+ * é falha — vermelho num cardápio de temporada encerrada ensina o lojista a
+ * ignorar vermelho. Ícone **+ texto**, nunca só a cor (WCAG 1.4.1).
+ *
+ * A ordem das linhas é da copy pura (`avisoCardapioEscondendo`), não daqui: é
+ * lá que ela está travada por teste. Nada sumiu ⇒ o componente inteiro some.
+ */
+function AvisoEscondendo({
+  linha,
+  aoReligar,
+  aoDevolver,
+}: {
+  linha: LinhaCardapio;
+  aoReligar: () => void;
+  aoDevolver: () => void;
+}): ReactElement | null {
+  const linhas = avisoCardapioEscondendo(linha.escondidos);
+  if (linhas === null) return null;
+
+  return (
+    <div
+      role="alert"
+      className="flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      <div className="flex items-start gap-2">
+        <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
+        <div className="flex flex-col gap-0.5">
+          {linhas.map((frase, indice) => (
+            <p key={frase} className={indice === 0 ? "font-medium" : undefined}>
+              {frase}
+            </p>
+          ))}
+        </div>
+      </div>
+
+      {/* As duas saídas a um clique. Nenhuma das duas roda sozinha: religar é
+          um gesto do lojista e devolver abre confirmação nomeando os produtos.
+          O sistema nunca converte `visibilidade` por conta própria. */}
+      <div className="flex flex-wrap gap-2">
+        {linha.ativo ? (
+          <Button
+            variant="outline"
+            className={ALVO}
+            render={
+              <Link href={`/painel/cardapios/${linha.id}`}>
+                {rotuloReligarOuEstender(true)}
+              </Link>
+            }
+          />
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            className={ALVO}
+            onClick={aoReligar}
+          >
+            {rotuloReligarOuEstender(false)}
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          className={ALVO}
+          onClick={aoDevolver}
+        >
+          {rotuloDevolverAoMenu(linha.escondidos.sumidos)}
+        </Button>
+      </div>
     </div>
   );
 }

@@ -9,12 +9,19 @@ import {
   montarRootMargin,
 } from "@/components/vitrine/scrollspyCategorias";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { ancoraCategoria } from "@/lib/utils/ancoraCategoria";
+import { ancoraSecao } from "@/lib/utils/ancoraCategoria";
 
-/** O mínimo que a nav precisa de uma categoria — `CategoriaComProdutos` serve. */
+/** O mínimo que a nav precisa de uma seção — `SecaoVitrine` (248) serve. */
 export type CategoriaNavegavel = {
   id: string | null;
   nome: string;
+  /**
+   * [263/RN-16] O discriminante da seção — **o único campo novo**. É tudo de
+   * que a nav precisa para pedir a âncora CERTA à mesma função que
+   * `SecaoCatalogo` usa. Scrollspy, `useMediaQuery`, `scrollIntoView` e a
+   * lógica de chip ativo continuam iguais.
+   */
+  tipo: "cardapio" | "categoria";
 };
 
 type NavCategoriasProps = {
@@ -30,7 +37,13 @@ type NavCategoriasProps = {
   alturaBarra: number;
 };
 
-/** RN-4: com menos que isso o trilho é ruído, não navegação. */
+/**
+ * RN-4: com menos que isso o trilho é ruído, não navegação.
+ *
+ * [263] Passa a contar as seções de DESTAQUE junto, porque a lista que chega
+ * aqui já é `[...secoesDestaque, ...categorias]` — o trilho existe quando há o
+ * que navegar, e não quando há três CATEGORIAS.
+ */
 const MINIMO_CATEGORIAS = 3;
 
 // D9 — CSS com vírgula/parêntese NUNCA vira classe Tailwind arbitrária: o
@@ -89,12 +102,13 @@ export function NavCategorias({ categorias, alturaBarra }: NavCategoriasProps) {
 }
 
 function TrilhoCategorias({ categorias, alturaBarra }: NavCategoriasProps) {
-  // Âncoras SEMPRE de `ancoraCategoria` (fonte única, 201): uma segunda
-  // implementação = links quebrados. A chave derivada do conteúdo mantém a
-  // identidade estável entre renders e reconstrói o observer quando o conjunto
-  // de seções muda (D5 — a 202 filtra o catálogo).
+  // Âncoras SEMPRE de `ancoraSecao` (fonte única, 201/263): o `href` do chip e
+  // o `id` da <section> saem da MESMA função, e uma segunda implementação =
+  // links quebrados. A chave derivada do conteúdo mantém a identidade estável
+  // entre renders e reconstrói o observer quando o conjunto de seções muda
+  // (D5 — a 202 filtra o catálogo; a 263 acrescenta/remove destaques).
   const chaveOrdem = categorias
-    .map((categoria, indice) => ancoraCategoria(categoria.id, indice))
+    .map((categoria, indice) => ancoraSecao(categoria, indice))
     .join("|");
   const ancoras = useMemo(() => chaveOrdem.split("|"), [chaveOrdem]);
 

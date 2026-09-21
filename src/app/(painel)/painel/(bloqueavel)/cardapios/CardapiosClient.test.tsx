@@ -23,6 +23,7 @@ function acoes(): AcoesCardapios {
     ligarDesligar: vi.fn(async () => ({ ok: true }) as const),
     remover: vi.fn(async () => ({ ok: true }) as const),
     converter: vi.fn(async () => ({ ok: true }) as const),
+    devolverAoMenu: vi.fn(async () => ({ ok: true }) as const),
   };
 }
 
@@ -40,6 +41,11 @@ function linha(over: Partial<LinhaCardapio> = {}): LinhaCardapio {
     descricao: "Aparece todo sábado, das 11:00 às 15:00.",
     menu: 4,
     exclusivos: 2,
+    // [264] Por padrão, nada sumiu — o aviso de RN-12 não aparece em cardápio
+    // no ar, e um aviso que aparece sempre não é lido nunca.
+    escondidos: { doMenu: 4, sumidos: 0 },
+    nomesEscondidos: [],
+    idsEscondidos: [],
     ...over,
   };
 }
@@ -113,5 +119,86 @@ describe("CardapiosClient", () => {
 
   it("lista vazia não é tela em branco", () => {
     expect(montar([])).toContain("Nenhum cardápio ainda.");
+  });
+});
+
+describe("264/RN-12 — o aviso de cardápio escondendo produtos", () => {
+  const expirado = linha({
+    nome: "Cardápio de Inverno",
+    estado: {
+      tom: "neutro",
+      rotulo: "Expirado",
+      rotuloAcessivel: null,
+      abertoAgora: false,
+    },
+    menu: 7,
+    escondidos: { doMenu: 7, sumidos: 4 },
+    nomesEscondidos: ["Sopa de cebola", "Caldo verde", "Fondue", "Canjica"],
+    idsEscondidos: ["p1", "p2", "p3", "p4"],
+  });
+
+  it("cardápio no ar não mostra aviso nenhum", () => {
+    const html = montar([linha()]);
+    expect(html).not.toContain("sumiram da vitrine");
+    expect(html).not.toContain("Devolver");
+  });
+
+  it("mostra as três frases na ordem: o que sumiu antes do que fica", () => {
+    const html = montar([expirado]);
+
+    expect(html).toContain("4 produtos sumiram da vitrine");
+    expect(html).toContain("Eles são exclusivos deste cardápio.");
+    expect(html).toContain(
+      "Outros 7 produtos do menu continuam aparecendo e vendendo normalmente.",
+    );
+    expect(html.indexOf("sumiram da vitrine")).toBeLessThan(
+      html.indexOf("continuam aparecendo"),
+    );
+  });
+
+  it("é âmbar com ícone + texto, nunca vermelho (design §13.4 item 4)", () => {
+    const html = montar([expirado]);
+    // Recorta o bloco do aviso: o vermelho do "Remover" é de OUTRA parte da
+    // linha e continua legítimo — o que não pode ser vermelho é o aviso.
+    const aviso = html.slice(
+      html.indexOf('<div role="alert"'),
+      html.indexOf("Devolver os 4 ao menu"),
+    );
+
+    expect(aviso).toContain("border-amber-300");
+    expect(aviso).toContain("text-amber-900");
+    expect(aviso).toContain("lucide-triangle-alert");
+    // As classes `aria-invalid:*-destructive` do `Button` valem para estado de
+    // erro de form e não pintam nada aqui; o que o aviso não pode ter é cor
+    // vermelha aplicada.
+    expect(aviso).not.toContain("text-destructive");
+    expect(aviso).not.toContain("bg-destructive");
+  });
+
+  it("oferece as duas saídas, as duas com alvo de 44px", () => {
+    const html = montar([expirado]);
+
+    // Expirado continua ligado: religar seria um botão que não faz nada.
+    expect(html).toContain("Estender o prazo");
+    expect(html).toContain("Devolver os 4 ao menu");
+    expect(html).toContain("min-h-[44px]");
+  });
+
+  it("cardápio DESLIGADO oferece religar — mesmo aviso, um predicado só", () => {
+    const html = montar([
+      linha({
+        ...expirado,
+        ativo: false,
+        estado: {
+          tom: "neutro",
+          rotulo: "Desligado",
+          rotuloAcessivel: null,
+          abertoAgora: false,
+        },
+      }),
+    ]);
+
+    expect(html).toContain("4 produtos sumiram da vitrine");
+    expect(html).toContain("Religar o cardápio");
   });
 });

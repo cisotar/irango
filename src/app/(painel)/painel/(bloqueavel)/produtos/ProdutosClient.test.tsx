@@ -517,3 +517,58 @@ describe("ProdutosClient — badge de D14 (issue 261)", () => {
     expect(html).not.toContain(">Selecionar<");
   });
 });
+
+/**
+ * [264/RN-12 · design §13.4 item 5] O aviso reduzido na linha do produto. É o
+ * mesmo estado de `/painel/cardapios`, visto do lado do produto — e é o único
+ * lugar onde o lojista descobre que um prato sumiu da vitrine.
+ */
+describe("264 — aviso de sumiço na linha do produto", () => {
+  function comSumico(
+    sumicos: ProdutosClientProps["sumicos"],
+  ): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={[produtoBase({ visibilidade: "cardapio" } as Partial<Produto>)]}
+        categorias={[]}
+        opcionaisPorCategoria={{}}
+        cardapiosPorProduto={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
+        sumicos={sumicos}
+        acoes={acoesBase()}
+      />,
+    );
+  }
+
+  it("sem sumiço, a linha não ganha aviso nenhum", () => {
+    expect(comSumico({})).not.toContain("sumiu da vitrine");
+  });
+
+  it("cardápio expirado: a frase literal do design, em âmbar", () => {
+    const html = comSumico({
+      "prod-1": { cardapio: "Cardápio de Inverno", ativo: true },
+    });
+
+    expect(html).toContain(
+      "sumiu da vitrine — o cardápio Cardápio de Inverno expirou",
+    );
+    expect(html).toContain("text-amber-700");
+    expect(html).toContain("lucide-triangle-alert");
+  });
+
+  it("cardápio desligado: o mesmo aviso, com o verbo verdadeiro", () => {
+    expect(
+      comSumico({ "prod-1": { cardapio: "Cardápio de Inverno", ativo: false } }),
+    ).toContain("sumiu da vitrine — o cardápio Cardápio de Inverno foi desligado");
+  });
+
+  it("sem a prop (hub admin), nenhum aviso é inventado", () => {
+    expect(renderLista([produtoBase()])).not.toContain("sumiu da vitrine");
+  });
+});

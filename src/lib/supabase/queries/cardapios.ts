@@ -123,55 +123,92 @@ export type CardapioDoPainel = CardapioDaLoja & {
 export async function buscarCardapiosDoPainel(
   client: Client,
   lojaId: string,
-): Promise<CardapioDoPainel[]> {
-  const [{ cardapios }, vinculos] = await Promise.all([
+): Promise<{
+  cardapios: CardapioDoPainel[];
+  /**
+   * [264] Os produtos VINCULADOS a algum cardápio da loja, deduplicados — o
+   * universo exato que `contarProdutosEscondidos` percorre (produto sem vínculo
+   * nenhum não pode ter sumido por causa de cardápio). Sai do MESMO round trip
+   * dos vínculos: nenhuma query nova entrou na página.
+   */
+  produtos: ProdutoVinculado[];
+  /** [264] `produto_id → cardápios do produto`, para avaliar RN-13 por produto. */
+  cardapiosPorProduto: Map<string, CardapioDaLoja[]>;
+}> {
+  const [{ cardapios, cardapiosPorProduto }, vinculos] = await Promise.all([
     buscarCardapiosComProdutos(client, lojaId),
     buscarVinculosComVisibilidade(client, lojaId),
   ]);
 
   // Quantos cardápios cada produto tem: 1 significa "só este", e é o que
   // transforma um exclusivo em órfão na remoção (RN-14).
-  const cardapiosPorProduto = new Map<string, number>();
+  const quantosCardapios = new Map<string, number>();
   for (const v of vinculos) {
-    cardapiosPorProduto.set(
+    quantosCardapios.set(
       v.produto_id,
-      (cardapiosPorProduto.get(v.produto_id) ?? 0) + 1,
+      (quantosCardapios.get(v.produto_id) ?? 0) + 1,
     );
   }
 
-  return cardapios.map((cardapio) => {
+  const linhas = cardapios.map((cardapio) => {
     let menu = 0;
     let exclusivos = 0;
     for (const v of vinculos) {
       if (v.cardapio_id !== cardapio.id) continue;
       if (v.visibilidade === "menu") menu++;
-      else if ((cardapiosPorProduto.get(v.produto_id) ?? 0) === 1) exclusivos++;
+      else if ((quantosCardapios.get(v.produto_id) ?? 0) === 1) exclusivos++;
     }
     return { ...cardapio, menu, exclusivos };
   });
+
+  const produtos = new Map<string, ProdutoVinculado>();
+  for (const v of vinculos) {
+    if (!produtos.has(v.produto_id)) {
+      produtos.set(v.produto_id, {
+        id: v.produto_id,
+        nome: v.nome,
+        visibilidade: v.visibilidade,
+      });
+    }
+  }
+
+  return {
+    cardapios: linhas,
+    produtos: [...produtos.values()],
+    cardapiosPorProduto,
+  };
 }
+
+/** [264] O mínimo que o aviso de RN-12 lê de um produto vinculado. */
+export type ProdutoVinculado = {
+  id: string;
+  nome: string;
+  visibilidade: string;
+};
 
 type VinculoComVisibilidade = {
   cardapio_id: string;
   produto_id: string;
+  nome: string;
   visibilidade: string;
 };
 
-/** Os vínculos da loja inteira + a visibilidade do produto, num round trip. */
+/** Os vínculos da loja inteira + nome e visibilidade do produto, num round trip. */
 async function buscarVinculosComVisibilidade(
   client: Client,
   lojaId: string,
 ): Promise<VinculoComVisibilidade[]> {
   const { data, error } = await client
     .from("cardapio_produtos")
-    .select("cardapio_id, produto_id, produtos!inner(visibilidade)")
+    .select("cardapio_id, produto_id, produtos!inner(nome, visibilidade)")
     .eq("loja_id", lojaId);
   if (error) throw error;
 
+  type Embutido = { nome: string; visibilidade: string };
   const linhas = (data ?? []) as unknown as {
     cardapio_id: string;
     produto_id: string;
-    produtos: { visibilidade: string } | { visibilidade: string }[] | null;
+    produtos: Embutido | Embutido[] | null;
   }[];
 
   return linhas.map((linha) => {
@@ -181,6 +218,7 @@ async function buscarVinculosComVisibilidade(
     return {
       cardapio_id: linha.cardapio_id,
       produto_id: linha.produto_id,
+      nome: produto?.nome ?? "",
       visibilidade: produto?.visibilidade ?? "menu",
     };
   });

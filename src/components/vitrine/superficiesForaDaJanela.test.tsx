@@ -26,12 +26,22 @@ import { ROTULO_SEM_VOLTA } from "@/lib/utils/descreverVigencia";
 import { CardProduto } from "./CardProduto";
 import { ItemProdutoLista } from "./ItemProdutoLista";
 import { SecaoCatalogo, type CategoriaComProdutos } from "./SecaoCatalogo";
+import type { SecaoVitrine } from "@/lib/utils/catalogoVitrine";
 import {
   ROTULO_ESGOTADO,
   rotuloAcessivelNaoCompravel,
   rotuloCtaNaoCompravel,
   rotuloNaoCompravel,
 } from "./rotuloEsgotado";
+
+/**
+ * [263] As fixtures continuam descrevendo CATEGORIAS — é o mesmo objeto de
+ * sempre. `SecaoCatalogo` passou a exigir o discriminante `tipo` (SecaoVitrine),
+ * então ele é acrescentado aqui, num lugar só, em vez de espalhado por cada
+ * literal: o que os testes abaixo afirmam não mudou.
+ */
+const comoSecoes = (categorias: CategoriaComProdutos[]): SecaoVitrine[] =>
+  categorias.map((categoria) => ({ ...categoria, tipo: "categoria" }));
 
 const ID = "p-feijoada";
 const NOME = "Feijoada completa";
@@ -111,7 +121,7 @@ describe("262 rotuloEsgotado — um módulo, dois motivos", () => {
 describe("262 CardProduto — a pílula diz quando volta, e o card continua abrindo", () => {
   const html = () =>
     renderToStaticMarkup(
-      <CardProduto
+      <CardProduto idNaSecao="cat-x:p-1"
         produto={FORA_DA_JANELA}
         rotuloIndisponivel={ROTULO}
         onAdicionar={() => {}}
@@ -134,7 +144,7 @@ describe("262 CardProduto — a pílula diz quando volta, e o card continua abri
     expect(marcado).toContain("pointer-events-none");
     // No comprável nem uma classe a mais: a árvore é a de hoje.
     const bom = renderToStaticMarkup(
-      <CardProduto
+      <CardProduto idNaSecao="cat-x:p-1"
         produto={COMPRAVEL}
         rotuloIndisponivel={ROTULO}
         onAdicionar={() => {}}
@@ -150,14 +160,14 @@ describe("262 CardProduto — a pílula diz quando volta, e o card continua abri
 
   it("chave ausente ⇒ a pílula degrada visível, nunca em branco", () => {
     const semRotulo = renderToStaticMarkup(
-      <CardProduto produto={FORA_DA_JANELA} onAdicionar={() => {}} />,
+      <CardProduto idNaSecao="cat-x:p-1" produto={FORA_DA_JANELA} onAdicionar={() => {}} />,
     );
     expect(semRotulo).toContain(ROTULO_SEM_VOLTA);
   });
 
   it("`esgotado` renderiza exatamente como em 225 (não-regressão)", () => {
     const html225 = renderToStaticMarkup(
-      <CardProduto produto={ESGOTADO} onAdicionar={() => {}} />,
+      <CardProduto idNaSecao="cat-x:p-1" produto={ESGOTADO} onAdicionar={() => {}} />,
     );
     expect(html225).toContain(ROTULO_ESGOTADO);
     expect(html225).toContain(`aria-label="${NOME} esgotado"`);
@@ -201,7 +211,7 @@ describe("262 SecaoCatalogo — `rotulosVigencia` desce às duas variantes", () 
   it("grid: a frase chega ao card", () => {
     const html = renderToStaticMarkup(
       <SecaoCatalogo
-        categorias={categorias(true, [FORA_DA_JANELA])}
+        secoes={comoSecoes(categorias(true, [FORA_DA_JANELA]))}
         rotulosVigencia={ROTULOS}
       />,
     );
@@ -211,7 +221,7 @@ describe("262 SecaoCatalogo — `rotulosVigencia` desce às duas variantes", () 
   it("lista textual: a frase chega à linha", () => {
     const html = renderToStaticMarkup(
       <SecaoCatalogo
-        categorias={categorias(false, [FORA_DA_JANELA])}
+        secoes={comoSecoes(categorias(false, [FORA_DA_JANELA]))}
         rotulosVigencia={ROTULOS}
       />,
     );
@@ -221,7 +231,7 @@ describe("262 SecaoCatalogo — `rotulosVigencia` desce às duas variantes", () 
   it("mapa VAZIO ⇒ 'Indisponível no momento' — degradação visível, nunca branco", () => {
     const html = renderToStaticMarkup(
       <SecaoCatalogo
-        categorias={categorias(true, [FORA_DA_JANELA])}
+        secoes={comoSecoes(categorias(true, [FORA_DA_JANELA]))}
         rotulosVigencia={{}}
       />,
     );
