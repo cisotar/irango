@@ -99,6 +99,7 @@ export type Database = {
         Row: {
           cardapio_id: string
           criado_em: string
+          dias_semana: number[] | null
           id: string
           loja_id: string
           produto_id: string
@@ -106,6 +107,7 @@ export type Database = {
         Insert: {
           cardapio_id: string
           criado_em?: string
+          dias_semana?: number[] | null
           id?: string
           loja_id: string
           produto_id: string
@@ -113,6 +115,7 @@ export type Database = {
         Update: {
           cardapio_id?: string
           criado_em?: string
+          dias_semana?: number[] | null
           id?: string
           loja_id?: string
           produto_id?: string
