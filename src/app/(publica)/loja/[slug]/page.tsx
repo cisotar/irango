@@ -216,13 +216,19 @@ export default async function VitrinePage({ params }: PageProps) {
   // [263/D16/RN-15] As seções de DESTAQUE saem da MESMA lista projetada que as
   // categorias — é isso que faz os dois cards do mesmo produto carregarem a
   // MESMA referência de objeto e, portanto, dizerem sempre a mesma coisa.
-  // Nenhuma janela é reavaliada aqui: `cardapiosAbertos` já veio decidido uma
-  // vez por request, e `agruparPorCardapio` (248) já ordena e já descarta seção
-  // vazia. Cardápio que fecha ⇒ a seção some sozinha, sem ninguém publicar nada.
+  // A janela do CARDÁPIO não é reavaliada aqui: `cardapiosAbertos` já veio
+  // decidido uma vez por request, e `agruparPorCardapio` (248) já ordena e já
+  // descarta seção vazia. Cardápio que fecha ⇒ a seção some sozinha, sem
+  // ninguém publicar nada — e, desde [279], o mesmo vale para o cardápio cujo
+  // nenhum item é do dia de hoje.
+  // [279/RN-05] `agora` e o fuso da LOJA entram porque a seção lista só os
+  // ITENS DO DIA: o cardápio aberto cujo nenhum item é de hoje não vira seção.
   const secoesDestaque = agruparPorCardapio(
     produtosVitrine,
     cardapiosAbertos,
     vinculosPorProduto,
+    agora,
+    timezoneLoja,
   );
   // O rótulo de janela do cabeçalho (design §13.1 item 3), redigido pelo mesmo
   // módulo das outras três frases de vigência (M6) — no fuso da LOJA.

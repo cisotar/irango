@@ -21,6 +21,23 @@
  * MESMA função que decide se o produto aparece na vitrine
  * (`avaliarVigenciaDoProduto`, 246) — nunca um segundo critério de "quando
  * volta" escrito neste arquivo.
+ *
+ * **[280/RN-03] A leitura é POR VÍNCULO, não por cardápio.** Nada mudou aqui
+ * quando a agenda passou a ser do item (273): este arquivo nunca leu
+ * `cardapio.dias_semana` nem chamou `cardapioAberto`, e por delegar 100% do
+ * predicado herdou a regra nova de graça. A consequência que importa ao
+ * lojista: o exclusivo de cardápio RECORRENTE com dias de item **nunca** entra
+ * em `sumidos` — ele alterna entre comprável e marcado, e acusar sumiço aí
+ * assustaria a loja à toa e ofereceria uma conversão que não resolve nada.
+ * Continuam sumidos o exclusivo de prazo fixo EXPIRADO e o de cardápio
+ * DESLIGADO.
+ *
+ * **Divergência conhecida (RN-06):** cardápio {sáb,dom} com item {qua} nunca
+ * fica comprável, e mesmo assim NÃO é contado como escondido — `voltaAAbrir`
+ * ignora o dia do item de propósito (273), para não abrir a segunda casa da
+ * regra de dia. Decisão registrada na spec §Fora do Escopo; quem avisa o
+ * lojista dessa agenda impossível é o painel (issue 276), não esta contagem.
+ * Travada por teste com comentário em `contarProdutosEscondidos.test.ts`.
  */
 
 import {
@@ -54,10 +71,11 @@ function vinculado(
  * `produtos` chegou.
  *
  * "Sumiu" é `visibilidade = 'cardapio'` **e** `visivelNaVitrine === false`
- * avaliado sobre TODOS os cardápios do produto — não sobre este. O exclusivo
- * que também está num cardápio aberto (ou que ainda vai abrir) **não sumiu**, e
- * contá-lo assustaria o lojista à toa. Produto do menu nunca entra: RN-05
- * curto-circuita antes de olhar cardápio nenhum.
+ * avaliado sobre TODOS os vínculos do produto — não sobre este cardápio. O
+ * exclusivo que também está num cardápio aberto (ou que ainda vai abrir) **não
+ * sumiu**, e contá-lo assustaria o lojista à toa. Produto do menu nunca entra:
+ * RN-05 curto-circuita antes de olhar cardápio nenhum. [280] "Fora do dia do
+ * item" também não é sumiço: o vínculo agendado tem volta.
  *
  * Existe além de `contarProdutosEscondidos` porque a saída "Devolver os N ao
  * menu" precisa NOMEAR os N no `AlertDialog` (design §13.4 item 3) — e o número
@@ -130,8 +148,10 @@ export type SumicoDoProduto = {
  * cardápio X expirou"*.
  *
  * `null` = o produto está na vitrine. O predicado é o MESMO de
- * `listarProdutosEscondidos` (`visivelNaVitrine`, 246): um produto não pode
- * estar sumido numa tela e presente na outra.
+ * `listarProdutosEscondidos` (`visivelNaVitrine`, 246, por VÍNCULO desde 273):
+ * um produto não pode estar sumido numa tela e presente na outra — nem sumido
+ * no painel e presente na seção de destaque da vitrine ([279]), que chama as
+ * mesmas funções de `vigenciaCardapio.ts`.
  *
  * O cardápio "culpado" é escolhido por escada determinística (`nome` pt-BR →
  * `id`) porque aqui TODOS os candidatos estão sem volta — não existe "o que

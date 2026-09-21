@@ -8,6 +8,7 @@ import { precoEfetivo, type ProdutoComDesconto } from "./precoEfetivo";
 import {
   avaliarVigenciaDoProduto,
   cardapioAberto,
+  itemAberto,
   visibilidadeDe,
   type CardapioVigencia,
   type VinculoVigencia,
@@ -280,17 +281,31 @@ export type SecaoVitrine = CategoriaComProdutos & {
  * o critério de aceite proíbe (a suíte de `agruparCatalogo` passa sem uma
  * edição). Aqui não há categoria, não há grupo "Outros" e a ordem é outra.
  *
- * **Não reavalia janela nenhuma.** `cardapiosAbertos` vem pronto de
- * `projetarCatalogoVitrine` — "está aberto?" tem UMA resposta por request
- * (RN-15). Como consequência de propriedade, e não de filtro: todo produto de
- * cardápio aberto está `dentroDaJanela` (a janela do produto é a UNIÃO dos
- * cardápios dele), então **nenhum produto de seção de destaque está fora da
- * janela**. Esgotado, sim — e aparece, com o selo de esgotado, porque
- * `disponivel` é ortogonal à janela.
+ * **A janela do CARDÁPIO não é reavaliada:** `cardapiosAbertos` vem pronto de
+ * `projetarCatalogoVitrine` — "o cardápio está aberto?" tem UMA resposta por
+ * request (RN-15).
+ *
+ * **O dia do ITEM, sim — e é o único filtro escrito aqui** ([279]/RN-05). Até
+ * a 273 valia por PROPRIEDADE que todo produto de cardápio aberto estava
+ * `dentroDaJanela`; com agenda por item isso deixou de ser verdade (o Virado
+ * de segunda pertence ao cardápio aberto hoje e não é servido hoje), e a seção
+ * passa a ser verdadeira **por filtro**: só entra o item com
+ * `itemAberto(vinculo, agora, timezone)`. A regra de dia continua com UM dono
+ * (`vigenciaCardapio.ts`); daqui sai só a chamada. Por isso `agora`/`timezone`
+ * entram por parâmetro — nunca `new Date()` aqui dentro.
+ *
+ * O item fora do dia **não some da loja**: continua na seção da categoria
+ * dele, marcado, com o selo que lê os dias do item (RN-08). Esgotado dentro do
+ * dia também aparece, com o selo de esgotado — `disponivel` é ortogonal à
+ * janela. E produto `visibilidade = 'menu'` com vínculo agendado continua
+ * comprável todo dia: a seção é a projeção do CARDÁPIO, não da comprabilidade.
  *
  * **Seção vazia não é emitida** (`filter(s => s.produtos.length > 0)`): a mesma
  * regra da issue 177, aplicada de novo, não reinventada. Cardápio aberto cujos
- * produtos foram todos ocultados não pinta cabeçalho que não leva a lugar nenhum.
+ * produtos foram todos ocultados — ou cujo nenhum item é do DIA de hoje
+ * ([279]) — não pinta cabeçalho que não leva a lugar nenhum. É esse filtro que
+ * faz o "Especiais do Dia" sumir no domingo sem prato do dia: nenhuma linha
+ * nova.
  *
  * **Ordem `cardapios.ordem` → `nome` (pt-BR) → `id`** — a MESMA escada de RN-07
  * (`escolherVinculoParaRotulo`). Duas ordenações diferentes de cardápio é como
@@ -311,6 +326,8 @@ export function agruparPorCardapio<C extends CardapioVigencia & { ordem: number 
   produtos: readonly ProdutoVitrine[],
   cardapiosAbertos: readonly C[],
   vinculosPorProduto: ReadonlyMap<string, VinculoVigencia<C>[]>,
+  agora: Date,
+  timezone: string,
 ): SecaoVitrine[] {
   if (cardapiosAbertos.length === 0) return [];
 
@@ -338,13 +355,17 @@ export function agruparPorCardapio<C extends CardapioVigencia & { ordem: number 
     // Deduplica por id: o mesmo cardápio pode aparecer duas vezes na lista de
     // um produto se o vínculo vier duplicado do banco.
     const vistos = new Set<string>();
-    for (const { cardapio } of vinculosPorProduto.get(produto.id) ?? []) {
+    for (const vinculo of vinculosPorProduto.get(produto.id) ?? []) {
+      const { cardapio } = vinculo;
       if (vistos.has(cardapio.id)) continue;
       vistos.add(cardapio.id);
-      // D16-a: produto em DOIS cardápios abertos sai nas DUAS seções — e na
-      // categoria dele, que é outro agrupador. Cardápio FECHADO não tem seção
-      // no mapa, então o `?.` já é o filtro de RN-15: nenhuma janela é
-      // reavaliada aqui.
+      // [279/RN-05] O item precisa estar aberto HOJE: `itemAberto` é
+      // `cardapioAberto` E o dia do item, e é a MESMA função que decide a
+      // compra no recálculo autoritativo. Nenhum segundo critério de dia.
+      if (!itemAberto(vinculo, agora, timezone)) continue;
+      // D16-a: produto em DOIS cardápios abertos PARA ELE sai nas DUAS seções
+      // — e na categoria dele, que é outro agrupador. Cardápio FECHADO não tem
+      // seção no mapa, então o `?.` continua sendo o filtro de RN-15.
       secoes.get(cardapio.id)?.produtos.push(produto);
     }
   }
