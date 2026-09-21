@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.4.2 | **Atualizado:** 2026-09-21
+**Versão:** 0.4.3 | **Atualizado:** 2026-09-21
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -412,9 +412,19 @@ Duas RPCs desta família passam a servir **os dois chamadores** — o lojista au
 
 Se a permutação for de um escopo mais fino que a loja inteira (ex.: um par loja+categoria, ou loja+grupo), o parâmetro extra que define esse escopo vem do payload do cliente — não de `auth.uid()` — e por isso exige checagem explícita na Server Action **antes** da RPC, além do filtro dentro da função (T3, quando `definer`; RLS, quando `invoker`).
 
----
+### Alternativa sem RPC: sequência de requests sob constraint trigger DEFERRED (issues 284/285)
 
-## 3. Server vs Client
+Nem toda escrita multi-linha/multi-tabela precisa de RPC `security definer`. `removerCardapio`/`removerCardapioAdmin`
+(modos `arquivar`/`cascata`, `specs/remocao-cardapio-exclusivos.md` D1) escrevem `produtos` e depois `cardapios`
+em **dois requests PostgREST separados**, não numa RPC, porque a invariante que protegeria (nenhum produto
+exclusivo órfão) já é garantida por um `constraint trigger ... deferrable initially deferred` existente
+(`produtos_exclusivo_tem_cardapio`, `20260920131000`) que só avalia no COMMIT. A alternativa é segura, não
+default: só vale quando as três condições valem juntas — (1) a ORDEM certa das escritas nunca deixa o trigger
+ver um estado inválido (aqui: produtos antes, cardápio depois — a ordem inversa derruba a transação com `23000`,
+fail-closed); (2) falha entre os dois requests deixa estado **reconciliável**, nunca corrompido (aqui: produtos já
+tocados + cardápio ainda existente, removível numa segunda tentativa); (3) o backstop do trigger cobre a corrida
+residual (TOCTOU entre os dois requests) com uma mensagem acionável, não o erro cru do Postgres (`seguranca.md` §14).
+Faltando qualquer uma das três, volte para RPC `security definer` (T1–T7, acima) — não force a sequência.
 
 | Operação | Onde roda | Por quê |
 |----------|-----------|---------|
