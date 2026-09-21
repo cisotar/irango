@@ -227,7 +227,18 @@ type GrupoProdutos = {
   produtos: Produto[];
 };
 
-/** Agrupa produtos por categoria, na ordem das categorias; "Sem categoria" por último. */
+/**
+ * Agrupa produtos por categoria, na ordem das categorias; "Sem categoria" por
+ * último.
+ *
+ * Categoria VAZIA continua na lista (issue 261): esconder grupo vazio é regra
+ * da VITRINE (issue 177, `projetarCatalogoVitrine`), onde o cliente não tem o
+ * que fazer com uma seção sem item. No painel do lojista — e no hub admin, que
+ * reusa este mesmo componente — a categoria recém-criada nasce vazia por
+ * definição, e sumir da lista fazia o lojista concluir que não criou nada.
+ * "Sem categoria" é a exceção: não é categoria, é o resíduo dos órfãos, então
+ * só existe quando existe produto órfão.
+ */
 function agruparPorCategoria(
   produtos: Produto[],
   categorias: Categoria[],
@@ -250,9 +261,8 @@ function agruparPorCategoria(
     }
   }
 
-  const naoVazios = grupos.filter((g) => g.produtos.length > 0);
-  if (outros) naoVazios.push(outros);
-  return naoVazios;
+  if (outros) grupos.push(outros);
+  return grupos;
 }
 
 /**
@@ -502,8 +512,8 @@ export function ProdutosClient({
 
   /**
    * `categoria_id → nº de produtos`. Contado sobre TODOS os produtos, não sobre
-   * `grupos`: `agruparPorCategoria` descarta as categorias vazias, e o modo
-   * reordenar precisa mostrar "0 produtos" para elas.
+   * `grupos`, que carrega o grupo sintético "Sem categoria" e é montado para a
+   * listagem; o modo reordenar lê de `categorias` e só precisa do número.
    */
   const contagemPorCategoria = useMemo(() => {
     const contagem: Record<string, number> = {};
@@ -753,12 +763,12 @@ export function ProdutosClient({
       )}
 
       {/* No modo reordenar a listagem normal dá lugar à lista de reordenação:
-          é o que colapsa tudo e faz a tela ler de `categorias` (todas), e não de
-          `grupos` (que esconde categoria vazia). */}
+          é o que colapsa tudo e faz a tela ler de `categorias` (todas, sem o
+          grupo sintético "Sem categoria", que não é ordenável). */}
       {modoReordenar ? (
         <>
           <p className="mb-3 text-sm text-muted-foreground">
-            Ordene as categorias. Categorias sem produtos aparecem só aqui.
+            Ordene as categorias. A ordem daqui é a do cardápio.
           </p>
           <ReordenarCategorias
             ref={reordenarRef}
@@ -804,30 +814,34 @@ export function ProdutosClient({
                       // Par de botões com o NÚMERO escrito, nunca checkbox
                       // tri-estado: o `Checkbox` gerado renderiza `CheckIcon`
                       // fixo e um estado "mixed" mostraria um ✓ — corrigir isso
-                      // exigiria editar arquivo do shadcn CLI.
-                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="min-h-[44px]"
-                          onClick={() =>
-                            selecionarGrupo(grupo.produtos.map((p) => p.id))
-                          }
-                        >
-                          Selecionar os {grupo.produtos.length}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="min-h-[44px]"
-                          aria-label={`Limpar a seleção de ${grupo.nome}`}
-                          onClick={() =>
-                            limparGrupo(grupo.produtos.map((p) => p.id))
-                          }
-                        >
-                          Limpar
-                        </Button>
-                      </div>
+                      // exigiria editar arquivo do shadcn CLI. Grupo vazio não
+                      // ganha o par: "Selecionar os 0" é controle para operação
+                      // impossível.
+                      grupo.produtos.length === 0 ? null : (
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-h-[44px]"
+                            onClick={() =>
+                              selecionarGrupo(grupo.produtos.map((p) => p.id))
+                            }
+                          >
+                            Selecionar os {grupo.produtos.length}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="min-h-[44px]"
+                            aria-label={`Limpar a seleção de ${grupo.nome}`}
+                            onClick={() =>
+                              limparGrupo(grupo.produtos.map((p) => p.id))
+                            }
+                          >
+                            Limpar
+                          </Button>
+                        </div>
+                      )
                     ) : grupo.id != null ? (
                       <div className="flex shrink-0 items-center">
                         <Button
@@ -860,6 +874,14 @@ export function ProdutosClient({
                   </div>
                   <AccordionContent className="pt-0 pb-0">
                     <CardContent className="divide-y divide-foreground/10 p-0">
+                      {/* Categoria vazia diz que está vazia, em vez de sumir
+                          (issue 261): o cabeçalho acima já oferece o
+                          "Novo produto em {nome}" que a preenche. */}
+                      {grupo.produtos.length === 0 && (
+                        <p className="px-4 py-3 text-sm text-muted-foreground">
+                          Nenhum produto nesta categoria ainda.
+                        </p>
+                      )}
                       {grupo.produtos.map((p) => (
                         // `flex-wrap` + `items-start` é o coração do fix de layout
                         // mobile: em 360px os 7 filhos somavam ~433px de largura

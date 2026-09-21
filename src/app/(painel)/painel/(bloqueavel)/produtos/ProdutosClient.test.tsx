@@ -238,7 +238,7 @@ describe("injeção de acoes (issues 129 e 160)", () => {
           categorias={[]}
           opcionaisPorCategoria={{}}
           hrefCardapios="/painel/cardapios"
-      cardapiosPorProduto={{}}
+          cardapiosPorProduto={{}}
           promocoes={{}}
           fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
           categoriasOpcional={[]}
@@ -265,16 +265,19 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
     { id: "c2", nome: "Bebidas", exibir_imagens: true },
   ];
 
-  function renderComCategorias(produtos: Produto[]): string {
+  function renderComCategorias(
+    produtos: Produto[],
+    categorias = CATEGORIAS,
+  ): string {
     return renderToStaticMarkup(
       <ProdutosClient
         lojaSlug="loja-teste"
         lojaId="loja-1"
         produtos={produtos}
-        categorias={CATEGORIAS}
+        categorias={categorias}
         opcionaisPorCategoria={{}}
         hrefCardapios="/painel/cardapios"
-      cardapiosPorProduto={{}}
+        cardapiosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -300,15 +303,18 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
       produtoBase({ id: "prod-2", nome: "Avulso", categoria_id: null }),
     ]);
     expect(html).toContain("Sem categoria");
-    // Só a categoria real ganha o botão: exatamente 1 aria-label no HTML.
-    expect(html.match(/aria-label="Novo produto em /g)?.length).toBe(1);
+    // Só as categorias REAIS ganham o botão — as duas de `CATEGORIAS`, já que
+    // categoria vazia também é card desde a issue 261. O resíduo "Sem
+    // categoria" continua de fora.
+    expect(html).not.toContain('aria-label="Novo produto em Sem categoria"');
+    expect(html.match(/aria-label="Novo produto em /g)?.length).toBe(2);
     expect(html).toContain('aria-label="Novo produto em Lanches"');
   });
 
   it("botão global 'Novo produto' do topo continua presente mesmo sem nenhum botão de card", () => {
-    // Só produto sem categoria => zero botões de card; o "Novo produto"
-    // encontrado é necessariamente o global do topo.
-    const html = renderComCategorias([produtoBase({ categoria_id: null })]);
+    // Sem nenhuma categoria e só produto órfão => zero botões de card; o
+    // "Novo produto" encontrado é necessariamente o global do topo.
+    const html = renderComCategorias([produtoBase({ categoria_id: null })], []);
     expect(html.match(/aria-label="Novo produto em /g)).toBeNull();
     expect(html).toContain(">Novo produto<");
   });
@@ -318,10 +324,9 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
  * Cenário 11 da issue 175 — GATE do botão "Reordenar categorias".
  *
  * O gate é sobre `categorias.length` (TODAS), nunca sobre os grupos
- * renderizados: `agruparPorCategoria` descarta categoria vazia, então contar
- * grupos faria o botão sumir justamente para a loja que acabou de criar
- * categorias e ainda não cadastrou produto — o momento em que ela mais quer
- * ordenar o cardápio.
+ * renderizados: `grupos` carrega o grupo sintético "Sem categoria", que não é
+ * ordenável, então contar grupos acenderia o botão para uma loja com uma
+ * categoria só e produtos órfãos.
  */
 describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () => {
   function renderComNCategorias(
@@ -336,7 +341,7 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
         categorias={categorias.map((c) => ({ ...c, exibir_imagens: true }))}
         opcionaisPorCategoria={{}}
         hrefCardapios="/painel/cardapios"
-      cardapiosPorProduto={{}}
+        cardapiosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -392,16 +397,21 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
 });
 
 /**
- * Metade "listagem normal" do cenário 10 da issue 175 — a outra metade
- * ("aparece no modo com 0 produtos") é provada em ReordenarCategorias.test.tsx
- * ([C10]), o único lugar onde o modo reordenar é observável sem simular clique
- * (ele está SEMPRE ligado nesse componente). Aqui o modo está sempre DESLIGADO
- * (render inicial estático), então é o lugar certo para provar a outra metade:
- * a categoria sem produto não pode aparecer como card na tela normal.
+ * Issue 261 — INVERSÃO da asserção do cenário 10 da issue 175. O teste antigo
+ * ("categoria sem nenhum produto não vira card") afirmava `not.toContain
+ * ("Bebidas")` e codificava a regra errada: "categoria vazia fica oculta" foi
+ * decidido pensando só na VITRINE, e o painel herdou por acidente. A regra
+ * esclarecida pelo dono do produto: o CLIENTE não vê categoria vazia (vitrine,
+ * `projetarCatalogoVitrine`, intocada); o LOJISTA e o dono do SaaS sempre veem
+ * (este componente, reusado pelo painel e pelo hub admin). Uma categoria
+ * recém-criada nasce vazia e sumia da lista logo após ser criada.
+ *
+ * A outra metade do cenário 10 ("aparece no modo reordenar com 0 produtos")
+ * segue em ReordenarCategorias.test.tsx ([C10]).
  */
-describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 10)", () => {
-  it("categoria sem nenhum produto não vira card (agruparPorCategoria descarta grupo vazio)", () => {
-    const html = renderToStaticMarkup(
+describe("categoria vazia APARECE na listagem normal do painel (issue 261)", () => {
+  function renderComVazia(): string {
+    return renderToStaticMarkup(
       <ProdutosClient
         lojaSlug="loja-teste"
         lojaId="loja-1"
@@ -413,7 +423,7 @@ describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 1
         acoes={acoesBase()}
         opcionaisPorCategoria={{}}
         hrefCardapios="/painel/cardapios"
-      cardapiosPorProduto={{}}
+        cardapiosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -421,10 +431,30 @@ describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 1
         associacoes={[]}
       />,
     );
+  }
+
+  it("categoria sem nenhum produto vira card, com cabeçalho e estado vazio", () => {
+    const html = renderComVazia();
     expect(html).toContain("Lanches");
-    // "Bebidas" não pode aparecer em lugar NENHUM do HTML: nem como card, nem
-    // vazando por engano do modo reordenar (que aqui está desligado).
-    expect(html).not.toContain("Bebidas");
+    expect(html).toContain("Bebidas");
+    expect(html).toContain("Nenhum produto nesta categoria ainda.");
+  });
+
+  it("o card da categoria vazia traz o botão 'Novo produto em {nome}'", () => {
+    // É o caminho de saída do estado vazio: `abrirCriarNaCategoria(grupo.id)`
+    // pré-seleciona a categoria no formulário.
+    const html = renderComVazia();
+    expect(html).toContain('aria-label="Novo produto em Bebidas"');
+  });
+
+  it("ordem das categorias preservada: a vazia não vai para o fim", () => {
+    const html = renderComVazia();
+    expect(html.indexOf("Lanches")).toBeLessThan(html.indexOf("Bebidas"));
+  });
+
+  it("'Sem categoria' NÃO aparece quando não há produto órfão", () => {
+    // O resíduo dos órfãos não é categoria: sem órfão, não existe grupo.
+    expect(renderComVazia()).not.toContain("Sem categoria");
   });
 });
 
@@ -441,7 +471,7 @@ describe("ProdutosClient — chip de promoção vigente (issue 235, design §8.4
         categorias={[]}
         opcionaisPorCategoria={{}}
         hrefCardapios="/painel/cardapios"
-      cardapiosPorProduto={{}}
+        cardapiosPorProduto={{}}
         promocoes={promocoes}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -530,18 +560,18 @@ describe("ProdutosClient — badge de D14 (issue 261)", () => {
  * lugar onde o lojista descobre que um prato sumiu da vitrine.
  */
 describe("264 — aviso de sumiço na linha do produto", () => {
-  function comSumico(
-    sumicos: ProdutosClientProps["sumicos"],
-  ): string {
+  function comSumico(sumicos: ProdutosClientProps["sumicos"]): string {
     return renderToStaticMarkup(
       <ProdutosClient
         lojaSlug="loja-teste"
         lojaId="loja-1"
-        produtos={[produtoBase({ visibilidade: "cardapio" } as Partial<Produto>)]}
+        produtos={[
+          produtoBase({ visibilidade: "cardapio" } as Partial<Produto>),
+        ]}
         categorias={[]}
         opcionaisPorCategoria={{}}
         hrefCardapios="/painel/cardapios"
-      cardapiosPorProduto={{}}
+        cardapiosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -571,8 +601,12 @@ describe("264 — aviso de sumiço na linha do produto", () => {
 
   it("cardápio desligado: o mesmo aviso, com o verbo verdadeiro", () => {
     expect(
-      comSumico({ "prod-1": { cardapio: "Cardápio de Inverno", ativo: false } }),
-    ).toContain("sumiu da vitrine — o cardápio Cardápio de Inverno foi desligado");
+      comSumico({
+        "prod-1": { cardapio: "Cardápio de Inverno", ativo: false },
+      }),
+    ).toContain(
+      "sumiu da vitrine — o cardápio Cardápio de Inverno foi desligado",
+    );
   });
 
   it("sem a prop (hub admin), nenhum aviso é inventado", () => {
