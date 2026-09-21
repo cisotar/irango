@@ -34,6 +34,8 @@ import {
   schemaPreviaDeLote,
   schemaCardapio,
   schemaIdCardapio,
+  schemaDiasDoVinculo,
+  normalizarDiasDoVinculo,
 } from "@/lib/validacoes/cardapio";
 import {
   MSG_GENERICA_LOTE,
@@ -42,6 +44,7 @@ import {
   MSG_CONVERTER,
   MSG_LOJA,
   MSG_INVALIDO,
+  MSG_DIAS_DO_VINCULO,
   MSG_EXCLUSIVOS_SEM_NUMERO,
   mensagemExclusivos,
   ehErroDeExclusivoOrfao,
@@ -62,6 +65,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
+import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
 
 // [269 · D2/D3] As frases, os reconhecedores de erro do trigger, a
 // normalização de prazo pelo fuso e o resumo da prévia moram em
@@ -78,10 +82,18 @@ import { revalidatePath } from "next/cache";
  * (`/painel/cardapio`, singular) não existe como rota — débito conhecido
  * (`architecture.md` §10), não reusado aqui de propósito.
  */
-function revalidarCaminhosDoCardapio(slug: string): void {
-  revalidatePath("/painel/cardapios");
+function revalidarCaminhosDoCardapio(slug: string, cardapioId?: string): void {
+  revalidatePath(ROTA_CARDAPIOS_LOJISTA);
   revalidatePath("/painel/produtos");
   revalidatePath(`/loja/${slug}`);
+  // [274 · D9] `revalidatePath("/painel/cardapios")` invalida SÓ aquele path
+  // (type `page` é o default) — não o DETALHE `/painel/cardapios/[cardapioId]`,
+  // que é a tela da agenda por item. O caminho CONCRETO, nunca a forma coringa
+  // nem `"layout"`: revalidar o layout derrubaria o detalhe de todos os
+  // cardápios da loja sem necessidade.
+  if (cardapioId != null) {
+    revalidatePath(`${ROTA_CARDAPIOS_LOJISTA}/${cardapioId}`);
+  }
 }
 
 /**
@@ -351,15 +363,20 @@ export async function atualizarCardapio(
 
     // Escopo explícito por `loja_id` ALÉM da RLS: um `id` de outra loja no
     // payload não casa com nenhuma linha e não escreve nada.
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from("cardapios")
-      .update(linhaDoCardapio(parsed.data, loja.timezone))
+      .update(linhaDoCardapio(parsed.data, loja.timezone), { count: "exact" })
       .eq("id", id)
       .eq("loja_id", loja.id);
     if (error) {
       console.error("[atualizarCardapio]", error);
       return { ok: false, erro: MSG_SALVAR };
     }
+    // [274 · D8] Zero linhas casadas = id inexistente OU de outra loja: a mesma
+    // frase para os dois (sem oráculo). Antes disso a UI dizia "salvo" por uma
+    // escrita que não aconteceu. `count` ausente (`null`/`undefined`) NÃO
+    // recusa — a recusa é em `0` ESTRITO (R4).
+    if (count === 0) return { ok: false, erro: MSG_SALVAR };
 
     revalidarCaminhosDoCardapio(loja.slug);
     return { ok: true };
@@ -388,15 +405,17 @@ export async function ligarDesligarCardapio(
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: MSG_LOJA };
 
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from("cardapios")
-      .update({ ativo })
+      .update({ ativo }, { count: "exact" })
       .eq("id", id)
       .eq("loja_id", loja.id);
     if (error) {
       console.error("[ligarDesligarCardapio]", error);
       return { ok: false, erro: MSG_SALVAR };
     }
+    // [274 · D8] Mesma regra de `atualizarCardapio`.
+    if (count === 0) return { ok: false, erro: MSG_SALVAR };
 
     revalidarCaminhosDoCardapio(loja.slug);
     return { ok: true };
@@ -437,9 +456,9 @@ export async function removerCardapio(id: string): Promise<ResultadoRemocao> {
       };
     }
 
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from("cardapios")
-      .delete()
+      .delete({ count: "exact" })
       .eq("id", id)
       .eq("loja_id", loja.id);
     if (error) {
@@ -451,6 +470,8 @@ export async function removerCardapio(id: string): Promise<ResultadoRemocao> {
       }
       return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
     }
+    // [274 · D8] Zero linhas apagadas = id inexistente OU de outra loja.
+    if (count === 0) return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
 
     revalidarCaminhosDoCardapio(loja.slug);
     return { ok: true };
@@ -492,6 +513,14 @@ export async function converterExclusivosParaMenu(
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: MSG_LOJA };
 
+    // [274 · D8] A posse do cardápio ANTES de ler os órfãos: sem ela, um
+    // `cardapioId` alheio faria a leitura rodar sobre um cardápio de OUTRA
+    // loja (que devolve vazio pela RLS) e a action responderia `{ ok: true }`
+    // por uma conversão que não aconteceu. Alheio e inexistente: a mesma frase.
+    if (!(await cardapioPertenceALoja(supabase, loja.id, cardapioId))) {
+      return { ok: false, erro: MSG_CONVERTER };
+    }
+
     const orfaos = await buscarProdutosQueFicariamOrfaos(
       supabase,
       loja.id,
@@ -515,5 +544,68 @@ export async function converterExclusivosParaMenu(
   } catch (e) {
     console.error("[converterExclusivosParaMenu]", e);
     return { ok: false, erro: MSG_CONVERTER };
+  }
+}
+
+// ═══════════════ [274] A agenda do VÍNCULO — RN-10, RN-11, RN-12, RN-14 ═════
+
+/**
+ * Define em QUE DIAS DA SEMANA um item aparece dentro de um cardápio — a única
+ * via de escrita de `cardapio_produtos.dias_semana` no painel do lojista.
+ *
+ * A posse é provada PELA PRÓPRIA ESCRITA (D6): o UPDATE é
+ * `where loja_id ∧ cardapio_id ∧ produto_id` com `count: "exact"`, e
+ * `count === 0` É a recusa. Isso é estritamente mais forte que o gate
+ * `cardapioPertenceALoja` das actions de lote — que existe lá porque
+ * `ON CONFLICT DO NOTHING` descarta a linha antes da FK e porque um DELETE de
+ * zero linhas termina mudo — e custa um round trip a MENOS, sem a janela
+ * TOCTOU entre a leitura e a escrita.
+ *
+ * Contrato da fronteira, o mesmo do resto do módulo: parse zod antes de
+ * qualquer I/O (o `.strict()` recusa um `loja_id` pendurado no payload —
+ * RN-10), `loja_id` de `buscarLojaDoDono`, client AUTENTICADO, e UMA frase
+ * (`MSG_DIAS_DO_VINCULO`) para payload fora de forma, vínculo inexistente,
+ * vínculo de outra loja e erro de banco — alheio e inexistente byte a byte
+ * iguais (`seguranca.md` §14). O `23514` do CHECK de domínio vai cru para o
+ * log, nunca para a tela.
+ *
+ * RN-11: a REPRESENTAÇÃO é decidida no servidor por `normalizarDiasDoVinculo`
+ * — `[]` vira `NULL` ("todos os dias do cardápio"), `[1,1,3]` e `[3,1]` viram
+ * `[1,3]`.
+ */
+export async function definirDiasDoVinculo(
+  payload: unknown,
+): Promise<Resultado> {
+  const parsed = schemaDiasDoVinculo.safeParse(payload);
+  if (!parsed.success) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+  const { cardapio_id, produto_id, dias_semana } = parsed.data;
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+
+    const { error, count } = await supabase
+      .from("cardapio_produtos")
+      .update(
+        { dias_semana: normalizarDiasDoVinculo(dias_semana) },
+        { count: "exact" },
+      )
+      .eq("loja_id", loja.id)
+      .eq("cardapio_id", cardapio_id)
+      .eq("produto_id", produto_id);
+    if (error) {
+      console.error("[definirDiasDoVinculo]", error);
+      return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+    }
+    // Sem log: `count === 0` não é erro de servidor, é um id que não existe
+    // NESTA loja. `count` ausente não recusa (R4).
+    if (count === 0) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+
+    revalidarCaminhosDoCardapio(loja.slug, cardapio_id);
+    return { ok: true };
+  } catch (e) {
+    console.error("[definirDiasDoVinculo]", e);
+    return { ok: false, erro: MSG_DIAS_DO_VINCULO };
   }
 }

@@ -430,6 +430,15 @@ describe("removerCardapio (RN-14)", () => {
 // ═══════════════════════════════════════ converterExclusivosParaMenu ════════
 
 describe("converterExclusivosParaMenu", () => {
+  /**
+   * [274 · D8] A leitura de POSSE (`cardapioPertenceALoja`) que passou a vir
+   * ANTES das três de órfãos: sem ela, um `cardapioId` alheio faria a conversão
+   * ler vínculos de outra loja e responder `{ ok: true }` por uma escrita que
+   * não aconteceu. Aqui a fila é posicional, então o caminho feliz precisa
+   * declarar a posse como a PRIMEIRA resposta.
+   */
+  const POSSE = { data: { id: CARDAPIO }, error: null };
+
   /** As três leituras de `produtosQueFicariamOrfaos`, nesta ordem. */
   function leiturasDeOrfaos(
     vinculados: string[],
@@ -445,6 +454,7 @@ describe("converterExclusivosParaMenu", () => {
 
   it("escreve só visibilidade = 'menu', escopado por loja e pelos que ficariam órfãos", async () => {
     fila = [
+      POSSE,
       ...leiturasDeOrfaos([P1, P2], [P1, P2], [
         { produto_id: P1, cardapio_id: CARDAPIO },
         { produto_id: P2, cardapio_id: CARDAPIO },
@@ -472,6 +482,7 @@ describe("converterExclusivosParaMenu", () => {
    */
   it("NÃO converte o exclusivo que também está em outro cardápio", async () => {
     fila = [
+      POSSE,
       ...leiturasDeOrfaos([P1, P2], [P1, P2], [
         { produto_id: P1, cardapio_id: CARDAPIO },
         { produto_id: P1, cardapio_id: OUTRO_CARDAPIO },
@@ -508,7 +519,7 @@ describe("converterExclusivosParaMenu", () => {
     expect(escritas()).toHaveLength(0);
 
     ops = [];
-    fila = [...leiturasDeOrfaos([P1, P2], [P1, P2], vinculos), {
+    fila = [POSSE, ...leiturasDeOrfaos([P1, P2], [P1, P2], vinculos), {
       data: null,
       error: null,
     }];
@@ -519,13 +530,14 @@ describe("converterExclusivosParaMenu", () => {
   });
 
   it("cardápio sem vínculo nenhum não escreve nada", async () => {
-    fila = [{ data: [], error: null }];
+    fila = [POSSE, { data: [], error: null }];
     expect(await converterExclusivosParaMenu(CARDAPIO)).toEqual({ ok: true });
     expect(escritas()).toHaveLength(0);
   });
 
   it("cardápio só com produtos do menu (nenhum exclusivo) não escreve nada", async () => {
     fila = [
+      POSSE,
       { data: [{ produto_id: P1 }], error: null },
       { data: [], error: null },
     ];

@@ -98,6 +98,20 @@ export const MSG_SALVAR = "Não foi possível salvar o cardápio.";
 export const MSG_REMOVER = "Não foi possível remover o cardápio.";
 export const MSG_CONVERTER =
   "Não foi possível converter os produtos deste cardápio para o menu.";
+/**
+ * [274 · D3 · RN-12] A ÚNICA frase que sai de `definirDiasDoVinculo` e da sua
+ * gêmea admin, para QUALQUER falha: payload fora de forma, sessão/loja ausente,
+ * vínculo inexistente, vínculo de OUTRA loja, erro do banco. Alheio e
+ * inexistente recebem os MESMOS bytes — a recusa não vira oráculo de existência
+ * de id (`seguranca.md` §14).
+ *
+ * Frase própria (e não `MSG_GENERICA_LOTE`): num toast de "marcar quarta na
+ * linha da Feijoada", "não foi possível aplicar o cardápio aos produtos
+ * selecionados" descreve uma operação que não aconteceu.
+ */
+export const MSG_DIAS_DO_VINCULO =
+  "Não foi possível salvar os dias deste item.";
+
 export const MSG_LOJA = "Loja não encontrada.";
 export const MSG_INVALIDO = "Cardápio inválido.";
 

@@ -75,7 +75,14 @@ type Op = {
   /** `upsert` de N linhas (`escopo.inserirVarios`). */
   upsert?: Record<string, unknown>[];
   update?: Record<string, unknown>;
+  /**
+   * [274 · R2] O 2º argumento do `update`/`delete` (`{ count: "exact" }`).
+   * Sem capturá-lo, "a action checa o `count`" é indistinguível de "a action
+   * recebeu `count: 1` do mock por default" — e D8 inteiro vira decoração.
+   */
+  updateOpts?: unknown;
   deleted?: boolean;
+  deleteOpts?: unknown;
   filtros: Array<[string, unknown]>;
 };
 type ChamadaRpc = { nome: string; args: Record<string, unknown> };
@@ -116,12 +123,14 @@ function makeChain() {
         op.upsert = linhas;
         return queryChain;
       };
-      queryChain.update = (row: Record<string, unknown>) => {
+      queryChain.update = (row: Record<string, unknown>, opts?: unknown) => {
         op.update = row;
+        op.updateOpts = opts;
         return queryChain;
       };
-      queryChain.delete = () => {
+      queryChain.delete = (opts?: unknown) => {
         op.deleted = true;
+        op.deleteOpts = opts;
         return queryChain;
       };
       queryChain.then = (onF: (v: unknown) => unknown) =>
@@ -162,6 +171,8 @@ type AdminCardapios = {
   aplicarCardapioEmCategoriaAdmin(lojaId: string, payload: unknown): Promise<Resultado>;
   tirarDeCardapioAdmin(lojaId: string, payload: unknown): Promise<Resultado>;
   preverLoteAdmin(lojaId: string, entrada: unknown): Promise<Previa>;
+  /** [274] A agenda do VÍNCULO — a única via de escrita de `dias_semana` por item. */
+  definirDiasDoVinculoAdmin(lojaId: string, payload: unknown): Promise<Resultado>;
 };
 
 /** Caminho em VARIÁVEL: ver o cabeçalho. */
@@ -899,5 +910,357 @@ describe("270 — cardápio alheio ou inexistente não escreve e não vira log a
     expect(logouAcesso()).toBe(false);
     expect(JSON.stringify(r)).not.toContain("57014");
     expect(JSON.stringify(r)).not.toContain("detalhe interno");
+  });
+});
+
+// ═══════════════ 9 · [274] `definirDiasDoVinculoAdmin` — a agenda do VÍNCULO ══
+//
+// Fase RED da issue 274 (RN-10, RN-11, RN-12, RN-14). Espelho byte a byte de
+// `src/lib/actions/cardapio.test.ts` §[274 · A]: mesma frase, mesma linha,
+// mesmos filtros — o que muda é de onde vem o `loja_id` (aqui, o `lojaId` da
+// URL validado, injetado POR ÚLTIMO pelo wrapper) e que aqui existe log.
+//
+// Por que a prova importa mais deste lado: `service_role` tem BYPASSRLS.
+// `cardapio_produtos_escrita_propria` NÃO protege este caminho. Quem protege
+// são as FKs compostas `(cardapio_id, loja_id)`/`(produto_id, loja_id)`, o
+// escopo explícito por `loja_id` e a recusa por `count === 0` — que é a posse
+// provada PELA PRÓPRIA ESCRITA, sem SELECT prévio nem janela TOCTOU (D6).
+
+/** A frase de RN-12 (D3), escrita à MÃO como as outras seis do topo. */
+const MSG_DIAS_DO_VINCULO = "Não foi possível salvar os dias deste item.";
+const MSG_SALVAR = "Não foi possível salvar o cardápio.";
+const MSG_REMOVER = "Não foi possível remover o cardápio.";
+const MSG_CONVERTER =
+  "Não foi possível converter os produtos deste cardápio para o menu.";
+
+async function definirDias(): Promise<AdminCardapios["definirDiasDoVinculoAdmin"]> {
+  const a = await acoes();
+  if (typeof a.definirDiasDoVinculoAdmin !== "function") {
+    throw new Error(
+      "[RED 274] `definirDiasDoVinculoAdmin` ainda não existe em " +
+        "`src/app/admin/assinantes/actions/admin-cardapios.ts` — é a fase GREEN (D5).",
+    );
+  }
+  return a.definirDiasDoVinculoAdmin;
+}
+
+const diasDo = (over: Record<string, unknown> = {}) => ({
+  cardapio_id: CARDAPIO_ID,
+  produto_id: PRODUTO_1,
+  dias_semana: [3],
+  ...over,
+});
+
+/** A resposta do UPDATE do vínculo, com o `count` que o caso quer provar. */
+function vinculoResponde(count: number | null | undefined, error: unknown = null) {
+  respostaPorTabela.cardapio_produtos = { data: null, error, count: count ?? undefined };
+}
+
+describe("[274] definirDiasDoVinculoAdmin — escopo pela TRIPLA e recusa por count", () => {
+  it("A1: UMA escrita em `cardapio_produtos`, `count: \"exact\"` e os TRÊS filtros nomeados", async () => {
+    vinculoResponde(1);
+    const definir = await definirDias();
+    const r = await definir(LOJA_ALVO, diasDo());
+
+    expect(r).toEqual({ ok: true });
+    const w = opEscrita("cardapio_produtos");
+    expect(w, "nenhum UPDATE em cardapio_produtos foi emitido").toBeDefined();
+    expect(w!.update).toEqual({ dias_semana: [3] });
+    expect(w!.updateOpts).toEqual({ count: "exact" });
+    expect(w!.filtros).toContainEqual(["loja_id", LOJA_ALVO]);
+    expect(w!.filtros).toContainEqual(["cardapio_id", CARDAPIO_ID]);
+    expect(w!.filtros).toContainEqual(["produto_id", PRODUTO_1]);
+    expect(w!.filtros.map(([c]) => c).sort()).toEqual([
+      "cardapio_id",
+      "loja_id",
+      "produto_id",
+    ]);
+    // O patch toca SÓ a agenda: o `.eq` escopa QUAL linha, nunca O QUE se grava.
+    expect(Object.keys(w!.update ?? {})).toEqual(["dias_semana"]);
+  });
+
+  it("A2/A3/A4 (RN-11): `[]` → NULL, `[1,1,3]` → `[1,3]`, `[3,1]` → `[1,3]`", async () => {
+    vinculoResponde(1);
+    const definir = await definirDias();
+
+    await definir(LOJA_ALVO, diasDo({ dias_semana: [] }));
+    expect(opEscrita("cardapio_produtos")?.update).toEqual({ dias_semana: null });
+
+    ops = [];
+    await definir(LOJA_ALVO, diasDo({ dias_semana: [1, 1, 3] }));
+    expect(opEscrita("cardapio_produtos")?.update).toEqual({ dias_semana: [1, 3] });
+
+    ops = [];
+    await definir(LOJA_ALVO, diasDo({ dias_semana: [3, 1] }));
+    expect(opEscrita("cardapio_produtos")?.update).toEqual({ dias_semana: [1, 3] });
+  });
+
+  it("A5 (RN-10): `loja_id` hostil no payload ⇒ recusa com ZERO I/O — nada vai para a loja alheia", async () => {
+    const definir = await definirDias();
+    const r = await definir(LOJA_ALVO, diasDo({ loja_id: LOJA_OUTRA }));
+    await flush();
+
+    expect(r).toEqual({ ok: false, erro: MSG_DIAS_DO_VINCULO });
+    expect(ops, "o `.strict()` recusa antes de tocar o banco").toHaveLength(0);
+    expect(logouAcesso()).toBe(false);
+    expect(JSON.stringify(ops)).not.toContain(LOJA_OUTRA);
+  });
+
+  it("payload fora da forma (dia 7, 8 itens, id não-uuid) ⇒ a MESMA frase e ZERO I/O", async () => {
+    const definir = await definirDias();
+    for (const payload of [
+      diasDo({ dias_semana: [7] }),
+      diasDo({ dias_semana: [1.5] }),
+      diasDo({ dias_semana: [1, 1, 1, 1, 1, 1, 1, 1] }),
+      diasDo({ cardapio_id: "nao-e-uuid" }),
+      diasDo({ produto_id: "nao-e-uuid" }),
+      {},
+      null,
+    ]) {
+      ops = [];
+      const r = await definir(LOJA_ALVO, payload);
+      expect(r, `${JSON.stringify(payload)} deveria ser recusado`).toEqual({
+        ok: false,
+        erro: MSG_DIAS_DO_VINCULO,
+      });
+      expect(ops).toHaveLength(0);
+    }
+  });
+
+  it("A6/A7/A8 (§14): `count: 0` alheio e inexistente ⇒ MESMA resposta, sem log, sem revalidate", async () => {
+    const { revalidatePath } = await import("next/cache");
+    vi.mocked(revalidatePath).mockClear();
+    vinculoResponde(0);
+    const definir = await definirDias();
+
+    const alheio = await definir(LOJA_ALVO, diasDo({ cardapio_id: CARDAPIO_OUTRO }));
+    await flush();
+    expect(alheio).toEqual({ ok: false, erro: MSG_DIAS_DO_VINCULO });
+    expect(logouAcesso(), "id-probe não pode virar linha em admin_acessos").toBe(false);
+    expect(revalidatePath).not.toHaveBeenCalled();
+
+    ops = [];
+    const inexistente = await definir(
+      LOJA_ALVO,
+      diasDo({ cardapio_id: "5a5a5a5a-5a5a-4a5a-8a5a-5a5a5a5a5a5a" }),
+    );
+    await flush();
+    expect(JSON.stringify(alheio)).toBe(JSON.stringify(inexistente));
+    expect(JSON.stringify(alheio)).not.toContain(CARDAPIO_OUTRO);
+  });
+
+  it("A9: sucesso loga `cardapio.definir_dias` com a CONTAGEM de dias — nunca o nome nem o array", async () => {
+    vinculoResponde(1);
+    const definir = await definirDias();
+    await definir(LOJA_ALVO, diasDo({ dias_semana: [3, 1, 1] }));
+    await flush();
+
+    const log = ops.find((o) => o.tabela === "admin_acessos")?.insert ?? {};
+    expect(log.acao).toBe("cardapio.definir_dias");
+    expect(log.loja_id).toBe(LOJA_ALVO);
+    expect(log.entidade_id).toBe(CARDAPIO_ID);
+    const metadados = (log.metadados ?? {}) as Record<string, unknown>;
+    expect(Object.keys(metadados)).toEqual(["produto_id", "dias"]);
+    expect(metadados.produto_id).toBe(PRODUTO_1);
+    // A CONTAGEM (já normalizada), não o conteúdo: `[3,1,1]` são 2 dias.
+    expect(metadados.dias).toBe(2);
+    expect(JSON.stringify(metadados)).not.toContain("nome");
+  });
+
+  it("A10: `lojaId` não-UUID ⇒ `Loja inválida.` ANTES de elevar — nenhuma ida ao banco", async () => {
+    const definir = await definirDias();
+    const r = await definir("loja-b", diasDo());
+    await flush();
+    expect(r).toEqual({ ok: false, erro: MSG_LOJA_INVALIDA });
+    expect(ops).toHaveLength(0);
+  });
+
+  it("A11 (fail-closed D-4): `verificarAdminSaaS` lançando REJEITA a action, não devolve `{ok:false}`", async () => {
+    const { verificarAdminSaaS } = await import("@/lib/auth/admin");
+    vi.mocked(verificarAdminSaaS).mockRejectedValueOnce(new Error("acesso negado"));
+    const definir = await definirDias();
+    await expect(definir(LOJA_ALVO, diasDo())).rejects.toThrow("acesso negado");
+    expect(ops).toHaveLength(0);
+  });
+
+  it("A12/A13: `error` do banco ⇒ frase + `console.error`; `count: 0` ⇒ SEM `console.error`", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vinculoResponde(null, {
+      code: "23514",
+      message: 'violates check constraint "cardapio_produtos_dias_semana_dominio"',
+    });
+    const definir = await definirDias();
+    const comErro = await definir(LOJA_ALVO, diasDo());
+    expect(comErro).toEqual({ ok: false, erro: MSG_DIAS_DO_VINCULO });
+    expect(spy).toHaveBeenCalled();
+    expect(JSON.stringify(comErro)).not.toContain("23514");
+    expect(JSON.stringify(comErro)).not.toContain("dias_semana_dominio");
+
+    spy.mockClear();
+    ops = [];
+    vinculoResponde(0);
+    await definir(LOJA_ALVO, diasDo());
+    expect(spy, "`count: 0` é id que não existe NESTA loja, não erro de servidor").not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("R4: `count` ausente (`null`/`undefined`) NÃO recusa — a recusa é em `0` estrito", async () => {
+    const definir = await definirDias();
+    for (const count of [null, undefined]) {
+      ops = [];
+      vinculoResponde(count);
+      expect(await definir(LOJA_ALVO, diasDo()), `count: ${count} não pode recusar`).toEqual({
+        ok: true,
+      });
+    }
+  });
+
+  it("A15 (D9): o sucesso revalida o DETALHE concreto do cardápio na loja-alvo", async () => {
+    const { revalidatePath } = await import("next/cache");
+    vi.mocked(revalidatePath).mockClear();
+    vinculoResponde(1);
+    const definir = await definirDias();
+    await definir(LOJA_ALVO, diasDo());
+
+    const caminhos = vi.mocked(revalidatePath).mock.calls.map((c) => c[0]);
+    expect(
+      caminhos,
+      "`/admin/assinantes/<loja>/cardapios` não invalida o detalhe, que é a tela desta feature",
+    ).toContain(`/admin/assinantes/${LOJA_ALVO}/cardapios/${CARDAPIO_ID}`);
+    // A vitrine continua coberta por `revalidarLojaAdmin`.
+    expect(caminhos).toContain("/loja/[slug]");
+    // Nenhum caminho do painel do LOJISTA: o admin edita a loja de um terceiro.
+    expect(caminhos.some((c) => String(c).startsWith("/painel"))).toBe(false);
+  });
+
+  it("D6: a posse NÃO custa uma segunda ida ao banco — o UPDATE é a única op", async () => {
+    vinculoResponde(1);
+    const definir = await definirDias();
+    await definir(LOJA_ALVO, diasDo());
+    const semLog = ops.filter((o) => o.tabela !== "admin_acessos");
+    expect(semLog).toHaveLength(1);
+    expect(semLog[0].tabela).toBe("cardapio_produtos");
+  });
+
+  it("D3: `MSG_DIAS_DO_VINCULO` mora no contrato neutro e NÃO é redeclarada nos dois mundos", () => {
+    const RAIZ = process.cwd();
+    const contrato = readFileSync(join(RAIZ, "src/lib/actions/cardapio-contrato.ts"), "utf8");
+    const admin = readFileSync(
+      join(RAIZ, "src/app/admin/assinantes/actions/admin-cardapios.ts"),
+      "utf8",
+    );
+    const lojista = readFileSync(join(RAIZ, "src/lib/actions/cardapio.ts"), "utf8");
+    expect(contrato, "a frase de RN-12 não está no contrato neutro").toContain(
+      MSG_DIAS_DO_VINCULO,
+    );
+    expect(admin).not.toContain(MSG_DIAS_DO_VINCULO);
+    expect(lojista).not.toContain(MSG_DIAS_DO_VINCULO);
+    // E os dois importam a MESMA normalização, não uma cópia local.
+    expect(admin).toContain("normalizarDiasDoVinculo");
+    expect(lojista).toContain("normalizarDiasDoVinculo");
+  });
+});
+
+// ═══ 10 · [274 · B] item ABSORVIDO da auditoria da 270: `count` nas 4 admin ══
+//
+// Hoje as quatro descartam o `count` de `escopo.atualizar`/`escopo.remover`:
+// cardápio alheio ou inexistente casa ZERO linhas, a action devolve
+// `{ ok: true }` e `registrarAcessoAdmin` grava `entidade_id` de OUTRO tenant.
+// Nenhuma escrita cruza lojas — o defeito é o sucesso mentiroso e o log sujo.
+// A frase de alheio é a MESMA de inexistente (`MSG_SALVAR`/`MSG_REMOVER`/
+// `MSG_CONVERTER`), então nada disto vira oráculo.
+
+describe("[274 · B] D8 — as quatro actions admin leem o `count` e recusam ANTES do log", () => {
+  const recorrente = {
+    nome: "Segunda",
+    modo: "recorrente",
+    dias_semana: [1],
+    dias_mes: null,
+    hora_inicio: null,
+    hora_fim: null,
+  };
+
+  beforeEach(() => {
+    // Sem órfãos: a remoção e a conversão chegam à escrita.
+    respostaPorTabela.cardapio_produtos = { data: [], error: null, count: 1 };
+    respostaPorTabela.produtos = { data: [], error: null, count: 1 };
+  });
+
+  it("atualizarCardapioAdmin: `count: 0` ⇒ `{ok:false, MSG_SALVAR}` e NENHUM log", async () => {
+    const { revalidatePath } = await import("next/cache");
+    vi.mocked(revalidatePath).mockClear();
+    respostaPorTabela.cardapios = { data: null, error: null, count: 0 };
+
+    const { atualizarCardapioAdmin } = await acoes();
+    const r = await atualizarCardapioAdmin(LOJA_ALVO, CARDAPIO_OUTRO, recorrente);
+    await flush();
+
+    expect(r).toEqual({ ok: false, erro: MSG_SALVAR });
+    expect(opEscrita("cardapios")?.updateOpts).toEqual({ count: "exact" });
+    expect(logouAcesso(), "entidade_id de outro tenant não pode virar auditoria").toBe(false);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("ligarDesligarCardapioAdmin: `count: 0` ⇒ `{ok:false, MSG_SALVAR}` e NENHUM log", async () => {
+    respostaPorTabela.cardapios = { data: null, error: null, count: 0 };
+    const { ligarDesligarCardapioAdmin } = await acoes();
+    const r = await ligarDesligarCardapioAdmin(LOJA_ALVO, CARDAPIO_OUTRO, false);
+    await flush();
+
+    expect(r).toEqual({ ok: false, erro: MSG_SALVAR });
+    expect(opEscrita("cardapios")?.updateOpts).toEqual({ count: "exact" });
+    expect(logouAcesso()).toBe(false);
+  });
+
+  it("removerCardapioAdmin: `count: 0` ⇒ `{ok:false, MSG_REMOVER, exclusivos: 0}` e NENHUM log", async () => {
+    respostaPorTabela.cardapios = { data: null, error: null, count: 0 };
+    const { removerCardapioAdmin } = await acoes();
+    const r = await removerCardapioAdmin(LOJA_ALVO, CARDAPIO_OUTRO);
+    await flush();
+
+    expect(r).toEqual({ ok: false, erro: MSG_REMOVER, exclusivos: 0 });
+    expect(opEscrita("cardapios")?.deleteOpts).toEqual({ count: "exact" });
+    expect(logouAcesso()).toBe(false);
+  });
+
+  it("converterExclusivosParaMenuAdmin: cardápio ALHEIO é recusado ANTES de ler os órfãos", async () => {
+    const { revalidatePath } = await import("next/cache");
+    vi.mocked(revalidatePath).mockClear();
+
+    const { converterExclusivosParaMenuAdmin } = await acoes();
+    // `respostaPorTabela.cardapios` do beforeEach global só devolve posse para
+    // CARDAPIO_ID na LOJA_ALVO: para CARDAPIO_OUTRO o gate tem de negar.
+    const r = await converterExclusivosParaMenuAdmin(LOJA_ALVO, CARDAPIO_OUTRO);
+    await flush();
+
+    expect(r).toEqual({ ok: false, erro: MSG_CONVERTER });
+    expect(
+      ops.some((o) => o.tabela === "cardapio_produtos"),
+      "buscarProdutosQueFicariamOrfaos não pode rodar sem posse provada",
+    ).toBe(false);
+    expect(opEscrita("produtos")).toBeUndefined();
+    expect(logouAcesso()).toBe(false);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("regressão: com posse e ZERO órfãos, a conversão continua `{ok:true}` E continua logando", async () => {
+    const { converterExclusivosParaMenuAdmin } = await acoes();
+    const r = await converterExclusivosParaMenuAdmin(LOJA_ALVO, CARDAPIO_ID);
+    await flush();
+
+    expect(r).toEqual({ ok: true });
+    expect(
+      logouAcesso(),
+      "o rastro que explica por que a tela não mudou é intencional (269 · D7)",
+    ).toBe(true);
+  });
+
+  it("R4 (regressão): `count` ausente continua `{ok:true}` nas três de escopo", async () => {
+    respostaPorTabela.cardapios = { data: null, error: null };
+    const { atualizarCardapioAdmin, ligarDesligarCardapioAdmin, removerCardapioAdmin } =
+      await acoes();
+    expect(await atualizarCardapioAdmin(LOJA_ALVO, CARDAPIO_ID, recorrente)).toEqual({ ok: true });
+    expect(await ligarDesligarCardapioAdmin(LOJA_ALVO, CARDAPIO_ID, true)).toEqual({ ok: true });
+    expect(await removerCardapioAdmin(LOJA_ALVO, CARDAPIO_ID)).toEqual({ ok: true });
   });
 });

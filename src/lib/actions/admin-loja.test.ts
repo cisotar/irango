@@ -73,8 +73,11 @@ function builderEspia(tabela: string) {
     // [269] `upsert` de N linhas (`escopo.inserirVarios`) — captura o ARRAY
     // inteiro em `op.linhas`, distinto de `op.payload` (que é sempre 1 objeto).
     upsert(p: unknown[], opts?: unknown) { op.tipo = "upsert"; op.linhas = p; op.opts = opts; return b; },
-    update(p: unknown) { op.tipo = "update"; op.payload = p; return b; },
-    delete() { op.tipo = "delete"; return b; },
+    // [274 · R2] O 2º argumento do `update` é capturado: sem ele, "o helper
+    // pede `count: "exact"`" é indistinguível de "o mock devolveu count: 1 por
+    // default" — e a recusa por `count === 0` seria decorativa.
+    update(p: unknown, opts?: unknown) { op.tipo = "update"; op.payload = p; op.opts = opts; return b; },
+    delete(opts?: unknown) { op.tipo = "delete"; op.opts = opts; return b; },
     select() { return b; },
     maybeSingle() { return b; },
     eq(c: string, v: unknown) { op.eqs.push({ c, v }); return b; },
@@ -501,5 +504,109 @@ describe("registrarAcessoAdmin — INSERT best-effort fire-and-forget", () => {
     expect(
       registrarAcessoAdmin(svc as never, { lojaId: LOJA_ID, acao: "x" }),
     ).toBeUndefined();
+  });
+});
+
+// ══════════════ [274 · C] `EscopoLoja.atualizarPorChave` — UPDATE por CHAVE ══
+//
+// Fase RED da issue 274 (D4). O método ainda não existe: o `escopo` de hoje só
+// sabe atualizar por `id`, e o cliente de `cardapio_produtos` conhece o par
+// `(cardapio_id, produto_id)`, não o `id` da junção. Resolver o `id` por SELECT
+// prévio seria um round trip a mais, uma janela TOCTOU e um oráculo de
+// existência; o UPDATE pela chave natural prova a posse NA PRÓPRIA ESCRITA —
+// `count === 0` É a recusa.
+//
+// R1 (o footgun NOVO desta issue): chave vazia degradaria para um UPDATE da
+// LOJA INTEIRA sob `service_role` (BYPASSRLS). Tem de LANÇAR, e a mensagem é
+// afirmada por fragmento — um `TypeError` de método inexistente também "lança",
+// e passaria vacuamente. Por isso todo caso começa exigindo a função.
+//
+// E4 (tipo, fora do runtime — verificado por `npx tsc --noEmit`): o `patch` é
+// `Omit<Update, "loja_id" | "id" | K>`, então `atualizarPorChave("cardapio_produtos",
+// { cardapio_id, produto_id }, { loja_id: X })` e `{ cardapio_id: Y }` NÃO
+// COMPILAM. O `.eq` escopa QUAL linha; nunca O QUE se grava. Não há caso de
+// runtime para isso de propósito: um `as never` aqui provaria o contrário do
+// que se quer (que o compilador barra), e a barreira de runtime dessa classe já
+// é o `.strict()` do zod na fronteira.
+
+type EscopoComChave = {
+  atualizarPorChave(
+    tabela: string,
+    chave: Record<string, string>,
+    patch: Record<string, unknown>,
+  ): PromiseLike<{ data: unknown; error: unknown; count: number | null }>;
+};
+
+async function escopoPorChave(): Promise<EscopoComChave> {
+  const { escopo } = await prepararContextoAdmin(LOJA_ID);
+  const candidato = escopo as unknown as Partial<EscopoComChave>;
+  if (typeof candidato.atualizarPorChave !== "function") {
+    throw new Error(
+      "[RED 274] `EscopoLoja.atualizarPorChave` ainda não existe em " +
+        "`src/lib/actions/admin-loja.ts` — é a fase GREEN (D4 do plano).",
+    );
+  }
+  return candidato as EscopoComChave;
+}
+
+describe("[274] escopo.atualizarPorChave — escopo duplo `loja_id` + chave natural", () => {
+  const CARDAPIO = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const PRODUTO = "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1";
+
+  it("E2: escopa por `loja_id` PRIMEIRO e depois por TODAS as colunas da chave", async () => {
+    opsEspia = [];
+    const escopo = await escopoPorChave();
+    await escopo.atualizarPorChave(
+      "cardapio_produtos",
+      { cardapio_id: CARDAPIO, produto_id: PRODUTO },
+      { dias_semana: [1, 3] },
+    );
+
+    const op = opsEspia.find((o) => o.tipo === "update")!;
+    expect(op.tabela).toBe("cardapio_produtos");
+    expect(op.payload).toEqual({ dias_semana: [1, 3] });
+    // Os TRÊS filtros, nomeando a coluna — e o `loja_id` é o do wrapper.
+    expect(op.eqs).toEqual([
+      { c: "loja_id", v: LOJA_ID },
+      { c: "cardapio_id", v: CARDAPIO },
+      { c: "produto_id", v: PRODUTO },
+    ]);
+  });
+
+  it("E3: pede `count: \"exact\"` — sem ele, `count === 0` nunca chega à action", async () => {
+    opsEspia = [];
+    const escopo = await escopoPorChave();
+    await escopo.atualizarPorChave("cardapio_produtos", { cardapio_id: CARDAPIO }, {
+      dias_semana: null,
+    });
+    const op = opsEspia.find((o) => o.tipo === "update")!;
+    expect(op.opts).toEqual({ count: "exact" });
+  });
+
+  it("E1 (R1): chave VAZIA LANÇA — e nenhuma op chega ao banco", async () => {
+    opsEspia = [];
+    const escopo = await escopoPorChave();
+    expect(() => escopo.atualizarPorChave("cardapio_produtos", {}, { dias_semana: null })).toThrow(
+      // Fragmento afirmado: um `TypeError` de método ausente também lançaria.
+      /chave vazia/i,
+    );
+    expect(
+      opsEspia,
+      "chave vazia degradaria para UPDATE da loja inteira: nada pode ter sido emitido",
+    ).toHaveLength(0);
+  });
+
+  it("o `loja_id` do wrapper NÃO é substituível por uma coluna homônima na chave", async () => {
+    opsEspia = [];
+    const escopo = await escopoPorChave();
+    await escopo.atualizarPorChave(
+      "cardapio_produtos",
+      { cardapio_id: CARDAPIO, produto_id: PRODUTO },
+      { dias_semana: [0] },
+    );
+    const op = opsEspia.find((o) => o.tipo === "update")!;
+    const lojas = op.eqs.filter((e) => e.c === "loja_id");
+    expect(lojas).toEqual([{ c: "loja_id", v: LOJA_ID }]);
+    expect(JSON.stringify(op.payload)).not.toContain("loja_id");
   });
 });
