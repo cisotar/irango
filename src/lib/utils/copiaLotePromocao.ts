@@ -120,6 +120,61 @@ export function perguntaVisibilidade(p: {
 }
 
 /**
+ * [277/decisão B] A frase de apoio no corpo do diálogo de "Definir dias".
+ *
+ * A prévia conta PRODUTOS; a escrita alcança VÍNCULOS. O botão só habilita com
+ * a seleção inteira já vinculada (`podeDefinirDias`), e esta linha diz por quê
+ * — sem ela, o lojista não entende por que o botão está apagado.
+ */
+export const FRASE_SO_QUEM_ESTA_NO_CARDAPIO =
+  "Só vale para quem já está neste cardápio.";
+
+/**
+ * [277/desenho §8-G] Título, corpo e rótulo do botão da ação "Definir dias".
+ *
+ * NÃO é uma segunda redação de confirmação (que a spec proíbe): é a redação da
+ * AÇÃO NOVA, no mesmo módulo puro, no mesmo formato e varrida pela mesma trava
+ * de fonte (`lote-contagem-do-servidor.test.ts`). `total` é do SERVIDOR.
+ *
+ * Nenhuma pílula marcada é um gesto legítimo e tem rótulo PRÓPRIO — "Definir os
+ * dias" prometendo uma restrição que não vai existir seria mentira de UI.
+ */
+export function perguntaDias(p: {
+  nomeCardapio: string;
+  /** Nomes resolvidos pelo SERVIDOR, sob RLS. Só apresentação. */
+  nomes: readonly string[];
+  /** Contagem do SERVIDOR. Nunca `selecionados.size`. */
+  total: number;
+  /** Os dias escolhidos no diálogo; vazio = "voltar para todos os dias". */
+  dias: readonly number[];
+}): CopiaDoLote {
+  const { nomeCardapio, total, dias } = p;
+  const restringe = dias.length > 0;
+
+  const titulo = restringe
+    ? `Definir os dias no cardápio “${nomeCardapio}”?`
+    : `Voltar para todos os dias em “${nomeCardapio}”?`;
+
+  if (total === 0) {
+    return {
+      titulo,
+      corpo: "Nenhum produto desta seleção foi encontrado na sua loja.",
+      rotuloConfirmar: "Nada a alterar",
+    };
+  }
+
+  const corpo = restringe
+    ? `${total} ${plural(total, "produto passa", "produtos passam")} a aparecer só nos dias escolhidos, dentro da janela deste cardápio:`
+    : `${total} ${plural(total, "produto volta", "produtos voltam")} a aparecer em todos os dias em que este cardápio abre:`;
+
+  const rotuloConfirmar = restringe
+    ? `Definir os dias em ${total} ${plural(total, "produto", "produtos")}`
+    : `Voltar ${total} ${plural(total, "produto", "produtos")} para todos os dias`;
+
+  return { titulo, corpo, rotuloConfirmar };
+}
+
+/**
  * As frases de D14 do diálogo de cardápio (design §10.2, trava 4). Os dois
  * números vêm da MESMA prévia do servidor. Quando só existe um dos casos, só
  * uma frase aparece — o aviso que dispara sempre vira papel de parede.

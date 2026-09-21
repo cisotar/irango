@@ -31,6 +31,7 @@ import {
   aplicarCardapioEmCategoriaAdmin,
   tirarDeCardapioAdmin,
   preverLoteAdmin,
+  definirDiasDoVinculoAdmin,
 } from "@/app/admin/assinantes/actions/admin-cardapios";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import { enviarFotoProdutoAdmin } from "@/app/admin/assinantes/actions/admin-upload";
@@ -66,7 +67,7 @@ export function CardapioAdminClient({
   categorias,
   opcionaisPorCategoria,
   cardapiosDoLote,
-  cardapiosPorProduto,
+  vinculosPorProduto,
   categoriasOpcional,
   opcionais,
   associacoes,
@@ -85,12 +86,12 @@ export function CardapioAdminClient({
   cardapiosDoLote: CardapioParaLote[];
 } & Pick<
   ProdutosClientProps,
-  // [Auditoria 260/261] `cardapiosPorProduto` é OBRIGATÓRIA e vem do Server
+  // [Auditoria 260/261] `vinculosPorProduto` é OBRIGATÓRIA e vem do Server
   // Component admin (`carga-cardapios.ts`): é a leitura que impede o
   // `FormProduto` de afirmar "não está em nenhum cardápio" sobre quem está.
   // [269] A prop `lote` deixou de ser ausente aqui — as cinco actions admin
   // agora existem, e omiti-la recriaria a assimetria que a issue mata.
-  | "cardapiosPorProduto"
+  | "vinculosPorProduto"
   // [235] `promocoes`/`fusoLojaRotulo` são projeção do SERVER COMPONENT admin
   // (com o fuso da loja-alvo) — o wrapper só repassa, sem derivar nada.
   | "categoriasOpcional"
@@ -122,13 +123,13 @@ export function CardapioAdminClient({
       // admin no `acoes` (abaixo) na MESMA mudança — a prop é OBRIGATÓRIA
       // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
-      cardapiosPorProduto={cardapiosPorProduto}
+      vinculosPorProduto={vinculosPorProduto}
       // [269] A rota admin de cardápios EXISTE desde a fase 6, então o link
       // volta — apontando para a LOJA-ALVO. Era `null` enquanto ela não
       // existia (256/261): um href fixo de `/painel/...` mandaria o admin para
       // o painel da PRÓPRIA loja dele e criaria o cardápio na loja errada.
       hrefCardapios={rotaCardapiosAdmin(lojaId)}
-      // [269] As cinco actions de `AcoesLote`, todas admin e todas com o
+      // [269][276] As SEIS actions de `AcoesLote`, todas admin e todas com o
       // `lojaId` da URL fixado por closure. Omitir qualquer uma cairia na
       // action do LOJISTA, que resolve a loja por `auth.uid()`.
       lote={{
@@ -142,6 +143,7 @@ export function CardapioAdminClient({
           preverLote: (entrada) => preverLoteAdmin(lojaId, entrada),
           definirVisibilidade: (payload) =>
             definirVisibilidadeEmProdutosAdmin(lojaId, payload),
+          definirDias: (payload) => definirDiasDoVinculoAdmin(lojaId, payload),
         },
       }}
       categoriasOpcional={categoriasOpcional}

@@ -172,8 +172,23 @@ export type DadosCardapio = {
   prazo_preset: "diario" | "semanal" | "mensal" | "customizado" | null;
 };
 
-/** RN-02: "sem restrição" tem UMA representação no banco — NULL, nunca `'{}'`. */
-function eixoOuNulo(dias: number[] | null | undefined): number[] | null {
+/**
+ * RN-02 (cardápio) / RN-11 (274, vínculo): "sem restrição" tem UMA
+ * representação no banco — NULL, nunca `'{}'`.
+ *
+ * Exportada desde a 274 porque os DOIS mundos de escrita da agenda do VÍNCULO
+ * (`definirDiasDoVinculo` e `definirDiasDoVinculoAdmin`) precisam exatamente
+ * desta regra — dedup, ordem numérica, `[]`/`null` → `null`. Ela já existia
+ * aqui como a normalização do eixo do CARDÁPIO; reescrevê-la em
+ * `cardapio-contrato.ts` seria uma segunda cópia da mesma decisão (e um ciclo
+ * de import, porque o contrato já importa deste módulo).
+ *
+ * `[1,1,3]` → `[1,3]` · `[3,1]` → `[1,3]` · `[]` → `null` · `null` → `null`.
+ * Devolve SEMPRE um array novo: o array recebido não é mutado.
+ */
+export function normalizarDiasDoVinculo(
+  dias: number[] | null | undefined,
+): number[] | null {
   if (dias == null || dias.length === 0) return null;
   return [...new Set(dias)].sort((a, b) => a - b);
 }
@@ -203,8 +218,8 @@ export const schemaCardapio = z
       // `cardapios_recorrente_tem_eixo`: os três eixos vazios ao mesmo tempo
       // é o estado que o lojista não consegue diagnosticar olhando a vitrine.
       const semEixo =
-        eixoOuNulo(v.dias_semana) == null &&
-        eixoOuNulo(v.dias_mes) == null &&
+        normalizarDiasDoVinculo(v.dias_semana) == null &&
+        normalizarDiasDoVinculo(v.dias_mes) == null &&
         v.hora_inicio == null;
       if (semEixo) {
         ctx.addIssue({
@@ -244,8 +259,8 @@ export const schemaCardapio = z
       return {
         nome: v.nome,
         modo: "recorrente",
-        dias_semana: eixoOuNulo(v.dias_semana),
-        dias_mes: eixoOuNulo(v.dias_mes),
+        dias_semana: normalizarDiasDoVinculo(v.dias_semana),
+        dias_mes: normalizarDiasDoVinculo(v.dias_mes),
         hora_inicio: v.hora_inicio ?? null,
         hora_fim: v.hora_fim ?? null,
         prazo_inicio: null,
@@ -267,3 +282,30 @@ export const schemaCardapio = z
   });
 
 export type EntradaCardapio = z.input<typeof schemaCardapio>;
+
+// ═══════════════════ [274] dias por VÍNCULO — RN-10, RN-11, RN-12 ═══════════
+
+/**
+ * A FORMA do payload que define a agenda de UM item dentro de UM cardápio
+ * (D1). Mesmo molde dos schemas de lote acima:
+ *  - `.strict()`: um `loja_id` pendurado no payload não é ignorado, é RECUSADO
+ *    antes de qualquer I/O — `loja_id` é SEMPRE derivado no servidor (RN-10);
+ *  - `z.guid()` nos dois ids: lixo não vira ida ao banco;
+ *  - `dias_semana` é lista de inteiros 0..6 (mesma convenção de `partesNoFuso`)
+ *    com teto de cardinalidade `.max(7)` (CWE-770), avaliado ANTES da dedup:
+ *    oito elementos são recusados mesmo que normalizassem para um só.
+ *
+ * O schema NÃO deduplica e NÃO ordena — quem decide a REPRESENTAÇÃO é
+ * `normalizarDiasDoVinculo`, no servidor. `[1,1,3]` e `[1,3]` dizem a mesma
+ * coisa ("segunda e quarta"); recusar a repetição viraria uma frase de erro
+ * que quem salvou não sabe corrigir.
+ */
+export const schemaDiasDoVinculo = z
+  .object({
+    cardapio_id: z.guid(),
+    produto_id: z.guid(),
+    dias_semana: z.array(z.number().int().min(0).max(6)).max(7),
+  })
+  .strict();
+
+export type DiasDoVinculo = z.infer<typeof schemaDiasDoVinculo>;

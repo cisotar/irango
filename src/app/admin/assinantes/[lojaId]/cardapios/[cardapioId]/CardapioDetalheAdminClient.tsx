@@ -16,6 +16,7 @@ import {
   aplicarCardapioEmCategoriaAdmin,
   tirarDeCardapioAdmin,
   preverLoteAdmin,
+  definirDiasDoVinculoAdmin,
 } from "@/app/admin/assinantes/actions/admin-cardapios";
 import { definirVisibilidadeEmProdutosAdmin } from "@/app/admin/assinantes/actions/admin-produtos";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
@@ -23,10 +24,10 @@ import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 /**
  * [269 · fase 6] Wrapper client do detalhe de cardápio no hub admin. Reusa
  * `FormVigencia` + `SeletorProdutosDoCardapio` do painel — NENHUM markup
- * copiado — e injeta as SEIS Server Actions admin (`salvar` + as 5 de
+ * copiado — e injeta as SETE Server Actions admin (`salvar` + as 6 de
  * `AcoesLote`) com o `lojaId` da URL fixado por closure.
  *
- * As cinco de `acoes` são OBRIGATÓRIAS e sem default (issue 160): omitir
+ * As seis de `acoes` são OBRIGATÓRIAS e sem default (issue 160): omitir
  * qualquer uma faria a action do LOJISTA rodar, resolver a loja por
  * `auth.uid()` e escrever na loja do ADMIN LOGADO.
  */
@@ -73,6 +74,7 @@ export function CardapioDetalheAdminClient({
           preverLote: (entrada) => preverLoteAdmin(lojaId, entrada),
           definirVisibilidade: (payload) =>
             definirVisibilidadeEmProdutosAdmin(lojaId, payload),
+          definirDias: (payload) => definirDiasDoVinculoAdmin(lojaId, payload),
         }}
       />
     </>

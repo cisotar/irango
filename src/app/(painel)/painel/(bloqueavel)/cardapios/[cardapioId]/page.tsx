@@ -16,10 +16,17 @@ import {
   aplicarCardapioEmCategoria,
   tirarDeCardapio,
   preverLoteAction,
+  definirDiasDoVinculo,
 } from "@/lib/actions/cardapio";
 import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
-import { rotuloAgora, descreverVigencia } from "@/lib/utils/descreverVigencia";
+import {
+  rotuloAgora,
+  descreverVigencia,
+  rotuloDiasDoItem,
+  avisoAgendaQueNuncaAbre,
+} from "@/lib/utils/descreverVigencia";
+import { fraseAgendaDoItem } from "@/lib/utils/copiaCardapioPainel";
 import { cardapioAberto, visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
 import { FormVigencia } from "@/components/painel/FormVigencia";
@@ -60,9 +67,9 @@ export default async function CardapioDetalhePage({
 
   // [260] A lista da loja inteira agrupada por categoria + quem já está neste
   // cardápio. Duas idas ao banco em paralelo, nenhuma por produto: o índice
-  // `produto → cardápios` de `buscarCardapiosComProdutos` é o mesmo que a
+  // `produto → vínculos` de `buscarCardapiosComProdutos` é o mesmo que a
   // vitrine consome, e é dele que sai `noCardapio`.
-  const [produtos, categorias, { cardapiosPorProduto }] = await Promise.all([
+  const [produtos, categorias, { vinculosPorProduto }] = await Promise.all([
     buscarProdutosDoLojista(supabase, loja.id),
     buscarCategorias(supabase, loja.id),
     buscarCardapiosComProdutos(supabase, loja.id),
@@ -84,15 +91,30 @@ export default async function CardapioDetalhePage({
     .map((grupo) => ({
       id: grupo.id,
       nome: grupo.nome,
-      produtos: grupo.produtos.map((p) => ({
-        id: p.id,
-        nome: p.nome,
-        // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
-        exclusivo: visibilidadeDe(p) === "cardapio",
-        noCardapio: (cardapiosPorProduto.get(p.id) ?? []).some(
-          (c) => c.id === cardapioId,
-        ),
-      })),
+      produtos: grupo.produtos.map((p) => {
+        // [276] O vínculo com ESTE cardápio, achado uma vez: dele saem
+        // `noCardapio`, os dias do item, a frase da linha e o aviso de RN-06 —
+        // os três REDIGIDOS aqui, no servidor, com o fuso da loja. O browser
+        // nunca redige janela de vigência nem avalia dia.
+        const vinculo =
+          (vinculosPorProduto.get(p.id) ?? []).find(
+            (v) => v.cardapio.id === cardapioId,
+          ) ?? null;
+        return {
+          id: p.id,
+          nome: p.nome,
+          // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
+          exclusivo: visibilidadeDe(p) === "cardapio",
+          noCardapio: vinculo !== null,
+          dias: vinculo?.dias_semana ?? null,
+          fraseAgenda:
+            vinculo === null
+              ? null
+              : fraseAgendaDoItem(rotuloDiasDoItem(vinculo.dias_semana)),
+          avisoNuncaAbre:
+            vinculo === null ? null : avisoAgendaQueNuncaAbre(vinculo),
+        };
+      }),
     }));
 
   return (
@@ -130,6 +152,7 @@ export default async function CardapioDetalhePage({
           tirarDeCardapio,
           preverLote: preverLoteAction,
           definirVisibilidade: definirVisibilidadeEmProdutos,
+          definirDias: definirDiasDoVinculo,
         }}
       />
     </div>

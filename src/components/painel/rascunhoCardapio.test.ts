@@ -10,10 +10,12 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  DIAS_DA_SEMANA,
   fimDoPresetExibido,
   fraseDoRascunho,
   payloadDoRascunho,
   rascunhoInicial,
+  todosOsDias,
   validarRascunho,
   vigenciaDoRascunho,
   type RascunhoCardapio,
@@ -224,5 +226,31 @@ describe("rascunhoInicial", () => {
     expect(r.dias_semana).toEqual([]);
     expect(r.comHorario).toBe(false);
     expect(validarRascunho({ ...r, nome: "Teste" }).ok).toBe(false);
+  });
+});
+
+/**
+ * [275] O atalho "Todos os dias" é um clique na tela, mas a promessa — os 7
+ * valores no payload e a prévia lendo "todos os dias" — é pura, e é aqui que
+ * ela fica travada sem jsdom.
+ */
+describe("todosOsDias — o atalho de [275]", () => {
+  it("devolve os sete dias, derivados da tabela (nunca um literal à mão)", () => {
+    expect(todosOsDias()).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(todosOsDias()).toEqual(DIAS_DA_SEMANA.map((d) => d.valor));
+  });
+
+  it("no payload, satisfaz o CHECK cardapios_recorrente_tem_eixo", () => {
+    const validado = validarRascunho(base({ dias_semana: todosOsDias() }));
+    expect(validado.ok).toBe(true);
+    if (validado.ok) {
+      expect(validado.payload).toMatchObject({ dias_semana: [0, 1, 2, 3, 4, 5, 6] });
+    }
+  });
+
+  it("a prévia com os 7 marcados lê 'Aparece todos os dias.' (RN-07)", () => {
+    expect(fraseDoRascunho(base({ dias_semana: todosOsDias() }), SP)).toBe(
+      "Aparece todos os dias.",
+    );
   });
 });

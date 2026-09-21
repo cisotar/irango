@@ -194,11 +194,20 @@ function bancoBase() {
   });
 }
 
-function cardapiosDoBanco(vinculos: Record<string, (CardapioVigencia & { ordem: number })[]>) {
-  const todos = [...new Set(Object.values(vinculos).flat())];
+function cardapiosDoBanco(
+  porProduto: Record<string, (CardapioVigencia & { ordem: number })[]>,
+) {
+  const todos = [...new Set(Object.values(porProduto).flat())];
+  // [273] O índice passa a ser de VÍNCULOS. Sem dias do item, o veredito é
+  // byte a byte o de 249/252 — é a forma de 100% das linhas no deploy da 272.
   buscarCardapiosComProdutos.mockResolvedValue({
     cardapios: todos,
-    cardapiosPorProduto: new Map(Object.entries(vinculos)),
+    vinculosPorProduto: new Map(
+      Object.entries(porProduto).map(([id, lista]) => [
+        id,
+        lista.map((cardapio) => ({ cardapio, dias_semana: null })),
+      ]),
+    ),
   });
 }
 
@@ -391,5 +400,121 @@ describe("[252/§6] produto_id de OUTRA LOJA", () => {
 
     expect("erro" in pedido).toBe(true);
     expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [273] RED — o preview do checkout marca a mesma linha que o autoritativo.
+//
+// Autoridade: specs/vigencia-por-item-do-cardapio.md RN-01/RN-02/RN-04 ·
+// seguranca.md §10-A (paridade preview ↔ autoritativo).
+//
+// ⚠️ SEAM 273 → GREEN: `revisarCarrinho.ts` passa
+// `cardapios.vinculosPorProduto.get(produto.id) ?? []` à MESMA
+// `avaliarVigenciaDoProduto` de `criarPedido`. Nenhum motivo novo em
+// `MotivoNaoCompravel`: item fora do dia produz `"fora_da_janela"`.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Seg 21/12/2026, 12:00 -03. */
+const SEGUNDA = new Date("2026-12-21T15:00:00.000Z");
+/** Qua 23/12/2026, 12:00 -03. */
+const QUARTA = new Date("2026-12-23T15:00:00.000Z");
+
+const FEIJOADA = "aaaaaaaa-0000-0000-0000-000000000013";
+
+const ESPECIAIS_DO_DIA = cardapio({
+  id: "bbbbbbbb-0000-0000-0000-000000000273",
+  nome: "Especiais do Dia",
+  modo: "recorrente",
+  dias_semana: [0, 1, 2, 3, 4, 5, 6],
+  dias_mes: null,
+  prazo_inicio: null,
+  prazo_fim: null,
+});
+
+const FEIJOADA_ROW = produtoRow({
+  id: FEIJOADA,
+  nome: "Feijoada",
+  preco: 45.0,
+  visibilidade: "cardapio",
+});
+
+/**
+ * Mesmo bridge do RED da 273 em `pedido.vigencia-cardapio.test.ts`. A chave
+ * legada por cardápio, que existia só para o vermelho ser da REGRA e não de um
+ * `Map` vazio, saiu com o rename (RN-09).
+ */
+function vinculosDoBanco(
+  porProduto: Record<
+    string,
+    { cardapio: CardapioVigencia & { ordem: number }; dias_semana: number[] | null }[]
+  >,
+) {
+  const vinculos = Object.values(porProduto).flat();
+  buscarCardapiosComProdutos.mockResolvedValue({
+    cardapios: [...new Set(vinculos.map((v) => v.cardapio))],
+    vinculosPorProduto: new Map(Object.entries(porProduto)),
+  });
+}
+
+describe("[273/§10-A] a Feijoada {qua, sáb} na revisão do carrinho", () => {
+  const CARRINHO = [
+    { produto_id: COCA, quantidade: 2 },
+    { produto_id: FEIJOADA, quantidade: 1 },
+  ];
+
+  it("SEGUNDA: linha NÃO comprável com motivo 'fora_da_janela', fora do subtotal", async () => {
+    vi.setSystemTime(SEGUNDA);
+    buscarProdutosPorIds.mockResolvedValue([produtoRow(), FEIJOADA_ROW]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const r = await preview(CARRINHO);
+    if (!r.ok) throw new Error(r.mensagem);
+
+    const linha = (r.itens as LinhaComVigencia[]).find((l) => l.produto_id === FEIJOADA);
+    expect(linha?.compravel).toBe(false);
+    // Nenhum motivo NOVO: para o cliente é a mesma frase útil ("volta quarta").
+    expect(linha?.motivoNaoCompravel).toBe("fora_da_janela");
+    // A linha NÃO some da lista, mas não entra na conta: 2 × R$ 10,00 da Coca.
+    expect(r.itens).toHaveLength(2);
+    expect(r.subtotal).toBe(20);
+  });
+
+  it("SEGUNDA: o preview bloqueia EXATAMENTE o que faz `criarPedido` recusar", async () => {
+    vi.setSystemTime(SEGUNDA);
+    buscarProdutosPorIds.mockResolvedValue([produtoRow(), FEIJOADA_ROW]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const r = await preview(CARRINHO);
+    const pedido = await autoritativo(CARRINHO);
+
+    expect(bloqueados(r)).toEqual([FEIJOADA]);
+    expect("erro" in pedido).toBe(true);
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("QUARTA: nada bloqueado no preview e o pedido é aceito — o preview não é mais SEVERO", async () => {
+    vi.setSystemTime(QUARTA);
+    buscarProdutosPorIds.mockResolvedValue([produtoRow(), FEIJOADA_ROW]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const r = await preview(CARRINHO);
+    const pedido = await autoritativo(CARRINHO);
+
+    expect(bloqueados(r)).toEqual([]);
+    expect("erro" in pedido).toBe(false);
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("virada de meia-noite: o veredito muda com `agora` do SERVIDOR, não com o payload", async () => {
+    buscarProdutosPorIds.mockResolvedValue([produtoRow(), FEIJOADA_ROW]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    // Quarta 23:59:59 local ainda vende; quinta 00:00:01 local já não.
+    vi.setSystemTime(new Date("2026-12-24T02:59:59.000Z"));
+    expect(bloqueados(await preview(CARRINHO))).toEqual([]);
+
+    vi.setSystemTime(new Date("2026-12-24T03:00:01.000Z"));
+    expect(bloqueados(await preview(CARRINHO))).toEqual([FEIJOADA]);
   });
 });

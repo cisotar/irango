@@ -12,6 +12,7 @@ import {
   type CardapioDoPainel,
   type ProdutoVinculado,
 } from "@/lib/supabase/queries/cardapios";
+import type { VinculoVigencia } from "@/lib/utils/vigenciaCardapio";
 import {
   buscarLojaAdminPorId,
   type LojaCompleta,
@@ -39,7 +40,7 @@ import {
  */
 export async function carregarCardapiosAdmin(lojaId: string): Promise<{
   cardapios: CardapioDaLoja[];
-  cardapiosPorProduto: Map<string, CardapioDaLoja[]>;
+  vinculosPorProduto: Map<string, VinculoVigencia<CardapioDaLoja>[]>;
 }> {
   const validacao = validarLojaIdAdmin(lojaId);
   if (!validacao.ok) {
@@ -74,7 +75,7 @@ export async function carregarCardapiosDoPainelAdmin(lojaId: string): Promise<{
   loja: LojaCompleta;
   cardapios: CardapioDoPainel[];
   produtos: ProdutoVinculado[];
-  cardapiosPorProduto: Map<string, CardapioDaLoja[]>;
+  vinculosPorProduto: Map<string, VinculoVigencia<CardapioDaLoja>[]>;
 }> {
   const validacao = validarLojaIdAdmin(lojaId);
   if (!validacao.ok) {
@@ -92,8 +93,8 @@ export async function carregarCardapiosDoPainelAdmin(lojaId: string): Promise<{
     notFound();
   }
 
-  const { cardapios, produtos, cardapiosPorProduto } =
+  const { cardapios, produtos, vinculosPorProduto } =
     await buscarCardapiosDoPainel(svc, idValidado);
 
-  return { loja, cardapios, produtos, cardapiosPorProduto };
+  return { loja, cardapios, produtos, vinculosPorProduto };
 }

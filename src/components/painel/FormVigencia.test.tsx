@@ -84,6 +84,32 @@ describe("FormVigencia — modo Repete sempre (257)", () => {
     expect(html).toContain("sm:grid-cols-7");
   });
 
+  /** [275] O atalho e seu par reversível. A lógica está em
+   *  `rascunhoCardapio.test.ts`; aqui o que se afirma é o DOM. */
+  it("a linha do atalho existe abaixo das pílulas", () => {
+    const html = montar(recorrente());
+    expect(html).toContain("Todos os dias");
+    expect(html).toContain("Limpar");
+    expect(html.indexOf("Todos os dias")).toBeGreaterThan(
+      html.indexOf('aria-label="sábado"'),
+    );
+    expect(html.indexOf("Todos os dias")).toBeLessThan(
+      html.indexOf("Nenhum dia marcado = todos os dias."),
+    );
+  });
+
+  it("com os 7 dias salvos, 'Todos os dias' fica disabled e aria-pressed", () => {
+    const html = montar(recorrente({ dias_semana: [0, 1, 2, 3, 4, 5, 6] }));
+    expect(html).toMatch(
+      /disabled=""[^>]*aria-pressed="true"[^>]*>Todos os dias</,
+    );
+  });
+
+  it("sem nenhum dia marcado, 'Limpar' nasce disabled (não há o que desfazer)", () => {
+    const html = montar(recorrente({ dias_semana: null }));
+    expect(html).toMatch(/disabled=""[^>]*>Limpar</);
+  });
+
   it("dias do mês nasce FECHADO quando não há dia do mês marcado", () => {
     expect(montar(recorrente())).toContain("Escolher dias do mês");
   });

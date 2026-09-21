@@ -15,6 +15,7 @@ import type {
   aplicarCardapioEmCategoria,
   tirarDeCardapio,
   preverLoteAction,
+  definirDiasDoVinculo,
 } from "@/lib/actions/cardapio";
 import type { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
 
@@ -24,13 +25,19 @@ export type PreviaDoLote = Extract<
   { ok: true }
 >;
 
-/** As cinco actions do modo de seleção. Todas OBRIGATÓRIAS. */
+/** As seis actions do modo de seleção. Todas OBRIGATÓRIAS. */
 export type AcoesLote = {
   aplicarEmProdutos: typeof aplicarCardapioEmProdutos;
   aplicarEmCategoria: typeof aplicarCardapioEmCategoria;
   tirarDeCardapio: typeof tirarDeCardapio;
   preverLote: typeof preverLoteAction;
   definirVisibilidade: typeof definirVisibilidadeEmProdutos;
+  /**
+   * [276] A agenda de UM vínculo (RN-06). Obrigatória e sem default, como as
+   * outras cinco: omiti-la no wrapper admin faria a action do LOJISTA rodar,
+   * resolver a loja por `auth.uid()` e escrever na loja do ADMIN LOGADO.
+   */
+  definirDias: typeof definirDiasDoVinculo;
 };
 
 /**
@@ -49,10 +56,21 @@ export type CardapioParaLote = {
  * De quais cardápios um produto participa, e se ele está DENTRO da janela
  * agora — os dois derivados no Server Component, com o relógio do servidor.
  */
-export type CardapioDoProduto = {
+export type VinculoDoProduto = {
   id: string;
   nome: string;
   abertoAgora: boolean;
+  /**
+   * [278/RN-13] Os dias do ITEM neste cardápio, JÁ REDIGIDOS no servidor
+   * (`rotuloDiasDoItem`) — `"qua e sáb"`. `null` = o item não restringe nada e
+   * NADA é anexado na tela.
+   *
+   * OBRIGATÓRIO, não opcional: o ponto fraco desta feature é um dos dois
+   * mundos esquecer de derivar, e campo opcional deixaria o admin renderizar
+   * mudo sem quebrar nada. String e não `number[]` porque o browser nunca
+   * escolhe preposição, ordem seg-first nem abreviação (M6).
+   */
+  rotuloDias: string | null;
 };
 
 /** Tudo que `/painel/produtos` precisa para oferecer o modo de seleção. */
@@ -69,4 +87,4 @@ export type LoteDeProdutos = {
  * por ela se mostra "este produto não está em nenhum cardápio". Pendurada no
  * lote, o admin lia `{}` e afirmava isso de um produto que está em dois.
  */
-export type CardapiosPorProduto = Record<string, CardapioDoProduto[]>;
+export type VinculosPorProduto = Record<string, VinculoDoProduto[]>;

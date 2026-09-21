@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  perguntaDias,
   perguntaLote,
   perguntaVisibilidade,
   frasesDeVisibilidade,
@@ -215,5 +216,45 @@ describe("fraseEMais", () => {
   it("cala quando a lista já nomeia tudo", () => {
     expect(fraseEMais(3, 3)).toBeNull();
     expect(fraseEMais(2, 6)).toBeNull();
+  });
+});
+
+/**
+ * [277] A redação da ação nova. A trava do design §10.2 continua valendo: o
+ * NÚMERO vai DENTRO do rótulo do botão, e ele é o `total` do SERVIDOR.
+ */
+describe("perguntaDias (277)", () => {
+  const base = { nomeCardapio: "Especiais do Dia", nomes: ["Feijoada"] };
+
+  it("com dias marcados, o número vai dentro do rótulo", () => {
+    const copia = perguntaDias({ ...base, total: 12, dias: [3, 6] });
+    expect(copia.rotuloConfirmar).toBe("Definir os dias em 12 produtos");
+    expect(copia.titulo).toBe("Definir os dias no cardápio “Especiais do Dia”?");
+    expect(copia.corpo).toContain("12 produtos passam");
+  });
+
+  it("sem nenhum dia marcado, o rótulo é o do gesto inverso", () => {
+    const copia = perguntaDias({ ...base, total: 12, dias: [] });
+    expect(copia.rotuloConfirmar).toBe("Voltar 12 produtos para todos os dias");
+    expect(copia.titulo).toBe(
+      "Voltar para todos os dias em “Especiais do Dia”?",
+    );
+  });
+
+  it("singular e plural nos dois sentidos", () => {
+    expect(
+      perguntaDias({ ...base, total: 1, dias: [3] }).rotuloConfirmar,
+    ).toBe("Definir os dias em 1 produto");
+    expect(perguntaDias({ ...base, total: 1, dias: [] }).rotuloConfirmar).toBe(
+      "Voltar 1 produto para todos os dias",
+    );
+  });
+
+  it("total 0 não promete escrita nenhuma", () => {
+    const copia = perguntaDias({ ...base, total: 0, dias: [3] });
+    expect(copia.rotuloConfirmar).toBe("Nada a alterar");
+    expect(copia.corpo).toBe(
+      "Nenhum produto desta seleção foi encontrado na sua loja.",
+    );
   });
 });

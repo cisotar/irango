@@ -188,12 +188,21 @@ function bancoBase() {
   });
 }
 
-/** O índice `produto_id → cardápios` no formato de `buscarCardapiosComProdutos`. */
-function cardapiosDoBanco(vinculos: Record<string, (CardapioVigencia & { ordem: number })[]>) {
-  const todos = [...new Set(Object.values(vinculos).flat())];
+/** O índice `produto_id → vínculos` no formato de `buscarCardapiosComProdutos`. */
+function cardapiosDoBanco(
+  porProduto: Record<string, (CardapioVigencia & { ordem: number })[]>,
+) {
+  const todos = [...new Set(Object.values(porProduto).flat())];
+  // [273] O índice passa a ser de VÍNCULOS. Sem dias do item, o veredito é
+  // byte a byte o de 249/252 — é a forma de 100% das linhas no deploy da 272.
   buscarCardapiosComProdutos.mockResolvedValue({
     cardapios: todos,
-    cardapiosPorProduto: new Map(Object.entries(vinculos)),
+    vinculosPorProduto: new Map(
+      Object.entries(porProduto).map(([id, lista]) => [
+        id,
+        lista.map((cardapio) => ({ cardapio, dias_semana: null })),
+      ]),
+    ),
   });
 }
 
@@ -341,6 +350,188 @@ describe("[249/segurança] falha ao ler cardápios é FAIL-CLOSED", () => {
 
     // Fail-closed sem branch novo: o `Promise.all` rejeita, o catch externo
     // devolve o genérico (§14) e nada é vendido.
+    expect("erro" in r).toBe(true);
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [273] RED PRINCIPAL DO LOOP — `criarPedido` recusa a Feijoada numa SEGUNDA.
+//
+// Autoridade: specs/vigencia-por-item-do-cardapio.md RN-01 (itemAberto),
+// RN-02 (união sobre vínculos), RN-04 (a recusa é do servidor e é a única
+// autoridade) · seguranca.md §10 (valor e agora recalculados do banco).
+//
+// É a invariante de DINHEIRO desta spec: o cardápio "Especiais do Dia" está
+// aberto os 7 dias, a Feijoada tem `dias_semana = {qua, sáb}` no VÍNCULO, e um
+// payload forjado numa segunda-feira não pode virar pedido. O cliente não envia
+// dia, hora, fuso, cardápio nem preço — o schema é `.strict()` e nada de
+// vigência é declarado nele.
+//
+// ⚠️ SEAM 273 → GREEN. O contrato que este RED impõe:
+//   `pedido.ts` passa `cardapios.vinculosPorProduto.get(produto.id) ?? []` a
+//   `avaliarVigenciaDoProduto`, no MESMO laço que já recusa
+//   indisponível/oculto/de outra loja, ANTES da RPC. Nenhuma linha de regra
+//   nova, nenhum motivo novo, nenhuma segunda leitura de cardápio.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Seg 21/12/2026, 12:00 -03 (America/Sao_Paulo, o fuso de `bancoBase`). */
+const SEGUNDA = new Date("2026-12-21T15:00:00.000Z");
+/** Qua 23/12/2026, 12:00 -03. */
+const QUARTA = new Date("2026-12-23T15:00:00.000Z");
+
+const FEIJOADA = "aaaaaaaa-0000-0000-0000-000000000013";
+const CARD_ESPECIAIS = "bbbbbbbb-0000-0000-0000-000000000273";
+
+/** "Especiais do Dia": recorrente, ATIVO, os 7 dias, sem faixa de horas. */
+const ESPECIAIS_DO_DIA = cardapio({
+  id: CARD_ESPECIAIS,
+  nome: "Especiais do Dia",
+  modo: "recorrente",
+  dias_semana: [0, 1, 2, 3, 4, 5, 6],
+  dias_mes: null,
+  prazo_inicio: null,
+  prazo_fim: null,
+});
+
+/** A Feijoada existe SÓ por causa do cardápio — é o prato do dono do SaaS. */
+const FEIJOADA_ROW = produtoRow({
+  id: FEIJOADA,
+  nome: "Feijoada",
+  preco: 45.0,
+  visibilidade: "cardapio",
+});
+
+/**
+ * O índice que a 273 promete: `vinculosPorProduto`, com o `dias_semana` do
+ * VÍNCULO. O RED trazia junto a chave legada por cardápio para que o vermelho
+ * fosse da REGRA, e não de um `Map` vazio caindo no `?? []`; o GREEN a removeu
+ * com o rename (RN-09).
+ */
+function vinculosDoBanco(
+  porProduto: Record<
+    string,
+    { cardapio: CardapioVigencia & { ordem: number }; dias_semana: number[] | null }[]
+  >,
+) {
+  const vinculos = Object.values(porProduto).flat();
+  buscarCardapiosComProdutos.mockResolvedValue({
+    cardapios: [...new Set(vinculos.map((v) => v.cardapio))],
+    vinculosPorProduto: new Map(Object.entries(porProduto)),
+  });
+}
+
+describe("[273/RN-04] a Feijoada de {qua, sáb} num cardápio aberto os 7 dias", () => {
+  it("SEGUNDA: `criarPedido` recusa o pedido com a mensagem de RN-08 e NÃO chama a RPC", async () => {
+    vi.setSystemTime(SEGUNDA);
+    buscarProdutosPorIds.mockResolvedValue([FEIJOADA_ROW]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const r = await enviar(FEIJOADA);
+
+    expect("erro" in r).toBe(true);
+    expect((r as { erro: string }).erro).toBe(ERRO_FORA_DA_JANELA);
+    // "antes da RPC": nada em `pedidos`, nada em `itens_pedido`.
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("QUARTA: o MESMO payload passa — a regra não fecha o que devia abrir", async () => {
+    vi.setSystemTime(QUARTA);
+    buscarProdutosPorIds.mockResolvedValue([FEIJOADA_ROW]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const r = await enviar(FEIJOADA);
+
+    expect("erro" in r).toBe(false);
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("o carrinho INTEIRO cai por causa dela — o item bom não é gravado sozinho", async () => {
+    vi.setSystemTime(SEGUNDA);
+    buscarProdutosPorIds.mockResolvedValue([FEIJOADA_ROW, produtoRow()]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const r = await criarPedido({
+      loja_id: LOJA_A,
+      tipo_entrega: "retirada",
+      itens: [
+        { produto_id: COCA, quantidade: 2 },
+        { produto_id: FEIJOADA, quantidade: 1 },
+      ],
+      forma_pagamento: "pix",
+      nome_cliente: "Fulano",
+    });
+
+    expect("erro" in r).toBe(true);
+    expect((r as { erro: string }).erro).toBe(ERRO_FORA_DA_JANELA);
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("basta UM vínculo aberto hoje: em dois cardápios, o de segunda vende", async () => {
+    vi.setSystemTime(SEGUNDA);
+    buscarProdutosPorIds.mockResolvedValue([FEIJOADA_ROW]);
+    vinculosDoBanco({
+      [FEIJOADA]: [
+        { cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] },
+        { cardapio: ESPECIAIS_DO_DIA, dias_semana: [1] },
+      ],
+    });
+
+    const r = await enviar(FEIJOADA);
+
+    expect("erro" in r).toBe(false);
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("[273] regressão zero do deploy da 272 e curto-circuito de RN-02", () => {
+  it("vínculo com `dias_semana` NULL ou [] vende em qualquer dia", async () => {
+    // É 100% das linhas no deploy da 272: a coluna nasceu NULL, sem backfill.
+    for (const dias of [null, []] as (number[] | null)[]) {
+      vi.clearAllMocks();
+      fakeClient.rpc.mockReset();
+      bancoBase();
+      vi.setSystemTime(SEGUNDA);
+      buscarProdutosPorIds.mockResolvedValue([FEIJOADA_ROW]);
+      vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: dias }] });
+
+      const r = await enviar(FEIJOADA);
+
+      expect("erro" in r).toBe(false);
+      expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("produto `visibilidade: 'menu'` com vínculo agendado continua vendendo na segunda", async () => {
+    vi.setSystemTime(SEGUNDA);
+    // RN-02 curto-circuita ANTES de olhar vínculo nenhum: a agenda do vínculo
+    // só decide destaque para o produto do menu, nunca compra.
+    buscarProdutosPorIds.mockResolvedValue([produtoRow()]);
+    vinculosDoBanco({ [COCA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const r = await enviar(COCA);
+
+    expect("erro" in r).toBe(false);
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("o payload NÃO tem por onde mandar dia, cardápio ou vigência (`.strict()`)", async () => {
+    vi.setSystemTime(SEGUNDA);
+    buscarProdutosPorIds.mockResolvedValue([FEIJOADA_ROW]);
+    vinculosDoBanco({ [FEIJOADA]: [{ cardapio: ESPECIAIS_DO_DIA, dias_semana: [3, 6] }] });
+
+    const forjado = {
+      loja_id: LOJA_A,
+      tipo_entrega: "retirada" as const,
+      itens: [{ produto_id: FEIJOADA, quantidade: 1 }],
+      forma_pagamento: "pix",
+      nome_cliente: "Fulano",
+      dias_semana: [1],
+      cardapio_id: CARD_ESPECIAIS,
+    };
+    const r = await criarPedido(forjado as unknown as Parameters<typeof criarPedido>[0]);
+
+    // Recusado de um jeito ou de outro — o que NUNCA pode é virar pedido.
     expect("erro" in r).toBe(true);
     expect(fakeClient.rpc).not.toHaveBeenCalled();
   });

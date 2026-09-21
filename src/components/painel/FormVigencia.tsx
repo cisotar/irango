@@ -11,14 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
+import { PilulasDeDias } from "@/components/painel/PilulasDeDias";
 import { PreviewVigencia } from "@/components/painel/PreviewVigencia";
 import {
-  DIAS_DA_SEMANA,
   MODOS,
   PRESETS,
   fimDoPresetExibido,
   fraseDoRascunho,
   rascunhoInicial,
+  todosOsDias,
   validarRascunho,
   type ModoVigencia,
   type PresetDeDuracao,
@@ -262,6 +263,7 @@ function ModoRepeteSempre({
   alternarDia: (lista: number[], valor: number) => number[];
 }): ReactElement {
   const temTrintaEUm = rascunho.dias_mes.includes(31);
+  const todosMarcados = rascunho.dias_semana.length === todosOsDias().length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -272,39 +274,43 @@ function ModoRepeteSempre({
             <span className="text-xs text-texto-muted">opcional</span>
           </div>
           {/* grid-cols-4 no mobile: sete alvos de 44px não cabem nos 328px
-              úteis de uma tela de 360px (design §9.2). */}
-          <div
-            role="group"
-            aria-label="Dias da semana em que este cardápio aparece"
-            // `aria-invalid` não é suportado em `role="group"` nem em
-            // `<button>` (ARIA não o define para eles): o erro de RN-02 fala
-            // pelo `aria-describedby` abaixo + o bloco `role="alert"` que
-            // recebe foco no submit (design §9.6).
-            aria-describedby={erros.dias_semana != null ? ID_ERROS : undefined}
-            className="grid grid-cols-4 gap-2 sm:grid-cols-7"
-          >
-            {DIAS_DA_SEMANA.map((dia) => {
-              const marcado = rascunho.dias_semana.includes(dia.valor);
-              return (
-                <button
-                  key={dia.valor}
-                  type="button"
-                  aria-pressed={marcado}
-                  onClick={() =>
-                    alterar({
-                      dias_semana: alternarDia(rascunho.dias_semana, dia.valor),
-                    })
-                  }
-                  className={`${ALVO} rounded-lg border text-sm font-medium focus-visible:ring-3 focus-visible:ring-ring/50 ${
-                    marcado
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "bg-background hover:bg-muted"
-                  }`}
-                >
-                  {dia.rotulo}
-                </button>
-              );
-            })}
+              úteis de uma tela de 360px (design §9.2). O desenho das pílulas
+              mora em `PilulasDeDias` — duas superfícies, uma implementação.
+              `aria-invalid` não é suportado em `role="group"` nem em
+              `<button>` (ARIA não o define para eles): o erro de RN-02 fala
+              pelo `aria-describedby` + o bloco `role="alert"` que recebe foco
+              no submit (design §9.6). */}
+          <PilulasDeDias
+            valor={rascunho.dias_semana}
+            onChange={(dias) => alterar({ dias_semana: dias })}
+            rotulo="Dias da semana em que este cardápio aparece"
+            descritoPor={erros.dias_semana != null ? ID_ERROS : undefined}
+          />
+          {/* [275] O atalho fica ABAIXO das pílulas e ACIMA da nota: acima
+              delas disputaria a primeira leitura com os dias. Não é CTA — o
+              CTA da rota continua sendo "Salvar cardápio". */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-pressed={todosMarcados}
+              disabled={todosMarcados}
+              className={ALVO}
+              onClick={() => alterar({ dias_semana: todosOsDias() })}
+            >
+              Todos os dias
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={rascunho.dias_semana.length === 0}
+              className={ALVO}
+              onClick={() => alterar({ dias_semana: [] })}
+            >
+              Limpar
+            </Button>
           </div>
           <p className="text-xs text-texto-muted">
             Nenhum dia marcado = todos os dias.

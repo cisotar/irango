@@ -33,6 +33,19 @@ export type CardapioVigencia = {
   prazo_fim: string | null;
 };
 
+/**
+ * [273/RN-01] Um vínculo produto↔cardápio reduzido ao que decide vigência.
+ *
+ * `dias_semana` é do ITEM e NUNCA é uma segunda janela: ele só RESTRINGE, por
+ * dentro, os dias em que o cardápio já está aberto. NULL ou vazio = todos os
+ * dias do cardápio (é 100% das linhas no deploy da 272).
+ */
+export type VinculoVigencia<C extends CardapioVigencia = CardapioVigencia> = {
+  cardapio: C;
+  /** 0=dom..6=sab. NULL ou vazio = todos os dias do cardápio. */
+  dias_semana: number[] | null;
+};
+
 /** O que da vigência do produto interessa a RN-05/RN-13. */
 export type ProdutoVigencia = {
   visibilidade: "menu" | "cardapio";
@@ -119,6 +132,30 @@ export function cardapioAberto(
 }
 
 /**
+ * [273/RN-01] O ITEM está à venda NESTE instante?
+ *
+ * `cardapioAberto` E o dia do item. É INTERSEÇÃO, não união: o eixo do item só
+ * pode tirar dias que o cardápio já dava — cardápio {sáb,dom} com item {qua}
+ * nunca abre. Nenhum eixo de hora e nenhum eixo de dia do mês pertence ao
+ * item: a faixa de horas continua sendo do CARDÁPIO.
+ *
+ * `diaIndex` vem de `partesNoFusoCompletas` (mandato 2): nenhum `Intl` novo.
+ */
+export function itemAberto(
+  vinculo: VinculoVigencia,
+  agora: Date,
+  timezone: string,
+): boolean {
+  if (!cardapioAberto(vinculo.cardapio, agora, timezone)) return false;
+
+  const dias = vinculo.dias_semana ?? [];
+  if (dias.length === 0) return true;
+
+  const { diaIndex } = partesNoFusoCompletas(agora, timezone);
+  return dias.includes(diaIndex);
+}
+
+/**
  * Existe alguma abertura FUTURA deste cardápio? Predicado mínimo de RN-13 — o
  * texto de "quando volta" (`proximaAbertura`/`descreverVigencia`) é da issue
  * 254 e não tem segunda implementação aqui: esta função é privada de propósito.
@@ -126,8 +163,15 @@ export function cardapioAberto(
  * Recorrente ativo com faixa de horário não-degenerada repete para sempre;
  * prazo fixo só tem futuro enquanto não expirou. Inativo já foi descartado
  * antes de chegar aqui (RN-03: não conta nem como abertura futura).
+ *
+ * [273/RN-03] Recebe o VÍNCULO e IGNORA `dias_semana` do item, de propósito:
+ * encodar o dia aqui criaria a segunda casa da regra de dia. A consequência
+ * assumida é a interseção vazia (cardápio {sáb,dom} + item {qua}), que fica
+ * visível e marcada para sempre — decisão registrada da spec (§Fora do
+ * Escopo), com o aviso do painel na issue 276.
  */
-function voltaAAbrir(cardapio: CardapioVigencia, agora: Date): boolean {
+function voltaAAbrir(vinculo: VinculoVigencia, agora: Date): boolean {
+  const cardapio = vinculo.cardapio;
   if (cardapio.modo === "prazo_fixo") {
     return (
       cardapio.prazo_fim === null ||
@@ -143,10 +187,11 @@ function voltaAAbrir(cardapio: CardapioVigencia, agora: Date): boolean {
 /**
  * RN-05 + RN-13 — o par que a vitrine e o recálculo do pedido consomem.
  *
- * `dentroDaJanela` é a permissão de compra (união entre os cardápios do
- * produto: basta UM aberto). `visivelNaVitrine` é a existência do item para o
- * cliente: produto do menu sempre existe, produto de cardápio existe enquanto
- * estiver aberto ou ainda tiver uma abertura pela frente.
+ * [273] A união é sobre VÍNCULOS, não sobre cardápios: `dentroDaJanela` é a
+ * permissão de compra (basta UM vínculo aberto — pôr o produto em mais um
+ * cardápio nunca reduz disponibilidade). `visivelNaVitrine` é a existência do
+ * item para o cliente: produto do menu sempre existe, produto de cardápio
+ * existe enquanto estiver aberto ou ainda tiver uma abertura pela frente.
  *
  * RN-05/D14: `visibilidade === 'menu'` curto-circuita ANTES de qualquer acesso
  * à lista de cardápios — o produto do menu não é afetado nem por cardápio
@@ -154,7 +199,7 @@ function voltaAAbrir(cardapio: CardapioVigencia, agora: Date): boolean {
  */
 export function avaliarVigenciaDoProduto(
   produto: ProdutoVigencia,
-  cardapios: CardapioVigencia[],
+  vinculos: VinculoVigencia[],
   agora: Date,
   timezone: string,
 ): VigenciaDoProduto {
@@ -162,10 +207,10 @@ export function avaliarVigenciaDoProduto(
     return { dentroDaJanela: true, visivelNaVitrine: true };
   }
 
-  const ativos = cardapios.filter((c) => c.ativo);
-  const dentroDaJanela = ativos.some((c) => cardapioAberto(c, agora, timezone));
+  const ativos = vinculos.filter((v) => v.cardapio.ativo);
+  const dentroDaJanela = ativos.some((v) => itemAberto(v, agora, timezone));
   const visivelNaVitrine =
-    dentroDaJanela || ativos.some((c) => voltaAAbrir(c, agora));
+    dentroDaJanela || ativos.some((v) => voltaAAbrir(v, agora));
 
   return { dentroDaJanela, visivelNaVitrine };
 }

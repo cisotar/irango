@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { fraseEstaEm } from "@/lib/utils/copiaCardapioPainel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -117,7 +118,12 @@ export type FormProdutoProps = {
    * É PREVIEW DE UX: nada aqui autoriza nada. A autoridade é o trigger da
    * issue 245, e a mensagem legível é a da Server Action.
    */
-  cardapiosDoProduto: readonly { id: string; nome: string }[];
+  cardapiosDoProduto: readonly {
+    id: string;
+    nome: string;
+    /** [278] Os dias do ITEM, já redigidos no servidor. `null` = sem restrição. */
+    rotuloDias: string | null;
+  }[];
   /**
    * Destino da tela de cardápios NESTE mundo, ou `null` quando o mundo não tem
    * uma. Regra de roteamento não mora em componente de apresentação — é o
@@ -739,9 +745,12 @@ export function FormProduto({
           </div>
         )}
 
+        {/* [278] A linha inteira vem redigida do módulo puro: sem jsdom, uma
+            frase montada com `join` dentro do JSX não é afirmável. Os dias do
+            item chegam já escritos pelo servidor (`rotuloDiasDoItem`). */}
         {cardapiosDoProduto.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Está em: {cardapiosDoProduto.map((c) => c.nome).join(", ")}.
+            {fraseEstaEm(cardapiosDoProduto)}
           </p>
         )}
       </fieldset>

@@ -13,6 +13,8 @@ import type {
   PreviaDoLote,
 } from "@/components/painel/contrato-lote";
 import type { AcaoLote, AcaoVisibilidade } from "@/lib/utils/copiaLotePromocao";
+import { payloadsDeDiasEmLote } from "@/components/painel/agendaDoVinculo";
+import { MSG_DIAS_DO_VINCULO } from "@/lib/actions/cardapio-contrato";
 import { TETO_LOTE } from "@/lib/validacoes/produto";
 
 /**
@@ -72,6 +74,8 @@ export function useLoteDeProdutos(
   ) => void;
   /** Declarar D14 para a seleção. */
   abrirVisibilidade: (acao: AcaoVisibilidade, produtoIds: string[]) => void;
+  /** [277] Definir a MESMA agenda para vários vínculos deste cardápio. */
+  abrirDias: (cardapio: CardapioParaLote, produtoIds: string[]) => void;
   /** Prévia em voo: o chamador troca o ícone do botão por `Loader2`. */
   prevendo: boolean;
   /** Escrita em voo. */
@@ -84,6 +88,12 @@ export function useLoteDeProdutos(
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [prevendo, setPrevendo] = useState(false);
   const [pendente, setPendente] = useState(false);
+  /**
+   * [277] Os dias escolhidos no diálogo moram AQUI, junto do resto do ciclo —
+   * o `DialogoLoteCardapio` continua sem estado de payload. Zeram a cada
+   * abertura: uma agenda herdada do lote anterior seria escrita sem intenção.
+   */
+  const [diasEscolhidos, setDiasEscolhidos] = useState<number[]>([]);
 
   const prever = useCallback(
     async (alvo: AlvoDoLote, escopo: EscopoDoLote): Promise<void> => {
@@ -145,11 +155,58 @@ export function useLoteDeProdutos(
     [prever],
   );
 
+  const abrirDias = useCallback(
+    (cardapio: CardapioParaLote, produtoIds: string[]) => {
+      setDiasEscolhidos([]);
+      // `dias` e `onDias` entram no render do diálogo, não aqui: o `alvo`
+      // guardado é só a identidade da ação.
+      void prever(
+        { tipo: "dias", cardapio, dias: [], onDias: () => {} },
+        { tipo: "produtos", produto_ids: produtoIds },
+      );
+    },
+    [prever],
+  );
+
   const confirmar = useCallback(async (): Promise<void> => {
     if (pedido === null || acoes === undefined) return;
     const { alvo, escopo } = pedido;
     setPendente(true);
     try {
+      /**
+       * [277] "Definir dias" é FAN-OUT: N escritas, cada uma individualmente
+       * escopada pela tripla com `count: "exact"` de [274]. É a única
+       * divergência registrada do princípio "o lote é UMA instrução", e a
+       * consequência assumida é ATOMICIDADE PARCIAL.
+       *
+       * Falha parcial ou total: o diálogo PERMANECE aberto, uma frase só
+       * (`MSG_DIAS_DO_VINCULO` — e não `MSG_GENERICA_LOTE`, que descreveria uma
+       * operação que não aconteceu) e o `router.refresh()` do `onConcluido`
+       * acontece MESMO ASSIM, para a tela voltar a mostrar a verdade do banco.
+       * Sem contagem parcial: o servidor não tem número confiável nesse
+       * instante (o mesmo argumento de `MSG_EXCLUSIVOS_SEM_NUMERO`).
+       */
+      if (alvo.tipo === "dias") {
+        const ids = escopo.tipo === "produtos" ? escopo.produto_ids : [];
+        const escritas = await Promise.allSettled(
+          payloadsDeDiasEmLote(alvo.cardapio.id, ids, diasEscolhidos).map(
+            (payload) => acoes.definirDias(payload),
+          ),
+        );
+        const todasOk = escritas.every(
+          (e) => e.status === "fulfilled" && e.value.ok,
+        );
+        if (!todasOk) {
+          toast.error(MSG_DIAS_DO_VINCULO);
+          onConcluido();
+          return;
+        }
+        toast.success("Dias atualizados.");
+        setPedido(null);
+        onConcluido();
+        return;
+      }
+
       const resultado =
         alvo.tipo === "visibilidade"
           ? await acoes.definirVisibilidade({
@@ -192,11 +249,12 @@ export function useLoteDeProdutos(
     } finally {
       setPendente(false);
     }
-  }, [acoes, onConcluido, pedido]);
+  }, [acoes, diasEscolhidos, onConcluido, pedido]);
 
   return {
     abrirCardapio,
     abrirVisibilidade,
+    abrirDias,
     prevendo,
     pendente,
     dialogoAberto: pedido !== null,
@@ -204,7 +262,11 @@ export function useLoteDeProdutos(
       pedido === null ? null : (
         <DialogoLoteCardapio
           previa={pedido.previa}
-          alvo={pedido.alvo}
+          alvo={
+            pedido.alvo.tipo === "dias"
+              ? { ...pedido.alvo, dias: diasEscolhidos, onDias: setDiasEscolhidos }
+              : pedido.alvo
+          }
           pendente={pendente}
           onConfirmar={() => void confirmar()}
           onCancelar={() => {

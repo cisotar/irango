@@ -143,7 +143,7 @@ describe("o form nunca afirma cardápio a partir de um default", () => {
     expect(fonte).not.toMatch(/cardapiosDoProduto\s*=\s*\[\]/);
   });
 
-  it("o hub admin alimenta `cardapiosPorProduto` com dado real da loja-alvo", () => {
+  it("o hub admin alimenta `vinculosPorProduto` com dado real da loja-alvo", () => {
     const wrapper = readFileSync(
       join(RAIZ, "app/admin/assinantes/[lojaId]/produtos/CardapioAdminClient.tsx"),
       "utf8",
@@ -152,7 +152,7 @@ describe("o form nunca afirma cardápio a partir de um default", () => {
       join(RAIZ, "app/admin/assinantes/[lojaId]/produtos/page.tsx"),
       "utf8",
     );
-    expect(wrapper).toMatch(/cardapiosPorProduto=\{cardapiosPorProduto\}/);
+    expect(wrapper).toMatch(/vinculosPorProduto=\{vinculosPorProduto\}/);
     expect(page).toMatch(/carregarCardapiosAdmin/);
   });
 });

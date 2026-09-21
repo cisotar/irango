@@ -20,7 +20,11 @@
  */
 
 import { diaNoFuso, horaLocalNoFuso, instanteNoFuso, partesNoFusoCompletas } from "./fusoLoja";
-import { cardapioAberto, type CardapioVigencia } from "./vigenciaCardapio";
+import {
+  cardapioAberto,
+  type CardapioVigencia,
+  type VinculoVigencia,
+} from "./vigenciaCardapio";
 
 /**
  * Fallback de render, e SÓ isso: por RN-13 todo produto que chega marcado à
@@ -117,6 +121,10 @@ export function proximaAbertura(
  * MESMA escada da ordem das seções de destaque (RN-15) — duas ordenações
  * diferentes de cardápio é como nasce bug de "a frase mudou sozinha".
  *
+ * [273/RN-09] Devolve o VÍNCULO, não o cardápio: é o `dias_semana` do item que
+ * a frase lê. A escada continua sendo `proximaAbertura` DO CARDÁPIO — duas
+ * ordenações de cardápio é como nasce bug de "a frase mudou sozinha".
+ *
  * Se o melhor candidato não tem volta (`null`), NÃO há frase a escolher: o
  * caller usa `ROTULO_SEM_VOLTA` e, por RN-13, esse produto normalmente nem
  * chega à vitrine.
@@ -124,13 +132,13 @@ export function proximaAbertura(
  * `proxima` entra por parâmetro para que a memoização de RN-07 (uma vez por
  * cardápio por request) more no caller, e não num cache global escondido aqui.
  */
-export function escolherCardapioParaRotulo<C extends CardapioVigencia>(
-  cardapios: C[],
+export function escolherVinculoParaRotulo<C extends CardapioVigencia>(
+  vinculos: VinculoVigencia<C>[],
   proxima: (cardapio: C) => Date | null,
-): C | null {
-  const candidatos = cardapios
-    .filter((c) => c.ativo)
-    .map((c) => ({ cardapio: c, abertura: proxima(c) }));
+): VinculoVigencia<C> | null {
+  const candidatos = vinculos
+    .filter((v) => v.cardapio.ativo)
+    .map((v) => ({ vinculo: v, cardapio: v.cardapio, abertura: proxima(v.cardapio) }));
   if (candidatos.length === 0) return null;
 
   candidatos.sort((a, b) => {
@@ -148,7 +156,7 @@ export function escolherCardapioParaRotulo<C extends CardapioVigencia>(
   });
 
   const escolhido = candidatos[0];
-  return escolhido.abertura === null ? null : escolhido.cardapio;
+  return escolhido.abertura === null ? null : escolhido.vinculo;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -177,14 +185,7 @@ export function descreverVigencia(
   const temTrinta = mes.includes(31);
   const partes: string[] = [];
 
-  if (semana.length > 0) {
-    const corrida = corridaDaSemana(semana);
-    partes.push(
-      corrida
-        ? `de ${DIAS_LONGOS[corrida.primeiro]} a ${DIAS_LONGOS[corrida.ultimo]}`
-        : `todo ${enumerar(semana.map((d) => DIAS_LONGOS[d]))}`,
-    );
-  }
+  if (semana.length > 0) partes.push(descreverDiasDaSemana(semana, "longa"));
 
   if (mes.length > 0) {
     const listaDeDias = `todo ${enumerar(mes.map((d) => `dia ${d}`))}`;
@@ -212,16 +213,24 @@ export function descreverVigencia(
  * aplicado AQUI, na função pura, nunca no CSS: assim ele é afirmável byte a
  * byte sem DOM.
  *
- * Pré-condição do caller: este cardápio foi escolhido por
- * `escolherCardapioParaRotulo`, ou seja, está FECHADO e TEM volta. Por isso o
+ * Pré-condição do caller: este vínculo foi escolhido por
+ * `escolherVinculoParaRotulo`, ou seja, o cardápio está FECHADO e TEM volta, ou
+ * está ABERTO e é o ITEM que não é do dia (273/RN-08). Por isso o
  * prazo fixo aqui só tem uma leitura ("A partir de dd/MM") — prazo encerrado
  * não produz selo porque não produz card (RN-13).
  */
 export function rotuloVoltaQuando(
-  cardapio: CardapioVigencia,
+  vinculo: VinculoVigencia,
+  agora: Date,
   timezone: string,
 ): string {
-  return cortar(textoDoSelo(cardapio, timezone), MAX_ROTULO);
+  // [273/RN-08] A PRECEDÊNCIA mora aqui, numa casa só: cardápio fechado vence
+  // item fora do dia. Espalhar a escolha pelos callers seria a lista de guards
+  // em N caminhos que o mandato 2 proíbe.
+  const texto = cardapioAberto(vinculo.cardapio, agora, timezone)
+    ? textoDoSeloDoItem(vinculo, timezone)
+    : textoDoSelo(vinculo.cardapio, timezone);
+  return cortar(texto, MAX_ROTULO);
 }
 
 /**
@@ -282,16 +291,8 @@ function textoDoSelo(cardapio: CardapioVigencia, timezone: string): string {
   }
 
   if (semana.length > 0) {
-    const corrida = corridaDaSemana(semana);
-    if (horas === "") {
-      return corrida
-        ? `Só de ${DIAS_LONGOS[corrida.primeiro]} a ${DIAS_LONGOS[corrida.ultimo]}`
-        : `Só aos ${enumerar(semana.map((d) => DIAS_PLURAIS[d]))}`;
-    }
-    const dias = corrida
-      ? `${DIAS_CURTOS[corrida.primeiro]} a ${DIAS_CURTOS[corrida.ultimo]}`
-      : enumerar(semana.map((d) => DIAS_CURTOS[d]));
-    return `${maiuscula(dias)}${horas}`;
+    if (horas === "") return fraseSoNosDias(semana);
+    return `${maiuscula(descreverDiasDaSemana(semana, "curta"))}${horas}`;
   }
 
   if (mes.length > 0) {
@@ -309,6 +310,23 @@ function textoDoSelo(cardapio: CardapioVigencia, timezone: string): string {
   }
   // Sem nenhum eixo: recusado pelo CHECK `cardapios_recorrente_tem_eixo`.
   return ROTULO_SEM_VOLTA;
+}
+
+/**
+ * [273/RN-08] O selo do ITEM fora do dia, num cardápio ABERTO: os dias vêm do
+ * VÍNCULO e a faixa de horas continua vindo do CARDÁPIO (o item não tem
+ * horário próprio). Mesma tabela de nomes de dia, mesma enumeração.
+ *
+ * Vínculo sem dias num cardápio aberto não produz selo (o item está à venda);
+ * o fallback defensivo devolve a frase do cardápio em vez de inventar uma.
+ */
+function textoDoSeloDoItem(vinculo: VinculoVigencia, timezone: string): string {
+  const semana = ordenarSemana(vinculo.dias_semana);
+  if (semana.length === 0) return textoDoSelo(vinculo.cardapio, timezone);
+
+  const horas = faixaCurta(vinculo.cardapio);
+  if (horas === "") return fraseSoNosDias(semana);
+  return `${maiuscula(descreverDiasDaSemana(semana, "curta"))}${horas}`;
 }
 
 function textoDoDestaque(
@@ -337,6 +355,82 @@ function textoDoDestaque(
 // ───────────────────────────────────────────────────────────────────────────
 // Peças de texto
 // ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * [276][278/RN-13] Os dias do ITEM, na forma CURTA — `"qua e sáb"`,
+ * `"seg a sex"`. É o ponto de entrada público da redação do item, usado pela
+ * linha do vínculo no detalhe do cardápio e pelos chips de `/painel/produtos`.
+ *
+ * Devolve `null` — e o caller NÃO anexa trecho nenhum — quando não há
+ * restrição a dizer:
+ *
+ *  - `null` / `[]`: o item segue o cardápio;
+ *  - **7 dias marcados**: indistinguível de não restringir. "todos os dias"
+ *    viraria ruído em toda loja que não usa a feature. Um dado, uma leitura;
+ *  - só dias fora de 0..6 (dado velho): `ordenarSemana` filtra e sobra vazio.
+ */
+export function rotuloDiasDoItem(dias: number[] | null): string | null {
+  const semana = ordenarSemana(dias);
+  if (semana.length === 0 || semana.length === 7) return null;
+  return descreverDiasDaSemana(semana, "curta");
+}
+
+/**
+ * [276/RN-06] O aviso de AGENDA QUE NUNCA ABRE: o item marcou dias que o
+ * cardápio nunca abre, então ele não aparece nunca.
+ *
+ * *"Este item nunca aparece: o cardápio só abre aos sábados e domingos."*
+ *
+ * A frase nasce AQUI, ao lado das outras redações e sobre as MESMAS tabelas de
+ * dia — num `.tsx` ela seria a segunda redação que este módulo existe para
+ * impedir, e, sem jsdom, um aviso em componente não é travável.
+ *
+ * É **preview de UX**: não bloqueia salvamento, e nada depende dele. Devolve
+ * `null` — ou seja, NÃO avisa — em cinco casos, e cada um tem motivo:
+ *
+ *  - cardápio **inativo** (RN-03: desligado não abre, não fecha e não restringe);
+ *  - **`prazo_fixo`**: não tem eixo de dia da semana para contradizer;
+ *  - cardápio **sem `dias_semana`**: abre em todos os dias, nenhum item o contradiz;
+ *  - item **sem dias**: não restringe nada;
+ *  - cardápio com **`dias_mes` não-vazio**: o `OU` de RN-02 faz a interseção
+ *    deixar de ser vazia — dia 15 numa quarta abre um cardápio `{sáb,dom}+{15}`.
+ *    É este caso que separa um aviso correto de um alarme falso.
+ */
+export function avisoAgendaQueNuncaAbre(vinculo: VinculoVigencia): string | null {
+  const { cardapio } = vinculo;
+  if (!cardapio.ativo) return null;
+  if (cardapio.modo !== "recorrente") return null;
+  if (ordenarMes(cardapio.dias_mes).length > 0) return null;
+
+  const doCardapio = ordenarSemana(cardapio.dias_semana);
+  const doItem = ordenarSemana(vinculo.dias_semana);
+  if (doCardapio.length === 0 || doItem.length === 0) return null;
+  if (doItem.some((d) => doCardapio.includes(d))) return null;
+
+  return `Este item nunca aparece: o cardápio ${fraseAbreNosDias(doCardapio)}.`;
+}
+
+/** "só abre de segunda a sexta" · "só abre aos sábados e domingos". */
+function fraseAbreNosDias(semana: number[]): string {
+  if (semana.length === 7 || corridaDaSemana(semana)) {
+    return `só abre ${descreverDiasDaSemana(semana, "longa")}`;
+  }
+  return `só abre ${preposicaoPlural(semana[0])} ${enumerar(
+    semana.map((d) => DIAS_PLURAIS[d]),
+  )}`;
+}
+
+/**
+ * [275/decisão F] O nome COMPLETO do dia (0=dom..6=sáb), para o `aria-label`
+ * de cada pílula de `PilulasDeDias`. É uma EXPORTAÇÃO da tabela que já existe
+ * aqui, nunca uma segunda tabela no `.tsx` (mandato 2): o browser não redige
+ * nome de dia.
+ *
+ * Fora de 0..6 devolve `""` — dado velho não inventa rótulo nem quebra render.
+ */
+export function rotuloLongoDoDia(dia: number): string {
+  return DIAS_LONGOS[dia] ?? "";
+}
 
 /** Semana ordenada COMEÇANDO NA SEGUNDA: {sáb, dom} lê "sábado e domingo". */
 function ordenarSemana(dias: number[] | null): number[] {
@@ -368,6 +462,48 @@ function corridaDaSemana(
     if (rank(semana[i]) !== rank(semana[i - 1]) + 1) return null;
   }
   return { primeiro: semana[0], ultimo: semana[semana.length - 1] };
+}
+
+/**
+ * [273/RN-07] Os dias da semana em português, na forma LONGA da prévia do
+ * painel ou na CURTA do selo — uma casa só para as duas redações.
+ *
+ * O curto-circuito dos 7 dias vem ANTES de `corridaDaSemana`: o lojista que
+ * clicou "Todos os dias" lê "todos os dias", não "de segunda a domingo".
+ */
+function descreverDiasDaSemana(semana: number[], forma: "longa" | "curta"): string {
+  if (semana.length === 7) return "todos os dias";
+
+  const corrida = corridaDaSemana(semana);
+  if (forma === "longa") {
+    return corrida
+      ? `de ${DIAS_LONGOS[corrida.primeiro]} a ${DIAS_LONGOS[corrida.ultimo]}`
+      : `todo ${enumerar(semana.map((d) => DIAS_LONGOS[d]))}`;
+  }
+  return corrida
+    ? `${DIAS_CURTOS[corrida.primeiro]} a ${DIAS_CURTOS[corrida.ultimo]}`
+    : enumerar(semana.map((d) => DIAS_CURTOS[d]));
+}
+
+/**
+ * [273/D4] "Só de segunda a sexta" · "Só às quartas e sábados" · "Só aos
+ * sábados e domingos" — a forma sem faixa de horas, do cardápio E do item.
+ */
+function fraseSoNosDias(semana: number[]): string {
+  if (semana.length === 7) return maiuscula(descreverDiasDaSemana(semana, "longa"));
+
+  if (corridaDaSemana(semana)) return `Só ${descreverDiasDaSemana(semana, "longa")}`;
+  const plurais = enumerar(semana.map((d) => DIAS_PLURAIS[d]));
+  return `Só ${preposicaoPlural(semana[0])} ${plurais}`;
+}
+
+/**
+ * [273/D4] A preposição concorda com o PRIMEIRO dia enumerado (ordem
+ * seg-first): domingo e sábado são masculinos ("aos"), o resto é feminino
+ * ("às"). Uma regra, as duas redações — nunca "Só aos quartas".
+ */
+function preposicaoPlural(dia: number): string {
+  return dia === 0 || dia === 6 ? "aos" : "às";
 }
 
 /** "a" · "a e b" · "a, b e c" — o "e" antes do último, sempre. */

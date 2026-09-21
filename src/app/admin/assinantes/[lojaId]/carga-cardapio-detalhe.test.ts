@@ -62,7 +62,12 @@ const cardapioFake = { id: CARDAPIO_ID, nome: "Feijoada", modo: "recorrente" };
 const buscarCardapioPorId = vi.fn(async (_c: unknown, _lojaId: string, _id: string) => cardapioFake);
 const cardapiosComProdutosFake = {
   cardapios: [{ id: CARDAPIO_ID, loja_id: LOJA_ID }],
-  cardapiosPorProduto: new Map([["prod-1", [{ id: CARDAPIO_ID }]]]),
+  vinculosPorProduto: new Map([
+    ["prod-1", [{ cardapio: { id: CARDAPIO_ID }, dias_semana: null }]],
+    // [276] Um vínculo COM agenda: o mundo admin precisa dos mesmos dias que o
+    // do lojista para derivar a frase e o aviso de RN-06 no servidor.
+    ["prod-2", [{ cardapio: { id: CARDAPIO_ID }, dias_semana: [3, 6] }]],
+  ]),
 };
 const buscarCardapiosComProdutos = vi.fn(async (_c: unknown, _id: string) => cardapiosComProdutosFake);
 vi.mock("@/lib/supabase/queries/cardapios", () => ({
@@ -224,7 +229,23 @@ describe("carregarCardapioDetalheAdmin — sucesso: ordem, escopo e agregado", (
       cardapio: cardapioFake,
       produtos: produtosFake,
       categorias: categoriasFake,
-      cardapiosPorProduto: cardapiosComProdutosFake.cardapiosPorProduto,
+      vinculosPorProduto: cardapiosComProdutosFake.vinculosPorProduto,
     });
+  });
+
+  /**
+   * [276] A carga NÃO muda nesta issue — `COLUNAS_CARDAPIO_VIGENCIA` já traz
+   * `dias_semana` por vínculo desde [273]. Esta asserção é a trava de que ele
+   * sobrevive à carga: sem ele, a página admin derivaria `null` em toda linha
+   * e renderizaria mudo, sem quebrar nada.
+   */
+  it("o dias_semana de cada vínculo sobrevive à carga, sem query nova", async () => {
+    const { vinculosPorProduto } = await carregarCardapioDetalheAdmin(
+      LOJA_ID,
+      CARDAPIO_ID,
+    );
+    expect(vinculosPorProduto.get("prod-2")?.[0].dias_semana).toEqual([3, 6]);
+    expect(vinculosPorProduto.get("prod-1")?.[0].dias_semana).toBeNull();
+    expect(buscarCardapiosComProdutos).toHaveBeenCalledTimes(1);
   });
 });

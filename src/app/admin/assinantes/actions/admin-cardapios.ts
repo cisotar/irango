@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Variantes ADMIN das nove Server Actions de cardápio (issue 269, fase 4 —
+ * Variantes ADMIN das dez Server Actions de cardápio (issue 269, fase 4 —
  * `crítica: SIM`). Escrevem na LOJA-ALVO (`lojaId` explícito, vindo da URL
  * admin) sob `service_role`, escopadas pelo wrapper `escopo` (injeta
  * `.eq("loja_id")` + `.eq("id")` por construção).
@@ -27,7 +27,7 @@
  * fuso do admin nem um fuso do payload; `ordem` é `max(ordem) + 1` lido da
  * loja-alvo (RN-15).
  *
- * D7: `registrarAcessoAdmin` cobre as OITO escritas. `preverLoteAdmin` é leitura
+ * D7: `registrarAcessoAdmin` cobre as NOVE escritas. `preverLoteAdmin` é leitura
  * pura e não loga — mas passa por `prepararContextoAdmin`, que é a prova de
  * admin antes de elevar.
  *
@@ -41,6 +41,8 @@ import {
   schemaLoteDeProdutos,
   schemaLoteDeCategoria,
   schemaPreviaDeLote,
+  schemaDiasDoVinculo,
+  normalizarDiasDoVinculo,
 } from "@/lib/validacoes/cardapio";
 import {
   MSG_GENERICA_LOTE,
@@ -49,6 +51,7 @@ import {
   MSG_CONVERTER,
   MSG_LOJA,
   MSG_INVALIDO,
+  MSG_DIAS_DO_VINCULO,
   MSG_EXCLUSIVOS_SEM_NUMERO,
   mensagemExclusivos,
   ehErroDeExclusivoOrfao,
@@ -64,6 +67,7 @@ import {
 import {
   buscarProdutosQueFicariamOrfaos,
   buscarLinhasDaPrevia,
+  cardapioPertenceALoja,
 } from "@/lib/supabase/queries/cardapios";
 import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
 import {
@@ -72,6 +76,8 @@ import {
   registrarAcessoAdmin,
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
+import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
+import { revalidatePath } from "next/cache";
 
 /** A mesma recusa de `lojaId` fora de forma de todas as actions admin. */
 const MSG_LOJA_INVALIDA = "Loja inválida.";
@@ -165,7 +171,7 @@ export async function atualizarCardapioAdmin(
 
     // Escopo duplo (`loja_id` + `id`) por construção: um `id` de outra loja não
     // casa com nenhuma linha e não escreve nada.
-    const { error } = await escopo.atualizar(
+    const { error, count } = await escopo.atualizar(
       "cardapios",
       id,
       linhaDoCardapio(parsed.data, lojaAlvo.timezone),
@@ -174,6 +180,10 @@ export async function atualizarCardapioAdmin(
       console.error("[atualizarCardapioAdmin]", error);
       return { ok: false, erro: MSG_SALVAR };
     }
+    // [274 · D8] Zero linhas casadas = cardápio inexistente OU de outra loja.
+    // A recusa vem ANTES do log: `entidade_id` de outro tenant não pode virar
+    // linha em `admin_acessos`. `count` ausente NÃO recusa (R4).
+    if (count === 0) return { ok: false, erro: MSG_SALVAR };
 
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
@@ -204,11 +214,13 @@ export async function ligarDesligarCardapioAdmin(
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    const { error } = await escopo.atualizar("cardapios", id, { ativo });
+    const { error, count } = await escopo.atualizar("cardapios", id, { ativo });
     if (error) {
       console.error("[ligarDesligarCardapioAdmin]", error);
       return { ok: false, erro: MSG_SALVAR };
     }
+    // [274 · D8] Mesma regra: recusa antes do log.
+    if (count === 0) return { ok: false, erro: MSG_SALVAR };
 
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
@@ -252,7 +264,7 @@ export async function removerCardapioAdmin(
       };
     }
 
-    const { error } = await escopo.remover("cardapios", id);
+    const { error, count } = await escopo.remover("cardapios", id);
     if (error) {
       console.error("[removerCardapioAdmin]", error);
       // Backstop: o trigger deferido só falha no COMMIT, depois da leitura.
@@ -261,6 +273,8 @@ export async function removerCardapioAdmin(
       }
       return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
     }
+    // [274 · D8] Zero linhas apagadas: recusa antes do log.
+    if (count === 0) return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
 
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
@@ -299,6 +313,14 @@ export async function converterExclusivosParaMenuAdmin(
   const { svc } = await prepararContextoAdmin(loja.lojaId);
 
   try {
+    // [274 · D8] A posse do cardápio na LOJA-ALVO ANTES de ler os órfãos:
+    // `service_role` tem BYPASSRLS, então um `cardapioId` alheio leria vínculos
+    // de OUTRO tenant e o log gravaria `entidade_id` que não é desta loja.
+    // Alheio e inexistente: a mesma frase.
+    if (!(await cardapioPertenceALoja(svc, loja.lojaId, cardapioId))) {
+      return { ok: false, erro: MSG_CONVERTER };
+    }
+
     const orfaos = await buscarProdutosQueFicariamOrfaos(
       svc,
       loja.lojaId,
@@ -339,10 +361,17 @@ export async function converterExclusivosParaMenuAdmin(
 
 /**
  * Vincula uma SELEÇÃO EXPLÍCITA de produtos ao cardápio (RN-09), em UMA
- * instrução: id alheio ou inexistente derruba o lote inteiro pelas FKs
+ * instrução: PRODUTO alheio ou inexistente derruba o lote inteiro pelas FKs
  * compostas, e NENHUMA linha é gravada — nem as legítimas. Gravar as boas e
  * reclamar do resto denunciaria, pela diferença, quais ids existem em outra
  * loja.
+ *
+ * O `cardapio_id` NÃO é coberto por essa FK em todo caso (270): o
+ * `ON CONFLICT (cardapio_id, produto_id) DO NOTHING` descarta a linha cujo par
+ * já existe na loja dona do cardápio ANTES de a FK `(cardapio_id, loja_id)` ser
+ * avaliada — aqui, onde `service_role` tem BYPASSRLS, isso devolveria
+ * `{ ok: true }` e gravaria `admin_acessos` apontando para entidade de OUTRO
+ * tenant. A posse é provada antes da escrita E antes do log.
  *
  * `escopo.inserirVarios` injeta `loja_id` por último em CADA linha (D5).
  * RN-10: a idempotência vem do `on conflict do nothing`.
@@ -361,6 +390,12 @@ export async function aplicarCardapioEmProdutosAdmin(
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
+    // 270: posse do cardápio na LOJA-ALVO antes de qualquer escrita — inclusive
+    // antes de `registrarAcessoAdmin`. Alheio e inexistente: a mesma frase.
+    if (!(await cardapioPertenceALoja(svc, loja.lojaId, cardapio_id))) {
+      return { ok: false, erro: MSG_GENERICA_LOTE };
+    }
+
     const { error } = await escopo.inserirVarios(
       "cardapio_produtos",
       produto_ids.map((produto_id) => ({ cardapio_id, produto_id })),
@@ -438,6 +473,10 @@ export async function aplicarCardapioEmCategoriaAdmin(
  * Desfaz o vínculo. DELETE escopado por `loja_id` da URL + `cardapio_id` +
  * a lista de produtos: um `cardapio_id` de outra loja no payload não desvia o
  * escopo, só não casa linha nenhuma. Mesmo zod da gravação.
+ *
+ * 270: "não casa linha nenhuma" era justamente o problema — apagar zero e
+ * devolver `{ ok: true }` grava `cardapio.tirar_produtos` com `entidade_id` de
+ * outro tenant. A posse vem antes do DELETE e antes do log.
  */
 export async function tirarDeCardapioAdmin(
   lojaId: string,
@@ -453,6 +492,11 @@ export async function tirarDeCardapioAdmin(
   const { svc } = await prepararContextoAdmin(loja.lojaId);
 
   try {
+    // 270: a mesma prova de posse da gravação, com a mesma frase.
+    if (!(await cardapioPertenceALoja(svc, loja.lojaId, cardapio_id))) {
+      return { ok: false, erro: MSG_GENERICA_LOTE };
+    }
+
     const { error } = await svc
       .from("cardapio_produtos")
       .delete()
@@ -506,5 +550,73 @@ export async function preverLoteAdmin(
   } catch (e) {
     console.error("[preverLoteAdmin]", e);
     return { ok: false, erro: MSG_GENERICA_LOTE };
+  }
+}
+
+// ═══════════════ [274] A agenda do VÍNCULO — RN-10, RN-11, RN-12, RN-14 ═════
+
+/**
+ * Gêmea admin de `definirDiasDoVinculo`: define em QUE DIAS DA SEMANA um item
+ * aparece dentro de um cardápio da LOJA-ALVO.
+ *
+ * Aqui a RLS não vale (`service_role` tem BYPASSRLS). O que protege:
+ *  1. `validarLojaIdAdmin` + `prepararContextoAdmin` — prova de admin ANTES de
+ *     elevar, e a exceção PROPAGA (fail-closed, D-4);
+ *  2. `escopo.atualizarPorChave`, que injeta `.eq("loja_id", <lojaId da URL>)`
+ *     por construção e escopa a linha pela chave natural `(cardapio_id,
+ *     produto_id)` — `loja_id` NUNCA vem do payload, e o `.strict()` do zod o
+ *     recusa antes de qualquer I/O (RN-10);
+ *  3. as FKs compostas `(cardapio_id, loja_id)` / `(produto_id, loja_id)`, que
+ *     valem sob qualquer role: a linha da loja A só referencia cardápio e
+ *     produto da loja A;
+ *  4. `count === 0` ⇒ recusa, ANTES do log e de qualquer `revalidatePath` — um
+ *     id-probe de outro tenant não vira linha em `admin_acessos` nem oráculo
+ *     de existência (a frase de alheio é a de inexistente, byte a byte).
+ *
+ * O log grava a CONTAGEM de dias já normalizada (`dias: n`), nunca o conteúdo.
+ */
+export async function definirDiasDoVinculoAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: MSG_LOJA_INVALIDA };
+
+  const parsed = schemaDiasDoVinculo.safeParse(payload);
+  if (!parsed.success) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+  const { cardapio_id, produto_id, dias_semana } = parsed.data;
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    const dias = normalizarDiasDoVinculo(dias_semana);
+
+    const { error, count } = await escopo.atualizarPorChave(
+      "cardapio_produtos",
+      { cardapio_id, produto_id },
+      { dias_semana: dias },
+    );
+    if (error) {
+      console.error("[definirDiasDoVinculoAdmin]", error);
+      return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+    }
+    // Sem `console.error`: o servidor não aprendeu nada que valha registro.
+    // `count` ausente NÃO recusa (R4).
+    if (count === 0) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "cardapio.definir_dias",
+      entidadeId: cardapio_id,
+      metadados: { produto_id, dias: dias?.length ?? 0 },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    // [274 · D9] O DETALHE concreto do cardápio na loja-alvo — `revalidarLojaAdmin`
+    // cobre a lista, o hub e a vitrine, mas não a tela desta feature.
+    revalidatePath(`${rotaCardapiosAdmin(loja.lojaId)}/${cardapio_id}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[definirDiasDoVinculoAdmin]", e);
+    return { ok: false, erro: MSG_DIAS_DO_VINCULO };
   }
 }

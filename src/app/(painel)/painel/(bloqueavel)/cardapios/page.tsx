@@ -45,7 +45,7 @@ export default async function CardapiosPage(): Promise<ReactElement> {
     redirect("/painel/onboarding");
   }
 
-  const { cardapios, produtos, cardapiosPorProduto } =
+  const { cardapios, produtos, vinculosPorProduto } =
     await buscarCardapiosDoPainel(supabase, loja.id);
   const agora = new Date();
 
@@ -58,14 +58,14 @@ export default async function CardapiosPage(): Promise<ReactElement> {
     const contagem = contarProdutosEscondidos(
       cardapio,
       produtos,
-      cardapiosPorProduto,
+      vinculosPorProduto,
       agora,
       loja.timezone,
     );
     const escondidos = listarProdutosEscondidos(
       cardapio,
       produtos,
-      cardapiosPorProduto,
+      vinculosPorProduto,
       agora,
       loja.timezone,
     );

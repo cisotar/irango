@@ -44,7 +44,10 @@ import {
 } from "@/lib/utils/promocaoPainel";
 import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
-import { descreverVigencia } from "@/lib/utils/descreverVigencia";
+import {
+  descreverVigencia,
+  rotuloDiasDoItem,
+} from "@/lib/utils/descreverVigencia";
 import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
 import {
   diagnosticarSumico,
@@ -55,9 +58,10 @@ import {
   aplicarCardapioEmCategoria,
   tirarDeCardapio,
   preverLoteAction,
+  definirDiasDoVinculo,
 } from "@/lib/actions/cardapio";
 import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
-import type { CardapiosPorProduto } from "@/components/painel/contrato-lote";
+import type { VinculosPorProduto } from "@/components/painel/contrato-lote";
 import { ProdutosClient } from "./ProdutosClient";
 
 /**
@@ -135,14 +139,17 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     nome: c.nome,
     descricao: descreverVigencia(c, loja.timezone, agora),
   }));
-  const cardapiosPorProduto: CardapiosPorProduto =
+  const vinculosPorProduto: VinculosPorProduto =
     Object.fromEntries(
-      [...cardapiosDaLoja.cardapiosPorProduto].map(([produtoId, lista]) => [
+      [...cardapiosDaLoja.vinculosPorProduto].map(([produtoId, lista]) => [
         produtoId,
-        lista.map((c) => ({
-          id: c.id,
-          nome: c.nome,
-          abertoAgora: cardapioAberto(c, agora, loja.timezone),
+        lista.map((v) => ({
+          id: v.cardapio.id,
+          nome: v.cardapio.nome,
+          abertoAgora: cardapioAberto(v.cardapio, agora, loja.timezone),
+          // [278] Os dias do ITEM, redigidos AQUI, no servidor. O cliente
+          // recebe texto, não regra.
+          rotuloDias: rotuloDiasDoItem(v.dias_semana),
         })),
       ]),
     );
@@ -156,7 +163,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
   for (const p of produtos) {
     const sumico = diagnosticarSumico(
       p,
-      cardapiosDaLoja.cardapiosPorProduto.get(p.id) ?? [],
+      cardapiosDaLoja.vinculosPorProduto.get(p.id) ?? [],
       agora,
       loja.timezone,
     );
@@ -178,7 +185,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
       // [261] LEITURA, não ação: vive fora do `lote` porque o hub admin também
       // a recebe (o `FormProduto` depende dela para não mentir sobre cardápio).
-      cardapiosPorProduto={cardapiosPorProduto}
+      vinculosPorProduto={vinculosPorProduto}
       // A rota de cardápios é conhecida AQUI, não no componente: no painel do
       // lojista ela existe; no hub admin, não (o wrapper admin passa `null`).
       hrefCardapios="/painel/cardapios"
@@ -196,6 +203,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
           tirarDeCardapio,
           preverLote: preverLoteAction,
           definirVisibilidade: definirVisibilidadeEmProdutos,
+          definirDias: definirDiasDoVinculo,
         },
       }}
       // [217] Linhas INTEIRAS, não mais `{id, nome}`: o cartão de associação

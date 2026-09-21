@@ -150,6 +150,38 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
     ) {
       return from(tabela).update(patch, { count: "exact" }).eq("loja_id", lojaId).eq("id", id);
     },
+    /**
+     * [274 · D4] UPDATE por CHAVE NATURAL: escopo = `loja_id` + TODAS as
+     * colunas de `chave`, com `count: "exact"`.
+     *
+     * Existe porque `atualizar` só chaveia por `id`, e o cliente de
+     * `cardapio_produtos` conhece o par `(cardapio_id, produto_id)`, não o `id`
+     * da linha de junção — resolver o `id` por SELECT prévio seria uma segunda
+     * ida ao banco, uma janela TOCTOU e um oráculo de existência. Aqui a posse
+     * é provada PELA PRÓPRIA ESCRITA: `count === 0` é a recusa.
+     *
+     * `patch` é `Omit<Update, "loja_id" | "id" | K>`: o `.eq` escopa QUAL linha,
+     * nunca O QUE se grava — o wrapper barra POR TIPO re-parentear (`loja_id`),
+     * re-chavear (`id`) ou mover a linha pelas colunas da chave. Mesma simetria
+     * de `inserir`/`atualizar`.
+     */
+    atualizarPorChave<
+      T extends TabelaComLojaId,
+      K extends Exclude<Extract<keyof Tabelas[T]["Row"], string>, "loja_id">,
+    >(
+      tabela: T,
+      chave: Record<K, string>,
+      patch: Omit<Tabelas[T]["Update"], "loja_id" | "id" | K>,
+    ) {
+      const colunas = Object.entries(chave) as [string, string][];
+      // Chave vazia degradaria para um UPDATE da LOJA INTEIRA sob service_role
+      // (BYPASSRLS). Lança — não é `{ ok: false }` amigável, é bug de
+      // programação, e fail-closed é a regra desta via.
+      if (colunas.length === 0) throw new Error("atualizarPorChave: chave vazia");
+      let q = from(tabela).update(patch, { count: "exact" }).eq("loja_id", lojaId);
+      for (const [coluna, valor] of colunas) q = q.eq(coluna, valor);
+      return q;
+    },
     /** DELETE de linha da loja, escopo duplo `loja_id`+`id`, `count:"exact"`. */
     remover<T extends TabelaComLojaId>(tabela: T, id: string) {
       return from(tabela).delete({ count: "exact" }).eq("loja_id", lojaId).eq("id", id);

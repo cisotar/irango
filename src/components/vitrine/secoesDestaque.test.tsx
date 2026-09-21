@@ -19,7 +19,14 @@ import {
   ancoraCategoria,
   idNaSecao,
 } from "@/lib/utils/ancoraCategoria";
-import type { ProdutoVitrine, SecaoVitrine } from "@/lib/utils/catalogoVitrine";
+import {
+  agruparPorCardapio,
+  projetarCatalogoVitrine,
+  type ProdutoVitrine,
+  type SecaoVitrine,
+} from "@/lib/utils/catalogoVitrine";
+import type { CardapioVigencia, VinculoVigencia } from "@/lib/utils/vigenciaCardapio";
+import { instanteNoFuso } from "@/lib/utils/fusoLoja";
 
 function produto(id: string, nome: string): ProdutoVitrine {
   return {
@@ -187,5 +194,101 @@ describe("263/RN-16 — a busca nunca vê o destaque (trava de fonte)", () => {
     // `filtrarCatalogo(...)` ou `contarProdutos(...)`.
     expect(usos).toHaveLength(4);
     expect(FONTE).toContain("emBusca ? filtradas : [...secoesDestaque, ...filtradas]");
+  });
+});
+
+describe("279 — dia sem item do cardápio: a seção não chega a existir", () => {
+  type CardapioDaLoja = CardapioVigencia & { ordem: number };
+
+  /** "Especiais do Dia": aberto os 7 dias — quem esvazia a seção é o ITEM. */
+  const ESPECIAIS: CardapioDaLoja = {
+    id: "inverno",
+    nome: "Cardápio de Inverno",
+    ativo: true,
+    modo: "recorrente",
+    dias_semana: null,
+    dias_mes: null,
+    hora_inicio: null,
+    hora_fim: null,
+    prazo_inicio: null,
+    prazo_fim: null,
+    ordem: 1,
+  };
+
+  const SP = "America/Sao_Paulo";
+  /** Domingo 18/10/2026 12:00 no fuso da loja — nenhum item é de domingo. */
+  const DOMINGO = new Date(instanteNoFuso("2026-10-18T12:00", SP));
+
+  /** A Sopa ('cardapio') só é servida às quartas. */
+  const SOPA_CRUA = {
+    id: "sopa",
+    nome: "Sopa de cebola",
+    descricao: null,
+    foto_url: null,
+    categoria_id: "sopas",
+    disponivel: true,
+    preco: 48,
+    desconto_ativo: false,
+    desconto_tipo: null,
+    desconto_valor: null,
+    desconto_inicio: null,
+    desconto_fim: null,
+    visibilidade: "cardapio",
+  };
+  const vinculos = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+    ["sopa", [{ cardapio: ESPECIAIS, dias_semana: [3] }]],
+  ]);
+
+  function renderizarDomingo() {
+    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+      produtos: [SOPA_CRUA],
+      vinculosPorProduto: vinculos,
+      agora: DOMINGO,
+      timezone: SP,
+    });
+    const secoesDestaque = agruparPorCardapio(
+      produtos,
+      cardapiosAbertos,
+      vinculos,
+      DOMINGO,
+      SP,
+    );
+    // A seção nem chega ao render: o `agruparPorCardapio` já a descartou.
+    expect(secoesDestaque).toEqual([]);
+
+    return renderToStaticMarkup(
+      <CatalogoVitrine
+        categorias={[
+          { id: "sopas", nome: "Sopas", tipo: "categoria", produtos },
+        ]}
+        secoesDestaque={secoesDestaque}
+        rotulosJanela={{ inverno: "Hoje" }}
+        rotulosVigencia={{ sopa: "Só às quartas" }}
+      />,
+    );
+  }
+
+  it("a âncora da seção de destaque não existe no HTML", () => {
+    const html = renderizarDomingo();
+
+    expect(html).not.toContain(`id="${ancoraCardapio("inverno")}"`);
+    expect(html.match(/<section /g)).toHaveLength(1);
+  });
+
+  it("o trilho não lista o cardápio — e nem aparece, com 1 seção só", () => {
+    const html = renderizarDomingo();
+
+    expect(html).not.toContain(`href="#${ancoraCardapio("inverno")}"`);
+    // Efeito colateral registrado na 279: abaixo de MINIMO_CATEGORIAS o trilho
+    // some — comportamento certo, não há o que navegar.
+    expect(html).not.toContain('<nav aria-label="Categorias do cardápio"');
+  });
+
+  it("o produto continua na CATEGORIA dele, marcado, com o selo do item", () => {
+    const html = renderizarDomingo();
+
+    expect(html).toContain("Sopa de cebola");
+    expect(html.match(/<article /g)).toHaveLength(1);
+    expect(html).toContain("Só às quartas");
   });
 });

@@ -72,7 +72,7 @@ import { BarraSelecaoLote } from "@/components/painel/BarraSelecaoLote";
 import { useLoteDeProdutos } from "@/components/painel/useLoteDeProdutos";
 import type {
   LoteDeProdutos,
-  CardapiosPorProduto,
+  VinculosPorProduto,
 } from "@/components/painel/contrato-lote";
 import { visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import type { SumicoDoProduto } from "@/lib/utils/contarProdutosEscondidos";
@@ -166,9 +166,9 @@ export type ProdutosClientProps = {
    * [261] `produto.id → cardápios dele`, projetado no Server Component (com o
    * relógio do servidor e o fuso da loja). OBRIGATÓRIA nos dois mundos: é o que
    * o `FormProduto` lê para decidir entre "está em: …" e o aviso de RN-14.
-   * Separada de `lote` de propósito — ver `CardapiosPorProduto`.
+   * Separada de `lote` de propósito — ver `VinculosPorProduto`.
    */
-  cardapiosPorProduto: CardapiosPorProduto;
+  vinculosPorProduto: VinculosPorProduto;
   /**
    * Destino da tela de cardápios NESTE mundo, ou `null` quando ele não tem uma.
    * OBRIGATÓRIA e sem default (issue 160, e o mesmo contrato do `NavPainel`:
@@ -313,7 +313,7 @@ export function ProdutosClient({
   promocoes,
   fusoLojaRotulo,
   lote,
-  cardapiosPorProduto,
+  vinculosPorProduto,
   hrefCardapios,
   sumicos = {},
   acoes,
@@ -651,7 +651,7 @@ export function ProdutosClient({
       // saída quando o produto não está em cardápio nenhum. A autoridade segue
       // sendo o trigger + a mensagem da Server Action.
       cardapiosDoProduto={
-        emEdicao ? (cardapiosPorProduto[emEdicao.id] ?? []) : []
+        emEdicao ? (vinculosPorProduto[emEdicao.id] ?? []) : []
       }
       inicial={
         emEdicao
@@ -941,15 +941,24 @@ export function ProdutosClient({
                                 vêm projetados do Server Component, com o
                                 relógio do servidor e o fuso da loja — o painel
                                 nunca decide vigência no browser. */}
-                            {(cardapiosPorProduto[p.id]?.length ?? 0) > 0 && (
+                            {(vinculosPorProduto[p.id]?.length ?? 0) > 0 && (
                               <ul className="mt-1 flex flex-wrap items-center gap-1.5">
-                                {cardapiosPorProduto[p.id]?.map((c) => (
+                                {vinculosPorProduto[p.id]?.map((c) => (
                                   <li key={c.id}>
                                     <Badge
                                       variant="outline"
-                                      className="font-normal"
+                                      // [278] Em 360px o chip com os três
+                                      // trechos quebra em duas linhas em vez de
+                                      // esticar a linha do produto.
+                                      className="font-normal whitespace-normal"
                                     >
                                       {c.nome}
+                                      {/* [278] Ordem fixada: nome · dias ·
+                                          estado. O estado é consequência, vem
+                                          por último. Redigido no SERVIDOR. */}
+                                      {c.rotuloDias === null
+                                        ? ""
+                                        : ` · ${c.rotuloDias}`}
                                       {c.abertoAgora
                                         ? ""
                                         : " · fora da janela agora"}
