@@ -29,6 +29,7 @@ import { schemaProduto } from "@/lib/validacoes/produto";
 import {
   erroDeParseProduto,
   comPrazosNoFuso,
+  erroDeEscritaDeProduto,
   type DadosProduto,
 } from "@/lib/actions/produto-contrato";
 import {
@@ -41,6 +42,9 @@ import {
 import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
 
 type Resultado = { ok: true } | { ok: false; erro: string };
+
+/** A genérica de escrita de produto (`seguranca.md` §14), declarada uma vez. */
+const MSG_SALVAR = "Não foi possível salvar o produto.";
 
 /**
  * Confere que `categoriaId` pertence à LOJA-ALVO. Sem RLS por dono aqui (service_
@@ -107,7 +111,10 @@ export async function criarProdutoAdmin(
     const { error } = await escopo.inserir("produtos", dados);
     if (error) {
       console.error("[criarProdutoAdmin]", error);
-      return { ok: false, erro: "Não foi possível salvar o produto." };
+      // [261] Paridade com o caminho do lojista: a recusa de RN-14 vira frase
+      // acionável (o trigger é SECURITY DEFINER e vale sob `service_role`), o
+      // resto segue genérico.
+      return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR) };
     }
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
@@ -117,7 +124,7 @@ export async function criarProdutoAdmin(
     return { ok: true };
   } catch (e) {
     console.error("[criarProdutoAdmin]", e);
-    return { ok: false, erro: "Não foi possível salvar o produto." };
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR) };
   }
 }
 
@@ -150,7 +157,10 @@ export async function atualizarProdutoAdmin(
     const { error } = await escopo.atualizar("produtos", id, dados);
     if (error) {
       console.error("[atualizarProdutoAdmin]", error);
-      return { ok: false, erro: "Não foi possível salvar o produto." };
+      // [261] Paridade com o caminho do lojista: a recusa de RN-14 vira frase
+      // acionável (o trigger é SECURITY DEFINER e vale sob `service_role`), o
+      // resto segue genérico.
+      return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR) };
     }
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
@@ -161,7 +171,7 @@ export async function atualizarProdutoAdmin(
     return { ok: true };
   } catch (e) {
     console.error("[atualizarProdutoAdmin]", e);
-    return { ok: false, erro: "Não foi possível salvar o produto." };
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR) };
   }
 }
 

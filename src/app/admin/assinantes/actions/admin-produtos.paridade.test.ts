@@ -292,6 +292,12 @@ describe("241 — nenhum patch admin montado por spread do payload", () => {
     "categoria_id",
     "disponivel",
     "oculto",
+    // [261] D14 — `schemaProduto` ganhou `visibilidade` com `.default("menu")`,
+    // então ela chega ao INSERT/UPDATE mesmo num payload que não a manda. O
+    // caminho admin escreve o MESMO campo que o do lojista (paridade), e a
+    // recusa de RN-14 vale igual lá: o trigger é SECURITY DEFINER e não
+    // depende de role.
+    "visibilidade",
     "ordem",
     "foto_url",
     "desconto_ativo",

@@ -471,3 +471,43 @@ describe("ProdutosClient — chip de promoção vigente (issue 235, design §8.4
     expect(() => renderComPromocoes([produto], {})).not.toThrow();
   });
 });
+
+/**
+ * [261] D14 na lista (design §13.5, regra 5). O badge é a única coisa que
+ * distingue, na linha, o produto que vai SUMIR da vitrine quando o cardápio
+ * dele fechar — e o produto do menu não ganha ruído nenhum.
+ */
+describe("ProdutosClient — badge de D14 (issue 261)", () => {
+  it("produto exclusivo de cardápio ganha o badge literal", () => {
+    const html = renderLista([
+      produtoBase({ visibilidade: "cardapio" } as Partial<Produto>),
+    ]);
+    expect(html).toContain("Exclusivo de cardápio");
+  });
+
+  it("produto do menu NÃO ganha badge — o default não merece ruído", () => {
+    const html = renderLista([
+      produtoBase({ visibilidade: "menu" } as Partial<Produto>),
+    ]);
+    expect(html).not.toContain("Exclusivo de cardápio");
+  });
+
+  /**
+   * FAIL-OPEN de `visibilidadeDe` (247/D6): valor fora do domínio lê como
+   * `menu`. A alternativa (tratar como exclusivo) anunciaria na tela uma
+   * exclusividade que o projeto não sabe avaliar.
+   */
+  it("visibilidade desconhecida lê como menu, não como exclusivo", () => {
+    const html = renderLista([
+      produtoBase({ visibilidade: "vigencia-do-futuro" } as Partial<Produto>),
+    ]);
+    expect(html).not.toContain("Exclusivo de cardápio");
+  });
+
+  it("sem a prop `lote`, a tela não oferece modo de seleção", () => {
+    // O hub admin cai aqui: as actions de lote derivam a loja de `auth.uid()`
+    // e injetá-las lá gravaria na loja do ADMIN logado.
+    const html = renderLista([produtoBase()]);
+    expect(html).not.toContain(">Selecionar<");
+  });
+});

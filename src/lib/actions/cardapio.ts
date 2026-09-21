@@ -34,6 +34,7 @@ import {
 } from "@/lib/validacoes/cardapio";
 import { instanteNoFuso } from "@/lib/utils/fusoLoja";
 import { calcularFimDoPreset } from "@/lib/utils/calcularFimDoPreset";
+import { ehErroDeExclusivoSemCardapio } from "@/lib/actions/produto-contrato";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
@@ -41,7 +42,21 @@ import { revalidatePath } from "next/cache";
 type Resultado = { ok: true } | { ok: false; erro: string };
 
 type Previa =
-  | { ok: true; total: number; nomes: string[]; menu: number; cardapio: number }
+  | {
+      ok: true;
+      total: number;
+      nomes: string[];
+      menu: number;
+      cardapio: number;
+      /**
+       * [260] Quantos do lote estão `oculto = true`. A RPC de categoria inclui
+       * produto oculto (RN-10) e o diálogo NÃO o esconde da contagem — a frase
+       * "N deles estão ocultos e continuam ocultos" (design §10.2, trava 5)
+       * precisa deste número, e ele sai da MESMA leitura que já acontecia.
+       * Contá-lo no cliente seria contar uma seleção que pode estar velha.
+       */
+      ocultos: number;
+    }
   | { ok: false; erro: string };
 
 /**
@@ -50,6 +65,22 @@ type Previa =
  */
 const MSG_GENERICA =
   "Não foi possível aplicar o cardápio aos produtos selecionados.";
+
+/**
+ * [261] A OUTRA ponta do trigger de RN-14: tirar o ÚLTIMO cardápio de um
+ * produto exclusivo o deixaria órfão. É a única falha do lote que ganha frase
+ * própria — ela é regra de negócio do próprio lojista, nomeia a saída
+ * ("Devolver ao menu", que a barra de ação oferece ao lado) e não diz nada
+ * sobre existência de id alheio (id de outra loja nem chega ao trigger: o
+ * `.eq("loja_id")` e a RLS o descartam antes, com a mesma resposta de id
+ * inexistente). Todo o resto continua genérico.
+ */
+const MSG_ORFAO_NO_LOTE =
+  "Um dos produtos selecionados só aparece por causa deste cardápio e sumiria da vitrine. Devolva-o ao menu antes de tirá-lo do cardápio.";
+
+function erroDoLote(erro: unknown): string {
+  return ehErroDeExclusivoSemCardapio(erro) ? MSG_ORFAO_NO_LOTE : MSG_GENERICA;
+}
 
 /** O diálogo mostra 6 nomes no desktop e 3 no mobile (design §10.3). */
 const NOMES_NA_PREVIA = 6;
@@ -177,14 +208,14 @@ export async function tirarDeCardapio(payload: unknown): Promise<Resultado> {
       .in("produto_id", produto_ids);
     if (error) {
       console.error("[tirarDeCardapio]", error);
-      return { ok: false, erro: MSG_GENERICA };
+      return { ok: false, erro: erroDoLote(error) };
     }
 
     revalidarCaminhosDoCardapio(loja.slug);
     return { ok: true };
   } catch (e) {
     console.error("[tirarDeCardapio]", e);
-    return { ok: false, erro: MSG_GENERICA };
+    return { ok: false, erro: erroDoLote(e) };
   }
 }
 
@@ -210,7 +241,7 @@ export async function preverLoteAction(entrada: unknown): Promise<Previa> {
 
     const base = supabase
       .from("produtos")
-      .select("id, nome, visibilidade")
+      .select("id, nome, visibilidade, oculto")
       .eq("loja_id", loja.id);
     const consulta =
       "produto_ids" in parsed.data
@@ -230,6 +261,7 @@ export async function preverLoteAction(entrada: unknown): Promise<Previa> {
       nomes: linhas.slice(0, NOMES_NA_PREVIA).map((p) => p.nome),
       menu: linhas.filter((p) => p.visibilidade === "menu").length,
       cardapio: linhas.filter((p) => p.visibilidade === "cardapio").length,
+      ocultos: linhas.filter((p) => p.oculto).length,
     };
   } catch (e) {
     console.error("[preverLoteAction]", e);

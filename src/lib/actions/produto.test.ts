@@ -140,6 +140,8 @@ import {
   // Issue 175 (fase GREEN): a action existe, então o resolvedor por namespace
   // que o RED usava vira import direto — a ausência agora seria erro de tipo.
   reordenarCategorias,
+  // [261] D14 em lote.
+  definirVisibilidadeEmProdutos,
 } from "./produto";
 import type { ResultadoGestaoCategoria } from "./produto";
 
@@ -866,5 +868,106 @@ describe("criarProduto/atualizarProduto — desconto (issue 230)", () => {
     expect(texto).not.toContain("check constraint");
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+/**
+ * [261] `definirVisibilidadeEmProdutos` — D14 em lote.
+ *
+ * O que estes testes travam, na ordem da importância:
+ *  1. `loja_id` sai de `buscarLojaDoDono`, NUNCA do payload, e vai como filtro
+ *     explícito no UPDATE além da RLS;
+ *  2. `visibilidade` é a ÚNICA coluna escrita;
+ *  3. UMA instrução para a lista inteira (tudo ou nada) — nenhum UPDATE por id;
+ *  4. a recusa de RN-14 vira frase acionável; o resto segue genérico;
+ *  5. lixo não vira ida ao banco.
+ */
+describe("definirVisibilidadeEmProdutos (D14 em lote — issue 261)", () => {
+  const P1 = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  const P2 = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
+  it("escreve só `visibilidade`, escopado pela loja do DONO", async () => {
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1, P2],
+      visibilidade: "cardapio",
+    });
+
+    expect(r).toEqual({ ok: true });
+    const op = opEscrita("produtos");
+    expect(op?.update).toEqual({ visibilidade: "cardapio" });
+    expect(op?.filtros).toContainEqual(["loja_id", LOJA_DONO]);
+    expect(op?.filtros).toContainEqual(["id", [P1, P2]]);
+    // Uma instrução só: o lote é tudo ou nada.
+    expect(ops.filter((o) => o.tabela === "produtos" && o.update)).toHaveLength(
+      1,
+    );
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  it("`loja_id` no payload não sobrevive ao `.strict()` e não vira escrita", async () => {
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "menu",
+      loja_id: LOJA_OUTRA,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(ops).toHaveLength(0);
+  });
+
+  it("lixo não vira ida ao banco (id fora do formato, lista vazia, enum inválido)", async () => {
+    for (const payload of [
+      { produto_ids: ["nao-e-uuid"], visibilidade: "menu" },
+      { produto_ids: [], visibilidade: "menu" },
+      { produto_ids: [P1], visibilidade: "invisivel" },
+      { produto_ids: [P1, P1], visibilidade: "menu" },
+      null,
+    ]) {
+      ops = [];
+      const r = await definirVisibilidadeEmProdutos(payload);
+      expect(r.ok).toBe(false);
+      expect(ops).toHaveLength(0);
+      expect(buscarLojaDoDono).not.toHaveBeenCalled();
+    }
+  });
+
+  it("a recusa de RN-14 chega legível, com a saída na própria frase", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: {
+        code: "23000",
+        message:
+          "produto exclusivo sem cardapio: cccccccc-cccc-cccc-cccc-cccccccccccc",
+      },
+    };
+
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "cardapio",
+    });
+
+    expect(r).toEqual({
+      ok: false,
+      erro: "Este produto não está em nenhum cardápio. Escolha um cardápio antes, ou deixe-o no menu.",
+    });
+  });
+
+  it("qualquer outra falha de banco segue genérica (§14)", async () => {
+    respostaPorTabela.produtos = {
+      data: null,
+      error: {
+        code: "42501",
+        message: 'permission denied for table "produtos"',
+      },
+    };
+
+    const r = await definirVisibilidadeEmProdutos({
+      produto_ids: [P1],
+      visibilidade: "menu",
+    });
+
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar o produto." });
+    // O texto cru do Postgres não vaza para a tela.
+    expect(r.ok === false && r.erro).not.toContain("permission denied");
   });
 });

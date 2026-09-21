@@ -18,6 +18,7 @@ import {
   Loader2,
   SlidersHorizontal,
   EyeOff,
+  ListChecks,
   MoreVertical,
   X,
 } from "lucide-react";
@@ -32,6 +33,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -65,6 +67,10 @@ import {
   type ManipuladorReordenarCategorias,
 } from "@/components/painel/ReordenarCategorias";
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
+import { BarraSelecaoLote } from "@/components/painel/BarraSelecaoLote";
+import { useLoteDeProdutos } from "@/components/painel/useLoteDeProdutos";
+import type { LoteDeProdutos } from "@/components/painel/contrato-lote";
+import { visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import type {
   Associacao,
   CategoriaProduto,
@@ -137,6 +143,16 @@ export type ProdutosClientProps = {
   promocoes: Record<string, PromocaoDoPainel>;
   /** Linha de fuso pronta do servidor, repassada ao `FormProduto` (§8.1). */
   fusoLojaRotulo: string;
+  /**
+   * [260][261] O modo de seleção e a ação em lote. OPCIONAL, e é a única prop
+   * deste componente que é: as Server Actions de lote derivam a loja de
+   * `auth.uid()` e NÃO têm variante admin (issue 251). Injetá-las no hub admin
+   * gravaria na loja do ADMIN logado, não na loja-alvo. Ausente ⇒ o botão
+   * "Selecionar" não existe e não há modo de seleção — o mesmo espírito da
+   * issue 160 (nunca cair num default que escreve na loja errada), resolvido
+   * pela ausência da funcionalidade em vez de por um fallback silencioso.
+   */
+  lote?: LoteDeProdutos;
   /**
    * Actions injetadas. Todas OBRIGATÓRIAS (issue 160): a page do painel passa
    * as 21 do lojista, a via admin passa as 21 variantes escopadas por `lojaId`.
@@ -223,6 +239,20 @@ function badgeStatus(p: Produto) {
   );
 }
 
+/**
+ * [261] D14 na lista — `Badge variant="secondary"` com o texto literal
+ * `Exclusivo de cardápio`, ao lado do `badgeStatus(p)`. Produto do MENU não
+ * ganha badge nenhum: é o default e não merece ruído em toda linha.
+ *
+ * `visibilidadeDe` é o estreitamento FAIL-OPEN já usado pela vitrine (247/D6):
+ * valor desconhecido lê como `menu`, e a linha não anuncia uma exclusividade
+ * que o projeto não sabe avaliar.
+ */
+function badgeExclusivo(p: Produto) {
+  if (visibilidadeDe(p) !== "cardapio") return null;
+  return <Badge variant="secondary">Exclusivo de cardápio</Badge>;
+}
+
 export function ProdutosClient({
   lojaSlug,
   lojaId,
@@ -235,6 +265,7 @@ export function ProdutosClient({
   associacoes,
   promocoes,
   fusoLojaRotulo,
+  lote,
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
@@ -319,6 +350,89 @@ export function ProdutosClient({
   // Guard de reentrância enquanto o flush está em voo (ESC repetido, duplo
   // clique em Concluir). Ref, não estado: não deve provocar render.
   const saindoDoModoRef = useRef(false);
+
+  /*
+    [260] Modo de SELEÇÃO — mesmo desenho de `modoReordenar` (issue 175):
+    estado no PAI, a linha troca de aparência, uma barra de ação aparece. Não é
+    chrome permanente porque a linha que ganha um checkbox soma ~44px de chrome
+    e em 360px sobra pouco para o nome (`design-system.md` §5).
+
+    🔴 `selecionados` é INTENÇÃO, não permissão. Nada aqui autoriza coisa
+    alguma: a trava é a FK composta + a RLS + o `loja_id` da sessão (243/251), e
+    a contagem que o lojista lê antes de confirmar vem do SERVIDOR.
+  */
+  const [modoSelecao, setModoSelecao] = useState(false);
+  const [selecionados, setSelecionados] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  // Para onde o foco volta ao sair do modo (ESC ou "Cancelar").
+  const botaoSelecionarRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * A seleção que vai ao servidor, DERIVADA da lista renderizada — nunca o
+   * `Set` cru. Depois de um `router.refresh()` (lote aplicado, produto
+   * removido de outro dispositivo) o id que sumiu da tela sai daqui sozinho,
+   * sem efeito nenhum: mandar ao servidor uma lista que descreve um catálogo
+   * que não existe mais só produziria recusa genérica.
+   */
+  const lista = useMemo(
+    () => produtos.filter((p) => selecionados.has(p.id)).map((p) => p.id),
+    [produtos, selecionados],
+  );
+
+  const limparSelecao = useCallback(() => setSelecionados(new Set()), []);
+
+  const aoConcluirLote = useCallback(() => {
+    // A ação terminou: a seleção velha não descreve mais nada. O MODO
+    // permanece — o lojista costuma aplicar dois cardápios em seguida.
+    limparSelecao();
+    router.refresh();
+  }, [limparSelecao, router]);
+
+  const loteUI = useLoteDeProdutos(lote?.acoes, aoConcluirLote);
+
+  /** Sair do modo LIMPA a seleção e devolve o foco ao botão "Selecionar". */
+  const sairDoModoSelecao = useCallback(() => {
+    limparSelecao();
+    setModoSelecao(false);
+    // `requestAnimationFrame` porque o botão só volta a existir no próximo
+    // render (a barra some e o cabeçalho normal reaparece).
+    requestAnimationFrame(() => botaoSelecionarRef.current?.focus());
+  }, [limparSelecao]);
+
+  // ESC sai do modo — mas NUNCA por cima do diálogo de confirmação, que tem o
+  // próprio ESC (fechar o diálogo não pode cancelar a seleção junto).
+  useEffect(() => {
+    if (!modoSelecao) return;
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === "Escape" && !loteUI.dialogoAberto) sairDoModoSelecao();
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [modoSelecao, loteUI.dialogoAberto, sairDoModoSelecao]);
+
+  function alternarSelecao(id: string) {
+    setSelecionados((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(id)) proximo.delete(id);
+      else proximo.add(id);
+      return proximo;
+    });
+  }
+
+  /** "Selecionar os 12" do cabeçalho do grupo (design §10.1). */
+  function selecionarGrupo(ids: string[]) {
+    setSelecionados((atual) => new Set([...atual, ...ids]));
+  }
+
+  /** "Limpar" do cabeçalho do grupo — só os produtos dele. */
+  function limparGrupo(ids: string[]) {
+    setSelecionados((atual) => {
+      const proximo = new Set(atual);
+      for (const id of ids) proximo.delete(id);
+      return proximo;
+    });
+  }
 
   const grupos = useMemo(
     () => agruparPorCategoria(produtos, categorias),
@@ -460,6 +574,12 @@ export function ProdutosClient({
       onAtualizar={acoes.atualizarProduto}
       onEnviarFoto={acoes.enviarFotoProduto}
       fusoLojaRotulo={fusoLojaRotulo}
+      // [261] Preview de UX para a recusa de RN-14: o form explica e oferece a
+      // saída quando o produto não está em cardápio nenhum. A autoridade segue
+      // sendo o trigger + a mensagem da Server Action.
+      cardapiosDoProduto={
+        emEdicao ? (lote?.cardapiosPorProduto[emEdicao.id] ?? []) : []
+      }
       inicial={
         emEdicao
           ? {
@@ -469,6 +589,9 @@ export function ProdutosClient({
               preco: emEdicao.preco,
               categoria_id: emEdicao.categoria_id,
               disponivel: emEdicao.disponivel,
+              // [261] D14 — estreitado FAIL-OPEN (247/D6): valor desconhecido
+              // abre o form em "menu", nunca fazendo o produto sumir sozinho.
+              visibilidade: visibilidadeDe(emEdicao),
               foto_url: emEdicao.foto_url,
               ordem: emEdicao.ordem,
               // RN-07: o form recebe a promoção INTEIRA, inclusive desligada.
@@ -506,6 +629,13 @@ export function ProdutosClient({
         */}
         {modoReordenar ? (
           <Button onClick={() => void sairDoModoReordenar()}>Concluir</Button>
+        ) : modoSelecao ? (
+          // No modo, as ações de criação somem (não ficam `disabled`): botão
+          // inerte sai da tabulação e não explica por que não funciona — a
+          // mesma regra que `modoReordenar` fixou.
+          <p className="text-sm text-muted-foreground">
+            Marque os produtos que a ação deve atingir.
+          </p>
         ) : (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
@@ -524,9 +654,40 @@ export function ProdutosClient({
                 Reordenar categorias
               </Button>
             )}
+            {/* Só existe onde a ação em lote existe (ver a prop `lote`). */}
+            {lote != null && produtos.length > 0 && (
+              <Button
+                ref={botaoSelecionarRef}
+                variant="outline"
+                onClick={() => setModoSelecao(true)}
+              >
+                <ListChecks className="size-4" />
+                Selecionar
+              </Button>
+            )}
           </div>
         )}
       </div>
+
+      {/* A barra de ação do modo (design §10.1): `fixed` no rodapé do mobile,
+          `sticky top` no desktop. Fica ACIMA da lista na árvore para que o
+          `sticky` se ancore no topo do scroll da página. */}
+      {modoSelecao && lote != null && (
+        <BarraSelecaoLote
+          selecionados={lista}
+          cardapios={lote.cardapios}
+          prevendo={loteUI.prevendo}
+          abrirCardapio={(acao, cardapio) =>
+            loteUI.abrirCardapio(acao, cardapio, {
+              tipo: "produtos",
+              produto_ids: lista,
+            })
+          }
+          abrirVisibilidade={(acao) => loteUI.abrirVisibilidade(acao, lista)}
+          onLimpar={limparSelecao}
+          onCancelar={sairDoModoSelecao}
+        />
+      )}
 
       {/* No modo reordenar a listagem normal dá lugar à lista de reordenação:
           é o que colapsa tudo e faz a tela ler de `categorias` (todas), e não de
@@ -576,7 +737,35 @@ export function ProdutosClient({
                     <AccordionTrigger className="min-h-[44px] font-heading text-lg font-semibold text-foreground">
                       {grupo.nome}
                     </AccordionTrigger>
-                    {grupo.id != null && (
+                    {modoSelecao ? (
+                      // Par de botões com o NÚMERO escrito, nunca checkbox
+                      // tri-estado: o `Checkbox` gerado renderiza `CheckIcon`
+                      // fixo e um estado "mixed" mostraria um ✓ — corrigir isso
+                      // exigiria editar arquivo do shadcn CLI.
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-h-[44px]"
+                          onClick={() =>
+                            selecionarGrupo(grupo.produtos.map((p) => p.id))
+                          }
+                        >
+                          Selecionar os {grupo.produtos.length}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-[44px]"
+                          aria-label={`Limpar a seleção de ${grupo.nome}`}
+                          onClick={() =>
+                            limparGrupo(grupo.produtos.map((p) => p.id))
+                          }
+                        >
+                          Limpar
+                        </Button>
+                      </div>
+                    ) : grupo.id != null ? (
                       <div className="flex shrink-0 items-center">
                         <Button
                           variant="ghost"
@@ -604,7 +793,7 @@ export function ProdutosClient({
                           <span className="hidden sm:inline">Novo produto</span>
                         </Button>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                   <AccordionContent className="pt-0 pb-0">
                     <CardContent className="divide-y divide-foreground/10 p-0">
@@ -620,6 +809,17 @@ export function ProdutosClient({
                           key={p.id}
                           className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
                         >
+                          {/* Prefixo do modo. Alvo de 44px LITERAL; o `label`
+                              é o alvo, não o quadradinho do checkbox. */}
+                          {modoSelecao && (
+                            <label className="flex min-h-[44px] min-w-[44px] shrink-0 cursor-pointer items-center justify-center">
+                              <Checkbox
+                                checked={selecionados.has(p.id)}
+                                onCheckedChange={() => alternarSelecao(p.id)}
+                                aria-label={`Selecionar ${p.nome}`}
+                              />
+                            </label>
+                          )}
                           <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
                           {/* `sm:min-w-[14rem]` é o piso do nome no desktop. Sem
                               ele, a lista de opcionais (que não encolhe) comia a
@@ -637,6 +837,8 @@ export function ProdutosClient({
                                 {formatarMoeda(p.preco)}
                               </span>
                               {badgeStatus(p)}
+                              {/* [261] D14 — nada para o produto do menu. */}
+                              {badgeExclusivo(p)}
                               {/* Chip de promoção VIGENTE. O rótulo inteiro
                                   (`-20% até 30/09`) vem projetado do servidor;
                                   aqui não há derivação de vigência nenhuma. */}
@@ -649,112 +851,149 @@ export function ProdutosClient({
                                 </Badge>
                               )}
                             </div>
+                            {/* [261] De quais cardápios o produto participa e
+                                se algum está DENTRO da janela agora. Os dois
+                                vêm projetados do Server Component, com o
+                                relógio do servidor e o fuso da loja — o painel
+                                nunca decide vigência no browser. */}
+                            {(lote?.cardapiosPorProduto[p.id]?.length ?? 0) >
+                              0 && (
+                              <ul className="mt-1 flex flex-wrap items-center gap-1.5">
+                                {lote?.cardapiosPorProduto[p.id]?.map((c) => (
+                                  <li key={c.id}>
+                                    <Badge
+                                      variant="outline"
+                                      className="font-normal"
+                                    >
+                                      {c.nome}
+                                      {c.abertoAgora
+                                        ? ""
+                                        : " · fora da janela agora"}
+                                    </Badge>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
                           </div>
 
                           {/* Editar/Remover consolidados no kebab: elimina os dois
                               ícones cortados na borda e afasta a ação destrutiva do
-                              alvo de toque de "Marcar esgotado". */}
-                          <Menu>
-                            <MenuTrigger
-                              render={
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="order-3 min-h-[44px] min-w-[44px] sm:order-last"
-                                  aria-label={`Mais ações de ${p.nome}`}
-                                />
-                              }
-                            >
-                              <MoreVertical aria-hidden className="size-4" />
-                            </MenuTrigger>
-                            <MenuPortal>
-                              <MenuPositioner align="end">
-                                <MenuPopup>
-                                  <MenuItem
-                                    className="min-h-[44px]"
-                                    aria-label={`Editar ${p.nome}`}
-                                    onClick={() => abrirEditar(p)}
-                                  >
-                                    <Pencil aria-hidden className="size-4" />
-                                    Editar
-                                  </MenuItem>
-                                  <MenuItem
-                                    className="min-h-[44px]"
-                                    aria-label={`Remover ${p.nome}`}
-                                    onClick={() => setARemover(p)}
-                                  >
-                                    <Trash2
-                                      aria-hidden
-                                      className="size-4 text-destructive"
-                                    />
-                                    Remover
-                                  </MenuItem>
-                                </MenuPopup>
-                              </MenuPositioner>
-                            </MenuPortal>
-                          </Menu>
+                              alvo de toque de "Marcar esgotado".
 
-                          {(() => {
-                            const gruposOpcionais =
-                              opcionaisPorCategoria[p.categoria_id ?? ""] ?? [];
-                            if (gruposOpcionais.length === 0) return null;
-                            return (
-                              <ul className="order-4 flex w-full min-w-0 shrink flex-wrap gap-1.5 sm:order-3 sm:w-auto">
-                                {gruposOpcionais
-                                  .slice()
-                                  .sort((a, b) => a.ordem - b.ordem)
-                                  .map((g) => (
-                                    <li key={g.categoriaOpcionalId}>
-                                      <Badge
-                                        variant="secondary"
-                                        className="font-normal"
-                                      >
-                                        {g.categoriaOpcionalNome}
-                                      </Badge>
-                                    </li>
-                                  ))}
-                              </ul>
-                            );
-                          })()}
+                              No modo de seleção o kebab, os chips de opcionais e
+                              os dois botões de estado SOMEM: o checkbox soma
+                              ~44px de chrome à linha e a régua de
+                              `design-system.md` §5 é COMPRIMIR, não estourar em
+                              360px. Some também porque no modo a única ação é a
+                              da barra — o mesmo que `modoReordenar` já faz. */}
+                          {!modoSelecao && (
+                            <Menu>
+                              <MenuTrigger
+                                render={
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="order-3 min-h-[44px] min-w-[44px] sm:order-last"
+                                    aria-label={`Mais ações de ${p.nome}`}
+                                  />
+                                }
+                              >
+                                <MoreVertical aria-hidden className="size-4" />
+                              </MenuTrigger>
+                              <MenuPortal>
+                                <MenuPositioner align="end">
+                                  <MenuPopup>
+                                    <MenuItem
+                                      className="min-h-[44px]"
+                                      aria-label={`Editar ${p.nome}`}
+                                      onClick={() => abrirEditar(p)}
+                                    >
+                                      <Pencil aria-hidden className="size-4" />
+                                      Editar
+                                    </MenuItem>
+                                    <MenuItem
+                                      className="min-h-[44px]"
+                                      aria-label={`Remover ${p.nome}`}
+                                      onClick={() => setARemover(p)}
+                                    >
+                                      <Trash2
+                                        aria-hidden
+                                        className="size-4 text-destructive"
+                                      />
+                                      Remover
+                                    </MenuItem>
+                                  </MenuPopup>
+                                </MenuPositioner>
+                              </MenuPortal>
+                            </Menu>
+                          )}
+
+                          {!modoSelecao &&
+                            (() => {
+                              const gruposOpcionais =
+                                opcionaisPorCategoria[p.categoria_id ?? ""] ??
+                                [];
+                              if (gruposOpcionais.length === 0) return null;
+                              return (
+                                <ul className="order-4 flex w-full min-w-0 shrink flex-wrap gap-1.5 sm:order-3 sm:w-auto">
+                                  {gruposOpcionais
+                                    .slice()
+                                    .sort((a, b) => a.ordem - b.ordem)
+                                    .map((g) => (
+                                      <li key={g.categoriaOpcionalId}>
+                                        <Badge
+                                          variant="secondary"
+                                          className="font-normal"
+                                        >
+                                          {g.categoriaOpcionalNome}
+                                        </Badge>
+                                      </li>
+                                    ))}
+                                </ul>
+                              );
+                            })()}
 
                           {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
                               52.8px na base de 120% do projeto (globals.css). */}
-                          <div className="order-last flex w-full basis-full gap-2 sm:order-4 sm:w-auto sm:basis-auto">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="min-h-[44px] flex-1 sm:flex-none"
-                              disabled={
-                                alternandoOculto && idAlternandoOculto === p.id
-                              }
-                              aria-label={
-                                p.oculto
-                                  ? `Exibir ${p.nome} na vitrine`
-                                  : `Ocultar ${p.nome} da vitrine`
-                              }
-                              onClick={() => alternarVisibilidade(p)}
-                            >
-                              {p.oculto ? "Exibir" : "Ocultar"}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="min-h-[44px] flex-1 sm:flex-none"
-                              disabled={
-                                alternandoDisp && idAlternandoDisp === p.id
-                              }
-                              aria-label={
-                                p.disponivel
-                                  ? `Marcar ${p.nome} como esgotado`
-                                  : `Disponibilizar ${p.nome}`
-                              }
-                              onClick={() => alternarDispon(p)}
-                            >
-                              {p.disponivel
-                                ? "Marcar esgotado"
-                                : "Disponibilizar"}
-                            </Button>
-                          </div>
+                          {!modoSelecao && (
+                            <div className="order-last flex w-full basis-full gap-2 sm:order-4 sm:w-auto sm:basis-auto">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="min-h-[44px] flex-1 sm:flex-none"
+                                disabled={
+                                  alternandoOculto &&
+                                  idAlternandoOculto === p.id
+                                }
+                                aria-label={
+                                  p.oculto
+                                    ? `Exibir ${p.nome} na vitrine`
+                                    : `Ocultar ${p.nome} da vitrine`
+                                }
+                                onClick={() => alternarVisibilidade(p)}
+                              >
+                                {p.oculto ? "Exibir" : "Ocultar"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="min-h-[44px] flex-1 sm:flex-none"
+                                disabled={
+                                  alternandoDisp && idAlternandoDisp === p.id
+                                }
+                                aria-label={
+                                  p.disponivel
+                                    ? `Marcar ${p.nome} como esgotado`
+                                    : `Disponibilizar ${p.nome}`
+                                }
+                                onClick={() => alternarDispon(p)}
+                              >
+                                {p.disponivel
+                                  ? "Marcar esgotado"
+                                  : "Disponibilizar"}
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </CardContent>
@@ -765,6 +1004,10 @@ export function ProdutosClient({
           </Accordion>
         </>
       )}
+
+      {/* [260] O diálogo de alcance. `loteUI.dialogo` é `null` até a prévia
+          do SERVIDOR chegar — não existe caminho que o monte antes. */}
+      {loteUI.dialogo}
 
       {/* Gestão de categorias de produto */}
       <GerenciarCategorias

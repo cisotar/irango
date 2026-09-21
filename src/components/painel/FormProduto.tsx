@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   schemaProduto,
   ehMensagemDescontoMaiorQuePreco,
+  type Visibilidade,
 } from "@/lib/validacoes/produto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import {
@@ -35,6 +37,8 @@ import {
 const ID_ERRO_PAR = "produto-erro-preco-desconto";
 /** Descrição de fuso compartilhada pelos quatro campos de prazo. */
 const ID_FUSO = "produto-desconto-fuso";
+/** Rótulo acessível do RadioGroup de D14 (§13.5). */
+const ID_VISIBILIDADE = "produto-visibilidade-rotulo";
 
 export type Categoria = {
   id: string;
@@ -54,6 +58,8 @@ export type ProdutoInicial = {
   foto_url?: string | null;
   /** Preservada no submit; não é campo editável pelo usuário neste form. */
   ordem?: number;
+  /** [261] D14 — "do menu" × "de cardápio". Ausente lê como `'menu'`. */
+  visibilidade?: Visibilidade;
   // ── Promoção (issue 235) ──────────────────────────────────────────────────
   // Os cinco campos chegam do SERVER COMPONENT, que já converteu os dois
   // prazos de `timestamptz` para a HORA LOCAL da loja (`projetarPromocaoDoPainel`).
@@ -96,6 +102,15 @@ export type FormProdutoProps = {
    * é o do servidor, nunca o do dispositivo.
    */
   fusoLojaRotulo: string;
+  /**
+   * [261] Os cardápios a que ESTE produto já pertence, lidos no servidor.
+   * Vazio (ou ausente, no caminho admin) ⇒ marcar "só no cardápio" seria
+   * RECUSADO pelo trigger de RN-14, e o form explica isso com a saída junto.
+   *
+   * É PREVIEW DE UX: nada aqui autoriza nada. A autoridade é o trigger da
+   * issue 245, e a mensagem legível é a da Server Action.
+   */
+  cardapiosDoProduto?: readonly { id: string; nome: string }[];
 };
 
 /**
@@ -118,6 +133,7 @@ export function FormProduto({
   onAtualizar,
   onEnviarFoto,
   fusoLojaRotulo,
+  cardapiosDoProduto = [],
 }: FormProdutoProps) {
   const router = useRouter();
   const ehEdicao = inicial?.id != null;
@@ -130,6 +146,11 @@ export function FormProduto({
   const [categoriaId, setCategoriaId] = useState(inicial?.categoria_id ?? "");
   const [disponivel, setDisponivel] = useState(inicial?.disponivel ?? true);
   const [oculto, setOculto] = useState(inicial?.oculto ?? false);
+  // [261] D14. O default é "menu" — o MESMO do zod e da coluna: form antigo e
+  // produto criado antes da migration continuam com o comportamento de hoje.
+  const [visibilidade, setVisibilidade] = useState<Visibilidade>(
+    inicial?.visibilidade ?? "menu",
+  );
   const [fotoUrl, setFotoUrl] = useState<string | null>(
     inicial?.foto_url ?? null,
   );
@@ -198,6 +219,7 @@ export function FormProduto({
       categoria_id: categoriaId ? categoriaId : null,
       disponivel,
       oculto,
+      visibilidade,
       foto_url: fotoUrl,
       ordem: inicial?.ordem ?? 0,
       // Os cinco vão SEMPRE juntos e nunca condicionalmente (RN-07): omitir
@@ -594,6 +616,101 @@ export function FormProduto({
           </p>
         </div>
       </div>
+
+      {/* ── [261] D14: onde este produto aparece (design §13.5) ────────────
+          `RadioGroup`, não `Switch`: são DUAS opções nomeadas, ambas legítimas
+          e permanentes — não é ligar/desligar. A copy é a que o lojista
+          consegue verificar sozinho; `'menu'`/`'cardapio'` nunca aparecem na
+          tela. A segunda linha de cada opção diz a CONSEQUÊNCIA, que é o que a
+          escolha realmente decide. */}
+      <fieldset className="space-y-3 rounded-lg border border-input p-3">
+        <legend
+          id={ID_VISIBILIDADE}
+          className="px-1 text-sm font-medium text-foreground"
+        >
+          Onde este produto aparece
+        </legend>
+
+        <RadioGroup
+          aria-labelledby={ID_VISIBILIDADE}
+          value={visibilidade}
+          onValueChange={(v) =>
+            setVisibilidade(v === "cardapio" ? "cardapio" : "menu")
+          }
+          className="gap-2"
+          disabled={enviando}
+        >
+          <Label
+            htmlFor="produto-visibilidade-menu"
+            className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-lg border border-input p-3"
+          >
+            <RadioGroupItem
+              id="produto-visibilidade-menu"
+              value="menu"
+              disabled={enviando}
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">
+                Aparece sempre no meu menu
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Continua vendendo mesmo quando um cardápio dele fecha ou expira.
+              </span>
+            </span>
+          </Label>
+
+          <Label
+            htmlFor="produto-visibilidade-cardapio"
+            className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-lg border border-input p-3"
+          >
+            <RadioGroupItem
+              id="produto-visibilidade-cardapio"
+              value="cardapio"
+              disabled={enviando}
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">
+                Só aparece quando um cardápio dele estiver aberto
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Fora da temporada, ele some da vitrine.
+              </span>
+            </span>
+          </Label>
+        </RadioGroup>
+
+        {/* 🔴 A opção NÃO some quando o produto não está em cardápio nenhum:
+            esconder o controle produziria a pior versão do erro — o lojista
+            procura um botão que sumiu. O form explica a recusa e oferece a
+            saída. A autoridade continua sendo o trigger de RN-14 e a mensagem
+            legível da Server Action. */}
+        {visibilidade === "cardapio" && cardapiosDoProduto.length === 0 && (
+          <div
+            role="alert"
+            className="flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-100 p-3 text-sm text-amber-900"
+          >
+            <p>
+              Este produto não está em nenhum cardápio. Escolha um cardápio
+              antes, ou deixe-o no menu.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-h-[44px]"
+              render={<Link href="/painel/cardapios" />}
+            >
+              Escolher um cardápio
+            </Button>
+          </div>
+        )}
+
+        {cardapiosDoProduto.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Está em: {cardapiosDoProduto.map((c) => c.nome).join(", ")}.
+          </p>
+        )}
+      </fieldset>
 
       <Button type="submit" className="w-full" disabled={enviando}>
         {enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

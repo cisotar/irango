@@ -4,12 +4,28 @@ import { notFound, redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
-import { buscarCardapioPorId } from "@/lib/supabase/queries/cardapios";
-import { atualizarCardapio } from "@/lib/actions/cardapio";
+import {
+  buscarCardapioPorId,
+  buscarCardapiosComProdutos,
+} from "@/lib/supabase/queries/cardapios";
+import { buscarProdutosDoLojista } from "@/lib/supabase/queries/produtos";
+import { buscarCategorias } from "@/lib/supabase/queries/categorias";
+import {
+  atualizarCardapio,
+  aplicarCardapioEmProdutos,
+  aplicarCardapioEmCategoria,
+  tirarDeCardapio,
+  preverLoteAction,
+} from "@/lib/actions/cardapio";
+import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
-import { rotuloAgora } from "@/lib/utils/descreverVigencia";
-import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
+import { rotuloAgora, descreverVigencia } from "@/lib/utils/descreverVigencia";
+import { cardapioAberto, visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import { FormVigencia } from "@/components/painel/FormVigencia";
+import {
+  SeletorProdutosDoCardapio,
+  type GrupoDoSeletor,
+} from "@/components/painel/SeletorProdutosDoCardapio";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +57,43 @@ export default async function CardapioDetalhePage({
 
   const agora = new Date();
 
+  // [260] A lista da loja inteira agrupada por categoria + quem já está neste
+  // cardápio. Duas idas ao banco em paralelo, nenhuma por produto: o índice
+  // `produto → cardápios` de `buscarCardapiosComProdutos` é o mesmo que a
+  // vitrine consome, e é dele que sai `noCardapio`.
+  const [produtos, categorias, { cardapiosPorProduto }] = await Promise.all([
+    buscarProdutosDoLojista(supabase, loja.id),
+    buscarCategorias(supabase, loja.id),
+    buscarCardapiosComProdutos(supabase, loja.id),
+  ]);
+
+  const grupos: GrupoDoSeletor[] = [
+    ...categorias.map((categoria) => ({
+      id: categoria.id as string | null,
+      nome: categoria.nome,
+      produtos: produtos.filter((p) => p.categoria_id === categoria.id),
+    })),
+    {
+      id: null,
+      nome: "Sem categoria",
+      produtos: produtos.filter((p) => p.categoria_id == null),
+    },
+  ]
+    .filter((grupo) => grupo.produtos.length > 0)
+    .map((grupo) => ({
+      id: grupo.id,
+      nome: grupo.nome,
+      produtos: grupo.produtos.map((p) => ({
+        id: p.id,
+        nome: p.nome,
+        // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
+        exclusivo: visibilidadeDe(p) === "cardapio",
+        noCardapio: (cardapiosPorProduto.get(p.id) ?? []).some(
+          (c) => c.id === cardapioId,
+        ),
+      })),
+    }));
+
   return (
     <div className="flex flex-col gap-4">
       <Link href="/painel/cardapios" className="text-sm underline">
@@ -59,6 +112,24 @@ export default async function CardapioDetalhePage({
         )}
         salvar={atualizarCardapio.bind(null, cardapioId)}
         voltarHref="/painel/cardapios"
+      />
+
+      <SeletorProdutosDoCardapio
+        cardapio={{
+          id: cardapio.id,
+          nome: cardapio.nome,
+          // A frase de vigência que o diálogo de confirmação mostra — redigida
+          // no SERVIDOR, com o fuso da loja (a mesma de `/painel/cardapios`).
+          descricao: descreverVigencia(cardapio, loja.timezone, agora),
+        }}
+        grupos={grupos}
+        acoes={{
+          aplicarEmProdutos: aplicarCardapioEmProdutos,
+          aplicarEmCategoria: aplicarCardapioEmCategoria,
+          tirarDeCardapio,
+          preverLote: preverLoteAction,
+          definirVisibilidade: definirVisibilidadeEmProdutos,
+        }}
       />
     </div>
   );

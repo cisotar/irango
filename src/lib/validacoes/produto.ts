@@ -25,6 +25,20 @@ const prazoLocal = z
   .nullable()
   .optional();
 
+/**
+ * [261] D14 — o domínio de `produtos.visibilidade`, declarado UMA vez. É o
+ * mesmo enum consumido pelo `FormProduto` (um produto), pela ação em lote
+ * (`schemaVisibilidadeEmLote`, N produtos) e pelas Server Actions dos dois
+ * mundos: não existe segunda lista de valores válidos no projeto.
+ *
+ * `'menu'` × `'cardapio'` são jargão de schema e NÃO aparecem na tela — a copy
+ * que o lojista lê é a de `plan/design-promocoes-e-vigencia.md` §13.5.
+ */
+export const visibilidadeProduto = z.enum(["menu", "cardapio"]);
+
+/** O tipo estreito de D14, para quem consome sem passar pelo parse. */
+export type Visibilidade = z.infer<typeof visibilidadeProduto>;
+
 // Campos do produto. O `superRefine` de desconto vive logo abaixo, separado,
 // para que este objeto continue legível (e o diff das colunas novas, mínimo).
 const camposProduto = z.object({
@@ -39,6 +53,11 @@ const camposProduto = z.object({
   // espelhando `disponivel`: o form sempre envia o valor explícito; o DEFAULT
   // false vive no banco (RN-7). Separado de `disponivel` (RN-6-b).
   oculto: z.boolean(),
+  // [261] D14 — ONDE o produto aparece. `.default("menu")` é o MESMO default
+  // da coluna (migration 20260920130000): form antigo e payload sem o campo
+  // continuam produzindo o comportamento de hoje, nunca um sumiço silencioso.
+  // Eixo INDEPENDENTE de `oculto` e de `disponivel` — ver RN-05/D14.
+  visibilidade: visibilidadeProduto.default("menu"),
   ordem: z.number().int().min(0),
   // foto_url (issue 072): camada autoritativa anti-injeção de URL — renderizada
   // como <Image src> na vitrine pública. `preprocess` normaliza "" (form sem
@@ -170,6 +189,32 @@ export const schemaReordenacaoCategorias = z
   .refine((ids) => new Set(ids).size === ids.length, {
     message: "Ids repetidos na reordenação",
   });
+
+/**
+ * [261] D14 em LOTE — a forma do payload da barra de ação de `/painel/produtos`.
+ *
+ * Herda o contrato de `schemaLoteDeProdutos` (`lib/validacoes/cardapio.ts`),
+ * que é o mesmo de `schemaReordenacaoCategorias`: `.strict()` (um `loja_id`
+ * pendurado no payload não sobrevive ao parse — a loja é SEMPRE derivada de
+ * `auth.uid()`), `z.guid()` em todo id, `.max(200)` de cardinalidade
+ * (CWE-770), `.min(1)` porque escrever em zero produto é chamada sem efeito, e
+ * sem duplicata (a seleção é um CONJUNTO).
+ *
+ * `visibilidade` reusa `visibilidadeProduto`: o lote não tem uma segunda
+ * definição do domínio de D14.
+ */
+export const schemaVisibilidadeEmLote = z
+  .object({
+    produto_ids: z
+      .array(z.guid())
+      .min(1)
+      .max(200)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Ids repetidos na seleção",
+      }),
+    visibilidade: visibilidadeProduto,
+  })
+  .strict();
 
 /**
  * Mensagem literal de D10 (M7 do design §8.2): nomeia os DOIS números e as
