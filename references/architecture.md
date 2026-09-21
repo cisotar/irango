@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.3.3 | **Atualizado:** 2026-09-21
+**Versão:** 0.3.4 | **Atualizado:** 2026-09-21
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -396,4 +396,7 @@ const items = order.order_items
 | `CAMINHO_PAINEL = "/painel/cardapio"` (`src/lib/actions/produto.ts:25`) aponta para rota que não existe | os 17 `revalidatePath` que o usam (9 em `produto.ts`, 8 em `opcional.ts`) são no-op silencioso; as telas só atualizam via `router.refresh()` do client. Corrigir muda o cache de 17 actions | achado na issue 175 — issue própria a abrir |
 | `atualizarCategoria`/`removerCategoria` (`produto.ts`) não escopam por `loja_id` explícito, confiam só na RLS | não é vulnerabilidade — PoC da auditoria da issue 175 provou `affectedRows: 0` em categoria alheia (o `USING` da RLS torna a linha invisível) — mas é defeito de qualidade: a UI mostra sucesso numa escrita que não ocorreu, e o `loja_id: loja.id` que `atualizarCategoria` grava vira sequestro de categoria alheia no dia em que a RLS for afrouxada | issue 178 |
 | `opcionais_categorias.ordem` com papel reduzido | desde a issue 208 só ordena a Biblioteca de opcionais no painel — deixou de ser a ordem da vitrine (`categoria_produto_opcionais.ordem` assumiu isso). Não é removida (exigiria mexer no CRUD de hoje); candidata a limpeza | sem issue aberta — decisão registrada na spec v0.2.0 |
+| Leitura pública de `cardapio_produtos` não filtra `produtos.oculto` | policy `cardapio_produtos_leitura_publica` exige loja e cardápio ativos, mas não confere `produtos.oculto`; anon aprende `produto_id` + `dias_semana` de produto oculto (sem nome/preço/foto, que não têm SELECT público desde a issue 250) — classe pré-existente, não regressão da vigência por item | issue 281 |
+| `EscopoLoja.atualizar`/`atualizarPorChave` barram `loja_id`/`id`/colunas da chave só por TIPO | sem strip em runtime (ao contrário de `atualizarLoja`, que já tem); um caller futuro com cast (`as never`) re-parenteia a linha para outro tenant. Sem vetor a partir do cliente hoje — zod `.strict()` valida antes | issue 282 |
+| `definirDiasDoVinculo`/`definirDiasDoVinculoAdmin` recusam só em `count === 0` | `postgrest-js` devolve `count: null`/`NaN` quando falta o header `Content-Range`; `unique(cardapio_id, produto_id)` garante ≤ 1 linha, então `count !== 1` é a forma fail-closed exata (precedente: `admin-status.ts`) | issue 283 |
 | `createServerClient` (`lib/supabase/server.ts`) sem o genérico `Database` | client do lojista destipado — `.rpc`/`.select`/`.insert` sem checagem do `tsc`; não é vulnerabilidade (PostgREST é fail-closed nessa classe de erro), é perda de sinal de CI, evidenciado na issue 208 (coluna `ordem` nova só quebrou `tsc` no caminho admin, tipado, não no do lojista) | issue 212 — fazer só depois do `db push` da 208 |
