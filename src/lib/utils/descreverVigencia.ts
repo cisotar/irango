@@ -411,3 +411,58 @@ function cortar(texto: string, maximo: number): string {
   if (texto.length <= maximo) return texto;
   return `${texto.slice(0, maximo - 1).trimEnd()}…`;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Rótulos do PAINEL (256, 259) — a terceira e a quarta superfície de M6
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * [256] O rótulo do badge de cardápio FECHADO que ainda tem volta:
+ * `Abre hoje às 11:00` · `Abre sábado às 11:00` · `Abre em 23/12 às 11:00`.
+ *
+ * Mora AQUI e não no `.tsx` pelo mesmo motivo de M6: a tabela de nomes de dia
+ * tem um dono só. Dentro da semana o nome do dia é mais legível; além dela
+ * "sábado" seria ambíguo (qual sábado?), então vai a data — a mesma escada de
+ * `textoDoDestaque`.
+ *
+ * `abertura` vem de `proximaAbertura` (RN-07) e `agora` é injetado: nenhum
+ * relógio é lido aqui dentro.
+ */
+export function rotuloAbreQuando(
+  abertura: Date,
+  agora: Date,
+  timezone: string,
+): string {
+  const { data, hora } = partesLocais(abertura.toISOString(), timezone);
+
+  if (diaNoFuso(abertura, timezone) === diaNoFuso(agora, timezone)) {
+    return `Abre hoje às ${hora}`;
+  }
+
+  const faltam = abertura.getTime() - agora.getTime();
+  if (faltam > 0 && faltam <= 7 * DIA_MS) {
+    const { diaIndex } = partesNoFusoCompletas(abertura, timezone);
+    return `Abre ${DIAS_LONGOS[diaIndex]} às ${hora}`;
+  }
+  return `Abre em ${data} às ${hora}`;
+}
+
+/**
+ * [259] A linha "Agora:" da prévia (design §9.4), no fuso da LOJA:
+ * `Agora (sáb, 19/09, 13:04): APARECENDO`.
+ *
+ * `aparecendo` é o veredito de `cardapioAberto` calculado NO SERVIDOR. Esta
+ * função não decide nada — só escreve a frase. Por design §9.4 item 3, a linha
+ * só existe para a configuração SALVA: derivá-la do relógio do browser diria
+ * ao lojista algo que o cliente não vê.
+ */
+export function rotuloAgora(
+  agora: Date,
+  timezone: string,
+  aparecendo: boolean,
+): string {
+  const { diaIndex } = partesNoFusoCompletas(agora, timezone);
+  const { data, hora } = partesLocais(agora.toISOString(), timezone);
+  const veredito = aparecendo ? "APARECENDO" : "NÃO APARECE";
+  return `Agora (${DIAS_CURTOS[diaIndex]}, ${data}, ${hora}): ${veredito}`;
+}
