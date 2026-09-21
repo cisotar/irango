@@ -107,6 +107,11 @@ export function CardapioAdminClient({
       // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
       cardapiosPorProduto={cardapiosPorProduto}
+      // `null` DE PROPÓSITO: `/admin/assinantes/[lojaId]/cardapios` não existe
+      // (issue 256). Com um href fixo de `/painel/...` o admin — que edita a
+      // loja de um terceiro — cairia no painel da PRÓPRIA loja dele e criaria
+      // o cardápio na loja errada. Sem rota ⇒ sem link, nunca um link mentiroso.
+      hrefCardapios={null}
       categoriasOpcional={categoriasOpcional}
       // [217] A biblioteca de itens e as linhas de associação alimentam o
       // cartão dentro do modal. Nenhuma query nova no admin: o agregado

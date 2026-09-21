@@ -118,6 +118,19 @@ export type FormProdutoProps = {
    * issue 245, e a mensagem legível é a da Server Action.
    */
   cardapiosDoProduto: readonly { id: string; nome: string }[];
+  /**
+   * Destino da tela de cardápios NESTE mundo, ou `null` quando o mundo não tem
+   * uma. Regra de roteamento não mora em componente de apresentação — é o
+   * mesmo contrato do `NavPainel` (href vem do layout) e da issue 160: prop
+   * OBRIGATÓRIA e SEM default. O painel do lojista passa `/painel/cardapios`;
+   * o hub admin passa `null`, porque `/admin/assinantes/[lojaId]/cardapios`
+   * não existe (issue 256).
+   *
+   * Um default aqui mandaria o admin — que edita a loja de um TERCEIRO — para
+   * o painel da PRÓPRIA loja dele, e o cardápio nasceria na loja errada.
+   * `null` ⇒ nenhum link é renderizado: o aviso continua, sem saída falsa.
+   */
+  hrefCardapios: string | null;
 };
 
 /**
@@ -141,6 +154,7 @@ export function FormProduto({
   onEnviarFoto,
   fusoLojaRotulo,
   cardapiosDoProduto,
+  hrefCardapios,
 }: FormProdutoProps) {
   const router = useRouter();
   const ehEdicao = inicial?.id != null;
@@ -704,15 +718,24 @@ export function FormProduto({
               Este produto não está em nenhum cardápio. Escolha um cardápio
               antes, ou deixe-o no menu.
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="min-h-[44px]"
-              render={<Link href="/painel/cardapios" />}
-            >
-              Escolher um cardápio
-            </Button>
+            {/* Sem rota de cardápios neste mundo (hub admin) NÃO há botão:
+                um link para o painel do lojista levaria o admin à loja DELE.
+                O aviso permanece — o que muda é a saída, que vira instrução. */}
+            {hrefCardapios === null ? (
+              <p className="text-xs">
+                Cardápios são gerenciados pelo painel do lojista.
+              </p>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="min-h-[44px]"
+                render={<Link href={hrefCardapios} />}
+              >
+                Escolher um cardápio
+              </Button>
+            )}
           </div>
         )}
 

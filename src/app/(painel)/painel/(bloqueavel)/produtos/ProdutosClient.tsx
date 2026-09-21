@@ -170,6 +170,18 @@ export type ProdutosClientProps = {
    */
   cardapiosPorProduto: CardapiosPorProduto;
   /**
+   * Destino da tela de cardápios NESTE mundo, ou `null` quando ele não tem uma.
+   * OBRIGATÓRIA e sem default (issue 160, e o mesmo contrato do `NavPainel`:
+   * href vem de quem conhece a rota, nunca do componente de apresentação).
+   * O painel do lojista passa `/painel/cardapios`; o hub admin passa `null`,
+   * porque `/admin/assinantes/[lojaId]/cardapios` não existe (issue 256) e um
+   * link fixo mandaria o admin para o painel da PRÓPRIA loja dele.
+   *
+   * `null` ⇒ some a saída do kebab que depende da rota, e o `FormProduto`
+   * troca o botão por instrução. Repassada, não inferida.
+   */
+  hrefCardapios: string | null;
+  /**
    * [264/RN-12] `produto.id → por que ele sumiu da vitrine`, derivado no Server
    * Component pelo MESMO predicado de `/painel/cardapios`. Esparso: só o
    * produto que de fato sumiu tem entrada, e o resto da lista não ganha ruído.
@@ -292,6 +304,7 @@ export function ProdutosClient({
   fusoLojaRotulo,
   lote,
   cardapiosPorProduto,
+  hrefCardapios,
   sumicos = {},
   acoes,
 }: ProdutosClientProps) {
@@ -622,6 +635,8 @@ export function ProdutosClient({
       onAtualizar={acoes.atualizarProduto}
       onEnviarFoto={acoes.enviarFotoProduto}
       fusoLojaRotulo={fusoLojaRotulo}
+      // Repasse puro: quem sabe a rota é a page/wrapper de cada mundo.
+      hrefCardapios={hrefCardapios}
       // [261] Preview de UX para a recusa de RN-14: o form explica e oferece a
       // saída quando o produto não está em cardápio nenhum. A autoridade segue
       // sendo o trigger + a mensagem da Server Action.
@@ -985,11 +1000,11 @@ export function ProdutosClient({
                                         devolver ao menu mexe só NESTE produto —
                                         o sistema nunca converte `visibilidade`
                                         por conta própria. */}
-                                    {sumicos[p.id] && (
+                                    {sumicos[p.id] && hrefCardapios !== null && (
                                       <MenuItem
                                         className="min-h-[44px]"
                                         onClick={() =>
-                                          router.push("/painel/cardapios")
+                                          router.push(hrefCardapios)
                                         }
                                       >
                                         {rotuloReligarOuEstender(

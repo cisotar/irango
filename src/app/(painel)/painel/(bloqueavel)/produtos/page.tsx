@@ -179,6 +179,9 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       // [261] LEITURA, não ação: vive fora do `lote` porque o hub admin também
       // a recebe (o `FormProduto` depende dela para não mentir sobre cardápio).
       cardapiosPorProduto={cardapiosPorProduto}
+      // A rota de cardápios é conhecida AQUI, não no componente: no painel do
+      // lojista ela existe; no hub admin, não (o wrapper admin passa `null`).
+      hrefCardapios="/painel/cardapios"
       // [264] LEITURA, preview de UX: o produto que sumiu da vitrine e o
       // cardápio a quem o sumiço é atribuído. Nenhuma decisão depende disto.
       sumicos={sumicos}
