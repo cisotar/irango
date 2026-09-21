@@ -391,19 +391,40 @@ describe("removerCardapio (RN-14)", () => {
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).not.toContain("23000");
     expect(JSON.stringify(r)).not.toContain("produto exclusivo sem cardapio:");
-    expect(r).toMatchObject({ exclusivos: 1 });
-    expect(String((r as { erro: string }).erro)).toContain(
-      "Converta esse produto para o menu",
-    );
+    // Sem NÚMERO: o backstop só dispara numa corrida no COMMIT, depois de a
+    // leitura ter devolvido zero órfãos — ali o servidor não tem contagem
+    // confiável, e o literal `1` de antes era ficção (o lojista lia "1
+    // produto" mesmo com três orfanados). `exclusivos: 0` ⇒ o diálogo não
+    // oferece um botão "converter os N" com N inventado.
+    expect(r).toMatchObject({ exclusivos: 0 });
+    const erro = String((r as { erro: string }).erro);
+    expect(erro).toContain("Converta esses produtos para o menu");
+    expect(erro).not.toMatch(/\d/);
   });
 });
 
 // ═══════════════════════════════════════ converterExclusivosParaMenu ════════
 
 describe("converterExclusivosParaMenu", () => {
-  it("escreve só visibilidade = 'menu', escopado por loja e pelos vinculados ao cardápio", async () => {
+  /** As três leituras de `produtosQueFicariamOrfaos`, nesta ordem. */
+  function leiturasDeOrfaos(
+    vinculados: string[],
+    exclusivos: string[],
+    vinculos: Array<{ produto_id: string; cardapio_id: string }>,
+  ): Array<{ data: unknown; error: unknown }> {
+    return [
+      { data: vinculados.map((id) => ({ produto_id: id })), error: null },
+      { data: exclusivos.map((id) => ({ id })), error: null },
+      { data: vinculos, error: null },
+    ];
+  }
+
+  it("escreve só visibilidade = 'menu', escopado por loja e pelos que ficariam órfãos", async () => {
     fila = [
-      { data: [{ produto_id: P1 }, { produto_id: P2 }], error: null },
+      ...leiturasDeOrfaos([P1, P2], [P1, P2], [
+        { produto_id: P1, cardapio_id: CARDAPIO },
+        { produto_id: P2, cardapio_id: CARDAPIO },
+      ]),
       { data: null, error: null },
     ];
     expect(await converterExclusivosParaMenu(CARDAPIO)).toEqual({ ok: true });
@@ -419,10 +440,102 @@ describe("converterExclusivosParaMenu", () => {
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
+  /**
+   * O bug da issue: o UPDATE usava TODOS os vinculados, então o exclusivo que
+   * também está em OUTRO cardápio (P1) virava `menu` e passava a aparecer o
+   * ano inteiro — sem estar em cardápio sazonal nenhum, e sem o lojista ter
+   * pedido. O escopo agora é o MESMO da recusa: só quem ficaria órfão.
+   */
+  it("NÃO converte o exclusivo que também está em outro cardápio", async () => {
+    fila = [
+      ...leiturasDeOrfaos([P1, P2], [P1, P2], [
+        { produto_id: P1, cardapio_id: CARDAPIO },
+        { produto_id: P1, cardapio_id: OUTRO_CARDAPIO },
+        { produto_id: P2, cardapio_id: CARDAPIO },
+      ]),
+      { data: null, error: null },
+    ];
+    expect(await converterExclusivosParaMenu(CARDAPIO)).toEqual({ ok: true });
+
+    const w = escritas()[0];
+    expect(w.filtros).toEqual([
+      ["loja_id", LOJA_ID],
+      ["visibilidade", "cardapio"],
+      ["id", [P2]],
+    ]);
+  });
+
+  /**
+   * A prova de ponta a ponta do número: o mesmo estado de banco visto pelas
+   * duas actions. A recusa anuncia "1 produto", o botão repete esse 1 — e a
+   * conversão escreve em exatamente 1 id, o mesmo.
+   */
+  it("converte exatamente o que a recusa da remoção anunciou", async () => {
+    const vinculos = [
+      { produto_id: P1, cardapio_id: CARDAPIO },
+      { produto_id: P1, cardapio_id: OUTRO_CARDAPIO },
+      { produto_id: P2, cardapio_id: CARDAPIO },
+    ];
+
+    fila = leiturasDeOrfaos([P1, P2], [P1, P2], vinculos);
+    const recusa = await removerCardapio(CARDAPIO);
+    expect(recusa).toMatchObject({ ok: false, exclusivos: 1 });
+    expect(String((recusa as { erro: string }).erro)).toContain("1 produto só");
+    expect(escritas()).toHaveLength(0);
+
+    ops = [];
+    fila = [...leiturasDeOrfaos([P1, P2], [P1, P2], vinculos), {
+      data: null,
+      error: null,
+    }];
+    expect(await converterExclusivosParaMenu(CARDAPIO)).toEqual({ ok: true });
+
+    const w = escritas()[0];
+    expect(w.filtros.at(-1)).toEqual(["id", [P2]]);
+  });
+
   it("cardápio sem vínculo nenhum não escreve nada", async () => {
     fila = [{ data: [], error: null }];
     expect(await converterExclusivosParaMenu(CARDAPIO)).toEqual({ ok: true });
     expect(escritas()).toHaveLength(0);
+  });
+
+  it("cardápio só com produtos do menu (nenhum exclusivo) não escreve nada", async () => {
+    fila = [
+      { data: [{ produto_id: P1 }], error: null },
+      { data: [], error: null },
+    ];
+    expect(await converterExclusivosParaMenu(CARDAPIO)).toEqual({ ok: true });
+    expect(escritas()).toHaveLength(0);
+  });
+});
+
+// ══════════════════════════════════════════ id fora de forma (zod guid) ════
+
+/**
+ * As quatro actions de ENTIDADE recebem o `id` como escalar e iam direto ao
+ * `.eq()`. O contrato declarado no cabeçalho do módulo — e já cumprido pelas
+ * actions de LOTE — é parse ANTES de qualquer I/O: lixo não vira ida ao banco.
+ */
+describe("id fora de forma não chega ao banco", () => {
+  const LIXO = "nao-e-um-guid";
+
+  it("nenhuma das quatro actions abre client, lê a loja ou escreve", async () => {
+    const resultados = [
+      await atualizarCardapio(LIXO, {
+        nome: "X",
+        modo: "recorrente",
+        dias_semana: [0],
+      }),
+      await ligarDesligarCardapio(LIXO, true),
+      await removerCardapio(LIXO),
+      await converterExclusivosParaMenu(LIXO),
+    ];
+
+    expect(resultados.every((r) => r.ok === false)).toBe(true);
+    expect(buscarLojaDoDono).not.toHaveBeenCalled();
+    expect(ops).toHaveLength(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
 

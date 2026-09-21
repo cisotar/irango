@@ -51,6 +51,10 @@ export default async function HubLojaLayout({
     basePath: `/admin/assinantes/${lojaId}`,
     voltarHref: "/admin",
     voltarRotulo: "Voltar ao hub admin",
+    // O hub admin não tem `cardapios/page.tsx`: o item existe para o lojista e
+    // aqui nasceria 404. Quem sabe quais rotas existem sob esta base é este
+    // layout, não o NavPainel — mesma regra do `voltarHref`.
+    rotasAusentes: ["cardapios"],
   };
 
   return (

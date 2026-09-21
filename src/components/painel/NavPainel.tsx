@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BadgeCheck,
+  CalendarRange,
   ChevronDown,
   ClipboardList,
   Clock,
@@ -94,6 +95,17 @@ export type ContextoNav = {
   voltarHref?: string;
   /** Rótulo do link de volta. Default "Voltar". */
   voltarRotulo?: string;
+  /**
+   * Sufixos de rota (relativos ao `basePath`) que NÃO existem sob esta base —
+   * o item é OMITIDO em vez de nascer quebrado. Ex.: `["cardapios"]` no hub
+   * admin, que não tem `/admin/assinantes/[lojaId]/cardapios`.
+   *
+   * É DADO passado pelo layout, nunca inferido do `basePath`: quem sabe quais
+   * `page.tsx` existem é a rota, não o componente de apresentação — a mesma
+   * regra que `voltarHref` já segue. Default `[]` (o painel do lojista tem
+   * todas as rotas do menu).
+   */
+  rotasAusentes?: string[];
 };
 
 /**
@@ -135,7 +147,9 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
     ],
   };
 
-  return [
+  const ausentes = new Set(contexto.rotasAusentes ?? []);
+
+  const itens: ItemNav[] = [
     { href: base, rotulo: "Dashboard", icone: LayoutDashboard },
     { href: `${base}/pedidos`, rotulo: "Pedidos", icone: ClipboardList },
     {
@@ -152,9 +166,16 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
         },
       ],
     },
+    {
+      href: `${base}/cardapios`,
+      rotulo: "Cardápios",
+      icone: CalendarRange,
+    },
     { href: `${base}/cupons`, rotulo: "Cupons", icone: Ticket },
     itemConfiguracoes,
   ];
+
+  return itens.filter((item) => !ausentes.has(item.href.slice(base.length + 1)));
 }
 
 /**

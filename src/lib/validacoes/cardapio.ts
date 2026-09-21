@@ -54,6 +54,14 @@ export const schemaPreviaDeLote = z.union([
   z.object({ categoria_id: z.guid() }).strict(),
 ]);
 
+/**
+ * O `id` da ENTIDADE cardápio, quando ele chega sozinho (sem objeto de
+ * payload): `atualizarCardapio`, `ligarDesligarCardapio`, `removerCardapio` e
+ * `converterExclusivosParaMenu`. Mesmo contrato das actions de lote — lixo não
+ * vira ida ao banco —, só que aqui o argumento é um escalar.
+ */
+export const schemaIdCardapio = z.guid();
+
 export type LoteDeProdutos = z.infer<typeof schemaLoteDeProdutos>;
 export type LoteDeCategoria = z.infer<typeof schemaLoteDeCategoria>;
 export type PreviaDeLote = z.infer<typeof schemaPreviaDeLote>;
