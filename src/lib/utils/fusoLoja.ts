@@ -14,6 +14,15 @@ export type PartesNoFuso = {
   minutos: number;
 };
 
+/**
+ * O mesmo par de `PartesNoFuso` mais o dia do mês local (1..31), exigido pelo
+ * eixo `dias_mes` da vigência de cardápio (RN-02).
+ */
+export type PartesNoFusoCompletas = PartesNoFuso & {
+  /** Dia do mês local: 1..31. */
+  diaDoMes: number;
+};
+
 // Mapa do weekday "short" en-US do Intl para o índice 0=dom..6=sab.
 const MAPA_DIA: Record<string, number> = {
   Sun: 0,
@@ -27,14 +36,22 @@ const MAPA_DIA: Record<string, number> = {
 
 /**
  * Quebra o instante UTC `agora` no fuso `timezone`, devolvendo o índice do
- * dia-da-semana (0=dom..6=sab) e os minutos desde a meia-noite local.
- * Usa Intl para não depender do fuso do runtime — função PURA: o instante
- * vem exclusivamente de `agora`.
+ * dia-da-semana (0=dom..6=sab), o dia do mês (1..31) e os minutos desde a
+ * meia-noite local. Usa Intl para não depender do fuso do runtime — função
+ * PURA: o instante vem exclusivamente de `agora`.
+ *
+ * É a ÚNICA leitura de calendário local do projeto: `partesNoFuso` é a fatia
+ * histórica dela (dia-da-semana + minutos, o que `lojaAberta` consome) e a
+ * vigência de cardápio consome esta, com o dia do mês. Nenhuma segunda cópia.
  */
-export function partesNoFuso(agora: Date, timezone: string): PartesNoFuso {
+export function partesNoFusoCompletas(
+  agora: Date,
+  timezone: string,
+): PartesNoFusoCompletas {
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     weekday: "short",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -44,13 +61,23 @@ export function partesNoFuso(agora: Date, timezone: string): PartesNoFuso {
     partes.find((p) => p.type === tipo)?.value ?? "";
 
   const diaIndex = MAPA_DIA[get("weekday")] ?? 0;
+  const diaDoMes = Number(get("day"));
 
   let hora = Number(get("hour"));
   // Intl com hour12:false pode emitir "24" para meia-noite em alguns runtimes.
   if (hora === 24) hora = 0;
   const minuto = Number(get("minute"));
 
-  return { diaIndex, minutos: hora * 60 + minuto };
+  return { diaIndex, diaDoMes, minutos: hora * 60 + minuto };
+}
+
+/**
+ * Dia-da-semana local e minutos desde a meia-noite local — a fatia de
+ * `partesNoFusoCompletas` que `lojaAberta` consome desde a issue 222.
+ */
+export function partesNoFuso(agora: Date, timezone: string): PartesNoFuso {
+  const { diaIndex, minutos } = partesNoFusoCompletas(agora, timezone);
+  return { diaIndex, minutos };
 }
 
 /** Converte "HH:MM" em minutos desde a meia-noite. */
