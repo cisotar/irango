@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { FormProduto } from "@/components/painel/FormProduto";
+import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 
 /**
  * TRAVA DE ROTEAMENTO — o destino de cardápios é INJETADO, nunca escrito no
@@ -12,8 +13,12 @@ import { FormProduto } from "@/components/painel/FormProduto";
  * O bug que originou esta trava: no hub admin, editando a loja de um TERCEIRO,
  * "Escolher um cardápio" levava a `/painel/cardapios` — o painel da loja do
  * ADMIN logado. Completar o formulário criaria o cardápio na loja errada.
- * `/admin/assinantes/[lojaId]/cardapios` não existe (issue 256), então não há
- * href correto a inferir: o mundo admin passa `null` e o link some.
+ *
+ * [269] A rota admin passou a existir, então o mundo admin injeta
+ * `/admin/assinantes/<lojaId>/cardapios` em vez de `null` — e a trava fica MAIS
+ * necessária, não menos: agora há dois destinos legítimos, e escrever qualquer
+ * um deles dentro de código compartilhado manda um dos mundos para a loja
+ * errada. `null` continua sendo contrato válido (mundo sem rota de cardápios).
  *
  * Mesmo contrato do `NavPainel` (href vem do layout) e da issue 160 (prop
  * obrigatória, sem default): regra de roteamento não mora em componente de
@@ -42,12 +47,19 @@ function arquivosDeFonte(dir: string): string[] {
 
 /**
  * Os arquivos vigiados: tudo em `components/painel/**` (reusado pelo hub admin
- * via `CardapioAdminClient`) mais o `ProdutosClient`, que mora na árvore do
- * painel mas é montado pelos DOIS mundos.
+ * via `CardapioAdminClient`), o `ProdutosClient`, que mora na árvore do painel
+ * mas é montado pelos DOIS mundos, e — desde a 269 — a pasta `cardapios/` do
+ * lojista INTEIRA: `CardapiosClient` é montado também pelo hub admin, e as
+ * páginas ao lado dele são o lugar mais provável para um quarto link fixo
+ * aparecer. A base de rota vem de `@/lib/utils/rotasCardapios`, fora das duas
+ * árvores, para que nenhum mundo herde a do outro por descuido.
  */
 function vigiados(): { caminho: string }[] {
   return [
     ...arquivosDeFonte(join(RAIZ, "components/painel")),
+    ...arquivosDeFonte(
+      join(RAIZ, "app/(painel)/painel/(bloqueavel)/cardapios"),
+    ),
     join(RAIZ, "app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient.tsx"),
   ].map((caminho) => ({ caminho }));
 }
@@ -114,5 +126,18 @@ describe("FormProduto — saída do aviso de RN-14 por mundo", () => {
     const html = renderFormAdmin("/painel/cardapios");
     expect(html).toContain('href="/painel/cardapios"');
     expect(html).toContain("Escolher um cardápio");
+  });
+
+  /**
+   * [269] O mundo admin deixou de passar `null`: a rota da LOJA-ALVO existe.
+   * Este caso trava o outro lado da injeção — o botão tem de aparecer e apontar
+   * para `/admin/assinantes/<lojaId>/cardapios`, nunca para o painel do admin.
+   */
+  it("com a rota ADMIN da loja-alvo, o botão aparece apontando para ela", () => {
+    const href = rotaCardapiosAdmin("loja-alvo");
+    const html = renderFormAdmin(href);
+    expect(html).toContain(`href="${href}"`);
+    expect(html).toContain("Escolher um cardápio");
+    expect(html).not.toContain("/painel/cardapios");
   });
 });

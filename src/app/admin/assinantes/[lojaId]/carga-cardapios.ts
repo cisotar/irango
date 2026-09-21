@@ -7,8 +7,15 @@ import { verificarAdminSaaS } from "@/lib/auth/admin";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
   buscarCardapiosComProdutos,
+  buscarCardapiosDoPainel,
   type CardapioDaLoja,
+  type CardapioDoPainel,
+  type ProdutoVinculado,
 } from "@/lib/supabase/queries/cardapios";
+import {
+  buscarLojaAdminPorId,
+  type LojaCompleta,
+} from "@/lib/supabase/queries/lojas";
 
 /**
  * [Auditoria 260/261] Os cardápios da LOJA-ALVO para o hub admin.
@@ -46,4 +53,47 @@ export async function carregarCardapiosAdmin(lojaId: string): Promise<{
   const svc = createServiceClient();
 
   return buscarCardapiosComProdutos(svc, idValidado);
+}
+
+/**
+ * [269 · fase 5] A LISTA de cardápios da loja-alvo para
+ * `/admin/assinantes/[lojaId]/cardapios` — o gêmeo admin de
+ * `/painel/cardapios`.
+ *
+ * Devolve a loja junto porque o badge, a frase de vigência e a contagem de
+ * "produtos escondidos" são derivados no SERVIDOR com o relógio do servidor e o
+ * fuso da LOJA-ALVO: o admin edita em nome do lojista e não pode ver "Aberto
+ * agora" por outro relógio.
+ *
+ * Mesma ordem fail-closed de `carga.ts` (ver `carregarCardapiosAdmin` acima):
+ * `lojaId` não-UUID → `notFound()` ANTES de qualquer leitura; prova de admin
+ * antes de elevar; loja-alvo inexistente → `notFound()`. Sob `service_role`
+ * (BYPASSRLS) o isolamento é o `.eq("loja_id")` explícito das queries.
+ */
+export async function carregarCardapiosDoPainelAdmin(lojaId: string): Promise<{
+  loja: LojaCompleta;
+  cardapios: CardapioDoPainel[];
+  produtos: ProdutoVinculado[];
+  cardapiosPorProduto: Map<string, CardapioDaLoja[]>;
+}> {
+  const validacao = validarLojaIdAdmin(lojaId);
+  if (!validacao.ok) {
+    notFound();
+  }
+  const idValidado = validacao.lojaId;
+
+  // Prova de admin ANTES de elevar a service_role; a falha PROPAGA.
+  await verificarAdminSaaS();
+
+  const svc = createServiceClient();
+
+  const loja = await buscarLojaAdminPorId(svc, idValidado);
+  if (loja == null) {
+    notFound();
+  }
+
+  const { cardapios, produtos, cardapiosPorProduto } =
+    await buscarCardapiosDoPainel(svc, idValidado);
+
+  return { loja, cardapios, produtos, cardapiosPorProduto };
 }

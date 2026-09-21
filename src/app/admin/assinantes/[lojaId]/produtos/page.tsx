@@ -9,7 +9,11 @@ import {
 } from "@/lib/utils/promocaoPainel";
 import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
-import type { CardapiosPorProduto } from "@/components/painel/contrato-lote";
+import { descreverVigencia } from "@/lib/utils/descreverVigencia";
+import type {
+  CardapioParaLote,
+  CardapiosPorProduto,
+} from "@/components/painel/contrato-lote";
 import { CardapioAdminClient } from "./CardapioAdminClient";
 
 /**
@@ -56,6 +60,17 @@ export default async function CardapioAdminPage({
     ]),
   );
 
+  // [269] Os destinos da barra de seleção em lote, com a frase de vigência
+  // redigida AQUI (servidor, fuso da loja-alvo) — o browser nunca redige janela
+  // de vigência. Mesma projeção de `/painel/produtos`.
+  const cardapiosDoLote: CardapioParaLote[] = cardapiosDaLoja.cardapios.map(
+    (c) => ({
+      id: c.id,
+      nome: c.nome,
+      descricao: descreverVigencia(c, loja.timezone, agora),
+    }),
+  );
+
   // O MESMO `agora` do bloco acima e o fuso da LOJA-ALVO: o admin edita em nome
   // do lojista e não pode ver "aberto agora" por outro relógio.
   const cardapiosPorProduto: CardapiosPorProduto = Object.fromEntries(
@@ -80,6 +95,7 @@ export default async function CardapioAdminPage({
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
+      cardapiosDoLote={cardapiosDoLote}
       cardapiosPorProduto={cardapiosPorProduto}
       promocoes={promocoes}
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}

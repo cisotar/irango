@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { criarCardapio } from "@/lib/actions/cardapio";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
+import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
 import { FormVigencia } from "@/components/painel/FormVigencia";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export default async function NovoCardapioPage(): Promise<ReactElement> {
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href="/painel/cardapios" className="text-sm underline">
+      <Link href={ROTA_CARDAPIOS_LOJISTA} className="text-sm underline">
         Voltar para cardápios
       </Link>
       <h1 className="text-xl font-semibold">Novo cardápio</h1>
@@ -41,7 +42,7 @@ export default async function NovoCardapioPage(): Promise<ReactElement> {
         agoraLocal={horaLocalNoFuso(agora.toISOString(), loja.timezone)}
         linhaAgora={null}
         salvar={criarCardapio}
-        voltarHref="/painel/cardapios"
+        voltarHref={ROTA_CARDAPIOS_LOJISTA}
       />
     </div>
   );

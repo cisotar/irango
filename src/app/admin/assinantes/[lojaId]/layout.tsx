@@ -51,10 +51,12 @@ export default async function HubLojaLayout({
     basePath: `/admin/assinantes/${lojaId}`,
     voltarHref: "/admin",
     voltarRotulo: "Voltar ao hub admin",
-    // O hub admin não tem `cardapios/page.tsx`: o item existe para o lojista e
-    // aqui nasceria 404. Quem sabe quais rotas existem sob esta base é este
-    // layout, não o NavPainel — mesma regra do `voltarHref`.
-    rotasAusentes: ["cardapios"],
+    // [269] Nenhuma rota do painel falta mais sob esta base: `cardapios/`
+    // nasceu no hub admin com as três telas do lojista. Quem sabe quais rotas
+    // existem sob esta base continua sendo este layout, não o NavPainel —
+    // mesma regra do `voltarHref` —, então a chave fica declarada e VAZIA:
+    // soltar um item de menu antes de a rota existir publica um 404.
+    rotasAusentes: [],
   };
 
   return (

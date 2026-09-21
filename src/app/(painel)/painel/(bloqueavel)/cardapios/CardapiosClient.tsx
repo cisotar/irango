@@ -99,9 +99,22 @@ type Recusa = { mensagem: string; exclusivos: number };
  */
 export function CardapiosClient({
   cardapios,
+  baseCardapios,
   acoes,
 }: {
   cardapios: LinhaCardapio[];
+  /**
+   * [269] A BASE das rotas de cardápio deste mundo: a do lojista no painel, a
+   * da loja-alvo no hub admin.
+   *
+   * OBRIGATÓRIA e sem default (issue 160), pelo mesmo motivo de `hrefCardapios`
+   * no `ProdutosClient`: com a rota escrita aqui dentro, o admin que edita a
+   * loja de um terceiro cairia no painel da PRÓPRIA loja dele e criaria o
+   * cardápio na loja errada — o bug que já voltou duas vezes (`8bfe902`,
+   * `f26cc6a`). Quem sabe qual rota existe é o Server Component, não este
+   * componente de apresentação.
+   */
+  baseCardapios: string;
   acoes: AcoesCardapios;
 }): ReactElement {
   const router = useRouter();
@@ -200,7 +213,7 @@ export function CardapiosClient({
         <Button
           className={ALVO}
           render={
-            <Link href="/painel/cardapios/novo">
+            <Link href={`${baseCardapios}/novo`}>
               <Plus aria-hidden />
               Novo cardápio
             </Link>
@@ -260,6 +273,7 @@ export function CardapiosClient({
 
                 <AvisoEscondendo
                   linha={linha}
+                  editarHref={`${baseCardapios}/${linha.id}`}
                   aoReligar={() => void ligar(linha, true)}
                   aoDevolver={() => setConfirmacao({ tipo: "devolver", linha })}
                 />
@@ -269,7 +283,7 @@ export function CardapiosClient({
                     variant="outline"
                     className={ALVO}
                     render={
-                      <Link href={`/painel/cardapios/${linha.id}`}>
+                      <Link href={`${baseCardapios}/${linha.id}`}>
                         <Pencil aria-hidden />
                         Editar
                       </Link>
@@ -401,10 +415,13 @@ export function CardapiosClient({
  */
 function AvisoEscondendo({
   linha,
+  editarHref,
   aoReligar,
   aoDevolver,
 }: {
   linha: LinhaCardapio;
+  /** [269] Derivado de `baseCardapios` pelo chamador — nunca escrito aqui. */
+  editarHref: string;
   aoReligar: () => void;
   aoDevolver: () => void;
 }): ReactElement | null {
@@ -436,7 +453,7 @@ function AvisoEscondendo({
             variant="outline"
             className={ALVO}
             render={
-              <Link href={`/painel/cardapios/${linha.id}`}>
+              <Link href={editarHref}>
                 {rotuloReligarOuEstender(true)}
               </Link>
             }

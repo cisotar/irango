@@ -52,7 +52,13 @@ function linha(over: Partial<LinhaCardapio> = {}): LinhaCardapio {
 
 function montar(linhas: LinhaCardapio[]): string {
   return renderToStaticMarkup(
-    <CardapiosClient cardapios={linhas} acoes={acoes()} />,
+    <CardapiosClient
+      cardapios={linhas}
+      // [269] A base de rota é INJETADA: o componente não conhece nem a do
+      // lojista nem a do admin.
+      baseCardapios="/painel/cardapios"
+      acoes={acoes()}
+    />,
   );
 }
 
