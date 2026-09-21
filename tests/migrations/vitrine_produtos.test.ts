@@ -56,10 +56,27 @@ const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bb0000000265";
 const DONO_INATIVA = "cccccccc-cccc-cccc-cccc-cc0000000265";
 const DONO_MASCARA = "dddddddd-dddd-dddd-dddd-dd0000000265";
 
-/** Instante de referência das bordas de vigência (literal, sem `now()`). */
-const AGORA = "2026-09-20T12:00:00Z";
-const ANTES = "2026-09-19T12:00:00Z";
-const DEPOIS = "2026-09-21T12:00:00Z";
+/**
+ * Instantes de referência das bordas de vigência, RELATIVOS ao relógio do
+ * request.
+ *
+ * Eram três literais de setembro de 2026 e apodreceram no dia em que o
+ * calendário passou por cima deles: `vitrine_produtos` compara com `now()` do
+ * Postgres, então o produto "Agendado" (início no `DEPOIS`) virou vigente e o
+ * "Vigente" virou terminado — três casos vermelhos sem nenhuma mudança de
+ * código. Data fixa num teste que fala com `now()` é uma bomba-relógio; a
+ * ordem ANTES < AGORA < DEPOIS é o que os casos afirmam, e ela agora é
+ * verdadeira em qualquer dia.
+ */
+const DIA = 24 * 60 * 60 * 1000;
+const emRelacaoAAgora = (dias: number): string =>
+  new Date(Date.now() + dias * DIA).toISOString();
+
+const AGORA = emRelacaoAAgora(0);
+const ANTES = emRelacaoAAgora(-1);
+const DEPOIS = emRelacaoAAgora(1);
+/** Antes do `ANTES`: é o INÍCIO da promoção já terminada. */
+const MUITO_ANTES = emRelacaoAAgora(-3);
 
 /**
  * Contrato de colunas de `public.vitrine_produtos` — §Contratos de Dados da
@@ -176,7 +193,7 @@ async function criarCenario(t: TestDb): Promise<Cenario> {
          ($1, 'Agendado',           200.00, true, false, 2, true,  'fixo',        30.00, $3, null),
          ($1, 'Terminado',          200.00, true, false, 3, true,  'percentual',  40.00, $4, $2)
        returning id, nome`,
-      [lojaMascara, ANTES, DEPOIS, "2026-09-18T12:00:00Z"],
+      [lojaMascara, ANTES, DEPOIS, MUITO_ANTES],
     );
     const masc = (nome: string) => mascara.rows.find((p) => p.nome === nome)!.id;
 

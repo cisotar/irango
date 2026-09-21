@@ -4,6 +4,8 @@ import type { Database } from "@/lib/database.types";
 
 import {
   buscarCardapiosComProdutos,
+  buscarProdutosQueFicariamOrfaos,
+  buscarLinhasDaPrevia,
   COLUNAS_CARDAPIO_VIGENCIA,
 } from "./cardapios";
 
@@ -182,6 +184,224 @@ describe("247 — buscarCardapiosComProdutos: montagem do Map", () => {
 
     expect(r.cardapios).toEqual([]);
     expect(r.cardapiosPorProduto.size).toBe(0);
+  });
+});
+
+// ═══════════════════ [269] buscarProdutosQueFicariamOrfaos / buscarLinhasDaPrevia
+//
+// As duas leituras que migraram de dentro de `lib/actions/cardapio.ts` para cá
+// (issue 269, D3) quando o hub admin virou um SEGUNDO caminho de escrita sob
+// `service_role` (BYPASSRLS). Sem teste dedicado até agora: eram exercitadas só
+// por tabela via `admin-cardapios.paridade.test.ts` (mock do client inteiro,
+// que não prova a FORMA exata das sub-queries) e via `cardapio.test.ts` do
+// lojista. O que este bloco trava é a ÚNICA proteção que sobra sob
+// service_role: o `.eq("loja_id", lojaId)` EXPLÍCITO em CADA sub-query — não a
+// RLS, que a service_role ignora por completo.
+
+type TerminalMulti = { data: unknown; error: unknown };
+type ChamadaMulti = {
+  tabela: string;
+  colunas?: string;
+  eqs: [string, unknown][];
+  ins: [string, unknown][];
+};
+
+/**
+ * Client multi-tabela: cada `.from(tabela)` monta um builder independente, e a
+ * resposta de uma tabela é consumida NA ORDEM (fila) — necessário porque
+ * `buscarProdutosQueFicariamOrfaos` chama `cardapio_produtos` DUAS vezes com
+ * propósitos diferentes (vínculos do cardápio, depois vínculos de TODOS os
+ * cardápios da loja).
+ */
+function makeMultiClient(respostasPorTabela: Record<string, TerminalMulti[]>) {
+  const chamadas: ChamadaMulti[] = [];
+  const contadores: Record<string, number> = {};
+
+  const client = {
+    from: (tabela: string) => {
+      const chamada: ChamadaMulti = { tabela, eqs: [], ins: [] };
+      chamadas.push(chamada);
+      const builder: Record<string, unknown> = {};
+      builder.select = (cols?: string) => {
+        chamada.colunas = cols;
+        return builder;
+      };
+      builder.eq = (c: string, v: unknown) => {
+        chamada.eqs.push([c, v]);
+        return builder;
+      };
+      builder.in = (c: string, v: unknown) => {
+        chamada.ins.push([c, v]);
+        return builder;
+      };
+      builder.then = (resolve: (v: TerminalMulti) => unknown) => {
+        const fila = respostasPorTabela[tabela] ?? [];
+        const indice = contadores[tabela] ?? 0;
+        contadores[tabela] = indice + 1;
+        const terminal = fila[indice] ?? fila[fila.length - 1] ?? { data: [], error: null };
+        return resolve(terminal);
+      };
+      return builder;
+    },
+  } as unknown as Client;
+
+  return { client, chamadas };
+}
+
+describe("269 — buscarProdutosQueFicariamOrfaos: escopo por loja_id em CADA sub-query", () => {
+  const LOJA = "loja-alvo-269";
+  const CARDAPIO = "cardapio-1";
+
+  it("as TRÊS sub-queries (cardapio_produtos, produtos, cardapio_produtos) recebem .eq('loja_id', LOJA)", async () => {
+    const { client, chamadas } = makeMultiClient({
+      cardapio_produtos: [
+        { data: [{ produto_id: "p1" }], error: null }, // vinculados a este cardápio
+        { data: [{ produto_id: "p1", cardapio_id: CARDAPIO }], error: null }, // todos os vínculos
+      ],
+      produtos: [{ data: [{ id: "p1" }], error: null }], // exclusivos
+    });
+
+    await buscarProdutosQueFicariamOrfaos(client, LOJA, CARDAPIO);
+
+    expect(chamadas).toHaveLength(3);
+    for (const chamada of chamadas) {
+      expect(chamada.eqs).toContainEqual(["loja_id", LOJA]);
+    }
+  });
+
+  it("produto exclusivo com ÚNICO vínculo (este cardápio) é devolvido como órfão", async () => {
+    const { client } = makeMultiClient({
+      cardapio_produtos: [
+        { data: [{ produto_id: "p1" }], error: null },
+        { data: [{ produto_id: "p1", cardapio_id: CARDAPIO }], error: null },
+      ],
+      produtos: [{ data: [{ id: "p1" }], error: null }],
+    });
+
+    const orfaos = await buscarProdutosQueFicariamOrfaos(client, LOJA, CARDAPIO);
+
+    expect(orfaos).toEqual(["p1"]);
+  });
+
+  it("produto exclusivo vinculado a ESTE E A OUTRO cardápio NÃO é órfão (RN-14 exata)", async () => {
+    const { client } = makeMultiClient({
+      cardapio_produtos: [
+        { data: [{ produto_id: "p1" }, { produto_id: "p2" }], error: null },
+        {
+          data: [
+            { produto_id: "p1", cardapio_id: CARDAPIO },
+            { produto_id: "p2", cardapio_id: CARDAPIO },
+            { produto_id: "p2", cardapio_id: "outro-cardapio" }, // p2 sobrevive noutro cardápio
+          ],
+          error: null,
+        },
+      ],
+      produtos: [{ data: [{ id: "p1" }, { id: "p2" }], error: null }],
+    });
+
+    const orfaos = await buscarProdutosQueFicariamOrfaos(client, LOJA, CARDAPIO);
+
+    expect(orfaos).toEqual(["p1"]);
+  });
+
+  it("sem vínculos nenhum ⇒ [] SEM chamar produtos nem a 2ª cardapio_produtos (early return)", async () => {
+    const { client, chamadas } = makeMultiClient({
+      cardapio_produtos: [{ data: [], error: null }],
+    });
+
+    const orfaos = await buscarProdutosQueFicariamOrfaos(client, LOJA, CARDAPIO);
+
+    expect(orfaos).toEqual([]);
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it("vínculos existem mas nenhum é exclusivo (visibilidade=menu) ⇒ [] SEM a 3ª query", async () => {
+    const { client, chamadas } = makeMultiClient({
+      cardapio_produtos: [{ data: [{ produto_id: "p1" }], error: null }],
+      produtos: [{ data: [], error: null }], // nenhum exclusivo
+    });
+
+    const orfaos = await buscarProdutosQueFicariamOrfaos(client, LOJA, CARDAPIO);
+
+    expect(orfaos).toEqual([]);
+    expect(chamadas).toHaveLength(2);
+  });
+
+  it("propaga erro da leitura de `produtos` (§14) — nunca engole e segue com []", async () => {
+    const { client } = makeMultiClient({
+      cardapio_produtos: [{ data: [{ produto_id: "p1" }], error: null }],
+      produtos: [{ data: null, error: { message: "boom-produtos" } }],
+    });
+
+    await expect(buscarProdutosQueFicariamOrfaos(client, LOJA, CARDAPIO)).rejects.toMatchObject({
+      message: "boom-produtos",
+    });
+  });
+
+  it("propaga erro da leitura de vínculos (1ª cardapio_produtos)", async () => {
+    const { client } = makeMultiClient({
+      cardapio_produtos: [{ data: null, error: { message: "boom-vinculos" } }],
+    });
+
+    await expect(buscarProdutosQueFicariamOrfaos(client, LOJA, CARDAPIO)).rejects.toMatchObject({
+      message: "boom-vinculos",
+    });
+  });
+});
+
+describe("269 — buscarLinhasDaPrevia: escopo por loja_id + forma da query por tipo de lote", () => {
+  const LOJA = "loja-alvo-269";
+
+  it("escopo por produto_ids: usa .in('id', ids) + .eq('loja_id', LOJA)", async () => {
+    const { client, chamadas } = makeMultiClient({
+      produtos: [{ data: [{ id: "p1", nome: "X", visibilidade: "menu", oculto: false }], error: null }],
+    });
+
+    await buscarLinhasDaPrevia(client, LOJA, { produto_ids: ["p1", "p2"] });
+
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0].eqs).toContainEqual(["loja_id", LOJA]);
+    expect(chamadas[0].ins).toContainEqual(["id", ["p1", "p2"]]);
+    // select nomeado com só as 4 colunas que resumirPrevia consome.
+    expect(chamadas[0].colunas).toBe("id, nome, visibilidade, oculto");
+  });
+
+  it("escopo por categoria_id: usa .eq('categoria_id', …) + .eq('loja_id', LOJA), SEM .in", async () => {
+    const { client, chamadas } = makeMultiClient({
+      produtos: [{ data: [], error: null }],
+    });
+
+    await buscarLinhasDaPrevia(client, LOJA, { categoria_id: "cat-1" });
+
+    expect(chamadas[0].eqs).toContainEqual(["loja_id", LOJA]);
+    expect(chamadas[0].eqs).toContainEqual(["categoria_id", "cat-1"]);
+    expect(chamadas[0].ins).toHaveLength(0);
+  });
+
+  it("produto_ids vazio: ainda chama .in('id', []) — não é tratado como 'sem filtro'", async () => {
+    const { client, chamadas } = makeMultiClient({ produtos: [{ data: [], error: null }] });
+
+    await buscarLinhasDaPrevia(client, LOJA, { produto_ids: [] });
+
+    expect(chamadas[0].ins).toContainEqual(["id", []]);
+  });
+
+  it("data null ⇒ [] (nunca lança por linha ausente)", async () => {
+    const { client } = makeMultiClient({ produtos: [{ data: null, error: null }] });
+
+    const linhas = await buscarLinhasDaPrevia(client, LOJA, { categoria_id: "cat-1" });
+
+    expect(linhas).toEqual([]);
+  });
+
+  it("propaga erro (§14) em vez de devolver [] silenciosamente", async () => {
+    const { client } = makeMultiClient({
+      produtos: [{ data: null, error: { message: "boom-previa" } }],
+    });
+
+    await expect(
+      buscarLinhasDaPrevia(client, LOJA, { categoria_id: "cat-1" }),
+    ).rejects.toMatchObject({ message: "boom-previa" });
   });
 });
 

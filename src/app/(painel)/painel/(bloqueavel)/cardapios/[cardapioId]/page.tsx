@@ -21,6 +21,7 @@ import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { rotuloAgora, descreverVigencia } from "@/lib/utils/descreverVigencia";
 import { cardapioAberto, visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
+import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
 import { FormVigencia } from "@/components/painel/FormVigencia";
 import {
   SeletorProdutosDoCardapio,
@@ -96,7 +97,7 @@ export default async function CardapioDetalhePage({
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href="/painel/cardapios" className="text-sm underline">
+      <Link href={ROTA_CARDAPIOS_LOJISTA} className="text-sm underline">
         Voltar para cardápios
       </Link>
       <h1 className="text-xl font-semibold">{cardapio.nome}</h1>
@@ -111,7 +112,7 @@ export default async function CardapioDetalhePage({
           cardapioAberto(cardapio, agora, loja.timezone),
         )}
         salvar={atualizarCardapio.bind(null, cardapioId)}
-        voltarHref="/painel/cardapios"
+        voltarHref={ROTA_CARDAPIOS_LOJISTA}
       />
 
       <SeletorProdutosDoCardapio

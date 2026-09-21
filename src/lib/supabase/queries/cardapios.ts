@@ -251,3 +251,112 @@ export async function buscarCardapioPorId(
 
   return paraCardapioVigencia(data as unknown as Omit<CardapioVigencia, "modo"> & { modo: string });
 }
+
+// ═══════════════════════ Leituras compartilhadas lojista ↔ hub admin (269) ══
+//
+// [269 · D3] As duas leituras abaixo nasceram DENTRO de `lib/actions/cardapio.ts`
+// e foram movidas para cá quando o hub admin virou um segundo caminho de
+// escrita. Elas fazem I/O, então não cabem no módulo neutro
+// `lib/actions/cardapio-contrato.ts` (`architecture.md` §8: módulo neutro em
+// `lib/actions/` exporta só função pura) — e a mesma §8 diz que query não se
+// escreve inline. Aqui é o lugar.
+//
+// O parâmetro se chama `client` (não `svc`) por consistência com as três
+// funções acima: o lojista passa o client AUTENTICADO, o admin passa o service
+// client, e o `.eq("loja_id", lojaId)` EXPLÍCITO é o que torna as duas seguras
+// sob `service_role` (BYPASSRLS) sem uma segunda query.
+
+/** Os `produto_id` vinculados a este cardápio, na loja dada. */
+async function buscarProdutosVinculados(
+  client: Client,
+  lojaId: string,
+  cardapioId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("cardapio_produtos")
+    .select("produto_id")
+    .eq("loja_id", lojaId)
+    .eq("cardapio_id", cardapioId);
+  if (error) throw error;
+  return (data ?? []).map((v) => v.produto_id);
+}
+
+/**
+ * Os produtos que ficariam ÓRFÃOS se este cardápio sumisse: exclusivos
+ * (`visibilidade = 'cardapio'`) cujo ÚNICO vínculo é ele. É exatamente a
+ * condição que o trigger de RN-14 avalia no COMMIT — contar todos os
+ * exclusivos vinculados recusaria também quem está em dois cardápios e não
+ * corre risco nenhum.
+ *
+ * Ler antes não é oráculo: é dado da própria loja-alvo, escopado por
+ * `loja_id` nas duas idas ao banco. Propaga `error` (§14) — engolir e devolver
+ * `[]` faria a remoção seguir achando que não há órfão.
+ */
+export async function buscarProdutosQueFicariamOrfaos(
+  client: Client,
+  lojaId: string,
+  cardapioId: string,
+): Promise<string[]> {
+  const vinculados = await buscarProdutosVinculados(client, lojaId, cardapioId);
+  if (vinculados.length === 0) return [];
+
+  const { data: exclusivos, error: erroProdutos } = await client
+    .from("produtos")
+    .select("id")
+    .eq("loja_id", lojaId)
+    .eq("visibilidade", "cardapio")
+    .in("id", vinculados);
+  if (erroProdutos) throw erroProdutos;
+  const ids = (exclusivos ?? []).map((p) => p.id);
+  if (ids.length === 0) return [];
+
+  // Todos os vínculos desses exclusivos, em QUALQUER cardápio da loja: quem
+  // aparece só uma vez está pendurado apenas neste.
+  const { data: todos, error: erroVinculos } = await client
+    .from("cardapio_produtos")
+    .select("produto_id, cardapio_id")
+    .eq("loja_id", lojaId)
+    .in("produto_id", ids);
+  if (erroVinculos) throw erroVinculos;
+
+  const outros = new Set(
+    (todos ?? [])
+      .filter((v) => v.cardapio_id !== cardapioId)
+      .map((v) => v.produto_id),
+  );
+  return ids.filter((id) => !outros.has(id));
+}
+
+/** O escopo de um lote: uma seleção explícita de produtos OU uma categoria. */
+export type EscopoDoLote =
+  | { produto_ids: string[] }
+  | { categoria_id: string };
+
+/**
+ * As linhas que a prévia do lote resume (RN-09-a). NÃO grava nada.
+ *
+ * A leitura é `where loja_id = <a da loja-alvo> and ...`: um id de outra loja
+ * simplesmente NÃO volta. Nenhuma contagem de "ignorados", nenhum aviso — a
+ * resposta de `[p1, pB]` é byte a byte a de `[p1]`, senão a prévia viraria
+ * oráculo de existência (`seguranca.md` §14).
+ *
+ * Select NOMEADO com as quatro colunas que `resumirPrevia` consome, e só elas.
+ */
+export async function buscarLinhasDaPrevia(
+  client: Client,
+  lojaId: string,
+  escopo: EscopoDoLote,
+): Promise<{ id: string; nome: string; visibilidade: string; oculto: boolean }[]> {
+  const base = client
+    .from("produtos")
+    .select("id, nome, visibilidade, oculto")
+    .eq("loja_id", lojaId);
+  const consulta =
+    "produto_ids" in escopo
+      ? base.in("id", escopo.produto_ids)
+      : base.eq("categoria_id", escopo.categoria_id);
+
+  const { data, error } = await consulta;
+  if (error) throw error;
+  return data ?? [];
+}

@@ -226,7 +226,16 @@ function tipoDePropsDoComponente(sf: ts.SourceFile, nome: string): ts.TypeNode |
  * `onSucesso?: () => void` (FormCupom) é UX e fica de fora.
  */
 function eAcaoPlana(m: Membro): boolean {
-  return /^on[A-Z]/.test(m.nome) && !/^\(\s*\)\s*=>\s*void$/.test(m.tipoTexto);
+  if (/^\(\s*\)\s*=>\s*void$/.test(m.tipoTexto)) return false;
+  // [269] Duas assinaturas de prop de action convivem no projeto: a convenção
+  // `onX` (PerfilClient, HorariosClient, TemaClient…) e a prop nomeada pelo
+  // VERBO, cujo tipo é uma Server Action — `salvar: (payload: unknown) =>
+  // Promise<ResultadoAcao>` no `FormVigencia`. Enquanto o guard só lia `onX`,
+  // um wrapper admin que renderizasse SÓ o `FormVigencia` não tinha NENHUM
+  // alvo: zero asserção, verde por ausência. A forma `=> Promise<` é o que
+  // caracteriza a action, e é ela que precisa ser injetada — omitida, roda a
+  // do LOJISTA, que resolve a loja por `auth.uid()`.
+  return /^on[A-Z]/.test(m.nome) || /=>\s*Promise</.test(m.tipoTexto);
 }
 
 // ── Leitura do wrapper admin ────────────────────────────────────────────────

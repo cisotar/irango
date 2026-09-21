@@ -97,8 +97,8 @@ export type ContextoNav = {
   voltarRotulo?: string;
   /**
    * Sufixos de rota (relativos ao `basePath`) que NÃO existem sob esta base —
-   * o item é OMITIDO em vez de nascer quebrado. Ex.: `["cardapios"]` no hub
-   * admin, que não tem `/admin/assinantes/[lojaId]/cardapios`.
+   * o item é OMITIDO em vez de nascer quebrado. O hub admin usou `["cardapios"]`
+   * entre as issues 256 e 269, enquanto a rota admin não existia.
    *
    * É DADO passado pelo layout, nunca inferido do `basePath`: quem sabe quais
    * `page.tsx` existem é a rota, não o componente de apresentação — a mesma

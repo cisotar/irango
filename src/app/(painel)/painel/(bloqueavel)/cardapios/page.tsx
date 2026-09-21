@@ -16,6 +16,7 @@ import {
   contarProdutosEscondidos,
   listarProdutosEscondidos,
 } from "@/lib/utils/contarProdutosEscondidos";
+import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
 import { CardapiosClient, type LinhaCardapio } from "./CardapiosClient";
 
 /**
@@ -88,6 +89,9 @@ export default async function CardapiosPage(): Promise<ReactElement> {
   return (
     <CardapiosClient
       cardapios={linhas}
+      // [269] A base das rotas deste mundo. O hub admin passa a dele; o
+      // componente não conhece nenhuma das duas.
+      baseCardapios={ROTA_CARDAPIOS_LOJISTA}
       acoes={{
         ligarDesligar: ligarDesligarCardapio,
         remover: removerCardapio,

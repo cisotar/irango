@@ -95,6 +95,8 @@ interface Encadeavel extends PromiseLike<RespostaPostgrest> {
 }
 interface FromSolto {
   insert(dados: unknown): Encadeavel;
+  /** [269] `upsert` de N linhas — a forma que `inserirVarios` encapsula. */
+  upsert(dados: unknown, opts?: unknown): Encadeavel;
   update(patch: unknown, opts?: { count: "exact" }): Encadeavel;
   delete(opts?: { count: "exact" }): Encadeavel;
   select(colunas?: string): Encadeavel;
@@ -110,6 +112,32 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
     /** INSERT com `loja_id` injetado POR ÚLTIMO — payload hostil não sobrescreve o escopo. */
     inserir<T extends TabelaComLojaId>(tabela: T, dados: Omit<Tabelas[T]["Insert"], "loja_id">) {
       return from(tabela).insert({ ...dados, loja_id: lojaId });
+    },
+    /**
+     * [269 · D5] INSERT de N linhas em UMA instrução, com `loja_id` injetado
+     * POR ÚLTIMO em CADA linha — mesma garantia do `inserir`, aplicada ao lote:
+     * payload hostil não sobrescreve o escopo em nenhuma das linhas.
+     *
+     * Existe porque `upsert` não aceita `.eq` e o lote precisa ser TUDO OU
+     * NADA. As duas alternativas eram piores:
+     *  - `svc.from(t).upsert(...)` cru: escapava do wrapper e, até a camada 3
+     *    do enforcement passar a casar `upsert` (R1), era invisível ao CI;
+     *  - N chamadas de `inserir`: gravaria os ids legítimos e falharia nos
+     *    alheios, denunciando PELA DIFERENÇA quais ids existem em outra loja —
+     *    o oráculo que o caminho do lojista documenta ter evitado.
+     *
+     * `opcoes` repassa `onConflict`/`ignoreDuplicates` (idempotência por
+     * `on conflict do nothing`), nunca escopo.
+     */
+    inserirVarios<T extends TabelaComLojaId>(
+      tabela: T,
+      linhas: Omit<Tabelas[T]["Insert"], "loja_id">[],
+      opcoes?: { onConflict: string; ignoreDuplicates: boolean },
+    ) {
+      return from(tabela).upsert(
+        linhas.map((linha) => ({ ...linha, loja_id: lojaId })),
+        opcoes,
+      );
     },
     /** UPDATE de linha da loja, escopo duplo `loja_id`+`id`, `count:"exact"`.
      * `patch` é `Omit<Update,"loja_id"|"id">`: o `.eq` escopa QUAL linha, não O QUE

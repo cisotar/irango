@@ -29,61 +29,41 @@ import {
   schemaPreviaDeLote,
   schemaCardapio,
   schemaIdCardapio,
-  ehMensagemDeVigencia,
-  type DadosCardapio,
 } from "@/lib/validacoes/cardapio";
-import { instanteNoFuso } from "@/lib/utils/fusoLoja";
-import { calcularFimDoPreset } from "@/lib/utils/calcularFimDoPreset";
-import { ehErroDeExclusivoSemCardapio } from "@/lib/actions/produto-contrato";
+import {
+  MSG_GENERICA_LOTE,
+  MSG_SALVAR,
+  MSG_REMOVER,
+  MSG_CONVERTER,
+  MSG_LOJA,
+  MSG_INVALIDO,
+  MSG_EXCLUSIVOS_SEM_NUMERO,
+  mensagemExclusivos,
+  ehErroDeExclusivoOrfao,
+  erroDoLote,
+  erroDeParseCardapio,
+  linhaDoCardapio,
+  resumirPrevia,
+  type Resultado,
+  type Previa,
+  type ResultadoCardapio,
+  type ResultadoRemocao,
+} from "@/lib/actions/cardapio-contrato";
+import {
+  buscarProdutosQueFicariamOrfaos,
+  buscarLinhasDaPrevia,
+} from "@/lib/supabase/queries/cardapios";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
 
-type Resultado = { ok: true } | { ok: false; erro: string };
-
-type Previa =
-  | {
-      ok: true;
-      total: number;
-      nomes: string[];
-      menu: number;
-      cardapio: number;
-      /**
-       * [260] Quantos do lote estão `oculto = true`. A RPC de categoria inclui
-       * produto oculto (RN-10) e o diálogo NÃO o esconde da contagem — a frase
-       * "N deles estão ocultos e continuam ocultos" (design §10.2, trava 5)
-       * precisa deste número, e ele sai da MESMA leitura que já acontecia.
-       * Contá-lo no cliente seria contar uma seleção que pode estar velha.
-       */
-      ocultos: number;
-    }
-  | { ok: false; erro: string };
-
-/**
- * A ÚNICA mensagem que o lojista vê, para QUALQUER falha (RN-09). Mensagens
- * distintas por tipo de falha virariam oráculo de existência de id.
- */
-const MSG_GENERICA =
-  "Não foi possível aplicar o cardápio aos produtos selecionados.";
-
-/**
- * [261] A OUTRA ponta do trigger de RN-14: tirar o ÚLTIMO cardápio de um
- * produto exclusivo o deixaria órfão. É a única falha do lote que ganha frase
- * própria — ela é regra de negócio do próprio lojista, nomeia a saída
- * ("Devolver ao menu", que a barra de ação oferece ao lado) e não diz nada
- * sobre existência de id alheio (id de outra loja nem chega ao trigger: o
- * `.eq("loja_id")` e a RLS o descartam antes, com a mesma resposta de id
- * inexistente). Todo o resto continua genérico.
- */
-const MSG_ORFAO_NO_LOTE =
-  "Um dos produtos selecionados só aparece por causa deste cardápio e sumiria da vitrine. Devolva-o ao menu antes de tirá-lo do cardápio.";
-
-function erroDoLote(erro: unknown): string {
-  return ehErroDeExclusivoSemCardapio(erro) ? MSG_ORFAO_NO_LOTE : MSG_GENERICA;
-}
-
-/** O diálogo mostra 6 nomes no desktop e 3 no mobile (design §10.3). */
-const NOMES_NA_PREVIA = 6;
+// [269 · D2/D3] As frases, os reconhecedores de erro do trigger, a
+// normalização de prazo pelo fuso e o resumo da prévia moram em
+// `cardapio-contrato.ts`; as duas leituras compartilhadas, em
+// `queries/cardapios.ts`. Este arquivo é UM dos dois callers — o outro é
+// `src/app/admin/assinantes/actions/admin-cardapios.ts`, que escreve com
+// `service_role` e por isso não tem a RLS como rede. Redeclarar qualquer coisa
+// daquelas aqui reabre o drift que a extração fechou.
 
 /**
  * RN-11: os três caminhos REAIS, e a vitrine pelo slug da PRÓPRIA loja. Nunca a
@@ -113,13 +93,13 @@ export async function aplicarCardapioEmProdutos(
   payload: unknown,
 ): Promise<Resultado> {
   const parsed = schemaLoteDeProdutos.safeParse(payload);
-  if (!parsed.success) return { ok: false, erro: MSG_GENERICA };
+  if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
   const { cardapio_id, produto_ids } = parsed.data;
 
   try {
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) return { ok: false, erro: MSG_GENERICA };
+    if (loja == null) return { ok: false, erro: MSG_GENERICA_LOTE };
 
     const linhas = produto_ids.map((produto_id) => ({
       loja_id: loja.id,
@@ -135,14 +115,14 @@ export async function aplicarCardapioEmProdutos(
       });
     if (error) {
       console.error("[aplicarCardapioEmProdutos]", error);
-      return { ok: false, erro: MSG_GENERICA };
+      return { ok: false, erro: MSG_GENERICA_LOTE };
     }
 
     revalidarCaminhosDoCardapio(loja.slug);
     return { ok: true };
   } catch (e) {
     console.error("[aplicarCardapioEmProdutos]", e);
-    return { ok: false, erro: MSG_GENERICA };
+    return { ok: false, erro: MSG_GENERICA_LOTE };
   }
 }
 
@@ -159,13 +139,13 @@ export async function aplicarCardapioEmCategoria(
   payload: unknown,
 ): Promise<Resultado> {
   const parsed = schemaLoteDeCategoria.safeParse(payload);
-  if (!parsed.success) return { ok: false, erro: MSG_GENERICA };
+  if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
   const { cardapio_id, categoria_id } = parsed.data;
 
   try {
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) return { ok: false, erro: MSG_GENERICA };
+    if (loja == null) return { ok: false, erro: MSG_GENERICA_LOTE };
 
     const { error } = await supabase.rpc("aplicar_cardapio_em_categoria", {
       p_loja_id: loja.id,
@@ -174,14 +154,14 @@ export async function aplicarCardapioEmCategoria(
     });
     if (error) {
       console.error("[aplicarCardapioEmCategoria]", error);
-      return { ok: false, erro: MSG_GENERICA };
+      return { ok: false, erro: MSG_GENERICA_LOTE };
     }
 
     revalidarCaminhosDoCardapio(loja.slug);
     return { ok: true };
   } catch (e) {
     console.error("[aplicarCardapioEmCategoria]", e);
-    return { ok: false, erro: MSG_GENERICA };
+    return { ok: false, erro: MSG_GENERICA_LOTE };
   }
 }
 
@@ -192,13 +172,13 @@ export async function aplicarCardapioEmCategoria(
  */
 export async function tirarDeCardapio(payload: unknown): Promise<Resultado> {
   const parsed = schemaLoteDeProdutos.safeParse(payload);
-  if (!parsed.success) return { ok: false, erro: MSG_GENERICA };
+  if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
   const { cardapio_id, produto_ids } = parsed.data;
 
   try {
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) return { ok: false, erro: MSG_GENERICA };
+    if (loja == null) return { ok: false, erro: MSG_GENERICA_LOTE };
 
     const { error } = await supabase
       .from("cardapio_produtos")
@@ -232,40 +212,18 @@ export async function tirarDeCardapio(payload: unknown): Promise<Resultado> {
  */
 export async function preverLoteAction(entrada: unknown): Promise<Previa> {
   const parsed = schemaPreviaDeLote.safeParse(entrada);
-  if (!parsed.success) return { ok: false, erro: MSG_GENERICA };
+  if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
 
   try {
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) return { ok: false, erro: MSG_GENERICA };
+    if (loja == null) return { ok: false, erro: MSG_GENERICA_LOTE };
 
-    const base = supabase
-      .from("produtos")
-      .select("id, nome, visibilidade, oculto")
-      .eq("loja_id", loja.id);
-    const consulta =
-      "produto_ids" in parsed.data
-        ? base.in("id", parsed.data.produto_ids)
-        : base.eq("categoria_id", parsed.data.categoria_id);
-
-    const { data, error } = await consulta;
-    if (error) {
-      console.error("[preverLoteAction]", error);
-      return { ok: false, erro: MSG_GENERICA };
-    }
-
-    const linhas = data ?? [];
-    return {
-      ok: true,
-      total: linhas.length,
-      nomes: linhas.slice(0, NOMES_NA_PREVIA).map((p) => p.nome),
-      menu: linhas.filter((p) => p.visibilidade === "menu").length,
-      cardapio: linhas.filter((p) => p.visibilidade === "cardapio").length,
-      ocultos: linhas.filter((p) => p.oculto).length,
-    };
+    const linhas = await buscarLinhasDaPrevia(supabase, loja.id, parsed.data);
+    return { ok: true, ...resumirPrevia(linhas) };
   } catch (e) {
     console.error("[preverLoteAction]", e);
-    return { ok: false, erro: MSG_GENERICA };
+    return { ok: false, erro: MSG_GENERICA_LOTE };
   }
 }
 
@@ -287,105 +245,6 @@ export async function preverLoteAction(entrada: unknown): Promise<Previa> {
 // aplicada a data em vez de dinheiro. E a travessia hora local → instante usa
 // `lojas.timezone` LIDO DO BANCO (`buscarLojaDoDono`), nunca um fuso enviado
 // pelo cliente.
-
-const MSG_SALVAR = "Não foi possível salvar o cardápio.";
-const MSG_REMOVER = "Não foi possível remover o cardápio.";
-const MSG_CONVERTER =
-  "Não foi possível converter os produtos deste cardápio para o menu.";
-const MSG_LOJA = "Loja não encontrada.";
-const MSG_INVALIDO = "Cardápio inválido.";
-
-/**
- * O fragmento LITERAL que o trigger de RN-14 (20260920131000) levanta no
- * COMMIT, com errcode 23000. É o backstop: a recusa legível abaixo é a primeira
- * barreira, mas ela lê ANTES da transação e o cascade pode orfanar um produto
- * vinculado no meio do caminho. Quando isso acontece o lojista recebe a MESMA
- * frase acionável, não um erro genérico nem o texto cru do Postgres.
- */
-const FRAGMENTO_TRIGGER = "produto exclusivo sem cardapio";
-
-/** `integrity_constraint_violation` — o errcode que o trigger usa (D8). */
-const ERRCODE_TRIGGER = "23000";
-
-type ResultadoCardapio = { ok: true } | { ok: false; erro: string };
-
-/**
- * A remoção devolve quantos produtos exclusivos travam a operação, porque o
- * diálogo precisa desse número para oferecer "converter os N para o menu"
- * (§Páginas, `/painel/cardapios`). `exclusivos: 0` em qualquer outra falha.
- */
-type ResultadoRemocao =
-  | { ok: true }
-  | { ok: false; erro: string; exclusivos: number };
-
-function mensagemExclusivos(n: number): string {
-  return n === 1
-    ? "1 produto só aparece por causa deste cardápio e sumiria da vitrine. Converta esse produto para o menu antes de remover o cardápio."
-    : `${n} produtos só aparecem por causa deste cardápio e sumiriam da vitrine. Converta esses produtos para o menu antes de remover o cardápio.`;
-}
-
-/**
- * A MESMA recusa, SEM número — a frase do backstop do trigger.
- *
- * Por que sem número: o backstop só dispara numa CORRIDA no COMMIT, depois de
- * a leitura de `produtosQueFicariamOrfaos` ter devolvido zero órfãos. Nesse
- * instante o servidor não tem contagem confiável nenhuma: o literal `1` de
- * antes era ficção, e reler seria uma segunda leitura igualmente racy — e
- * indisponível no ramo `catch`, onde o client pode nem ter sido construído.
- * Sem número a frase continua acionável e não mente. O lojista repete a
- * remoção e o caminho normal, que lê ANTES da transação, devolve o número
- * exato e o botão de conversão.
- */
-const MSG_EXCLUSIVOS_SEM_NUMERO =
-  "Alguns produtos só aparecem por causa deste cardápio e sumiriam da vitrine. Converta esses produtos para o menu antes de remover o cardápio.";
-
-/** Erro do banco que é, na verdade, a recusa de RN-14 vinda do trigger. */
-function ehErroDeExclusivoOrfao(erro: unknown): boolean {
-  if (erro == null || typeof erro !== "object") return false;
-  const e = erro as { code?: unknown; message?: unknown };
-  // O PAR, não só o fragmento: erro de outra origem cuja mensagem contenha o
-  // texto (um nome de produto, por exemplo) não vira a recusa de RN-14.
-  return (
-    e.code === ERRCODE_TRIGGER &&
-    typeof e.message === "string" &&
-    e.message.includes(FRAGMENTO_TRIGGER)
-  );
-}
-
-/**
- * RN-04 — a linha que vai ao banco, com os dois campos de instante já no fuso
- * da LOJA. Recebe `timezone` por parâmetro: nenhuma leitura de relógio e
- * nenhum fuso do cliente entram aqui.
- */
-function linhaDoCardapio(
-  dados: DadosCardapio,
-  timezone: string,
-): DadosCardapio {
-  if (dados.modo !== "prazo_fixo" || dados.prazo_inicio == null) return dados;
-
-  const inicio = instanteNoFuso(dados.prazo_inicio, timezone);
-  const fim =
-    dados.prazo_preset === "customizado"
-      ? // Único preset em que o fim digitado é aceito — e o zod já garantiu
-        // que ele existe e é posterior ao início.
-        instanteNoFuso(dados.prazo_fim as string, timezone)
-      : calcularFimDoPreset(
-          new Date(inicio),
-          // `customizado` já saiu acima; o cast é o estreitamento que o tipo
-          // do preset não expressa sozinho.
-          dados.prazo_preset as "diario" | "semanal" | "mensal",
-          timezone,
-        ).toISOString();
-
-  return { ...dados, prazo_inicio: inicio, prazo_fim: fim };
-}
-
-/** Parse → mensagem: só as frases de vigência de §9.6 são promovidas literais. */
-function erroDeParseCardapio(
-  issues: readonly { message: string }[],
-): string {
-  return issues.find((i) => ehMensagemDeVigencia(i.message))?.message ?? MSG_INVALIDO;
-}
 
 /**
  * Cria o cardápio. `ordem = max(ordem) + 1` da loja (RN-15): cardápio novo
@@ -521,65 +380,6 @@ export async function ligarDesligarCardapio(
 }
 
 /**
- * Os produtos que ficariam ÓRFÃOS se este cardápio sumisse: exclusivos
- * (`visibilidade = 'cardapio'`) cujo ÚNICO vínculo é ele. É exatamente a
- * condição que o trigger de RN-14 avalia no COMMIT — contar todos os
- * exclusivos vinculados recusaria também quem está em dois cardápios e não
- * corre risco nenhum.
- *
- * Ler antes não é oráculo: é dado do próprio lojista, sob a RLS dele.
- */
-async function produtosQueFicariamOrfaos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  lojaId: string,
-  cardapioId: string,
-): Promise<string[]> {
-  const vinculados = await produtosVinculados(supabase, lojaId, cardapioId);
-  if (vinculados.length === 0) return [];
-
-  const { data: exclusivos, error: erroProdutos } = await supabase
-    .from("produtos")
-    .select("id")
-    .eq("loja_id", lojaId)
-    .eq("visibilidade", "cardapio")
-    .in("id", vinculados);
-  if (erroProdutos) throw erroProdutos;
-  const ids = (exclusivos ?? []).map((p) => p.id);
-  if (ids.length === 0) return [];
-
-  // Todos os vínculos desses exclusivos, em QUALQUER cardápio da loja: quem
-  // aparece só uma vez está pendurado apenas neste.
-  const { data: todos, error: erroVinculos } = await supabase
-    .from("cardapio_produtos")
-    .select("produto_id, cardapio_id")
-    .eq("loja_id", lojaId)
-    .in("produto_id", ids);
-  if (erroVinculos) throw erroVinculos;
-
-  const outros = new Set(
-    (todos ?? [])
-      .filter((v) => v.cardapio_id !== cardapioId)
-      .map((v) => v.produto_id),
-  );
-  return ids.filter((id) => !outros.has(id));
-}
-
-/** Os `produto_id` vinculados a este cardápio, sob a RLS do dono. */
-async function produtosVinculados(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  lojaId: string,
-  cardapioId: string,
-): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("cardapio_produtos")
-    .select("produto_id")
-    .eq("loja_id", lojaId)
-    .eq("cardapio_id", cardapioId);
-  if (error) throw error;
-  return (data ?? []).map((v) => v.produto_id);
-}
-
-/**
  * Remove o cardápio. RECUSADA enquanto existir produto exclusivo que ficaria
  * sem nenhum cardápio (RN-14), com a mensagem que diz o número e a saída —
  * `converterExclusivosParaMenu` é o "converter os N para o menu" do diálogo.
@@ -601,7 +401,7 @@ export async function removerCardapio(id: string): Promise<ResultadoRemocao> {
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: MSG_LOJA, exclusivos: 0 };
 
-    const orfaos = await produtosQueFicariamOrfaos(supabase, loja.id, id);
+    const orfaos = await buscarProdutosQueFicariamOrfaos(supabase, loja.id, id);
     if (orfaos.length > 0) {
       return {
         ok: false,
@@ -641,7 +441,7 @@ export async function removerCardapio(id: string): Promise<ResultadoRemocao> {
  * voltam a ser do menu. Sempre permitido — é a saída de qualquer estado preso
  * (§Páginas, `/painel/produtos`).
  *
- * O escopo é `produtosQueFicariamOrfaos` — o MESMO helper que produz o número
+ * O escopo é `buscarProdutosQueFicariamOrfaos` — o MESMO helper que produz o número
  * que a recusa anuncia e que o botão repete ("converter os N para o menu").
  * Converter todos os exclusivos VINCULADOS escreveria também em quem está
  * pendurado em outro cardápio e não corre risco nenhum: esse produto viraria
@@ -665,7 +465,7 @@ export async function converterExclusivosParaMenu(
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: MSG_LOJA };
 
-    const orfaos = await produtosQueFicariamOrfaos(
+    const orfaos = await buscarProdutosQueFicariamOrfaos(
       supabase,
       loja.id,
       cardapioId,

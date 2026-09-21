@@ -4,6 +4,7 @@ import { useCallback } from "react";
 
 import { ProdutosClient } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import type { Categoria } from "@/components/painel/FormProduto";
+import type { CardapioParaLote } from "@/components/painel/contrato-lote";
 import type {
   Produto,
   OpcionaisPorCategoria,
@@ -23,7 +24,15 @@ import {
   removerProdutoAdmin,
   alternarDisponibilidadeAdmin,
   alternarOcultoAdmin,
+  definirVisibilidadeEmProdutosAdmin,
 } from "@/app/admin/assinantes/actions/admin-produtos";
+import {
+  aplicarCardapioEmProdutosAdmin,
+  aplicarCardapioEmCategoriaAdmin,
+  tirarDeCardapioAdmin,
+  preverLoteAdmin,
+} from "@/app/admin/assinantes/actions/admin-cardapios";
+import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import { enviarFotoProdutoAdmin } from "@/app/admin/assinantes/actions/admin-upload";
 import {
   criarCategoriaOpcionalAdmin,
@@ -56,6 +65,7 @@ export function CardapioAdminClient({
   produtos,
   categorias,
   opcionaisPorCategoria,
+  cardapiosDoLote,
   cardapiosPorProduto,
   categoriasOpcional,
   opcionais,
@@ -68,12 +78,18 @@ export function CardapioAdminClient({
   produtos: Produto[];
   categorias: Categoria[];
   opcionaisPorCategoria: OpcionaisPorCategoria;
+  /**
+   * [269] Os cardápios da LOJA-ALVO para a barra de seleção em lote, com a
+   * frase de vigência já redigida no Server Component admin (fuso da loja-alvo).
+   */
+  cardapiosDoLote: CardapioParaLote[];
 } & Pick<
   ProdutosClientProps,
   // [Auditoria 260/261] `cardapiosPorProduto` é OBRIGATÓRIA e vem do Server
-  // Component admin (`carga-cardapios.ts`). O hub admin continua SEM a prop
-  // `lote` — nenhuma ação de cardápio aqui, só a leitura que impede o
+  // Component admin (`carga-cardapios.ts`): é a leitura que impede o
   // `FormProduto` de afirmar "não está em nenhum cardápio" sobre quem está.
+  // [269] A prop `lote` deixou de ser ausente aqui — as cinco actions admin
+  // agora existem, e omiti-la recriaria a assimetria que a issue mata.
   | "cardapiosPorProduto"
   // [235] `promocoes`/`fusoLojaRotulo` são projeção do SERVER COMPONENT admin
   // (com o fuso da loja-alvo) — o wrapper só repassa, sem derivar nada.
@@ -107,11 +123,27 @@ export function CardapioAdminClient({
       // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
       cardapiosPorProduto={cardapiosPorProduto}
-      // `null` DE PROPÓSITO: `/admin/assinantes/[lojaId]/cardapios` não existe
-      // (issue 256). Com um href fixo de `/painel/...` o admin — que edita a
-      // loja de um terceiro — cairia no painel da PRÓPRIA loja dele e criaria
-      // o cardápio na loja errada. Sem rota ⇒ sem link, nunca um link mentiroso.
-      hrefCardapios={null}
+      // [269] A rota admin de cardápios EXISTE desde a fase 6, então o link
+      // volta — apontando para a LOJA-ALVO. Era `null` enquanto ela não
+      // existia (256/261): um href fixo de `/painel/...` mandaria o admin para
+      // o painel da PRÓPRIA loja dele e criaria o cardápio na loja errada.
+      hrefCardapios={rotaCardapiosAdmin(lojaId)}
+      // [269] As cinco actions de `AcoesLote`, todas admin e todas com o
+      // `lojaId` da URL fixado por closure. Omitir qualquer uma cairia na
+      // action do LOJISTA, que resolve a loja por `auth.uid()`.
+      lote={{
+        cardapios: cardapiosDoLote,
+        acoes: {
+          aplicarEmProdutos: (payload) =>
+            aplicarCardapioEmProdutosAdmin(lojaId, payload),
+          aplicarEmCategoria: (payload) =>
+            aplicarCardapioEmCategoriaAdmin(lojaId, payload),
+          tirarDeCardapio: (payload) => tirarDeCardapioAdmin(lojaId, payload),
+          preverLote: (entrada) => preverLoteAdmin(lojaId, entrada),
+          definirVisibilidade: (payload) =>
+            definirVisibilidadeEmProdutosAdmin(lojaId, payload),
+        },
+      }}
       categoriasOpcional={categoriasOpcional}
       // [217] A biblioteca de itens e as linhas de associação alimentam o
       // cartão dentro do modal. Nenhuma query nova no admin: o agregado

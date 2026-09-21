@@ -22,7 +22,11 @@
  * REGRA: arquivo 'use server' só exporta funções async — tipos locais sem export.
  */
 
-import { schemaProduto, schemaProdutoUpdate } from "@/lib/validacoes/produto";
+import {
+  schemaProduto,
+  schemaProdutoUpdate,
+  schemaVisibilidadeEmLote,
+} from "@/lib/validacoes/produto";
 // Contrato NEUTRO compartilhado com o caminho do LOJISTA (issue 241): a mensagem
 // de D10 e a conversão de prazo pelo fuso têm UMA fonte nos dois mundos — o
 // admin escreve com service_role (BYPASSRLS), então a paridade É a proteção.
@@ -298,5 +302,59 @@ export async function reordenarProdutosAdmin(
   } catch (e) {
     console.error("[reordenarProdutosAdmin]", e);
     return { ok: false, erro: "Não foi possível reordenar os produtos." };
+  }
+}
+
+/**
+ * [269] Gêmea admin de `definirVisibilidadeEmProdutos` (261): declara a
+ * visibilidade de uma SELEÇÃO de produtos da LOJA-ALVO.
+ *
+ * Nasce aqui, e não em `admin-cardapios.ts`, porque a linha escrita é de
+ * `produtos` — e é a MESMA action que serve as duas superfícies do mundo admin:
+ * o `devolverAoMenu` de `AcoesCardapios` e o `definirVisibilidade` de
+ * `AcoesLote`. Sem ela nenhuma das duas compila no hub admin.
+ *
+ * R5 (registrado): `visibilidade` é declaração do LOJISTA e o sistema nunca a
+ * muda sozinho — aqui quem clica é outra pessoa. Fica rastreável em
+ * `admin_acessos`; nada além da contagem entra em `metadados`.
+ *
+ * UPDATE escopado por `loja_id` da URL validado (sob `service_role` não há RLS)
+ * + `in("id", …)`: id de outra loja simplesmente não casa linha.
+ */
+export async function definirVisibilidadeEmProdutosAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaVisibilidadeEmLote.safeParse(payload);
+  if (!parsed.success) return { ok: false, erro: MSG_SALVAR };
+  const { produto_ids, visibilidade } = parsed.data;
+
+  const { svc } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    const { error } = await svc
+      .from("produtos")
+      .update({ visibilidade })
+      .eq("loja_id", loja.lojaId)
+      .in("id", produto_ids);
+    if (error) {
+      console.error("[definirVisibilidadeEmProdutosAdmin]", error);
+      // [261] Paridade: a recusa de RN-14 vira frase acionável (o trigger é
+      // SECURITY DEFINER e vale sob `service_role`), o resto segue genérico.
+      return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR) };
+    }
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "produto.visibilidade_lote",
+      metadados: { produtos: produto_ids.length, visibilidade },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[definirVisibilidadeEmProdutosAdmin]", e);
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR) };
   }
 }
