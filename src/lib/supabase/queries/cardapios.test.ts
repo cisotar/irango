@@ -5,6 +5,7 @@ import type { Database } from "@/lib/database.types";
 import {
   buscarCardapiosComProdutos,
   buscarCardapiosDoPainel,
+  buscarCardapioPorId,
   buscarProdutosQueFicariamOrfaos,
   buscarLinhasDaPrevia,
   COLUNAS_CARDAPIO_VIGENCIA,
@@ -44,6 +45,7 @@ function makeClient(terminal: Terminal) {
     calls.order(...args);
     return builder;
   };
+  builder.maybeSingle = () => builder;
   builder.then = (resolve: (v: Terminal) => unknown) => resolve(terminal);
 
   const client = {
@@ -708,5 +710,33 @@ describe("273/RN-09 — o embed carrega `dias_semana` do vínculo", () => {
 
     expect(cardapios).toHaveLength(0);
     expect(vinculosPorProduto.has("orfao")).toBe(false);
+  });
+});
+
+describe("271 — buscarCardapioPorId: id malformado é fail-closed", () => {
+  const LOJA = "5ec21485-e58a-4071-a41c-f8963076ae00";
+
+  it('id "abc" ⇒ null SEM tocar o banco (nenhum `.from()`)', async () => {
+    const { client, calls } = makeClient({ data: { id: "x" }, error: null });
+    await expect(buscarCardapioPorId(client, LOJA, "abc")).resolves.toBeNull();
+    expect(calls.from).not.toHaveBeenCalled();
+  });
+
+  it("id vazio e id com espaço também não chegam ao banco", async () => {
+    const { client, calls } = makeClient({ data: null, error: null });
+    await buscarCardapioPorId(client, LOJA, "");
+    await buscarCardapioPorId(client, LOJA, " 5ec21485-e58a-4071-a41c-f8963076ae00");
+    expect(calls.from).not.toHaveBeenCalled();
+  });
+
+  it("uuid válido segue ao banco escopado por loja_id e id", async () => {
+    const { client, calls } = makeClient({ data: null, error: null });
+    const ID = "a1b2c3d4-0000-4000-8000-000000000001";
+    await expect(buscarCardapioPorId(client, LOJA, ID)).resolves.toBeNull();
+    expect(calls.from).toHaveBeenCalledWith("cardapios");
+    expect(calls.eq.mock.calls).toEqual([
+      ["loja_id", LOJA],
+      ["id", ID],
+    ]);
   });
 });

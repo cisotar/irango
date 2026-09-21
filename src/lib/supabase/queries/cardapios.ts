@@ -8,6 +8,7 @@ import {
   type CardapioVigencia,
   type VinculoVigencia,
 } from "@/lib/utils/vigenciaCardapio";
+import { schemaIdCardapio } from "@/lib/validacoes/cardapio";
 
 type Client = SupabaseClient<Database>;
 
@@ -254,6 +255,10 @@ export async function buscarCardapioPorId(
   lojaId: string,
   id: string,
 ): Promise<CardapioVigencia | null> {
+  // [271] Id malformado na URL é fail-closed `null` (mesmo `notFound()` de id
+  // inexistente ou alheio), nunca `22P02` virando 500 — `seguranca.md` §7.
+  if (!schemaIdCardapio.safeParse(id).success) return null;
+
   const { data, error } = await client
     .from("cardapios")
     .select(
