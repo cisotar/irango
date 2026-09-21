@@ -44,6 +44,19 @@ type SecaoCatalogoProps = {
    */
   opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
   /**
+   * [262/RN-06] Mapa `produto_id → frase de "quando volta"`, produzido pelo
+   * MESMO `projetarCatalogoVitrine` que produziu os produtos (247/254): não
+   * existe caminho de código que marque o produto sem produzir o rótulo dele.
+   *
+   * OBRIGATÓRIA de propósito (design §4.1, consequência 1): sem jsdom, o `tsc`
+   * é a única trava contra alguém montar o catálogo sem os rótulos e a vitrine
+   * degradar em silêncio para "Indisponível no momento".
+   *
+   * Chaveado por id ⇒ imune ao filtro da busca, exatamente como
+   * `opcionaisPorCategoria` nesta mesma cadeia.
+   */
+  rotulosVigencia: Record<string, string>;
+  /**
    * Termo de busca ativo (200), repassado a cada card/linha para realçar o
    * trecho casado. Ausente/vazio → catálogo renderiza exatamente como antes.
    * O filtro em si é de quem monta `categorias` (`filtrarCatalogo`, 199/202).
@@ -72,6 +85,7 @@ const ESTILO_ANCORA_CATEGORIA: CSSProperties = {
 export function SecaoCatalogo({
   categorias,
   opcionaisPorCategoria = {},
+  rotulosVigencia,
   termo,
 }: SecaoCatalogoProps) {
   const { adicionar } = useCarrinho();
@@ -88,6 +102,8 @@ export function SecaoCatalogo({
       gruposOpcionais: produto.categoria_id
         ? opcionaisPorCategoria[produto.categoria_id]
         : undefined,
+      // O modal é o único lugar onde a frase de vigência cabe inteira (§4.2).
+      rotuloIndisponivel: rotulosVigencia[produto.id],
     });
     setModalAberto(true);
   };
@@ -167,6 +183,7 @@ export function SecaoCatalogo({
                   key={produto.id}
                   produto={produto}
                   termo={termo}
+                  rotuloIndisponivel={rotulosVigencia[produto.id]}
                   onSelecionar={() => abrirModal(produto)}
                 />
               ))}
@@ -178,6 +195,7 @@ export function SecaoCatalogo({
                   key={produto.id}
                   produto={produto}
                   termo={termo}
+                  rotuloIndisponivel={rotulosVigencia[produto.id]}
                   // Em vez de adicionar direto, abre o modal de detalhe do produto.
                   onAdicionar={() => abrirModal(produto)}
                 />

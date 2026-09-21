@@ -88,7 +88,7 @@ function categoriasFixture(): CategoriaComProdutos[] {
 describe("086 SecaoCatalogo — propaga `disponivel` ao CardProduto", () => {
   it("produto INDISPONÍVEL renderiza estado 'esgotado' (ribbon + botão desabilitado)", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasFixture()} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasFixture()} />,
     );
 
     // CardProduto com disponivel=false: ribbon "Esgotado" + aria-label de esgotado.
@@ -101,7 +101,7 @@ describe("086 SecaoCatalogo — propaga `disponivel` ao CardProduto", () => {
 
   it("produto DISPONÍVEL segue clicável (aria-label de adicionar, sem 'esgotado')", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasFixture()} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasFixture()} />,
     );
 
     // O disponível mantém o aria-label de adicionar, agora com o preço que o
@@ -156,7 +156,7 @@ describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista p
 
   it("grupo com exibir_imagens=true renderiza CardProduto (grid, com área de imagem)", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasComToggle()} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasComToggle()} />,
     );
 
     // CardProduto expõe o botão "Adicionar X ao carrinho" (contrato do grid).
@@ -167,7 +167,7 @@ describe("toggle-imagens-por-categoria — SecaoCatalogo escolhe grid ou lista p
 
   it("grupo com exibir_imagens=false renderiza ItemProdutoLista (sem imagem)", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasComToggle()} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasComToggle()} />,
     );
 
     // ItemProdutoLista: role="button" + aria-label "Ver detalhes de..." — sem
@@ -210,7 +210,7 @@ describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", (
   it("o id da seção é exatamente `ancoraCategoria(id, indice)`", () => {
     const categorias = categoriasComGrupoSemId();
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categorias} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categorias} />,
     );
 
     categorias.forEach((categoria, indice) => {
@@ -220,7 +220,7 @@ describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", (
 
   it('grupo sem id ("Outros") vira `grupo-<indice>`', () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasComGrupoSemId()} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasComGrupoSemId()} />,
     );
 
     expect(html).toContain('id="grupo-0"');
@@ -229,7 +229,7 @@ describe("201 SecaoCatalogo — âncora compartilhada e scroll-margin medido", (
 
   it("a seção usa scroll-margin-top medido e NÃO a antiga classe fixa de scroll-margin", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasFixture()} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasFixture()} />,
     );
 
     expect(html).toContain("scroll-margin-top:calc(var(--altura-barra)");
@@ -272,10 +272,10 @@ describe("SecaoCatalogo (200) — realce do trecho casado", () => {
   it("sem termo (e com termo vazio) o HTML é byte a byte o de antes, sem <mark>", () => {
     const categorias = categoriasFixture();
     const semTermo = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categorias} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categorias} />,
     );
     const termoVazio = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categorias} termo="" />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categorias} termo="" />,
     );
 
     expect(termoVazio).toBe(semTermo);
@@ -284,7 +284,7 @@ describe("SecaoCatalogo (200) — realce do trecho casado", () => {
 
   it("com termo, o ramo de grid realça o nome preservando o acento", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasPao(true)} termo="pao" />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasPao(true)} termo="pao" />,
     );
 
     expect(html).toMatch(/<mark[^>]*>Pão<\/mark>/);
@@ -292,7 +292,7 @@ describe("SecaoCatalogo (200) — realce do trecho casado", () => {
 
   it("com termo, o ramo de lista (exibir_imagens=false) também realça", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasPao(false)} termo="pao" />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasPao(false)} termo="pao" />,
     );
 
     expect(html).toMatch(/<mark[^>]*>Pão<\/mark>/);
@@ -300,10 +300,10 @@ describe("SecaoCatalogo (200) — realce do trecho casado", () => {
 
   it("`alt` e `aria-label` continuam com o nome cru, sem <mark> dentro", () => {
     const grid = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasPao(true)} termo="pao" />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasPao(true)} termo="pao" />,
     );
     const lista = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categoriasPao(false)} termo="pao" />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categoriasPao(false)} termo="pao" />,
     );
 
     expect(grid).toContain(

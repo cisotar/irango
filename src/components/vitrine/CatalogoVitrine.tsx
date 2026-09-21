@@ -40,6 +40,12 @@ import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 type CatalogoVitrineProps = {
   categorias: CategoriaComProdutos[];
   opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
+  /**
+   * [262] Repassado intacto ao `SecaoCatalogo`. Este componente não lê nem
+   * reescreve o mapa: a frase vem pronta do servidor (247/254) e chaveada por
+   * id, então o filtro da busca (que é subtrativo) não a alcança.
+   */
+  rotulosVigencia: Record<string, string>;
 };
 
 /**
@@ -56,6 +62,7 @@ type CatalogoVitrineProps = {
 export function CatalogoVitrine({
   categorias,
   opcionaisPorCategoria,
+  rotulosVigencia,
 }: CatalogoVitrineProps) {
   const barraRef = useRef<HTMLDivElement>(null);
   const temBarra = categorias.length > 0;
@@ -201,6 +208,7 @@ export function CatalogoVitrine({
           <SecaoCatalogo
             categorias={filtradas}
             opcionaisPorCategoria={opcionaisPorCategoria}
+            rotulosVigencia={rotulosVigencia}
             termo={termo}
           />
         )}

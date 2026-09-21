@@ -189,7 +189,7 @@ describe("233 SecaoCatalogo — grid, lista e o caminho da busca", () => {
 
   it("a promoção chega ao grid de cards", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categorias(true)} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categorias(true)} />,
     );
     expect(html).toContain("-20%");
     expect(html).toContain(`R$${NBSP}80,00`);
@@ -197,7 +197,7 @@ describe("233 SecaoCatalogo — grid, lista e o caminho da busca", () => {
 
   it("a promoção chega à lista textual", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo categorias={categorias(false)} />,
+      <SecaoCatalogo rotulosVigencia={{}} categorias={categorias(false)} />,
     );
     expect(html).toContain("-20%");
     expect(html).toContain(`R$${NBSP}80,00`);

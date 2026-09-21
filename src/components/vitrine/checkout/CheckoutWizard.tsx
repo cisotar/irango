@@ -38,6 +38,10 @@ import {
   MSG_REVISAO_FALHOU,
   MSG_REVISAO_SEM_MUDANCA,
 } from "./reconfirmacaoPreco";
+import {
+  detectarItensBloqueados,
+  SEM_BLOQUEIOS,
+} from "./itensBloqueados";
 import { useRevisaoCarrinho } from "@/hooks/useRevisaoCarrinho";
 import { textosRevisao } from "@/lib/utils/copiaRevisaoPreco";
 import type {
@@ -223,6 +227,23 @@ export function CheckoutWizard({
     [linhasExibidas, revisaoFresca],
   );
 
+  // [262/design §13.7] Linhas que o SERVIDOR recusa agora (esgotado ou fora da
+  // janela do cardápio — 252/RN-06). Só com revisão FRESCA: parear o carrinho
+  // de agora com um veredito calculado para um carrinho anterior riscaria o
+  // preço da linha errada. Sem revisão fresca nada é afirmado, e a autoridade
+  // segue sendo `criarPedido` (RN-08).
+  const bloqueados = useMemo(
+    () =>
+      revisaoFresca
+        ? detectarItensBloqueados(
+            linhasExibidas.map((l) => l.nome),
+            revisaoFresca.itens,
+          )
+        : SEM_BLOQUEIOS,
+    [linhasExibidas, revisaoFresca],
+  );
+  const temItemBloqueado = bloqueados.length > 0;
+
   // [238/D11] A reconfirmação SEMPRE nasce de números frescos: o conteúdo do
   // diálogo é congelado aqui, no instante em que ele abre. `null` = fechado.
   const [reconfirmacao, setReconfirmacao] = useState<{
@@ -286,7 +307,13 @@ export function CheckoutWizard({
     lojaAberta &&
     estado.nome.trim().length > 0 &&
     itens.length > 0 &&
-    podeConfirmar(estado, estado.tipoEntrega, freteStatusPreview, SEM_REVISAO);
+    podeConfirmar(
+      estado,
+      estado.tipoEntrega,
+      freteStatusPreview,
+      SEM_REVISAO,
+      temItemBloqueado,
+    );
 
   // Segundo clique EXPLÍCITO, sobre o número novo: as linhas do diálogo passam
   // a afirmar `promocaoExibida: false`, que é o que destrava a trava de RN-12-a
@@ -412,6 +439,7 @@ export function CheckoutWizard({
           codigoCupom={estado.codigoCupom}
           cupom={estadoCupom}
           economiaProdutos={economiaProdutos}
+          bloqueados={bloqueados}
           onIncrementar={incrementar}
           onDecrementar={decrementar}
           onRemover={remover}
@@ -458,6 +486,7 @@ export function CheckoutWizard({
           economiaProdutos={economiaProdutos}
           freteStatus={freteStatusPreview}
           revisao={revisaoDoGate}
+          temItemBloqueado={temItemBloqueado}
           onRevisaoNecessaria={aoRevisaoNecessaria}
           indicesReconfirmados={indicesReconfirmados}
           frete={fretePreviewEfetivo}
@@ -479,6 +508,7 @@ export function CheckoutWizard({
       estado.tipoEntrega,
       freteStatusPreview,
       revisaoDoGate,
+      temItemBloqueado,
     );
 
   const layoutDesktop = (
@@ -494,6 +524,7 @@ export function CheckoutWizard({
             codigoCupom={estado.codigoCupom}
             cupom={estadoCupom}
             economiaProdutos={economiaProdutos}
+            bloqueados={bloqueados}
             onIncrementar={incrementar}
             onDecrementar={decrementar}
             onRemover={remover}
@@ -536,6 +567,7 @@ export function CheckoutWizard({
             economiaProdutos={economiaProdutos}
             freteStatus={freteStatusPreview}
             revisao={revisaoDoGate}
+            temItemBloqueado={temItemBloqueado}
             onRevisaoNecessaria={aoRevisaoNecessaria}
             indicesReconfirmados={indicesReconfirmados}
             frete={fretePreviewEfetivo}

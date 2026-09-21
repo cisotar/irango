@@ -187,12 +187,22 @@ export default async function VitrinePage({ params }: PageProps) {
   // lista ainda é uma lista — e a regra "grupo sem produto visível não é
   // devolvido" (issue 177, dentro de `agruparCatalogo`) passa a cobrir a
   // categoria esvaziada pela temporada de graça, sem código de agrupamento novo.
+  //
+  // 248/RN-06: o zeramento de `foto_url` em categoria "ocultar" entra AQUI, na
+  // projeção, e não mais por grupo depois do agrupamento. A URL escondida vira
+  // PROPRIEDADE DO PRODUTO: ele viaja com um `foto_url` só para onde for
+  // (categoria, lista de promocionais, seção de destaque da 263), e nenhuma
+  // superfície nova pode reintroduzir o vazamento que a issue 201 fechou.
   const agora = new Date();
-  const { produtos: produtosVitrine } = projetarCatalogoVitrine({
+  const exibirImagensPorCategoria = new Map(
+    categorias.map((c) => [c.id, c.exibir_imagens !== false]),
+  );
+  const { produtos: produtosVitrine, rotulosVigencia } = projetarCatalogoVitrine({
     produtos,
     cardapiosPorProduto,
     agora,
     timezone: timezoneLoja,
+    exibirImagensPorCategoria,
   });
   const grupos = agruparCatalogo(produtosVitrine, categorias);
 
@@ -217,21 +227,19 @@ export default async function VitrinePage({ params }: PageProps) {
     exibir_imagens: grupo.categoria?.exibir_imagens ?? true,
     // O `ProdutoVitrine` INTEIRO desce às superfícies (225) — sem remontar campo
     // a campo, que era onde comprabilidade e preço efetivo caíam no chão (D13).
-    produtos: grupo.produtos.map((p) => ({
-      ...p,
-      // RN-3 (issue 201) — NÃO é adaptador: em categoria "ocultar", a foto não
-      // trafega ao cliente. Zerada aqui no SSR, não só escondida no render (o
-      // payload RSC não carrega a URL).
-      foto_url: grupo.categoria?.exibir_imagens === false ? null : p.foto_url,
-    })),
+    // 248: a MESMA referência que saiu da projeção, sem cópia e sem remendo de
+    // `foto_url` — a URL de categoria "ocultar" já veio `null` de lá.
+    produtos: grupo.produtos,
   }));
 
   // RN-15: "pratos promocionais" é DERIVADO do catálogo que a página já
-  // carregou — zero query nova, zero tabela nova. Filtra sobre
-  // `categoriasComProdutos`, e não sobre `produtosVitrine`, porque é ali que a
-  // RN-3 já zerou a `foto_url` de categoria com `exibir_imagens = false`: o
-  // modal (234) mostra foto, e a lista crua faria a URL que o catálogo esconde
-  // trafegar ao cliente por outra porta.
+  // carregou — zero query nova, zero tabela nova.
+  //
+  // 248: a passagem por `categoriasComProdutos` deixou de ser a GUARDA da RN-3
+  // (a `foto_url` de categoria "ocultar" já está `null` no PRODUTO, dentro da
+  // projeção) e passou a ser só a ordem de exibição do modal — agrupada por
+  // categoria, como o cliente vê o cardápio. A URL escondida não volta por
+  // aqui nem por nenhuma superfície futura.
   const promocionais = categoriasComProdutos
     .flatMap((c) => c.produtos)
     .filter((p) => p.temDesconto);
@@ -282,6 +290,10 @@ export default async function VitrinePage({ params }: PageProps) {
           <CatalogoVitrine
             categorias={categoriasComProdutos}
             opcionaisPorCategoria={opcionaisPorCategoria}
+            // [262/RN-06] O mapa desce junto com os produtos, do MESMO retorno:
+            // é o que garante que nenhum produto marcado chegue à tela sem a
+            // frase que diz quando ele volta.
+            rotulosVigencia={rotulosVigencia}
           />
         )}
 
