@@ -316,6 +316,17 @@ export async function removerCardapioAdmin(
           // estado é reconciliável numa segunda tentativa.
           return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
         }
+        // O gesto destrutivo em `produtos` JÁ commitou aqui — o rastro não
+        // pode depender do desfecho do request 2 (achado da auditoria da
+        // issue 284/285). Se o DELETE do cardápio falhar por corrida (RN-09)
+        // ou já tiver sido removido em paralelo, o hub ainda sabe quem
+        // arquivou/apagou os N produtos.
+        registrarAcessoAdmin(svc, {
+          lojaId: loja.lojaId,
+          acao: "cardapio.remover",
+          entidadeId: id,
+          metadados: { modo: escolha, produtos: atingidos, etapa: "produtos" },
+        });
       }
     }
 
@@ -336,10 +347,12 @@ export async function removerCardapioAdmin(
       acao: "cardapio.remover",
       entidadeId: id,
       // RN-13: o rastro do gesto de OUTRA pessoa. `manter` continua com o log
-      // de hoje, sem metadados — nada mudou no que ele faz.
+      // de hoje, sem metadados — nada mudou no que ele faz. Nos modos novos
+      // esta é a SEGUNDA entrada (a 1ª, `etapa:"produtos"`, já saiu acima) —
+      // ela confirma que o cardápio também saiu, não só os produtos.
       ...(escolha === "manter"
         ? {}
-        : { metadados: { modo: escolha, produtos: atingidos } }),
+        : { metadados: { modo: escolha, produtos: atingidos, etapa: "cardapio" } }),
     });
     revalidarLojaAdmin(loja.lojaId);
     return { ok: true };

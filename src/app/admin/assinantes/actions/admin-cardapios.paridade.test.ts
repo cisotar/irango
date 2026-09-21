@@ -1621,6 +1621,15 @@ describe("[284] removerCardapioAdmin(lojaId, id, modo) — os três modos", () =
           exclusivos: 0,
         });
         expect(JSON.stringify(r)).not.toContain("23000");
+
+        // [achado da auditoria 284/285] O gesto em `produtos` JÁ commitou
+        // antes da corrida derrubar o request 2 — o rastro não pode
+        // desaparecer só porque o cardápio sobreviveu desta vez.
+        expect(logAdmin()).toMatchObject({
+          acao: "cardapio.remover",
+          entidade_id: CARDAPIO_ID,
+          metadados: { modo, produtos: 1, etapa: "produtos" },
+        });
       },
     );
   });
