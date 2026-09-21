@@ -6,7 +6,6 @@
 import { describe, it, expect } from "vitest";
 
 import {
-  alternarDiaDoVinculo,
   payloadDeDias,
   payloadsDeDiasEmLote,
   podeDefinirDias,
@@ -15,30 +14,6 @@ import { schemaDiasDoVinculo } from "@/lib/validacoes/cardapio";
 
 const CARDAPIO = "11111111-1111-4111-8111-111111111111";
 const PRODUTO = "22222222-2222-4222-8222-222222222222";
-
-describe("alternarDiaDoVinculo", () => {
-  it("marca um dia mantendo a lista ordenada", () => {
-    expect(alternarDiaDoVinculo([6], 3)).toEqual([3, 6]);
-  });
-
-  it("desmarca um dia já marcado", () => {
-    expect(alternarDiaDoVinculo([3, 6], 3)).toEqual([6]);
-  });
-
-  it("null é 'todos os dias do cardápio' e vira uma lista de um", () => {
-    expect(alternarDiaDoVinculo(null, 0)).toEqual([0]);
-  });
-
-  it("desmarcar o último dia devolve lista vazia (o servidor grava NULL)", () => {
-    expect(alternarDiaDoVinculo([3], 3)).toEqual([]);
-  });
-
-  it("não muta a lista de entrada", () => {
-    const original = [3];
-    alternarDiaDoVinculo(original, 6);
-    expect(original).toEqual([3]);
-  });
-});
 
 describe("payloadDeDias", () => {
   it("produz EXATAMENTE as três chaves da action", () => {

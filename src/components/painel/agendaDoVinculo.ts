@@ -20,19 +20,6 @@ export type PayloadDeDias = {
 };
 
 /**
- * Alterna um dia na agenda do vínculo, mantendo a lista ordenada e sem
- * repetição. A representação final (`[]` → `NULL`, dedup, ordem) continua sendo
- * decidida no SERVIDOR por `normalizarDiasDoVinculo` — isto é só o que a tela
- * mostra enquanto a escrita está em voo.
- */
-export function alternarDiaDoVinculo(dias: number[] | null, dia: number): number[] {
-  const atual = dias ?? [];
-  return atual.includes(dia)
-    ? atual.filter((d) => d !== dia)
-    : [...atual, dia].sort((a, b) => a - b);
-}
-
-/**
  * O payload de UMA escrita. Três chaves e nada mais: nem `loja_id` (que o
  * `.strict()` recusaria — RN-10), nem nome, nem estado de tela.
  */
