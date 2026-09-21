@@ -223,7 +223,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // descartado em silêncio. Sem `codigo` — não é a recusa de RN-12-a.
       const vigencia = avaliarVigenciaDoProduto(
         { visibilidade: visibilidadeDe(produto) },
-        cardapios.cardapiosPorProduto.get(produto.id) ?? [],
+        cardapios.vinculosPorProduto.get(produto.id) ?? [],
         agora,
         loja.timezone,
       );

@@ -6,6 +6,7 @@ import type { Database } from "@/lib/database.types";
 import {
   paraCardapioVigencia,
   type CardapioVigencia,
+  type VinculoVigencia,
 } from "@/lib/utils/vigenciaCardapio";
 
 type Client = SupabaseClient<Database>;
@@ -22,18 +23,29 @@ export type CardapioDaLoja = CardapioVigencia & { ordem: number };
  */
 export const COLUNAS_CARDAPIO_VIGENCIA =
   "id, nome, ativo, ordem, modo, dias_semana, dias_mes, hora_inicio, hora_fim, " +
-  "prazo_inicio, prazo_fim, cardapio_produtos(produto_id)";
+  "prazo_inicio, prazo_fim, cardapio_produtos(produto_id, dias_semana)";
 
 /** A row crua do PostgREST: `modo` é `string` (o CHECK não viaja ao TS). */
 type LinhaCardapio = Omit<CardapioVigencia, "modo"> & {
   modo: string;
   ordem: number;
-  cardapio_produtos: { produto_id: string }[] | null;
+  /**
+   * [273] O embed traz o vínculo INTEIRO do que decide vigência. `dias_semana`
+   * NÃO é saneado aqui: `itemAberto` trata `null` e `[]` igual, `ordenarSemana`
+   * filtra inteiro fora de 0..6 e o CHECK `cardapio_produtos_dias_semana_dominio`
+   * (272) é o backstop no banco.
+   */
+  cardapio_produtos: { produto_id: string; dias_semana: number[] | null }[] | null;
 };
 
 /**
- * Cardápios da loja + o índice `produto_id → cardápios` que a projeção da
+ * Cardápios da loja + o índice `produto_id → VÍNCULOS` que a projeção da
  * vitrine consome (`projetarCatalogoVitrine`).
+ *
+ * [273/RN-09] O índice carrega o VÍNCULO (`{ cardapio, dias_semana }`), não o
+ * cardápio: os dias do item são do vínculo, e jogar a linha de
+ * `cardapio_produtos` fora aqui deixaria quem decide a venda sem como saber
+ * que a Feijoada só sai na quarta.
  *
  * SEM `.eq("ativo", true)` de propósito: RN-03 é decidida na função pura
  * (`avaliarVigenciaDoProduto` filtra `ativo`), e filtrar no SQL criaria a
@@ -56,7 +68,7 @@ export async function buscarCardapiosComProdutos(
   lojaId: string,
 ): Promise<{
   cardapios: CardapioDaLoja[];
-  cardapiosPorProduto: Map<string, CardapioDaLoja[]>;
+  vinculosPorProduto: Map<string, VinculoVigencia<CardapioDaLoja>[]>;
 }> {
   const { data, error } = await client
     .from("cardapios")
@@ -69,7 +81,7 @@ export async function buscarCardapiosComProdutos(
 
   const linhas = (data ?? []) as unknown as LinhaCardapio[];
   const cardapios: CardapioDaLoja[] = [];
-  const cardapiosPorProduto = new Map<string, CardapioDaLoja[]>();
+  const vinculosPorProduto = new Map<string, VinculoVigencia<CardapioDaLoja>[]>();
 
   for (const linha of linhas) {
     const vigencia = paraCardapioVigencia(linha);
@@ -78,14 +90,18 @@ export async function buscarCardapiosComProdutos(
     const cardapio: CardapioDaLoja = { ...vigencia, ordem: linha.ordem };
     cardapios.push(cardapio);
 
-    for (const vinculo of linha.cardapio_produtos ?? []) {
-      const lista = cardapiosPorProduto.get(vinculo.produto_id);
-      if (lista) lista.push(cardapio);
-      else cardapiosPorProduto.set(vinculo.produto_id, [cardapio]);
+    for (const linhaVinculo of linha.cardapio_produtos ?? []) {
+      const vinculo: VinculoVigencia<CardapioDaLoja> = {
+        cardapio,
+        dias_semana: linhaVinculo.dias_semana,
+      };
+      const lista = vinculosPorProduto.get(linhaVinculo.produto_id);
+      if (lista) lista.push(vinculo);
+      else vinculosPorProduto.set(linhaVinculo.produto_id, [vinculo]);
     }
   }
 
-  return { cardapios, cardapiosPorProduto };
+  return { cardapios, vinculosPorProduto };
 }
 
 /**
@@ -132,10 +148,10 @@ export async function buscarCardapiosDoPainel(
    * dos vínculos: nenhuma query nova entrou na página.
    */
   produtos: ProdutoVinculado[];
-  /** [264] `produto_id → cardápios do produto`, para avaliar RN-13 por produto. */
-  cardapiosPorProduto: Map<string, CardapioDaLoja[]>;
+  /** [264] `produto_id → vínculos do produto`, para avaliar RN-13 por produto. */
+  vinculosPorProduto: Map<string, VinculoVigencia<CardapioDaLoja>[]>;
 }> {
-  const [{ cardapios, cardapiosPorProduto }, vinculos] = await Promise.all([
+  const [{ cardapios, vinculosPorProduto }, vinculos] = await Promise.all([
     buscarCardapiosComProdutos(client, lojaId),
     buscarVinculosComVisibilidade(client, lojaId),
   ]);
@@ -175,7 +191,7 @@ export async function buscarCardapiosDoPainel(
   return {
     cardapios: linhas,
     produtos: [...produtos.values()],
-    cardapiosPorProduto,
+    vinculosPorProduto,
   };
 }
 

@@ -12,7 +12,7 @@ import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
 import { descreverVigencia } from "@/lib/utils/descreverVigencia";
 import type {
   CardapioParaLote,
-  CardapiosPorProduto,
+  VinculosPorProduto,
 } from "@/components/painel/contrato-lote";
 import { CardapioAdminClient } from "./CardapioAdminClient";
 
@@ -73,13 +73,13 @@ export default async function CardapioAdminPage({
 
   // O MESMO `agora` do bloco acima e o fuso da LOJA-ALVO: o admin edita em nome
   // do lojista e não pode ver "aberto agora" por outro relógio.
-  const cardapiosPorProduto: CardapiosPorProduto = Object.fromEntries(
-    [...cardapiosDaLoja.cardapiosPorProduto].map(([produtoId, lista]) => [
+  const vinculosPorProduto: VinculosPorProduto = Object.fromEntries(
+    [...cardapiosDaLoja.vinculosPorProduto].map(([produtoId, lista]) => [
       produtoId,
-      lista.map((c) => ({
-        id: c.id,
-        nome: c.nome,
-        abertoAgora: cardapioAberto(c, agora, loja.timezone),
+      lista.map((v) => ({
+        id: v.cardapio.id,
+        nome: v.cardapio.nome,
+        abertoAgora: cardapioAberto(v.cardapio, agora, loja.timezone),
       })),
     ]),
   );
@@ -96,7 +96,7 @@ export default async function CardapioAdminPage({
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
       cardapiosDoLote={cardapiosDoLote}
-      cardapiosPorProduto={cardapiosPorProduto}
+      vinculosPorProduto={vinculosPorProduto}
       promocoes={promocoes}
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
       // Linhas INTEIRAS desde a 217 — o cartão de associação exige

@@ -31,7 +31,7 @@ export default async function CardapiosAdminPage({
   params: Promise<{ lojaId: string }>;
 }): Promise<ReactElement> {
   const { lojaId } = await params;
-  const { loja, cardapios, produtos, cardapiosPorProduto } =
+  const { loja, cardapios, produtos, vinculosPorProduto } =
     await carregarCardapiosDoPainelAdmin(lojaId);
 
   const agora = new Date();
@@ -40,14 +40,14 @@ export default async function CardapiosAdminPage({
     const contagem = contarProdutosEscondidos(
       cardapio,
       produtos,
-      cardapiosPorProduto,
+      vinculosPorProduto,
       agora,
       loja.timezone,
     );
     const escondidos = listarProdutosEscondidos(
       cardapio,
       produtos,
-      cardapiosPorProduto,
+      vinculosPorProduto,
       agora,
       loja.timezone,
     );

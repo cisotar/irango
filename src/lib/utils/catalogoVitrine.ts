@@ -10,9 +10,10 @@ import {
   cardapioAberto,
   visibilidadeDe,
   type CardapioVigencia,
+  type VinculoVigencia,
 } from "./vigenciaCardapio";
 import {
-  escolherCardapioParaRotulo,
+  escolherVinculoParaRotulo,
   proximaAbertura,
   rotuloVoltaQuando,
   ROTULO_SEM_VOLTA,
@@ -84,7 +85,7 @@ export type MotivoNaoCompravel = "esgotado" | "fora_da_janela";
 // fuso, de dia da semana ou de prazo é reescrita aqui.
 export function projetarProdutoVitrine(
   produto: ProdutoParaVitrine & { visibilidade: string },
-  cardapios: CardapioVigencia[],
+  vinculos: VinculoVigencia[],
   agora: Date,
   timezone: string,
   /**
@@ -112,7 +113,7 @@ export function projetarProdutoVitrine(
   const preco = precoEfetivo(produto, agora);
   const vigencia = avaliarVigenciaDoProduto(
     { visibilidade: visibilidadeDe(produto) },
-    cardapios,
+    vinculos,
     agora,
     timezone,
   );
@@ -165,7 +166,7 @@ export function projetarProdutoVitrine(
  */
 export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
   produtos: (ProdutoParaVitrine & { visibilidade: string })[];
-  cardapiosPorProduto: Map<string, C[]>;
+  vinculosPorProduto: Map<string, VinculoVigencia<C>[]>;
   agora: Date;
   timezone: string;
   /**
@@ -180,7 +181,7 @@ export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
 } {
   const {
     produtos: entradaProdutos,
-    cardapiosPorProduto,
+    vinculosPorProduto,
     agora,
     timezone,
     exibirImagensPorCategoria,
@@ -202,10 +203,10 @@ export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
   };
 
   for (const produto of entradaProdutos) {
-    const cardapios = cardapiosPorProduto.get(produto.id) ?? [];
+    const vinculos = vinculosPorProduto.get(produto.id) ?? [];
     const vigencia = avaliarVigenciaDoProduto(
       { visibilidade: visibilidadeDe(produto) },
-      cardapios,
+      vinculos,
       agora,
       timezone,
     );
@@ -213,7 +214,7 @@ export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
 
     const projetado = projetarProdutoVitrine(
       produto,
-      cardapios,
+      vinculos,
       agora,
       timezone,
       exibirImagensPorCategoria,
@@ -226,9 +227,14 @@ export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
       // UI nunca escolhe, e o texto desce pronto do servidor. Sem volta
       // conhecida, o fallback defensivo de render (design §4.1): por RN-13 o
       // produto de cardápio nesse estado nem chega aqui.
-      const dono = escolherCardapioParaRotulo(cardapios, proxima);
+      // [273/R2] A escada continua sendo `proximaAbertura` DO CARDÁPIO: com um
+      // cardápio aberto hoje (item só na quarta) e outro fechado que abre
+      // amanhã, ganha o aberto e a frase é a do item. Verdadeira, não ótima —
+      // e manter a escada idêntica à ordem das seções de destaque é o que
+      // evita "a frase mudou sozinha".
+      const dono = escolherVinculoParaRotulo(vinculos, proxima);
       rotulosVigencia[projetado.id] = dono
-        ? rotuloVoltaQuando(dono, timezone)
+        ? rotuloVoltaQuando(dono, agora, timezone)
         : ROTULO_SEM_VOLTA;
     }
   }
@@ -237,8 +243,8 @@ export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
   // por produto vinculado). Consumido pela 248, que NÃO reavalia a janela.
   const vistos = new Set<string>();
   const cardapiosAbertos: C[] = [];
-  for (const lista of cardapiosPorProduto.values()) {
-    for (const cardapio of lista) {
+  for (const lista of vinculosPorProduto.values()) {
+    for (const { cardapio } of lista) {
       if (vistos.has(cardapio.id)) continue;
       vistos.add(cardapio.id);
       if (cardapioAberto(cardapio, agora, timezone)) cardapiosAbertos.push(cardapio);
@@ -287,7 +293,7 @@ export type SecaoVitrine = CategoriaComProdutos & {
  * produtos foram todos ocultados não pinta cabeçalho que não leva a lugar nenhum.
  *
  * **Ordem `cardapios.ordem` → `nome` (pt-BR) → `id`** — a MESMA escada de RN-07
- * (`escolherCardapioParaRotulo`). Duas ordenações diferentes de cardápio é como
+ * (`escolherVinculoParaRotulo`). Duas ordenações diferentes de cardápio é como
  * nasce bug de "a seção mudou de lugar sozinha".
  *
  * **A duplicata é de RENDER, nunca de dado**: o mesmo `ProdutoVitrine` (a mesma
@@ -304,7 +310,7 @@ export type SecaoVitrine = CategoriaComProdutos & {
 export function agruparPorCardapio<C extends CardapioVigencia & { ordem: number }>(
   produtos: readonly ProdutoVitrine[],
   cardapiosAbertos: readonly C[],
-  cardapiosPorProduto: ReadonlyMap<string, C[]>,
+  vinculosPorProduto: ReadonlyMap<string, VinculoVigencia<C>[]>,
 ): SecaoVitrine[] {
   if (cardapiosAbertos.length === 0) return [];
 
@@ -332,7 +338,7 @@ export function agruparPorCardapio<C extends CardapioVigencia & { ordem: number 
     // Deduplica por id: o mesmo cardápio pode aparecer duas vezes na lista de
     // um produto se o vínculo vier duplicado do banco.
     const vistos = new Set<string>();
-    for (const cardapio of cardapiosPorProduto.get(produto.id) ?? []) {
+    for (const { cardapio } of vinculosPorProduto.get(produto.id) ?? []) {
       if (vistos.has(cardapio.id)) continue;
       vistos.add(cardapio.id);
       // D16-a: produto em DOIS cardápios abertos sai nas DUAS seções — e na

@@ -49,7 +49,7 @@ export type CardapioParaLote = {
  * De quais cardápios um produto participa, e se ele está DENTRO da janela
  * agora — os dois derivados no Server Component, com o relógio do servidor.
  */
-export type CardapioDoProduto = {
+export type VinculoDoProduto = {
   id: string;
   nome: string;
   abertoAgora: boolean;
@@ -69,4 +69,4 @@ export type LoteDeProdutos = {
  * por ela se mostra "este produto não está em nenhum cardápio". Pendurada no
  * lote, o admin lia `{}` e afirmava isso de um produto que está em dois.
  */
-export type CardapiosPorProduto = Record<string, CardapioDoProduto[]>;
+export type VinculosPorProduto = Record<string, VinculoDoProduto[]>;

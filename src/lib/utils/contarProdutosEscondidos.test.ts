@@ -12,7 +12,7 @@ import {
   listarProdutosEscondidos,
   type ProdutoContado,
 } from "./contarProdutosEscondidos";
-import type { CardapioVigencia } from "./vigenciaCardapio";
+import type { CardapioVigencia, VinculoVigencia } from "./vigenciaCardapio";
 
 const SP = "America/Sao_Paulo";
 const emSP = (local: string) => new Date(instanteNoFuso(local, SP));
@@ -51,12 +51,21 @@ const COCA: ProdutoContado = {
 const DEZEMBRO = emSP("2026-12-20T12:00");
 const JULHO = emSP("2026-07-15T12:00");
 
+/**
+ * [273] O vínculo SEM dias do item — a forma de 100% das linhas no deploy da
+ * 272. A contagem tem de continuar byte a byte a de antes do eixo mudar.
+ */
+const semDias = (cardapio: CardapioVigencia): VinculoVigencia => ({
+  cardapio,
+  dias_semana: null,
+});
+
 function vinculos(
   cardapio: CardapioVigencia,
-): Map<string, CardapioVigencia[]> {
+): Map<string, VinculoVigencia[]> {
   return new Map([
-    ["sopa", [cardapio]],
-    ["coca", [cardapio]],
+    ["sopa", [semDias(cardapio)]],
+    ["coca", [semDias(cardapio)]],
   ]);
 }
 
@@ -123,8 +132,8 @@ describe("264 contarProdutosEscondidos — cenário 6", () => {
         INVERNO,
         [SOPA, COCA],
         new Map([
-          ["sopa", [INVERNO, verao]],
-          ["coca", [INVERNO]],
+          ["sopa", [semDias(INVERNO), semDias(verao)]],
+          ["coca", [semDias(INVERNO)]],
         ]),
         DEZEMBRO,
         SP,
@@ -139,7 +148,9 @@ describe("264 contarProdutosEscondidos — cenário 6", () => {
       visibilidade: "cardapio",
     };
     const mapa = vinculos(INVERNO);
-    mapa.set("outro", [{ ...INVERNO, id: "feira", nome: "Feira", ativo: false }]);
+    mapa.set("outro", [
+      semDias({ ...INVERNO, id: "feira", nome: "Feira", ativo: false }),
+    ]);
 
     expect(
       contarProdutosEscondidos(INVERNO, [SOPA, COCA, deOutro], mapa, DEZEMBRO, SP),
@@ -185,7 +196,7 @@ describe("264 listarProdutosEscondidos — o número e os nomes saem do mesmo lu
 
 describe("264 diagnosticarSumico — o mesmo estado, visto do produto", () => {
   it("exclusivo de cardápio expirado ⇒ nomeia o cardápio e diz que segue ligado", () => {
-    expect(diagnosticarSumico(SOPA, [INVERNO], DEZEMBRO, SP)).toEqual({
+    expect(diagnosticarSumico(SOPA, [semDias(INVERNO)], DEZEMBRO, SP)).toEqual({
       cardapio: "Cardápio de Inverno",
       ativo: true,
     });
@@ -193,21 +204,21 @@ describe("264 diagnosticarSumico — o mesmo estado, visto do produto", () => {
 
   it("exclusivo de cardápio DESLIGADO ⇒ mesmo diagnóstico, `ativo: false`", () => {
     expect(
-      diagnosticarSumico(SOPA, [INVERNO_DESLIGADO], JULHO, SP),
+      diagnosticarSumico(SOPA, [semDias(INVERNO_DESLIGADO)], JULHO, SP),
     ).toEqual({ cardapio: "Cardápio de Inverno", ativo: false });
   });
 
   it("produto do MENU nunca sumiu — RN-05 curto-circuita", () => {
-    expect(diagnosticarSumico(COCA, [INVERNO], DEZEMBRO, SP)).toBeNull();
+    expect(diagnosticarSumico(COCA, [semDias(INVERNO)], DEZEMBRO, SP)).toBeNull();
   });
 
   it("exclusivo com cardápio em curso não sumiu", () => {
-    expect(diagnosticarSumico(SOPA, [INVERNO], JULHO, SP)).toBeNull();
+    expect(diagnosticarSumico(SOPA, [semDias(INVERNO)], JULHO, SP)).toBeNull();
   });
 
   it("é determinístico: com dois cardápios sem volta, sempre o mesmo nome", () => {
     const outro: CardapioVigencia = { ...INVERNO, id: "a", nome: "Aniversário" };
-    const lista = [INVERNO, outro];
+    const lista = [semDias(INVERNO), semDias(outro)];
 
     expect(diagnosticarSumico(SOPA, lista, DEZEMBRO, SP)?.cardapio).toBe(
       "Aniversário",

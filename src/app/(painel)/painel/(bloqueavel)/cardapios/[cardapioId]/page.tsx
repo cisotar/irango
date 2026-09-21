@@ -60,9 +60,9 @@ export default async function CardapioDetalhePage({
 
   // [260] A lista da loja inteira agrupada por categoria + quem já está neste
   // cardápio. Duas idas ao banco em paralelo, nenhuma por produto: o índice
-  // `produto → cardápios` de `buscarCardapiosComProdutos` é o mesmo que a
+  // `produto → vínculos` de `buscarCardapiosComProdutos` é o mesmo que a
   // vitrine consome, e é dele que sai `noCardapio`.
-  const [produtos, categorias, { cardapiosPorProduto }] = await Promise.all([
+  const [produtos, categorias, { vinculosPorProduto }] = await Promise.all([
     buscarProdutosDoLojista(supabase, loja.id),
     buscarCategorias(supabase, loja.id),
     buscarCardapiosComProdutos(supabase, loja.id),
@@ -89,8 +89,8 @@ export default async function CardapioDetalhePage({
         nome: p.nome,
         // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
         exclusivo: visibilidadeDe(p) === "cardapio",
-        noCardapio: (cardapiosPorProduto.get(p.id) ?? []).some(
-          (c) => c.id === cardapioId,
+        noCardapio: (vinculosPorProduto.get(p.id) ?? []).some(
+          (v) => v.cardapio.id === cardapioId,
         ),
       })),
     }));

@@ -10,7 +10,7 @@ import {
   type ProdutoParaVitrine,
   type ProdutoVitrine,
 } from "./catalogoVitrine";
-import type { CardapioVigencia } from "./vigenciaCardapio";
+import type { CardapioVigencia, VinculoVigencia } from "./vigenciaCardapio";
 import { instanteNoFuso } from "./fusoLoja";
 import { rotuloVoltaQuando } from "./descreverVigencia";
 import { agruparCatalogo, type ProdutoPublico } from "@/lib/supabase/queries/produtos";
@@ -436,6 +436,15 @@ const SP = "America/Sao_Paulo";
 const emSP = (local: string) => new Date(instanteNoFuso(local, SP));
 
 /** Cenário 1 da spec: recorrente sáb+dom, 11:00–15:00. */
+/**
+ * [273] O vínculo SEM dias do item — a forma de 100% das linhas no deploy da
+ * 272. A projeção tem de sair byte a byte igual à de antes do eixo mudar.
+ */
+const semDias = <C extends CardapioVigencia>(cardapio: C): VinculoVigencia<C> => ({
+  cardapio,
+  dias_semana: null,
+});
+
 const FIM_DE_SEMANA: CardapioVigencia = {
   id: "c0000000-0000-4000-8000-000000000001",
   nome: "Fim de semana",
@@ -539,7 +548,7 @@ describe("247 — cenário 3 literal: compravel === disponivel && dentroDaJanela
     it(caso.linha, () => {
       const v = projetarProdutoVitrine(
         base({ visibilidade: caso.visibilidade, disponivel: caso.disponivel }),
-        [FIM_DE_SEMANA],
+        [semDias(FIM_DE_SEMANA)],
         caso.agora,
         SP,
       );
@@ -573,7 +582,7 @@ describe("247 — cenário 3 literal: compravel === disponivel && dentroDaJanela
   it("cardápio INATIVO não abre janela nenhuma (RN-03), mesmo no horário", () => {
     const v = projetarProdutoVitrine(
       base({ visibilidade: "cardapio", disponivel: true }),
-      [{ ...FIM_DE_SEMANA, ativo: false }],
+      [semDias({ ...FIM_DE_SEMANA, ativo: false })],
       SABADO,
       SP,
     );
@@ -585,8 +594,8 @@ describe("247 — cenário 3 literal: compravel === disponivel && dentroDaJanela
     const v = projetarProdutoVitrine(
       base({ visibilidade: "cardapio", disponivel: true }),
       [
-        FIM_DE_SEMANA, // fechado na quarta
-        { ...INVERNO, prazo_inicio: "2026-06-01T00:00:00.000Z", prazo_fim: "2026-09-01T00:00:00.000Z" },
+        semDias(FIM_DE_SEMANA), // fechado na quarta
+        semDias({ ...INVERNO, prazo_inicio: "2026-06-01T00:00:00.000Z", prazo_fim: "2026-09-01T00:00:00.000Z" }),
       ],
       emSP("2026-07-15T12:00"), // quarta, dentro do prazo do Inverno
       SP,
@@ -598,7 +607,7 @@ describe("247 — cenário 3 literal: compravel === disponivel && dentroDaJanela
   it("`visibilidade` continua AUSENTE das chaves do objeto projetado (regra 6)", () => {
     const projetado = projetarProdutoVitrine(
       base({ visibilidade: "cardapio" }),
-      [FIM_DE_SEMANA],
+      [semDias(FIM_DE_SEMANA)],
       TERCA,
       SP,
     );
@@ -612,7 +621,7 @@ describe("247 — cenário 3 literal: compravel === disponivel && dentroDaJanela
 
   it("nenhuma coluna crua de VIGÊNCIA entra no objeto projetado", () => {
     const chaves = Object.keys(
-      projetarProdutoVitrine(base({ visibilidade: "cardapio" }), [FIM_DE_SEMANA], TERCA, SP),
+      projetarProdutoVitrine(base({ visibilidade: "cardapio" }), [semDias(FIM_DE_SEMANA)], TERCA, SP),
     );
     for (const coluna of ["dias_semana", "dias_mes", "hora_inicio", "hora_fim", "prazo_inicio", "prazo_fim"]) {
       expect(chaves).not.toContain(coluna);
@@ -659,15 +668,15 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
   });
 
   /** Cenário 6: os dois produtos estão no MESMO cardápio expirado. */
-  const cardapiosPorProduto = new Map<string, CardapioVigencia[]>([
-    [SOPA.id, [INVERNO]],
-    [COCA.id, [INVERNO]],
+  const vinculosPorProduto = new Map<string, VinculoVigencia[]>([
+    [SOPA.id, [semDias(INVERNO)]],
+    [COCA.id, [semDias(INVERNO)]],
   ]);
 
   it("cenário 6 — a sopa 'cardapio' NÃO está na lista devolvida (RN-13/D14)", () => {
     const { produtos } = projetarCatalogoVitrine({
       produtos: [SOPA, COCA],
-      cardapiosPorProduto,
+      vinculosPorProduto,
       agora: DEZEMBRO,
       timezone: SP,
     });
@@ -677,7 +686,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
   it("cenário 6 — a Coca 'menu' do mesmo cardápio expirado segue COMPRÁVEL", () => {
     const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
       produtos: [SOPA, COCA],
-      cardapiosPorProduto,
+      vinculosPorProduto,
       agora: DEZEMBRO,
       timezone: SP,
     });
@@ -692,7 +701,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
     // A composição REAL da página: projetar → agrupar (ordem invertida na 247).
     const { produtos } = projetarCatalogoVitrine({
       produtos: [SOPA, COCA],
-      cardapiosPorProduto,
+      vinculosPorProduto,
       agora: DEZEMBRO,
       timezone: SP,
     });
@@ -704,7 +713,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
   it("produto 'menu' fora da janela: compravel true e NENHUM rótulo", () => {
     const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
       produtos: [COCA],
-      cardapiosPorProduto: new Map([[COCA.id, [FIM_DE_SEMANA]]]),
+      vinculosPorProduto: new Map([[COCA.id, [semDias(FIM_DE_SEMANA)]]]),
       agora: TERCA,
       timezone: SP,
     });
@@ -725,7 +734,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
     });
     const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
       produtos: [marcado, esgotado, COCA],
-      cardapiosPorProduto: new Map([[marcado.id, [FIM_DE_SEMANA]]]),
+      vinculosPorProduto: new Map([[marcado.id, [semDias(FIM_DE_SEMANA)]]]),
       agora: TERCA,
       timezone: SP,
     });
@@ -749,7 +758,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
     });
     const { rotulosVigencia } = projetarCatalogoVitrine({
       produtos: [marcado],
-      cardapiosPorProduto: new Map([[marcado.id, [FIM_DE_SEMANA]]]),
+      vinculosPorProduto: new Map([[marcado.id, [semDias(FIM_DE_SEMANA)]]]),
       agora: TERCA,
       timezone: SP,
     });
@@ -758,10 +767,68 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
     // troca: o texto agora é o de `rotuloVoltaQuando` para o FIM_DE_SEMANA
     // (sáb+dom, 11:00–15:00) numa terça — a volta real, e não um genérico.
     expect(rotulosVigencia[marcado.id]).toBe(
-      rotuloVoltaQuando(FIM_DE_SEMANA, SP),
+      rotuloVoltaQuando(semDias(FIM_DE_SEMANA), TERCA, SP),
     );
     expect(rotulosVigencia[marcado.id]).toBe("Sáb e dom, 11:00–15:00");
     expect(rotulosVigencia[marcado.id]).not.toBe("Indisponível no momento");
+  });
+
+  // [testar/273] Lacuna: TODOS os testes acima de "fora_da_janela" usam
+  // `semDias(...)` — o vínculo SEM dias do item, herdando a janela inteira do
+  // cardápio. Nenhum prova o caso central da 273: cardápio ABERTO agora (o
+  // "Especiais do Dia", 7 dias) com um ITEM cujo `dias_semana` não bate com
+  // hoje. Sem este teste, um bug que trocasse `escolherVinculoParaRotulo` +
+  // `rotuloVoltaQuando` para ler sempre o CARDÁPIO (em vez do vínculo)
+  // passaria despercebido: o rótulo diria "Todos os dias" para um prato que só
+  // sai na quarta e no sábado — uma mentira para o cliente. Escopo apenas de
+  // 273 (produto + rótulo): o filtro da SEÇÃO de destaque por item é a 279.
+  describe("273 — item fora do dia dentro de um cardápio ABERTO", () => {
+    const ESPECIAIS_TODOS_OS_DIAS: CardapioVigencia = {
+      id: "c0000000-0000-4000-8000-000000000009",
+      nome: "Especiais do Dia",
+      ativo: true,
+      modo: "recorrente",
+      dias_semana: [0, 1, 2, 3, 4, 5, 6],
+      dias_mes: null,
+      hora_inicio: null,
+      hora_fim: null,
+      prazo_inicio: null,
+      prazo_fim: null,
+    };
+    // 2026-10-12 é segunda (o dia seguinte ao domingo 11/10) — fora do dia do
+    // item {qua, sáb}, mas o cardápio está aberto (ele abre os 7 dias).
+    const SEGUNDA = emSP("2026-10-12T12:00");
+
+    it("marca fora_da_janela e o rótulo é o do ITEM, nunca 'Todos os dias' do cardápio", () => {
+      const feijoada = base({
+        id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        nome: "Feijoada",
+        visibilidade: "cardapio",
+        disponivel: true,
+      });
+      const vinculo: VinculoVigencia = {
+        cardapio: ESPECIAIS_TODOS_OS_DIAS,
+        dias_semana: [3, 6],
+      };
+
+      const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
+        produtos: [feijoada],
+        vinculosPorProduto: new Map([[feijoada.id, [vinculo]]]),
+        agora: SEGUNDA,
+        timezone: SP,
+      });
+
+      const projetado = produtos.find((p) => p.id === feijoada.id);
+      // Continua na lista: cardápio recorrente sem faixa degenerada sempre
+      // tem volta (RN-03) — o produto fica MARCADO, não some.
+      expect(projetado).toBeDefined();
+      expect(projetado?.compravel).toBe(false);
+      expect(projetado?.motivoNaoCompravel).toBe("fora_da_janela");
+
+      expect(rotulosVigencia[feijoada.id]).toBe(rotuloVoltaQuando(vinculo, SEGUNDA, SP));
+      expect(rotulosVigencia[feijoada.id]).toBe("Só às quartas e sábados");
+      expect(rotulosVigencia[feijoada.id]).not.toBe("Todos os dias");
+    });
   });
 
   it("cardapiosAbertos traz só os ativos ABERTOS agora, e preserva `ordem` (D4)", () => {
@@ -777,7 +844,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
 
     const { cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
       produtos: [SOPA],
-      cardapiosPorProduto: new Map([[SOPA.id, [abertoComOrdem, fechado, desligado]]]),
+      vinculosPorProduto: new Map([[SOPA.id, [semDias(abertoComOrdem), semDias(fechado), semDias(desligado)]]]),
       agora: SABADO,
       timezone: SP,
     });
@@ -791,9 +858,9 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
   it("cardápio sem NENHUM produto do catálogo não vira produto fantasma", () => {
     const { produtos } = projetarCatalogoVitrine({
       produtos: [COCA],
-      cardapiosPorProduto: new Map([
-        [COCA.id, [FIM_DE_SEMANA]],
-        ["produto-oculto-fora-do-catalogo", [FIM_DE_SEMANA]],
+      vinculosPorProduto: new Map([
+        [COCA.id, [semDias(FIM_DE_SEMANA)]],
+        ["produto-oculto-fora-do-catalogo", [semDias(FIM_DE_SEMANA)]],
       ]),
       agora: SABADO,
       timezone: SP,
@@ -805,7 +872,7 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
     const entrada = [SOPA, COCA].map((p) => ({ ...p, visibilidade: "menu" }));
     const { produtos, rotulosVigencia, cardapiosAbertos } = projetarCatalogoVitrine({
       produtos: entrada,
-      cardapiosPorProduto: new Map(),
+      vinculosPorProduto: new Map(),
       agora: DEZEMBRO,
       timezone: SP,
     });
@@ -919,7 +986,7 @@ describe("248 — foto_url é propriedade do PRODUTO, não do grupo (RN-06)", ()
     // Com ele dentro da projeção, existe UM objeto e UM `foto_url`.
     const { produtos } = projetarCatalogoVitrine({
       produtos: [base({ categoria_id: CAT_OCULTA, visibilidade: "menu" })],
-      cardapiosPorProduto: new Map(),
+      vinculosPorProduto: new Map(),
       agora: AGORA,
       timezone: TZ,
       exibirImagensPorCategoria: mapa,
@@ -987,15 +1054,15 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
     visibilidade: "cardapio",
   });
 
-  const vinculos = new Map<string, CardapioDaLoja[]>([
-    [LASANHA.id, [INVERNO_ABERTO]],
-    [SOPA_CEBOLA.id, [INVERNO_ABERTO]],
+  const vinculos = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+    [LASANHA.id, [semDias(INVERNO_ABERTO)]],
+    [SOPA_CEBOLA.id, [semDias(INVERNO_ABERTO)]],
   ]);
 
   function projetarCenario8() {
     return projetarCatalogoVitrine<CardapioDaLoja>({
       produtos: [LASANHA, NHOQUE, SOPA_CEBOLA],
-      cardapiosPorProduto: vinculos,
+      vinculosPorProduto: vinculos,
       agora: SABADO,
       timezone: SP,
     });
@@ -1050,7 +1117,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
   it("produto ESGOTADO aparece na seção de destaque, com o motivo 'esgotado'", () => {
     const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
       produtos: [{ ...LASANHA, disponivel: false }],
-      cardapiosPorProduto: new Map([[LASANHA.id, [INVERNO_ABERTO]]]),
+      vinculosPorProduto: new Map([[LASANHA.id, [semDias(INVERNO_ABERTO)]]]),
       agora: SABADO,
       timezone: SP,
     });
@@ -1067,12 +1134,12 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
       nome: "Cardápio de Verão",
       ordem: 2,
     };
-    const dois = new Map<string, CardapioDaLoja[]>([
-      [LASANHA.id, [INVERNO_ABERTO, VERAO]],
+    const dois = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+      [LASANHA.id, [semDias(INVERNO_ABERTO), semDias(VERAO)]],
     ]);
     const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
       produtos: [LASANHA],
-      cardapiosPorProduto: dois,
+      vinculosPorProduto: dois,
       agora: SABADO,
       timezone: SP,
     });
@@ -1109,12 +1176,12 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
     const z1 = semana("c0000000-0000-4000-8000-0000000000z1", "Bistrô", 1);
     const a1 = semana("c0000000-0000-4000-8000-0000000000a1", "Almoço", 1);
 
-    const vinculosOrdem = new Map<string, CardapioDaLoja[]>([
-      [LASANHA.id, [b1, a2, z1, a1]],
+    const vinculosOrdem = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+      [LASANHA.id, [semDias(b1), semDias(a2), semDias(z1), semDias(a1)]],
     ]);
     const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
       produtos: [LASANHA],
-      cardapiosPorProduto: vinculosOrdem,
+      vinculosPorProduto: vinculosOrdem,
       agora: SABADO,
       timezone: SP,
     });
@@ -1130,7 +1197,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
     const mapa = new Map([[CAT_SOPAS, false]]);
     const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
       produtos: [SOPA_CEBOLA],
-      cardapiosPorProduto: vinculos,
+      vinculosPorProduto: vinculos,
       agora: SABADO,
       timezone: SP,
       exibirImagensPorCategoria: mapa,

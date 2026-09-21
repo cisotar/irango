@@ -62,7 +62,9 @@ const cardapioFake = { id: CARDAPIO_ID, nome: "Feijoada", modo: "recorrente" };
 const buscarCardapioPorId = vi.fn(async (_c: unknown, _lojaId: string, _id: string) => cardapioFake);
 const cardapiosComProdutosFake = {
   cardapios: [{ id: CARDAPIO_ID, loja_id: LOJA_ID }],
-  cardapiosPorProduto: new Map([["prod-1", [{ id: CARDAPIO_ID }]]]),
+  vinculosPorProduto: new Map([
+    ["prod-1", [{ cardapio: { id: CARDAPIO_ID }, dias_semana: null }]],
+  ]),
 };
 const buscarCardapiosComProdutos = vi.fn(async (_c: unknown, _id: string) => cardapiosComProdutosFake);
 vi.mock("@/lib/supabase/queries/cardapios", () => ({
@@ -224,7 +226,7 @@ describe("carregarCardapioDetalheAdmin — sucesso: ordem, escopo e agregado", (
       cardapio: cardapioFake,
       produtos: produtosFake,
       categorias: categoriasFake,
-      cardapiosPorProduto: cardapiosComProdutosFake.cardapiosPorProduto,
+      vinculosPorProduto: cardapiosComProdutosFake.vinculosPorProduto,
     });
   });
 });

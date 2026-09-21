@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   descreverVigencia,
-  escolherCardapioParaRotulo,
+  escolherVinculoParaRotulo,
   proximaAbertura,
   rotuloJanelaDestaque,
   rotuloVoltaQuando,
@@ -21,6 +21,15 @@ import { cardapioAberto, type CardapioVigencia } from "./vigenciaCardapio";
 const SP = "America/Sao_Paulo";
 const emSP = (local: string) => new Date(instanteNoFuso(local, SP));
 const localSP = (d: Date) => horaLocalNoFuso(d.toISOString(), SP);
+
+/**
+ * [273] O vínculo SEM dias do item — a forma de 100% das linhas no deploy da
+ * 272. Com `dias_semana` vazio a frase é a do CARDÁPIO em qualquer instante,
+ * então a tabela de 254 continua afirmável byte a byte.
+ */
+const semDias = (cardapio: CardapioVigencia) => ({ cardapio, dias_semana: null });
+/** Terça 13/10/2026, 12:00 — fora da janela de todos os cardápios da tabela. */
+const AGORA_254 = new Date(instanteNoFuso("2026-10-13T12:00", SP));
 
 function recorrente(over: Partial<CardapioVigencia> = {}): CardapioVigencia {
   return {
@@ -165,7 +174,7 @@ describe("254 — rotuloVoltaQuando: a tabela da vitrine (design §4.3), literal
 
   for (const [nome, cardapio, esperado] of casos) {
     it(`${nome} ⇒ "${esperado}"`, () => {
-      expect(rotuloVoltaQuando(cardapio, SP)).toBe(esperado);
+      expect(rotuloVoltaQuando(semDias(cardapio), AGORA_254, SP)).toBe(esperado);
     });
   }
 
@@ -177,12 +186,12 @@ describe("254 — rotuloVoltaQuando: a tabela da vitrine (design §4.3), literal
       recorrente({ dias_mes: [1, 7, 13, 19, 25, 31], ...DAS_11_AS_15 }),
     ];
     for (const c of longos) {
-      const rotulo = rotuloVoltaQuando(c, SP);
+      const rotulo = rotuloVoltaQuando(semDias(c), AGORA_254, SP);
       expect(rotulo.length).toBeLessThanOrEqual(32);
       expect(rotulo.length).toBeGreaterThan(0);
     }
     // O corte é da função pura, com reticências visíveis — não do CSS.
-    expect(rotuloVoltaQuando(longos[0], SP).endsWith("…")).toBe(true);
+    expect(rotuloVoltaQuando(semDias(longos[0]), AGORA_254, SP).endsWith("…")).toBe(true);
   });
 });
 
@@ -294,9 +303,9 @@ describe("254 — a escada determinística de RN-07 (a mesma de RN-15)", () => {
       dias_mes: null,
       ...DAS_11_AS_15,
     });
-    expect(escolherCardapioParaRotulo([sabado, quarta], proxima)?.id).toBe("b");
+    expect(escolherVinculoParaRotulo([semDias(sabado), semDias(quarta)], proxima)?.cardapio.id).toBe("b");
     // A ordem da entrada não muda o resultado.
-    expect(escolherCardapioParaRotulo([quarta, sabado], proxima)?.id).toBe("b");
+    expect(escolherVinculoParaRotulo([semDias(quarta), semDias(sabado)], proxima)?.cardapio.id).toBe("b");
   });
 
   it("`null` vai por último — o expirado nunca rouba a frase de quem volta", () => {
@@ -304,7 +313,7 @@ describe("254 — a escada determinística de RN-07 (a mesma de RN-15)", () => {
     const volta = recorrente({ id: "z", nome: "Zzz", ...SAB_DOM, ...DAS_11_AS_15 });
     const agora = emSP("2026-10-13T12:00");
     const proximaAgora = (c: CardapioVigencia) => proximaAbertura(c, agora, SP);
-    expect(escolherCardapioParaRotulo([expirado, volta], proximaAgora)?.id).toBe("z");
+    expect(escolherVinculoParaRotulo([semDias(expirado), semDias(volta)], proximaAgora)?.cardapio.id).toBe("z");
   });
 
   it("empate no instante ⇒ desempate por nome (pt-BR) e depois por id", () => {
@@ -312,11 +321,11 @@ describe("254 — a escada determinística de RN-07 (a mesma de RN-15)", () => {
     const acai = recorrente({ id: "id-2", nome: "Açaí", ...base });
     const azul = recorrente({ id: "id-1", nome: "Azul", ...base });
     // "Açaí" < "Azul" em pt-BR (ç colado no c), o que `localeCompare` sabe.
-    expect(escolherCardapioParaRotulo([azul, acai], proxima)?.id).toBe("id-2");
+    expect(escolherVinculoParaRotulo([semDias(azul), semDias(acai)], proxima)?.cardapio.id).toBe("id-2");
 
     const mesmoNomeA = recorrente({ id: "id-a", nome: "Igual", ...base });
     const mesmoNomeB = recorrente({ id: "id-b", nome: "Igual", ...base });
-    expect(escolherCardapioParaRotulo([mesmoNomeB, mesmoNomeA], proxima)?.id).toBe("id-a");
+    expect(escolherVinculoParaRotulo([semDias(mesmoNomeB), semDias(mesmoNomeA)], proxima)?.cardapio.id).toBe("id-a");
   });
 
   it("todos sem volta ⇒ null: não há frase verdadeira a escolher (RN-07)", () => {
@@ -326,16 +335,246 @@ describe("254 — a escada determinística de RN-07 (a mesma de RN-15)", () => {
       prazo_inicio: instanteNoFuso("2026-01-01T00:00", SP),
       prazo_fim: instanteNoFuso("2026-02-01T00:00", SP),
     });
-    expect(escolherCardapioParaRotulo([expirado, outroExpirado], proxima)).toBeNull();
+    expect(escolherVinculoParaRotulo([semDias(expirado), semDias(outroExpirado)], proxima)).toBeNull();
   });
 
   it("cardápio INATIVO não participa da escolha (RN-03)", () => {
     const desligado = recorrente({ id: "off", ativo: false, ...SAB_DOM, ...DAS_11_AS_15 });
-    expect(escolherCardapioParaRotulo([desligado], proxima)).toBeNull();
+    expect(escolherVinculoParaRotulo([semDias(desligado)], proxima)).toBeNull();
   });
 
   it("lista vazia ⇒ null, e o caller cai no fallback defensivo", () => {
-    expect(escolherCardapioParaRotulo([], proxima)).toBeNull();
+    expect(escolherVinculoParaRotulo([], proxima)).toBeNull();
     expect(ROTULO_SEM_VOLTA).toBe("Indisponível no momento");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [273] RED — os rótulos passam a ler os dias do ITEM.
+//
+// Autoridade: specs/vigencia-por-item-do-cardapio.md RN-07 ("Todos os dias"),
+// RN-08 (o selo do item + precedência cardápio fechado > item fora do dia) e
+// RN-09 (`escolherCardapioParaRotulo` → `escolherVinculoParaRotulo`).
+//
+// ⚠️ SEAM 273 → GREEN. O contrato que este RED impõe:
+//   1. `rotuloVoltaQuando(vinculo: VinculoVigencia, agora: Date, timezone: string)`
+//      — `agora` entra porque a PRECEDÊNCIA de RN-08 mora na função pura, não nos
+//      callers: cardápio fechado ⇒ frase do CARDÁPIO; cardápio aberto e só o item
+//      fora do dia ⇒ frase do ITEM. Teto de 32 caracteres, aplicado aqui;
+//   2. a preposição do plural concorda com o PRIMEIRO dia enumerado (ordem
+//      seg-first): "Só às quartas e sábados", "Só aos sábados e domingos";
+//   3. `descreverDiasDaSemana` com curto-circuito de 7 dias ANTES de
+//      `corridaDaSemana`, servindo a prévia longa E o selo curto (RN-07);
+//   4. `escolherVinculoParaRotulo(vinculos, proxima)` devolve o VÍNCULO, com a
+//      MESMA escada de hoje (`proximaAbertura` do cardápio).
+//
+// Nenhuma segunda tabela de nome de dia: DIAS_LONGOS/DIAS_PLURAIS/DIAS_CURTOS,
+// `corridaDaSemana` e `enumerar` são reusados (mandato 2).
+//
+// Import DINÂMICO por caminho em variável: `rotuloVoltaQuando` muda de aridade e
+// `escolherVinculoParaRotulo` ainda não existe — resolver estaticamente deixaria
+// `tsc` vermelho e mascararia a asserção.
+// ═══════════════════════════════════════════════════════════════════════════
+
+type VinculoRED = { cardapio: CardapioVigencia; dias_semana: number[] | null };
+type RotuloPorVinculo = (v: VinculoRED, agora: Date, timezone: string) => string;
+type EscolherVinculo = (
+  vinculos: VinculoRED[],
+  proxima: (c: CardapioVigencia) => Date | null,
+) => VinculoRED | null;
+
+const MODULO_DESCREVER = "./descreverVigencia";
+
+async function carregarRotulo(): Promise<RotuloPorVinculo> {
+  const mod = (await import(/* @vite-ignore */ MODULO_DESCREVER)) as Record<string, unknown>;
+  return mod.rotuloVoltaQuando as RotuloPorVinculo;
+}
+
+async function carregarEscolher(): Promise<EscolherVinculo> {
+  const mod = (await import(/* @vite-ignore */ MODULO_DESCREVER)) as Record<string, unknown>;
+  const fn = mod.escolherVinculoParaRotulo;
+  if (typeof fn !== "function") {
+    throw new Error(
+      "[RED 273] `escolherVinculoParaRotulo` ainda não é exportada de " +
+        "`src/lib/utils/descreverVigencia.ts` — é a fase GREEN da issue 273. " +
+        "Contrato: <C extends CardapioVigencia>(vinculos: VinculoVigencia<C>[], " +
+        "proxima: (cardapio: C) => Date | null) => VinculoVigencia<C> | null, " +
+        "com a MESMA escada de `escolherCardapioParaRotulo` (RN-09: rename, não cópia).",
+    );
+  }
+  return fn as EscolherVinculo;
+}
+
+/** Os 7 dias marcados — o que o atalho "Todos os dias" do FormVigencia grava. */
+const TODOS_OS_DIAS = { dias_semana: [0, 1, 2, 3, 4, 5, 6], dias_mes: null };
+
+/** "Especiais do Dia": aberto a semana inteira, sem faixa de horas. */
+const ESPECIAIS = recorrente({
+  id: "c0000000-0000-4000-8000-000000000273",
+  nome: "Especiais do Dia",
+  ...TODOS_OS_DIAS,
+});
+
+const SEGUNDA_273 = emSP("2026-12-21T12:00");
+const QUARTA_273 = emSP("2026-12-23T12:00");
+
+describe("273/RN-07 — os 7 dias marcados leem 'todos os dias'", () => {
+  it("prévia longa do painel ⇒ 'Aparece todos os dias.'", () => {
+    // Sem a regra, `corridaDaSemana` diria "de segunda a domingo": verdadeiro,
+    // desnecessariamente longo, e não é o que o lojista acabou de clicar.
+    expect(descreverVigencia(recorrente(TODOS_OS_DIAS), SP)).toBe("Aparece todos os dias.");
+  });
+
+  it("prévia longa com faixa de horas ⇒ a faixa continua anexada", () => {
+    expect(descreverVigencia(recorrente({ ...TODOS_OS_DIAS, ...DAS_11_AS_15 }), SP)).toBe(
+      "Aparece todos os dias, das 11:00 às 15:00.",
+    );
+  });
+
+  it("selo curto da vitrine ⇒ 'Todos os dias, 11:00–15:00'", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    const cardapio = recorrente({ ...TODOS_OS_DIAS, ...DAS_11_AS_15 });
+    // Cardápio de 7 dias FORA da faixa de horas: fechado, com volta. É o único
+    // estado em que este selo é produzido — o caso é real, não hipotético.
+    const foraDaFaixa = emSP("2026-12-21T16:00");
+    expect(rotuloVoltaQuandoV({ cardapio, dias_semana: null }, foraDaFaixa, SP)).toBe(
+      "Todos os dias, 11:00–15:00",
+    );
+  });
+
+  it("uma casa só: a prévia e o selo não podem divergir sobre os 7 dias", () => {
+    // O curto-circuito é de `descreverDiasDaSemana`, antes de `corridaDaSemana`.
+    expect(descreverVigencia(recorrente(TODOS_OS_DIAS), SP)).not.toContain("de segunda a domingo");
+  });
+});
+
+describe("273/RN-08 — o selo do item fora do dia vem dos dias do ITEM", () => {
+  it("cardápio ABERTO os 7 dias + item {qua, sáb}, numa segunda ⇒ 'Só às quartas e sábados'", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    // Dizer "Todos os dias" (a janela do CARDÁPIO) num prato que só sai na
+    // quarta seria FALSO para o cliente.
+    expect(rotuloVoltaQuandoV({ cardapio: ESPECIAIS, dias_semana: [3, 6] }, SEGUNDA_273, SP)).toBe(
+      "Só às quartas e sábados",
+    );
+  });
+
+  it("a preposição concorda com o PRIMEIRO dia enumerado (ordem seg-first)", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    // Primeiro dia feminino ⇒ "às"; primeiro dia masculino ⇒ "aos". Uma regra,
+    // as duas redações — nunca "Só aos quartas".
+    expect(rotuloVoltaQuandoV({ cardapio: ESPECIAIS, dias_semana: [2, 4] }, SEGUNDA_273, SP)).toBe(
+      "Só às terças e quintas",
+    );
+    expect(rotuloVoltaQuandoV({ cardapio: ESPECIAIS, dias_semana: [6, 0] }, SEGUNDA_273, SP)).toBe(
+      "Só aos sábados e domingos",
+    );
+  });
+
+  it("PRECEDÊNCIA: cardápio FECHADO vence o item fora do dia", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    const fimDeSemana = recorrente({ ...SAB_DOM });
+    // Segunda-feira: o cardápio {sáb,dom} está fechado E o item {qua} não é do
+    // dia. A frase é a do CARDÁPIO — é a restrição que o cliente não destrava
+    // esperando pouco (mesmo argumento de RN-05 da spec-mãe).
+    expect(rotuloVoltaQuandoV({ cardapio: fimDeSemana, dias_semana: [3] }, SEGUNDA_273, SP)).toBe(
+      "Só aos sábados e domingos",
+    );
+  });
+
+  it("vínculo SEM dias num cardápio fechado continua lendo a frase do cardápio", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    // Regressão zero: é 100% das linhas no deploy da 272.
+    for (const dias of [null, []] as (number[] | null)[]) {
+      expect(
+        rotuloVoltaQuandoV({ cardapio: recorrente({ ...SAB_DOM }), dias_semana: dias }, SEGUNDA_273, SP),
+      ).toBe("Só aos sábados e domingos");
+    }
+  });
+
+  it("o teto de 32 caracteres é da FUNÇÃO PURA, não do CSS — inclusive no item", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    // 5 dias não-consecutivos: não vira corrida, e a enumeração estoura o teto.
+    const rotulo = rotuloVoltaQuandoV(
+      { cardapio: ESPECIAIS, dias_semana: [1, 3, 5, 6, 0] },
+      QUARTA_273,
+      SP,
+    );
+    expect(rotulo.length).toBeLessThanOrEqual(32);
+    expect(rotulo.endsWith("…")).toBe(true);
+  });
+
+  // [testar/273] Lacuna: o teste de PRECEDÊNCIA acima (linha ~473) usa um
+  // cardápio fechado por DIA (sáb+dom numa segunda) — nele o dia do item
+  // TAMBÉM está errado, então não isola qual dos dois eixos decide. Este teste
+  // usa um cardápio aberto TODOS os dias (o dia está certo) mas FORA da faixa
+  // de HORA, com um item cujo dia bate certinho com hoje — só assim a
+  // precedência "cardápio fechado vence" é provada pelo eixo de HORA, e não
+  // por uma coincidência de dia errado nos dois lados.
+  it("PRECEDÊNCIA: cardápio FECHADO POR HORA vence item cujo dia é hoje", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    const comHorario = recorrente({ ...TODOS_OS_DIAS, ...DAS_11_AS_15 });
+    // Quarta às 16:00: o cardápio abre todo dia mas só das 11 às 15 — a essa
+    // hora está FECHADO. O item {qua, sáb} bate com HOJE (quarta): se o item
+    // decidisse, a frase seria "Só às quartas e sábados" — factualmente
+    // enganosa, porque o prato não está fora do dia, está fora do HORÁRIO.
+    const quartaFechadaPorHora = emSP("2026-12-23T16:00");
+    expect(
+      rotuloVoltaQuandoV({ cardapio: comHorario, dias_semana: [3, 6] }, quartaFechadaPorHora, SP),
+    ).toBe("Todos os dias, 11:00–15:00");
+  });
+
+  // [testar/273] Lacuna: o "Todos os dias" curto-circuito de RN-07 já é
+  // provado no CARDÁPIO (linha ~434), mas D3 promete UMA implementação para as
+  // DUAS redações (mandato M6) — inclusive quando é o ITEM que tem os 7 dias
+  // marcados (ex.: lojista clicou "Todos os dias" na pílula do produto). Sem
+  // este teste, alguém poderia duplicar o curto-circuito só no lado do
+  // cardápio (`textoDoSelo`) e esquecer `textoDoSeloDoItem` — o bug ficaria
+  // invisível porque os dois textos coincidem aqui, só a CASA muda.
+  it("item com os 7 dias marcados também lê 'Todos os dias' (mesma casa do cardápio, D3)", async () => {
+    const rotuloVoltaQuandoV = await carregarRotulo();
+    const comHorario = recorrente({ ...TODOS_OS_DIAS, ...DAS_11_AS_15 });
+    // Cardápio ABERTO agora (12:00, dentro da faixa 11-15): só assim a
+    // precedência de RN-08 escolhe a frase do ITEM (`textoDoSeloDoItem`), que é
+    // a casa onde `descreverDiasDaSemana(semana, "curta")` roda para o item.
+    const quartaDentroDaFaixa = emSP("2026-12-23T12:00");
+    expect(
+      rotuloVoltaQuandoV(
+        { cardapio: comHorario, dias_semana: [0, 1, 2, 3, 4, 5, 6] },
+        quartaDentroDaFaixa,
+        SP,
+      ),
+    ).toBe("Todos os dias, 11:00–15:00");
+  });
+});
+
+describe("273/RN-09 — escolherVinculoParaRotulo devolve o VÍNCULO", () => {
+  const proximaEm = (agora: Date) => (c: CardapioVigencia) => proximaAbertura(c, agora, SP);
+
+  it("de dois vínculos, ganha o do cardápio que abre mais cedo — e volta o vínculo inteiro", async () => {
+    const escolher = await carregarEscolher();
+    const agora = emSP("2026-12-21T12:00"); // segunda
+    const terca = recorrente({ id: "t", nome: "Terça", dias_semana: [2], dias_mes: null });
+    const sabado = recorrente({ id: "s", nome: "Sábado", dias_semana: [6], dias_mes: null });
+
+    const escolhido = escolher(
+      [
+        { cardapio: sabado, dias_semana: [6] },
+        { cardapio: terca, dias_semana: [2] },
+      ],
+      proximaEm(agora),
+    );
+
+    // O vínculo, não o cardápio: é o `dias_semana` do item que o selo lê.
+    expect(escolhido?.cardapio.id).toBe("t");
+    expect(escolhido?.dias_semana).toEqual([2]);
+  });
+
+  it("cardápio INATIVO não participa, e lista vazia ⇒ null (escada idêntica à de hoje)", async () => {
+    const escolher = await carregarEscolher();
+    const agora = emSP("2026-12-21T12:00");
+    const desligado = recorrente({ id: "off", ativo: false, ...SAB_DOM });
+
+    expect(escolher([{ cardapio: desligado, dias_semana: [3] }], proximaEm(agora))).toBeNull();
+    expect(escolher([], proximaEm(agora))).toBeNull();
   });
 });

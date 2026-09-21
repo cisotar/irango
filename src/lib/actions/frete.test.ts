@@ -81,7 +81,7 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 vi.mock("@/lib/supabase/queries/cardapios", () => ({
   buscarCardapiosComProdutos: async () => ({
     cardapios: [],
-    cardapiosPorProduto: new Map(),
+    vinculosPorProduto: new Map(),
   }),
 }));
 

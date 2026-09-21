@@ -25,7 +25,7 @@ export default async function CardapioDetalheAdminPage({
   params: Promise<{ lojaId: string; cardapioId: string }>;
 }): Promise<ReactElement> {
   const { lojaId, cardapioId } = await params;
-  const { loja, cardapio, produtos, categorias, cardapiosPorProduto } =
+  const { loja, cardapio, produtos, categorias, vinculosPorProduto } =
     await carregarCardapioDetalheAdmin(lojaId, cardapioId);
 
   const agora = new Date();
@@ -51,8 +51,8 @@ export default async function CardapioDetalheAdminPage({
         nome: p.nome,
         // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
         exclusivo: visibilidadeDe(p) === "cardapio",
-        noCardapio: (cardapiosPorProduto.get(p.id) ?? []).some(
-          (c) => c.id === cardapioId,
+        noCardapio: (vinculosPorProduto.get(p.id) ?? []).some(
+          (v) => v.cardapio.id === cardapioId,
         ),
       })),
     }));

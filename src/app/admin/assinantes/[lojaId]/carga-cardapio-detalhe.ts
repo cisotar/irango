@@ -10,7 +10,10 @@ import {
   buscarCardapiosComProdutos,
   type CardapioDaLoja,
 } from "@/lib/supabase/queries/cardapios";
-import type { CardapioVigencia } from "@/lib/utils/vigenciaCardapio";
+import type {
+  CardapioVigencia,
+  VinculoVigencia,
+} from "@/lib/utils/vigenciaCardapio";
 import { buscarProdutosDoLojista, type Produto } from "@/lib/supabase/queries/produtos";
 import { buscarCategorias, type Categoria } from "@/lib/supabase/queries/categorias";
 import {
@@ -43,7 +46,7 @@ export async function carregarCardapioDetalheAdmin(
   cardapio: CardapioVigencia;
   produtos: Produto[];
   categorias: Categoria[];
-  cardapiosPorProduto: Map<string, CardapioDaLoja[]>;
+  vinculosPorProduto: Map<string, VinculoVigencia<CardapioDaLoja>[]>;
 }> {
   const validacao = validarLojaIdAdmin(lojaId);
   if (!validacao.ok) {
@@ -68,11 +71,11 @@ export async function carregarCardapioDetalheAdmin(
 
   // Três leituras em paralelo, todas escopadas pela MESMA `lojaId` validada —
   // o mesmo perfil da rota do lojista, sem nenhuma query por produto.
-  const [produtos, categorias, { cardapiosPorProduto }] = await Promise.all([
+  const [produtos, categorias, { vinculosPorProduto }] = await Promise.all([
     buscarProdutosDoLojista(svc, idValidado),
     buscarCategorias(svc, idValidado),
     buscarCardapiosComProdutos(svc, idValidado),
   ]);
 
-  return { loja, cardapio, produtos, categorias, cardapiosPorProduto };
+  return { loja, cardapio, produtos, categorias, vinculosPorProduto };
 }

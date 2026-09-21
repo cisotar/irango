@@ -229,7 +229,7 @@ export async function revisarCarrinhoAction(
       // horário, janela, cardápio nem `visibilidade`.
       const vigencia = avaliarVigenciaDoProduto(
         { visibilidade: visibilidadeDe(produto) },
-        cardapios.cardapiosPorProduto.get(produto.id) ?? [],
+        cardapios.vinculosPorProduto.get(produto.id) ?? [],
         agora,
         loja.timezone,
       );

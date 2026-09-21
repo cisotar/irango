@@ -55,14 +55,18 @@ vi.mock("next/navigation", () => ({
 
 const cardapiosComProdutosFake = {
   cardapios: [{ id: "card-1", loja_id: LOJA_ID }],
-  cardapiosPorProduto: new Map([["prod-1", [{ id: "card-1" }]]]),
+  vinculosPorProduto: new Map([
+    ["prod-1", [{ cardapio: { id: "card-1" }, dias_semana: null }]],
+  ]),
 };
 const buscarCardapiosComProdutos = vi.fn(async (_c: unknown, _id: string) => cardapiosComProdutosFake);
 
 const cardapiosDoPainelFake = {
   cardapios: [{ id: "card-1", loja_id: LOJA_ID, menu: 2, exclusivos: 1 }],
   produtos: [{ id: "prod-1", nome: "X", visibilidade: "menu" }],
-  cardapiosPorProduto: new Map([["prod-1", [{ id: "card-1" }]]]),
+  vinculosPorProduto: new Map([
+    ["prod-1", [{ cardapio: { id: "card-1" }, dias_semana: null }]],
+  ]),
 };
 const buscarCardapiosDoPainel = vi.fn(async (_c: unknown, _id: string) => cardapiosDoPainelFake);
 vi.mock("@/lib/supabase/queries/cardapios", () => ({
@@ -210,7 +214,7 @@ describe("carregarCardapiosDoPainelAdmin — sucesso: escopo e agregado", () => 
       loja: lojaFake,
       cardapios: cardapiosDoPainelFake.cardapios,
       produtos: cardapiosDoPainelFake.produtos,
-      cardapiosPorProduto: cardapiosDoPainelFake.cardapiosPorProduto,
+      vinculosPorProduto: cardapiosDoPainelFake.vinculosPorProduto,
     });
   });
 });

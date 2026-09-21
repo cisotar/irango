@@ -174,7 +174,7 @@ export default async function VitrinePage({ params }: PageProps) {
   // a tabela base não é mais legível por anon/authenticated.
   // 247: a 5ª query entra na MESMA onda — `cardapios` ⋈ `cardapio_produtos` num
   // round trip só, sem custo de latência de parede.
-  const [categorias, produtos, { cardapiosPorProduto }] = await Promise.all([
+  const [categorias, produtos, { vinculosPorProduto }] = await Promise.all([
     buscarCategorias(db, lojaId),
     buscarProdutosPublicos(db, lojaId),
     buscarCardapiosComProdutos(db, lojaId),
@@ -206,7 +206,7 @@ export default async function VitrinePage({ params }: PageProps) {
     cardapiosAbertos,
   } = projetarCatalogoVitrine({
     produtos,
-    cardapiosPorProduto,
+    vinculosPorProduto,
     agora,
     timezone: timezoneLoja,
     exibirImagensPorCategoria,
@@ -222,7 +222,7 @@ export default async function VitrinePage({ params }: PageProps) {
   const secoesDestaque = agruparPorCardapio(
     produtosVitrine,
     cardapiosAbertos,
-    cardapiosPorProduto,
+    vinculosPorProduto,
   );
   // O rótulo de janela do cabeçalho (design §13.1 item 3), redigido pelo mesmo
   // módulo das outras três frases de vigência (M6) — no fuso da LOJA.
