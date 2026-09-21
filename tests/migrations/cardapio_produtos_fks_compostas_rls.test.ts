@@ -355,4 +355,45 @@ describe("243 · cardapio_produtos: FKs compostas e RLS", () => {
     expect(defs.some((d) => /\(loja_id, cardapio_id\)/.test(d))).toBe(true);
     expect(defs.some((d) => /\(produto_id\)/.test(d))).toBe(true);
   });
+
+  it("[§Seg 6b] anon NÃO lê vínculo de cardápio INATIVO — o rascunho não vaza", async () => {
+    // Achado do `auditar`: a policy exigia só loja ativa, e policy de OUTRA
+    // tabela não restringe esta — cada tabela avalia a sua. Com a anon key do
+    // bundle dava para listar os vínculos do cardápio que o lojista ainda não
+    // lançou (quantos pratos, desde quando, os ids), enquanto `cardapios` e
+    // `produtos` negavam as mesmas linhas. Mesma classe do vazamento da 265.
+    const rascunho = await t.asService(async (db) => {
+      const c2 = await db.query<{ id: string }>(
+        `insert into public.cardapios (loja_id, nome, modo, dias_semana, hora_inicio, hora_fim, ativo)
+         values ($1, 'Rascunho de Natal', 'recorrente', array[6]::smallint[],
+                 time '11:00', time '15:00', false)
+         returning id`,
+        [c.lojaA],
+      );
+      const id = c2.rows[0].id;
+      await db.query(INSERT_VINCULO, [c.lojaA, id, c.produtoA]);
+      return id;
+    });
+
+    const vistos = await t.asAnon((db) =>
+      db.query(`select cardapio_id from public.cardapio_produtos where cardapio_id = $1`, [
+        rascunho,
+      ]),
+    );
+    expect(vistos.rows).toHaveLength(0);
+
+    // A linha existe: o que mudou é quem enxerga.
+    const naBase = await t.asService((db) =>
+      db.query(`select 1 from public.cardapio_produtos where cardapio_id = $1`, [rascunho]),
+    );
+    expect(naBase.rows.length).toBeGreaterThan(0);
+
+    // E o DONO continua lendo o próprio rascunho, pela policy de leitura própria.
+    const doDono = await t.asUser(DONO_A, (db) =>
+      db.query(`select cardapio_id from public.cardapio_produtos where cardapio_id = $1`, [
+        rascunho,
+      ]),
+    );
+    expect(doDono.rows.length).toBeGreaterThan(0);
+  });
 });

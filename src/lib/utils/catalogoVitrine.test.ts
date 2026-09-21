@@ -266,6 +266,28 @@ describe("224 — encaixe nas peças existentes", () => {
     };
     const v = projetarProdutoVitrine(daView, AGORA);
     expect(v).toMatchObject({ id: daView.id, preco: 8, precoEfetivo: 8, categoria_id: null });
+
+    // O conjunto de chaves é travado, não só conferido por amostragem: um
+    // refactor que troque a cópia campo a campo por `...produto` vazaria
+    // `visibilidade` e as cinco colunas cruas de desconto ao payload que desce
+    // ao browser, e `toMatchObject` não veria nada. Achado do `auditar` na 245.
+    expect(Object.keys(v).sort()).toEqual(
+      [
+        "id",
+        "nome",
+        "descricao",
+        "foto_url",
+        "categoria_id",
+        "preco",
+        "precoEfetivo",
+        "temDesconto",
+        "seloDesconto",
+        "descontoFim",
+        "compravel",
+        "motivoNaoCompravel",
+      ].sort(),
+    );
+    expect(v).not.toHaveProperty("visibilidade");
   });
 
   it("`agruparCatalogo` agrupa ProdutoVitrine sem edição da suíte dele", () => {
