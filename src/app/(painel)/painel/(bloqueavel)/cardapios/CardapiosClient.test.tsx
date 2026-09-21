@@ -50,13 +50,13 @@ function linha(over: Partial<LinhaCardapio> = {}): LinhaCardapio {
   };
 }
 
-function montar(linhas: LinhaCardapio[]): string {
+function montar(linhas: LinhaCardapio[], baseCardapios = "/painel/cardapios"): string {
   return renderToStaticMarkup(
     <CardapiosClient
       cardapios={linhas}
       // [269] A base de rota é INJETADA: o componente não conhece nem a do
       // lojista nem a do admin.
-      baseCardapios="/painel/cardapios"
+      baseCardapios={baseCardapios}
       acoes={acoes()}
     />,
   );
@@ -206,5 +206,62 @@ describe("264/RN-12 — o aviso de cardápio escondendo produtos", () => {
 
     expect(html).toContain("4 produtos sumiram da vitrine");
     expect(html).toContain("Religar o cardápio");
+  });
+});
+
+/**
+ * [269] Os TRÊS hrefs de `CardapiosClient` derivam de `baseCardapios`, nunca de
+ * um literal escrito no componente. O componente é montado pelos DOIS mundos
+ * (lojista em `/painel/cardapios`, hub admin em
+ * `/admin/assinantes/<lojaId>/cardapios`) — o bug que originou a issue 269 foi
+ * exatamente um href hardcoded mandando o admin, editando a loja de um
+ * terceiro, para o painel da PRÓPRIA loja dele.
+ *
+ * `rotaCardapiosInjetada.test.tsx` já garante por grep que o literal
+ * `/painel/cardapios` não aparece em código-fonte da pasta. O que FALTA e este
+ * bloco cobre: provar que o HTML realmente MUDA quando `baseCardapios` muda —
+ * um grep passa mesmo se o componente ignorasse a prop e sempre escrevesse
+ * `${uma_variável_qualquer}/novo` fixa; só o RENDER com dois valores distintos
+ * prova a derivação de verdade.
+ */
+describe("269 — CardapiosClient: os três hrefs derivam de baseCardapios (não hardcoded)", () => {
+  const BASE_ADMIN = "/admin/assinantes/loja-alvo-123/cardapios";
+
+  it("'Novo cardápio' aponta para `${baseCardapios}/novo` — muda com a base injetada", () => {
+    const htmlLojista = montar([linha()], "/painel/cardapios");
+    const htmlAdmin = montar([linha()], BASE_ADMIN);
+
+    expect(htmlLojista).toContain('href="/painel/cardapios/novo"');
+    expect(htmlAdmin).toContain(`href="${BASE_ADMIN}/novo"`);
+    // O mundo admin NUNCA vê a rota do lojista, nem por acidente de fallback.
+    expect(htmlAdmin).not.toContain('href="/painel/cardapios/novo"');
+  });
+
+  it("'Editar' (lápis) aponta para `${baseCardapios}/${linha.id}` — muda com a base injetada", () => {
+    const l = linha({ id: "cardapio-xyz" });
+    const htmlLojista = montar([l], "/painel/cardapios");
+    const htmlAdmin = montar([l], BASE_ADMIN);
+
+    expect(htmlLojista).toContain('href="/painel/cardapios/cardapio-xyz"');
+    expect(htmlAdmin).toContain(`href="${BASE_ADMIN}/cardapio-xyz"`);
+    expect(htmlAdmin).not.toContain('href="/painel/cardapios/cardapio-xyz"');
+  });
+
+  it("o link do aviso de RN-12 (editarHref de AvisoEscondendo) também deriva de baseCardapios", () => {
+    // ativo=true + sumidos>0 é a única combinação em que AvisoEscondendo
+    // renderiza um <Link> (religar por clique não passa por href nenhum).
+    const l = linha({
+      id: "cardapio-xyz",
+      ativo: true,
+      escondidos: { doMenu: 2, sumidos: 1 },
+    });
+    const htmlLojista = montar([l], "/painel/cardapios");
+    const htmlAdmin = montar([l], BASE_ADMIN);
+
+    expect(htmlLojista).toContain('href="/painel/cardapios/cardapio-xyz"');
+    expect(htmlAdmin).toContain(`href="${BASE_ADMIN}/cardapio-xyz"`);
+    // As DUAS ocorrências de href por página (Editar + AvisoEscondendo) mudam
+    // igualmente — nenhuma delas escapa da injeção.
+    expect(htmlAdmin).not.toContain("/painel/cardapios");
   });
 });

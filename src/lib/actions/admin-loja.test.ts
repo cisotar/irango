@@ -55,13 +55,24 @@ vi.mock("@/lib/auth/admin", () => ({
 // ── createServiceClient: server-only → mock. Registra ordem ao ser chamado. ────
 // Builder-espião: captura tabela/op/payload/eqs das escritas feitas pelo wrapper
 // `escopo` (usado só nos testes do wrapper; os demais não tocam `.from`).
-type OpEspia = { tabela: string; tipo: string; payload?: unknown; eqs: { c: string; v: unknown }[] };
+type OpEspia = {
+  tabela: string;
+  tipo: string;
+  payload?: unknown;
+  /** [269] Só preenchido quando `tipo === "upsert"` — o array de linhas do `inserirVarios`. */
+  linhas?: unknown[];
+  opts?: unknown;
+  eqs: { c: string; v: unknown }[];
+};
 let opsEspia: OpEspia[] = [];
 function builderEspia(tabela: string) {
   const op: OpEspia = { tabela, tipo: "select", eqs: [] };
   opsEspia.push(op);
   const b: Record<string, unknown> = {
     insert(p: unknown) { op.tipo = "insert"; op.payload = p; return b; },
+    // [269] `upsert` de N linhas (`escopo.inserirVarios`) — captura o ARRAY
+    // inteiro em `op.linhas`, distinto de `op.payload` (que é sempre 1 objeto).
+    upsert(p: unknown[], opts?: unknown) { op.tipo = "upsert"; op.linhas = p; op.opts = opts; return b; },
     update(p: unknown) { op.tipo = "update"; op.payload = p; return b; },
     delete() { op.tipo = "delete"; return b; },
     select() { return b; },
@@ -168,6 +179,56 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
     const op = opsEspia.find((o) => o.tipo === "delete")!;
     expect(op.eqs).toContainEqual({ c: "loja_id", v: LOJA_ID });
     expect(op.eqs).toContainEqual({ c: "id", v: ID_RECURSO });
+  });
+
+  // [269] `inserirVarios` — INSERT de N linhas em uma instrução (upsert), para o
+  // lote de `cardapio_produtos` do hub admin. A garantia que importa é a MESMA
+  // de `inserir`, aplicada a CADA linha do array: um `loja_id` hostil dentro de
+  // uma linha do payload não sobrevive — o wrapper sobrescreve por último, por
+  // linha, não só na primeira.
+  it("inserirVarios injeta loja_id do PARÂMETRO em CADA linha — loja_id hostil por linha não sobrevive", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.inserirVarios("cardapio_produtos", [
+      { produto_id: "p1", cardapio_id: "c1", loja_id: "hostil-1" } as never,
+      { produto_id: "p2", cardapio_id: "c1", loja_id: "hostil-2" } as never,
+      { produto_id: "p3", cardapio_id: "c1" } as never,
+    ]);
+    const op = opsEspia.find((o) => o.tipo === "upsert")!;
+    expect(op.linhas).toHaveLength(3);
+    // TODA linha carrega o loja_id do parâmetro — nenhuma escapa pela hostil.
+    for (const linha of op.linhas as Record<string, unknown>[]) {
+      expect(linha.loja_id).toBe(LOJA_ID);
+    }
+    expect((op.linhas as Record<string, unknown>[]).map((l) => l.loja_id)).not.toContain(
+      "hostil-1",
+    );
+    expect((op.linhas as Record<string, unknown>[]).map((l) => l.loja_id)).not.toContain(
+      "hostil-2",
+    );
+    // Os demais campos de cada linha são preservados (não é um objeto só com loja_id).
+    expect((op.linhas as Record<string, unknown>[]).map((l) => l.produto_id)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+    ]);
+  });
+
+  it("inserirVarios com array VAZIO: chama upsert([]) — não lança, não vira insert de 1 linha vazia", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.inserirVarios("cardapio_produtos", []);
+    const op = opsEspia.find((o) => o.tipo === "upsert")!;
+    expect(op.linhas).toEqual([]);
+  });
+
+  it("inserirVarios repassa `opcoes` (onConflict/ignoreDuplicates) intactas, sem injetar escopo nelas", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    const opcoes = { onConflict: "loja_id,cardapio_id,produto_id", ignoreDuplicates: true };
+    await escopo.inserirVarios("cardapio_produtos", [{ produto_id: "p1", cardapio_id: "c1" } as never], opcoes);
+    const op = opsEspia.find((o) => o.tipo === "upsert")!;
+    expect(op.opts).toEqual(opcoes);
   });
 
   it("atualizarLoja escopa a tabela lojas por id", async () => {
