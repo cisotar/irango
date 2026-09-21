@@ -360,3 +360,63 @@ fechar. Duas observações que **não** são lacuna de agente:
    fora do dia) é servidor puro e **está** coberta pelo `tdd` da issue B.
 2. **`auditar` em `fable`** nas issues C e 270 é override de modelo por precedente (241/269), não
    um agente novo.
+
+---
+
+## 9. Levas D e E — ordem de execução das seis issues de tela (planejadas em 2026-09-21)
+
+Planos técnicos em `plan/275…280.md` e no corpo de cada `tasks/`. Nenhuma das seis é crítica: a
+autoridade (motor de vigência, escopo da escrita, posse por `count`) já foi travada em RED nas
+270/272/273/274. A ordem abaixo é por **dependência de compilação**, não por risco.
+
+### Leva D — painel (estritamente sequencial: 275 → 276 → 277 → 278)
+
+| # | Depende de | O que a torna bloqueante para a seguinte |
+|---|---|---|
+| 275 | [273] | cria `PilulasDeDias` e exporta `rotuloLongoDoDia`; 276 e 277 o consomem |
+| 276 | [274], [275] | põe `definirDias` em `AcoesLote` — 277 não tem onde injetar sem isso; cria `agendaDoVinculo.ts` |
+| 277 | [274], [276] | estende `AlvoDoLote` e `useLoteDeProdutos`; toca os mesmos arquivos que 276 |
+| 278 | [273], [276] | muda `VinculoDoProduto` em `contrato-lote.ts` — mesmo arquivo que 276 edita |
+
+**Paralelizar dentro de D é armadilha:** 276, 277 e 278 editam `contrato-lote.ts` e 276/277 editam
+`SeletorProdutosDoCardapio.tsx`. Em worktrees separadas isso vira conflito de merge em cima do
+arquivo cujo contrato é a trava de segurança da feature.
+
+**Gate mecânico da leva D (roda uma vez, no fim):**
+```
+npx vitest run src/components/painel/ \
+  src/lib/utils/descreverVigencia.test.ts \
+  src/lib/utils/copiaLotePromocao.test.ts \
+  src/lib/utils/copiaCardapioPainel.test.ts \
+  "src/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient.test.tsx" \
+  "src/app/admin/assinantes/[lojaId]/carga-cardapio-detalhe.test.ts" \
+  src/app/admin/assinantes/enforcement-props-action-admin.test.ts
+npx tsc --noEmit && npm run lint && npm run build
+```
+Os dois guardas transversais **se auto-descobrem** e não precisam de edição:
+`rotaCardapiosInjetada.test.tsx` varre `components/painel/**` (o `PilulasDeDias` novo entra
+sozinho), `enforcement-props-action-admin.test.ts` lê o AST dos `*AdminClient.tsx` e passa a exigir
+`definirDias` assim que ele entra em `AcoesLote`, e `lote-contagem-do-servidor.test.ts` varre quem
+importa `copiaLotePromocao` e alcança `perguntaDias` sem lista nova.
+
+### Leva E — vitrine e diagnóstico (279 → 280)
+
+279 e 280 **não tocam nenhum arquivo da leva D** (`catalogoVitrine.ts`, `contarProdutosEscondidos.ts`,
+a `page.tsx` da vitrine). Podem rodar **em paralelo com D**, em worktree própria, e só precisam de
+[273], que já está em `main` desta branch. 280 depende de 279 apenas por coerência de revisão (o
+mesmo par de funções é lido nas duas), não por compilação.
+
+**Gate mecânico da leva E:**
+```
+npx vitest run src/lib/utils/catalogoVitrine.test.ts \
+  src/lib/actions/paridade-preview-autoritativo.test.ts \
+  src/components/vitrine/secoesDestaque.test.tsx \
+  src/lib/utils/contarProdutosEscondidos.test.ts
+npx tsc --noEmit && npm run build
+```
+
+### Gate único antes do `/pr`
+
+`npx tsc --noEmit` → `npm run lint` → `npm test` → `npm run build`, os quatro verdes, mais a linha
+de exceção do desenho §8-A (`min-w-[40px]` abaixo de `sm` no modo compacto) registrada em
+`references/design-system.md` §5 pelo `escriba`.
