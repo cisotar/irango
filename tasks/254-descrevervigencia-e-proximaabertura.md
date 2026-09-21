@@ -73,3 +73,19 @@ segunda", dias úteis, feriados): §Fora do Escopo, e o design já as retirou da
 - [ ] o módulo é importado pelos **três** consumidores (painel, projeção da vitrine, cabeçalho
       do destaque) — uma redação (M6);
 - [ ] `npx tsc --noEmit` → `npm run lint` → `npm test` → `npm run build`.
+
+## Item de escopo herdado da issue 247 (obrigatório antes do merge da onda 4)
+
+A 247 marcou o rótulo de produto fora da janela com uma constante provisória,
+`ROTULO_VIGENCIA_PROVISORIO` (`src/lib/utils/catalogoVitrine.ts`, marcada `TEMP(254)`), com o
+texto genérico "Indisponível no momento". Ela existe só porque `descreverVigencia` é desta issue,
+que está uma onda depois.
+
+O risco, levantado pelo `arquitetar`: o critério de aceite da 247 é estrutural ("existe rótulo para
+todo produto fora da janela"), então a constante genérica passa em tudo. Se ninguém a trocar, o
+contrato promete "volta sábado" e a vitrine diz "Indisponível no momento" para sempre.
+
+**Critério de aceite adicional desta issue:** `grep -rn ROTULO_VIGENCIA_PROVISORIO src/` volta
+vazio, e `grep -rn "TEMP(254)" src/` também. O teste da 247 afirma a constante **pelo nome e pelo
+texto literal**, de propósito: trocá-la pela frase real quebra o teste, o que torna a substituição
+obrigatória e visível em vez de opcional e esquecível.

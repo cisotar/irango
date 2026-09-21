@@ -169,3 +169,45 @@ export function avaliarVigenciaDoProduto(
 
   return { dentroDaJanela, visivelNaVitrine };
 }
+
+/**
+ * 247/D6 — estreitamento FAIL-CLOSED de `modo`, que chega como `string` dos
+ * tipos gerados (o CHECK do Postgres não viaja para o TypeScript). `modo` fora
+ * de {recorrente, prazo_fixo} ⇒ `null`, e a linha é DESCARTADA pelo caller:
+ * qualquer fallback cairia no eixo "NULL = sem restrição" e produziria um
+ * cardápio SEMPRE ABERTO.
+ *
+ * Copia campo a campo: o que sobra da row do PostgREST (o embed de
+ * `cardapio_produtos`, `ordem`, `loja_id`) não entra no objeto de vigência.
+ */
+export function paraCardapioVigencia(
+  row: Omit<CardapioVigencia, "modo"> & { modo: string },
+): CardapioVigencia | null {
+  if (row.modo !== "recorrente" && row.modo !== "prazo_fixo") return null;
+
+  return {
+    id: row.id,
+    nome: row.nome,
+    ativo: row.ativo,
+    modo: row.modo,
+    dias_semana: row.dias_semana,
+    dias_mes: row.dias_mes,
+    hora_inicio: row.hora_inicio,
+    hora_fim: row.hora_fim,
+    prazo_inicio: row.prazo_inicio,
+    prazo_fim: row.prazo_fim,
+  };
+}
+
+/**
+ * 247/D6 — estreitamento FAIL-OPEN de `visibilidade`. Decisão OPOSTA e
+ * deliberada à de `modo`: valor desconhecido vira `'menu'`, porque tratá-lo
+ * como `'cardapio'` faria produtos sumirem de todas as vitrines em silêncio
+ * (perda de venda sem erro nenhum). `'menu'` preserva o comportamento de hoje,
+ * e a compra continua sendo decidida pelo recálculo autoritativo do pedido.
+ */
+export function visibilidadeDe(produto: {
+  visibilidade: string;
+}): "menu" | "cardapio" {
+  return produto.visibilidade === "cardapio" ? "cardapio" : "menu";
+}

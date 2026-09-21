@@ -5,6 +5,9 @@ import { instanteNoFuso } from "./fusoLoja";
 import {
   avaliarVigenciaDoProduto,
   cardapioAberto,
+  // [247] RED — normalizadores de D6, AINDA NÃO IMPLEMENTADOS.
+  paraCardapioVigencia,
+  visibilidadeDe,
   type CardapioVigencia,
 } from "./vigenciaCardapio";
 
@@ -444,5 +447,86 @@ describe("mandato 2 — nenhuma segunda cópia de aritmética de fuso", () => {
   it("não instancia Intl nem reparte 'HH:MM' por conta própria", () => {
     expect(fonte).not.toContain("Intl.");
     expect(fonte).not.toMatch(/split\(\s*":"\s*\)/);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [247/D6] Fase RED — estreitamento de `modo` e `visibilidade`, que chegam como
+// `string` dos tipos gerados (o CHECK do Postgres não viaja para o TypeScript).
+// As duas direções são OPOSTAS de propósito, e é isso que o teste fixa.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** Row crua como o PostgREST devolve: `modo` é `string`, não a união. */
+const rowCrua = (modo: string) => ({
+  id: "c0000000-0000-4000-8000-00000000000a",
+  nome: "Cardápio",
+  ativo: true,
+  modo,
+  // Todos os eixos NULL = "sem restrição": é justamente a combinação que, se a
+  // linha NÃO fosse descartada, produziria um cardápio SEMPRE ABERTO.
+  dias_semana: null,
+  dias_mes: null,
+  hora_inicio: null,
+  hora_fim: null,
+  prazo_inicio: null,
+  prazo_fim: null,
+});
+
+describe("247/D6 — paraCardapioVigencia é FAIL-CLOSED no `modo`", () => {
+  it("estreita 'recorrente' e 'prazo_fixo' preservando a linha", () => {
+    for (const modo of ["recorrente", "prazo_fixo"] as const) {
+      const c = paraCardapioVigencia(rowCrua(modo));
+      expect(c).not.toBeNull();
+      expect(c?.modo).toBe(modo);
+      expect(c?.id).toBe("c0000000-0000-4000-8000-00000000000a");
+    }
+  });
+
+  it("modo FORA do domínio ⇒ null: a linha é DESCARTADA, nunca normalizada", () => {
+    // Um fallback para "recorrente" aqui faria esta linha (todos os eixos NULL)
+    // virar um cardápio aberto 24/7 — a vitrine venderia a temporada inteira.
+    for (const modo of ["sazonal", "", "RECORRENTE", "prazo-fixo", "null"]) {
+      expect(paraCardapioVigencia(rowCrua(modo))).toBeNull();
+    }
+  });
+
+  it("a linha descartada não pode ter virado um cardápio aberto por acidente", () => {
+    const c = paraCardapioVigencia(rowCrua("modo_que_nao_existe"));
+    // Afirma o DESCARTE, não só "não é recorrente": nenhum objeto sai daqui.
+    expect(c).toBeNull();
+    expect(c === null ? false : cardapioAberto(c, emSP("2026-10-13T12:00"), SP)).toBe(
+      false,
+    );
+  });
+});
+
+describe("247/D6 — visibilidadeDe é FAIL-OPEN em 'menu'", () => {
+  it("'cardapio' é o ÚNICO valor que vira 'cardapio'", () => {
+    expect(visibilidadeDe({ visibilidade: "cardapio" })).toBe("cardapio");
+  });
+
+  it("'menu' continua 'menu'", () => {
+    expect(visibilidadeDe({ visibilidade: "menu" })).toBe("menu");
+  });
+
+  it("valor DESCONHECIDO cai em 'menu' — produto não some em silêncio", () => {
+    // Direção oposta à de `modo`, por decisão: tratar desconhecido como
+    // 'cardapio' faria o produto sumir de TODAS as vitrines, sem erro nenhum.
+    for (const valor of ["", "exclusivo", "CARDAPIO", "sazonal", "cardapio "]) {
+      expect(visibilidadeDe({ visibilidade: valor })).toBe("menu");
+    }
+  });
+
+  it("o produto do menu por fallback continua comprável fora de qualquer janela", () => {
+    // Prova de CONSEQUÊNCIA, não só do valor devolvido: é o comportamento de
+    // hoje que o fail-open preserva.
+    expect(
+      avaliarVigenciaDoProduto(
+        { visibilidade: visibilidadeDe({ visibilidade: "valor_de_migration_futura" }) },
+        [],
+        emSP("2026-10-13T12:00"),
+        SP,
+      ),
+    ).toEqual({ dentroDaJanela: true, visivelNaVitrine: true });
   });
 });
