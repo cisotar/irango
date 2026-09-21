@@ -22,7 +22,7 @@
  * REGRA: arquivo 'use server' só exporta funções async — tipos locais sem export.
  */
 
-import { schemaProduto } from "@/lib/validacoes/produto";
+import { schemaProduto, schemaProdutoUpdate } from "@/lib/validacoes/produto";
 // Contrato NEUTRO compartilhado com o caminho do LOJISTA (issue 241): a mensagem
 // de D10 e a conversão de prazo pelo fuso têm UMA fonte nos dois mundos — o
 // admin escreve com service_role (BYPASSRLS), então a paridade É a proteção.
@@ -136,7 +136,12 @@ export async function atualizarProdutoAdmin(
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
-  const parsed = schemaProduto.safeParse(payload);
+  // 🔴 PARIDADE com o lojista: no UPDATE `visibilidade` é OBRIGATÓRIA. Sob
+  // `service_role` (BYPASSRLS) nenhuma RLS segura esta via — um payload sem o
+  // campo, com o default do INSERT, reescreveria `'menu'` num produto
+  // exclusivo de cardápio, e o admin teria mudado a declaração do lojista sem
+  // pedir. Recusar no parse é o fail-closed: nenhum patch sai daqui.
+  const parsed = schemaProdutoUpdate.safeParse(payload);
   if (!parsed.success) {
     return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
   }

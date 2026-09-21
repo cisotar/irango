@@ -36,6 +36,14 @@ const prazoLocal = z
  */
 export const visibilidadeProduto = z.enum(["menu", "cardapio"]);
 
+/**
+ * Teto de cardinalidade de QUALQUER lista de ids que o cliente manda (CWE-770,
+ * o mesmo motivo do `.max()` de `pedido.ts`). Declarado UMA vez porque a UI
+ * precisa do MESMO número para explicar a recusa antes de disparar a prévia —
+ * um teto que só existe no zod vira "não foi possível" sem saída.
+ */
+export const TETO_LOTE = 200;
+
 /** O tipo estreito de D14, para quem consome sem passar pelo parse. */
 export type Visibilidade = z.infer<typeof visibilidadeProduto>;
 
@@ -54,8 +62,13 @@ const camposProduto = z.object({
   // false vive no banco (RN-7). Separado de `disponivel` (RN-6-b).
   oculto: z.boolean(),
   // [261] D14 — ONDE o produto aparece. `.default("menu")` é o MESMO default
-  // da coluna (migration 20260920130000): form antigo e payload sem o campo
-  // continuam produzindo o comportamento de hoje, nunca um sumiço silencioso.
+  // da coluna (migration 20260920130000) e vale SÓ NO INSERT: produto novo sem
+  // o campo nasce no menu, como a coluna faria sozinha.
+  //
+  // 🔴 No UPDATE este default seria o sistema mudando `visibilidade` por conta
+  // própria — o invariante que a 255 declara impossível e que `removerCardapio`
+  // defende RECUSANDO em vez de converter. Por isso o UPDATE usa
+  // `schemaProdutoUpdate` (abaixo), onde o campo é OBRIGATÓRIO.
   // Eixo INDEPENDENTE de `oculto` e de `disponivel` — ver RN-05/D14.
   visibilidade: visibilidadeProduto.default("menu"),
   ordem: z.number().int().min(0),
@@ -86,7 +99,15 @@ const camposProduto = z.object({
   desconto_fim: prazoLocal,
 });
 
-export const schemaProduto = camposProduto.superRefine((v, ctx) => {
+/**
+ * As regras de desconto, extraídas para que `schemaProduto` (INSERT) e
+ * `schemaProdutoUpdate` (UPDATE) compartilhem UMA cópia. Os dois diferem
+ * apenas na obrigatoriedade de `visibilidade` — nada mais pode divergir.
+ */
+function refinarDesconto(
+  v: z.infer<typeof camposProduto>,
+  ctx: z.RefinementCtx,
+): void {
   const enviouBloco =
     v.desconto_ativo !== undefined ||
     v.desconto_tipo !== undefined ||
@@ -163,7 +184,35 @@ export const schemaProduto = camposProduto.superRefine((v, ctx) => {
       message: "O fim da promoção deve ser depois do início",
     });
   }
-});
+}
+
+/** A linha INTEIRA do produto, para o INSERT (`visibilidade` tem default). */
+export const schemaProduto = camposProduto.superRefine(refinarDesconto);
+
+/**
+ * [Auditoria 260/261] A linha inteira do produto para o **UPDATE**.
+ *
+ * Idêntica ao `schemaProduto` em tudo, menos em `visibilidade`: aqui o campo é
+ * OBRIGATÓRIO, espelhando `schemaVisibilidadeEmLote`. O UPDATE das actions
+ * grava a linha inteira (`update({ ...parsed.data })`), então um default aqui
+ * faria um payload sem o campo REESCREVER `'menu'` por cima de um produto que
+ * era `'cardapio'` — um prato de temporada voltaria a vender o ano inteiro, em
+ * silêncio, inclusive pelo caminho admin sob `service_role` (BYPASSRLS).
+ *
+ * Fail-closed: payload sem `visibilidade` é RECUSADO no parse, ANTES de
+ * qualquer I/O — nenhum UPDATE sai, e a coluna não é tocada. O sistema nunca
+ * muda `visibilidade` por conta própria; quem declara é sempre o lojista.
+ */
+export const schemaProdutoUpdate = camposProduto
+  .extend({ visibilidade: visibilidadeProduto })
+  .superRefine(refinarDesconto);
+
+/**
+ * O `id` do PRODUTO quando ele chega sozinho, fora do payload (`atualizarProduto`,
+ * `removerProduto`, `alternarDisponibilidade`, `alternarOculto`). Mesmo contrato
+ * de `schemaIdCardapio`: lixo não vira ida ao banco.
+ */
+export const schemaIdProduto = z.guid();
 
 export const schemaCategoria = z.object({
   nome: z.string().trim().min(1),
@@ -185,7 +234,7 @@ export const schemaCategoria = z.object({
 export const schemaReordenacaoCategorias = z
   .array(z.guid())
   .min(2)
-  .max(200)
+  .max(TETO_LOTE)
   .refine((ids) => new Set(ids).size === ids.length, {
     message: "Ids repetidos na reordenação",
   });
@@ -208,7 +257,7 @@ export const schemaVisibilidadeEmLote = z
     produto_ids: z
       .array(z.guid())
       .min(1)
-      .max(200)
+      .max(TETO_LOTE)
       .refine((ids) => new Set(ids).size === ids.length, {
         message: "Ids repetidos na seleção",
       }),

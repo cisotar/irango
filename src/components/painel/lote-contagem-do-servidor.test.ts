@@ -104,3 +104,55 @@ describe("D14 não tem segunda definição", () => {
     );
   });
 });
+
+/**
+ * [Auditoria 260/261] Duas travas de FONTE que o ambiente sem jsdom não
+ * consegue afirmar por render — e que, sem trava, dependem de disciplina:
+ *
+ *  1. o teto do lote é explicado com o número que o zod usa, não com um
+ *     literal repetido na UI;
+ *  2. `cardapiosDoProduto` não volta a ter default `= []` no `FormProduto` —
+ *     era o default que fazia o hub admin afirmar "este produto não está em
+ *     nenhum cardápio" sobre um produto que está em dois.
+ */
+describe("o teto do lote é explicado com o número do zod", () => {
+  const fonte = readFileSync(
+    join(RAIZ, "components/painel/useLoteDeProdutos.tsx"),
+    "utf8",
+  );
+
+  it("o hook importa `TETO_LOTE` em vez de repetir o número", () => {
+    expect(fonte).toMatch(/TETO_LOTE/);
+    expect(fonte).not.toMatch(/\b200\b/);
+  });
+
+  it("existe uma frase que nomeia o limite antes de a prévia falhar", () => {
+    expect(fonte).toMatch(/no máximo \$\{TETO_LOTE\} produtos/);
+  });
+});
+
+describe("o form nunca afirma cardápio a partir de um default", () => {
+  it("`cardapiosDoProduto` é prop OBRIGATÓRIA do FormProduto", () => {
+    const fonte = readFileSync(
+      join(RAIZ, "components/painel/FormProduto.tsx"),
+      "utf8",
+    );
+    // Sem `?:` na declaração e sem default na desestruturação.
+    expect(fonte).toMatch(/cardapiosDoProduto:\s*readonly/);
+    expect(fonte).not.toMatch(/cardapiosDoProduto\?/);
+    expect(fonte).not.toMatch(/cardapiosDoProduto\s*=\s*\[\]/);
+  });
+
+  it("o hub admin alimenta `cardapiosPorProduto` com dado real da loja-alvo", () => {
+    const wrapper = readFileSync(
+      join(RAIZ, "app/admin/assinantes/[lojaId]/produtos/CardapioAdminClient.tsx"),
+      "utf8",
+    );
+    const page = readFileSync(
+      join(RAIZ, "app/admin/assinantes/[lojaId]/produtos/page.tsx"),
+      "utf8",
+    );
+    expect(wrapper).toMatch(/cardapiosPorProduto=\{cardapiosPorProduto\}/);
+    expect(page).toMatch(/carregarCardapiosAdmin/);
+  });
+});

@@ -97,6 +97,7 @@ function renderLista(produtos: Produto[]): string {
       produtos={produtos}
       categorias={[]}
       opcionaisPorCategoria={{}}
+      cardapiosPorProduto={{}}
       promocoes={{}}
       fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
       categoriasOpcional={[]}
@@ -235,6 +236,7 @@ describe("injeção de acoes (issues 129 e 160)", () => {
           produtos={produtos}
           categorias={[]}
           opcionaisPorCategoria={{}}
+          cardapiosPorProduto={{}}
           promocoes={{}}
           fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
           categoriasOpcional={[]}
@@ -269,6 +271,7 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
         produtos={produtos}
         categorias={CATEGORIAS}
         opcionaisPorCategoria={{}}
+        cardapiosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -329,6 +332,7 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
         produtos={produtos}
         categorias={categorias.map((c) => ({ ...c, exibir_imagens: true }))}
         opcionaisPorCategoria={{}}
+        cardapiosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -404,6 +408,7 @@ describe("categoria vazia NÃO aparece na listagem normal (issue 175, cenário 1
         ]}
         acoes={acoesBase()}
         opcionaisPorCategoria={{}}
+        cardapiosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}
@@ -430,6 +435,7 @@ describe("ProdutosClient — chip de promoção vigente (issue 235, design §8.4
         produtos={produtos}
         categorias={[]}
         opcionaisPorCategoria={{}}
+        cardapiosPorProduto={{}}
         promocoes={promocoes}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
         categoriasOpcional={[]}

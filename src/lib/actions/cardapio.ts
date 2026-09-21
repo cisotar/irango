@@ -304,6 +304,9 @@ const MSG_INVALIDO = "Cardápio inválido.";
  */
 const FRAGMENTO_TRIGGER = "produto exclusivo sem cardapio";
 
+/** `integrity_constraint_violation` — o errcode que o trigger usa (D8). */
+const ERRCODE_TRIGGER = "23000";
+
 type ResultadoCardapio = { ok: true } | { ok: false; erro: string };
 
 /**
@@ -340,8 +343,12 @@ const MSG_EXCLUSIVOS_SEM_NUMERO =
 function ehErroDeExclusivoOrfao(erro: unknown): boolean {
   if (erro == null || typeof erro !== "object") return false;
   const e = erro as { code?: unknown; message?: unknown };
+  // O PAR, não só o fragmento: erro de outra origem cuja mensagem contenha o
+  // texto (um nome de produto, por exemplo) não vira a recusa de RN-14.
   return (
-    typeof e.message === "string" && e.message.includes(FRAGMENTO_TRIGGER)
+    e.code === ERRCODE_TRIGGER &&
+    typeof e.message === "string" &&
+    e.message.includes(FRAGMENTO_TRIGGER)
   );
 }
 

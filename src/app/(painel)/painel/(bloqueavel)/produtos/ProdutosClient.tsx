@@ -69,7 +69,10 @@ import {
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
 import { BarraSelecaoLote } from "@/components/painel/BarraSelecaoLote";
 import { useLoteDeProdutos } from "@/components/painel/useLoteDeProdutos";
-import type { LoteDeProdutos } from "@/components/painel/contrato-lote";
+import type {
+  LoteDeProdutos,
+  CardapiosPorProduto,
+} from "@/components/painel/contrato-lote";
 import { visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import type {
   Associacao,
@@ -153,6 +156,13 @@ export type ProdutosClientProps = {
    * pela ausência da funcionalidade em vez de por um fallback silencioso.
    */
   lote?: LoteDeProdutos;
+  /**
+   * [261] `produto.id → cardápios dele`, projetado no Server Component (com o
+   * relógio do servidor e o fuso da loja). OBRIGATÓRIA nos dois mundos: é o que
+   * o `FormProduto` lê para decidir entre "está em: …" e o aviso de RN-14.
+   * Separada de `lote` de propósito — ver `CardapiosPorProduto`.
+   */
+  cardapiosPorProduto: CardapiosPorProduto;
   /**
    * Actions injetadas. Todas OBRIGATÓRIAS (issue 160): a page do painel passa
    * as 21 do lojista, a via admin passa as 21 variantes escopadas por `lojaId`.
@@ -266,6 +276,7 @@ export function ProdutosClient({
   promocoes,
   fusoLojaRotulo,
   lote,
+  cardapiosPorProduto,
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
@@ -578,7 +589,7 @@ export function ProdutosClient({
       // saída quando o produto não está em cardápio nenhum. A autoridade segue
       // sendo o trigger + a mensagem da Server Action.
       cardapiosDoProduto={
-        emEdicao ? (lote?.cardapiosPorProduto[emEdicao.id] ?? []) : []
+        emEdicao ? (cardapiosPorProduto[emEdicao.id] ?? []) : []
       }
       inicial={
         emEdicao
@@ -856,10 +867,9 @@ export function ProdutosClient({
                                 vêm projetados do Server Component, com o
                                 relógio do servidor e o fuso da loja — o painel
                                 nunca decide vigência no browser. */}
-                            {(lote?.cardapiosPorProduto[p.id]?.length ?? 0) >
-                              0 && (
+                            {(cardapiosPorProduto[p.id]?.length ?? 0) > 0 && (
                               <ul className="mt-1 flex flex-wrap items-center gap-1.5">
-                                {lote?.cardapiosPorProduto[p.id]?.map((c) => (
+                                {cardapiosPorProduto[p.id]?.map((c) => (
                                   <li key={c.id}>
                                     <Badge
                                       variant="outline"

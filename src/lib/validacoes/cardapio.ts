@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { TETO_LOTE } from "@/lib/validacoes/produto";
+
 /**
  * Schemas do CARDÁPIO SAZONAL (Spec B) — um zod, vários consumidores.
  *
@@ -23,7 +25,7 @@ import { z } from "zod";
 const listaDeProdutos = z
   .array(z.guid())
   .min(1)
-  .max(200)
+  .max(TETO_LOTE)
   .refine((ids) => new Set(ids).size === ids.length, {
     message: "Ids repetidos na seleção",
   });

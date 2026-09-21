@@ -53,7 +53,7 @@ import {
   preverLoteAction,
 } from "@/lib/actions/cardapio";
 import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
-import type { CardapioDoProduto } from "@/components/painel/contrato-lote";
+import type { CardapiosPorProduto } from "@/components/painel/contrato-lote";
 import { ProdutosClient } from "./ProdutosClient";
 
 /**
@@ -131,7 +131,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     nome: c.nome,
     descricao: descreverVigencia(c, loja.timezone, agora),
   }));
-  const cardapiosPorProduto: Record<string, CardapioDoProduto[]> =
+  const cardapiosPorProduto: CardapiosPorProduto =
     Object.fromEntries(
       [...cardapiosDaLoja.cardapiosPorProduto].map(([produtoId, lista]) => [
         produtoId,
@@ -156,12 +156,14 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       opcionaisPorCategoria={opcionaisPorCategoria}
       promocoes={promocoes}
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
+      // [261] LEITURA, não ação: vive fora do `lote` porque o hub admin também
+      // a recebe (o `FormProduto` depende dela para não mentir sobre cardápio).
+      cardapiosPorProduto={cardapiosPorProduto}
       // [260][261] O modo de seleção só existe no painel do LOJISTA: estas
       // Server Actions derivam a loja de `auth.uid()` e não têm variante
       // admin (ver a prop `lote` do `ProdutosClient`).
       lote={{
         cardapios: cardapiosParaLote,
-        cardapiosPorProduto,
         acoes: {
           aplicarEmProdutos: aplicarCardapioEmProdutos,
           aplicarEmCategoria: aplicarCardapioEmCategoria,

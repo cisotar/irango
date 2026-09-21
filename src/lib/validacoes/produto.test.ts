@@ -11,6 +11,9 @@ vi.hoisted(() => {
 import {
   schemaCategoria,
   schemaProduto,
+  schemaProdutoUpdate,
+  schemaVisibilidadeEmLote,
+  TETO_LOTE,
   mensagemDescontoMaiorQuePreco,
 } from "./produto";
 import { STORAGE_URL_PREFIX } from "./storage";
@@ -582,5 +585,101 @@ describe("schemaProduto — desconto: prazo (RN-03)", () => {
     expect(
       schemaProduto.safeParse(comDesconto({ desconto_fim: "amanhã" })).success,
     ).toBe(false);
+  });
+});
+
+
+/**
+ * [Auditoria 260/261] INSERT e UPDATE divergem em UM ponto só: `visibilidade`.
+ *
+ * O `.default("menu")` é da COLUNA e vale no INSERT. No UPDATE, que grava a
+ * linha inteira, o mesmo default seria o SISTEMA reescrevendo a declaração do
+ * lojista — um prato exclusivo de cardápio voltaria ao menu em silêncio.
+ */
+describe("schemaProdutoUpdate — `visibilidade` obrigatória no UPDATE", () => {
+  function semVisibilidade() {
+    const p: Record<string, unknown> = { ...produtoValido };
+    delete p.visibilidade;
+    return p;
+  }
+
+  it("INSERT sem o campo passa e recebe o default da coluna", () => {
+    const r = schemaProduto.safeParse(semVisibilidade());
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.visibilidade).toBe("menu");
+  });
+
+  it("UPDATE sem o campo é RECUSADO (nenhum default entra no patch)", () => {
+    const r = schemaProdutoUpdate.safeParse(semVisibilidade());
+    expect(r.success).toBe(false);
+    expect(r.success === false && r.error.issues[0]?.path).toEqual([
+      "visibilidade",
+    ]);
+  });
+
+  it("UPDATE com o campo explícito preserva o valor declarado", () => {
+    for (const valor of ["menu", "cardapio"] as const) {
+      const r = schemaProdutoUpdate.safeParse({
+        ...produtoValido,
+        visibilidade: valor,
+      });
+      expect(r.success && r.data.visibilidade).toBe(valor);
+    }
+  });
+
+  it("UPDATE recusa valor fora do domínio (nada de terceira opção)", () => {
+    const r = schemaProdutoUpdate.safeParse({
+      ...produtoValido,
+      visibilidade: "invisivel",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("as demais regras (D10) valem IGUAIS nos dois schemas", () => {
+    const payload = {
+      ...produtoValido,
+      visibilidade: "menu",
+      preco: 8,
+      desconto_ativo: true,
+      desconto_tipo: "fixo",
+      desconto_valor: 10,
+      desconto_inicio: null,
+      desconto_fim: null,
+    };
+    const insert = schemaProduto.safeParse(payload);
+    const update = schemaProdutoUpdate.safeParse(payload);
+    expect(insert.success).toBe(false);
+    expect(update.success).toBe(false);
+    expect(
+      update.success === false && update.error.issues.map((i) => i.message),
+    ).toEqual(
+      insert.success === false && insert.error.issues.map((i) => i.message),
+    );
+  });
+});
+
+/**
+ * [Auditoria 260/261] O teto que a UI explica é o MESMO que o zod recusa. Se um
+ * dos dois mudar sozinho, o lojista volta a ler "não foi possível" sem saber
+ * que existe limite — ou lê um número que não é o que decide.
+ */
+describe("TETO_LOTE — o número da frase é o número da recusa", () => {
+  const id = (n: number) =>
+    `${String(n).padStart(8, "0")}-0000-0000-0000-000000000000`;
+
+  it(`aceita exatamente ${TETO_LOTE} ids`, () => {
+    const r = schemaVisibilidadeEmLote.safeParse({
+      produto_ids: Array.from({ length: TETO_LOTE }, (_, i) => id(i)),
+      visibilidade: "menu",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("recusa um id a mais", () => {
+    const r = schemaVisibilidadeEmLote.safeParse({
+      produto_ids: Array.from({ length: TETO_LOTE + 1 }, (_, i) => id(i)),
+      visibilidade: "menu",
+    });
+    expect(r.success).toBe(false);
   });
 });

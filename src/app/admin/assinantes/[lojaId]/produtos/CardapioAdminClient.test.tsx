@@ -100,6 +100,7 @@ function renderizar(lojaId = LOJA_ALVO) {
       produtos={[]}
       categorias={[]}
       opcionaisPorCategoria={{}}
+      cardapiosPorProduto={{}}
       promocoes={{}}
       fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
       categoriasOpcional={[]}

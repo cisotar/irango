@@ -40,11 +40,17 @@ const CATEGORIAS = [{ id: "c1", nome: "Lanches", exibir_imagens: true }];
  * default apontando para a action do lojista): o `ProdutosClient` repassa as do
  * seu `acoes`, preenchido pela page do painel ou pelo wrapper admin.
  */
-function renderForm(inicial?: ProdutoInicial): string {
+function renderForm(
+  inicial?: ProdutoInicial,
+  // [Auditoria 260/261] OBRIGATÓRIA no componente: o default `= []` mentia no
+  // hub admin ("não está em nenhum cardápio" para quem está em dois).
+  cardapiosDoProduto: readonly { id: string; nome: string }[] = [],
+): string {
   return renderToStaticMarkup(
     <FormProduto
       categorias={CATEGORIAS}
       inicial={inicial}
+      cardapiosDoProduto={cardapiosDoProduto}
       lojaSlug="loja-teste"
       lojaId="loja-1"
       fusoLojaRotulo="America/Sao_Paulo (GMT-3)"

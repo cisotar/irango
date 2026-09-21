@@ -401,6 +401,30 @@ describe("removerCardapio (RN-14)", () => {
     expect(erro).toContain("Converta esses produtos para o menu");
     expect(erro).not.toMatch(/\d/);
   });
+
+  // [Auditoria 260/261] O reconhecedor exige o PAR `23000` + fragmento. Só o
+  // fragmento faria um erro de outra origem que o contivesse (o nome de um
+  // produto num `permission denied`, por exemplo) virar a recusa de RN-14 e
+  // mandar o lojista converter produtos que não travam nada.
+  it("[backstop] fragmento SEM o 23000 continua genérico", async () => {
+    fila = [
+      { data: [{ produto_id: P1 }], error: null },
+      { data: [], error: null },
+      {
+        data: null,
+        error: {
+          code: "42501",
+          message: `permission denied: produto exclusivo sem cardapio: ${P1}`,
+        },
+      },
+    ];
+    const r = await semRuido(() => removerCardapio(CARDAPIO));
+    expect(r).toEqual({
+      ok: false,
+      erro: "Não foi possível remover o cardápio.",
+      exclusivos: 0,
+    });
+  });
 });
 
 // ═══════════════════════════════════════ converterExclusivosParaMenu ════════

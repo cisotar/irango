@@ -13,6 +13,18 @@ import type {
   PreviaDoLote,
 } from "@/components/painel/contrato-lote";
 import type { AcaoLote, AcaoVisibilidade } from "@/lib/utils/copiaLotePromocao";
+import { TETO_LOTE } from "@/lib/validacoes/produto";
+
+/**
+ * [Auditoria 260/261] O teto de cardinalidade (CWE-770) explicado ANTES de
+ * virar recusa. "Selecionar os N" não conhece o teto: numa categoria com mais
+ * de `TETO_LOTE` produtos a PRÉVIA falhava no parse e o lojista lia
+ * "não foi possível" sem saber que existe um limite nem o que fazer.
+ *
+ * O `.max()` do zod continua sendo a autoridade — esta frase não afrouxa nada,
+ * só deixa de esconder o número que já decide a recusa.
+ */
+const MSG_TETO = `Dá para aplicar uma ação a no máximo ${TETO_LOTE} produtos por vez. Desmarque alguns e tente de novo.`;
 
 /**
  * O escopo do lote, na FORMA que a Server Action recebe — nunca uma lista que
@@ -76,6 +88,15 @@ export function useLoteDeProdutos(
   const prever = useCallback(
     async (alvo: AlvoDoLote, escopo: EscopoDoLote): Promise<void> => {
       if (acoes === undefined || prevendo || pendente) return;
+      // O teto vale só para a SELEÇÃO EXPLÍCITA: a categoria inteira é
+      // expandida dentro da transação (RN-10) e não trafega como lista.
+      if (
+        escopo.tipo === "produtos" &&
+        escopo.produto_ids.length > TETO_LOTE
+      ) {
+        toast.error(MSG_TETO);
+        return;
+      }
       setPrevendo(true);
       try {
         // A prévia recebe o MESMO escopo da gravação: seleção explícita vira

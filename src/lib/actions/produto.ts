@@ -14,6 +14,8 @@
 
 import {
   schemaProduto,
+  schemaProdutoUpdate,
+  schemaIdProduto,
   schemaCategoria,
   schemaReordenacaoCategorias,
   schemaVisibilidadeEmLote,
@@ -118,7 +120,17 @@ export async function atualizarProduto(
   id: string,
   payload: unknown,
 ): Promise<ResultadoGestaoProduto> {
-  const parsed = schemaProduto.safeParse(payload);
+  // `id` chega FORA do payload e por isso escapava do zod: lixo virava ida ao
+  // banco. Mesmo contrato de `atualizarCardapio` — parse ANTES de qualquer I/O.
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: MSG_SALVAR_PRODUTO };
+  }
+
+  // 🔴 `schemaProdutoUpdate`, NÃO `schemaProduto`: no UPDATE `visibilidade` é
+  // obrigatória. Com o default do INSERT, um payload sem o campo gravaria
+  // `'menu'` por cima de um produto exclusivo de cardápio — o sistema mudando
+  // a declaração do lojista sozinho (ver o comentário em validacoes/produto.ts).
+  const parsed = schemaProdutoUpdate.safeParse(payload);
   if (!parsed.success) {
     return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
   }
@@ -142,14 +154,16 @@ export async function atualizarProduto(
     }
 
     // loja_id reafirmado como o do dono (a RLS rejeitaria troca, mas nem
-    // oferecemos a opção) + escopo por id.
+    // oferecemos a opção) + escopo por id E por loja_id: o mesmo cinto e
+    // suspensório das actions de lote, que não delegam o escopo só à RLS.
     const { error } = await supabase
       .from("produtos")
       .update({
         ...comPrazosNoFuso(parsed.data, loja.timezone),
         loja_id: loja.id,
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       // Inclui o 23514 dos CHECKs de desconto (issue 219): o texto cru do
       // Postgres fica no log, o lojista recebe a genérica (seguranca.md §14).
@@ -169,10 +183,24 @@ export async function atualizarProduto(
 export async function removerProduto(
   id: string,
 ): Promise<ResultadoGestaoProduto> {
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: "Não foi possível remover o produto." };
+  }
+
   try {
     const supabase = await createClient();
-    // RLS produtos_escrita_propria impede deletar produto de outra loja.
-    const { error } = await supabase.from("produtos").delete().eq("id", id);
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // RLS produtos_escrita_propria impede deletar produto de outra loja; o
+    // `.eq("loja_id")` explícito é a mesma defesa em profundidade das actions
+    // novas — escopo não fica só na RLS.
+    const { error } = await supabase
+      .from("produtos")
+      .delete()
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[removerProduto]", error);
       return { ok: false, erro: "Não foi possível remover o produto." };
@@ -189,13 +217,25 @@ export async function alternarDisponibilidade(
   id: string,
   disponivel: boolean,
 ): Promise<ResultadoGestaoProduto> {
+  if (typeof disponivel !== "boolean") {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+
   try {
     const supabase = await createClient();
-    // Toggle escopado por id; RLS isola por dono.
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // Toggle escopado por id E loja_id; a RLS continua isolando por dono.
     const { error } = await supabase
       .from("produtos")
       .update({ disponivel })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[alternarDisponibilidade]", error);
       return { ok: false, erro: "Não foi possível atualizar o produto." };
@@ -212,14 +252,27 @@ export async function alternarOculto(
   id: string,
   oculto: boolean,
 ): Promise<ResultadoGestaoProduto> {
+  if (typeof oculto !== "boolean") {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: "Não foi possível atualizar o produto." };
+  }
+
   try {
     const supabase = await createClient();
-    // Toggle de VISIBILIDADE escopado por id; RLS produtos_escrita_propria
-    // isola por dono. NÃO mexe em `disponivel` (RN-6-b).
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // Toggle de VISIBILIDADE (`oculto`) escopado por id E loja_id; a RLS
+    // produtos_escrita_propria continua isolando por dono. NÃO mexe em
+    // `disponivel` (RN-6-b) nem em `visibilidade` (D14).
     const { error } = await supabase
       .from("produtos")
       .update({ oculto })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("loja_id", loja.id);
     if (error) {
       console.error("[alternarOculto]", error);
       return { ok: false, erro: "Não foi possível atualizar o produto." };

@@ -58,7 +58,15 @@ export type CardapioDoProduto = {
 /** Tudo que `/painel/produtos` precisa para oferecer o modo de seleção. */
 export type LoteDeProdutos = {
   cardapios: CardapioParaLote[];
-  /** `produto.id → cardápios dele`. Produto ausente = não está em nenhum. */
-  cardapiosPorProduto: Record<string, CardapioDoProduto[]>;
   acoes: AcoesLote;
 };
+
+/**
+ * `produto.id → cardápios dele`. Produto ausente = não está em nenhum.
+ *
+ * NÃO mora em `LoteDeProdutos` (que é opcional, porque o hub admin não tem as
+ * actions de lote): é LEITURA, existe nos DOIS mundos e o `FormProduto` decide
+ * por ela se mostra "este produto não está em nenhum cardápio". Pendurada no
+ * lote, o admin lia `{}` e afirmava isso de um produto que está em dois.
+ */
+export type CardapiosPorProduto = Record<string, CardapioDoProduto[]>;

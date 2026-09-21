@@ -56,6 +56,7 @@ export function CardapioAdminClient({
   produtos,
   categorias,
   opcionaisPorCategoria,
+  cardapiosPorProduto,
   categoriasOpcional,
   opcionais,
   associacoes,
@@ -69,6 +70,11 @@ export function CardapioAdminClient({
   opcionaisPorCategoria: OpcionaisPorCategoria;
 } & Pick<
   ProdutosClientProps,
+  // [Auditoria 260/261] `cardapiosPorProduto` é OBRIGATÓRIA e vem do Server
+  // Component admin (`carga-cardapios.ts`). O hub admin continua SEM a prop
+  // `lote` — nenhuma ação de cardápio aqui, só a leitura que impede o
+  // `FormProduto` de afirmar "não está em nenhum cardápio" sobre quem está.
+  | "cardapiosPorProduto"
   // [235] `promocoes`/`fusoLojaRotulo` são projeção do SERVER COMPONENT admin
   // (com o fuso da loja-alvo) — o wrapper só repassa, sem derivar nada.
   | "categoriasOpcional"
@@ -100,6 +106,7 @@ export function CardapioAdminClient({
       // admin no `acoes` (abaixo) na MESMA mudança — a prop é OBRIGATÓRIA
       // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
+      cardapiosPorProduto={cardapiosPorProduto}
       categoriasOpcional={categoriasOpcional}
       // [217] A biblioteca de itens e as linhas de associação alimentam o
       // cartão dentro do modal. Nenhuma query nova no admin: o agregado

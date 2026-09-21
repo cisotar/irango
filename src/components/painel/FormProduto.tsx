@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   schemaProduto,
+  schemaProdutoUpdate,
   ehMensagemDescontoMaiorQuePreco,
   type Visibilidade,
 } from "@/lib/validacoes/produto";
@@ -104,13 +105,19 @@ export type FormProdutoProps = {
   fusoLojaRotulo: string;
   /**
    * [261] Os cardápios a que ESTE produto já pertence, lidos no servidor.
-   * Vazio (ou ausente, no caminho admin) ⇒ marcar "só no cardápio" seria
-   * RECUSADO pelo trigger de RN-14, e o form explica isso com a saída junto.
+   * Vazio ⇒ marcar "só no cardápio" seria RECUSADO pelo trigger de RN-14, e o
+   * form explica isso com a saída junto.
+   *
+   * OBRIGATÓRIA (issue 160, e o achado da auditoria de 260/261): com o default
+   * `= []` que existia aqui, o hub admin — que não passava a prop — afirmava
+   * "este produto não está em nenhum cardápio" para um produto que está em
+   * dois, e convidava um operador com BYPASSRLS a convertê-lo ao menu à toa.
+   * Omitir tem de quebrar o build, nunca mentir na tela.
    *
    * É PREVIEW DE UX: nada aqui autoriza nada. A autoridade é o trigger da
    * issue 245, e a mensagem legível é a da Server Action.
    */
-  cardapiosDoProduto?: readonly { id: string; nome: string }[];
+  cardapiosDoProduto: readonly { id: string; nome: string }[];
 };
 
 /**
@@ -133,7 +140,7 @@ export function FormProduto({
   onAtualizar,
   onEnviarFoto,
   fusoLojaRotulo,
-  cardapiosDoProduto = [],
+  cardapiosDoProduto,
 }: FormProdutoProps) {
   const router = useRouter();
   const ehEdicao = inicial?.id != null;
@@ -241,8 +248,12 @@ export function FormProduto({
     const payload = montarPayload();
     setErroPar(null);
 
-    // Gate de UX (servidor revalida o mesmo schema).
-    const parsed = schemaProduto.safeParse(payload);
+    // Gate de UX (o servidor revalida o MESMO schema — inclusive a escolha
+    // entre criar e atualizar: no UPDATE `visibilidade` é obrigatória, e o
+    // form sempre a envia).
+    const parsed = (ehEdicao ? schemaProdutoUpdate : schemaProduto).safeParse(
+      payload,
+    );
     if (!parsed.success) {
       // A mensagem vem PRONTA do `superRefine` — nenhuma cópia dela mora aqui.
       const d10 = parsed.error.issues.find((i) =>

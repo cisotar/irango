@@ -71,11 +71,23 @@ export const MSG_EXCLUSIVO_SEM_CARDAPIO =
  */
 const FRAGMENTO_TRIGGER_EXCLUSIVO = "produto exclusivo sem cardapio";
 
-/** Erro do banco que é, na verdade, a recusa legível de RN-14. */
+/** `integrity_constraint_violation` — o errcode que o trigger usa (D8). */
+const ERRCODE_TRIGGER_EXCLUSIVO = "23000";
+
+/**
+ * Erro do banco que é, na verdade, a recusa legível de RN-14.
+ *
+ * O reconhecimento exige o PAR: `23000` (o errcode que o trigger levanta com
+ * `using errcode = 'integrity_constraint_violation'`) **e** o fragmento
+ * literal. Só o fragmento bastaria para qualquer erro de outra origem que o
+ * contivesse — um nome de produto, um texto de cupom — virar a frase de RN-14 e
+ * mandar o lojista escolher um cardápio que não resolveria nada.
+ */
 export function ehErroDeExclusivoSemCardapio(erro: unknown): boolean {
   if (erro == null || typeof erro !== "object") return false;
-  const e = erro as { message?: unknown };
+  const e = erro as { code?: unknown; message?: unknown };
   return (
+    e.code === ERRCODE_TRIGGER_EXCLUSIVO &&
     typeof e.message === "string" &&
     e.message.includes(FRAGMENTO_TRIGGER_EXCLUSIVO)
   );
