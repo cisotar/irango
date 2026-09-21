@@ -47,6 +47,11 @@ import {
 } from "@/lib/utils/derivarBasesCupom";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
+import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
+import {
+  avaliarVigenciaDoProduto,
+  visibilidadeDe,
+} from "@/lib/utils/vigenciaCardapio";
 import {
   assinaturaPermiteAcesso,
   type StatusAssinatura,
@@ -64,6 +69,13 @@ const ERRO_GENERICO = "Não foi possível criar o pedido. Tente novamente.";
 // promoção — pagaria MAIS do que viu. D11 exige reconfirmação explícita, e a
 // garantia é de SERVIDOR: nenhum componente precisa ser confiável para isso.
 const ERRO_REVISAO = "Os preços do seu carrinho mudaram. Revise o pedido antes de confirmar.";
+// (249/RN-08) Item que saiu da janela do cardápio entre montar o carrinho e
+// confirmar. Específica como "Loja fechada no momento." e deliberadamente SEM
+// nomear o item: quem nomeia é `revisarCarrinhoAction` (252), para quem o
+// cliente já provou conhecer os ids. Não é oráculo — a mesma informação está
+// pública no selo da vitrine.
+const ERRO_FORA_DA_JANELA =
+  "Um item do seu pedido saiu do cardápio deste horário. Revise o carrinho.";
 
 export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedido> {
   // (0) Rate limit por IP antes de qualquer I/O (incl. safeParse): payload
@@ -128,14 +140,21 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         dados.itens.flatMap((i) => (i.opcionais ?? []).map((o) => o.opcional_id)),
       ),
     ];
-    const [formas, produtos, opcionaisBanco, zonasPreCarregadas] = await Promise.all([
-      listarFormasPagamento(svc, dados.loja_id),
-      buscarProdutosPorIds(svc, ids),
-      buscarOpcionaisPorIds(svc, opcionalIds),
-      dados.tipo_entrega === "retirada"
-        ? Promise.resolve<ZonaVitrine[]>([])
-        : listarZonasComTaxas(svc, dados.loja_id),
-    ]);
+    const [formas, produtos, opcionaisBanco, zonasPreCarregadas, cardapios] =
+      await Promise.all([
+        listarFormasPagamento(svc, dados.loja_id),
+        buscarProdutosPorIds(svc, ids),
+        buscarOpcionaisPorIds(svc, opcionalIds),
+        dados.tipo_entrega === "retirada"
+          ? Promise.resolve<ZonaVitrine[]>([])
+          : listarZonasComTaxas(svc, dados.loja_id),
+        // (249) A MESMA query que o SSR da vitrine usa (247), aqui sob
+        // `service_role`. Sem `.eq("ativo", true)`: RN-03 mora na função pura,
+        // e o recálculo precisa ENXERGAR o cardápio para poder recusar.
+        // Deliberadamente SEM try/catch local — rejeição sobe ao `Promise.all`
+        // e ao catch externo, e o pedido é recusado (fail-closed, §14).
+        buscarCardapiosComProdutos(svc, dados.loja_id),
+      ]);
 
     // (3) Forma de pagamento ∈ formas configuradas pela loja.
     if (!formas.some((f) => f.tipo === dados.forma_pagamento)) {
@@ -196,6 +215,20 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         produto.loja_id !== dados.loja_id
       ) {
         return { erro: ERRO_GENERICO };
+      }
+
+      // (249/RN-08) A janela do cardápio, pela MESMA função pura da vitrine e
+      // da revisão (246) — nenhuma aritmética de fuso/prazo nova aqui. Fora da
+      // janela recusa o PEDIDO INTEIRO, antes da RPC: nada gravado, nenhum item
+      // descartado em silêncio. Sem `codigo` — não é a recusa de RN-12-a.
+      const vigencia = avaliarVigenciaDoProduto(
+        { visibilidade: visibilidadeDe(produto) },
+        cardapios.cardapiosPorProduto.get(produto.id) ?? [],
+        agora,
+        loja.timezone,
+      );
+      if (!vigencia.dentroDaJanela) {
+        return { erro: ERRO_FORA_DA_JANELA };
       }
 
       // Conjunto de categorias de opcional permitidas para a categoria do produto.

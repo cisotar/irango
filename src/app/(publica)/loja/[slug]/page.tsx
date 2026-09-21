@@ -13,6 +13,7 @@ import {
 import type { CategoriaComProdutos } from "@/components/vitrine/SecaoCatalogo";
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
 import { createClient } from "@/lib/supabase/server";
+import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
 import {
@@ -20,7 +21,7 @@ import {
   buscarOpcionaisPorCategoria,
   buscarProdutosPublicos,
 } from "@/lib/supabase/queries/produtos";
-import { projetarProdutoVitrine } from "@/lib/utils/catalogoVitrine";
+import { projetarCatalogoVitrine } from "@/lib/utils/catalogoVitrine";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
 import { diaNoFuso } from "@/lib/utils/fusoLoja";
@@ -119,6 +120,10 @@ export default async function VitrinePage({ params }: PageProps) {
   const loja = await carregarLoja(slug);
   if (!loja || !loja.id || !loja.nome) notFound();
 
+  // Fuso da LOJA — nunca o do browser: é ele que decide horário de
+  // funcionamento (222), "hoje" do modal (RN-16) e a janela do cardápio (246).
+  const timezoneLoja = loja.timezone ?? "America/Sao_Paulo";
+
   // Gate de assinatura (RN-A7) — SEMPRE server-side, mesma fonte de verdade do
   // guard do painel e do `criarPedido` (issue 056). Loja com assinatura inválida
   // (suspensa ou fora da carência) renderiza "temporariamente indisponível",
@@ -136,7 +141,7 @@ export default async function VitrinePage({ params }: PageProps) {
           nome={loja.nome}
           logoUrl={loja.logo_url ?? undefined}
           horarios={resolverHorarios(loja.horarios)}
-          timezone={loja.timezone ?? "America/Sao_Paulo"}
+          timezone={timezoneLoja}
           whatsapp={loja.whatsapp}
         />
         <main className={CLASSES_MAIN_VITRINE}>
@@ -164,19 +169,31 @@ export default async function VitrinePage({ params }: PageProps) {
   // 265: `buscarProdutosPublicos` lê a view definer `public.vitrine_produtos`,
   // que já projeta as colunas públicas e mascara desconto não-vigente (RN-03) —
   // a tabela base não é mais legível por anon/authenticated.
-  const [categorias, produtos] = await Promise.all([
+  // 247: a 5ª query entra na MESMA onda — `cardapios` ⋈ `cardapio_produtos` num
+  // round trip só, sem custo de latência de parede.
+  const [categorias, produtos, { cardapiosPorProduto }] = await Promise.all([
     buscarCategorias(db, lojaId),
     buscarProdutosPublicos(db, lojaId),
+    buscarCardapiosComProdutos(db, lojaId),
   ]);
   // Contrato de catálogo (224): UM objeto por produto, produzido no servidor e
   // fonte única de preço/selo/comprabilidade. `agora` injetado — a vigência da
   // promoção é avaliada por request, e é por isso que esta página NÃO pode ser
   // cacheada (ver o bloco de `carregarLoja`): catálogo cacheado serve promoção
   // expirada.
+  //
+  // 247: a ordem é PROJETAR → AGRUPAR, invertida de propósito. O produto fora
+  // de temporada (RN-13) some dentro de `projetarCatalogoVitrine`, enquanto a
+  // lista ainda é uma lista — e a regra "grupo sem produto visível não é
+  // devolvido" (issue 177, dentro de `agruparCatalogo`) passa a cobrir a
+  // categoria esvaziada pela temporada de graça, sem código de agrupamento novo.
   const agora = new Date();
-  const produtosVitrine = produtos.map((produto) =>
-    projetarProdutoVitrine(produto, agora),
-  );
+  const { produtos: produtosVitrine } = projetarCatalogoVitrine({
+    produtos,
+    cardapiosPorProduto,
+    agora,
+    timezone: timezoneLoja,
+  });
   const grupos = agruparCatalogo(produtosVitrine, categorias);
 
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
@@ -221,7 +238,7 @@ export default async function VitrinePage({ params }: PageProps) {
 
   // "Hoje" da LOJA (RN-16), no servidor: o cliente que vira a meia-noite no
   // próprio fuso não reabre o modal de uma loja onde ainda é o mesmo dia.
-  const diaDeHojeNaLoja = diaNoFuso(agora, loja.timezone ?? "America/Sao_Paulo");
+  const diaDeHojeNaLoja = diaNoFuso(agora, timezoneLoja);
 
   // Grupo sem produto visível já não vem de `agruparCatalogo` (issue 177),
   // então lista vazia = loja sem nada a mostrar.
@@ -238,7 +255,7 @@ export default async function VitrinePage({ params }: PageProps) {
           nome={loja.nome}
           logoUrl={loja.logo_url ?? undefined}
           horarios={resolverHorarios(loja.horarios)}
-          timezone={loja.timezone ?? "America/Sao_Paulo"}
+          timezone={timezoneLoja}
           whatsapp={loja.whatsapp}
         />
 

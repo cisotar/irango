@@ -64,6 +64,11 @@ const DEPOIS = "2026-09-21T12:00:00Z";
 /**
  * Contrato de colunas de `public.vitrine_produtos` — §Contratos de Dados da
  * 265, na ordem fixa que vira `COLUNAS_PRODUTO_PUBLICO` no TS.
+ *
+ * 245: passa de 14 para 15. `visibilidade` entra NO FIM e as 14 anteriores
+ * ficam na MESMA ordem — o `create or replace view` da 132000 só aceita coluna
+ * nova no fim e recusa (42P16) qualquer mudança de nome/tipo nas existentes, o
+ * que faz desta lista um gate mecânico de não-regressão do contrato.
  */
 const COLUNAS_VITRINE_PRODUTOS = [
   "id",
@@ -80,6 +85,7 @@ const COLUNAS_VITRINE_PRODUTOS = [
   "desconto_valor",
   "desconto_inicio",
   "desconto_fim",
+  "visibilidade",
 ] as const;
 
 /** Ausentes por decisão (D6 + projeção mínima): nomeá-las tem de dar 42703. */
@@ -480,7 +486,7 @@ describe("265 · vitrine_produtos (projeção pública mascarada) + drop da poli
 
   // ───────────────────────────────── [5] contrato de colunas da projeção
 
-  it("[5a] vitrine_produtos expõe EXATAMENTE as 14 colunas do contrato, na ordem fixa", async () => {
+  it("[5a] vitrine_produtos expõe EXATAMENTE as 15 colunas do contrato, na ordem fixa (245)", async () => {
     const r = await t.db.query<{ column_name: string }>(
       `select column_name from information_schema.columns
         where table_schema = 'public' and table_name = 'vitrine_produtos'
@@ -489,7 +495,7 @@ describe("265 · vitrine_produtos (projeção pública mascarada) + drop da poli
     expect(r.rows.map((x) => x.column_name)).toEqual([...COLUNAS_VITRINE_PRODUTOS]);
   });
 
-  it("[5b] anon lê nomeando as 14 colunas uma a uma (coluna faltando ⇒ 42703, não silêncio)", async () => {
+  it("[5b] anon lê nomeando as 15 colunas uma a uma (coluna faltando ⇒ 42703, não silêncio)", async () => {
     const r = await t.asAnon((db) =>
       db.query<Record<string, unknown>>(
         `select ${COLUNAS_VITRINE_PRODUTOS.join(", ")}
@@ -593,6 +599,22 @@ describe("265 · vitrine_produtos (projeção pública mascarada) + drop da poli
       ),
     );
     expect(linhas.rows).toHaveLength(0);
+  });
+
+  it("[7c] 245: a barreira sobrevive ao `create or replace view` — sonda pela 15ª coluna", async () => {
+    // `create or replace view` executa AT_ReplaceRelOptions: SUBSTITUI todo o
+    // conjunto de reloptions pelo que a instrução declara. A 132000 que omitir
+    // `security_barrier = true` no `with (…)` desliga a barreira EM SILÊNCIO,
+    // desfazendo a 124500 sem erro nenhum. A sonda usa a coluna NOVA para que
+    // este caso só possa ficar verde depois da recriação.
+    const linhas = await t.asAnon((db) =>
+      db.query<{ id: string }>(
+        `select id from public.vitrine_produtos where id = $1 and visibilidade::int = 1`,
+        [c.prodInativaDisp],
+      ),
+    );
+    expect(linhas.rows).toHaveLength(0);
+    expect(await existeNaBase(t, c.prodInativaDisp)).toBe(true);
   });
 
   it("[6c] service_role continua lendo a TABELA (recálculo autoritativo não passa pela view)", async () => {

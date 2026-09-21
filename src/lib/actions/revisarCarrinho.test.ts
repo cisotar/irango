@@ -58,6 +58,16 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarLojaParaPedido: (...a: unknown[]) => buscarLojaParaPedido(...a),
 }));
 
+// (249/252) A onda de leituras de `criarPedido`/`revisarCarrinhoAction` passou a
+// incluir os cardápios da loja. Loja sem cardápio nenhum = o comportamento que
+// estes testes já descreviam (todo produto é `visibilidade: 'menu'`).
+vi.mock("@/lib/supabase/queries/cardapios", () => ({
+  buscarCardapiosComProdutos: async () => ({
+    cardapios: [],
+    cardapiosPorProduto: new Map(),
+  }),
+}));
+
 import * as rateLimitMod from "@/lib/utils/rateLimit";
 import { revisarCarrinhoAction } from "./revisarCarrinho";
 
@@ -118,6 +128,8 @@ function produtoRow(over: Partial<Tables<"produtos">> = {}): Tables<"produtos"> 
     desconto_valor: null,
     desconto_inicio: null,
     desconto_fim: null,
+    // [244] coluna NOT NULL com default 'menu': é assim que toda linha nasce.
+    visibilidade: "menu",
     criado_em: "2026-01-01T00:00:00.000Z",
     atualizado_em: "2026-01-01T00:00:00.000Z",
     ...over,
@@ -363,8 +375,26 @@ describe("[228] revisarCarrinhoAction — os números saem do BANCO (RN-09-a, RN
     const r = ok(await revisarCarrinhoAction(carrinhoRN10a()));
 
     expect(r.itens).toEqual([
-      { produto_id: FEIJOADA, quantidade: 1, preco: 100, precoEfetivo: 80, temDesconto: true },
-      { produto_id: REFRI, quantidade: 1, preco: 50, precoEfetivo: 50, temDesconto: false },
+      // (252) `compravel`/`motivoNaoCompravel` viajam em TODA linha: produto do
+      // menu, sem cardápio nenhum, é comprável sem motivo a declarar.
+      {
+        produto_id: FEIJOADA,
+        quantidade: 1,
+        preco: 100,
+        precoEfetivo: 80,
+        temDesconto: true,
+        compravel: true,
+        motivoNaoCompravel: null,
+      },
+      {
+        produto_id: REFRI,
+        quantidade: 1,
+        preco: 50,
+        precoEfetivo: 50,
+        temDesconto: false,
+        compravel: true,
+        motivoNaoCompravel: null,
+      },
     ]);
   });
 

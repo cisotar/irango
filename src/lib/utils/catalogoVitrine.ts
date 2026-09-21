@@ -4,6 +4,12 @@
 // origem; o que o cliente faz com ele depois é preview (seguranca.md §10).
 import type { Tables } from "@/lib/database.types";
 import { precoEfetivo, type ProdutoComDesconto } from "./precoEfetivo";
+import {
+  avaliarVigenciaDoProduto,
+  cardapioAberto,
+  visibilidadeDe,
+  type CardapioVigencia,
+} from "./vigenciaCardapio";
 
 /**
  * Entrada da projeção. A spec escreveu `produto: Produto`, mas depois da issue
@@ -46,8 +52,14 @@ export type ProdutoVitrine = {
   motivoNaoCompravel: MotivoNaoCompravel | null;
 };
 
-/** v1 tem um membro só. O Spec B ACRESCENTA membros; não remove nem renomeia. */
-export type MotivoNaoCompravel = "esgotado";
+/** v1 tinha um membro só. O Spec B (247) ACRESCENTA; não remove nem renomeia. */
+export type MotivoNaoCompravel = "esgotado" | "fora_da_janela";
+
+// Texto provisório do rótulo de vigência. Valor e nome fixados pelo plano
+// técnico (D3): o critério de aceite desta issue é ESTRUTURAL (existe rótulo
+// para todo motivo `fora_da_janela`), não sobre o texto.
+// TEMP(254): trocar por descreverVigencia do cardápio que abre mais cedo (RN-07).
+export const ROTULO_VIGENCIA_PROVISORIO = "Indisponível no momento";
 
 /**
  * Projeção do catálogo. PURA; `agora` injetado (determinismo no teste, e
@@ -66,11 +78,23 @@ export type MotivoNaoCompravel = "esgotado";
  * de extensão do Spec B. Esgotado e promoção são ORTOGONAIS: produto sem
  * estoque continua mostrando o preço promocional.
  */
+// 247 — `compravel` compõe `disponivel` com a vigência do cardápio. A decisão
+// de janela vem TODA de `avaliarVigenciaDoProduto` (246): nenhuma aritmética de
+// fuso, de dia da semana ou de prazo é reescrita aqui.
 export function projetarProdutoVitrine(
-  produto: ProdutoParaVitrine,
+  produto: ProdutoParaVitrine & { visibilidade: string },
+  cardapios: CardapioVigencia[],
   agora: Date,
+  timezone: string,
 ): ProdutoVitrine {
   const preco = precoEfetivo(produto, agora);
+  const vigencia = avaliarVigenciaDoProduto(
+    { visibilidade: visibilidadeDe(produto) },
+    cardapios,
+    agora,
+    timezone,
+  );
+  const compravel = produto.disponivel && vigencia.dentroDaJanela;
 
   return {
     id: produto.id,
@@ -89,7 +113,76 @@ export function projetarProdutoVitrine(
     // sem isso, vitrine e recálculo divergiriam em silêncio num campo só.
     descontoFim: preco.temDesconto ? produto.desconto_fim : null,
 
-    compravel: produto.disponivel,
-    motivoNaoCompravel: produto.disponivel ? null : "esgotado",
+    compravel,
+    // PRECEDÊNCIA de RN-05: a janela ganha de "esgotado". Numa terça a feijoada
+    // do cardápio de fim de semana não acabou — ela não é servida hoje, e só a
+    // restrição de janela sabe dizer quando volta (D4).
+    motivoNaoCompravel: compravel
+      ? null
+      : !vigencia.dentroDaJanela
+        ? "fora_da_janela"
+        : "esgotado",
   };
+}
+
+/**
+ * Ponto de entrada por CATÁLOGO (247). Dono das três saídas correlacionadas,
+ * para que não exista caminho que produza o produto marcado sem o rótulo dele.
+ *
+ * RN-13/D14: o produto sem `visivelNaVitrine` NÃO entra na lista devolvida —
+ * some antes de qualquer agrupamento, do mesmo jeito que `oculto` nunca entra.
+ * É o que faz a regra do grupo vazio (issue 177, dentro de `agruparCatalogo`)
+ * cobrir a categoria esvaziada pela temporada sem uma linha de código nova, e o
+ * que garante que o produto fora de temporada nunca chega ao payload RSC.
+ *
+ * Genérica em `C extends CardapioVigencia` (D4): `ordem` — que é de
+ * apresentação e a 248 consome — sobrevive à projeção sem que o módulo de
+ * vigência precise conhecê-la.
+ */
+export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
+  produtos: (ProdutoParaVitrine & { visibilidade: string })[];
+  cardapiosPorProduto: Map<string, C[]>;
+  agora: Date;
+  timezone: string;
+}): {
+  produtos: ProdutoVitrine[];
+  rotulosVigencia: Record<string, string>;
+  cardapiosAbertos: C[];
+} {
+  const { produtos: entradaProdutos, cardapiosPorProduto, agora, timezone } = entrada;
+
+  const produtos: ProdutoVitrine[] = [];
+  const rotulosVigencia: Record<string, string> = {};
+
+  for (const produto of entradaProdutos) {
+    const cardapios = cardapiosPorProduto.get(produto.id) ?? [];
+    const vigencia = avaliarVigenciaDoProduto(
+      { visibilidade: visibilidadeDe(produto) },
+      cardapios,
+      agora,
+      timezone,
+    );
+    if (!vigencia.visivelNaVitrine) continue;
+
+    const projetado = projetarProdutoVitrine(produto, cardapios, agora, timezone);
+    produtos.push(projetado);
+    // O par produto-marcado/rótulo é indivisível: nasce no MESMO passo.
+    if (projetado.motivoNaoCompravel === "fora_da_janela") {
+      rotulosVigencia[projetado.id] = ROTULO_VIGENCIA_PROVISORIO;
+    }
+  }
+
+  // Os cardápios abertos AGORA, deduplicados por id (um cardápio aparece uma vez
+  // por produto vinculado). Consumido pela 248, que NÃO reavalia a janela.
+  const vistos = new Set<string>();
+  const cardapiosAbertos: C[] = [];
+  for (const lista of cardapiosPorProduto.values()) {
+    for (const cardapio of lista) {
+      if (vistos.has(cardapio.id)) continue;
+      vistos.add(cardapio.id);
+      if (cardapioAberto(cardapio, agora, timezone)) cardapiosAbertos.push(cardapio);
+    }
+  }
+
+  return { produtos, rotulosVigencia, cardapiosAbertos };
 }

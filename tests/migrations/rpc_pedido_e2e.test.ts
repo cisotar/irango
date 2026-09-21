@@ -41,8 +41,14 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shim do query-builder supabase sobre pglite. Implementa SÓ o subset que a
-// action `criarPedido` e suas queries usam: from().select().eq().in().maybeSingle()
-// e .rpc(). Tradução ingênua para SQL parametrizado — suficiente para o fluxo.
+// action `criarPedido` e suas queries usam: from().select().eq().in().order()
+// .maybeSingle() e .rpc(). Tradução ingênua para SQL parametrizado — suficiente
+// para o fluxo.
+//
+// (249) `buscarCardapiosComProdutos` entrou na onda de leituras de
+// `criarPedido`: o shim ganhou `.order()` e o embed `cardapio_produtos(...)`,
+// resolvido por uma segunda query. Sem o embed real o E2E daria verde para
+// qualquer produto de cardápio, que é exatamente a recusa que a 249 criou.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // O `t` do pglite é atribuído no beforeAll e capturado pelo shim por closure.
@@ -54,6 +60,9 @@ type Filtro =
 
 function builder(tabela: string) {
   const filtros: Filtro[] = [];
+  const ordens: string[] = [];
+  /** Embeds pedidos no `select` PostgREST, ex.: `cardapio_produtos(produto_id)`. */
+  let embeds: string[] = [];
 
   function montarWhere(base: number): { sql: string; params: unknown[] } {
     if (filtros.length === 0) return { sql: "", params: [] };
@@ -75,10 +84,27 @@ function builder(tabela: string) {
 
   async function executar(): Promise<{ data: unknown; error: unknown }> {
     const { sql, params } = montarWhere(1);
+    const orderBy = ordens.length > 0 ? ` order by ${ordens.join(", ")}` : "";
     try {
-      const r = await DB.asService((db) =>
-        db.query(`select * from public.${tabela}${sql}`, params),
-      );
+      const r = await DB.asService(async (db) => {
+        const base = await db.query<Record<string, unknown>>(
+          `select * from public.${tabela}${sql}${orderBy}`,
+          params,
+        );
+        // Embed PostgREST: uma query por tabela filha, casada por `<tabela>_id`.
+        for (const embed of embeds) {
+          const filha = embed.slice(0, embed.indexOf("("));
+          const fk = `${tabela.replace(/s$/, "")}_id`;
+          for (const linha of base.rows) {
+            const f = await db.query<Record<string, unknown>>(
+              `select * from public.${filha} where ${fk} = $1`,
+              [linha.id],
+            );
+            linha[filha] = f.rows;
+          }
+        }
+        return base;
+      });
       return { data: r.rows, error: null };
     } catch (e) {
       return { data: null, error: e };
@@ -86,7 +112,12 @@ function builder(tabela: string) {
   }
 
   const api = {
-    select(_colunas?: string) {
+    select(colunas?: string) {
+      embeds = (colunas ?? "").match(/[a-z_]+\([^)]*\)/g) ?? [];
+      return api;
+    },
+    order(coluna: string, _opts?: { ascending?: boolean }) {
+      ordens.push(coluna);
       return api;
     },
     eq(coluna: string, valor: unknown) {

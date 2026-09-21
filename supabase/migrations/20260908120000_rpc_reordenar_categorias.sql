@@ -70,8 +70,12 @@ begin
 end;
 $$;
 
--- O Postgres concede EXECUTE a PUBLIC por padrão em função nova, e o projeto
--- NÃO tem `alter default privileges ... on functions` (só para tables e
--- sequences — 20260702150000 e 20260708140000). Sem este revoke, anon executaria.
+-- O Postgres concede EXECUTE a PUBLIC por padrão em função nova, E o projeto
+-- TEM `alter default privileges ... on routines` concedendo EXECUTE a `anon`,
+-- `authenticated` e `service_role` (20260614008500:31, `GRANT ALL ON ROUTINES`).
+-- Por isso o revoke precisa nomear `anon` EXPLICITAMENTE: revogar só de PUBLIC
+-- deixaria `anon` executando pela entrada própria na ACL, com a anon key do
+-- bundle público. E `service_role` NÃO é alcançado por este revoke — ele só é
+-- barrado pelo predicado no corpo da função.
 revoke all on function public.reordenar_categorias(uuid, uuid[]) from public, anon;
 grant execute on function public.reordenar_categorias(uuid, uuid[]) to authenticated, service_role;

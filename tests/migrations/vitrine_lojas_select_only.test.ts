@@ -181,7 +181,10 @@ const normaliza = (s: string) => s.toLowerCase().replace(/\s+/g, " ");
  *    `grant select` — forma mais forte, cobre TRUNCATE/TRIGGER/REFERENCES).
  */
 const criaVitrine = (c: string, nomeView = "vitrine_lojas") =>
-  normaliza(c).includes(`create view public.${nomeView}`);
+  // 245: `create OR REPLACE view` também é recriação — a 20260920132000 recria
+  // `vitrine_produtos` por essa forma, e sem reconhecê-la a recriação ficaria
+  // INVISÍVEL à guarda que exige o revoke.
+  new RegExp(`create (or replace )?view public\\.${nomeView}`).test(normaliza(c));
 const revogaEscritaVitrine = (c: string, nomeView = "vitrine_lojas") => {
   const n = normaliza(c);
   return (
@@ -296,6 +299,48 @@ describe("112/265 guarda estática — create view de vitrine exige revoke de es
     const reais = migrationsReais();
     expect(criadorasDeVitrine(reais, "vitrine_produtos")).not.toEqual([]);
     expect(violacoesRevokeVitrine(reais, "vitrine_produtos")).toEqual([]);
+  });
+
+  // ── 245 (fase RED) ────────────────────────────────────────────────────────
+  // A 132000 recria `vitrine_produtos` com `create OR REPLACE view` (D1: preserva
+  // grants e OID, e recusa mudar as 14 colunas existentes). O scanner de hoje só
+  // casa `create view`, então essa recriação é INVISÍVEL para a guarda estática —
+  // exatamente a forma que a issue 245 vai usar. Fixture sintética: nunca muta
+  // migration real.
+  //
+  // NOTA para o `executar`: a regex passa a ser
+  // `create (or replace )?view public.<view>`. Conferido que isso NÃO quebra o
+  // [G3]: as recriações de `vitrine_lojas` posteriores ao revoke da 20260702140000
+  // (20260704120000 e 20260920122000) trazem `revoke` no próprio arquivo, e a
+  // 20260920124500 ainda emite `revoke all on public.vitrine_lojas`.
+  it("[G5] scanner reconhece `create or replace view` (fixture sintética) — 245", () => {
+    const semRevoke: ArquivoMigration[] = [
+      {
+        nome: "20990101000000_or_replace_sem_revoke.sql",
+        conteudo: `create or replace view public.vitrine_produtos
+                     with (security_invoker = false, security_barrier = true)
+                   as select 1;`,
+      },
+    ];
+    expect(violacoesRevokeVitrine(semRevoke, "vitrine_produtos")).toEqual([
+      "20990101000000_or_replace_sem_revoke.sql",
+    ]);
+
+    const comRevoke: ArquivoMigration[] = [
+      {
+        nome: "20990101000000_or_replace_com_revoke.sql",
+        conteudo: `create or replace view public.vitrine_produtos as select 1;
+                   revoke all on public.vitrine_produtos from anon, authenticated;
+                   grant select on public.vitrine_produtos to anon, authenticated;`,
+      },
+    ];
+    expect(violacoesRevokeVitrine(comRevoke, "vitrine_produtos")).toEqual([]);
+
+    // E `criadorasDeVitrine` tem de CONTAR a recriação por `or replace`, senão
+    // o [G4] ficaria verde por vácuo caso a 124000 um dia vire `or replace`.
+    expect(criadorasDeVitrine(comRevoke, "vitrine_produtos")).toEqual([
+      "20990101000000_or_replace_com_revoke.sql",
+    ]);
   });
 });
 

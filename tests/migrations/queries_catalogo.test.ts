@@ -174,9 +174,11 @@ describe("024 queries de catálogo — contrato SQL/RLS (camada 1)", () => {
   // SEM `.eq("oculto", false)` — a view não projeta `oculto`; o filtro vive no
   // WHERE dela (D6). Espelhar `select * from produtos ... and oculto = false`
   // aqui passaria a testar um SQL que a produção não emite mais.
+  // 245: 15 colunas — `visibilidade` entra no fim (D2). Aqui o SQL é REAL
+  // (pglite), então coluna faltando na view vira 42703, não silêncio.
   const COLUNAS_PRODUTO_PUBLICO =
     "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +
-    "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim";
+    "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim, visibilidade";
 
   it("[1] anon lê produtos da loja ATIVA pela VIEW, incl. esgotado (filtro loja_id, sem oculto) — 265 · [2a]", async () => {
     const r = await t.asAnon((db) =>

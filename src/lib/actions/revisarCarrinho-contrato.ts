@@ -11,6 +11,8 @@
 // 🛑 Nenhum campo monetário entra por aqui: do cliente vêm SÓ ids e quantidades
 //    (seguranca.md §10). Todo número abaixo é PRODUZIDO pelo servidor.
 
+import type { MotivoNaoCompravel } from "@/lib/utils/catalogoVitrine";
+
 /** O que o cliente pode enviar por linha do carrinho: ids e quantidades. */
 export interface ItemRevisao {
   produto_id: string;
@@ -58,6 +60,19 @@ export interface LinhaRevisada {
   /** preço efetivo AGORA (`precoEfetivo`). */
   precoEfetivo: number;
   temDesconto: boolean;
+  /**
+   * (252) `disponivel && dentroDaJanela`, pela MESMA `avaliarVigenciaDoProduto`
+   * que o SSR da vitrine e `criarPedido` usam (RN-06). Linha não comprável NÃO
+   * entra no subtotal, mas NUNCA some da lista: omitir seria alterar o carrinho
+   * do cliente por omissão.
+   */
+  compravel: boolean;
+  /**
+   * Por que não é comprável; `null` ⟺ `compravel`. O MESMO enum do catálogo da
+   * vitrine — sem rótulo de "volta em": o texto é da issue 254, e o item de
+   * temporada encerrada não tem volta a prometer.
+   */
+  motivoNaoCompravel: MotivoNaoCompravel | null;
 }
 
 export type ResultadoRevisarCarrinho =
