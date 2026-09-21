@@ -15,10 +15,15 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  *      não pode ter dois significados.
  *  T2  AUTORIDADE: `lojas where id = p_loja_id and dono_id = auth.uid()`.
  *      Recusa com o fragmento LITERAL `loja alheia`.
- *      **`asService` cai aqui** — `service_role` tem BYPASSRLS, então a trava
- *      NÃO pode depender de policy: sob service_role `auth.uid()` é NULL, o
- *      exists é falso e a função fail-closes. É esse caso que prova que a
- *      defesa é o predicado explícito, e não a RLS.
+ *      **`asService` NÃO cai mais aqui** — até 20260920134000 a via de serviço
+ *      era recusada por T2 (`auth.uid()` NULL sob service_role), porque não
+ *      havia hub admin de cardápio. A issue 269 criou esse segundo caminho de
+ *      escrita e converteu a função para `security definer` com T2 de dois
+ *      sinais (`20260921120000`): a via de serviço passou a ser AUTORIZADA, e o
+ *      contrato dela vive inteiro em
+ *      `rpc_aplicar_cardapio_em_categoria_definer.test.ts`. Aqui sobra a prova
+ *      de que a inversão aconteceu — e as travas do LOJISTA, que continuam
+ *      valendo palavra por palavra.
  *  T3  COERÊNCIA dos pares, DEPOIS de T2 — `cardapio fora da loja` /
  *      `categoria fora da loja`. A ordem é regra: invertida, a função viraria
  *      oráculo de existência de cardápio/categoria em loja alheia
@@ -247,21 +252,36 @@ describe("250 · RPC aplicar_cardapio_em_categoria (T1–T4 + ACL)", () => {
     expect(msgIncoerente).not.toContain("categoria fora da loja");
   });
 
-  it("[T2 · service_role] asService é recusado por T2 (`loja alheia`) — a trava NÃO é policy, e BYPASSRLS não ajuda", async () => {
+  // [269] ASSERÇÃO INVERTIDA pela Fase 1 da issue 269
+  // (`20260921120000_rpc_aplicar_cardapio_em_categoria_definer.sql`).
+  //
+  // Até então este caso afirmava que `asService` era RECUSADO por T2 com
+  // `loja alheia` — o fail-closed de propósito de 20260920134000, escrito
+  // quando não existia via admin de cardápio. A issue 269 cria essa via (o hub
+  // admin escreve na loja-alvo com `service_role`) e, como `seguranca.md` §2
+  // exige, não acrescenta só o grant: converte a função para `SECURITY
+  // DEFINER` e prova a autoridade no corpo. A via de serviço passa a ser
+  // AUTORIZADA por T2 — e por dois sinais, não pelo claim do JWT sozinho.
+  //
+  // O contrato NOVO inteiro (as travas T3 sob `service_role`, os dois casos de
+  // fail-closed de T2 e a relocação da trava do lojista da RLS para T2) vive em
+  // `tests/migrations/rpc_aplicar_cardapio_em_categoria_definer.test.ts`. Aqui
+  // fica só a prova de que a inversão de fato aconteceu, para que o diff das
+  // duas fases seja legível lado a lado.
+  it("[T2 · service_role · 269] asService é AUTORIZADO por T2 (via de serviço), não mais recusado", async () => {
     const antes = await contarVinculos(t, c.cardapioB);
-    const msg = await erroAoChamar(() =>
-      t.asService(async (db) =>
-        db.query(`select public.aplicar_cardapio_em_categoria($1, $2, $3)`, [
-          c.lojaB,
-          c.cardapioB,
-          c.categoriaB,
-        ]),
-      ),
-    );
-    // `auth.uid()` é NULL sob service_role ⇒ o EXISTS explícito de T2 é falso.
-    expect(msg).toContain("loja alheia");
-    // E não foi recusado por privilégio: prova que chegou em T2, não na ACL.
-    expect(msg).not.toMatch(/permission denied/i);
+    // A categoria B não tem produto neste cenário: a chamada é aceita e grava
+    // 0 vínculos. O que se afirma aqui é a AUTORIZAÇÃO — que ela não levanta.
+    const inseridos = await t.asService(async (db) => {
+      const r = await db.query<{ n: number }>(
+        `select public.aplicar_cardapio_em_categoria($1, $2, $3) as n`,
+        [c.lojaB, c.cardapioB, c.categoriaB],
+      );
+      return r.rows[0].n;
+    });
+    expect(inseridos).toBe(0);
+    // Autorizada não quer dizer frouxa: nada nasceu que o SELECT do servidor
+    // não tivesse produzido.
     expect(await contarVinculos(t, c.cardapioB)).toBe(antes);
   });
 

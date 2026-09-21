@@ -140,8 +140,8 @@ describe("enforcement CAMADA 2 — GUARD de admin por export async", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Camada 3 — ESCOPO: toda escrita svc.from(x).update/delete/insert carrega
-// .eq(...) OU está ancorada por posse (allowlist explícita, revisada).
+// Camada 3 — ESCOPO: toda escrita svc.from(x).update/delete/insert/upsert
+// carrega .eq(...) OU está ancorada por posse (allowlist explícita, revisada).
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // Sob service_role a RLS não filtra linhas: um UPDATE/DELETE sem .eq afeta a
@@ -154,7 +154,18 @@ describe("enforcement CAMADA 2 — GUARD de admin por export async", () => {
 // INSERT não tem "escopo" no sentido de .eq (é criação, não filtro de linha
 // existente) — achado #4A do pentest 2026-07-08: a regex original só via
 // update/delete, então um `svc.from("bairros_zona").insert({ zona_id: <hostil> })`
-// cru passava sem NENHUM sinal. Para insert, a prova válida é POSSE ANTERIOR já
+// cru passava sem NENHUM sinal.
+//
+// [269 · R1] `upsert` entrou no verbo em 2026-09-21, pelo mesmo motivo e com o
+// mesmo tratamento de INSERT (é criação de linha; a prova válida é `loja_id`
+// injetado ou posse anterior já verificada). Até aqui a regex casava só
+// `update|delete|insert`, e um `svc.from("t").upsert(...)` cru era INVISÍVEL a
+// todas as camadas — já havia um no repositório
+// (`admin-entrega.ts` → `taxas_entrega`, legítimo por posse ancorada, mas
+// passando por AUSÊNCIA DE REDE, não por aprovação). A issue 269 introduziria o
+// segundo (`cardapio_produtos`, N linhas), então a rede é fechada ANTES: o
+// caminho sancionado passa a ser `escopo.inserirVarios`, que injeta `loja_id`
+// por último em cada linha. Para insert, a prova válida é POSSE ANTERIOR já
 // verificada no mesmo módulo — hoje só existe em `admin-entrega.ts`, onde cada
 // insert-filho (taxas_entrega/bairros_zona, sem loja_id próprio) é ancorado em
 // `escopo.buscarPorId("zonas_entrega", id)` (zona existente confirmada da
@@ -164,13 +175,15 @@ describe("enforcement CAMADA 2 — GUARD de admin por export async", () => {
 // escrever este teste. QUALQUER outro `.from(x).insert()` fora dela conta como
 // não-escopado.
 //
-// LETALIDADE: remover o .eq de um update/delete, OU adicionar um insert cru
-// fora da allowlist (tabela nova, ou o mesmo arquivo passando a escrever em
+// LETALIDADE: remover o .eq de um update/delete, OU adicionar um insert/upsert
+// cru fora da allowlist (tabela nova, ou o mesmo arquivo passando a escrever em
 // outra tabela sem prova de posse), faz o statement casar ESCRITA sem casar
-// EQ/allowlist → o `expect` falha nomeando o arquivo e o trecho.
+// EQ/allowlist → o `expect` falha nomeando o arquivo e o trecho. Provado por
+// mutação ao fechar R1: plantar `svc.from("cardapio_produtos").upsert([...])`
+// cru em `admin-produtos.ts` deixa esta camada VERMELHA.
 
-// Statement de escrita: .from("tabela") ... .update(  ou  .delete(  ou  .insert(
-const ESCRITA = /\.from\s*\(\s*["'`]([^"'`]+)["'`]\s*\)[\s\S]*?\.(update|delete|insert)\s*\(/;
+// Statement de escrita: .from("tabela") ... .update(, .delete(, .insert( ou .upsert(
+const ESCRITA = /\.from\s*\(\s*["'`]([^"'`]+)["'`]\s*\)[\s\S]*?\.(update|delete|insert|upsert)\s*\(/;
 
 /**
  * [179] Escopo de tenant = `.eq("loja_id", ...)` NOMEANDO A COLUNA — não um
@@ -192,7 +205,7 @@ function temEqDaColuna(statement: string, coluna: string): boolean {
 }
 
 /**
- * Inserts-filho ANCORADOS POR POSSE em `admin-entrega.ts` (lido linha a linha
+ * Inserts/upserts-filho ANCORADOS POR POSSE em `admin-entrega.ts` (lido linha a linha
  * ao escrever este teste): `taxas_entrega`/`bairros_zona` não têm `loja_id`
  * próprio (FK só via `zona_id`), então ficam fora do wrapper `escopo.*` — mas
  * TODA escrita neles, em `criarZonaAdmin`/`atualizarZonaAdmin`, acontece
@@ -200,6 +213,10 @@ function temEqDaColuna(statement: string, coluna: string): boolean {
  * bloqueia ANTES de tocar a filha) ou sob a zona recém-criada via
  * `escopo.inserir` (~56-63, a FK só pode apontar para uma zona que acabou de
  * nascer sob a loja-alvo). São os únicos dois casos revisados como seguros.
+ *
+ * [269 · R1] `taxas_entrega` é escrita por `upsert` (`onConflict: "zona_id"`),
+ * não por `insert`. A entrada já estava aqui e passa a valer de fato a partir
+ * do momento em que a regex enxerga `upsert` — até então ela era decorativa.
  */
 const ALLOWLIST_INSERT: { rotulo: string; tabela: string }[] = [
   { rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts", tabela: "taxas_entrega" },
@@ -273,15 +290,22 @@ describe("enforcement CAMADA 3 — ESCOPO .eq (ou posse ancorada) em toda escrit
       if (!casamento) return false;
       if (TEM_EQ_LOJA_ID.test(st)) return false; // escopado pelo tenant, o caso normal
       const [, tabela, verbo] = casamento;
-      if (verbo === "insert" && eInsertAllowlistado(mod.rotulo, tabela)) return false; // posse ancorada, revisada
+      // `insert` e `upsert` são criação de linha: a prova válida é a mesma.
+      if (
+        (verbo === "insert" || verbo === "upsert") &&
+        eInsertAllowlistado(mod.rotulo, tabela)
+      ) {
+        return false; // posse ancorada, revisada
+      }
       if (escopoAllowlistado(mod.rotulo, tabela, verbo, st)) return false; // outra coluna de escopo, revisada
       return true;
     });
-    it(`${mod.rotulo} — todo .from().update/.delete/.insert carrega .eq("loja_id") ou está na allowlist revisada`, () => {
+    it(`${mod.rotulo} — todo .from().update/.delete/.insert/.upsert carrega .eq("loja_id") ou está na allowlist revisada`, () => {
       expect(
         escritasSemEscopo,
         `escrita service_role sem .eq("loja_id") (nem allowlist revisada) em ${mod.rotulo} — ` +
-          `UPDATE/DELETE sem filtro afeta cross-tenant, INSERT cru cria dado hostil:\n${escritasSemEscopo.join("\n---\n")}`,
+          `UPDATE/DELETE sem filtro afeta cross-tenant, INSERT/UPSERT cru cria dado hostil ` +
+          `(use escopo.inserir/escopo.inserirVarios):\n${escritasSemEscopo.join("\n---\n")}`,
       ).toHaveLength(0);
     });
   }
