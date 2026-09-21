@@ -173,9 +173,9 @@ export type ProdutosClientProps = {
    * Destino da tela de cardápios NESTE mundo, ou `null` quando ele não tem uma.
    * OBRIGATÓRIA e sem default (issue 160, e o mesmo contrato do `NavPainel`:
    * href vem de quem conhece a rota, nunca do componente de apresentação).
-   * O painel do lojista passa `/painel/cardapios`; o hub admin passa `null`,
-   * porque `/admin/assinantes/[lojaId]/cardapios` não existe (issue 256) e um
-   * link fixo mandaria o admin para o painel da PRÓPRIA loja dele.
+   * O painel do lojista passa `ROTA_CARDAPIOS_LOJISTA`; o hub admin passa
+   * `rotaCardapiosAdmin(lojaId)` (issue 269). Um link fixo mandaria o admin
+   * para o painel da PRÓPRIA loja dele — foi o bug de `8bfe902` e `f26cc6a`.
    *
    * `null` ⇒ some a saída do kebab que depende da rota, e o `FormProduto`
    * troca o botão por instrução. Repassada, não inferida.

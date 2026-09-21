@@ -122,9 +122,9 @@ export type FormProdutoProps = {
    * Destino da tela de cardápios NESTE mundo, ou `null` quando o mundo não tem
    * uma. Regra de roteamento não mora em componente de apresentação — é o
    * mesmo contrato do `NavPainel` (href vem do layout) e da issue 160: prop
-   * OBRIGATÓRIA e SEM default. O painel do lojista passa `/painel/cardapios`;
-   * o hub admin passa `null`, porque `/admin/assinantes/[lojaId]/cardapios`
-   * não existe (issue 256).
+   * OBRIGATÓRIA e SEM default. O painel do lojista passa `ROTA_CARDAPIOS_LOJISTA`;
+   * o hub admin passa `rotaCardapiosAdmin(lojaId)` (issue 269). `null` segue
+   * aceito para um mundo que não tenha a rota.
    *
    * Um default aqui mandaria o admin — que edita a loja de um TERCEIRO — para
    * o painel da PRÓPRIA loja dele, e o cardápio nasceria na loja errada.

@@ -25,9 +25,9 @@ import {
  * afirmava o alerta para um produto que está em dois cardápios — e convidava um
  * operador com BYPASSRLS a convertê-lo ao menu sem necessidade.
  *
- * O hub admin NÃO ganha ação de cardápio com isto: é leitura pura. As Server
- * Actions de lote continuam só no painel do lojista (derivam a loja de
- * `auth.uid()`), e a prop `lote` do `ProdutosClient` segue ausente aqui.
+ * Este loader é leitura pura. As Server Actions de lote e de cardápio do hub
+ * admin vivem em `actions/admin-cardapios.ts` (issue 269) e a prop `lote` do
+ * `ProdutosClient` é injetada em `CardapioAdminClient`.
  *
  * Mesma ordem fail-closed de `carga.ts` e `carga-opcionais.ts`:
  *  1. `validarLojaIdAdmin(lojaId)` — não-UUID → `notFound()` ANTES de qualquer
