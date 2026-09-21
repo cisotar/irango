@@ -245,3 +245,132 @@ values
    '00000000-0000-4000-8000-000000000030', 'X-Burguer Teste', 25.90, 1,
    'Por favor, capriche no ponto da carne, sem sal em excesso, embalar os molhos separados para nao amolecer o pao, e se possivel cortar o sanduiche ao meio antes de embalar. Obrigado desde ja mesmo!')
 on conflict (id) do nothing;
+
+-- ── [2026-09-21] seed: produto com desconto ativo (onda 1, migration 20260920120000) ─
+-- O seed nunca ganhou uma linha com desconto_ativo=true — os produtos existentes
+-- (030..033) valem o default (desconto_ativo=false, os quatro campos NULL), que
+-- já cobre "produto SEM desconto". Faltava o outro lado do par que o `verificar`
+-- precisa observar (plan/loop-implementacao-descontos-promocoes-cardapio-sazonal.md
+-- §Forma do loop): "produto com e sem desconto". Percentual VIGENTE agora
+-- (desconto_inicio no passado, desconto_fim no futuro) — os CHECKs de
+-- 20260920120000 exigem tipo+valor quando ativo=true e 0 < percentual <= 100.
+-- seed de desenvolvimento, não usar em produção
+insert into public.produtos (
+  id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem,
+  desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim
+)
+values (
+  '00000000-0000-4000-8000-000000000034', '00000000-0000-4000-8000-000000000010',
+  '00000000-0000-4000-8000-000000000020', 'X-Duplo Promo Teste',
+  'Dois hambúrgueres e queijo em dobro. Produto fictício de seed, com desconto vigente.',
+  34.90, true, 3,
+  true, 'percentual', 20.00, now() - interval '1 day', now() + interval '30 days'
+)
+on conflict (id) do nothing;
+
+-- ── [2026-09-21] seed: cardápio sazonal — onda 3 (issues 242/243/244/245/250) ─
+-- Cobre os quatro estados que o plano exige para o `verificar` observar
+-- (§Forma do loop): produto EM janela e FORA de janela recorrente; cardápio de
+-- PRAZO FIXO EXPIRADO com um produto 'cardapio' (some da vitrine) e um 'menu'
+-- (segue vendendo) dentro; um cardápio ABERTO AGORA com dois produtos, um deles
+-- de categoria que também tem produto fora do cardápio.
+--
+-- "Some da vitrine" é comportamento da CAMADA DE VIGÊNCIA (vigenciaCardapio.ts,
+-- avaliada no servidor com relógio+fuso reais), NÃO da view `vitrine_produtos`:
+-- por RN-06 (20260920132000) a view só sabe "existe vínculo com cardápio
+-- ATIVO" e não avalia prazo/janela, então o produto 038 abaixo CONTINUA
+-- saindo de `public.vitrine_produtos` mesmo com o prazo vencido — é a camada
+-- de vigência, lida a partir desses mesmos dados, que o esconde do cliente.
+--
+-- Um produto `visibilidade = 'cardapio'` PRECISA nascer com pelo menos um
+-- vínculo em `cardapio_produtos` NA MESMA TRANSAÇÃO: o trigger
+-- `produtos_exclusivo_tem_cardapio` (20260920131000) é DEFERRABLE INITIALLY
+-- DEFERRED e só valida no COMMIT — mas cada statement deste arquivo roda em
+-- autocommit (não há BEGIN implícito entre eles). Por isso os INSERTs de
+-- `produtos` (visibilidade='cardapio') e de `cardapio_produtos` abaixo estão
+-- dentro de um BEGIN/COMMIT explícito.
+-- seed de desenvolvimento, não usar em produção
+begin;
+
+-- cardápios: um sempre aberto, um recorrente fora de janela na quase
+-- totalidade do tempo, um de prazo fixo já expirado.
+insert into public.cardapios (
+  id, loja_id, nome, ativo, ordem, modo,
+  dias_semana, hora_inicio, hora_fim,
+  prazo_inicio, prazo_fim, prazo_preset
+)
+values
+  -- SEMPRE ABERTO: todos os 7 dias, sem restrição de hora (os dois campos
+  -- NULL) — dentroDaJanela=true em qualquer instante, para sempre. É o
+  -- cardápio "aberto agora" que o plano pede.
+  ('00000000-0000-4000-8000-000000000120', '00000000-0000-4000-8000-000000000010',
+   'Cardápio Sempre Aberto Teste', true, 0, 'recorrente',
+   array[0,1,2,3,4,5,6]::smallint[], null, null,
+   null, null, null),
+  -- FORA DE JANELA na quase totalidade do tempo em que alguém roda o
+  -- `verificar`: todos os dias, mas só 03:00–04:00 (madrugada). Recorrente NÃO
+  -- tem estado "nunca abre" (o CHECK cardapios_recorrente_tem_eixo exige um
+  -- eixo, e um eixo recorrente sempre volta a valer, vigenciaCardapio.ts
+  -- voltaAAbrir) — este é o equivalente prático, o mesmo desenho que um
+  -- "Cardápio de Café da Madrugada" real teria.
+  ('00000000-0000-4000-8000-000000000121', '00000000-0000-4000-8000-000000000010',
+   'Cardápio Madrugada Teste', true, 1, 'recorrente',
+   array[0,1,2,3,4,5,6]::smallint[], '03:00', '04:00',
+   null, null, null),
+  -- PRAZO FIXO EXPIRADO: janeiro/2026, antes de qualquer `hoje` real deste
+  -- projeto (a onda 3 é de 2026-09). prazo_fixo NUNCA "volta a abrir"
+  -- (voltaAAbrir, vigenciaCardapio.ts) — o produto exclusivo vinculado a ele
+  -- fica fora da vitrine PARA SEMPRE, exatamente o estado que o `verificar`
+  -- precisa observar.
+  ('00000000-0000-4000-8000-000000000122', '00000000-0000-4000-8000-000000000010',
+   'Cardápio de Verão Expirado Teste', true, 2, 'prazo_fixo',
+   null, null, null,
+   '2026-01-01 00:00:00+00', '2026-02-01 00:00:00+00', 'customizado')
+on conflict (id) do nothing;
+
+-- produtos com visibilidade='cardapio' — cada um ganha o vínculo abaixo antes
+-- do COMMIT deste bloco.
+insert into public.produtos (
+  id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, visibilidade
+)
+values
+  -- categoria Lanches: a MESMA categoria de 030/031/033/034, que continuam
+  -- 'menu' e fora de qualquer cardápio — cobre "categoria que também tem
+  -- produto fora do cardápio".
+  ('00000000-0000-4000-8000-000000000035', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000020', 'Prato do Dia Sempre Teste',
+   'Só existe pelo Cardápio Sempre Aberto Teste. Produto fictício de seed.',
+   29.90, true, 4, 'cardapio'),
+  ('00000000-0000-4000-8000-000000000036', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000021', 'Suco Especial Sempre Teste',
+   'Segundo produto do Cardápio Sempre Aberto Teste. Produto fictício de seed.',
+   12.00, true, 1, 'cardapio'),
+  ('00000000-0000-4000-8000-000000000037', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000020', 'Prato da Madrugada Teste',
+   'Só existe pelo Cardápio Madrugada Teste (03:00-04:00). Produto fictício de seed.',
+   22.00, true, 5, 'cardapio'),
+  ('00000000-0000-4000-8000-000000000038', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000020', 'Ceia de Verão Teste',
+   'Só existe pelo Cardápio de Verão Expirado Teste — some da vitrine pois o prazo já passou. Produto fictício de seed.',
+   45.00, true, 6, 'cardapio')
+on conflict (id) do nothing;
+
+-- vínculos produto↔cardápio. O último liga o produto 'menu' 030 (X-Burguer
+-- Teste) ao cardápio expirado: como visibilidade='menu' curto-circuita
+-- avaliarVigenciaDoProduto (RN-05), ele segue vendendo mesmo com o cardápio
+-- vencido — é o par que a issue pede ("um 'menu' que segue vendendo").
+insert into public.cardapio_produtos (id, loja_id, cardapio_id, produto_id)
+values
+  ('00000000-0000-4000-8000-000000000140', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000120', '00000000-0000-4000-8000-000000000035'),
+  ('00000000-0000-4000-8000-000000000141', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000120', '00000000-0000-4000-8000-000000000036'),
+  ('00000000-0000-4000-8000-000000000142', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000121', '00000000-0000-4000-8000-000000000037'),
+  ('00000000-0000-4000-8000-000000000143', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000122', '00000000-0000-4000-8000-000000000038'),
+  ('00000000-0000-4000-8000-000000000144', '00000000-0000-4000-8000-000000000010',
+   '00000000-0000-4000-8000-000000000122', '00000000-0000-4000-8000-000000000030')
+on conflict (id) do nothing;
+
+commit;

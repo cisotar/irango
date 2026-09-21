@@ -150,10 +150,13 @@ comment on function public.aplicar_cardapio_em_categoria(uuid, uuid, uuid) is
   'RN-10 (Spec B, issue 250): vincula TODOS os produtos de uma categoria a um cardapio num unico insert...select DENTRO da transacao (sem TOCTOU). SECURITY INVOKER: a RLS do lojista continua valendo, e a trava T2 (lojas.dono_id = auth.uid()) e explicita, de modo que service_role — que tem BYPASSRLS e auth.uid() NULL — e recusado com "loja alheia" (fail-closed; nao ha via admin na v1). Ordem T1 nulo, T2 autoridade, T3 coerencia dos pares (loja,cardapio) e (loja,categoria), T4 escrita: T3 depois de T2 para nao virar oraculo de existencia em loja alheia. Inclui produtos oculto e disponivel=false. Idempotente por on conflict do nothing; devolve o numero de vinculos NOVOS.';
 
 -- ════════════════════════════════════════════════════════════════════════ ACL
--- O Postgres concede EXECUTE a PUBLIC por padrão em função nova, e o projeto
--- NÃO tem `alter default privileges ... on functions` (só tables e sequences —
--- 20260702150000 e 20260708140000). Sem este revoke, `anon` executaria a RPC
--- direto com a anon key do bundle público.
+-- O Postgres concede EXECUTE a PUBLIC por padrão em função nova, E o projeto
+-- TEM `alter default privileges ... on routines` concedendo EXECUTE a `anon`,
+-- `authenticated` e `service_role` (20260614008500:31, `GRANT ALL ON ROUTINES`).
+-- Por isso o revoke precisa nomear `anon` EXPLICITAMENTE: revogar só de PUBLIC
+-- deixaria `anon` executando pela entrada própria na ACL, com a anon key do
+-- bundle público. E `service_role` NÃO é alcançado por este revoke — ele só é
+-- barrado pelo predicado no corpo da função.
 revoke all on function public.aplicar_cardapio_em_categoria(uuid, uuid, uuid) from public, anon;
 
 -- `authenticated` e NÃO `service_role`, de propósito (spec §RPC, issue 250
