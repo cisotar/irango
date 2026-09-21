@@ -48,6 +48,22 @@ export type ResultadoRemocao =
   | { ok: true }
   | { ok: false; erro: string; exclusivos: number };
 
+/**
+ * [284] O que fazer com os produtos EXCLUSIVOS que ficariam órfãos ao remover o
+ * cardápio (spec `remocao-cardapio-exclusivos.md` · RN-01):
+ *
+ *  - `manter`: nada — a remoção é recusada e o lojista converte num clique
+ *    (comportamento de hoje, preservado byte a byte por RN-10);
+ *  - `arquivar`: `oculto = true` + `visibilidade = 'menu'` (reversível);
+ *  - `cascata`: os produtos são APAGADOS (irreversível).
+ *
+ * Mora no módulo NEUTRO porque arquivo `'use server'` só exporta função async —
+ * e porque os dois mundos de escrita (lojista e hub admin) importam o MESMO
+ * literal. A validação de runtime é `schemaModoRemocao`
+ * (`lib/validacoes/cardapio.ts`), isomórfica entre cliente e servidor.
+ */
+export type ModoRemocaoExclusivos = "manter" | "arquivar" | "cascata";
+
 /** O mínimo que a prévia lê de cada produto do lote. */
 export type LinhaDaPrevia = {
   nome: string;

@@ -121,3 +121,128 @@ describe("trava de fonte (critério de aceite da 256)", () => {
     ).toContain('export const dynamic = "force-dynamic"');
   });
 });
+
+// ═══════════════ [284] RED — as CINCO frases novas do diálogo de três saídas ══
+//
+// Critério 10 de `specs/remocao-cardapio-exclusivos.md`: as cinco funções puras
+// que os dois botões novos e a segunda confirmação da cascata usam, afirmadas
+// BYTE A BYTE em singular e plural. Elas nascem NESTE módulo (§Mensagens da
+// spec), não no `.tsx` — é o único jeito de travá-las sem jsdom.
+//
+// Import DINÂMICO por caminho em VARIÁVEL, e não `import { … } from "./…"`:
+// os cinco símbolos ainda não existem, e um import estático faria `tsc
+// --noEmit` e a coleta do arquivo inteiro morrerem — os quatro casos verdes de
+// cima parariam de rodar e o RED viraria erro de resolução em vez de asserção.
+// Assim cada caso falha com a SUA mensagem, que é o contrato da fase GREEN.
+
+const MODULO_FRASES = "./frasesCardapio";
+
+type FrasesDaRemocao = {
+  rotuloArquivar(n: number): string;
+  rotuloRemoverProdutos(n: number): string;
+  fraseArquivar(n: number): string;
+  fraseCascataPermanente(n: number): string;
+  rotuloConfirmarCascata(n: number): string;
+};
+
+const NOMES_NOVOS = [
+  "rotuloArquivar",
+  "rotuloRemoverProdutos",
+  "fraseArquivar",
+  "fraseCascataPermanente",
+  "rotuloConfirmarCascata",
+] as const;
+
+async function frasesDaRemocao(): Promise<FrasesDaRemocao> {
+  const mod = (await import(/* @vite-ignore */ MODULO_FRASES)) as Partial<FrasesDaRemocao>;
+  const faltando = NOMES_NOVOS.filter((n) => typeof mod[n] !== "function");
+  if (faltando.length > 0) {
+    throw new Error(
+      `[RED 284 · critério 10] \`src/components/painel/frasesCardapio.ts\` ainda não exporta: ` +
+        `${faltando.join(", ")}. As cinco frases são aditivas (spec §Mensagens) — ` +
+        `nenhuma delas pode nascer dentro do .tsx.`,
+    );
+  }
+  return mod as FrasesDaRemocao;
+}
+
+describe("[284] as cinco frases do diálogo de três saídas (critério 10)", () => {
+  it("o módulo exporta as cinco funções novas", async () => {
+    const f = await frasesDaRemocao();
+    for (const nome of NOMES_NOVOS) {
+      expect(typeof f[nome], `${nome} não é função`).toBe("function");
+    }
+  });
+
+  it("`rotuloArquivar` — 2º botão da recusa, singular e plural", async () => {
+    const { rotuloArquivar } = await frasesDaRemocao();
+    expect(rotuloArquivar(1)).toBe("Arquivar 1 produto");
+    expect(rotuloArquivar(3)).toBe("Arquivar os 3 produtos");
+  });
+
+  it("`rotuloRemoverProdutos` — 3º botão (destrutivo), singular e plural", async () => {
+    const { rotuloRemoverProdutos } = await frasesDaRemocao();
+    expect(rotuloRemoverProdutos(1)).toBe("Remover 1 produto");
+    expect(rotuloRemoverProdutos(3)).toBe("Remover os 3 produtos");
+  });
+
+  it("`fraseArquivar` promete REVERSÍVEL — some da vitrine, não é apagado", async () => {
+    const { fraseArquivar } = await frasesDaRemocao();
+    expect(fraseArquivar(1)).toBe(
+      "O produto fica guardado e some da vitrine. Você pode exibi-lo de novo quando quiser.",
+    );
+    expect(fraseArquivar(2)).toBe(
+      "Os 2 produtos ficam guardados e somem da vitrine. Você pode exibi-los de novo quando quiser.",
+    );
+  });
+
+  /**
+   * A frase que sustenta a única escolha IRREVERSÍVEL da fatia. Ela não pode
+   * ser eufemística: "apagados permanentemente" e "não poderão ser
+   * recuperados" são o contrato que a §Fora do Escopo (sem desfazer, sem
+   * lixeira) obriga a UI a declarar ANTES do clique.
+   */
+  it("`fraseCascataPermanente` é literal sobre a irreversibilidade", async () => {
+    const { fraseCascataPermanente } = await frasesDaRemocao();
+    expect(fraseCascataPermanente(1)).toBe(
+      "1 produto será apagado permanentemente e não poderá ser recuperado.",
+    );
+    expect(fraseCascataPermanente(4)).toBe(
+      "4 produtos serão apagados permanentemente e não poderão ser recuperados.",
+    );
+    for (const n of [1, 4]) {
+      expect(fraseCascataPermanente(n)).toContain("permanentemente");
+    }
+  });
+
+  it("`rotuloConfirmarCascata` — o botão que confirma de verdade", async () => {
+    const { rotuloConfirmarCascata } = await frasesDaRemocao();
+    expect(rotuloConfirmarCascata(1)).toBe("Apagar 1 produto e remover o cardápio");
+    expect(rotuloConfirmarCascata(5)).toBe("Apagar 5 produtos e remover o cardápio");
+  });
+
+  /**
+   * Trava de vocabulário (§Ressalva de vocabulário, não negociável): "arquivar"
+   * é `oculto = true`, NUNCA `disponivel = false` ("esgotado", que continua
+   * visível). Nenhuma frase de arquivar pode dizer "esgotado" nem prometer
+   * apagar; nenhuma frase de cascata pode prometer que dá para exibir de novo.
+   */
+  it("arquivar não fala de apagar, e cascata não promete recuperação", async () => {
+    const { fraseArquivar, rotuloArquivar, fraseCascataPermanente, rotuloConfirmarCascata } =
+      await frasesDaRemocao();
+    for (const texto of [fraseArquivar(1), fraseArquivar(2), rotuloArquivar(1), rotuloArquivar(2)]) {
+      expect(texto.toLowerCase()).not.toContain("apagad");
+      expect(texto.toLowerCase()).not.toContain("esgotad");
+      expect(texto.toLowerCase()).not.toContain("permanente");
+    }
+    for (const texto of [
+      fraseCascataPermanente(1),
+      fraseCascataPermanente(2),
+      rotuloConfirmarCascata(1),
+      rotuloConfirmarCascata(2),
+    ]) {
+      expect(texto.toLowerCase()).not.toContain("guardado");
+      expect(texto.toLowerCase()).not.toContain("de novo");
+    }
+  });
+});

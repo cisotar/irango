@@ -38,6 +38,7 @@
 import {
   schemaCardapio,
   schemaIdCardapio,
+  schemaModoRemocao,
   schemaLoteDeProdutos,
   schemaLoteDeCategoria,
   schemaPreviaDeLote,
@@ -63,6 +64,7 @@ import {
   type Resultado,
   type ResultadoCardapio,
   type ResultadoRemocao,
+  type ModoRemocaoExclusivos,
 } from "@/lib/actions/cardapio-contrato";
 import {
   buscarProdutosQueFicariamOrfaos,
@@ -241,27 +243,80 @@ export async function ligarDesligarCardapioAdmin(
  * que ficaria sem nenhum cardápio (RN-14): a mesma leitura, a mesma frase e o
  * mesmo número do caminho do lojista — e a saída (converter) é um clique, dado
  * por quem opera, porque `visibilidade` é declaração do LOJISTA.
+ *
+ * [284] `modo` dá as outras duas saídas — `arquivar` (reversível) e `cascata`
+ * (apaga os órfãos) —, em paridade byte a byte com o lojista. Aqui o clique é
+ * de OUTRA pessoa: os dois modos novos gravam `admin_acessos` com o modo e a
+ * contagem recalculada (RN-13).
  */
 export async function removerCardapioAdmin(
   lojaId: string,
   id: string,
+  modo: ModoRemocaoExclusivos = "manter",
 ): Promise<ResultadoRemocao> {
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: MSG_LOJA_INVALIDA, exclusivos: 0 };
   if (!schemaIdCardapio.safeParse(id).success) {
     return { ok: false, erro: MSG_INVALIDO, exclusivos: 0 };
   }
+  // [284 · RN-01] Parse do modo ANTES de elevar: um valor desconhecido nunca
+  // cai num ramo destrutivo, e nenhum I/O acontece.
+  const modoParsed = schemaModoRemocao.safeParse(modo);
+  if (!modoParsed.success) {
+    return { ok: false, erro: MSG_INVALIDO, exclusivos: 0 };
+  }
+  const escolha = modoParsed.data;
 
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    const orfaos = await buscarProdutosQueFicariamOrfaos(svc, loja.lojaId, id);
-    if (orfaos.length > 0) {
-      return {
-        ok: false,
-        erro: mensagemExclusivos(orfaos.length),
-        exclusivos: orfaos.length,
-      };
+    // Quantos produtos o gesto atingiu — vai para o log de auditoria (RN-13).
+    let atingidos = 0;
+
+    if (escolha === "manter") {
+      const orfaos = await buscarProdutosQueFicariamOrfaos(svc, loja.lojaId, id);
+      if (orfaos.length > 0) {
+        return {
+          ok: false,
+          erro: mensagemExclusivos(orfaos.length),
+          exclusivos: orfaos.length,
+        };
+      }
+    } else {
+      // [284 · RN-04] Sob `service_role` (BYPASSRLS) a posse é a ÚNICA barreira
+      // antes da leitura: sem ela, um `id` alheio faria o recálculo rodar sobre
+      // outro tenant e o log gravaria `entidade_id` que não é da loja-alvo.
+      // Alheio e inexistente: a MESMA frase (§14).
+      if (!(await cardapioPertenceALoja(svc, loja.lojaId, id))) {
+        return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
+      }
+
+      // RN-02: a lista é recalculada aqui, nunca aceita do cliente.
+      const orfaos = await buscarProdutosQueFicariamOrfaos(svc, loja.lojaId, id);
+      atingidos = orfaos.length;
+
+      if (orfaos.length > 0) {
+        // RN-06: produtos PRIMEIRO, cardápio DEPOIS. Escopo explícito por
+        // `loja_id` da URL validada + 2º cinto de `visibilidade = 'cardapio'`:
+        // é ele que substitui a RLS nesta via.
+        const alvo = svc.from("produtos");
+        const escrita =
+          escolha === "arquivar"
+            ? // RN-05: exatamente dois campos. `disponivel` é "esgotado", que
+              // CONTINUA visível, e não entra aqui.
+              alvo.update({ oculto: true, visibilidade: "menu" })
+            : alvo.delete();
+        const { error: erroProdutos } = await escrita
+          .eq("loja_id", loja.lojaId)
+          .eq("visibilidade", "cardapio")
+          .in("id", orfaos);
+        if (erroProdutos) {
+          console.error("[removerCardapioAdmin]", erroProdutos);
+          // Sem seguir para o request 2, e sem log: o cardápio sobrevive e o
+          // estado é reconciliável numa segunda tentativa.
+          return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
+        }
+      }
     }
 
     const { error, count } = await escopo.remover("cardapios", id);
@@ -280,6 +335,11 @@ export async function removerCardapioAdmin(
       lojaId: loja.lojaId,
       acao: "cardapio.remover",
       entidadeId: id,
+      // RN-13: o rastro do gesto de OUTRA pessoa. `manter` continua com o log
+      // de hoje, sem metadados — nada mudou no que ele faz.
+      ...(escolha === "manter"
+        ? {}
+        : { metadados: { modo: escolha, produtos: atingidos } }),
     });
     revalidarLojaAdmin(loja.lojaId);
     return { ok: true };

@@ -34,6 +34,7 @@ import {
   schemaPreviaDeLote,
   schemaCardapio,
   schemaIdCardapio,
+  schemaModoRemocao,
   schemaDiasDoVinculo,
   normalizarDiasDoVinculo,
 } from "@/lib/validacoes/cardapio";
@@ -56,6 +57,7 @@ import {
   type Previa,
   type ResultadoCardapio,
   type ResultadoRemocao,
+  type ModoRemocaoExclusivos,
 } from "@/lib/actions/cardapio-contrato";
 import {
   buscarProdutosQueFicariamOrfaos,
@@ -436,24 +438,88 @@ export async function ligarDesligarCardapio(
  * de um cardápio devolver silenciosamente pratos de temporada ao menu o ano
  * inteiro — o oposto do que o lojista declarou. A conversão existe, é um
  * clique, e é ELE quem dá o clique.
+ *
+ * [284] O `modo` é a escolha DECLARADA no diálogo, e só existe porque continua
+ * sendo o lojista quem decide: `manter` (ausente ou explícito) é o parágrafo
+ * acima, inalterado; `arquivar` tira os órfãos da vitrine de forma reversível
+ * (`oculto = true` + `visibilidade = 'menu'`); `cascata` os APAGA. Nos dois
+ * modos novos a lista é recalculada aqui (RN-02) e a posse do cardápio é
+ * provada antes (RN-04).
  */
-export async function removerCardapio(id: string): Promise<ResultadoRemocao> {
+export async function removerCardapio(
+  id: string,
+  modo: ModoRemocaoExclusivos = "manter",
+): Promise<ResultadoRemocao> {
   if (!schemaIdCardapio.safeParse(id).success) {
     return { ok: false, erro: MSG_INVALIDO, exclusivos: 0 };
   }
+  // [284 · RN-01] Parse do modo ANTES de qualquer I/O, e `default` que recusa:
+  // um valor desconhecido NUNCA cai num ramo destrutivo.
+  const modoParsed = schemaModoRemocao.safeParse(modo);
+  if (!modoParsed.success) {
+    return { ok: false, erro: MSG_INVALIDO, exclusivos: 0 };
+  }
+  const escolha = modoParsed.data;
 
   try {
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: MSG_LOJA, exclusivos: 0 };
 
-    const orfaos = await buscarProdutosQueFicariamOrfaos(supabase, loja.id, id);
-    if (orfaos.length > 0) {
-      return {
-        ok: false,
-        erro: mensagemExclusivos(orfaos.length),
-        exclusivos: orfaos.length,
-      };
+    if (escolha === "manter") {
+      const orfaos = await buscarProdutosQueFicariamOrfaos(
+        supabase,
+        loja.id,
+        id,
+      );
+      if (orfaos.length > 0) {
+        return {
+          ok: false,
+          erro: mensagemExclusivos(orfaos.length),
+          exclusivos: orfaos.length,
+        };
+      }
+    } else {
+      // [284 · RN-04] Nos modos que ESCREVEM nos produtos, a posse do cardápio
+      // vem antes da leitura: sem ela, um id alheio faria o recálculo rodar
+      // sobre outro tenant. Alheio e inexistente saem pela MESMA frase (§14).
+      if (!(await cardapioPertenceALoja(supabase, loja.id, id))) {
+        return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
+      }
+
+      // RN-02: a lista é SEMPRE derivada no servidor — a action não tem onde
+      // pendurar ids do cliente, e no modo `cascata` vazar aqui é irreversível.
+      const orfaos = await buscarProdutosQueFicariamOrfaos(
+        supabase,
+        loja.id,
+        id,
+      );
+      if (orfaos.length > 0) {
+        // RN-06: produtos PRIMEIRO, cardápio DEPOIS — a ordem inversa derruba a
+        // transação no trigger deferido. Um único statement escopado por
+        // `loja_id` (+ 2º cinto de `visibilidade`), como em
+        // `converterExclusivosParaMenu`: N chamadas de action por id seriam N
+        // round trips e uma falha parcial no meio do laço.
+        const alvo = supabase.from("produtos");
+        const escrita =
+          escolha === "arquivar"
+            ? // RN-05: exatamente dois campos. `disponivel` é "esgotado" (que
+              // CONTINUA visível na vitrine) e não entra aqui; `visibilidade`
+              // precisa sair de 'cardapio' no MESMO UPDATE, senão o produto
+              // vira exclusivo órfão e o COMMIT seguinte é recusado.
+              alvo.update({ oculto: true, visibilidade: "menu" })
+            : alvo.delete();
+        const { error: erroProdutos } = await escrita
+          .eq("loja_id", loja.id)
+          .eq("visibilidade", "cardapio")
+          .in("id", orfaos);
+        if (erroProdutos) {
+          console.error("[removerCardapio]", erroProdutos);
+          // Sem seguir para o request 2: o cardápio continua existindo, e o
+          // estado é reconciliável numa segunda tentativa.
+          return { ok: false, erro: MSG_REMOVER, exclusivos: 0 };
+        }
+      }
     }
 
     const { error, count } = await supabase
