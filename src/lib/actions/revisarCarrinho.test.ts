@@ -118,6 +118,8 @@ function produtoRow(over: Partial<Tables<"produtos">> = {}): Tables<"produtos"> 
     desconto_valor: null,
     desconto_inicio: null,
     desconto_fim: null,
+    // [244] coluna NOT NULL com default 'menu': é assim que toda linha nasce.
+    visibilidade: "menu",
     criado_em: "2026-01-01T00:00:00.000Z",
     atualizado_em: "2026-01-01T00:00:00.000Z",
     ...over,

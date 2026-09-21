@@ -6,7 +6,7 @@ import type { Categoria } from "./categorias";
 /**
  * Queries reusáveis de `produtos` para vitrine e painel (seguranca.md §2, §19):
  *  - VITRINE: lê a VIEW definer `public.vitrine_produtos` (265), que projeta as
- *    14 colunas públicas e mascara desconto não-vigente. A tabela base NÃO tem
+ *    15 colunas públicas e mascara desconto não-vigente. A tabela base NÃO tem
  *    mais SELECT público (`drop policy produtos_leitura_publica`);
  *  - produtos_leitura_propria: dono vê os próprios (incl. indisponíveis/ocultos);
  *  - `service_role` (recálculo autoritativo de pedido) lê a TABELA, nunca a view.
@@ -66,17 +66,21 @@ export type ProdutoPublico = Pick<
   | "desconto_valor"
   | "desconto_inicio"
   | "desconto_fim"
+  // [245] 15ª coluna: o SSR (247) precisa dela para decidir se o produto é de
+  // menu ou de cardápio. INTERNA ao servidor — `projetarProdutoVitrine` copia
+  // campos NOMEADOS, então ela não entra no `ProdutoVitrine` que vai ao browser.
+  | "visibilidade"
 >;
 
 /**
- * Lista EXATA (14 colunas, ordem fixa) da projeção pública — §Contratos de Dados
+ * Lista EXATA (15 colunas, ordem fixa) da projeção pública — §Contratos de Dados
  * da 265. Select NOMEADO por decisão (D4): `select("*")` numa view definer volta
  * a vazar qualquer coluna que uma migration futura (244/245) acrescente sem
  * revisão do contrato TS.
  */
 export const COLUNAS_PRODUTO_PUBLICO =
   "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +
-  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim";
+  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim, visibilidade";
 
 /** Grupo do catálogo público: uma categoria (ou "Outros") + seus produtos. */
 export type GrupoCatalogo<T = ProdutoPublico> = {

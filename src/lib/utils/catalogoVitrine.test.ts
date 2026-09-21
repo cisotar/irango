@@ -243,7 +243,7 @@ describe("224 — comprabilidade (D13 / RN-19)", () => {
 });
 
 describe("224 — encaixe nas peças existentes", () => {
-  it("aceita `ProdutoPublico` (as 14 colunas da view 265) sem cast", () => {
+  it("aceita `ProdutoPublico` (as 15 colunas da view 265/245) sem cast", () => {
     // Prova de TIPO + runtime: o único caller de vitrine passa o que
     // `buscarProdutosPublicos` devolve. Se a assinatura exigisse a row inteira
     // de `produtos`, este arquivo nem compilaria.
@@ -262,6 +262,7 @@ describe("224 — encaixe nas peças existentes", () => {
       desconto_valor: null,
       desconto_inicio: null,
       desconto_fim: null,
+      visibilidade: "menu",
     };
     const v = projetarProdutoVitrine(daView, AGORA);
     expect(v).toMatchObject({ id: daView.id, preco: 8, precoEfetivo: 8, categoria_id: null });

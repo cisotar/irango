@@ -95,6 +95,135 @@ export type Database = {
           },
         ]
       }
+      cardapio_produtos: {
+        Row: {
+          cardapio_id: string
+          criado_em: string
+          id: string
+          loja_id: string
+          produto_id: string
+        }
+        Insert: {
+          cardapio_id: string
+          criado_em?: string
+          id?: string
+          loja_id: string
+          produto_id: string
+        }
+        Update: {
+          cardapio_id?: string
+          criado_em?: string
+          id?: string
+          loja_id?: string
+          produto_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cardapio_produtos_cardapio_fk"
+            columns: ["cardapio_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "cardapios"
+            referencedColumns: ["id", "loja_id"]
+          },
+          {
+            foreignKeyName: "cardapio_produtos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cardapio_produtos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cardapio_produtos_produto_fk"
+            columns: ["produto_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id", "loja_id"]
+          },
+          {
+            foreignKeyName: "cardapio_produtos_produto_fk"
+            columns: ["produto_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_produtos"
+            referencedColumns: ["id", "loja_id"]
+          },
+        ]
+      }
+      cardapios: {
+        Row: {
+          ativo: boolean
+          atualizado_em: string
+          criado_em: string
+          dias_mes: number[] | null
+          dias_semana: number[] | null
+          hora_fim: string | null
+          hora_inicio: string | null
+          id: string
+          loja_id: string
+          modo: string
+          nome: string
+          ordem: number
+          prazo_fim: string | null
+          prazo_inicio: string | null
+          prazo_preset: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          atualizado_em?: string
+          criado_em?: string
+          dias_mes?: number[] | null
+          dias_semana?: number[] | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
+          id?: string
+          loja_id: string
+          modo: string
+          nome: string
+          ordem?: number
+          prazo_fim?: string | null
+          prazo_inicio?: string | null
+          prazo_preset?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          atualizado_em?: string
+          criado_em?: string
+          dias_mes?: number[] | null
+          dias_semana?: number[] | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
+          id?: string
+          loja_id?: string
+          modo?: string
+          nome?: string
+          ordem?: number
+          prazo_fim?: string | null
+          prazo_inicio?: string | null
+          prazo_preset?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cardapios_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cardapios_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categoria_produto_opcionais: {
         Row: {
           categoria_id: string
@@ -789,6 +918,7 @@ export type Database = {
           oculto: boolean
           ordem: number
           preco: number
+          visibilidade: string
         }
         Insert: {
           atualizado_em?: string
@@ -808,6 +938,7 @@ export type Database = {
           oculto?: boolean
           ordem?: number
           preco: number
+          visibilidade?: string
         }
         Update: {
           atualizado_em?: string
@@ -827,6 +958,7 @@ export type Database = {
           oculto?: boolean
           ordem?: number
           preco?: number
+          visibilidade?: string
         }
         Relationships: [
           {
@@ -1130,6 +1262,7 @@ export type Database = {
           nome: string | null
           ordem: number | null
           preco: number | null
+          visibilidade: string | null
         }
         Insert: {
           categoria_id?: string | null
@@ -1146,6 +1279,7 @@ export type Database = {
           nome?: string | null
           ordem?: number | null
           preco?: number | null
+          visibilidade?: string | null
         }
         Update: {
           categoria_id?: string | null
@@ -1162,6 +1296,7 @@ export type Database = {
           nome?: string | null
           ordem?: number | null
           preco?: number | null
+          visibilidade?: string | null
         }
         Relationships: [
           {

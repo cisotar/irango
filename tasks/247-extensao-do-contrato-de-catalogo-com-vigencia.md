@@ -2,7 +2,7 @@
 
 **crítica:** SIM (TDD red-first)
 **Mundo:** vitrine pública
-**Depende de:** [224] (`tasks/224-contrato-de-catalogo-produtovitrine-e-projecao.md`), [225] (`tasks/225-quatro-superficies-recebem-produtovitrine-e-correcao-do-d13.md`), [243] (`tasks/243-migration-cardapio-produtos-fks-compostas-e-rls.md`) e [246] (`tasks/246-vigenciacardapio-cardapioaberto-e-avaliarvigenciadoproduto.md`)
+**Depende de:** [224] (`tasks/224-contrato-de-catalogo-produtovitrine-e-projecao.md`), [225] (`tasks/225-quatro-superficies-recebem-produtovitrine-e-correcao-do-d13.md`), [243] (`tasks/243-migration-cardapio-produtos-fks-compostas-e-rls.md`), [245] (`tasks/245-trigger-do-produto-exclusivo-e-policy-publica-ajustada.md` — é ela que põe `visibilidade` em `vitrine_produtos`/`ProdutoPublico`) e [246] (`tasks/246-vigenciacardapio-cardapioaberto-e-avaliarvigenciadoproduto.md`)
 **Spec:** specs/cardapio-sazonal.md
 **Decisões:** D4, D14 · RN-05, RN-06, RN-13
 **Fatia crítica:** 3 (extensão do contrato de catálogo)
@@ -52,8 +52,11 @@ queries novas é nota para o `acelerar`, **depois** do `executar`.
 - `src/lib/utils/vigenciaCardapio.ts` (issue 246) — a decisão de janela vem toda de lá.
 - `agruparCatalogo` e a regra "grupo sem produto visível não é devolvido" (issue 177,
   `produtos.ts:78-88`) — reusada de graça pela ordem nova, **sem código de agrupamento novo**.
-- `buscarProdutosPublicos` (`produtos.ts:66`) — já faz `select("*")`: a coluna `visibilidade`
-  chega sozinha. **Nenhuma query de produto nova.**
+- `buscarProdutosPublicos` (`produtos.ts`) — lê a view `public.vitrine_produtos` com select
+  **nomeado** (`COLUNAS_PRODUTO_PUBLICO`, D4 da 265 — nunca `select("*")`). A coluna
+  `visibilidade` **não** "chega sozinha": ela entra como 15ª coluna da view, da constante e de
+  `ProdutoPublico` na issue **245** (decisão de recriar a view uma vez só). Esta issue só a
+  **consome** de `ProdutoPublico`. **Nenhuma query de produto nova.**
 - O padrão de mapa ao lado do catálogo de `opcionaisPorCategoria`.
 
 ## Segurança

@@ -93,7 +93,7 @@ function makeClient(terminal: Terminal) {
  */
 const COLUNAS_PRODUTO_PUBLICO =
   "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +
-  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim";
+  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim, visibilidade";
 
 describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
   it("consulta a VIEW vitrine_produtos filtrando por loja_id, ordenado por ordem — 265", async () => {
