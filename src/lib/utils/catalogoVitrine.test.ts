@@ -1070,7 +1070,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
 
   it("cenário 8 — 3 produtos, 3 seções, 5 cards", () => {
     const { produtos, cardapiosAbertos } = projetarCenario8();
-    const destaque = agruparPorCardapio(produtos, cardapiosAbertos, vinculos);
+    const destaque = agruparPorCardapio(produtos, cardapiosAbertos, vinculos, SABADO, SP);
     const categoriasSecoes = agruparCatalogo(produtos, categoriasCenario8);
 
     expect(produtos).toHaveLength(3);
@@ -1089,7 +1089,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
 
   it("cenário 8 — a duplicata é de RENDER: a MESMA referência nas duas seções", () => {
     const { produtos, cardapiosAbertos } = projetarCenario8();
-    const destaque = agruparPorCardapio(produtos, cardapiosAbertos, vinculos);
+    const destaque = agruparPorCardapio(produtos, cardapiosAbertos, vinculos, SABADO, SP);
     const massas = agruparCatalogo(produtos, categoriasCenario8)[0];
 
     const noDestaque = destaque[0].produtos.find((p) => p.nome === "Lasanha");
@@ -1100,13 +1100,15 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
   it("a seção carrega o discriminante `tipo: \"cardapio\"`", () => {
     const { produtos, cardapiosAbertos } = projetarCenario8();
     expect(
-      agruparPorCardapio(produtos, cardapiosAbertos, vinculos)[0].tipo,
+      agruparPorCardapio(produtos, cardapiosAbertos, vinculos, SABADO, SP)[0].tipo,
     ).toBe("cardapio");
   });
 
-  it("NENHUM produto de seção de destaque está fora da janela (propriedade)", () => {
+  // [279] Continua valendo — mas por FILTRO (`itemAberto`), não mais por
+  // propriedade da união dos cardápios.
+  it("NENHUM produto de seção de destaque está fora da janela", () => {
     const { produtos, cardapiosAbertos } = projetarCenario8();
-    const secoes = agruparPorCardapio(produtos, cardapiosAbertos, vinculos);
+    const secoes = agruparPorCardapio(produtos, cardapiosAbertos, vinculos, SABADO, SP);
     for (const secao of secoes) {
       for (const produto of secao.produtos) {
         expect(produto.motivoNaoCompravel).not.toBe("fora_da_janela");
@@ -1121,7 +1123,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
       agora: SABADO,
       timezone: SP,
     });
-    const secao = agruparPorCardapio(produtos, cardapiosAbertos, vinculos)[0];
+    const secao = agruparPorCardapio(produtos, cardapiosAbertos, vinculos, SABADO, SP)[0];
     expect(secao.produtos.map((p) => p.nome)).toEqual(["Lasanha"]);
     expect(secao.produtos[0].compravel).toBe(false);
     expect(secao.produtos[0].motivoNaoCompravel).toBe("esgotado");
@@ -1143,7 +1145,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
       agora: SABADO,
       timezone: SP,
     });
-    const secoes = agruparPorCardapio(produtos, cardapiosAbertos, dois);
+    const secoes = agruparPorCardapio(produtos, cardapiosAbertos, dois, SABADO, SP);
     expect(secoes.map((s) => s.nome)).toEqual([
       "Cardápio de Inverno",
       "Cardápio de Verão",
@@ -1154,12 +1156,12 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
   it("seção de destaque VAZIA não é emitida (regra da 177, reaplicada)", () => {
     // O cardápio está aberto, mas o produto dele saiu do catálogo (RN-13).
     const { cardapiosAbertos } = projetarCenario8();
-    expect(agruparPorCardapio([], cardapiosAbertos, vinculos)).toEqual([]);
+    expect(agruparPorCardapio([], cardapiosAbertos, vinculos, SABADO, SP)).toEqual([]);
   });
 
   it("nenhum cardápio aberto ⇒ nenhuma seção de destaque", () => {
     const { produtos } = projetarCenario8();
-    expect(agruparPorCardapio(produtos, [], vinculos)).toEqual([]);
+    expect(agruparPorCardapio(produtos, [], vinculos, SABADO, SP)).toEqual([]);
   });
 
   it("ordem `ordem → nome → id`, com EMPATE nos dois primeiros critérios", () => {
@@ -1187,7 +1189,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
     });
 
     expect(
-      agruparPorCardapio(produtos, cardapiosAbertos, vinculosOrdem).map(
+      agruparPorCardapio(produtos, cardapiosAbertos, vinculosOrdem, SABADO, SP).map(
         (s) => s.id,
       ),
     ).toEqual([a1.id, b1.id, z1.id, a2.id]);
@@ -1202,7 +1204,222 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
       timezone: SP,
       exibirImagensPorCategoria: mapa,
     });
-    const secao = agruparPorCardapio(produtos, cardapiosAbertos, vinculos)[0];
+    const secao = agruparPorCardapio(produtos, cardapiosAbertos, vinculos, SABADO, SP)[0];
     expect(secao.produtos[0].foto_url).toBe(null);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [279] D16-b/RN-05 — a seção do cardápio lista só os ITENS DO DIA, e some
+// quando nenhum item do cardápio está aberto hoje.
+//
+// Nada aqui reescreve a regra de dia: o veredito é o de `itemAberto` (273), e
+// os casos são os da spec §Vitrine da loja, com o resultado escrito à mão.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () => {
+  type CardapioDaLoja = CardapioVigencia & { ordem: number };
+
+  /** "Especiais do Dia": recorrente, ativo, ABERTO os 7 dias. */
+  const ESPECIAIS: CardapioDaLoja = {
+    id: "c0000000-0000-4000-8000-0000000002f9",
+    nome: "Especiais do Dia",
+    ativo: true,
+    modo: "recorrente",
+    dias_semana: null,
+    dias_mes: null,
+    hora_inicio: null,
+    hora_fim: null,
+    prazo_inicio: null,
+    prazo_fim: null,
+    ordem: 1,
+  };
+
+  const comDias = (
+    cardapio: CardapioDaLoja,
+    dias: number[],
+  ): VinculoVigencia<CardapioDaLoja> => ({ cardapio, dias_semana: dias });
+
+  const FEIJOADA = base({
+    id: "27900000-0000-4000-8000-000000000001",
+    nome: "Feijoada",
+    visibilidade: "cardapio",
+  });
+  const VIRADO = base({
+    id: "27900000-0000-4000-8000-000000000002",
+    nome: "Virado à paulista",
+    visibilidade: "cardapio",
+  });
+  const DOBRADINHA = base({
+    id: "27900000-0000-4000-8000-000000000003",
+    nome: "Dobradinha",
+    visibilidade: "cardapio",
+  });
+
+  /** Feijoada {qua,sáb}, Virado {seg}, Dobradinha {ter} — um cardápio só. */
+  const agenda = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+    [FEIJOADA.id, [comDias(ESPECIAIS, [3, 6])]],
+    [VIRADO.id, [comDias(ESPECIAIS, [1])]],
+    [DOBRADINHA.id, [comDias(ESPECIAIS, [2])]],
+  ]);
+
+  /** Quarta 14/10/2026 12:00 e domingo 18/10/2026 12:00, no fuso da LOJA. */
+  const QUARTA = emSP("2026-10-14T12:00");
+  const DOMINGO = emSP("2026-10-18T12:00");
+
+  function projetar(agora: Date) {
+    return projetarCatalogoVitrine<CardapioDaLoja>({
+      produtos: [FEIJOADA, VIRADO, DOBRADINHA],
+      vinculosPorProduto: agenda,
+      agora,
+      timezone: SP,
+    });
+  }
+
+  it("quarta — a seção do cardápio aberto os 7 dias contém SÓ o item {qua,sáb}", () => {
+    const { produtos, cardapiosAbertos } = projetar(QUARTA);
+    const secoes = agruparPorCardapio(
+      produtos,
+      cardapiosAbertos,
+      agenda,
+      QUARTA,
+      SP,
+    );
+
+    // RN-13: nenhum dos três some do catálogo — todos têm volta.
+    expect(produtos.map((p) => p.nome)).toEqual([
+      "Feijoada",
+      "Virado à paulista",
+      "Dobradinha",
+    ]);
+    expect(secoes.map((s) => s.nome)).toEqual(["Especiais do Dia"]);
+    expect(secoes[0].produtos.map((p) => p.nome)).toEqual(["Feijoada"]);
+  });
+
+  it("quarta — o item fora do dia fica MARCADO, com o selo dos dias do ITEM (RN-08)", () => {
+    const { produtos, rotulosVigencia } = projetar(QUARTA);
+    const porNome = new Map(produtos.map((p) => [p.nome, p]));
+
+    expect(porNome.get("Feijoada")?.compravel).toBe(true);
+    expect(porNome.get("Virado à paulista")?.motivoNaoCompravel).toBe(
+      "fora_da_janela",
+    );
+    expect(rotulosVigencia[VIRADO.id]).toBe("Só às segundas");
+    expect(rotulosVigencia[DOBRADINHA.id]).toBe("Só às terças");
+    expect(rotulosVigencia[FEIJOADA.id]).toBeUndefined();
+  });
+
+  it("domingo sem NENHUM item do dia — a seção não é devolvida", () => {
+    const { produtos, cardapiosAbertos } = projetar(DOMINGO);
+
+    // O cardápio continua ABERTO (7 dias): quem esvazia a seção é o item.
+    expect(cardapiosAbertos.map((c) => c.nome)).toEqual(["Especiais do Dia"]);
+    expect(
+      agruparPorCardapio(produtos, cardapiosAbertos, agenda, DOMINGO, SP),
+    ).toEqual([]);
+  });
+
+  it("produto 'menu' com vínculo agendado é comprável TODO dia — e some só da seção", () => {
+    const refri = base({
+      id: "27900000-0000-4000-8000-000000000004",
+      nome: "Refrigerante",
+      visibilidade: "menu",
+    });
+    const soQuarta = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+      [refri.id, [comDias(ESPECIAIS, [3])]],
+    ]);
+    const { produtos, cardapiosAbertos } =
+      projetarCatalogoVitrine<CardapioDaLoja>({
+        produtos: [refri],
+        vinculosPorProduto: soQuarta,
+        agora: DOMINGO,
+        timezone: SP,
+      });
+
+    // RN-05: 'menu' curto-circuita antes de olhar cardápio — vende no domingo.
+    expect(produtos[0].compravel).toBe(true);
+    // Mas a seção é a projeção do CARDÁPIO, não da comprabilidade.
+    expect(
+      agruparPorCardapio(produtos, cardapiosAbertos, soQuarta, DOMINGO, SP),
+    ).toEqual([]);
+  });
+
+  it("dois cardápios abertos, agenda só num deles ⇒ sai na seção de quem abre PARA ELE", () => {
+    const NOITE: CardapioDaLoja = {
+      ...ESPECIAIS,
+      id: "c0000000-0000-4000-8000-0000000002fa",
+      nome: "Especiais da Noite",
+      ordem: 2,
+    };
+    const dois = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+      [FEIJOADA.id, [comDias(ESPECIAIS, [3, 6]), comDias(NOITE, [1])]],
+    ]);
+    const { produtos, cardapiosAbertos } =
+      projetarCatalogoVitrine<CardapioDaLoja>({
+        produtos: [FEIJOADA],
+        vinculosPorProduto: dois,
+        agora: QUARTA,
+        timezone: SP,
+      });
+
+    // `dentroDaJanela` é a UNIÃO dos vínculos: pôr o produto em mais um
+    // cardápio nunca reduz disponibilidade.
+    expect(produtos[0].compravel).toBe(true);
+    const secoes = agruparPorCardapio(
+      produtos,
+      cardapiosAbertos,
+      dois,
+      QUARTA,
+      SP,
+    );
+    expect(secoes.map((s) => s.nome)).toEqual(["Especiais do Dia"]);
+  });
+
+  it("vínculo SEM dias do item ⇒ o comportamento de hoje, em qualquer dia", () => {
+    const semAgenda = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+      [FEIJOADA.id, [semDias(ESPECIAIS)]],
+    ]);
+    for (const agora of [QUARTA, DOMINGO]) {
+      const { produtos, cardapiosAbertos } =
+        projetarCatalogoVitrine<CardapioDaLoja>({
+          produtos: [FEIJOADA],
+          vinculosPorProduto: semAgenda,
+          agora,
+          timezone: SP,
+        });
+      expect(
+        agruparPorCardapio(
+          produtos,
+          cardapiosAbertos,
+          semAgenda,
+          agora,
+          SP,
+        )[0].produtos.map((p) => p.nome),
+      ).toEqual(["Feijoada"]);
+    }
+  });
+
+  it("produto ESGOTADO dentro do dia continua na seção (disponivel é ortogonal)", () => {
+    const soFeijoada = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
+      [FEIJOADA.id, [comDias(ESPECIAIS, [3, 6])]],
+    ]);
+    const { produtos, cardapiosAbertos } =
+      projetarCatalogoVitrine<CardapioDaLoja>({
+        produtos: [{ ...FEIJOADA, disponivel: false }],
+        vinculosPorProduto: soFeijoada,
+        agora: QUARTA,
+        timezone: SP,
+      });
+    const secao = agruparPorCardapio(
+      produtos,
+      cardapiosAbertos,
+      soFeijoada,
+      QUARTA,
+      SP,
+    )[0];
+
+    expect(secao.produtos.map((p) => p.motivoNaoCompravel)).toEqual([
+      "esgotado",
+    ]);
   });
 });

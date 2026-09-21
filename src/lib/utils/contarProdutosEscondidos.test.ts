@@ -228,3 +228,154 @@ describe("264 diagnosticarSumico — o mesmo estado, visto do produto", () => {
     );
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [280/RN-03] Caracterização POR VÍNCULO: com agenda de item, "fora do dia"
+// NÃO é "sumiu". O predicado continua sendo um só — `avaliarVigenciaDoProduto`
+// (273) —, e estes testes existem para travar que ninguém acrescente um
+// segundo critério de dia dentro de `contarProdutosEscondidos.ts`.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** "Especiais do Dia": recorrente, ativo, sem restrição de dia — abre sempre. */
+const ESPECIAIS: CardapioVigencia = {
+  id: "especiais",
+  nome: "Especiais do Dia",
+  ativo: true,
+  modo: "recorrente",
+  dias_semana: null,
+  dias_mes: null,
+  hora_inicio: null,
+  hora_fim: null,
+  prazo_inicio: null,
+  prazo_fim: null,
+};
+
+const comDias = (
+  cardapio: CardapioVigencia,
+  dias: number[],
+): VinculoVigencia => ({ cardapio, dias_semana: dias });
+
+/** Os 7 dias da semana de 18/10/2026 (domingo) a 24/10/2026 (sábado), ao meio-dia. */
+const SEMANA = [18, 19, 20, 21, 22, 23, 24].map((d) =>
+  emSP(`2026-10-${d}T12:00`),
+);
+
+describe("280 — exclusivo com agenda de ITEM nunca é 'escondido' (RN-03)", () => {
+  /** Feijoada exclusiva de cardápio, servida só às quartas. */
+  const soQuarta = new Map<string, VinculoVigencia[]>([
+    ["sopa", [comDias(ESPECIAIS, [3])]],
+    ["coca", [comDias(ESPECIAIS, [3])]],
+  ]);
+
+  it("em QUALQUER dia da semana ⇒ sumidos: 0 (alterna entre comprável e marcado)", () => {
+    for (const agora of SEMANA) {
+      expect(
+        contarProdutosEscondidos(ESPECIAIS, [SOPA, COCA], soQuarta, agora, SP),
+      ).toEqual({ doMenu: 1, sumidos: 0 });
+    }
+  });
+
+  it("`listarProdutosEscondidos` não nomeia ninguém, nos 7 dias", () => {
+    for (const agora of SEMANA) {
+      expect(
+        listarProdutosEscondidos(ESPECIAIS, [SOPA, COCA], soQuarta, agora, SP),
+      ).toEqual([]);
+    }
+  });
+
+  it("`diagnosticarSumico` ⇒ null: o painel não pinta aviso âmbar por dia", () => {
+    for (const agora of SEMANA) {
+      expect(
+        diagnosticarSumico(SOPA, [comDias(ESPECIAIS, [3])], agora, SP),
+      ).toBeNull();
+    }
+  });
+
+  it("dois cardápios — um expirado, um recorrente com item {qua} ⇒ não sumiu", () => {
+    const dois = new Map<string, VinculoVigencia[]>([
+      ["sopa", [semDias(INVERNO), comDias(ESPECIAIS, [3])]],
+      ["coca", [semDias(INVERNO)]],
+    ]);
+
+    // Terça 20/10: nem o Inverno (expirado) nem o item (quarta) estão abertos,
+    // e mesmo assim o produto continua na vitrine — marcado, com volta.
+    expect(
+      contarProdutosEscondidos(INVERNO, [SOPA, COCA], dois, SEMANA[2], SP),
+    ).toEqual({ doMenu: 1, sumidos: 0 });
+  });
+});
+
+describe("280 — o que CONTINUA escondido, apesar da agenda de item", () => {
+  it("prazo fixo EXPIRADO com item {qua} segue contado — não há volta", () => {
+    const expirado = new Map<string, VinculoVigencia[]>([
+      ["sopa", [comDias(INVERNO, [3])]],
+      ["coca", [comDias(INVERNO, [3])]],
+    ]);
+
+    expect(
+      contarProdutosEscondidos(INVERNO, [SOPA, COCA], expirado, DEZEMBRO, SP),
+    ).toEqual({ doMenu: 1, sumidos: 1 });
+    expect(
+      diagnosticarSumico(SOPA, [comDias(INVERNO, [3])], DEZEMBRO, SP),
+    ).toEqual({ cardapio: "Cardápio de Inverno", ativo: true });
+  });
+
+  it("cardápio DESLIGADO com item {qua} segue contado (RN-03)", () => {
+    const desligado = new Map<string, VinculoVigencia[]>([
+      ["sopa", [comDias({ ...ESPECIAIS, ativo: false }, [3])]],
+      ["coca", [comDias({ ...ESPECIAIS, ativo: false }, [3])]],
+    ]);
+
+    // Quarta 21/10 — o dia do item bate, e não muda nada: desligado não abre,
+    // não fecha e não restringe; `ativos` o descarta antes.
+    expect(
+      contarProdutosEscondidos(
+        { ...ESPECIAIS, ativo: false },
+        [SOPA, COCA],
+        desligado,
+        SEMANA[3],
+        SP,
+      ),
+    ).toEqual({ doMenu: 1, sumidos: 1 });
+  });
+});
+
+describe("280/RN-06 — interseção vazia: divergência CONHECIDA e aceita", () => {
+  /** Cardápio {sáb,dom} com item {qua}: o item nunca fica comprável. */
+  const FIM_DE_SEMANA: CardapioVigencia = {
+    ...ESPECIAIS,
+    id: "fds",
+    nome: "Fim de semana",
+    dias_semana: [6, 0],
+  };
+  const impossivel = new Map<string, VinculoVigencia[]>([
+    ["sopa", [comDias(FIM_DE_SEMANA, [3])]],
+    ["coca", [comDias(FIM_DE_SEMANA, [3])]],
+  ]);
+
+  // ⚠️ NÃO "consertar" baixando isto para `sumidos: 1`. `voltaAAbrir` ignora
+  // `dias_semana` do ITEM DE PROPÓSITO (273): encodar o dia ali criaria a
+  // segunda casa da regra de dia. A consequência é que este item fica visível
+  // e marcado para sempre, sem nunca abrir — registrado na spec §Fora do
+  // Escopo e endereçado pelo AVISO do painel, que é a issue [276] e outra
+  // pergunta. Este teste trava a decisão, não o acerto.
+  it("cardápio {sáb,dom} + item {qua} ⇒ sumidos: 0, nos 7 dias", () => {
+    for (const agora of SEMANA) {
+      expect(
+        contarProdutosEscondidos(
+          FIM_DE_SEMANA,
+          [SOPA, COCA],
+          impossivel,
+          agora,
+          SP,
+        ),
+      ).toEqual({ doMenu: 1, sumidos: 0 });
+    }
+  });
+
+  it("e `diagnosticarSumico` também devolve null — as duas telas concordam", () => {
+    expect(
+      diagnosticarSumico(SOPA, [comDias(FIM_DE_SEMANA, [3])], SEMANA[0], SP),
+    ).toBeNull();
+  });
+});
