@@ -234,6 +234,10 @@ function makeMultiClient(respostasPorTabela: Record<string, TerminalMulti[]>) {
         chamada.ins.push([c, v]);
         return builder;
       };
+      // [270] `cardapioPertenceALoja` termina em `.maybeSingle()`; os
+      // terminadores continuam sendo o `then`, então estes são passthrough.
+      builder.maybeSingle = () => builder;
+      builder.limit = () => builder;
       builder.then = (resolve: (v: TerminalMulti) => unknown) => {
         const fila = respostasPorTabela[tabela] ?? [];
         const indice = contadores[tabela] ?? 0;
@@ -415,5 +419,108 @@ describe("247 — nenhum `as CardapioVigencia` no projeto (R3)", () => {
       { encoding: "utf8" },
     ).trim();
     expect(saida).toBe("");
+  });
+});
+
+// ═══════════════ [270] cardapioPertenceALoja — a prova de POSSE do cardápio ══
+//
+// Fase RED da issue 270. A brecha: `ON CONFLICT (cardapio_id, produto_id) DO
+// NOTHING` descarta a linha ANTES de a FK composta `(cardapio_id, loja_id)` ser
+// avaliada, então um cardápio de OUTRA loja cujos pares já existem lá faz o
+// upsert terminar sem erro — sucesso reportado por escrita que não aconteceu, e
+// (no admin) uma linha de `admin_acessos` apontando para entidade alheia.
+//
+// A camada que falta é esta leitura: UM id de cardápio, na loja-alvo, com
+// `.eq("loja_id")` EXPLÍCITO — o que a torna válida sob `service_role`
+// (BYPASSRLS), onde a RLS não vale. Não é o pre-check que a 251 proibiu: aquele
+// era da LISTA DE PRODUTOS, e a diferença entre pedido e gravado denunciaria
+// quais ids existem em outra loja. Aqui alheio e inexistente saem pela MESMA
+// resposta (`false`), então não há oráculo.
+//
+// Import DINÂMICO por caminho em variável: o símbolo nasce na fase GREEN. Um
+// `import` estático mataria o arquivo inteiro na coleta e quebraria
+// `npx tsc --noEmit` durante toda a fase RED.
+
+type CardapioPertenceALoja = (
+  client: Client,
+  lojaId: string,
+  cardapioId: string,
+) => Promise<boolean>;
+
+const MODULO_QUERIES = "./cardapios";
+
+async function pertence(): Promise<CardapioPertenceALoja> {
+  const mod = (await import(/* @vite-ignore */ MODULO_QUERIES)) as Record<string, unknown>;
+  const fn = mod.cardapioPertenceALoja;
+  if (typeof fn !== "function") {
+    throw new Error(
+      "[RED 270] `cardapioPertenceALoja` ainda não é exportada de " +
+        "`src/lib/supabase/queries/cardapios.ts` — é a fase GREEN da issue 270. " +
+        "Contrato: (client, lojaId, cardapioId) => Promise<boolean>, " +
+        '`select("id")` + `.eq("loja_id", lojaId)` + `.eq("id", cardapioId)` + `.maybeSingle()`.',
+    );
+  }
+  return fn as CardapioPertenceALoja;
+}
+
+describe("270 — cardapioPertenceALoja: forma da query", () => {
+  const LOJA = "loja-alvo-270";
+  const CARDAPIO = "cardapio-proprio-270";
+
+  it("lê `cardapios` com select estreito e escopo EXPLÍCITO por loja_id + id", async () => {
+    const fn = await pertence();
+    const { client, chamadas } = makeMultiClient({
+      cardapios: [{ data: { id: CARDAPIO }, error: null }],
+    });
+
+    await fn(client, LOJA, CARDAPIO);
+
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0].tabela).toBe("cardapios");
+    // Um booleano não precisa de 10 colunas: `select("id")`, nunca `select("*")`.
+    expect(chamadas[0].colunas).toBe("id");
+    expect(chamadas[0].eqs).toContainEqual(["loja_id", LOJA]);
+    expect(chamadas[0].eqs).toContainEqual(["id", CARDAPIO]);
+  });
+
+  it("cardápio da PRÓPRIA loja ⇒ true", async () => {
+    const fn = await pertence();
+    const { client } = makeMultiClient({
+      cardapios: [{ data: { id: CARDAPIO }, error: null }],
+    });
+
+    await expect(fn(client, LOJA, CARDAPIO)).resolves.toBe(true);
+  });
+
+  it("cardápio de OUTRA loja e cardápio INEXISTENTE devolvem o MESMO `false` — sem oráculo", async () => {
+    const fn = await pertence();
+    // O `.eq("loja_id", LOJA)` faz o id alheio simplesmente NÃO voltar; é
+    // exatamente o que acontece com um id que não existe em lugar nenhum.
+    const alheio = makeMultiClient({ cardapios: [{ data: null, error: null }] });
+    const inexistente = makeMultiClient({ cardapios: [{ data: null, error: null }] });
+
+    const rAlheio = await fn(alheio.client, LOJA, "cardapio-da-loja-b");
+    const rInexistente = await fn(inexistente.client, LOJA, "cardapio-que-nao-existe");
+
+    expect(rAlheio).toBe(false);
+    expect(rInexistente).toBe(false);
+    expect(rAlheio).toEqual(rInexistente);
+    // E a FORMA da ida ao banco é idêntica nos dois: nem o número de round
+    // trips diferencia alheio de inexistente.
+    expect(alheio.chamadas).toHaveLength(inexistente.chamadas.length);
+  });
+
+  it("erro do banco é PROPAGADO (§14) — nunca vira `false` silencioso nem `true`", async () => {
+    const fn = await pertence();
+    const { client } = makeMultiClient({
+      cardapios: [{ data: null, error: { code: "57014", message: "boom-posse" } }],
+    });
+
+    // Propagar é o que deixa a Server Action cair no `catch` e responder a
+    // mensagem genérica (fail-closed). Devolver `false` seria a mesma recusa,
+    // mas apagaria a causa do log do servidor.
+    await expect(fn(client, LOJA, CARDAPIO)).rejects.toMatchObject({
+      message: "boom-posse",
+    });
   });
 });

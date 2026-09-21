@@ -63,3 +63,16 @@ para vínculo inexistente ou alheio.
       (c) `dias_semana: []` chega ao banco como `NULL`; (d) admin não chama `registrarAcessoAdmin` na recusa
 - [ ] `npx vitest run src/lib/actions/cardapio.test.ts src/app/admin/assinantes/actions/admin-cardapios.paridade.test.ts` verde
 - [ ] `npx tsc --noEmit` = 0 · `npm run lint` = 0 · **`npm run build` verde** (const exportada em `'use server'` só quebra aqui)
+
+## Absorvido da auditoria da 270 (BAIXA, pré-existente da 269)
+
+`atualizarCardapioAdmin`, `ligarDesligarCardapioAdmin`, `removerCardapioAdmin` e
+`converterExclusivosParaMenuAdmin` (`src/app/admin/assinantes/actions/admin-cardapios.ts`) descartam
+o `count` de `escopo.atualizar`/`escopo.remover`: cardápio alheio ou inexistente ⇒ 0 linhas ⇒
+`{ ok: true }` ⇒ `registrarAcessoAdmin` grava `entidade_id` de outro tenant. Nenhuma escrita cruza
+lojas. Como esta issue institui "UPDATE/DELETE provam posse por `count: "exact"`" para
+`definirDiasDoVinculo`, aplique a mesma regra nas quatro actions acima (uma frase só para alheio e
+inexistente, `MSG_SALVAR`/`MSG_REMOVER`, antes do log); em `converter`, o gate
+`cardapioPertenceALoja` da 270 antes de ler órfãos. Paridade com o lojista (`cardapio.ts`, sucesso
+mudo sem log): acompanhar. Critério: em `admin-cardapios.paridade.test.ts`, `count: 0` ⇒ `{ ok: false }`
+e `logouAcesso() === false` nas quatro.

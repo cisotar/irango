@@ -64,6 +64,7 @@ import {
 import {
   buscarProdutosQueFicariamOrfaos,
   buscarLinhasDaPrevia,
+  cardapioPertenceALoja,
 } from "@/lib/supabase/queries/cardapios";
 import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
 import {
@@ -339,10 +340,17 @@ export async function converterExclusivosParaMenuAdmin(
 
 /**
  * Vincula uma SELEÇÃO EXPLÍCITA de produtos ao cardápio (RN-09), em UMA
- * instrução: id alheio ou inexistente derruba o lote inteiro pelas FKs
+ * instrução: PRODUTO alheio ou inexistente derruba o lote inteiro pelas FKs
  * compostas, e NENHUMA linha é gravada — nem as legítimas. Gravar as boas e
  * reclamar do resto denunciaria, pela diferença, quais ids existem em outra
  * loja.
+ *
+ * O `cardapio_id` NÃO é coberto por essa FK em todo caso (270): o
+ * `ON CONFLICT (cardapio_id, produto_id) DO NOTHING` descarta a linha cujo par
+ * já existe na loja dona do cardápio ANTES de a FK `(cardapio_id, loja_id)` ser
+ * avaliada — aqui, onde `service_role` tem BYPASSRLS, isso devolveria
+ * `{ ok: true }` e gravaria `admin_acessos` apontando para entidade de OUTRO
+ * tenant. A posse é provada antes da escrita E antes do log.
  *
  * `escopo.inserirVarios` injeta `loja_id` por último em CADA linha (D5).
  * RN-10: a idempotência vem do `on conflict do nothing`.
@@ -361,6 +369,12 @@ export async function aplicarCardapioEmProdutosAdmin(
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
+    // 270: posse do cardápio na LOJA-ALVO antes de qualquer escrita — inclusive
+    // antes de `registrarAcessoAdmin`. Alheio e inexistente: a mesma frase.
+    if (!(await cardapioPertenceALoja(svc, loja.lojaId, cardapio_id))) {
+      return { ok: false, erro: MSG_GENERICA_LOTE };
+    }
+
     const { error } = await escopo.inserirVarios(
       "cardapio_produtos",
       produto_ids.map((produto_id) => ({ cardapio_id, produto_id })),
@@ -438,6 +452,10 @@ export async function aplicarCardapioEmCategoriaAdmin(
  * Desfaz o vínculo. DELETE escopado por `loja_id` da URL + `cardapio_id` +
  * a lista de produtos: um `cardapio_id` de outra loja no payload não desvia o
  * escopo, só não casa linha nenhuma. Mesmo zod da gravação.
+ *
+ * 270: "não casa linha nenhuma" era justamente o problema — apagar zero e
+ * devolver `{ ok: true }` grava `cardapio.tirar_produtos` com `entidade_id` de
+ * outro tenant. A posse vem antes do DELETE e antes do log.
  */
 export async function tirarDeCardapioAdmin(
   lojaId: string,
@@ -453,6 +471,11 @@ export async function tirarDeCardapioAdmin(
   const { svc } = await prepararContextoAdmin(loja.lojaId);
 
   try {
+    // 270: a mesma prova de posse da gravação, com a mesma frase.
+    if (!(await cardapioPertenceALoja(svc, loja.lojaId, cardapio_id))) {
+      return { ok: false, erro: MSG_GENERICA_LOTE };
+    }
+
     const { error } = await svc
       .from("cardapio_produtos")
       .delete()

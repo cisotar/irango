@@ -229,6 +229,20 @@ beforeEach(() => {
       error: null,
       count: 1,
     },
+    // [270] A prova de POSSE (`cardapioPertenceALoja`) é o ÚNICO `select("id")`
+    // em `cardapios`, e ela só responde pela LOJA-ALVO: é o que o
+    // `.eq("loja_id", …)` EXPLÍCITO produz sob service_role, onde a RLS não
+    // vale. Modelado aqui, e não caso a caso, porque `respostaDe` devolve
+    // `{ data: null }` para tabela não configurada — e `data: null` no
+    // `maybeSingle` significa POSSE NEGADA, o que afogaria os caminhos felizes
+    // de lote em falha espúria. Qualquer outro `select` em `cardapios`
+    // (`ordem`, a leitura da vigência) cai no default antigo, intocado.
+    cardapios: (op) =>
+      op.colunas === "id" &&
+      op.filtros.some(([c, v]) => c === "loja_id" && v === LOJA_ALVO) &&
+      op.filtros.some(([c, v]) => c === "id" && v === CARDAPIO_ID)
+        ? { data: { id: CARDAPIO_ID }, error: null, count: 1 }
+        : { data: null, error: null, count: 1 },
   };
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -690,17 +704,27 @@ describe("269 — `preverLoteAdmin` não é oráculo de existência", () => {
     );
   });
 
-  it("cardápio de outra loja no payload de lote não desvia o DELETE do escopo da URL", async () => {
+  it("[270] cardápio de outra loja no payload de lote é RECUSADO — e nada sai do escopo da URL", async () => {
+    // Reescrito na 270. A intenção original continua inteira (o caminho admin
+    // não pode ser desviado pelo `cardapio_id` do payload), mas a asserção
+    // "o DELETE acontece escopado" descrevia o defeito: com cardápio alheio o
+    // DELETE apaga 0 linhas, a action devolve `{ ok: true }` e o log de
+    // auditoria grava `entidade_id` de outra loja. O desfecho correto é a
+    // recusa ANTES da escrita.
     const { tirarDeCardapioAdmin } = await acoes();
-    await tirarDeCardapioAdmin(LOJA_ALVO, {
+    const r = await tirarDeCardapioAdmin(LOJA_ALVO, {
       cardapio_id: CARDAPIO_OUTRO,
       produto_ids: [PRODUTO_1],
     });
-    const del = opEscrita("cardapio_produtos");
-    expect(del?.deleted).toBe(true);
-    expect(del?.filtros).toEqual(
-      expect.arrayContaining([["loja_id", LOJA_ALVO]]),
-    );
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect(opEscrita("cardapio_produtos")).toBeUndefined();
+    // E a única ida ao banco que menciona o cardápio alheio é a leitura de
+    // posse, escopada pela LOJA-ALVO — nunca pela loja dona dele.
+    expect(
+      ops.every((o) =>
+        o.filtros.every(([c, v]) => c !== "loja_id" || v === LOJA_ALVO),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -745,5 +769,135 @@ describe("269 — D2: as frases têm UMA fonte; o admin importa, não copia", ()
     const admin = readFileSync(ADMIN, "utf8");
     expect(admin).toContain("@/lib/validacoes/cardapio");
     expect(admin).not.toContain("z.object(");
+  });
+});
+
+// ═══ 8 · [270] posse do cardápio ANTES da escrita E ANTES do log de auditoria ══
+//
+// Fase RED da issue 270, o caso com o efeito (b): o hub admin escreve com
+// `service_role` (BYPASSRLS), então nem a RLS nem a FK composta seguram este
+// caminho quando o par `(cardapio_id, produto_id)` JÁ EXISTE na loja dona do
+// cardápio — o `ON CONFLICT (cardapio_id, produto_id) DO NOTHING` descarta a
+// linha ANTES de a FK `(cardapio_id, loja_id)` ser avaliada
+// (`tests/migrations/cardapio_produtos_on_conflict_pula_fk.test.ts` prova a
+// semântica em SQL real). Resultado hoje: `{ ok: true }` por uma escrita que
+// não aconteceu, e uma linha em `admin_acessos` com `loja_id = <A>` e
+// `entidade_id = <cardápio da B>`.
+//
+// A frase da recusa é a MESMA de id inexistente, byte a byte (`seguranca.md`
+// §14) — comparada aqui com a constante escrita à mão no topo do arquivo, não
+// importada, pelo mesmo motivo das outras seis.
+
+describe("270 — cardápio alheio ou inexistente não escreve e não vira log admin", () => {
+  const CARDAPIO_INEXISTENTE = "5a5a5a5a-5a5a-5a5a-5a5a-5a5a5a5a5a5a";
+
+  for (const [rotulo, idHostil] of [
+    ["ALHEIO (cardápio da loja B, par já existente lá)", CARDAPIO_OUTRO],
+    ["INEXISTENTE", CARDAPIO_INEXISTENTE],
+  ] as const) {
+    it(`aplicarCardapioEmProdutosAdmin com cardápio ${rotulo} ⇒ recusa, zero escrita, zero log`, async () => {
+      const { revalidatePath } = await import("next/cache");
+      vi.mocked(revalidatePath).mockClear();
+
+      const { aplicarCardapioEmProdutosAdmin } = await acoes();
+      const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+        cardapio_id: idHostil,
+        produto_ids: [PRODUTO_1, PRODUTO_2],
+      });
+      await flush();
+
+      expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+      expect(opEscrita("cardapio_produtos")).toBeUndefined();
+      // Efeito (b): nenhuma entrada de auditoria apontando para entidade alheia.
+      expect(logouAcesso(), "registrarAcessoAdmin foi chamado mesmo sem posse").toBe(
+        false,
+      );
+      // NENHUMA escrita, em tabela nenhuma — nem o log, nem a linha do lote.
+      expect(
+        ops.some((o) => o.insert || o.upsert || o.update || o.deleted),
+      ).toBe(false);
+      expect(revalidatePath).not.toHaveBeenCalled();
+      // §14: o id alheio nunca volta na resposta.
+      expect(JSON.stringify(r)).not.toContain(idHostil);
+    });
+
+    it(`tirarDeCardapioAdmin com cardápio ${rotulo} ⇒ recusa, nenhum DELETE, zero log`, async () => {
+      const { tirarDeCardapioAdmin } = await acoes();
+      const r = await tirarDeCardapioAdmin(LOJA_ALVO, {
+        cardapio_id: idHostil,
+        produto_ids: [PRODUTO_1],
+      });
+      await flush();
+
+      expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+      expect(opEscrita("cardapio_produtos")).toBeUndefined();
+      expect(logouAcesso()).toBe(false);
+      expect(
+        ops.some((o) => o.insert || o.upsert || o.update || o.deleted),
+      ).toBe(false);
+    });
+  }
+
+  it("alheio e inexistente são byte a byte a MESMA resposta, com o MESMO número de idas ao banco", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+
+    const alheio = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_OUTRO,
+      produto_ids: [PRODUTO_1],
+    });
+    await flush();
+    const idasAlheio = ops.length;
+
+    ops = [];
+    const inexistente = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_INEXISTENTE,
+      produto_ids: [PRODUTO_1],
+    });
+    await flush();
+
+    expect(JSON.stringify(alheio)).toBe(JSON.stringify(inexistente));
+    // Nem um round trip a mais denuncia que o cardápio alheio EXISTE.
+    expect(idasAlheio).toBe(ops.length);
+  });
+
+  it("a posse é lida da LOJA-ALVO, por `id`, ANTES de qualquer escrita", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1],
+    });
+    expect(r).toEqual({ ok: true });
+
+    const posse = ops.find((o) => o.tabela === "cardapios" && o.colunas === "id");
+    expect(posse, "nenhuma leitura de posse foi emitida").toBeDefined();
+    expect(posse!.filtros).toEqual(
+      expect.arrayContaining([
+        ["loja_id", LOJA_ALVO],
+        ["id", CARDAPIO_ID],
+      ]),
+    );
+    const escrita = opEscrita("cardapio_produtos");
+    expect(escrita).toBeDefined();
+    expect(ops.indexOf(posse!)).toBeLessThan(ops.indexOf(escrita!));
+  });
+
+  it("falha de banco NA LEITURA de posse é fail-closed: recusa genérica, sem escrita e sem log", async () => {
+    respostaPorTabela.cardapios = (op) =>
+      op.colunas === "id"
+        ? { data: null, error: { code: "57014", message: "detalhe interno" }, count: 0 }
+        : { data: null, error: null, count: 1 };
+
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1],
+    });
+    await flush();
+
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect(opEscrita("cardapio_produtos")).toBeUndefined();
+    expect(logouAcesso()).toBe(false);
+    expect(JSON.stringify(r)).not.toContain("57014");
+    expect(JSON.stringify(r)).not.toContain("detalhe interno");
   });
 });

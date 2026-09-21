@@ -162,6 +162,13 @@ beforeEach(() => {
   respostaPorTabela = {
     cardapio_produtos: { data: null, error: null },
     produtos: { data: [], error: null },
+    // [270] A prova de POSSE do cardápio (`cardapioPertenceALoja`) lê UMA linha
+    // de `cardapios` escopada por `loja_id` + `id`. O default é a loja DONA do
+    // cardápio: sem ele, todo caminho feliz de lote seria recusado pelo mock, e
+    // o RED dos casos de posse viria afogado em falha espúria. Os casos de
+    // cardápio ALHEIO/INEXISTENTE sobrescrevem com `data: null`, que é o que o
+    // `.eq("loja_id", <própria>)` produz nos dois.
+    cardapios: { data: { id: CARDAPIO }, error: null },
   };
   buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, slug: LOJA_SLUG });
 });
@@ -196,11 +203,29 @@ describe("aplicarCardapioEmProdutos — lista de ids do cliente (RN-09)", () => 
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
-  it("[RN-09] NENHUM pre-check de posse em JS antes da escrita — seria TOCTOU", async () => {
+  it("[RN-09 · 270] a LISTA DE PRODUTOS nunca é lida antes da escrita; a posse é UMA leitura de `cardapios` por id", async () => {
+    // O que a 251 proibiu foi o pre-check da LISTA: a diferença entre o que
+    // foi pedido e o que foi gravado denunciaria quais ids existem em outra
+    // loja (oráculo, §14). Ler UM id de cardápio da PRÓPRIA loja não produz
+    // diferença observável — alheio e inexistente saem pela mesma frase — e é
+    // a única camada que pega a brecha da 270 (`ON CONFLICT DO NOTHING`
+    // descarta a linha ANTES de a FK composta ser avaliada).
     await aplicarCardapioEmProdutos(payload());
-    // Nada de `select id from produtos where id in (...)` antes do insert.
+
+    // Nada de `select id from produtos where id in (...)` antes do upsert.
     expect(leituras().some((o) => o.tabela === "produtos")).toBe(false);
+    // Nem de "quem já está" — RN-10 é do `ignoreDuplicates`, não de um SELECT.
     expect(leituras().some((o) => o.tabela === "cardapio_produtos")).toBe(false);
+
+    const posse = leituras().filter((o) => o.tabela === "cardapios");
+    expect(posse, "a posse do cardápio é UMA leitura, não N").toHaveLength(1);
+    expect(posse[0].colunas).toBe("id");
+    expect(posse[0].filtros).toContainEqual(["loja_id", LOJA_ID]);
+    expect(posse[0].filtros).toContainEqual(["id", CARDAPIO]);
+
+    // E continua havendo UMA única instrução de escrita.
+    expect(escritas()).toHaveLength(1);
+    expect(ops.indexOf(posse[0])).toBeLessThan(ops.indexOf(escritas()[0]));
   });
 
   it("[RN-09 · cenário 5] `pB` derruba a operação inteira: UMA escrita tentada, mensagem genérica, 23503 nunca vira texto", async () => {
@@ -518,5 +543,114 @@ describe("preverLoteAction — a prévia vem do servidor e só mostra o que é s
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).not.toContain("detalhe interno");
     expect(JSON.stringify(r)).not.toContain("42P01");
+  });
+});
+
+// ═════════════ [270] posse do cardápio provada ANTES da escrita (lojista) ════
+//
+// Fase RED da issue 270. A brecha que o `ON CONFLICT (cardapio_id, produto_id)
+// DO NOTHING` abre: quando o par já existe na loja DONA do cardápio, a linha é
+// descartada ANTES de a FK composta `(cardapio_id, loja_id)` ser avaliada — o
+// upsert termina sem erro e a action devolve `{ ok: true }` por uma escrita que
+// não aconteceu. `tests/migrations/cardapio_produtos_on_conflict_pula_fk.test.ts`
+// já prova essa semântica em SQL real; o fix é a camada de aplicação acima dela.
+//
+// O mesmo vale para `tirarDeCardapio`: o DELETE escopado por `loja_id` +
+// `cardapio_id` apaga 0 linhas com cardápio alheio e devolve `{ ok: true }`.
+//
+// Nenhuma linha cruza lojas em nenhum dos dois — o que se conserta é o SUCESSO
+// MENTIROSO, e no admin (paridade) a entrada de auditoria com entidade alheia.
+
+describe("[270] cardápio alheio/inexistente é recusado antes da escrita", () => {
+  /** O que o `.eq("loja_id", <própria>)` devolve para alheio E para inexistente. */
+  function semPosse() {
+    respostaPorTabela.cardapios = { data: null, error: null };
+  }
+
+  const CARDAPIO_INEXISTENTE = "cfcfcfcf-cfcf-4cfc-8cfc-cfcfcfcfcfcf";
+
+  it("aplicarCardapioEmProdutos: cardápio de outra loja ⇒ genérica, ZERO escrita, ZERO revalidate", async () => {
+    semPosse();
+    const r = await semRuido(() =>
+      aplicarCardapioEmProdutos({ cardapio_id: CARDAPIO_ALHEIO, produto_ids: [P1, P2] }),
+    );
+
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA });
+    expect(escritas()).toHaveLength(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+    // §14: o id alheio nunca volta na resposta.
+    expect(JSON.stringify(r)).not.toContain(CARDAPIO_ALHEIO);
+  });
+
+  it("aplicarCardapioEmProdutos: alheio e inexistente são byte a byte a MESMA resposta", async () => {
+    semPosse();
+    const alheio = await semRuido(() =>
+      aplicarCardapioEmProdutos({ cardapio_id: CARDAPIO_ALHEIO, produto_ids: [P1] }),
+    );
+    const opsAlheio = ops.length;
+    ops = [];
+    const inexistente = await semRuido(() =>
+      aplicarCardapioEmProdutos({ cardapio_id: CARDAPIO_INEXISTENTE, produto_ids: [P1] }),
+    );
+
+    expect(JSON.stringify(alheio)).toBe(JSON.stringify(inexistente));
+    // Nem o número de idas ao banco diferencia os dois casos.
+    expect(opsAlheio).toBe(ops.length);
+  });
+
+  it("tirarDeCardapio: cardápio de outra loja ⇒ genérica, nenhum DELETE emitido", async () => {
+    semPosse();
+    const r = await semRuido(() =>
+      tirarDeCardapio({ cardapio_id: CARDAPIO_ALHEIO, produto_ids: [P1, P2] }),
+    );
+
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA });
+    expect(escritas()).toHaveLength(0);
+    expect(ops.some((o) => o.deleted)).toBe(false);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("tirarDeCardapio: alheio e inexistente são byte a byte a MESMA resposta", async () => {
+    semPosse();
+    const alheio = await semRuido(() =>
+      tirarDeCardapio({ cardapio_id: CARDAPIO_ALHEIO, produto_ids: [P1] }),
+    );
+    const inexistente = await semRuido(() =>
+      tirarDeCardapio({ cardapio_id: CARDAPIO_INEXISTENTE, produto_ids: [P1] }),
+    );
+    expect(JSON.stringify(alheio)).toBe(JSON.stringify(inexistente));
+  });
+
+  it("tirarDeCardapio lê a posse com o MESMO escopo explícito do DELETE", async () => {
+    await tirarDeCardapio({ cardapio_id: CARDAPIO, produto_ids: [P1] });
+    const posse = leituras().filter((o) => o.tabela === "cardapios");
+    expect(posse).toHaveLength(1);
+    expect(posse[0].filtros).toContainEqual(["loja_id", LOJA_ID]);
+    expect(posse[0].filtros).toContainEqual(["id", CARDAPIO]);
+  });
+
+  it("falha de banco NA LEITURA de posse é FAIL-CLOSED: recusa genérica e nenhuma escrita", async () => {
+    respostaPorTabela.cardapios = {
+      data: null,
+      error: { code: "57014", message: "statement timeout interno" },
+    };
+    const r = await semRuido(() =>
+      aplicarCardapioEmProdutos({ cardapio_id: CARDAPIO, produto_ids: [P1] }),
+    );
+
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA });
+    expect(escritas()).toHaveLength(0);
+    expect(JSON.stringify(r)).not.toContain("57014");
+    expect(JSON.stringify(r)).not.toContain("statement timeout");
+  });
+
+  it("a posse é consultada DEPOIS do zod: payload inválido segue com ZERO I/O", async () => {
+    semPosse();
+    const r = await aplicarCardapioEmProdutos({
+      cardapio_id: CARDAPIO_ALHEIO,
+      produto_ids: [],
+    });
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA });
+    expect(ops).toHaveLength(0);
   });
 });

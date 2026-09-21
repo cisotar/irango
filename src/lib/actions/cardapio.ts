@@ -12,12 +12,17 @@
  *    payload não tem forma);
  *  - `loja_id` SEMPRE de `buscarLojaDoDono` (auth.uid()), NUNCA do payload;
  *  - client AUTENTICADO — `createServiceClient` (BYPASSRLS) não entra aqui;
- *  - **nenhum pre-check de posse em JS**: um `select` antes do `insert` seria
- *    TOCTOU e, pior, gravaria os ids válidos do lote, denunciando pela
- *    diferença entre pedido e resultado QUAIS ids existem em outra loja. A
- *    posse é provada DENTRO da transação: as FKs compostas de 20260920129000
+ *  - **nenhum pre-check da LISTA DE PRODUTOS em JS**: um `select` dos ids antes
+ *    do `insert` gravaria os válidos do lote e denunciaria, pela diferença
+ *    entre pedido e resultado, QUAIS ids existem em outra loja. A posse deles é
+ *    provada DENTRO da transação: as FKs compostas de 20260920129000
  *    (`cardapio_produtos_produto_fk`, `cardapio_produtos_cardapio_fk`) derrubam
- *    a instrução inteira — tudo ou nada;
+ *    a instrução inteira — tudo ou nada — QUANDO a linha chega ao índice;
+ *  - **a posse do `cardapio_id`, porém, é provada ANTES** (270), por
+ *    `cardapioPertenceALoja`: com `ON CONFLICT DO NOTHING` a linha cujo par já
+ *    existe é descartada antes de a FK `(cardapio_id, loja_id)` ser avaliada, e
+ *    o lote alheio terminaria sem erro. Um id, a PRÓPRIA loja, `false` idêntico
+ *    para alheio e inexistente — não é o pre-check acima e não é oráculo;
  *  - UMA mensagem genérica para id alheio, id inexistente, cardápio alheio e
  *    falha de banco. `23503`, nome de constraint e fragmento da RPC vão para o
  *    log do servidor, nunca para a tela (`seguranca.md` §14).
@@ -52,6 +57,7 @@ import {
 import {
   buscarProdutosQueFicariamOrfaos,
   buscarLinhasDaPrevia,
+  cardapioPertenceALoja,
 } from "@/lib/supabase/queries/cardapios";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
@@ -81,10 +87,16 @@ function revalidarCaminhosDoCardapio(slug: string): void {
 /**
  * Vincula uma SELEÇÃO EXPLÍCITA de produtos a um cardápio (RN-09).
  *
- * Uma única instrução com todos os ids: se qualquer um deles for de outra loja
- * ou inexistente, a FK composta derruba o lote inteiro e NENHUMA linha é
+ * Uma única instrução com todos os PRODUTOS: se qualquer um deles for de outra
+ * loja ou inexistente, a FK composta derruba o lote inteiro e NENHUMA linha é
  * gravada — nem para os ids legítimos, nem na loja alheia. Um upsert por id
  * gravaria os bons e confirmaria, pela diferença, qual é o alheio.
+ *
+ * O `cardapio_id`, esse, é provado ANTES (270): a FK `(cardapio_id, loja_id)`
+ * só é avaliada quando a linha chega ao índice, e `ON CONFLICT DO NOTHING`
+ * descarta antes disso a linha cujo par já existe na loja DONA do cardápio —
+ * o lote alheio terminaria sem erro e devolveria `{ ok: true }` por uma escrita
+ * que não aconteceu.
  *
  * RN-10: idempotência vem do `on conflict do nothing` (`ignoreDuplicates`),
  * não de um SELECT prévio de "quem já está".
@@ -100,6 +112,12 @@ export async function aplicarCardapioEmProdutos(
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: MSG_GENERICA_LOTE };
+
+    // 270: posse do cardápio ANTES da escrita. Alheio e inexistente saem pela
+    // MESMA frase — a leitura não vira oráculo.
+    if (!(await cardapioPertenceALoja(supabase, loja.id, cardapio_id))) {
+      return { ok: false, erro: MSG_GENERICA_LOTE };
+    }
 
     const linhas = produto_ids.map((produto_id) => ({
       loja_id: loja.id,
@@ -169,6 +187,10 @@ export async function aplicarCardapioEmCategoria(
  * Desfaz o vínculo (D2). O DELETE é escopado pela loja DERIVADA além da RLS:
  * o mesmo escopo explícito que `categoriaPertenceALoja` aplica no CRUD. Usa o
  * MESMO zod da gravação — teto, unicidade e forma não têm versão frouxa aqui.
+ *
+ * 270: o escopo impede que a escrita SAIA da loja, mas com cardápio alheio ele
+ * apenas não casa linha nenhuma — o DELETE apaga zero e devolve `{ ok: true }`.
+ * A posse é provada antes, com a mesma frase de id inexistente.
  */
 export async function tirarDeCardapio(payload: unknown): Promise<Resultado> {
   const parsed = schemaLoteDeProdutos.safeParse(payload);
@@ -179,6 +201,11 @@ export async function tirarDeCardapio(payload: unknown): Promise<Resultado> {
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: MSG_GENERICA_LOTE };
+
+    // 270: mesma prova de posse do caminho de gravação, mesma frase.
+    if (!(await cardapioPertenceALoja(supabase, loja.id, cardapio_id))) {
+      return { ok: false, erro: MSG_GENERICA_LOTE };
+    }
 
     const { error } = await supabase
       .from("cardapio_produtos")

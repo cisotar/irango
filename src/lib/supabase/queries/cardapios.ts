@@ -360,3 +360,50 @@ export async function buscarLinhasDaPrevia(
   if (error) throw error;
   return data ?? [];
 }
+
+/**
+ * A POSSE do cardápio pela loja-alvo (270): a linha existe COM este
+ * `loja_id`? Uma coluna, uma linha, um booleano.
+ *
+ * Por que a camada existe: `ON CONFLICT (cardapio_id, produto_id) DO NOTHING`
+ * descarta a linha ANTES de a FK composta `(cardapio_id, loja_id)` ser
+ * avaliada, então um cardápio de OUTRA loja cujo par já existe lá faz o upsert
+ * terminar sem erro — sucesso reportado por escrita que não aconteceu
+ * (`tests/migrations/cardapio_produtos_on_conflict_pula_fk.test.ts` prova a
+ * semântica em SQL real). O mesmo vale para o DELETE escopado, que apaga zero
+ * linhas e devolve sucesso.
+ *
+ * Por que NÃO é o pre-check que a 251 proibiu: aquele era da LISTA DE PRODUTOS,
+ * e a diferença entre o que foi pedido e o que foi gravado denunciaria quais
+ * ids existem em outra loja. Aqui se lê UM id de cardápio na PRÓPRIA loja-alvo:
+ * alheio e inexistente produzem o MESMO `false`, a mesma ida ao banco e a mesma
+ * frase na tela — nenhum oráculo (`seguranca.md` §14).
+ *
+ * Por que não reusar `buscarCardapioPorId`: ela é fail-closed por `modo`
+ * (`paraCardapioVigencia` → `null`), então um cardápio PRÓPRIO com `modo` fora
+ * do domínio receberia a recusa de "alheio"; e faz um select largo para
+ * responder um booleano.
+ *
+ * Não é TOCTOU: `cardapios.loja_id` não muda. A janela só poderia transformar
+ * um cardápio próprio e existente em inexistente — caso em que a FK composta
+ * derruba a escrita de qualquer forma.
+ *
+ * `.eq("loja_id", lojaId)` EXPLÍCITO: é o que torna a prova válida sob
+ * `service_role` (BYPASSRLS), onde a RLS não alcança o hub admin. Propaga
+ * `error` (§14) — devolver `false` daria a mesma recusa, mas apagaria a causa
+ * do log do servidor.
+ */
+export async function cardapioPertenceALoja(
+  client: Client,
+  lojaId: string,
+  cardapioId: string,
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("cardapios")
+    .select("id")
+    .eq("loja_id", lojaId)
+    .eq("id", cardapioId)
+    .maybeSingle();
+  if (error) throw error;
+  return data != null;
+}
