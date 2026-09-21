@@ -20,9 +20,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { BadgeEstadoSistema } from "@/components/vitrine/BadgeStatus";
 import {
+  fraseArquivar,
+  fraseCascataPermanente,
   frasesDoImpacto,
+  rotuloArquivar,
+  rotuloConfirmarCascata,
   rotuloConverter,
+  rotuloRemoverProdutos,
 } from "@/components/painel/frasesCardapio";
+import type { ModoRemocaoExclusivos } from "@/lib/actions/cardapio-contrato";
 import {
   FRASE_CONFIRMAR_DEVOLUCAO,
   avisoCardapioEscondendo,
@@ -65,8 +71,16 @@ export type AcoesCardapios = {
     id: string,
     ativo: boolean,
   ) => Promise<{ ok: true } | { ok: false; erro: string }>;
+  /**
+   * [285] O modo é OPCIONAL: ausente ⇒ `"manter"` na action (RN-10), o
+   * comportamento de hoje byte a byte. Só o gesto explícito do lojista no
+   * bloco de recusa manda `"arquivar"` ou `"cascata"` — o cliente envia o
+   * MODO e nada mais: a lista de produtos afetados é recalculada no servidor
+   * (RN-02), nunca sobe daqui.
+   */
   remover: (
     id: string,
+    modo?: ModoRemocaoExclusivos,
   ) => Promise<{ ok: true } | { ok: false; erro: string; exclusivos: number }>;
   converter: (
     cardapioId: string,
@@ -87,7 +101,19 @@ type Confirmacao =
   | { tipo: "remover"; linha: LinhaCardapio }
   | { tipo: "devolver"; linha: LinhaCardapio };
 
-type Recusa = { mensagem: string; exclusivos: number };
+/**
+ * [285] As duas etapas do bloco de recusa. `"escolha"` oferece as três saídas
+ * (converter, arquivar, remover produtos); `"cascata"` é a SEGUNDA
+ * confirmação, que só o botão destrutivo abre.
+ *
+ * Mora no estado do PAI (e não dentro do bloco) por dois motivos: fechar o
+ * diálogo zera a etapa junto com a recusa — ninguém reabre já armado no gesto
+ * irreversível — e o bloco fica puro, afirmável por `renderToStaticMarkup`
+ * sem jsdom, que é a única forma de travar este markup neste projeto.
+ */
+export type EtapaRecusa = "escolha" | "cascata";
+
+type Recusa = { mensagem: string; exclusivos: number; etapa: EtapaRecusa };
 
 /**
  * [256] A lista de `/painel/cardapios` — casca fina sobre `Card`, `Button`,
@@ -149,26 +175,41 @@ export function CardapiosClient({
     }
   }
 
-  async function confirmarRemover(linha: LinhaCardapio): Promise<void> {
+  /**
+   * [285] O único caminho de remoção — os três modos passam por aqui. O que
+   * muda entre eles é só o literal do modo e o toast de sucesso; a recusa,
+   * o `refresh` e o `pendente` são os mesmos.
+   */
+  async function remover(
+    linha: LinhaCardapio,
+    modo: ModoRemocaoExclusivos,
+    sucesso: string,
+  ): Promise<void> {
     setPendente(true);
     try {
-      const resultado = await acoes.remover(linha.id);
+      const resultado = await acoes.remover(linha.id, modo);
       if (!resultado.ok) {
-        // A recusa de RN-14 aparece NO MESMO diálogo, com a saída a um clique
-        // logo abaixo — nunca como toast depois do clique, que deixaria o
-        // lojista sem saber o que fazer a seguir.
+        // A recusa de RN-14 aparece NO MESMO diálogo, com as saídas a um
+        // clique logo abaixo — nunca como toast depois do clique, que
+        // deixaria o lojista sem saber o que fazer a seguir.
         setRecusa({
           mensagem: resultado.erro,
           exclusivos: resultado.exclusivos,
+          etapa: "escolha",
         });
         return;
       }
-      toast.success("Cardápio removido.");
+      toast.success(sucesso);
       fechar();
       router.refresh();
     } finally {
       setPendente(false);
     }
+  }
+
+  async function confirmarRemover(linha: LinhaCardapio): Promise<void> {
+    // RN-10: o gesto de sempre continua sendo `"manter"`.
+    await remover(linha, "manter", "Cardápio removido.");
   }
 
   async function devolverAoMenu(linha: LinhaCardapio): Promise<void> {
@@ -195,7 +236,7 @@ export function CardapiosClient({
     try {
       const resultado = await acoes.converter(linha.id);
       if (!resultado.ok) {
-        setRecusa({ mensagem: resultado.erro, exclusivos: 0 });
+        setRecusa({ mensagem: resultado.erro, exclusivos: 0, etapa: "escolha" });
         return;
       }
       toast.success("Produtos convertidos para o menu.");
@@ -348,23 +389,33 @@ export function CardapiosClient({
               </ul>
 
               {recusa !== null ? (
-                <div
-                  role="alert"
-                  className="flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-100 p-3 text-sm text-amber-900"
-                >
-                  <p>{recusa.mensagem}</p>
-                  {recusa.exclusivos > 0 ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={ALVO}
-                      disabled={pendente}
-                      onClick={() => void converter(confirmacao.linha)}
-                    >
-                      {rotuloConverter(recusa.exclusivos)}
-                    </Button>
-                  ) : null}
-                </div>
+                <BlocoRecusa
+                  mensagem={recusa.mensagem}
+                  exclusivos={recusa.exclusivos}
+                  etapa={recusa.etapa}
+                  pendente={pendente}
+                  aoConverter={() => void converter(confirmacao.linha)}
+                  aoArquivar={() =>
+                    void remover(
+                      confirmacao.linha,
+                      "arquivar",
+                      "Produtos arquivados e cardápio removido.",
+                    )
+                  }
+                  aoPedirCascata={() =>
+                    setRecusa({ ...recusa, etapa: "cascata" })
+                  }
+                  aoDesistirDaCascata={() =>
+                    setRecusa({ ...recusa, etapa: "escolha" })
+                  }
+                  aoConfirmarCascata={() =>
+                    void remover(
+                      confirmacao.linha,
+                      "cascata",
+                      "Produtos apagados e cardápio removido.",
+                    )
+                  }
+                />
               ) : null}
 
               <AlertDialogFooter>
@@ -477,6 +528,124 @@ function AvisoEscondendo({
           {rotuloDevolverAoMenu(linha.escondidos.sumidos)}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * [285/RN-14] O bloco âmbar da recusa da remoção — as três saídas que o
+ * lojista tem quando o cardápio tem produto exclusivo, mais a segunda
+ * confirmação da cascata.
+ *
+ * **Âmbar, nunca vermelho** (design §13.4 item 4): a recusa pede uma decisão,
+ * não denuncia uma falha. O único vermelho aqui é o do BOTÃO destrutivo.
+ *
+ * Componente puro e EXPORTADO de propósito: sem jsdom neste projeto, o
+ * conteúdo de um `AlertDialog` fechado não é observável, e travar este markup
+ * por teste exige renderizá-lo direto (`renderToStaticMarkup`). `etapa` é
+ * prop, não estado interno, pelo mesmo motivo — e porque fechar o diálogo
+ * precisa zerá-la junto com a recusa.
+ *
+ * Nenhum dos três gestos decide nada: quem autoriza é a RLS (lojista) ou o
+ * escopo por `loja_id` (admin), e QUEM é afetado é recalculado no servidor
+ * (RN-02). Daqui sobe só o modo.
+ */
+export function BlocoRecusa({
+  mensagem,
+  exclusivos,
+  etapa,
+  pendente,
+  aoConverter,
+  aoArquivar,
+  aoPedirCascata,
+  aoDesistirDaCascata,
+  aoConfirmarCascata,
+}: {
+  mensagem: string;
+  /** Quantos exclusivos o SERVIDOR contou nesta mesma resposta (preview). */
+  exclusivos: number;
+  etapa: EtapaRecusa;
+  pendente: boolean;
+  aoConverter: () => void;
+  aoArquivar: () => void;
+  /** Só TROCA de etapa — o botão destrutivo não escreve nada no banco. */
+  aoPedirCascata: () => void;
+  aoDesistirDaCascata: () => void;
+  aoConfirmarCascata: () => void;
+}): ReactElement {
+  const classe =
+    "flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-100 p-3 text-sm text-amber-900";
+
+  // A segunda confirmação SUBSTITUI o bloco: deixar os três botões à vista
+  // junto do irreversível convidaria o clique errado.
+  if (etapa === "cascata") {
+    return (
+      <div role="alert" className={classe}>
+        <p className="font-medium">{fraseCascataPermanente(exclusivos)}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className={ALVO}
+            disabled={pendente}
+            onClick={aoDesistirDaCascata}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            className={ALVO}
+            disabled={pendente}
+            onClick={aoConfirmarCascata}
+          >
+            {rotuloConfirmarCascata(exclusivos)}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div role="alert" className={classe}>
+      <p>{mensagem}</p>
+      {exclusivos > 0 ? (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className={ALVO}
+              disabled={pendente}
+              onClick={aoConverter}
+            >
+              {rotuloConverter(exclusivos)}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={ALVO}
+              disabled={pendente}
+              onClick={aoArquivar}
+            >
+              {rotuloArquivar(exclusivos)}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className={ALVO}
+              disabled={pendente}
+              onClick={aoPedirCascata}
+            >
+              {rotuloRemoverProdutos(exclusivos)}
+            </Button>
+          </div>
+          {/* Arquivar é o gesto do meio e o menos óbvio dos três: sem esta
+              linha, "arquivar" e "remover" soam iguais para quem não conhece
+              o jargão. */}
+          <p className="text-xs">{fraseArquivar(exclusivos)}</p>
+        </>
+      ) : null}
     </div>
   );
 }

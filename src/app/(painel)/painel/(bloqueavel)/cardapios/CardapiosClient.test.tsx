@@ -15,7 +15,19 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-import { CardapiosClient, type LinhaCardapio } from "./CardapiosClient";
+import {
+  BlocoRecusa,
+  CardapiosClient,
+  type LinhaCardapio,
+} from "./CardapiosClient";
+import {
+  fraseArquivar,
+  fraseCascataPermanente,
+  rotuloArquivar,
+  rotuloConfirmarCascata,
+  rotuloConverter,
+  rotuloRemoverProdutos,
+} from "@/components/painel/frasesCardapio";
 import type { AcoesCardapios } from "./CardapiosClient";
 
 function acoes(): AcoesCardapios {
@@ -263,5 +275,111 @@ describe("269 — CardapiosClient: os três hrefs derivam de baseCardapios (não
     // As DUAS ocorrências de href por página (Editar + AvisoEscondendo) mudam
     // igualmente — nenhuma delas escapa da injeção.
     expect(htmlAdmin).not.toContain("/painel/cardapios");
+  });
+});
+
+/**
+ * [285] O bloco de recusa da remoção — as três saídas e a segunda confirmação.
+ *
+ * Renderizado DIRETO, e não pelo `CardapiosClient`: sem jsdom o `AlertDialog`
+ * nasce fechado e o clique que produz a recusa não roda. Por isso `etapa` é
+ * prop do bloco e não estado interno dele — é o que torna os dois estados
+ * observáveis sem DOM.
+ */
+describe("285 — bloco de recusa: as três saídas do cardápio com exclusivos", () => {
+  const MENSAGEM =
+    "Converta esses produtos para o menu antes de remover o cardápio";
+
+  /** Os `<button>` do markup, um por item — o `AlertDialog` não entra aqui. */
+  function botoes(html: string): string[] {
+    return html.split("<button").slice(1);
+  }
+
+  function recusa(over: Partial<Parameters<typeof BlocoRecusa>[0]> = {}) {
+    return renderToStaticMarkup(
+      <BlocoRecusa
+        mensagem={MENSAGEM}
+        exclusivos={3}
+        etapa="escolha"
+        pendente={false}
+        aoConverter={vi.fn()}
+        aoArquivar={vi.fn()}
+        aoPedirCascata={vi.fn()}
+        aoDesistirDaCascata={vi.fn()}
+        aoConfirmarCascata={vi.fn()}
+        {...over}
+      />,
+    );
+  }
+
+  it("mostra os TRÊS botões, com os rótulos do módulo puro", () => {
+    const html = recusa();
+
+    expect(html).toContain(MENSAGEM);
+    expect(html).toContain(rotuloConverter(3));
+    expect(html).toContain(rotuloArquivar(3));
+    expect(html).toContain(rotuloRemoverProdutos(3));
+    // Os três com alvo de toque de 44px (design §5).
+    expect(botoes(html)).toHaveLength(3);
+    for (const botao of botoes(html)) expect(botao).toContain("min-h-[44px]");
+  });
+
+  it("explica o que 'arquivar' faz — o gesto menos óbvio dos três", () => {
+    expect(recusa()).toContain(fraseArquivar(3));
+  });
+
+  it("o singular não é 'os 1 produtos'", () => {
+    const html = recusa({ exclusivos: 1 });
+    expect(html).toContain("Arquivar 1 produto");
+    expect(html).toContain("Remover 1 produto");
+    expect(html).not.toContain("os 1 produtos");
+  });
+
+  it("só o botão de REMOVER produtos é vermelho; o bloco continua âmbar", () => {
+    const html = recusa();
+    expect(html).toContain("border-amber-300");
+    expect(html).toContain("text-amber-900");
+    // Um `bg-destructive` só — o terceiro botão. Converter e arquivar são
+    // `outline`: oferecer três vermelhos treinaria o lojista a ignorar o
+    // vermelho (design §13.4 item 4).
+    expect(
+      botoes(html).filter((botao) => botao.includes("bg-destructive")),
+    ).toHaveLength(1);
+  });
+
+  it("recusa SEM exclusivos (ex.: falha da conversão) não oferece botão nenhum", () => {
+    const html = recusa({ exclusivos: 0, mensagem: "Não foi possível." });
+    expect(html).toContain("Não foi possível.");
+    expect(html).not.toContain("Arquivar");
+    expect(html).not.toContain("Remover");
+  });
+
+  it("a etapa 'cascata' TROCA o bloco: só a frase do permanente e duas saídas", () => {
+    const html = recusa({ etapa: "cascata" });
+
+    expect(html).toContain(fraseCascataPermanente(3));
+    expect(html).toContain("Cancelar");
+    expect(html).toContain(rotuloConfirmarCascata(3));
+
+    // Os três botões da escolha SOMEM — ninguém arquiva por engano estando a
+    // um clique do apagar definitivo, e a mensagem original sai de cena.
+    expect(html).not.toContain(rotuloConverter(3));
+    expect(html).not.toContain(rotuloArquivar(3));
+    expect(html).not.toContain(MENSAGEM);
+  });
+
+  it("a segunda confirmação diz que NÃO há recuperação, antes do clique", () => {
+    expect(recusa({ etapa: "cascata" })).toContain(
+      "apagados permanentemente e não poderão ser recuperados",
+    );
+    expect(recusa({ etapa: "cascata", exclusivos: 1 })).toContain(
+      "1 produto será apagado permanentemente e não poderá ser recuperado.",
+    );
+  });
+
+  it("pendente desabilita as duas saídas da segunda confirmação", () => {
+    const html = recusa({ etapa: "cascata", pendente: true });
+    expect(botoes(html)).toHaveLength(2);
+    for (const botao of botoes(html)) expect(botao).toContain("disabled=");
   });
 });

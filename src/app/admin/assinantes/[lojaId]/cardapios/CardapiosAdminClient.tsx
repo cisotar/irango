@@ -43,7 +43,10 @@ export function CardapiosAdminClient({
       acoes={{
         ligarDesligar: (id, ativo) =>
           ligarDesligarCardapioAdmin(lojaId, id, ativo),
-        remover: (id) => removerCardapioAdmin(lojaId, id),
+        // [285] O modo sobe como está; quem o valida (`schemaModoRemocao`) e
+        // quem recalcula os produtos afetados é a action admin, sob o
+        // `lojaId` da URL — nunca este wrapper.
+        remover: (id, modo) => removerCardapioAdmin(lojaId, id, modo),
         converter: (cardapioId) =>
           converterExclusivosParaMenuAdmin(lojaId, cardapioId),
         devolverAoMenu: (payload) =>
