@@ -420,3 +420,17 @@ npx tsc --noEmit && npm run build
 `npx tsc --noEmit` → `npm run lint` → `npm test` → `npm run build`, os quatro verdes, mais a linha
 de exceção do desenho §8-A (`min-w-[40px]` abaixo de `sm` no modo compacto) registrada em
 `references/design-system.md` §5 pelo `escriba`.
+
+---
+
+## 10. Resultado da execução (2026-09-21)
+
+- Passos 0–13 executados na branch `feat/vigencia-por-item-do-cardapio`; G1 aprovado com os
+  defaults (a) e (b); G2 autorizado e `20260921130000` aplicada no cloud.
+- Entregues: 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280. Abertas pelas auditorias:
+  281, 282, 283. Zero achado crítico/alto em todo o loop.
+- `verificar` em "Lanches base" (segunda-feira): seção "[vinc-verificar] Especiais do Dia" só
+  com "Virado"; "Dobradinha" e "Feijoada" na categoria desabilitados com "Só às terças" /
+  "Só às quartas e sábados"; tripla com cardápio alheio ⇒ `count = 0`.
+- Gap documental herdado da #143: `cardapios`/`cardapio_produtos` nunca entraram em
+  `references/schema.md` §2. Fica para um `escriba` dedicado.
