@@ -31,6 +31,7 @@ import {
   aplicarCardapioEmCategoriaAdmin,
   tirarDeCardapioAdmin,
   preverLoteAdmin,
+  definirDiasDoVinculoAdmin,
 } from "@/app/admin/assinantes/actions/admin-cardapios";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import { enviarFotoProdutoAdmin } from "@/app/admin/assinantes/actions/admin-upload";
@@ -128,7 +129,7 @@ export function CardapioAdminClient({
       // existia (256/261): um href fixo de `/painel/...` mandaria o admin para
       // o painel da PRÓPRIA loja dele e criaria o cardápio na loja errada.
       hrefCardapios={rotaCardapiosAdmin(lojaId)}
-      // [269] As cinco actions de `AcoesLote`, todas admin e todas com o
+      // [269][276] As SEIS actions de `AcoesLote`, todas admin e todas com o
       // `lojaId` da URL fixado por closure. Omitir qualquer uma cairia na
       // action do LOJISTA, que resolve a loja por `auth.uid()`.
       lote={{
@@ -142,6 +143,7 @@ export function CardapioAdminClient({
           preverLote: (entrada) => preverLoteAdmin(lojaId, entrada),
           definirVisibilidade: (payload) =>
             definirVisibilidadeEmProdutosAdmin(lojaId, payload),
+          definirDias: (payload) => definirDiasDoVinculoAdmin(lojaId, payload),
         },
       }}
       categoriasOpcional={categoriasOpcional}

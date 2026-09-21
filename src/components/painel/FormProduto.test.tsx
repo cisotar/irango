@@ -44,7 +44,11 @@ function renderForm(
   inicial?: ProdutoInicial,
   // [Auditoria 260/261] OBRIGATÓRIA no componente: o default `= []` mentia no
   // hub admin ("não está em nenhum cardápio" para quem está em dois).
-  cardapiosDoProduto: readonly { id: string; nome: string }[] = [],
+  cardapiosDoProduto: readonly {
+    id: string;
+    nome: string;
+    rotuloDias: string | null;
+  }[] = [],
   // Mundo do LOJISTA por default; o teste de rota injetada passa `null` para
   // afirmar o mundo admin. Default só existe no helper, nunca no componente.
   hrefCardapios: string | null = "/painel/cardapios",
@@ -282,5 +286,33 @@ describe("FormProduto — bloco Promoção (issue 235, RN-07 / D1)", () => {
     );
     expect(markup).toContain('id="produto-desconto-fuso"');
     expect(markup).toContain('aria-describedby="produto-desconto-fuso"');
+  });
+});
+
+/**
+ * [278/RN-13] A linha "Está em:" passa a dizer EM QUE DIAS. A frase inteira vem
+ * de `fraseEstaEm` (pura, travada em `copiaCardapioPainel.test.ts`); aqui o que
+ * se afirma é que o `FormProduto` a renderiza e não redige nada por conta.
+ */
+describe("FormProduto — 'Está em:' com os dias do vínculo (278)", () => {
+  it("anexa os dias entre parênteses quando o item restringe", () => {
+    const html = renderForm(
+      { id: "p1", nome: "Feijoada", visibilidade: "cardapio" },
+      [
+        { id: "c1", nome: "Especiais do Dia", rotuloDias: "qua e sáb" },
+        { id: "c2", nome: "Cardápio de Inverno", rotuloDias: null },
+      ],
+    );
+    expect(html).toContain(
+      "Está em: Especiais do Dia (qua e sáb), Cardápio de Inverno.",
+    );
+  });
+
+  it("sem dias, nada é anexado — nunca '(todos os dias)'", () => {
+    const html = renderForm({ id: "p1", nome: "Feijoada", visibilidade: "menu" }, [
+      { id: "c1", nome: "Especiais do Dia", rotuloDias: null },
+    ]);
+    expect(html).toContain("Está em: Especiais do Dia.");
+    expect(html).not.toContain("todos os dias");
   });
 });

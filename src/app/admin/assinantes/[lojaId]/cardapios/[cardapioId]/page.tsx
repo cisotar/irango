@@ -3,7 +3,13 @@ import Link from "next/link";
 
 import { carregarCardapioDetalheAdmin } from "../../carga-cardapio-detalhe";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
-import { rotuloAgora, descreverVigencia } from "@/lib/utils/descreverVigencia";
+import {
+  rotuloAgora,
+  descreverVigencia,
+  rotuloDiasDoItem,
+  avisoAgendaQueNuncaAbre,
+} from "@/lib/utils/descreverVigencia";
+import { fraseAgendaDoItem } from "@/lib/utils/copiaCardapioPainel";
 import { cardapioAberto, visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import type { GrupoDoSeletor } from "@/components/painel/SeletorProdutosDoCardapio";
@@ -46,15 +52,30 @@ export default async function CardapioDetalheAdminPage({
     .map((grupo) => ({
       id: grupo.id,
       nome: grupo.nome,
-      produtos: grupo.produtos.map((p) => ({
-        id: p.id,
-        nome: p.nome,
-        // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
-        exclusivo: visibilidadeDe(p) === "cardapio",
-        noCardapio: (vinculosPorProduto.get(p.id) ?? []).some(
-          (v) => v.cardapio.id === cardapioId,
-        ),
-      })),
+      produtos: grupo.produtos.map((p) => {
+        // [276] O vínculo com ESTE cardápio, achado uma vez: dele saem
+        // `noCardapio`, os dias do item, a frase da linha e o aviso de RN-06 —
+        // os três REDIGIDOS aqui, no servidor, com o fuso da loja. O browser
+        // nunca redige janela de vigência nem avalia dia.
+        const vinculo =
+          (vinculosPorProduto.get(p.id) ?? []).find(
+            (v) => v.cardapio.id === cardapioId,
+          ) ?? null;
+        return {
+          id: p.id,
+          nome: p.nome,
+          // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
+          exclusivo: visibilidadeDe(p) === "cardapio",
+          noCardapio: vinculo !== null,
+          dias: vinculo?.dias_semana ?? null,
+          fraseAgenda:
+            vinculo === null
+              ? null
+              : fraseAgendaDoItem(rotuloDiasDoItem(vinculo.dias_semana)),
+          avisoNuncaAbre:
+            vinculo === null ? null : avisoAgendaQueNuncaAbre(vinculo),
+        };
+      }),
     }));
 
   return (

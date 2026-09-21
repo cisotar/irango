@@ -105,3 +105,40 @@ export function avisoNaLinhaDoProduto(
     ? `sumiu da vitrine — o cardápio ${nomeDoCardapio} expirou`
     : `sumiu da vitrine — o cardápio ${nomeDoCardapio} foi desligado`;
 }
+
+/**
+ * [276] A linha de agenda do produto JÁ VINCULADO, no detalhe do cardápio.
+ *
+ * `rotuloDias` chega pronto de `rotuloDiasDoItem` (o browser nunca redige
+ * janela): `null` significa "o item não restringe nada", e a linha diz isso em
+ * português de lojista em vez de ficar vazia.
+ *
+ * Produto NÃO vinculado não tem agenda e não chama esta função — o caller
+ * passa `null` no campo e a linha não mostra nem frase nem pílulas.
+ */
+export function fraseAgendaDoItem(rotuloDias: string | null): string {
+  return rotuloDias === null
+    ? "Todos os dias do cardápio"
+    : `Aparece: ${rotuloDias}`;
+}
+
+/**
+ * [278/RN-13] A linha "Está em:" do `FormProduto`, inteira, como string pura.
+ *
+ * Sem jsdom, uma frase montada com `join` dentro do JSX não é afirmável — foi
+ * por isso que a copy do painel já mora fora do `.tsx`. `rotuloDias` chega
+ * pronto de `rotuloDiasDoItem` (o browser nunca redige janela), e um vínculo
+ * sem restrição NÃO ganha "(todos os dias)": isso viraria ruído em toda loja
+ * que não usa a feature.
+ *
+ * Lista vazia devolve `""` — o caller já decide não renderizar a linha.
+ */
+export function fraseEstaEm(
+  vinculos: readonly { nome: string; rotuloDias: string | null }[],
+): string {
+  if (vinculos.length === 0) return "";
+  const itens = vinculos.map((v) =>
+    v.rotuloDias === null ? v.nome : `${v.nome} (${v.rotuloDias})`,
+  );
+  return `Está em: ${itens.join(", ")}.`;
+}

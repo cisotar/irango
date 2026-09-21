@@ -356,6 +356,82 @@ function textoDoDestaque(
 // Peças de texto
 // ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * [276][278/RN-13] Os dias do ITEM, na forma CURTA — `"qua e sáb"`,
+ * `"seg a sex"`. É o ponto de entrada público da redação do item, usado pela
+ * linha do vínculo no detalhe do cardápio e pelos chips de `/painel/produtos`.
+ *
+ * Devolve `null` — e o caller NÃO anexa trecho nenhum — quando não há
+ * restrição a dizer:
+ *
+ *  - `null` / `[]`: o item segue o cardápio;
+ *  - **7 dias marcados**: indistinguível de não restringir. "todos os dias"
+ *    viraria ruído em toda loja que não usa a feature. Um dado, uma leitura;
+ *  - só dias fora de 0..6 (dado velho): `ordenarSemana` filtra e sobra vazio.
+ */
+export function rotuloDiasDoItem(dias: number[] | null): string | null {
+  const semana = ordenarSemana(dias);
+  if (semana.length === 0 || semana.length === 7) return null;
+  return descreverDiasDaSemana(semana, "curta");
+}
+
+/**
+ * [276/RN-06] O aviso de AGENDA QUE NUNCA ABRE: o item marcou dias que o
+ * cardápio nunca abre, então ele não aparece nunca.
+ *
+ * *"Este item nunca aparece: o cardápio só abre aos sábados e domingos."*
+ *
+ * A frase nasce AQUI, ao lado das outras redações e sobre as MESMAS tabelas de
+ * dia — num `.tsx` ela seria a segunda redação que este módulo existe para
+ * impedir, e, sem jsdom, um aviso em componente não é travável.
+ *
+ * É **preview de UX**: não bloqueia salvamento, e nada depende dele. Devolve
+ * `null` — ou seja, NÃO avisa — em cinco casos, e cada um tem motivo:
+ *
+ *  - cardápio **inativo** (RN-03: desligado não abre, não fecha e não restringe);
+ *  - **`prazo_fixo`**: não tem eixo de dia da semana para contradizer;
+ *  - cardápio **sem `dias_semana`**: abre em todos os dias, nenhum item o contradiz;
+ *  - item **sem dias**: não restringe nada;
+ *  - cardápio com **`dias_mes` não-vazio**: o `OU` de RN-02 faz a interseção
+ *    deixar de ser vazia — dia 15 numa quarta abre um cardápio `{sáb,dom}+{15}`.
+ *    É este caso que separa um aviso correto de um alarme falso.
+ */
+export function avisoAgendaQueNuncaAbre(vinculo: VinculoVigencia): string | null {
+  const { cardapio } = vinculo;
+  if (!cardapio.ativo) return null;
+  if (cardapio.modo !== "recorrente") return null;
+  if (ordenarMes(cardapio.dias_mes).length > 0) return null;
+
+  const doCardapio = ordenarSemana(cardapio.dias_semana);
+  const doItem = ordenarSemana(vinculo.dias_semana);
+  if (doCardapio.length === 0 || doItem.length === 0) return null;
+  if (doItem.some((d) => doCardapio.includes(d))) return null;
+
+  return `Este item nunca aparece: o cardápio ${fraseAbreNosDias(doCardapio)}.`;
+}
+
+/** "só abre de segunda a sexta" · "só abre aos sábados e domingos". */
+function fraseAbreNosDias(semana: number[]): string {
+  if (semana.length === 7 || corridaDaSemana(semana)) {
+    return `só abre ${descreverDiasDaSemana(semana, "longa")}`;
+  }
+  return `só abre ${preposicaoPlural(semana[0])} ${enumerar(
+    semana.map((d) => DIAS_PLURAIS[d]),
+  )}`;
+}
+
+/**
+ * [275/decisão F] O nome COMPLETO do dia (0=dom..6=sáb), para o `aria-label`
+ * de cada pílula de `PilulasDeDias`. É uma EXPORTAÇÃO da tabela que já existe
+ * aqui, nunca uma segunda tabela no `.tsx` (mandato 2): o browser não redige
+ * nome de dia.
+ *
+ * Fora de 0..6 devolve `""` — dado velho não inventa rótulo nem quebra render.
+ */
+export function rotuloLongoDoDia(dia: number): string {
+  return DIAS_LONGOS[dia] ?? "";
+}
+
 /** Semana ordenada COMEÇANDO NA SEGUNDA: {sáb, dom} lê "sábado e domingo". */
 function ordenarSemana(dias: number[] | null): number[] {
   return [...new Set(dias ?? [])]

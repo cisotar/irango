@@ -9,7 +9,10 @@ import {
 } from "@/lib/utils/promocaoPainel";
 import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
-import { descreverVigencia } from "@/lib/utils/descreverVigencia";
+import {
+  descreverVigencia,
+  rotuloDiasDoItem,
+} from "@/lib/utils/descreverVigencia";
 import type {
   CardapioParaLote,
   VinculosPorProduto,
@@ -80,6 +83,9 @@ export default async function CardapioAdminPage({
         id: v.cardapio.id,
         nome: v.cardapio.nome,
         abertoAgora: cardapioAberto(v.cardapio, agora, loja.timezone),
+        // [278] Os dias do ITEM, redigidos AQUI, no servidor (fuso da
+        // LOJA-ALVO). O cliente recebe texto, não regra.
+        rotuloDias: rotuloDiasDoItem(v.dias_semana),
       })),
     ]),
   );

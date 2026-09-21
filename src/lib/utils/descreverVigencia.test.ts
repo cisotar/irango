@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  avisoAgendaQueNuncaAbre,
   descreverVigencia,
   escolherVinculoParaRotulo,
   proximaAbertura,
   rotuloJanelaDestaque,
+  rotuloLongoDoDia,
+  rotuloDiasDoItem,
   rotuloVoltaQuando,
   ROTULO_SEM_VOLTA,
 } from "./descreverVigencia";
@@ -576,5 +579,159 @@ describe("273/RN-09 — escolherVinculoParaRotulo devolve o VÍNCULO", () => {
 
     expect(escolher([{ cardapio: desligado, dias_semana: [3] }], proximaEm(agora))).toBeNull();
     expect(escolher([], proximaEm(agora))).toBeNull();
+  });
+});
+
+/**
+ * [275/decisão F] O nome completo do dia é EXPORTADO daqui para o `aria-label`
+ * das pílulas. Se algum dia alguém escrever a lista de novo num `.tsx`, estes
+ * sete casos continuam passando lá e divergindo aqui — por isso a trava de
+ * fonte de `PilulasDeDias.test.tsx` acompanha esta exportação.
+ */
+describe("rotuloLongoDoDia (275)", () => {
+  it("dá o nome completo dos sete dias, 0=dom..6=sáb", () => {
+    expect([0, 1, 2, 3, 4, 5, 6].map(rotuloLongoDoDia)).toEqual([
+      "domingo",
+      "segunda",
+      "terça",
+      "quarta",
+      "quinta",
+      "sexta",
+      "sábado",
+    ]);
+  });
+
+  it("fora de 0..6 devolve string vazia — dado velho não inventa rótulo", () => {
+    expect(rotuloLongoDoDia(-1)).toBe("");
+    expect(rotuloLongoDoDia(7)).toBe("");
+    expect(rotuloLongoDoDia(1.5)).toBe("");
+  });
+});
+
+/**
+ * [276/RN-06] A matriz do aviso de agenda que nunca abre. O caso que separa um
+ * aviso correto de um alarme falso é `dias_mes` não-vazio: o `OU` de RN-02 faz
+ * a interseção deixar de ser vazia.
+ */
+describe("avisoAgendaQueNuncaAbre (276)", () => {
+  function cardapio(over: Partial<CardapioVigencia> = {}): CardapioVigencia {
+    return {
+      id: "c1",
+      nome: "Especiais do Dia",
+      ativo: true,
+      modo: "recorrente",
+      dias_semana: [6, 0],
+      dias_mes: null,
+      hora_inicio: null,
+      hora_fim: null,
+      prazo_inicio: null,
+      prazo_fim: null,
+      ...over,
+    };
+  }
+
+  it("cardápio {sáb,dom} + item {qua} ⇒ a frase de RN-06, byte a byte", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({ cardapio: cardapio(), dias_semana: [3] }),
+    ).toBe(
+      "Este item nunca aparece: o cardápio só abre aos sábados e domingos.",
+    );
+  });
+
+  it("corrida de dias vira 'de X a Y'", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({
+        cardapio: cardapio({ dias_semana: [1, 2, 3, 4, 5] }),
+        dias_semana: [0, 6],
+      }),
+    ).toBe("Este item nunca aparece: o cardápio só abre de segunda a sexta.");
+  });
+
+  it("interseção NÃO vazia ⇒ sem aviso", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({ cardapio: cardapio(), dias_semana: [3, 6] }),
+    ).toBeNull();
+  });
+
+  it("dias_mes não-vazio ⇒ sem aviso (o OU de RN-02 abre o cardápio)", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({
+        cardapio: cardapio({ dias_mes: [15] }),
+        dias_semana: [3],
+      }),
+    ).toBeNull();
+  });
+
+  it("cardápio inativo ⇒ sem aviso (RN-03: desligado não restringe)", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({
+        cardapio: cardapio({ ativo: false }),
+        dias_semana: [3],
+      }),
+    ).toBeNull();
+  });
+
+  it("prazo_fixo ⇒ sem aviso (não tem eixo de dia da semana)", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({
+        cardapio: cardapio({
+          modo: "prazo_fixo",
+          dias_semana: null,
+          prazo_inicio: "2026-09-01T00:00:00Z",
+          prazo_fim: "2026-10-01T00:00:00Z",
+        }),
+        dias_semana: [3],
+      }),
+    ).toBeNull();
+  });
+
+  it("cardápio sem dias, ou item sem dias, ⇒ sem aviso", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({
+        cardapio: cardapio({ dias_semana: null }),
+        dias_semana: [3],
+      }),
+    ).toBeNull();
+    expect(
+      avisoAgendaQueNuncaAbre({ cardapio: cardapio(), dias_semana: [] }),
+    ).toBeNull();
+    expect(
+      avisoAgendaQueNuncaAbre({ cardapio: cardapio(), dias_semana: null }),
+    ).toBeNull();
+  });
+
+  it("dias fora de 0..6 são filtrados antes da interseção", () => {
+    expect(
+      avisoAgendaQueNuncaAbre({ cardapio: cardapio(), dias_semana: [9] }),
+    ).toBeNull();
+  });
+});
+
+/**
+ * [278/RN-13] A forma CURTA dos dias do item, para o chip e a linha
+ * "Está em:". `null` significa "não anexe nada".
+ */
+describe("rotuloDiasDoItem (278)", () => {
+  it("dois dias viram a lista curta", () => {
+    expect(rotuloDiasDoItem([3, 6])).toBe("qua e sáb");
+  });
+
+  it("três ou mais consecutivos viram a corrida", () => {
+    expect(rotuloDiasDoItem([1, 2, 3, 4, 5])).toBe("seg a sex");
+  });
+
+  it("ordem seg-first, não dom-first", () => {
+    expect(rotuloDiasDoItem([0, 6])).toBe("sáb e dom");
+  });
+
+  it("null, vazio e os 7 dias são indistinguíveis de 'sem restrição'", () => {
+    expect(rotuloDiasDoItem(null)).toBeNull();
+    expect(rotuloDiasDoItem([])).toBeNull();
+    expect(rotuloDiasDoItem([0, 1, 2, 3, 4, 5, 6])).toBeNull();
+  });
+
+  it("dado velho fora de 0..6 é filtrado; sobrando vazio, null", () => {
+    expect(rotuloDiasDoItem([9, -1])).toBeNull();
+    expect(rotuloDiasDoItem([9, 3])).toBe("qua");
   });
 });

@@ -89,7 +89,10 @@ function produtoBase(overrides: Partial<Produto> = {}): Produto {
   } as Produto;
 }
 
-function renderLista(produtos: Produto[]): string {
+function renderLista(
+  produtos: Produto[],
+  vinculosPorProduto: ProdutosClientProps["vinculosPorProduto"] = {},
+): string {
   return renderToStaticMarkup(
     <ProdutosClient
       lojaSlug="loja-teste"
@@ -98,7 +101,7 @@ function renderLista(produtos: Produto[]): string {
       categorias={[]}
       opcionaisPorCategoria={{}}
       hrefCardapios="/painel/cardapios"
-      vinculosPorProduto={{}}
+      vinculosPorProduto={vinculosPorProduto}
       promocoes={{}}
       fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
       categoriasOpcional={[]}
@@ -611,5 +614,66 @@ describe("264 — aviso de sumiço na linha do produto", () => {
 
   it("sem a prop (hub admin), nenhum aviso é inventado", () => {
     expect(renderLista([produtoBase()])).not.toContain("sumiu da vitrine");
+  });
+});
+
+/**
+ * [278/RN-13] O chip de cardápio passa a dizer EM QUE DIAS. A redação vem do
+ * SERVIDOR (`rotuloDiasDoItem`); o que se afirma aqui é a ORDEM dos trechos —
+ * nome · dias · estado —, porque o estado é consequência e vem por último.
+ */
+describe("ProdutosClient — dias do vínculo no chip (278)", () => {
+  const produto = produtoBase({ id: "p1", nome: "Feijoada" });
+
+  it("com dias, o chip acumula nome e dias", () => {
+    const html = renderLista([produto], {
+      p1: [
+        {
+          id: "c1",
+          nome: "Especiais do Dia",
+          abertoAgora: true,
+          rotuloDias: "qua e sáb",
+        },
+      ],
+    });
+    expect(html).toContain("Especiais do Dia");
+    expect(html).toContain("qua e sáb");
+    expect(html).not.toContain("fora da janela agora");
+  });
+
+  it("sem dias, nada é anexado antes do estado", () => {
+    const html = renderLista([produto], {
+      p1: [
+        {
+          id: "c1",
+          nome: "Especiais do Dia",
+          abertoAgora: false,
+          rotuloDias: null,
+        },
+      ],
+    });
+    expect(html).toContain("fora da janela agora");
+    expect(html).not.toContain("todos os dias");
+  });
+
+  it("a ordem é nome · dias · estado", () => {
+    const html = renderLista([produto], {
+      p1: [
+        {
+          id: "c1",
+          nome: "Especiais do Dia",
+          abertoAgora: false,
+          rotuloDias: "qua e sáb",
+        },
+      ],
+    });
+    expect(html.indexOf("Especiais do Dia")).toBeLessThan(
+      html.indexOf("qua e sáb"),
+    );
+    expect(html.indexOf("qua e sáb")).toBeLessThan(
+      html.indexOf("fora da janela agora"),
+    );
+    // Em 360px o chip quebra em duas linhas em vez de esticar a linha.
+    expect(html).toContain("whitespace-normal");
   });
 });

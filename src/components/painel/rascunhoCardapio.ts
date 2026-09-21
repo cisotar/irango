@@ -88,6 +88,16 @@ export const DIAS_DA_SEMANA: readonly { valor: number; rotulo: string }[] = [
   { valor: 6, rotulo: "Sáb" },
 ];
 
+/**
+ * [275] Os 7 dias, DERIVADOS da tabela acima — nunca um literal
+ * `[0,1,2,3,4,5,6]` escrito à mão. É o que torna "Todos os dias ⇒ `dias_semana`
+ * com os 7 valores" afirmável sem jsdom, e o que impede a tabela de dias de
+ * ganhar uma segunda casa.
+ */
+export function todosOsDias(): number[] {
+  return DIAS_DA_SEMANA.map((dia) => dia.valor);
+}
+
 /** "HH:MM:SS" do Postgres ou "HH:MM" do input — a UI só fala "HH:MM". */
 function hhmm(hora: string | null, padrao: string): string {
   return hora === null || hora === "" ? padrao : hora.slice(0, 5);

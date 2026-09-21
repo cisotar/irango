@@ -44,7 +44,10 @@ import {
 } from "@/lib/utils/promocaoPainel";
 import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
-import { descreverVigencia } from "@/lib/utils/descreverVigencia";
+import {
+  descreverVigencia,
+  rotuloDiasDoItem,
+} from "@/lib/utils/descreverVigencia";
 import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
 import {
   diagnosticarSumico,
@@ -55,6 +58,7 @@ import {
   aplicarCardapioEmCategoria,
   tirarDeCardapio,
   preverLoteAction,
+  definirDiasDoVinculo,
 } from "@/lib/actions/cardapio";
 import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
 import type { VinculosPorProduto } from "@/components/painel/contrato-lote";
@@ -143,6 +147,9 @@ export default async function ProdutosPage(): Promise<ReactElement> {
           id: v.cardapio.id,
           nome: v.cardapio.nome,
           abertoAgora: cardapioAberto(v.cardapio, agora, loja.timezone),
+          // [278] Os dias do ITEM, redigidos AQUI, no servidor. O cliente
+          // recebe texto, não regra.
+          rotuloDias: rotuloDiasDoItem(v.dias_semana),
         })),
       ]),
     );
@@ -196,6 +203,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
           tirarDeCardapio,
           preverLote: preverLoteAction,
           definirVisibilidade: definirVisibilidadeEmProdutos,
+          definirDias: definirDiasDoVinculo,
         },
       }}
       // [217] Linhas INTEIRAS, não mais `{id, nome}`: o cartão de associação

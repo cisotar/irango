@@ -947,9 +947,18 @@ export function ProdutosClient({
                                   <li key={c.id}>
                                     <Badge
                                       variant="outline"
-                                      className="font-normal"
+                                      // [278] Em 360px o chip com os três
+                                      // trechos quebra em duas linhas em vez de
+                                      // esticar a linha do produto.
+                                      className="font-normal whitespace-normal"
                                     >
                                       {c.nome}
+                                      {/* [278] Ordem fixada: nome · dias ·
+                                          estado. O estado é consequência, vem
+                                          por último. Redigido no SERVIDOR. */}
+                                      {c.rotuloDias === null
+                                        ? ""
+                                        : ` · ${c.rotuloDias}`}
                                       {c.abertoAgora
                                         ? ""
                                         : " · fora da janela agora"}

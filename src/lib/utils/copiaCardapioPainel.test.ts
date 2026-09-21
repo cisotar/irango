@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   avisoCardapioEscondendo,
+  fraseAgendaDoItem,
+  fraseEstaEm,
   avisoNaLinhaDoProduto,
   fraseContinuamVendendo,
   fraseExclusividade,
@@ -105,5 +107,51 @@ describe("264 aviso reduzido na linha do produto (§13.4 item 5)", () => {
     expect(avisoNaLinhaDoProduto("Cardápio de Inverno", false)).toBe(
       "sumiu da vitrine — o cardápio Cardápio de Inverno foi desligado",
     );
+  });
+});
+
+/**
+ * [276] A linha de agenda do produto vinculado. `null` NÃO vira "(todos os
+ * dias)" pendurado: vira a frase que explica o estado vazio.
+ */
+describe("fraseAgendaDoItem (276)", () => {
+  it("com dias, prefixa a redação que veio do servidor", () => {
+    expect(fraseAgendaDoItem("qua e sáb")).toBe("Aparece: qua e sáb");
+    expect(fraseAgendaDoItem("seg a sex")).toBe("Aparece: seg a sex");
+  });
+
+  it("sem dias, diz que o item segue o cardápio", () => {
+    expect(fraseAgendaDoItem(null)).toBe("Todos os dias do cardápio");
+  });
+});
+
+/**
+ * [278/RN-13] A linha "Está em:" inteira, byte a byte — incluindo a pontuação
+ * final, que num `join` dentro do JSX ninguém trava.
+ */
+describe("fraseEstaEm (278)", () => {
+  it("um cardápio com dias", () => {
+    expect(
+      fraseEstaEm([{ nome: "Especiais do Dia", rotuloDias: "qua e sáb" }]),
+    ).toBe("Está em: Especiais do Dia (qua e sáb).");
+  });
+
+  it("um cardápio sem dias não ganha sufixo nenhum", () => {
+    expect(fraseEstaEm([{ nome: "Cardápio de Inverno", rotuloDias: null }])).toBe(
+      "Está em: Cardápio de Inverno.",
+    );
+  });
+
+  it("vários cardápios, só alguns com dias", () => {
+    expect(
+      fraseEstaEm([
+        { nome: "Especiais do Dia", rotuloDias: "qua e sáb" },
+        { nome: "Cardápio de Inverno", rotuloDias: null },
+      ]),
+    ).toBe("Está em: Especiais do Dia (qua e sáb), Cardápio de Inverno.");
+  });
+
+  it("lista vazia devolve string vazia (o caller nem renderiza a linha)", () => {
+    expect(fraseEstaEm([])).toBe("");
   });
 });

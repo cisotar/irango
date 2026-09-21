@@ -14,9 +14,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { PilulasDeDias } from "@/components/painel/PilulasDeDias";
 import {
   perguntaLote,
   perguntaVisibilidade,
+  perguntaDias,
+  FRASE_SO_QUEM_ESTA_NO_CARDAPIO,
   frasesDeVisibilidade,
   fraseCategoriaEhFoto,
   fraseOcultos,
@@ -48,7 +51,18 @@ export type AlvoDoLote =
        */
       categoriaNome: string | null;
     }
-  | { tipo: "visibilidade"; acao: AcaoVisibilidade };
+  | { tipo: "visibilidade"; acao: AcaoVisibilidade }
+  /**
+   * [277] "Definir dias": os dias moram no HOOK (junto do resto do ciclo) e
+   * chegam aqui controlados, como em toda outra superfície de `PilulasDeDias`.
+   * Este arquivo continua sem redigir uma frase e sem calcular um número.
+   */
+  | {
+      tipo: "dias";
+      cardapio: CardapioParaLote;
+      dias: number[];
+      onDias: (dias: number[]) => void;
+    };
 
 export type DialogoLoteCardapioProps = {
   /**
@@ -94,11 +108,18 @@ export function DialogoLoteCardapio({
           nomes: previa.nomes,
           total: previa.total,
         })
-      : perguntaVisibilidade({
-          acao: alvo.acao,
-          nomes: previa.nomes,
-          total: previa.total,
-        });
+      : alvo.tipo === "dias"
+        ? perguntaDias({
+            nomeCardapio: alvo.cardapio.nome,
+            nomes: previa.nomes,
+            total: previa.total,
+            dias: alvo.dias,
+          })
+        : perguntaVisibilidade({
+            acao: alvo.acao,
+            nomes: previa.nomes,
+            total: previa.total,
+          });
 
   const limite = verTodos
     ? previa.nomes.length
@@ -156,9 +177,28 @@ export function DialogoLoteCardapio({
           </div>
         ) : null}
 
+        {/* [277] As 7 pílulas dentro do diálogo. O mesmo componente das outras
+            duas superfícies — nenhuma pílula é recriada aqui. */}
+        {alvo.tipo === "dias" ? (
+          <div className="flex flex-col gap-2">
+            <PilulasDeDias
+              compacto
+              valor={alvo.dias}
+              onChange={alvo.onDias}
+              rotulo="Dias em que estes produtos aparecem neste cardápio"
+              desabilitado={pendente}
+            />
+            <p className="text-sm text-texto-muted">
+              {FRASE_SO_QUEM_ESTA_NO_CARDAPIO}
+            </p>
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-2 text-sm">
           {/* A janela do cardápio, redigida no SERVIDOR (`descreverVigencia`). */}
-          {alvo.tipo === "cardapio" ? <p>{alvo.cardapio.descricao}</p> : null}
+          {alvo.tipo === "cardapio" || alvo.tipo === "dias" ? (
+            <p>{alvo.cardapio.descricao}</p>
+          ) : null}
           {frasesD14.map((frase) => (
             <p key={frase}>{frase}</p>
           ))}
