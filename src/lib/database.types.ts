@@ -1324,6 +1324,14 @@ export type Database = {
       }
     }
     Functions: {
+      aplicar_cardapio_em_categoria: {
+        Args: {
+          p_cardapio_id: string
+          p_categoria_id: string
+          p_loja_id: string
+        }
+        Returns: number
+      }
       criar_pedido:
         | {
             Args: {
