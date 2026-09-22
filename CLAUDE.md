@@ -68,12 +68,13 @@ Specs em `specs/` (concluídas em `specs/arquivo/`), issues em `tasks/`, planos 
 
 ## Higiene
 
-- Nunca `git add -A`. Nunca commitar `.env*`. Nenhum email, telefone, chave Pix ou CPF real em código, comentário ou seed.
+- Nunca `git add -A`. Nunca commitar `.env*`. Nunca commitar `plan/seguranca-auditoria-*.md` (relatório de pentest: PoC de brecha real — fica só local, mesmo depois do fix; `.gitignore` já bloqueia, não force). Nenhum email, telefone, chave Pix ou CPF real em código, comentário ou seed.
 - Erro interno não vaza pro cliente: mensagem genérica na UI, detalhe no log do servidor.
 - Commits na branch ativa; nunca trocar de branch no meio de um fluxo.
 - **Nem tudo precisa de PR.** Mudança de código vai por branch + PR (`/pr`). Higiene
   que não toca código — remover issue entregue de `tasks/`, arquivar issue engavetada,
-  atualizar `references/`, `plan/`, `performance/` — commita direto no `main` e dá push.
+  atualizar `references/`, `plan/` (**exceto** `seguranca-auditoria-*.md` — nunca, ver regra acima),
+  `performance/` — commita direto no `main` e dá push.
 - `main` local e remoto andam juntos: **dê push antes de abrir branch de trabalho.**
   `main` à frente do `origin/main` faz o squash do PR engolir o commit local (aconteceu
   no PR #126, que absorveu um `docs(188)` não relacionado).
