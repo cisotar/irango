@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { Card, CardContent } from "@/components/ui/card";
+
 const DEBOUNCE_MS = 400;
 
 type PreviewVigenciaProps = {
@@ -48,32 +50,35 @@ export function PreviewVigencia({
   }, [frase]);
 
   return (
-    <section
-      aria-labelledby="previa-vigencia-titulo"
-      className="rounded-lg border bg-muted/40 p-4"
-    >
-      <h3
-        id="previa-vigencia-titulo"
-        className="text-xs font-semibold tracking-wide text-texto-muted uppercase"
-      >
-        Prévia
-      </h3>
+    <Card>
+      <CardContent>
+        <section aria-labelledby="previa-vigencia-titulo">
+          <h3
+            id="previa-vigencia-titulo"
+            className="text-xs font-semibold tracking-wide text-texto-muted uppercase"
+          >
+            Prévia
+          </h3>
 
-      <p className="mt-2 text-base font-semibold" aria-hidden>
-        {frase}
-      </p>
-      {/* A região que fala. Fora do fluxo visual para não duplicar a frase. */}
-      <p aria-live="polite" className="sr-only">
-        {anunciada}
-      </p>
+          <p className="mt-2 text-base font-semibold" aria-hidden>
+            {frase}
+          </p>
+          {/* A região que fala. Fora do fluxo visual para não duplicar a frase. */}
+          <p aria-live="polite" className="sr-only">
+            {anunciada}
+          </p>
 
-      <p className="mt-1 text-xs text-texto-muted">
-        Fuso da loja: {fusoRotulo}
-      </p>
+          <p className="mt-1 text-xs text-texto-muted">
+            Fuso da loja: {fusoRotulo}
+          </p>
 
-      {linhaAgora ? (
-        <p className="mt-3 border-t pt-3 text-sm font-medium">{linhaAgora}</p>
-      ) : null}
-    </section>
+          {linhaAgora ? (
+            <p className="mt-3 border-t pt-3 text-sm font-medium">
+              {linhaAgora}
+            </p>
+          ) : null}
+        </section>
+      </CardContent>
+    </Card>
   );
 }

@@ -235,19 +235,23 @@ export function FormVigencia({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pendente} className={ALVO}>
-          {pendente ? "Salvando…" : "Salvar cardápio"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className={ALVO}
-          onClick={() => router.push(voltarHref)}
-        >
-          Cancelar
-        </Button>
-      </div>
+      {/* §10.2 regra 4: a barra de ação também é bloco de conteúdo — solta
+          sobre o creme ela some no fim da página. */}
+      <Card>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={pendente} className={ALVO}>
+            {pendente ? "Salvando…" : "Salvar cardápio"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className={ALVO}
+            onClick={() => router.push(voltarHref)}
+          >
+            Cancelar
+          </Button>
+        </CardContent>
+      </Card>
     </form>
   );
 }

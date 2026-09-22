@@ -326,19 +326,31 @@ isso o problema só aparecia de dia).
 
 1. **A superfície do painel é a classe `.superficie-painel`** (`globals.css`), aplicada no
    `<main>` de `(painel)/painel/layout.tsx`, de `admin/assinantes/[lojaId]/layout.tsx`,
-   `admin/assinantes/page.tsx` e `admin/page.tsx`. Ela redefine `--border` para `#8a8a8a`,
-   que mede 3,45:1 contra o card branco e 3,04:1 contra o creme — passa dos dois lados.
-2. **O fundo não muda, a borda sim.** Atingir 3:1 pelo fundo exigiria cinza médio
-   (`#959595`) e mataria o creme da marca. A norma aceita o limite pela borda **ou** pelo
-   fundo; aqui é pela borda.
+   `admin/assinantes/page.tsx` e `admin/page.tsx`. Ela faz **duas** coisas, e as duas são
+   necessárias:
+   - redefine `--border` para `#8a8a8a` — alcança input, pílula, separador e tudo que usa
+     a classe `border`;
+   - redefine `--tw-ring-color` em `[data-slot="card"]` para o mesmo valor. **O `Card` do
+     shadcn não usa `border`**, e sim `ring-1 ring-foreground/10`, invisível sobre o creme.
+     Mexer só em `--border` não alcança card nenhum — erro cometido e corrigido em
+     2026-09-22.
+   `#8a8a8a` mede 3,45:1 contra o card branco e 3,04:1 contra o creme, passando dos dois
+   lados.
+2. **O fundo da página não muda, o limite do card sim.** Atingir 3:1 pelo fundo exigiria
+   cinza médio (`#959595`) e mataria o creme da marca. A norma aceita o limite pela borda
+   **ou** pelo fundo; aqui é pelo limite do card.
 3. **`--cor-fundo` e os tokens de `:root` são proibidos nesta conversa.** A vitrine os
    compartilha e está correta. Qualquer ajuste de superfície do painel é escopado por
    classe.
-4. **Nada flutua direto no fundo.** Todo bloco de conteúdo do painel vive num card ou numa
-   seção com limite visível. Texto solto sobre o fundo é o defeito que esta seção existe
-   para impedir.
-5. **Cabeçalho de página é um bloco só:** migalha, título, selo de estado e ações juntos,
-   com a mesma forma em todas as rotas do painel — não três elementos soltos empilhados.
+4. **Todo bloco de conteúdo do painel é um card branco.** Não existe "bloco com borda mas
+   sem card", nem `bg-muted` como container de seção: rótulo, campo, grupo de opções,
+   prévia e aviso vivem dentro de `<Card><CardContent>`, sobre `bg-card`. Texto ou campo
+   solto sobre o creme é o defeito que esta seção existe para impedir, e "quase um card"
+   conta como solto.
+5. **Cabeçalho de página é um bloco só, e também é card:** migalha, título, selo de estado
+   e ações juntos, com a mesma forma em todas as rotas do painel. O componente é
+   `components/painel/CabecalhoPagina.tsx` — `voltarHref` é prop obrigatória, porque o hub
+   admin reusa o mesmo cabeçalho com destino diferente.
 
 ### 10.3 Como verificar
 
