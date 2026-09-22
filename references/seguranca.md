@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.4.3 | **Atualizado:** 2026-09-21
+**Versão:** 0.4.4 | **Atualizado:** 2026-09-22
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -968,15 +968,15 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 - Nunca montar HTML por concatenação de string com dado do banco.
 - URLs de imagem (`foto_url`): validar protocolo `https:` antes de renderizar — bloquear `javascript:`. Guard central: `src/lib/utils/urlHttpsSegura.ts` → `urlHttpsSegura(url?: string | null): string | null` (retorna `null` se não for `https:`). `fotoSegura` é especialização para imagens (adiciona fallback `/placeholder-produto.png`); `TabelaFaturas` e o render do QR Pix em `EtapaPagamento` usam `urlHttpsSegura` diretamente. Usar em todo lugar que renderiza `<img src>`, `<Image src>` ou `<a href>` com URL vinda do banco.
 
-### §15-A — Reverse tabnabbing: aba pré-aberta programaticamente (issue 126)
+### §15-A — Reverse tabnabbing: abertura programática de aba (issue 287, supersede issue 126)
 
-`rel="noopener noreferrer"` resolve o caso declarativo (`<a target="_blank">`), mas não cobre abertura **programática** de aba via `window.open()` seguida de navegação assíncrona — padrão usado para pré-abrir a aba do WhatsApp dentro do gesto de clique (Safari invalida a user activation após `await`, então não dá pra esperar a Server Action responder antes de abrir).
+`rel="noopener noreferrer"` resolve o caso declarativo (`<a target="_blank">`), mas abertura **programática** via `window.open()` continua precisando do `noopener` explícito na chamada — sem ele, uma referência viva (`opener`) fica na página nova e, se ela navegar para um domínio de terceiro (`wa.me`), esse terceiro pode reescrever `opener.location` e clonar a página de origem para phishing.
 
-**Risco:** `window.open("", "_blank")` sem `noopener` devolve uma referência viva (`opener`) à página nova; se ela navegar para um domínio de terceiro (`api.whatsapp.com`), esse terceiro pode reescrever `opener.location` e clonar a página de origem para phishing. `window.open(url, "_blank", "noopener")` mataria a própria mecânica, pois nesse caso a URL final só é conhecida depois da resposta do servidor.
+**Padrão atual:** o destino é conhecido no SSR (montado por `montarLinkWhatsappPedido`, revalidado por `urlHttpsSegura` — mesmo guard da §15) **antes** do clique, então `window.open(destino, "_blank", "noopener")` é chamado direto, sem mecânica de pré-abertura. Implementação: `src/components/vitrine/confirmacao/ModalAvisoWhatsapp.tsx` (gesto do botão) e `avisoWhatsapp.ts` → `criarContagemAviso` (contagem esgotada sem gesto usa `navegarTopLevel`, não `window.open`, porque popup fora de gesto do usuário cai no bloqueador).
 
-**Padrão:** desapossar (`janela.opener = null`) enquanto a aba ainda é `about:blank` (same-origin, `opener` gravável) — **antes** de navegá-la para a URL de terceiro. **Fail-closed:** se o desapossamento lançar exceção, a aba não navega e é fechada. Implementação: `src/components/vitrine/checkout/aberturaWhatsapp.ts` (`desapossar`, chamada por `prepararAbaWhatsapp`).
+**Histórico (issue 126, removido na issue 287):** quando o destino só era conhecido *depois* de uma resposta assíncrona da Server Action, o checkout pré-abria uma aba `about:blank` dentro do gesto de clique e desapossava (`janela.opener = null`) antes de navegá-la para a URL de terceiro — `noopener` real teria matado a mecânica, pois a URL final não existia ainda no momento do `window.open`. Esse primitivo (`checkout/aberturaWhatsapp.ts`) foi removido: o disparo do WhatsApp migrou para a página de confirmação, onde o destino já é conhecido no SSR, eliminando a necessidade da mecânica de pré-abertura.
 
-**Regra para devs e agentes:** toda abertura programática de aba (`window.open`) que depois navega para domínio externo com base numa resposta assíncrona segue este molde — desapossar o `opener` antes da navegação, fail-closed se não for possível.
+**Regra para devs e agentes:** toda abertura programática de aba (`window.open`) que navega para domínio externo usa `noopener` real na própria chamada sempre que o destino é conhecido antes do gesto. Só recorra à mecânica de pré-abertura + desapossamento manual se o destino depender de uma resposta assíncrona pós-gesto — e trate isso como exceção, não padrão default.
 
 ### §15-B — Texto livre do cliente: normalização Unicode + anti-injeção de rótulo (issues 166/167/170)
 

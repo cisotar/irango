@@ -1,6 +1,6 @@
 /**
  * Issue 201 — mecânica de medição da barra sticky, extraída para módulo neutro
- * (padrão `criarControladorPolling`/`aberturaWhatsapp`, architecture.md §8)
+ * (padrão `criarControladorPolling`/`avisoWhatsapp`, architecture.md §8)
  * exatamente para poder ser coberta em `environment: node` sem jsdom.
  *
  * `CatalogoVitrine.test.tsx` prova só a ÁRVORE (renderToStaticMarkup não roda

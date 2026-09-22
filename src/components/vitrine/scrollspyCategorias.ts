@@ -2,8 +2,8 @@
 //
 // Módulo NEUTRO (sem "use client"/"use server"), mesmo padrão de
 // `medicaoBarraVitrine.ts` / `criarControladorPolling`
-// (`confirmacao/StatusPedidoLive.tsx`) / `prepararAbaWhatsapp`
-// (`checkout/aberturaWhatsapp.ts`): o `IntersectionObserver` e a busca das
+// (`confirmacao/StatusPedidoLive.tsx`) / `criarContagemAviso`
+// (`confirmacao/avisoWhatsapp.ts`): o `IntersectionObserver` e a busca das
 // <section> são INJETADOS por parâmetro, nunca lidos direto de
 // `window`/`document` aqui dentro — é o que permite cobrir a lógica em
 // `environment: node` (o repo não tem jsdom) com fakes.

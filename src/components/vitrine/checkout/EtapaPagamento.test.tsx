@@ -18,9 +18,9 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // EtapaPagamento chama useEnviarPedido, que usa useRouter() (SSR estático não
-// tem App Router montado) e criarPedido/prepararAbaWhatsapp (server action e
-// mecânica de janela — irrelevantes para render). Mocks de infra, mesmo padrão
-// de useEnviarPedido.test.ts.
+// tem App Router montado) e criarPedido (server action — irrelevante para
+// render). Mocks de infra, mesmo padrão de useEnviarPedido.test.ts.
+// [287] O mock da mecânica de janela saiu junto com a pré-abertura de aba.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
@@ -29,9 +29,6 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("@/lib/actions/pedido", () => ({
   criarPedido: vi.fn(),
-}));
-vi.mock("./aberturaWhatsapp", () => ({
-  prepararAbaWhatsapp: () => ({ concluir: vi.fn() }),
 }));
 
 import { EtapaPagamento, type EtapaPagamentoProps } from "./EtapaPagamento";

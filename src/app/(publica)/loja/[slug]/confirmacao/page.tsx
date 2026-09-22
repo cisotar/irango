@@ -31,6 +31,7 @@ import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
 import { LinkMapsLoja } from "@/components/vitrine/confirmacao/LinkMapsLoja";
 import { StatusPedidoLive } from "@/components/vitrine/confirmacao/StatusPedidoLive";
+import { ModalAvisoWhatsapp } from "@/components/vitrine/confirmacao/ModalAvisoWhatsapp";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 type PageProps = {
@@ -120,14 +121,25 @@ export default async function ConfirmacaoPage({
 
   const ped = acao.pedido;
 
-  // Instrução de pagamento: derivada da forma configurada pela loja (config JSONB).
+  // [287] Consultas INDEPENDENTES em paralelo — o tempo delas está no caminho
+  // crítico antes do aviso de WhatsApp aparecer. `buscarPedidoPorToken` NÃO
+  // entra aqui: o `redirect()` do guard de token depende dela e precisa correr
+  // antes de qualquer outra coisa.
   const svc = createServiceClient();
-  const formas = await listarFormasPagamento(svc, ped.loja_id);
+  const [formas, loja] = await Promise.all([
+    listarFormasPagamento(svc, ped.loja_id),
+    buscarLojaParaPedido(svc, ped.loja_id),
+  ]);
+
+  // Instrução de pagamento: derivada da forma configurada pela loja (config JSONB).
   const forma = formas.find((f) => f.tipo === ped.forma_pagamento);
   const instrucao = forma ? instrucaoPagamento(forma.config) : null;
 
-  const loja = await buscarLojaParaPedido(svc, ped.loja_id);
   const linkWhatsapp = loja ? montarLinkWhatsappPedido(ped, loja) : null;
+  // [287] A decisão de exibir o aviso é do SERVIDOR (RN-A2): o cliente recebe
+  // um booleano já resolvido e o href, e não recalcula o toggle da loja.
+  const avisoWhatsappHabilitado =
+    loja?.whatsapp_envio_automatico === true && linkWhatsapp !== null;
   // [197] RN-R1/RN-R2: fonte única do endereço curto, igual ao do checkout.
   const enderecoLoja = loja ? formatarEnderecoLoja(loja) : null;
 
@@ -140,6 +152,14 @@ export default async function ConfirmacaoPage({
         token={token!}
         statusInicial={ped.status as StatusPedido}
         tipoEntrega={ped.tipo_entrega}
+      />
+
+      {/* [287] Aviso de envio da mensagem. O pedido JÁ está gravado quando ele
+          aparece — o modal não cria, altera nem desfaz nada. */}
+      <ModalAvisoWhatsapp
+        pedidoId={ped.id}
+        avisoHabilitado={avisoWhatsappHabilitado}
+        href={linkWhatsapp?.href ?? null}
       />
 
       <Card>
