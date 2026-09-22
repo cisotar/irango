@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { toast } from "sonner";
 
 import { CardProduto } from "@/components/vitrine/CardProduto";
 import { ItemProdutoLista } from "@/components/vitrine/ItemProdutoLista";
-import {
-  ProdutoModal,
-  type ProdutoModalDados,
-} from "@/components/vitrine/ProdutoModal";
+import { ID_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
+import { ProdutoModal } from "@/components/vitrine/ProdutoModal";
 import { useCarrinho } from "@/hooks/useCarrinho";
+import {
+  useProdutoEmFoco,
+  zerarProdutoEmFoco,
+} from "@/hooks/useProdutoEmFoco";
 import { ancoraSecao, idNaSecao } from "@/lib/utils/ancoraCategoria";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
@@ -117,23 +119,45 @@ export function SecaoCatalogo({
   termo,
 }: SecaoCatalogoProps) {
   const { adicionar } = useCarrinho();
-  const [produtoSelecionado, setProdutoSelecionado] =
-    useState<ProdutoModalDados | null>(null);
-  const [modalAberto, setModalAberto] = useState(false);
+  // [289/D1] O "qual produto está em foco" mora num store de módulo, e não mais
+  // em `useState` local: o `ModalPromocoes` é IRMÃO deste componente sob um
+  // Server Component e precisa abrir ESTE modal — o único da vitrine, e o único
+  // caminho que monta `temDesconto: true` no payload de `adicionar`.
+  const {
+    dados: produtoSelecionado,
+    aberto: modalAberto,
+    origem,
+    abrir,
+    fechar,
+  } = useProdutoEmFoco();
+
+  // [289/RN-12] Store é global ao módulo: navegar (client-side) para outra loja
+  // não pode deixar um produto pendente que reabra o modal sozinho.
+  useEffect(() => zerarProdutoEmFoco, []);
+
+  // [289/RN-6] Destino do foco quando o detalhe aberto PELA PROMOÇÃO fecha: o
+  // botão que o abriu já não existe. Mesmo mecanismo de id compartilhado da 234
+  // — resolvido depois da montagem, nunca no render e nunca no SSR.
+  const focoNoMain = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    focoNoMain.current = document.getElementById(ID_MAIN_VITRINE);
+  }, []);
 
   // Repassa o `ProdutoVitrine` INTEIRO — nunca mais um objeto remontado campo a
   // campo. Era a remontagem parcial que deixava comprabilidade (e agora preço
   // efetivo) caírem no chão em silêncio no caminho do modal (D13).
   const abrirModal = (produto: ProdutoVitrine) => {
-    setProdutoSelecionado({
-      ...produto,
-      gruposOpcionais: produto.categoria_id
-        ? opcionaisPorCategoria[produto.categoria_id]
-        : undefined,
-      // O modal é o único lugar onde a frase de vigência cabe inteira (§4.2).
-      rotuloIndisponivel: rotulosVigencia[produto.id],
-    });
-    setModalAberto(true);
+    abrir(
+      {
+        ...produto,
+        gruposOpcionais: produto.categoria_id
+          ? opcionaisPorCategoria[produto.categoria_id]
+          : undefined,
+        // O modal é o único lugar onde a frase de vigência cabe inteira (§4.2).
+        rotuloIndisponivel: rotulosVigencia[produto.id],
+      },
+      "catalogo",
+    );
   };
 
   // Confirmação do modal: adiciona a quantidade + opcionais escolhidos ao carrinho.
@@ -268,8 +292,13 @@ export function SecaoCatalogo({
         key={produtoSelecionado?.id ?? "vazio"}
         produto={produtoSelecionado}
         open={modalAberto}
-        onOpenChange={setModalAberto}
+        onOpenChange={(aberto) => {
+          if (!aberto) fechar();
+        }}
         onAdicionar={confirmarAdicao}
+        // Vindo do card/linha o gatilho continua no DOM: o Base UI devolve o
+        // foco a ele sozinho, e nada muda.
+        focoDeSaida={origem === "promocoes" ? focoNoMain : undefined}
       />
     </div>
   );

@@ -16,7 +16,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 
 import { ModalPromocoes } from "./ModalPromocoes";
-import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
+import type { ProdutoModalDados } from "./ProdutoModal";
 
 const FONTE = readFileSync(
   new URL("./ModalPromocoes.tsx", import.meta.url),
@@ -33,7 +33,7 @@ const CODIGO = FONTE.replace(/\/\*[\s\S]*?\*\//g, "").replace(
   "",
 );
 
-function promo(n: number): ProdutoVitrine {
+function promo(n: number): ProdutoModalDados {
   return {
     id: `p${n}`,
     nome: `Prato ${n}`,
@@ -135,5 +135,94 @@ describe("ModalPromocoes — as travas que são ausências (RN-17)", () => {
     expect(CODIGO.match(/focus-visible:outline-3/g)).toHaveLength(
       interativos.length,
     );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [289] As linhas de prato passaram a ABRIR O DETALHE.
+//
+// Por que árvore por TEXTO-FONTE e não por `renderToStaticMarkup`: a trava 6
+// diz que o SSR deste componente é VAZIO (`aberto` começa `false` e só a
+// hidratação muda), e os testes acima provam exatamente isso. Sem jsdom não há
+// hidratação — então o corpo do modal não existe em HTML nenhum que esta suíte
+// consiga produzir, e a estrutura é afirmada sobre o código, como já se faz com
+// as travas que são ausências. Foco, sequenciamento e a abertura do
+// `ProdutoModal` NÃO são observáveis aqui: são verificação manual (spec,
+// §Testabilidade).
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("ModalPromocoes — cada prato listado abre o detalhe (RN-1)", () => {
+  it("a linha do prato é um `<button type=\"button\">`", () => {
+    expect(CODIGO).toMatch(/<li key=\{produto\.id\}>\s*<button\s+type="button"/);
+  });
+
+  it("o clique registra o pendente e passa pelo MESMO `fechar` (trava 5/RN-3)", () => {
+    expect(CODIGO).toMatch(/onClick=\{\(\) => escolher\(produto\)\}/);
+    const escolher = /const escolher = \([\s\S]*?\n  \};/.exec(CODIGO);
+    expect(escolher).not.toBeNull();
+    expect(escolher?.[0]).toContain("setPendente(produto)");
+    expect(escolher?.[0]).toContain("fechar()");
+    // Continua havendo UM só caminho de fechamento no arquivo inteiro.
+    expect(CODIGO.match(/setAberto\(false\)/g)).toHaveLength(1);
+  });
+
+  it("a abertura do detalhe é sequenciada no `onOpenChangeComplete(false)` (RN-5)", () => {
+    const bloco = /onOpenChangeComplete=\{\(open\) => \{([\s\S]*?)\n      \}\}/.exec(
+      CODIGO,
+    );
+    expect(bloco).not.toBeNull();
+    // Sai cedo enquanto ABRINDO e quando não há prato pendente.
+    expect(bloco?.[1]).toContain("if (open || !pendente) return;");
+    expect(bloco?.[1]).toContain('abrirProdutoEmFoco(pendente, "promocoes")');
+    // E é o ÚNICO lugar do arquivo que põe produto em foco.
+    expect(CODIGO.match(/abrirProdutoEmFoco\(/g)).toHaveLength(1);
+  });
+
+  it("com prato pendente o modal NÃO move o foco (`false` = do nothing, RN-6)", () => {
+    expect(CODIGO).toContain("finalFocus={pendente ? false : destinoFoco}");
+  });
+
+  it("não monta payload de carrinho: `temDesconto` não é escrito aqui (RN-4)", () => {
+    // O único montador é `confirmarAdicao`, em `SecaoCatalogo` — é ele que
+    // alimenta `promocaoExibida` no pedido (238/RN-12-a).
+    expect(CODIGO).not.toMatch(/temDesconto:\s*true|adicionar\(/);
+    // E existe UMA instância de `ProdutoModal` na vitrine (em `SecaoCatalogo`);
+    // aqui o módulo entra SÓ como tipo — apagado na compilação, nunca montado.
+    // `ProdutoModal\b` não casa `ProdutoModalDados`: a única ocorrência é o
+    // caminho do `import type`.
+    expect(CODIGO.match(/ProdutoModal\b/g) ?? []).toHaveLength(1);
+    expect(CODIGO).toMatch(/^import type \{[^}]*\} from "[^"]*ProdutoModal";$/m);
+  });
+
+  it("alvo de toque do prato em valor LITERAL ≥44px (RN-10)", () => {
+    const botaoPrato = /<button\s+type="button"\s+onClick=\{\(\) => escolher\(produto\)\}[\s\S]*?>/.exec(
+      CODIGO,
+    );
+    expect(botaoPrato).not.toBeNull();
+    expect(botaoPrato?.[0]).toContain("min-h-[44px]");
+    expect(botaoPrato?.[0]).not.toMatch(/min-h-11/);
+    expect(botaoPrato?.[0]).toContain("focus-visible:outline-3");
+  });
+
+  it("o rótulo acessível traz o preço PROMOCIONAL, não o cheio (233/RN-10)", () => {
+    expect(CODIGO).toMatch(
+      /aria-label=\{`Ver detalhes de \$\{produto\.nome\}, \$\{rotuloPrecoAcessivel\(produto\)\}`\}/,
+    );
+  });
+
+  it('a linha "e mais N pratos em promoção" continua NÃO interativa', () => {
+    const resumo = /restantes > 0 \? \(([\s\S]*?)\) : null/.exec(CODIGO);
+    expect(resumo).not.toBeNull();
+    expect(resumo?.[1]).not.toMatch(/<button|onClick|role=/);
+  });
+
+  it("os dois CTAs do rodapé continuam lá, no mesmo `fechar` (trava 5)", () => {
+    expect(CODIGO).toContain("Ver promoções");
+    expect(CODIGO).toContain("Continuar vendo o cardápio");
+    expect(CODIGO.match(/onClick=\{fechar\}/g)).toHaveLength(3); // ✕ + 2 CTAs
+  });
+
+  it("o novo alvo NÃO trouxe handler de gesto bruto (RN-11)", () => {
+    expect(CODIGO).not.toMatch(/pointerdown|touchstart|mousedown/i);
   });
 });
