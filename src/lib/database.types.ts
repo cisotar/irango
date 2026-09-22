@@ -1516,6 +1516,10 @@ export type Database = {
         Args: { p_categoria_id: string; p_ids: string[]; p_loja_id: string }
         Returns: number
       }
+      reordenar_produtos: {
+        Args: { p_categoria_id: string; p_ids: string[]; p_loja_id: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

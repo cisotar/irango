@@ -70,6 +70,10 @@ import {
   ReordenarCategorias,
   type ManipuladorReordenarCategorias,
 } from "@/components/painel/ReordenarCategorias";
+import {
+  ReordenarProdutos,
+  type ManipuladorReordenarProdutos,
+} from "@/components/painel/ReordenarProdutos";
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
 import { BarraSelecaoLote } from "@/components/painel/BarraSelecaoLote";
 import { useLoteDeProdutos } from "@/components/painel/useLoteDeProdutos";
@@ -107,6 +111,7 @@ import type {
   removerCategoria as removerCategoriaLojista,
   alternarExibirImagens as alternarExibirImagensLojista,
   reordenarCategorias as reordenarCategoriasLojista,
+  reordenarProdutos as reordenarProdutosLojista,
 } from "@/lib/actions/produto";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
@@ -230,6 +235,12 @@ export type AcoesProdutosClient = {
   removerCategoria: typeof removerCategoriaLojista;
   alternarExibirImagens: typeof alternarExibirImagensLojista;
   reordenarCategorias: typeof reordenarCategoriasLojista;
+  /**
+   * [293] Reordenação dos PRODUTOS de UMA categoria. Chave própria, e não uma
+   * sobrecarga de `reordenarCategorias`: o escopo da permutação é o PAR (loja,
+   * categoria), e o payload carrega o `categoria_id` do grupo.
+   */
+  reordenarProdutos: typeof reordenarProdutosLojista;
 } & OpcionaisClientAcoes;
 
 type GrupoProdutos = {
@@ -434,6 +445,21 @@ export function ProdutosClient({
   const saindoDoModoRef = useRef(false);
 
   /*
+    [293] Segundo modo, IRMÃO do de categorias: reordenar os PRODUTOS de um
+    grupo. Guarda o GRUPO inteiro em vez de um booleano porque a permutação é
+    escopada pelo par (loja, categoria) — e `null` em `id` é o grupo legítimo
+    "Sem categoria" (`categoria_id IS NULL`), não "nenhum grupo". Por isso o
+    estado é `{ id, nome } | null`, e não `string | null`: as duas ausências
+    seriam o mesmo valor.
+  */
+  const [grupoReordenando, setGrupoReordenando] = useState<{
+    id: string | null;
+    nome: string;
+  } | null>(null);
+  const reordenarProdutosRef = useRef<ManipuladorReordenarProdutos>(null);
+  const saindoDoModoProdutosRef = useRef(false);
+
+  /*
     [260] Modo de SELEÇÃO — mesmo desenho de `modoReordenar` (issue 175):
     estado no PAI, a linha troca de aparência, uma barra de ação aparece. Não é
     chrome permanente porque a linha que ganha um checkbox soma ~44px de chrome
@@ -578,6 +604,41 @@ export function ProdutosClient({
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
   }, [modoReordenar, sairDoModoReordenar]);
+
+  /**
+   * [293] Produtos do grupo em modo reordenar, lidos de `grupos` — a MESMA
+   * lista que a tela mostra, já ordenada. Reprojetar de `produtos` aqui
+   * duplicaria a regra de agrupamento (e o casamento de `categoria_id` nulo).
+   */
+  const produtosDoGrupoReordenando = useMemo(
+    () =>
+      grupoReordenando == null
+        ? []
+        : (grupos.find((g) => g.id === grupoReordenando.id)?.produtos ?? []),
+    [grupos, grupoReordenando],
+  );
+
+  /** Mesma ordem do modo de categorias: flush → desmonta → refresh. */
+  const sairDoModoReordenarProdutos = useCallback(async () => {
+    if (saindoDoModoProdutosRef.current) return; // ESC repetido / duplo clique
+    saindoDoModoProdutosRef.current = true;
+    try {
+      await reordenarProdutosRef.current?.finalizar();
+    } finally {
+      saindoDoModoProdutosRef.current = false;
+      setGrupoReordenando(null);
+      router.refresh();
+    }
+  }, [router]);
+
+  useEffect(() => {
+    if (grupoReordenando == null) return;
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === "Escape") void sairDoModoReordenarProdutos();
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [grupoReordenando, sairDoModoReordenarProdutos]);
 
   function abrirCriar() {
     abrirCriarNaCategoria(null);
@@ -771,6 +832,11 @@ export function ProdutosClient({
         */}
         {modoReordenar ? (
           <Button onClick={() => void sairDoModoReordenar()}>Concluir</Button>
+        ) : grupoReordenando != null ? (
+          // [293] Mesma troca de BARRA do modo de categorias, pelo mesmo motivo.
+          <Button onClick={() => void sairDoModoReordenarProdutos()}>
+            Concluir
+          </Button>
         ) : modoSelecao ? (
           // No modo, as ações de criação somem (não ficam `disabled`): botão
           // inerte sai da tabulação e não explica por que não funciona — a
@@ -847,6 +913,23 @@ export function ProdutosClient({
             onReordenar={acoes.reordenarCategorias}
           />
         </>
+      ) : grupoReordenando != null ? (
+        /* [293] Reordenação ESCOPADA a um grupo: a listagem inteira dá lugar à
+           lista do grupo escolhido. Sai do cabeçalho da categoria (e não da
+           barra do topo) porque a ordem de produto só existe dentro do grupo. */
+        <>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Ordene os produtos de {grupoReordenando.nome}. A ordem daqui é a do
+            cardápio.
+          </p>
+          <ReordenarProdutos
+            ref={reordenarProdutosRef}
+            produtos={produtosDoGrupoReordenando}
+            categoriaId={grupoReordenando.id}
+            nomeCategoria={grupoReordenando.nome}
+            onReordenar={acoes.reordenarProdutos}
+          />
+        </>
       ) : (
         <>
           {produtos.length === 0 && (
@@ -911,8 +994,34 @@ export function ProdutosClient({
                           </Button>
                         </div>
                       )
-                    ) : grupo.id != null ? (
+                    ) : grupo.id != null || grupo.produtos.length >= 2 ? (
                       <div className="flex shrink-0 items-center">
+                        {/* [293] Ponto de entrada do modo reordenar PRODUTOS —
+                            no cabeçalho do grupo, porque a permutação é
+                            escopada a UMA categoria. Espelha o gate do modo de
+                            categorias (`podeReordenar`): abaixo de 2 itens não
+                            há ordem a escolher, e um botão desabilitado ali só
+                            produziria "por que não funciona?" sem resposta.
+                            Aparece também no grupo "Sem categoria" — lá o
+                            `categoria_id` é NULL e a RPC o trata como grupo. */}
+                        {grupo.produtos.length >= 2 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Reordenar produtos de ${grupo.nome}`}
+                            onClick={() =>
+                              setGrupoReordenando({
+                                id: grupo.id,
+                                nome: grupo.nome,
+                              })
+                            }
+                          >
+                            <ArrowUpDown className="size-4" />
+                            <span className="hidden sm:inline">Reordenar</span>
+                          </Button>
+                        )}
+                        {grupo.id != null && (
+                          <>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -938,6 +1047,8 @@ export function ProdutosClient({
                               (RN-5); o aria-label mantém o nome acessível. */}
                           <span className="hidden sm:inline">Novo produto</span>
                         </Button>
+                          </>
+                        )}
                       </div>
                     ) : null}
                   </div>

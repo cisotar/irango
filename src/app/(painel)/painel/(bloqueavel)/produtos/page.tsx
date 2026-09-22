@@ -25,6 +25,7 @@ import {
   removerCategoria,
   alternarExibirImagens,
   reordenarCategorias,
+  reordenarProdutos,
 } from "@/lib/actions/produto";
 import {
   criarCategoriaOpcional,
@@ -233,6 +234,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         removerCategoria,
         alternarExibirImagens,
         reordenarCategorias,
+        reordenarProdutos,
         criarCategoriaOpcional,
         atualizarCategoriaOpcional,
         removerCategoriaOpcional,

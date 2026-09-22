@@ -39,6 +39,9 @@ vi.mock("@/app/admin/assinantes/actions/admin-produtos", () => ({
   removerProdutoAdmin: vi.fn(async () => ({ ok: true })),
   alternarDisponibilidadeAdmin: vi.fn(async () => ({ ok: true })),
   alternarOcultoAdmin: vi.fn(async () => ({ ok: true })),
+  // [293] Sem este mock, a chave nova cairia no módulo real e o teste de
+  // fiação não provaria nada sobre ela.
+  reordenarProdutosAdmin: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock("@/app/admin/assinantes/actions/admin-upload", () => ({
@@ -81,6 +84,9 @@ const CHAVES_ESPERADAS = [
   // não estavam listadas; as 9 de opcionais entram com o cartão no modal.
   "alternarExibirImagens",
   "reordenarCategorias",
+  // [293] A chave do modo reordenar PRODUTOS: sem ela injetada, o hub admin
+  // cairia na action do LOJISTA, que resolve a loja por `auth.uid()`.
+  "reordenarProdutos",
   "criarCategoriaOpcional",
   "atualizarCategoriaOpcional",
   "removerCategoriaOpcional",
