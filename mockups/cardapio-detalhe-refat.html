@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iRango — refatoração de /painel/cardapios/[cardapioId]</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // Tokens reais do painel (globals.css :root). O painel NUNCA usa o tema da
+  // loja (lojas.tema) — estas são cores de sistema.
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          background: "#ffffff",
+          foreground: "#252525",
+          card: "#ffffff",
+          muted: "#f7f7f7",
+          "muted-foreground": "#8e8e8e",
+          secondary: "#f0f0f0",
+          "secondary-foreground": "#343434",
+          border: "#e5e5e5",
+          primary: "#252525",
+          "primary-foreground": "#fbfbfb",
+          destructive: "#dc2626",
+          ring: "#b5b5b5",
+          "texto-muted": "#6b5d4f",   // --texto-muted, AA em fundo claro
+        },
+        borderRadius: { DEFAULT: "0.625rem", xl: "0.875rem" },
+      },
+    },
+  };
+</script>
+<style>
+  /* globals.css:239 — base rem = 19.2px. min-h-11 = 52,8px e size-7 = 33,6px:
+     por isso TODO alvo de toque aqui usa 44px LITERAL (design-system §5). */
+  html { font-size: 120%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+         background:#f2efea; color:#252525; }
+
+  /* ---------- primitivos shadcn recriados como classe ---------- */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:.4rem;
+         border-radius:.625rem; font-size:.875rem; font-weight:500; padding:0 .8rem;
+         min-height:44px; cursor:pointer; border:1px solid transparent; }
+  .btn:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(181,181,181,.5); }
+  .btn-primary { background:#252525; color:#fbfbfb; }
+  .btn-outline { border-color:#e5e5e5; background:#fff; color:#252525; }
+  .btn-secondary { background:#f0f0f0; color:#343434; }
+  .btn-ghost { background:transparent; color:#252525; }
+  .btn-destructive { background:#dc2626; color:#fff; }
+  .btn[aria-disabled="true"] { opacity:.5; cursor:not-allowed; }
+  .alvo { min-width:44px; min-height:44px; }
+
+  /* Card: superfície BRANCA sobre shell cinza-quente. É este par que resolve o
+     "campos opacos sem distinção com o fundo" da queixa. */
+  .card { background:#fff; border:1px solid #e5e5e5; border-radius:.875rem;
+          box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .badge { display:inline-flex; align-items:center; gap:.2rem; border:1px solid #e5e5e5;
+           border-radius:9999px; padding:.08rem .5rem; font-size:.7rem; line-height:1.5;
+           color:#343434; background:#fff; white-space:nowrap; }
+  .badge-secondary { background:#f0f0f0; border-color:transparent; }
+  .input { min-height:44px; width:100%; border:1px solid #e5e5e5; border-radius:.625rem;
+           background:#fff; padding:0 .7rem; font-size:.875rem; color:#252525; }
+  .input:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(181,181,181,.5); border-color:#b5b5b5; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+             clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+  /* PilulasDeDias, modo compacto: altura 44px intacta, só o eixo X cede
+     (min-w 40px < sm). Exceção já registrada em design-system §5. */
+  .pilula { min-height:44px; min-width:40px; display:inline-flex; align-items:center;
+            justify-content:center; border:1px solid #e5e5e5; border-radius:.5rem;
+            background:#fff; font-size:.8rem; font-weight:500; cursor:pointer; }
+  .pilula[aria-pressed="true"] { background:#252525; border-color:#252525; color:#fbfbfb; font-weight:600; }
+  .pilula:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(181,181,181,.5); }
+  @media (min-width:640px){ .pilula { min-width:44px; } }
+  .grade-pilulas { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:.25rem; }
+
+  .aviso-ambar { border:1px solid #fcd34d; background:#fef3c7; color:#78350f;
+                 border-radius:.625rem; padding:.35rem .6rem; font-size:.75rem; }
+  .rotulo { font-size:.7rem; letter-spacing:.06em; text-transform:uppercase; color:#8e8e8e; }
+  .nota { border-left:3px solid #252525; background:#fff; padding:.5rem .75rem; font-size:.8rem; }
+  .tela { width:360px; max-width:100%; }
+  .shell { background:#f2efea; }
+</style>
+</head>
+<body>
+
+<div class="mx-auto max-w-6xl px-4 py-6 space-y-10">
+
+  <header class="space-y-1">
+    <h1 class="text-lg font-semibold">Refatoração — detalhe de um cardápio no painel</h1>
+    <p class="text-sm text-texto-muted">
+      Rota <code>/painel/cardapios/[cardapioId]</code>, reusada pelo hub admin com as ações injetadas.
+      Cores de sistema; toque 44px literal; tudo cabe em 360px sem rolagem horizontal.
+    </p>
+  </header>
+
+  <!-- ══════════════════ 1. PÁGINA, 360px, estado normal ══════════════════ -->
+  <section class="space-y-3">
+    <p class="rotulo">1 — Página em 360px · vigência recolhida + itens do cardápio</p>
+
+    <div class="tela shell rounded-xl border border-border p-3 space-y-3">
+
+      <!-- cabeçalho -->
+      <div class="space-y-1">
+        <a href="#" class="inline-flex min-h-[44px] items-center gap-1 text-sm underline">‹ Cardápios</a>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-semibold leading-tight">Almoço Executivo</h2>
+          <!-- cor + texto, nunca só cor (design-system §8) -->
+          <span class="badge" style="background:#dcfce7;border-color:#86efac;color:#166534">● Aparecendo agora</span>
+        </div>
+      </div>
+
+      <!-- ── VIGÊNCIA: Accordion single, FECHADO por padrão ── -->
+      <div class="card">
+        <h3>
+          <button class="flex w-full min-h-[44px] items-center gap-2 px-3 py-2 text-left"
+                  aria-expanded="false" aria-controls="painel-vigencia">
+            <span aria-hidden="true" class="text-muted-foreground">›</span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-semibold">Quando este cardápio aparece</span>
+              <!-- resumo de UMA linha, redigido no SERVIDOR (descreverVigencia) -->
+              <span class="block truncate text-xs text-texto-muted">Seg a sex, das 11:00 às 15:00</span>
+            </span>
+            <span class="badge shrink-0">Editar</span>
+          </button>
+        </h3>
+        <div id="painel-vigencia" hidden></div>
+      </div>
+
+      <!-- ── CORPO: os itens QUE ESTÃO no cardápio ── -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <h3 class="font-semibold">Itens do cardápio <span class="text-texto-muted font-normal">(4)</span></h3>
+        <button class="btn btn-primary">+ Adicionar item</button>
+      </div>
+
+      <ul class="space-y-2">
+        <!-- item com dias próprios -->
+        <li class="card p-3 space-y-2">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="text-[1.02rem] font-semibold leading-snug">Filé à parmegiana</p>
+              <p class="text-sm text-texto-muted tabular-nums">R$ 48,90 · Pratos principais</p>
+            </div>
+            <button class="btn btn-outline alvo shrink-0" aria-label="Mais ações de Filé à parmegiana">⋮</button>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span class="badge badge-secondary">Exclusivo de cardápio</span>
+          </div>
+          <p id="ag-file" class="text-xs text-texto-muted">Só às segundas, quartas e sextas.</p>
+          <div class="grade-pilulas" role="group"
+               aria-label="Dias em que Filé à parmegiana aparece neste cardápio"
+               aria-describedby="ag-file">
+            <button class="pilula" aria-pressed="false" aria-label="domingo" tabindex="0">D</button>
+            <button class="pilula" aria-pressed="true"  aria-label="segunda-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="terça-feira" tabindex="-1">T</button>
+            <button class="pilula" aria-pressed="true"  aria-label="quarta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="quinta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="true"  aria-label="sexta-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="sábado" tabindex="-1">S</button>
+          </div>
+          <p aria-live="polite" class="sr-only">Dias salvos.</p>
+        </li>
+
+        <!-- item que segue os dias do cardápio (dias_semana = NULL) -->
+        <li class="card p-3 space-y-2">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="text-[1.02rem] font-semibold leading-snug">Strogonoff de frango</p>
+              <p class="text-sm text-texto-muted tabular-nums">R$ 39,00 · Pratos principais</p>
+            </div>
+            <button class="btn btn-outline alvo shrink-0" aria-label="Mais ações de Strogonoff de frango">⋮</button>
+          </div>
+          <p id="ag-stro" class="text-xs text-texto-muted">Todos os dias do cardápio.</p>
+          <div class="grade-pilulas" role="group"
+               aria-label="Dias em que Strogonoff de frango aparece neste cardápio"
+               aria-describedby="ag-stro">
+            <button class="pilula" aria-pressed="false" aria-label="domingo" tabindex="0">D</button>
+            <button class="pilula" aria-pressed="false" aria-label="segunda-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="terça-feira" tabindex="-1">T</button>
+            <button class="pilula" aria-pressed="false" aria-label="quarta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="quinta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="sexta-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="sábado" tabindex="-1">S</button>
+          </div>
+        </li>
+
+        <!-- item com AVISO ÂMBAR de agenda que nunca abre (RN-06) -->
+        <li class="card p-3 space-y-2">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="text-[1.02rem] font-semibold leading-snug">Feijoada da casa</p>
+              <p class="text-sm text-texto-muted tabular-nums">R$ 54,00 · Pratos principais</p>
+            </div>
+            <button class="btn btn-outline alvo shrink-0" aria-label="Mais ações de Feijoada da casa">⋮</button>
+          </div>
+          <p id="ag-feij" class="text-xs text-texto-muted">Só aos sábados.</p>
+          <div class="grade-pilulas" role="group"
+               aria-label="Dias em que Feijoada da casa aparece neste cardápio"
+               aria-describedby="ag-feij">
+            <button class="pilula" aria-pressed="false" aria-label="domingo" tabindex="0">D</button>
+            <button class="pilula" aria-pressed="false" aria-label="segunda-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="terça-feira" tabindex="-1">T</button>
+            <button class="pilula" aria-pressed="false" aria-label="quarta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="quinta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="sexta-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="true"  aria-label="sábado" tabindex="-1">S</button>
+          </div>
+          <!-- texto REDIGIDO no servidor (avisoAgendaQueNuncaAbre); avisa, não bloqueia -->
+          <p role="status" class="aviso-ambar">
+            Este item nunca aparece: o cardápio só abre de segunda a sexta.
+          </p>
+        </li>
+
+        <!-- item em CONFIRMAÇÃO de remoção — na página é AlertDialog (ver bloco 4);
+             aqui fica o estado "salvando" do vínculo -->
+        <li class="card p-3 space-y-2" aria-busy="true">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="text-[1.02rem] font-semibold leading-snug">Salada Caesar</p>
+              <p class="text-sm text-texto-muted tabular-nums">R$ 28,50 · Entradas</p>
+            </div>
+            <button class="btn btn-outline alvo shrink-0" aria-label="Mais ações de Salada Caesar">⋮</button>
+          </div>
+          <p id="ag-cae" class="text-xs text-texto-muted">Salvando…</p>
+          <div class="grade-pilulas" role="group"
+               aria-label="Dias em que Salada Caesar aparece neste cardápio" aria-describedby="ag-cae">
+            <button class="pilula" aria-pressed="false" aria-label="domingo" disabled>D</button>
+            <button class="pilula" aria-pressed="true"  aria-label="segunda-feira" disabled>S</button>
+            <button class="pilula" aria-pressed="true"  aria-label="terça-feira" disabled>T</button>
+            <button class="pilula" aria-pressed="true"  aria-label="quarta-feira" disabled>Q</button>
+            <button class="pilula" aria-pressed="true"  aria-label="quinta-feira" disabled>Q</button>
+            <button class="pilula" aria-pressed="true"  aria-label="sexta-feira" disabled>S</button>
+            <button class="pilula" aria-pressed="false" aria-label="sábado" disabled>S</button>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 2. Vigência ABERTA + kebab + vazio ══════════════════ -->
+  <section class="grid gap-4 md:grid-cols-2">
+    <div class="space-y-2">
+      <p class="rotulo">2a — vigência ABERTA (o FormVigencia de hoje, inteiro, dentro do painel)</p>
+      <div class="tela shell rounded-xl border border-border p-3">
+        <div class="card">
+          <h3>
+            <button class="flex w-full min-h-[44px] items-center gap-2 px-3 py-2 text-left"
+                    aria-expanded="true" aria-controls="vig-aberta">
+              <span aria-hidden="true" class="text-muted-foreground">⌄</span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-semibold">Quando este cardápio aparece</span>
+                <span class="block truncate text-xs text-texto-muted">Seg a sex, das 11:00 às 15:00</span>
+              </span>
+            </button>
+          </h3>
+          <div id="vig-aberta" class="border-t border-border p-3 space-y-3">
+            <div class="space-y-1">
+              <label for="nome-card" class="text-sm font-medium">Nome do cardápio</label>
+              <input id="nome-card" class="input" value="Almoço Executivo" />
+            </div>
+            <fieldset class="space-y-2">
+              <legend class="text-sm font-medium">Modo</legend>
+              <label class="flex min-h-[44px] items-center gap-2 text-sm">
+                <input type="radio" name="modo" checked /> Repete sempre
+              </label>
+              <label class="flex min-h-[44px] items-center gap-2 text-sm">
+                <input type="radio" name="modo" /> Período com data de fim
+              </label>
+            </fieldset>
+            <div class="space-y-1">
+              <p class="text-sm font-medium" id="rot-dias-vig">Dias da semana</p>
+              <!-- modo NÃO-compacto: 4 colunas < sm, 44px nos dois eixos -->
+              <div role="group" aria-labelledby="rot-dias-vig" class="grid grid-cols-4 gap-2">
+                <button class="btn btn-outline alvo" aria-pressed="false" aria-label="domingo">Dom</button>
+                <button class="btn btn-primary alvo" aria-pressed="true" aria-label="segunda-feira">Seg</button>
+                <button class="btn btn-primary alvo" aria-pressed="true" aria-label="terça-feira">Ter</button>
+                <button class="btn btn-primary alvo" aria-pressed="true" aria-label="quarta-feira">Qua</button>
+                <button class="btn btn-primary alvo" aria-pressed="true" aria-label="quinta-feira">Qui</button>
+                <button class="btn btn-primary alvo" aria-pressed="true" aria-label="sexta-feira">Sex</button>
+                <button class="btn btn-outline alvo" aria-pressed="false" aria-label="sábado">Sáb</button>
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button class="btn btn-outline">Todos os dias</button>
+                <button class="btn btn-ghost">Limpar</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="space-y-1">
+                <label for="h1" class="text-sm font-medium">Abre às</label>
+                <input id="h1" class="input" value="11:00" />
+              </div>
+              <div class="space-y-1">
+                <label for="h2" class="text-sm font-medium">Fecha às</label>
+                <input id="h2" class="input" value="15:00" />
+              </div>
+            </div>
+            <p class="rounded-lg bg-muted px-2 py-1 text-xs text-texto-muted">
+              Agora (qui, 21/09, 12:40): está aparecendo.
+            </p>
+            <div class="flex gap-2">
+              <button class="btn btn-primary flex-1">Salvar vigência</button>
+              <button class="btn btn-outline flex-1">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-4">
+      <div class="space-y-2">
+        <p class="rotulo">2b — kebab do item</p>
+        <div class="card w-72 p-1">
+          <div class="min-h-[44px] flex items-center gap-2 px-3 text-sm">✎ Editar produto</div>
+          <div class="min-h-[44px] flex items-center gap-2 px-3 text-sm">↺ Voltar a todos os dias do cardápio</div>
+          <div class="min-h-[44px] flex items-center gap-2 px-3 text-sm text-destructive">⊘ Tirar do cardápio</div>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <p class="rotulo">2c — estado vazio (texto + CTA, nunca tela em branco)</p>
+        <div class="tela shell rounded-xl border border-border p-3">
+          <div class="card p-4 text-center space-y-2">
+            <p class="font-semibold">Nenhum item neste cardápio ainda</p>
+            <p class="text-sm text-texto-muted">
+              Um cardápio sem item não muda nada na vitrine. Escolha os produtos que ele controla.
+            </p>
+            <button class="btn btn-primary w-full">+ Adicionar item</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 3. SHEET de adicionar ══════════════════ -->
+  <section class="space-y-3">
+    <p class="rotulo">3 — Sheet “Adicionar itens” · side=bottom no mobile (h 90dvh), side=right ≥ sm</p>
+
+    <div class="grid gap-4 md:grid-cols-2">
+
+      <!-- 3a: sanfona fechada -->
+      <div class="space-y-2">
+        <p class="text-xs text-texto-muted">3a — abre com as categorias FECHADAS</p>
+        <div class="tela card overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="t-sheet">
+          <div class="flex items-start gap-2 border-b border-border px-3 py-2">
+            <div class="min-w-0 flex-1">
+              <p id="t-sheet" class="font-semibold text-sm">Adicionar itens</p>
+              <p class="text-xs text-texto-muted truncate">Almoço Executivo · seg a sex, 11:00–15:00</p>
+            </div>
+            <!-- close PRÓPRIO de 44px: o do sheet.tsx é size="icon-sm" = 33,6px -->
+            <button class="btn btn-ghost alvo shrink-0" aria-label="Fechar">✕</button>
+          </div>
+
+          <div class="border-b border-border p-3">
+            <label for="busca" class="sr-only">Buscar produto</label>
+            <input id="busca" class="input" type="search" placeholder="Buscar produto…" />
+          </div>
+
+          <div class="max-h-80 overflow-y-auto">
+            <!-- categoria FECHADA -->
+            <div class="border-b border-border">
+              <div class="flex items-center gap-1 px-2">
+                <button class="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-left"
+                        aria-expanded="false" aria-controls="cat-entradas">
+                  <span aria-hidden="true" class="text-muted-foreground">›</span>
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium">Entradas</span>
+                    <span class="block text-xs text-texto-muted">6 produtos · 1 já no cardápio</span>
+                  </span>
+                </button>
+                <button class="btn btn-outline shrink-0 px-2 text-xs" aria-label="Adicionar os 5 produtos de Entradas que faltam">
+                  + os 5
+                </button>
+              </div>
+            </div>
+
+            <!-- categoria ABERTA -->
+            <div class="border-b border-border">
+              <div class="flex items-center gap-1 px-2">
+                <button class="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-left"
+                        aria-expanded="true" aria-controls="cat-pratos">
+                  <span aria-hidden="true" class="text-muted-foreground">⌄</span>
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium">Pratos principais</span>
+                    <span class="block text-xs text-texto-muted">9 produtos · 3 já no cardápio</span>
+                  </span>
+                </button>
+                <button class="btn btn-outline shrink-0 px-2 text-xs" aria-label="Adicionar os 6 produtos de Pratos principais que faltam">
+                  + os 6
+                </button>
+              </div>
+
+              <ul id="cat-pratos" class="bg-muted/60 px-2 pb-2">
+                <li>
+                  <label class="flex min-h-[44px] items-center gap-2 border-t border-border/70">
+                    <span class="alvo grid place-items-center shrink-0"><input type="checkbox" checked /></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm font-medium">Picanha na chapa</span>
+                      <span class="block text-xs text-texto-muted tabular-nums">R$ 72,00</span>
+                    </span>
+                  </label>
+                </li>
+                <li>
+                  <label class="flex min-h-[44px] items-center gap-2 border-t border-border/70">
+                    <span class="alvo grid place-items-center shrink-0"><input type="checkbox" checked /></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm font-medium">Risoto de camarão</span>
+                      <span class="block text-xs text-texto-muted tabular-nums">R$ 64,00</span>
+                    </span>
+                  </label>
+                </li>
+                <!-- já vinculado: fora da seleção, visível como estado, não como opção -->
+                <li>
+                  <div class="flex min-h-[44px] items-center gap-2 border-t border-border/70 opacity-70">
+                    <span class="alvo grid place-items-center shrink-0 text-muted-foreground" aria-hidden="true">✓</span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm">Filé à parmegiana</span>
+                      <span class="block text-xs text-texto-muted">Já está neste cardápio</span>
+                    </span>
+                  </div>
+                </li>
+                <li>
+                  <label class="flex min-h-[44px] items-center gap-2 border-t border-border/70">
+                    <span class="alvo grid place-items-center shrink-0"><input type="checkbox" /></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="flex min-w-0 items-center gap-1">
+                        <span class="truncate text-sm font-medium">Bacalhau ao forno</span>
+                        <span class="badge badge-secondary">Exclusivo</span>
+                      </span>
+                      <span class="block text-xs text-texto-muted tabular-nums">R$ 89,00</span>
+                    </span>
+                  </label>
+                </li>
+              </ul>
+            </div>
+
+            <div class="border-b border-border px-2">
+              <button class="flex min-h-[44px] min-w-0 w-full items-center gap-2 text-left" aria-expanded="false">
+                <span aria-hidden="true" class="text-muted-foreground">›</span>
+                <span class="min-w-0">
+                  <span class="block truncate text-sm font-medium">Sobremesas</span>
+                  <span class="block text-xs text-texto-muted">4 produtos · nenhum no cardápio</span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- RODAPÉ STICKY: a escolha dos dias e o CTA moram juntos -->
+          <div class="border-t border-border bg-background p-3 space-y-2">
+            <fieldset class="space-y-1">
+              <legend class="text-sm font-medium">Em que dias estes itens aparecem?</legend>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="flex min-h-[44px] items-center gap-2 rounded-lg border border-primary bg-muted px-2 text-sm">
+                  <input type="radio" name="quando" checked /> Todos os dias do cardápio
+                </label>
+                <label class="flex min-h-[44px] items-center gap-2 rounded-lg border border-border px-2 text-sm">
+                  <input type="radio" name="quando" /> Escolher dias
+                </label>
+              </div>
+              <p class="text-xs text-texto-muted">Dá para mudar item por item depois.</p>
+            </fieldset>
+            <p aria-live="polite" class="text-sm font-medium">3 produtos selecionados</p>
+            <button class="btn btn-primary w-full">Adicionar 3 itens</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3b: “Escolher dias” aberto + estado sem seleção -->
+      <div class="space-y-4">
+        <div class="space-y-2">
+          <p class="text-xs text-texto-muted">3b — “Escolher dias” revela as 7 pílulas (mesma interação, sem sair do sheet)</p>
+          <div class="tela card p-3 space-y-2">
+            <fieldset class="space-y-2">
+              <legend class="text-sm font-medium">Em que dias estes itens aparecem?</legend>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="flex min-h-[44px] items-center gap-2 rounded-lg border border-border px-2 text-sm">
+                  <input type="radio" name="quando2" /> Todos os dias do cardápio
+                </label>
+                <label class="flex min-h-[44px] items-center gap-2 rounded-lg border border-primary bg-muted px-2 text-sm">
+                  <input type="radio" name="quando2" checked /> Escolher dias
+                </label>
+              </div>
+              <div class="grade-pilulas" role="group" aria-label="Dias em que os itens selecionados aparecem neste cardápio"
+                   aria-describedby="dica-dias">
+                <button class="pilula" aria-pressed="false" aria-label="domingo" tabindex="0">D</button>
+                <button class="pilula" aria-pressed="true"  aria-label="segunda-feira" tabindex="-1">S</button>
+                <button class="pilula" aria-pressed="true"  aria-label="terça-feira" tabindex="-1">T</button>
+                <button class="pilula" aria-pressed="true"  aria-label="quarta-feira" tabindex="-1">Q</button>
+                <button class="pilula" aria-pressed="true"  aria-label="quinta-feira" tabindex="-1">Q</button>
+                <button class="pilula" aria-pressed="true"  aria-label="sexta-feira" tabindex="-1">S</button>
+                <button class="pilula" aria-pressed="false" aria-label="sábado" tabindex="-1">S</button>
+              </div>
+              <p id="dica-dias" class="text-xs text-texto-muted">Escolha pelo menos um dia.</p>
+            </fieldset>
+            <p aria-live="polite" class="text-sm font-medium">3 produtos selecionados</p>
+            <button class="btn btn-primary w-full">Adicionar 3 itens</button>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <p class="text-xs text-texto-muted">3c — nada selecionado e nenhum dia marcado: o motivo é TEXTO, não só <code>title</code></p>
+          <div class="tela card p-3 space-y-2">
+            <p aria-live="polite" class="text-sm text-texto-muted">Nenhum produto selecionado</p>
+            <button class="btn btn-primary w-full" aria-disabled="true" aria-describedby="pq-off">Adicionar itens</button>
+            <p id="pq-off" class="text-xs text-texto-muted">Marque ao menos um produto e escolha pelo menos um dia.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 4. Confirmações ══════════════════ -->
+  <section class="grid gap-4 md:grid-cols-2">
+    <div class="space-y-2">
+      <p class="rotulo">4a — confirmação do lote DENTRO do sheet (sem overlay aninhado)</p>
+      <div class="tela card overflow-hidden">
+        <div class="flex items-start gap-2 border-b border-border px-3 py-2">
+          <button class="btn btn-ghost alvo shrink-0" aria-label="Voltar para a escolha dos produtos">‹</button>
+          <p class="min-w-0 flex-1 font-semibold text-sm">Adicionar 3 produtos a Almoço Executivo?</p>
+        </div>
+        <div class="p-3 space-y-2 text-sm">
+          <!-- contagem e nomes vindos do SERVIDOR (preverLoteAction), nunca do browser -->
+          <ul class="max-h-40 list-disc overflow-y-auto pl-5">
+            <li>Picanha na chapa</li>
+            <li>Risoto de camarão</li>
+            <li>Bacalhau ao forno</li>
+          </ul>
+          <p>Aparece seg a sex, das 11:00 às 15:00.</p>
+          <p>1 produto é exclusivo deste cardápio e vai sumir da vitrine.</p>
+          <p>2 produtos do menu continuam aparecendo e vendendo normalmente.</p>
+          <p class="text-texto-muted">Eles vão aparecer de segunda a sexta.</p>
+        </div>
+        <div class="flex gap-2 border-t border-border p-3">
+          <button class="btn btn-outline flex-1">Voltar</button>
+          <button class="btn btn-primary flex-1">Adicionar 3 produtos</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-2">
+      <p class="rotulo">4b — tirar do cardápio: AlertDialog NA PÁGINA (não há modal aberto embaixo)</p>
+      <div class="tela card p-3 space-y-2" role="alertdialog" aria-labelledby="t-rem" aria-describedby="d-rem">
+        <p id="t-rem" class="font-semibold text-sm">Tirar “Filé à parmegiana” deste cardápio?</p>
+        <p id="d-rem" class="text-sm text-texto-muted">
+          Ele é exclusivo deste cardápio e vai sumir da vitrine. O produto continua no seu catálogo.
+        </p>
+        <div class="flex gap-2">
+          <button class="btn btn-outline flex-1" autofocus>Cancelar</button>
+          <button class="btn btn-destructive flex-1">Tirar do cardápio</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 5. Desktop ══════════════════ -->
+  <section class="space-y-3">
+    <p class="rotulo">5 — ≥ md: lista em 2 colunas, sheet entra pela direita (max-w-sm)</p>
+    <div class="shell rounded-xl border border-border p-4 space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="font-semibold">Itens do cardápio <span class="font-normal text-texto-muted">(4)</span></h3>
+        <button class="btn btn-primary">+ Adicionar item</button>
+      </div>
+      <ul class="grid gap-2 md:grid-cols-2">
+        <li class="card p-3 space-y-2">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold leading-snug">Picanha na chapa</p>
+              <p class="text-sm text-texto-muted tabular-nums">R$ 72,00 · Pratos principais</p>
+            </div>
+            <button class="btn btn-outline alvo shrink-0" aria-label="Mais ações de Picanha na chapa">⋮</button>
+          </div>
+          <p class="text-xs text-texto-muted">Só às sextas e sábados.</p>
+          <div class="grade-pilulas" role="group" aria-label="Dias em que Picanha na chapa aparece neste cardápio">
+            <button class="pilula" aria-pressed="false" aria-label="domingo" tabindex="0">D</button>
+            <button class="pilula" aria-pressed="false" aria-label="segunda-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="terça-feira" tabindex="-1">T</button>
+            <button class="pilula" aria-pressed="false" aria-label="quarta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="quinta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="true"  aria-label="sexta-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="true"  aria-label="sábado" tabindex="-1">S</button>
+          </div>
+        </li>
+        <li class="card p-3 space-y-2">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold leading-snug">Pudim de leite</p>
+              <p class="text-sm text-texto-muted tabular-nums">R$ 18,00 · Sobremesas</p>
+            </div>
+            <button class="btn btn-outline alvo shrink-0" aria-label="Mais ações de Pudim de leite">⋮</button>
+          </div>
+          <p class="text-xs text-texto-muted">Todos os dias do cardápio.</p>
+          <div class="grade-pilulas" role="group" aria-label="Dias em que Pudim de leite aparece neste cardápio">
+            <button class="pilula" aria-pressed="false" aria-label="domingo" tabindex="0">D</button>
+            <button class="pilula" aria-pressed="false" aria-label="segunda-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="terça-feira" tabindex="-1">T</button>
+            <button class="pilula" aria-pressed="false" aria-label="quarta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="quinta-feira" tabindex="-1">Q</button>
+            <button class="pilula" aria-pressed="false" aria-label="sexta-feira" tabindex="-1">S</button>
+            <button class="pilula" aria-pressed="false" aria-label="sábado" tabindex="-1">S</button>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 6. O que este mockup trava ══════════════════ -->
+  <section class="space-y-2">
+    <p class="rotulo">6 — o que este mockup trava</p>
+    <div class="nota"><strong>Nada de overlay aninhado.</strong> A confirmação do lote é um PASSO do sheet (4a), não um
+      <code>AlertDialog</code> por cima dele: design-system §6 registra que o ESC do interno borbulha e fecha o externo.</div>
+    <div class="nota"><strong>Close de 44px.</strong> O <code>showCloseButton</code> do <code>sheet.tsx</code> usa
+      <code>size="icon-sm"</code> = 33,6px na base de 120% — abaixo do mínimo. Passar <code>showCloseButton={false}</code>
+      e render o ✕ próprio no header.</div>
+    <div class="nota"><strong>Motivo de desabilitado é texto.</strong> Hoje o “Definir dias” explica pelo atributo
+      <code>title</code>, que leitor de tela e toque não expõem de forma confiável. Vira
+      <code>aria-describedby</code> com parágrafo visível (3c).</div>
+    <div class="nota"><strong>Contagem é do servidor.</strong> Os números e nomes de 4a vêm de <code>preverLoteAction</code>;
+      o browser só mostra. A frase de vigência vem de <code>descreverVigencia</code>, com o fuso da loja.</div>
+  </section>
+
+</div>
+</body>
+</html>
