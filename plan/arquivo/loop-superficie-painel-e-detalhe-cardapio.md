@@ -456,3 +456,28 @@ Nenhuma lacuna de agente ou skill: o catálogo cobre os dois trabalhos. Três li
    atrito aparecer no uso, o sucessor natural é uma issue de migration com parâmetro novo na
    função — não um remendo em JavaScript expandindo a categoria fora da transação, que é
    justamente o que a RN-10 proíbe.
+
+---
+
+## Resultado da execução (2026-09-22)
+
+**(A) superfície do painel — PR #149, mesclado.** Custou mais que os 40 min previstos porque o
+diagnóstico inicial errou o alvo: reforcei `--border`, mas o `Card` do shadcn se delimita por
+`ring-1 ring-foreground/10`. Corrigido no mesmo PR, com a §10 do design system registrando o
+erro. Entrou junto o `CabecalhoPagina` e a conversão de prévia, ações e resumo em card, depois
+que o dono do produto pediu "todos os elementos dentro de cards".
+
+**(B) detalhe do cardápio — issues 287 e 288.** Corte de 5 invocações aplicado, como o dono
+pediu: `planejar` → `tdd` → `executar` (backend e UI numa invocação) → `auditar` → `verificar`.
+Sem `revisar` e sem `escriba`.
+
+- Sem migration, como planejado. A coluna já existia desde a 272.
+- `tdd` capturou 22 vermelhos; `executar` fechou os dois blocos com o gate no meio.
+- `auditar`: zero crítico, zero alto, zero médio. Dois BAIXA corrigidos na hora, de uma linha
+  cada, em vez de virarem issue.
+- `verificar` no cloud: dias gravados no ato de adicionar chegam corretos à vigência por item;
+  cardápio de outra loja é barrado pela FK composta; `dias_semana` fora de 0 a 6 recusado pelo
+  CHECK. Nada nasceu ou sumiu em outra loja.
+- Desvio registrado: "adicionar a categoria inteira" fica desabilitado quando o lojista escolhe
+  dias específicos, com o motivo em texto perceptível. O dono tinha aprovado que entrasse sempre
+  ignorando os dias; ignorar em silêncio seria pior.
