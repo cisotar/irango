@@ -20,6 +20,7 @@ import {
   validarPrecoContraDesconto,
   schemaCategoria,
   schemaReordenacaoCategorias,
+  schemaReordenacaoProdutos,
   schemaVisibilidadeEmLote,
 } from "@/lib/validacoes/produto";
 // Contrato NEUTRO compartilhado com o caminho ADMIN (issue 241): mensagem de
@@ -42,6 +43,13 @@ const CAMINHO_PAINEL = "/painel/cardapio";
 
 /** A genérica de escrita de produto, declarada uma vez (`seguranca.md` §14). */
 const MSG_SALVAR_PRODUTO = "Não foi possível salvar o produto.";
+
+/**
+ * [293] A genérica ÚNICA de reordenação (`seguranca.md` §14). Mesma frase de
+ * `reordenarCategorias`: id alheio, lista incompleta e erro de banco caem todos
+ * aqui — distinguir as causas viraria oráculo de existência de dado alheio.
+ */
+const MSG_SALVAR_ORDEM = "Não foi possível salvar a ordem.";
 
 /**
  * Confere que a `categoria_id` informada pertence à PRÓPRIA loja do dono.
@@ -536,6 +544,80 @@ export async function reordenarCategorias(
   } catch (e) {
     console.error("[reordenarCategorias]", e);
     return { ok: false, erro: "Não foi possível salvar a ordem." };
+  }
+}
+
+/**
+ * [293] Reordena os PRODUTOS de UMA categoria da loja do dono, gravando `ordem`
+ * normalizada 0..n-1 numa única instrução atômica.
+ *
+ * Mesma doutrina de `reordenarCategorias`, com UMA diferença estrutural: o
+ * escopo da permutação é o PAR (loja, categoria), não a loja inteira — a lista
+ * de `/painel/produtos` é agrupada por categoria e ordenada dentro do grupo. Por
+ * isso a RPC recebe também `p_categoria_id`, e `null` ali é o grupo legítimo
+ * "Sem categoria" (`categoria_id IS NULL`), casado com `IS NOT DISTINCT FROM`.
+ *
+ * Onde a posse é provada: dentro da transação. A RPC `security invoker` exige
+ * que `p_ids` seja a PERMUTAÇÃO COMPLETA do par e confere o `row_count` do
+ * UPDATE; a RLS `produtos_escrita_propria` continua valendo lá dentro. Id de
+ * outra loja, lista incompleta ou duplicata derrubam a transação — nada é
+ * escrito em nenhuma das lojas. Um pre-check de posse em JS seria TOCTOU (a
+ * lista pode mudar entre o SELECT e o UPDATE); a checagem dentro da transação
+ * não é.
+ *
+ * `p_loja_id` vem SEMPRE de `buscarLojaDoDono` (auth.uid()), NUNCA do payload.
+ */
+export async function reordenarProdutos(
+  payload: unknown,
+): Promise<ResultadoGestaoProduto> {
+  // 1) Forma ANTES de qualquer I/O: `{ categoria_id, produto_ids }` estrito,
+  //    uuid, sem duplicata, 2..200. O parse devolve um objeto NOVO — um
+  //    `loja_id` pendurado pelo cliente não sobrevive e nunca chega à RPC.
+  const parsed = schemaReordenacaoProdutos.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: MSG_SALVAR_ORDEM };
+  }
+
+  try {
+    // 2) Client AUTENTICADO — nunca `service_role`. A RLS
+    //    `produtos_escrita_propria` isola por dono, e `security invoker` na RPC
+    //    mantém essa RLS valendo lá dentro.
+    const supabase = await createClient();
+    // 3) loja_id DERIVADO do auth.uid(), NUNCA do payload.
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+
+    // 4) UMA ida ao banco, UMA instrução, atômica.
+    const { error } = await supabase.rpc("reordenar_produtos", {
+      p_loja_id: loja.id,
+      // `p_categoria_id` é NULLABLE no banco — `null` É o grupo "Sem
+      // categoria", casado com `IS NOT DISTINCT FROM`. O `supabase gen types`
+      // não modela nulidade de ARGUMENTO (a assinatura gerada diz `string`),
+      // então a asserção mora AQUI, em uma linha, sobre um valor já validado
+      // por `z.guid().nullable()` — e não some num `any`.
+      p_categoria_id: parsed.data.categoria_id as string,
+      p_ids: parsed.data.produto_ids,
+    });
+    if (error) {
+      // Mensagem ÚNICA para id alheio / lista incompleta / erro de banco:
+      // mensagens distintas por causa virariam oráculo de existência de produto
+      // de outra loja (`seguranca.md` §14). O detalhe fica no log do servidor.
+      console.error("[reordenarProdutos]", error);
+      return { ok: false, erro: MSG_SALVAR_ORDEM };
+    }
+
+    // Caminhos REAIS (não `CAMINHO_PAINEL`, que aponta para rota inexistente),
+    // incluindo o da vitrine, que herda a ordem dos produtos. Pelo slug da
+    // PRÓPRIA loja, nunca pela forma coringa `("/loja/[slug]", "page")`: aquela
+    // invalidaria o Router Cache da vitrine de TODAS as lojas a cada movimento.
+    revalidatePath("/painel/produtos");
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[reordenarProdutos]", e);
+    return { ok: false, erro: MSG_SALVAR_ORDEM };
   }
 }
 

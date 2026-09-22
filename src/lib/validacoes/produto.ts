@@ -250,6 +250,38 @@ export const schemaReordenacaoCategorias = z
   });
 
 /**
+ * [293] Reordenação dos PRODUTOS de UMA categoria. Mesmo contrato do
+ * `schemaReordenacaoCategorias` — só a sequência de ids, nunca valores de
+ * `ordem` (derivados no servidor) e nunca `loja_id` (derivado de `auth.uid()`)
+ * — com uma diferença: o payload carrega TAMBÉM a categoria cujo grupo está
+ * sendo permutado, porque a RPC é escopada pelo PAR (loja, categoria).
+ *
+ * `.strict()`: um `loja_id` pendurado no payload não sobrevive ao parse.
+ *
+ * `categoria_id` é `.nullable()` e OBRIGATÓRIO, não opcional: `null` é o grupo
+ * legítimo "Sem categoria" (`produtos.categoria_id IS NULL`), e um payload que
+ * simplesmente OMITISSE a chave seria tratado como esse grupo — permutando o
+ * conjunto errado em silêncio. Quem reordena declara qual grupo, sempre.
+ *
+ * `.min(2)`: lista de 1 não tem ordem (o modo nem é oferecido).
+ * `.max(TETO_LOTE)`: teto de cardinalidade (CWE-770), mesmo número do lote.
+ * O refine de unicidade é defesa em profundidade — a RPC também rejeita
+ * duplicata pelo `row_count`, mas duplicata nem deve chegar ao banco.
+ */
+export const schemaReordenacaoProdutos = z
+  .object({
+    categoria_id: z.guid().nullable(),
+    produto_ids: z
+      .array(z.guid())
+      .min(2)
+      .max(TETO_LOTE)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Ids repetidos na reordenação",
+      }),
+  })
+  .strict();
+
+/**
  * [261] D14 em LOTE — a forma do payload da barra de ação de `/painel/produtos`.
  *
  * Herda o contrato de `schemaLoteDeProdutos` (`lib/validacoes/cardapio.ts`),

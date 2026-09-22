@@ -10,7 +10,10 @@ import type {
   OpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
 import type { ProdutosClientProps } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
-import { schemaReordenacaoCategorias } from "@/lib/validacoes/produto";
+import {
+  schemaReordenacaoCategorias,
+  schemaReordenacaoProdutos,
+} from "@/lib/validacoes/produto";
 import {
   criarCategoriaAdmin,
   atualizarCategoriaAdmin,
@@ -26,6 +29,7 @@ import {
   alternarDisponibilidadeAdmin,
   alternarOcultoAdmin,
   definirVisibilidadeEmProdutosAdmin,
+  reordenarProdutosAdmin,
 } from "@/app/admin/assinantes/actions/admin-produtos";
 import {
   aplicarCardapioEmProdutosAdmin,
@@ -175,6 +179,27 @@ export function CardapioAdminClient({
           return reordenarCategoriasAdmin(
             lojaId,
             parsed.data.map((id, indice) => ({ id, ordem: indice })),
+          );
+        },
+        // [293] MESMA adaptação de forma, e de propósito NÃO a RPC nova: o
+        // caminho admin continua na `reordenarProdutosAdmin` existente
+        // (UPDATE por linha, escopado por `lojaId` da URL). Trocá-la pela RPC
+        // `security invoker` é tarefa de `tasks/292` — sob `service_role` a
+        // RLS não vale, então a atomicidade da RPC exigiria repensar o escopo
+        // admin inteiro, e isso não é correção pedida por esta issue.
+        // `categoria_id` não é repassado porque a action admin escopa por
+        // `lojaId` e recebe os pares já formados; os ids vêm todos de UM grupo.
+        reordenarProdutos: async (payload) => {
+          const parsed = schemaReordenacaoProdutos.safeParse(payload);
+          if (!parsed.success) {
+            return { ok: false, erro: "Não foi possível salvar a ordem." };
+          }
+          return reordenarProdutosAdmin(
+            lojaId,
+            parsed.data.produto_ids.map((id, indice) => ({
+              id,
+              ordem: indice,
+            })),
           );
         },
         criarProduto: (payload) => criarProdutoAdmin(lojaId, payload),
