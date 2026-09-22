@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ArrowUpDown,
   Pencil,
+  PencilLine,
   Plus,
   Trash2,
   Loader2,
@@ -35,6 +36,8 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -98,6 +101,7 @@ import type {
   alternarOculto as alternarOcultoLojista,
   criarProduto as criarProdutoLojista,
   atualizarProduto as atualizarProdutoLojista,
+  atualizarNomeEPreco as atualizarNomeEPrecoLojista,
   criarCategoria as criarCategoriaLojista,
   atualizarCategoria as atualizarCategoriaLojista,
   removerCategoria as removerCategoriaLojista,
@@ -213,6 +217,13 @@ export type AcoesProdutosClient = {
   alternarOculto: typeof alternarOcultoLojista;
   criarProduto: typeof criarProdutoLojista;
   atualizarProduto: typeof atualizarProdutoLojista;
+  /**
+   * [290] Patch ESTREITO de nome+preço da edição inline. Chave PRÓPRIA, e
+   * não uma sobrecarga de `atualizarProduto`: aquela grava a linha inteira,
+   * e reusá-la aqui obrigaria o cliente a remontar foto, visibilidade e
+   * promoção — apagando em silêncio o que o lojista não tocou.
+   */
+  atualizarNomeEPreco: typeof atualizarNomeEPrecoLojista;
   enviarFotoProduto: EnviarFotoProduto;
   criarCategoria: typeof criarCategoriaLojista;
   atualizarCategoria: typeof atualizarCategoriaLojista;
@@ -632,6 +643,64 @@ export function ProdutosClient({
     });
   }
 
+  /*
+    [290] Edição INLINE de nome e preço. Estado no PAI, como `editandoId` de
+    `GerenciarCategorias` — mas com os alvos de toque em 44px LITERAL, e não no
+    `size="icon-sm"` (33,6px na base de 120%) de lá, que está abaixo do mínimo
+    de `design-system.md` §5 (débito registrado na issue 291).
+
+    🔴 O que este estado NÃO é: autoridade sobre valor. Nada daqui decide preço
+    — a Server Action relê o desconto do banco, reaplica D10 e grava um patch
+    de duas chaves. As conferências abaixo são PREVIEW de UX: poupam um
+    roundtrip, nunca substituem o servidor.
+  */
+  const [editandoInlineId, setEditandoInlineId] = useState<string | null>(null);
+  const [nomeInline, setNomeInline] = useState("");
+  const [precoInline, setPrecoInline] = useState("");
+  const [erroInline, setErroInline] = useState<string | null>(null);
+  const [salvandoInline, startSalvarInline] = useTransition();
+
+  function abrirEdicaoInline(p: Produto) {
+    setEditandoInlineId(p.id);
+    setNomeInline(p.nome);
+    // Vírgula: é o separador que o lojista digita, o mesmo do `FormProduto`.
+    setPrecoInline(String(p.preco).replace(".", ","));
+    setErroInline(null);
+  }
+
+  function fecharEdicaoInline() {
+    setEditandoInlineId(null);
+    setErroInline(null);
+  }
+
+  function salvarEdicaoInline(p: Produto) {
+    const nome = nomeInline.trim();
+    // Mesma coerção do `FormProduto`: vírgula → ponto, `Number`, sem máscara
+    // nova (`inputMode="decimal"` no input).
+    const preco = Number(precoInline.replace(",", "."));
+    if (nome === "") {
+      setErroInline("Informe o nome do produto.");
+      return;
+    }
+    if (!Number.isFinite(preco) || preco < 0) {
+      setErroInline("Informe um preço válido, como 12,90.");
+      return;
+    }
+    startSalvarInline(async () => {
+      const resultado = await acoes.atualizarNomeEPreco(p.id, { nome, preco });
+      if (!resultado.ok) {
+        // A recusa de D10 tem dois números e duas saídas: fica NA LINHA,
+        // re-legível, não num toast que some em 4 segundos (design §8.3).
+        setErroInline(resultado.erro);
+        return;
+      }
+      setEditandoInlineId(null);
+      setErroInline(null);
+      toast.success("Produto atualizado.");
+      router.refresh();
+    });
+  }
+
   const formProduto = (
     <FormProduto
       // Recria o form ao alternar entre produtos / criar (global ou por
@@ -912,30 +981,175 @@ export function ProdutosClient({
                               lista é `w-full` e quebra sozinha, por isso lá o
                               nome já tinha a largura toda. */}
                           <div className="min-w-0 flex-1 sm:min-w-[14rem]">
-                            {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
-                                cabe em duas linhas em vez de sumir. */}
-                            <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
-                              {p.nome}
-                            </span>
-                            <div className="mt-1 flex flex-wrap items-center gap-2">
-                              <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
-                                {formatarMoeda(p.preco)}
-                              </span>
-                              {badgeStatus(p)}
-                              {/* [261] D14 — nada para o produto do menu. */}
-                              {badgeExclusivo(p)}
-                              {/* Chip de promoção VIGENTE. O rótulo inteiro
-                                  (`-20% até 30/09`) vem projetado do servidor;
-                                  aqui não há derivação de vigência nenhuma. */}
-                              {promocoes[p.id]?.rotulo != null && (
-                                <Badge
-                                  variant="secondary"
-                                  className="text-promo-texto"
-                                >
-                                  {promocoes[p.id].rotulo}
-                                </Badge>
-                              )}
-                            </div>
+                            {/* [290] Em edição inline, a faixa de texto (nome +
+                                preço/status) dá lugar a dois campos EMPILHADOS
+                                — em 360px eles não cabem lado a lado. A linha
+                                em REPOUSO não muda: o mockup segue byte a
+                                byte, e o gatilho é o item do kebab. */}
+                            {editandoInlineId === p.id ? (
+                              <div className="space-y-2">
+                                <div className="space-y-1">
+                                  <Label
+                                    htmlFor={`inline-nome-${p.id}`}
+                                    className="text-xs text-muted-foreground"
+                                  >
+                                    Nome
+                                  </Label>
+                                  <Input
+                                    id={`inline-nome-${p.id}`}
+                                    value={nomeInline}
+                                    autoFocus
+                                    disabled={salvandoInline}
+                                    onChange={(e) =>
+                                      setNomeInline(e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        salvarEdicaoInline(p);
+                                      }
+                                      if (e.key === "Escape")
+                                        fecharEdicaoInline();
+                                    }}
+                                    // D10 é erro de PAR (preço × desconto): os
+                                    // dois campos apontam para a MESMA
+                                    // descrição, como no `FormProduto`.
+                                    aria-invalid={
+                                      erroInline != null ? true : undefined
+                                    }
+                                    aria-describedby={
+                                      erroInline != null
+                                        ? `inline-erro-${p.id}`
+                                        : undefined
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label
+                                    htmlFor={`inline-preco-${p.id}`}
+                                    className="text-xs text-muted-foreground"
+                                  >
+                                    Preço (R$)
+                                  </Label>
+                                  <Input
+                                    id={`inline-preco-${p.id}`}
+                                    value={precoInline}
+                                    inputMode="decimal"
+                                    placeholder="0,00"
+                                    disabled={salvandoInline}
+                                    onChange={(e) =>
+                                      setPrecoInline(e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        salvarEdicaoInline(p);
+                                      }
+                                      if (e.key === "Escape")
+                                        fecharEdicaoInline();
+                                    }}
+                                    aria-invalid={
+                                      erroInline != null ? true : undefined
+                                    }
+                                    aria-describedby={
+                                      erroInline != null
+                                        ? `inline-erro-${p.id}`
+                                        : undefined
+                                    }
+                                  />
+                                </div>
+                                {erroInline != null && (
+                                  <p
+                                    id={`inline-erro-${p.id}`}
+                                    role="alert"
+                                    className="text-xs text-destructive"
+                                  >
+                                    {erroInline}
+                                  </p>
+                                )}
+                                {/* Alvo de toque: 44px LITERAL. `min-h-11`
+                                    seria 52,8px na base de 120% do projeto, e
+                                    `size="icon-sm"` seria 33,6px — abaixo do
+                                    mínimo de `design-system.md` §5. */}
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    className="min-h-[44px] min-w-[44px] flex-1 sm:flex-none"
+                                    disabled={salvandoInline}
+                                    onClick={() => salvarEdicaoInline(p)}
+                                  >
+                                    {salvandoInline && (
+                                      <Loader2 className="mr-2 size-4 animate-spin" />
+                                    )}
+                                    Salvar
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="min-h-[44px] min-w-[44px] flex-1 sm:flex-none"
+                                    disabled={salvandoInline}
+                                    onClick={fecharEdicaoInline}
+                                  >
+                                    Cancelar
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
+                                    cabe em duas linhas em vez de sumir. */}
+                                <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
+                                  {p.nome}
+                                </span>
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+                                    {formatarMoeda(p.preco)}
+                                  </span>
+                                  {badgeStatus(p)}
+                                  {/* [261] D14 — nada para o produto do menu. */}
+                                  {badgeExclusivo(p)}
+                                  {/* Chip de promoção VIGENTE. O rótulo inteiro
+                                      (`-20% até 30/09`) vem projetado do servidor;
+                                      aqui não há derivação de vigência nenhuma. */}
+                                  {promocoes[p.id]?.rotulo != null && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-promo-texto"
+                                    >
+                                      {promocoes[p.id].rotulo}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                            {!modoSelecao &&
+                              (() => {
+                                const gruposOpcionais =
+                                  opcionaisPorCategoria[
+                                    p.categoria_id ?? ""
+                                  ] ?? [];
+                                if (gruposOpcionais.length === 0) return null;
+                                return (
+                                  <ul
+                                    className="mt-1.5 flex flex-wrap gap-1.5"
+                                    aria-label={`Opcionais da categoria ${grupo.nome}`}
+                                  >
+                                    {gruposOpcionais
+                                      .slice()
+                                      .sort((a, b) => a.ordem - b.ordem)
+                                      .map((g) => (
+                                        <li key={g.categoriaOpcionalId}>
+                                          <Badge
+                                            variant="secondary"
+                                            className="font-normal"
+                                          >
+                                            {g.categoriaOpcionalNome}
+                                          </Badge>
+                                        </li>
+                                      ))}
+                                  </ul>
+                                );
+                              })()}
                             {/* [261] De quais cardápios o produto participa e
                                 se algum está DENTRO da janela agora. Os dois
                                 vêm projetados do Server Component, com o
@@ -990,109 +1204,6 @@ export function ProdutosClient({
                             )}
                           </div>
 
-                          {/* Editar/Remover consolidados no kebab: elimina os dois
-                              ícones cortados na borda e afasta a ação destrutiva do
-                              alvo de toque de "Marcar esgotado".
-
-                              No modo de seleção o kebab, os chips de opcionais e
-                              os dois botões de estado SOMEM: o checkbox soma
-                              ~44px de chrome à linha e a régua de
-                              `design-system.md` §5 é COMPRIMIR, não estourar em
-                              360px. Some também porque no modo a única ação é a
-                              da barra — o mesmo que `modoReordenar` já faz. */}
-                          {!modoSelecao && (
-                            <Menu>
-                              <MenuTrigger
-                                render={
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="order-3 min-h-[44px] min-w-[44px] sm:order-last"
-                                    aria-label={`Mais ações de ${p.nome}`}
-                                  />
-                                }
-                              >
-                                <MoreVertical aria-hidden className="size-4" />
-                              </MenuTrigger>
-                              <MenuPortal>
-                                <MenuPositioner align="end">
-                                  <MenuPopup>
-                                    <MenuItem
-                                      className="min-h-[44px]"
-                                      aria-label={`Editar ${p.nome}`}
-                                      onClick={() => abrirEditar(p)}
-                                    >
-                                      <Pencil aria-hidden className="size-4" />
-                                      Editar
-                                    </MenuItem>
-                                    {/* [264/§13.4 item 5] O MESMO par de saídas
-                                        do aviso de `/painel/cardapios`, aqui no
-                                        kebab. Nenhuma das duas roda sozinha, e
-                                        devolver ao menu mexe só NESTE produto —
-                                        o sistema nunca converte `visibilidade`
-                                        por conta própria. */}
-                                    {sumicos[p.id] && hrefCardapios !== null && (
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        onClick={() =>
-                                          router.push(hrefCardapios)
-                                        }
-                                      >
-                                        {rotuloReligarOuEstender(
-                                          sumicos[p.id].ativo,
-                                        )}
-                                      </MenuItem>
-                                    )}
-                                    {sumicos[p.id] && lote != null && (
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        onClick={() => void devolverAoMenu(p)}
-                                      >
-                                        Devolver ao menu
-                                      </MenuItem>
-                                    )}
-                                    <MenuItem
-                                      className="min-h-[44px]"
-                                      aria-label={`Remover ${p.nome}`}
-                                      onClick={() => setARemover(p)}
-                                    >
-                                      <Trash2
-                                        aria-hidden
-                                        className="size-4 text-destructive"
-                                      />
-                                      Remover
-                                    </MenuItem>
-                                  </MenuPopup>
-                                </MenuPositioner>
-                              </MenuPortal>
-                            </Menu>
-                          )}
-
-                          {!modoSelecao &&
-                            (() => {
-                              const gruposOpcionais =
-                                opcionaisPorCategoria[p.categoria_id ?? ""] ??
-                                [];
-                              if (gruposOpcionais.length === 0) return null;
-                              return (
-                                <ul className="order-4 flex w-full min-w-0 shrink flex-wrap gap-1.5 sm:order-3 sm:w-auto">
-                                  {gruposOpcionais
-                                    .slice()
-                                    .sort((a, b) => a.ordem - b.ordem)
-                                    .map((g) => (
-                                      <li key={g.categoriaOpcionalId}>
-                                        <Badge
-                                          variant="secondary"
-                                          className="font-normal"
-                                        >
-                                          {g.categoriaOpcionalNome}
-                                        </Badge>
-                                      </li>
-                                    ))}
-                                </ul>
-                              );
-                            })()}
-
                           {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
                               52.8px na base de 120% do projeto (globals.css). */}
                           {!modoSelecao && (
@@ -1132,6 +1243,93 @@ export function ProdutosClient({
                                   ? "Marcar esgotado"
                                   : "Disponibilizar"}
                               </Button>
+                              {/* Editar/Remover consolidados no kebab: elimina os dois
+                                  ícones cortados na borda e afasta a ação destrutiva do
+                                  alvo de toque de "Marcar esgotado". Último filho deste
+                                  grupo: fica à direita de Ocultar/Disponibilizar nos
+                                  dois breakpoints, sem classe `order-*` própria — se
+                                  algum dia quebrar, quebra junto com os botões do
+                                  produto dele, nunca sozinho. */}
+                              <Menu>
+                                <MenuTrigger
+                                  render={
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="min-h-[44px] min-w-[44px] shrink-0"
+                                      aria-label={`Mais ações de ${p.nome}`}
+                                    />
+                                  }
+                                >
+                                  <MoreVertical aria-hidden className="size-4" />
+                                </MenuTrigger>
+                                <MenuPortal>
+                                  <MenuPositioner align="end">
+                                    <MenuPopup>
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        aria-label={`Editar ${p.nome}`}
+                                        onClick={() => abrirEditar(p)}
+                                      >
+                                        <Pencil aria-hidden className="size-4" />
+                                        Editar
+                                      </MenuItem>
+                                      {/* [290] ADICIONAL ao "Editar" acima, não
+                                          substituto: aquele abre o formulário
+                                          inteiro (foto, desconto, vigência),
+                                          este edita a linha no lugar. */}
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        aria-label={`Editar nome e preço de ${p.nome}`}
+                                        onClick={() => abrirEdicaoInline(p)}
+                                      >
+                                        <PencilLine
+                                          aria-hidden
+                                          className="size-4"
+                                        />
+                                        Editar nome e preço
+                                      </MenuItem>
+                                      {/* [264/§13.4 item 5] O MESMO par de saídas
+                                          do aviso de `/painel/cardapios`, aqui no
+                                          kebab. Nenhuma das duas roda sozinha, e
+                                          devolver ao menu mexe só NESTE produto —
+                                          o sistema nunca converte `visibilidade`
+                                          por conta própria. */}
+                                      {sumicos[p.id] && hrefCardapios !== null && (
+                                        <MenuItem
+                                          className="min-h-[44px]"
+                                          onClick={() =>
+                                            router.push(hrefCardapios)
+                                          }
+                                        >
+                                          {rotuloReligarOuEstender(
+                                            sumicos[p.id].ativo,
+                                          )}
+                                        </MenuItem>
+                                      )}
+                                      {sumicos[p.id] && lote != null && (
+                                        <MenuItem
+                                          className="min-h-[44px]"
+                                          onClick={() => void devolverAoMenu(p)}
+                                        >
+                                          Devolver ao menu
+                                        </MenuItem>
+                                      )}
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        aria-label={`Remover ${p.nome}`}
+                                        onClick={() => setARemover(p)}
+                                      >
+                                        <Trash2
+                                          aria-hidden
+                                          className="size-4 text-destructive"
+                                        />
+                                        Remover
+                                      </MenuItem>
+                                    </MenuPopup>
+                                  </MenuPositioner>
+                                </MenuPortal>
+                              </Menu>
                             </div>
                           )}
                         </div>

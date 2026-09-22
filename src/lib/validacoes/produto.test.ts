@@ -16,6 +16,13 @@ import {
   TETO_LOTE,
   mensagemDescontoMaiorQuePreco,
 } from "./produto";
+// [290 — RED] `validarPrecoContraDesconto` AINDA NÃO EXISTE. Um named import
+// dela quebraria a AVALIAÇÃO do módulo e derrubaria os ~40 testes já verdes
+// deste arquivo — o vermelho viraria ruído. O resolvedor por namespace abaixo
+// é o mesmo padrão que a issue 175 usou no seu RED: só os casos NOVOS falham,
+// e falham com mensagem que nomeia o contrato ausente. Na fase GREEN ele vira
+// import direto.
+import * as validacoesProduto from "./produto";
 import { STORAGE_URL_PREFIX } from "./storage";
 
 // Contrato: validação isomórfica (form + Server Action). Espelha as constraints
@@ -681,5 +688,89 @@ describe("TETO_LOTE — o número da frase é o número da recusa", () => {
       visibilidade: "menu",
     });
     expect(r.success).toBe(false);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * [290 — RED] `validarPrecoContraDesconto(preco, tipo, valor)`
+ *
+ * A edição inline de nome+preço não passa por `schemaProdutoUpdate` (que exige
+ * a linha INTEIRA). Mas D10 continua valendo: baixar o preço abaixo de um
+ * `desconto_valor` FIXO já configurado é recusa, e a recusa precisa da frase
+ * legível — não do `23514` cru do CHECK da 20260920120000.
+ *
+ * Por isso a regra cruzada vira função PURA, reusada pelo `superRefine` de
+ * `refinarDesconto` (:158-171) e pelas duas Server Actions novas (lojista e
+ * admin). Contrato:
+ *   - devolve a mensagem de `mensagemDescontoMaiorQuePreco` quando
+ *     `tipo === "fixo"` e `valor > preco`;
+ *   - devolve `null` em qualquer outro caso.
+ *
+ * O caso de `desconto_ativo` é estrutural, não numérico: a faixa por tipo é
+ * "INDEPENDENTE de `desconto_ativo`" (comentário de `validacoes/produto.ts`
+ * :146-148), então a função NÃO PODE ter um parâmetro que a desligue. Um
+ * quarto argumento `ativo` seria a porta por onde quem desligou a promoção e
+ * baixou o preço escaparia para o 23514.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+type ValidarPrecoContraDesconto = (
+  preco: number,
+  tipo: string | null,
+  valor: number | null,
+) => string | null;
+
+/** Resolve a função ainda inexistente sem quebrar a avaliação do módulo. */
+function validarPrecoContraDesconto(
+  ...args: Parameters<ValidarPrecoContraDesconto>
+): string | null {
+  const fn = (validacoesProduto as unknown as Record<string, unknown>)
+    .validarPrecoContraDesconto;
+  if (typeof fn !== "function") {
+    throw new Error(
+      "[290 RED] `validarPrecoContraDesconto` ainda não existe em " +
+        "src/lib/validacoes/produto.ts — implementação é da fase GREEN.",
+    );
+  }
+  return (fn as ValidarPrecoContraDesconto)(...args);
+}
+
+describe("290 — validarPrecoContraDesconto (D10 fora do schema da linha inteira)", () => {
+  it("fixo 15,00 contra preço novo 10,00: nomeia os DOIS números na mensagem", () => {
+    const msg = validarPrecoContraDesconto(10, "fixo", 15);
+    // Fragmentos literais, com o U+00A0 que o Intl pt-BR insere. Os dois
+    // números são DISTINTOS de propósito: uma implementação que ecoasse o
+    // mesmo valor duas vezes passaria numa asserção de número único.
+    expect(msg).toContain("o preço novo (R$ 10,00)");
+    expect(msg).toContain("R$ 15,00");
+    // E é exatamente a frase única de D10 — não um texto "parecido".
+    expect(msg).toBe(mensagemDescontoMaiorQuePreco(10, 15));
+  });
+
+  it("percentual 50 com preço 10 → null (percentual não cruza com o preço)", () => {
+    expect(validarPrecoContraDesconto(10, "percentual", 50)).toBeNull();
+  });
+
+  it("fixo IGUAL ao preço → null (o limite é `>`, não `>=`)", () => {
+    expect(validarPrecoContraDesconto(10, "fixo", 10)).toBeNull();
+  });
+
+  it("sem desconto configurado (tipo/valor null) → null", () => {
+    expect(validarPrecoContraDesconto(10, null, null)).toBeNull();
+    expect(validarPrecoContraDesconto(10, "fixo", null)).toBeNull();
+  });
+
+  it("`desconto_ativo` NÃO entra na conta: a função não aceita um quarto argumento", () => {
+    // `:146-148` — a faixa por tipo vale com a promoção desligada. Travar a
+    // ARIDADE é o que impede que alguém acrescente um `ativo` depois e devolva
+    // `null` para promoção desligada: o produto iria ao banco e morreria em
+    // 23514 genérico, exatamente a regressão de UX que D10 existe para evitar.
+    const fn = (validacoesProduto as unknown as Record<string, unknown>)
+      .validarPrecoContraDesconto;
+    expect(typeof fn).toBe("function");
+    expect((fn as ValidarPrecoContraDesconto).length).toBe(3);
+    // E o resultado de um produto com promoção DESLIGADA é o mesmo: recusa.
+    expect(validarPrecoContraDesconto(10, "fixo", 15)).toBe(
+      mensagemDescontoMaiorQuePreco(10, 15),
+    );
   });
 });

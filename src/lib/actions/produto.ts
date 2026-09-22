@@ -16,6 +16,8 @@ import {
   schemaProduto,
   schemaProdutoUpdate,
   schemaIdProduto,
+  schemaNomeEPreco,
+  validarPrecoContraDesconto,
   schemaCategoria,
   schemaReordenacaoCategorias,
   schemaVisibilidadeEmLote,
@@ -176,6 +178,89 @@ export async function atualizarProduto(
     return { ok: true };
   } catch (e) {
     console.error("[atualizarProduto]", e);
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR_PRODUTO) };
+  }
+}
+
+/**
+ * [290] Edição INLINE de nome e preço — PATCH ESTREITO, não um clone do UPDATE
+ * total acima.
+ *
+ * Por que uma action própria e não `atualizarProduto`: aquele grava a linha
+ * INTEIRA (`schemaProdutoUpdate` exige `visibilidade`, `disponivel`, `oculto`,
+ * `ordem`, `foto_url` e o bloco de desconto). Mandar só dois campos por lá não
+ * passa, e "resolver" enchendo o payload no cliente APAGARIA em silêncio a
+ * promoção, a foto e a visibilidade do produto.
+ *
+ * Por que relê o desconto do banco: D10 vale mesmo com a promoção DESLIGADA, e
+ * o cliente não é fonte de `desconto_tipo`/`desconto_valor` — nunca. Sem a
+ * releitura, baixar o preço abaixo do desconto fixo morreria no `23514` do
+ * CHECK (mensagem genérica de Postgres) em vez da frase acionável de D10.
+ *
+ * Escopo duplo (`id` + `loja_id` do dono AUTENTICADO) na leitura E na escrita:
+ * conferir D10 numa linha e gravar noutra seria pior que não conferir.
+ */
+export async function atualizarNomeEPreco(
+  id: string,
+  payload: unknown,
+): Promise<ResultadoGestaoProduto> {
+  // 1) Forma ANTES de qualquer I/O — lixo não vira sessão nem ida ao banco.
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: MSG_SALVAR_PRODUTO };
+  }
+  const parsed = schemaNomeEPreco.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
+  }
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+
+    // 2) Releitura ESCOPADA do desconto já gravado (nunca do payload).
+    const { data: linha, error: erroLeitura } = await supabase
+      .from("produtos")
+      .select("desconto_tipo, desconto_valor")
+      .eq("id", id)
+      .eq("loja_id", loja.id)
+      .maybeSingle();
+    if (erroLeitura) throw erroLeitura;
+    if (linha == null) {
+      return { ok: false, erro: MSG_SALVAR_PRODUTO };
+    }
+
+    // 3) D10 com os números do BANCO — recusa sem tocar em UPDATE nenhum.
+    const recusa = validarPrecoContraDesconto(
+      parsed.data.preco,
+      linha.desconto_tipo,
+      linha.desconto_valor,
+    );
+    if (recusa != null) {
+      return { ok: false, erro: recusa };
+    }
+
+    // 4) Patch de DUAS chaves. Sem `loja_id` no objeto (diferente do UPDATE
+    //    total): aqui o escopo vive só nos `.eq()`, e o patch é a allowlist do
+    //    que a linha inline pode gravar.
+    const { error } = await supabase
+      .from("produtos")
+      .update({ nome: parsed.data.nome, preco: parsed.data.preco })
+      .eq("id", id)
+      .eq("loja_id", loja.id);
+    if (error) {
+      console.error("[atualizarNomeEPreco]", error);
+      return {
+        ok: false,
+        erro: erroDeEscritaDeProduto(error, MSG_SALVAR_PRODUTO),
+      };
+    }
+    revalidatePath(CAMINHO_PAINEL);
+    return { ok: true };
+  } catch (e) {
+    console.error("[atualizarNomeEPreco]", e);
     return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR_PRODUTO) };
   }
 }

@@ -147,6 +147,9 @@ import {
   definirVisibilidadeEmProdutos,
 } from "./produto";
 import type { ResultadoGestaoCategoria } from "./produto";
+// [290 — RED] resolvedor por namespace da action que ainda não existe (ver o
+// bloco da issue 290 no fim do arquivo).
+import * as acoesProduto from "./produto";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
   return { id: LOJA_DONO, dono_id: "dono-1", slug: "minha-loja", ativo: true };
@@ -1132,5 +1135,311 @@ describe("RN-14 — o errcode faz parte do reconhecimento", () => {
     spy.mockRestore();
 
     expect(r).toEqual({ ok: false, erro: "Não foi possível salvar o produto." });
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * [290 — RED] `atualizarNomeEPreco(id, { nome, preco })` — PATCH ESTREITO.
+ *
+ * `atualizarProduto` é UPDATE TOTAL: exige `visibilidade`, `disponivel`,
+ * `oculto`, `ordem`, `foto_url` e o bloco de desconto inteiro. A edição inline
+ * manda só dois campos, e "resolver" isso enchendo o payload no cliente
+ * APAGARIA em silêncio promoção, foto e visibilidade.
+ *
+ * O que estas asserções travam, e que nenhuma outra camada trava:
+ *   1. D10 relida do BANCO — `desconto_tipo`/`desconto_valor` nunca vêm do
+ *      cliente; a recusa é a frase literal, não o `23514` do CHECK da
+ *      20260920120000 (que protege o DADO, não a MENSAGEM);
+ *   2. o patch tem EXATAMENTE `nome` e `preco` — a asserção sobre
+ *      `Object.keys` é a única barreira contra o apagamento silencioso se
+ *      alguém ampliar o patch depois;
+ *   3. escopo duplo `id` + `loja_id` do DONO AUTENTICADO, com `loja_id`
+ *      hostil do payload ignorado;
+ *   4. `id`/`nome` inválidos morrem ANTES de qualquer I/O.
+ *
+ * A action não existe: resolvida por namespace para não derrubar a avaliação
+ * do módulo (e com ela os ~90 testes já verdes deste arquivo).
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+
+type AtualizarNomeEPreco = (
+  id: string,
+  payload: unknown,
+) => Promise<{ ok: true } | { ok: false; erro: string }>;
+
+function atualizarNomeEPreco(
+  ...args: Parameters<AtualizarNomeEPreco>
+): ReturnType<AtualizarNomeEPreco> {
+  const fn = (acoesProduto as unknown as Record<string, unknown>)
+    .atualizarNomeEPreco;
+  if (typeof fn !== "function") {
+    throw new Error(
+      "[290 RED] `atualizarNomeEPreco` ainda não existe em " +
+        "src/lib/actions/produto.ts — implementação é da fase GREEN.",
+    );
+  }
+  return (fn as AtualizarNomeEPreco)(...args);
+}
+
+// D10 com os números DESTE cenário: preço novo 10,00 contra desconto fixo
+// 15,00 já gravado. Escrita à mão, byte a byte (U+00A0 explícito): se a action
+// devolver a genérica, ou um texto "parecido", falha.
+const MSG_D10_10_15 =
+  "Não dá para salvar: o preço novo (R$ 10,00) é menor que o desconto " +
+  "configurado (R$ 15,00). Reduza o desconto para no máximo R$ 10,00 " +
+  "ou desligue a promoção deste produto.";
+
+describe("290 — atualizarNomeEPreco (edição inline: patch estreito + D10)", () => {
+  /** A linha como o BANCO a devolve: promoção DESLIGADA, mas fixa em 15,00. */
+  function linhaComDescontoFixo(over: Record<string, unknown> = {}) {
+    return {
+      id: PRODUTO_ID,
+      loja_id: LOJA_DONO,
+      preco: 30,
+      // `desconto_ativo: false` de propósito — `validacoes/produto.ts:146-148`
+      // diz que a faixa por tipo vale INDEPENDENTE do desconto estar ligado.
+      desconto_ativo: false,
+      desconto_tipo: "fixo",
+      desconto_valor: 15,
+      ...over,
+    };
+  }
+
+  function semDesconto() {
+    return {
+      id: PRODUTO_ID,
+      loja_id: LOJA_DONO,
+      preco: 30,
+      desconto_ativo: false,
+      desconto_tipo: null,
+      desconto_valor: null,
+    };
+  }
+
+  beforeEach(() => {
+    respostaPorTabela.produtos = { data: semDesconto(), error: null };
+  });
+
+  // ── (a) D10 lida do banco, e NENHUM update ────────────────────────────────
+  it("preço abaixo do desconto FIXO lido do banco é recusado com a frase literal de D10", async () => {
+    respostaPorTabela.produtos = {
+      data: linhaComDescontoFixo(),
+      error: null,
+    };
+
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "X-Burger",
+      preco: 10,
+    });
+
+    expect(r).toEqual({ ok: false, erro: MSG_D10_10_15 });
+  });
+
+  it("recusa de D10 não chama NENHUM .update() (nem na tabela produtos, nem em outra)", async () => {
+    respostaPorTabela.produtos = {
+      data: linhaComDescontoFixo(),
+      error: null,
+    };
+
+    await atualizarNomeEPreco(PRODUTO_ID, { nome: "X-Burger", preco: 10 });
+
+    expect(opEscrita("produtos")).toBeUndefined();
+    expect(ops.every((o) => o.update === undefined)).toBe(true);
+  });
+
+  it("ATAQUE: desconto vindo no PAYLOAD não substitui o do banco", async () => {
+    // O cliente jura que o desconto é 1,00 — o banco diz 15,00. Vale o banco.
+    respostaPorTabela.produtos = {
+      data: linhaComDescontoFixo(),
+      error: null,
+    };
+
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "X-Burger",
+      preco: 10,
+      desconto_tipo: "fixo",
+      desconto_valor: 1,
+      desconto_ativo: false,
+    });
+
+    expect(r).toEqual({ ok: false, erro: MSG_D10_10_15 });
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  it("desconto PERCENTUAL não cruza com o preço: baixar para 10 é aceito", async () => {
+    respostaPorTabela.produtos = {
+      data: linhaComDescontoFixo({
+        desconto_tipo: "percentual",
+        desconto_valor: 50,
+      }),
+      error: null,
+    };
+
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "X-Burger",
+      preco: 10,
+    });
+
+    expect(r).toEqual({ ok: true });
+    expect(opEscrita("produtos")?.update).toBeDefined();
+  });
+
+  it("preço IGUAL ao desconto fixo é aceito (o limite é `>`, não `>=`)", async () => {
+    respostaPorTabela.produtos = {
+      data: linhaComDescontoFixo(),
+      error: null,
+    };
+
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "X-Burger",
+      preco: 15,
+    });
+
+    expect(r).toEqual({ ok: true });
+  });
+
+  // ── (b) o patch tem EXATAMENTE duas chaves ────────────────────────────────
+  it("o patch enviado ao banco tem EXATAMENTE as chaves `nome` e `preco`", async () => {
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "X-Burger Duplo",
+      preco: 27.5,
+    });
+
+    expect(r).toEqual({ ok: true });
+    const update = opEscrita("produtos")?.update ?? {};
+    expect(Object.keys(update).sort()).toEqual(["nome", "preco"]);
+    expect(update).toEqual({ nome: "X-Burger Duplo", preco: 27.5 });
+  });
+
+  it("o patch NÃO carrega visibilidade, foto_url, disponivel, oculto nem desconto", async () => {
+    // A regressão que esta asserção impede: um patch ampliado grava default
+    // por cima de promoção, foto e visibilidade que o lojista nunca tocou.
+    await atualizarNomeEPreco(PRODUTO_ID, { nome: "X", preco: 1 });
+
+    const update = opEscrita("produtos")?.update ?? {};
+    for (const chave of [
+      "visibilidade",
+      "foto_url",
+      "disponivel",
+      "oculto",
+      "ordem",
+      "descricao",
+      "categoria_id",
+      "desconto_ativo",
+      "desconto_tipo",
+      "desconto_valor",
+      "desconto_inicio",
+      "desconto_fim",
+      "loja_id",
+      "id",
+    ]) {
+      expect(update).not.toHaveProperty(chave);
+    }
+  });
+
+  it("chaves hostis no payload não sobrevivem ao patch (schema estrito)", async () => {
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "X-Burger",
+      preco: 12,
+      loja_id: LOJA_OUTRA,
+      id: "99999999-9999-9999-9999-999999999999",
+      visibilidade: "cardapio",
+      foto_url: "https://evil.example/x.png",
+    });
+
+    expect(r.ok).toBe(true);
+    const update = opEscrita("produtos")?.update ?? {};
+    expect(Object.keys(update).sort()).toEqual(["nome", "preco"]);
+  });
+
+  // ── (c) escopo duplo, derivado do dono autenticado ────────────────────────
+  it("escopo duplo: .eq('id') E .eq('loja_id', <loja do dono>)", async () => {
+    await atualizarNomeEPreco(PRODUTO_ID, { nome: "X", preco: 12 });
+
+    expect(buscarLojaDoDono).toHaveBeenCalledWith(authClient);
+    expect(opEscrita("produtos")?.filtros).toEqual(
+      expect.arrayContaining([
+        ["id", PRODUTO_ID],
+        ["loja_id", LOJA_DONO],
+      ]),
+    );
+  });
+
+  it("ATAQUE: loja_id hostil no payload é IGNORADO (vale o de buscarLojaDoDono)", async () => {
+    await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "X",
+      preco: 12,
+      loja_id: LOJA_OUTRA,
+    });
+
+    // Nenhum filtro, em NENHUMA op, aponta para a loja alheia — inclusive o
+    // SELECT que relê o desconto (senão D10 seria conferida na linha errada).
+    for (const op of ops) {
+      expect(op.filtros.some(([, v]) => v === LOJA_OUTRA)).toBe(false);
+    }
+  });
+
+  it("a releitura do desconto também é escopada por loja_id (não só o UPDATE)", async () => {
+    await atualizarNomeEPreco(PRODUTO_ID, { nome: "X", preco: 12 });
+
+    const leitura = ops.find(
+      (o) => o.tabela === "produtos" && o.update === undefined,
+    );
+    expect(leitura?.filtros).toEqual(
+      expect.arrayContaining([
+        ["id", PRODUTO_ID],
+        ["loja_id", LOJA_DONO],
+      ]),
+    );
+  });
+
+  it("NÃO usa service_role (a escrita do lojista passa pela RLS autenticada)", async () => {
+    await atualizarNomeEPreco(PRODUTO_ID, { nome: "X", preco: 12 });
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  // ── (d) recusa ANTES de qualquer I/O ──────────────────────────────────────
+  it("id não-UUID é recusado SEM nenhuma ida ao banco", async () => {
+    const r = await atualizarNomeEPreco("nao-uuid", { nome: "X", preco: 12 });
+
+    expect(r.ok).toBe(false);
+    expect(ops).toHaveLength(0);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(buscarLojaDoDono).not.toHaveBeenCalled();
+  });
+
+  it("nome vazio após trim é recusado SEM nenhuma ida ao banco", async () => {
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "   ",
+      preco: 12,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(ops).toHaveLength(0);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("nome de 201 caracteres é recusado SEM nenhuma ida ao banco", async () => {
+    const r = await atualizarNomeEPreco(PRODUTO_ID, {
+      nome: "a".repeat(201),
+      preco: 12,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(ops).toHaveLength(0);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("preço negativo, NaN e com 3 casas são recusados SEM ida ao banco", async () => {
+    for (const preco of [-1, Number.NaN, 10.999]) {
+      ops = [];
+      vi.clearAllMocks();
+      buscarLojaDoDono.mockResolvedValue(lojaDoDono());
+
+      const r = await atualizarNomeEPreco(PRODUTO_ID, { nome: "X", preco });
+
+      expect(r.ok).toBe(false);
+      expect(ops).toHaveLength(0);
+    }
   });
 });

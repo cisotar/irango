@@ -21,6 +21,7 @@ import {
 import {
   criarProdutoAdmin,
   atualizarProdutoAdmin,
+  atualizarNomeEPrecoAdmin,
   removerProdutoAdmin,
   alternarDisponibilidadeAdmin,
   alternarOcultoAdmin,
@@ -179,6 +180,11 @@ export function CardapioAdminClient({
         criarProduto: (payload) => criarProdutoAdmin(lojaId, payload),
         atualizarProduto: (id, payload) =>
           atualizarProdutoAdmin(lojaId, id, payload),
+        // [290] O `lojaId` da URL admin fixado por closure — a action do
+        // lojista derivaria a loja de `auth.uid()` e gravaria na loja do
+        // admin logado (o bug da auditoria 143).
+        atualizarNomeEPreco: (id, payload) =>
+          atualizarNomeEPrecoAdmin(lojaId, id, payload),
         removerProduto: (id) => removerProdutoAdmin(lojaId, id),
         alternarDisponibilidade: (id, disponivel) =>
           alternarDisponibilidadeAdmin(lojaId, id, disponivel),

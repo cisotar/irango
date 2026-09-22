@@ -26,6 +26,9 @@ import {
   schemaProduto,
   schemaProdutoUpdate,
   schemaVisibilidadeEmLote,
+  schemaIdProduto,
+  schemaNomeEPreco,
+  validarPrecoContraDesconto,
 } from "@/lib/validacoes/produto";
 // Contrato NEUTRO compartilhado com o caminho do LOJISTA (issue 241): a mensagem
 // de D10 e a conversão de prazo pelo fuso têm UMA fonte nos dois mundos — o
@@ -128,6 +131,91 @@ export async function criarProdutoAdmin(
     return { ok: true };
   } catch (e) {
     console.error("[criarProdutoAdmin]", e);
+    return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR) };
+  }
+}
+
+/**
+ * [290] O desconto JÁ GRAVADO da linha, lido pelo escopo (loja-alvo + id). O
+ * wrapper devolve `data: unknown` (os generics do PostgREST não estreitam ali),
+ * então a forma é conferida aqui — sem `any` e sem confiar no payload.
+ */
+type DescontoGravado = { tipo: string | null; valor: number | null };
+
+function descontoGravado(data: unknown): DescontoGravado | null {
+  if (data == null || typeof data !== "object") return null;
+  const linha = data as Record<string, unknown>;
+  return {
+    tipo: typeof linha.desconto_tipo === "string" ? linha.desconto_tipo : null,
+    valor:
+      typeof linha.desconto_valor === "number" ? linha.desconto_valor : null,
+  };
+}
+
+/**
+ * [290] PARIDADE da edição inline de nome+preço. O hub admin escreve com
+ * `service_role` (BYPASSRLS): nenhuma regra que more só na RLS protege esta
+ * via, e o CHECK de desconto protege o DADO, não a MENSAGEM. O que protege a
+ * UX aqui é a paridade com `atualizarNomeEPreco` do lojista — mesma
+ * `validarPrecoContraDesconto`, mesma frase de D10 (uma fonte só, nenhum texto
+ * literal aqui), mesmo patch de DUAS chaves, mesma recusa antes do I/O.
+ */
+export async function atualizarNomeEPrecoAdmin(
+  lojaId: string,
+  id: string,
+  payload: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  if (!schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: MSG_SALVAR };
+  }
+  const parsed = schemaNomeEPreco.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: erroDeParseProduto(parsed.error.issues) };
+  }
+
+  // Fail-closed: prova de admin FORA do try → propaga, service só depois.
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // Releitura ESCOPADA do desconto já gravado (nunca do payload).
+    const { data, error: erroLeitura } = await escopo.buscarPorId(
+      "produtos",
+      id,
+      "desconto_tipo, desconto_valor",
+    );
+    if (erroLeitura) throw erroLeitura;
+    const desconto = descontoGravado(data);
+    if (desconto == null) return { ok: false, erro: MSG_SALVAR };
+
+    const recusa = validarPrecoContraDesconto(
+      parsed.data.preco,
+      desconto.tipo,
+      desconto.valor,
+    );
+    if (recusa != null) return { ok: false, erro: recusa };
+
+    // Patch de DUAS chaves, montado campo a campo (nunca por spread). Escopo
+    // cross-loja (loja_id + id) pelo wrapper; loja_id não vai no patch.
+    const { error } = await escopo.atualizar("produtos", id, {
+      nome: parsed.data.nome,
+      preco: parsed.data.preco,
+    });
+    if (error) {
+      console.error("[atualizarNomeEPrecoAdmin]", error);
+      return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR) };
+    }
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "produto.atualizar",
+      entidadeId: id,
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[atualizarNomeEPrecoAdmin]", e);
     return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR) };
   }
 }
