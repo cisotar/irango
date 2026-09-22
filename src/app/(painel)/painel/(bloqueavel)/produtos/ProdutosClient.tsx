@@ -936,6 +936,34 @@ export function ProdutosClient({
                                 </Badge>
                               )}
                             </div>
+                            {!modoSelecao &&
+                              (() => {
+                                const gruposOpcionais =
+                                  opcionaisPorCategoria[
+                                    p.categoria_id ?? ""
+                                  ] ?? [];
+                                if (gruposOpcionais.length === 0) return null;
+                                return (
+                                  <ul
+                                    className="mt-1.5 flex flex-wrap gap-1.5"
+                                    aria-label={`Opcionais da categoria ${grupo.nome}`}
+                                  >
+                                    {gruposOpcionais
+                                      .slice()
+                                      .sort((a, b) => a.ordem - b.ordem)
+                                      .map((g) => (
+                                        <li key={g.categoriaOpcionalId}>
+                                          <Badge
+                                            variant="secondary"
+                                            className="font-normal"
+                                          >
+                                            {g.categoriaOpcionalNome}
+                                          </Badge>
+                                        </li>
+                                      ))}
+                                  </ul>
+                                );
+                              })()}
                             {/* [261] De quais cardápios o produto participa e
                                 se algum está DENTRO da janela agora. Os dois
                                 vêm projetados do Server Component, com o
@@ -990,109 +1018,6 @@ export function ProdutosClient({
                             )}
                           </div>
 
-                          {/* Editar/Remover consolidados no kebab: elimina os dois
-                              ícones cortados na borda e afasta a ação destrutiva do
-                              alvo de toque de "Marcar esgotado".
-
-                              No modo de seleção o kebab, os chips de opcionais e
-                              os dois botões de estado SOMEM: o checkbox soma
-                              ~44px de chrome à linha e a régua de
-                              `design-system.md` §5 é COMPRIMIR, não estourar em
-                              360px. Some também porque no modo a única ação é a
-                              da barra — o mesmo que `modoReordenar` já faz. */}
-                          {!modoSelecao && (
-                            <Menu>
-                              <MenuTrigger
-                                render={
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="order-3 min-h-[44px] min-w-[44px] sm:order-last"
-                                    aria-label={`Mais ações de ${p.nome}`}
-                                  />
-                                }
-                              >
-                                <MoreVertical aria-hidden className="size-4" />
-                              </MenuTrigger>
-                              <MenuPortal>
-                                <MenuPositioner align="end">
-                                  <MenuPopup>
-                                    <MenuItem
-                                      className="min-h-[44px]"
-                                      aria-label={`Editar ${p.nome}`}
-                                      onClick={() => abrirEditar(p)}
-                                    >
-                                      <Pencil aria-hidden className="size-4" />
-                                      Editar
-                                    </MenuItem>
-                                    {/* [264/§13.4 item 5] O MESMO par de saídas
-                                        do aviso de `/painel/cardapios`, aqui no
-                                        kebab. Nenhuma das duas roda sozinha, e
-                                        devolver ao menu mexe só NESTE produto —
-                                        o sistema nunca converte `visibilidade`
-                                        por conta própria. */}
-                                    {sumicos[p.id] && hrefCardapios !== null && (
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        onClick={() =>
-                                          router.push(hrefCardapios)
-                                        }
-                                      >
-                                        {rotuloReligarOuEstender(
-                                          sumicos[p.id].ativo,
-                                        )}
-                                      </MenuItem>
-                                    )}
-                                    {sumicos[p.id] && lote != null && (
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        onClick={() => void devolverAoMenu(p)}
-                                      >
-                                        Devolver ao menu
-                                      </MenuItem>
-                                    )}
-                                    <MenuItem
-                                      className="min-h-[44px]"
-                                      aria-label={`Remover ${p.nome}`}
-                                      onClick={() => setARemover(p)}
-                                    >
-                                      <Trash2
-                                        aria-hidden
-                                        className="size-4 text-destructive"
-                                      />
-                                      Remover
-                                    </MenuItem>
-                                  </MenuPopup>
-                                </MenuPositioner>
-                              </MenuPortal>
-                            </Menu>
-                          )}
-
-                          {!modoSelecao &&
-                            (() => {
-                              const gruposOpcionais =
-                                opcionaisPorCategoria[p.categoria_id ?? ""] ??
-                                [];
-                              if (gruposOpcionais.length === 0) return null;
-                              return (
-                                <ul className="order-4 flex w-full min-w-0 shrink flex-wrap gap-1.5 sm:order-3 sm:w-auto">
-                                  {gruposOpcionais
-                                    .slice()
-                                    .sort((a, b) => a.ordem - b.ordem)
-                                    .map((g) => (
-                                      <li key={g.categoriaOpcionalId}>
-                                        <Badge
-                                          variant="secondary"
-                                          className="font-normal"
-                                        >
-                                          {g.categoriaOpcionalNome}
-                                        </Badge>
-                                      </li>
-                                    ))}
-                                </ul>
-                              );
-                            })()}
-
                           {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
                               52.8px na base de 120% do projeto (globals.css). */}
                           {!modoSelecao && (
@@ -1132,6 +1057,78 @@ export function ProdutosClient({
                                   ? "Marcar esgotado"
                                   : "Disponibilizar"}
                               </Button>
+                              {/* Editar/Remover consolidados no kebab: elimina os dois
+                                  ícones cortados na borda e afasta a ação destrutiva do
+                                  alvo de toque de "Marcar esgotado". Último filho deste
+                                  grupo: fica à direita de Ocultar/Disponibilizar nos
+                                  dois breakpoints, sem classe `order-*` própria — se
+                                  algum dia quebrar, quebra junto com os botões do
+                                  produto dele, nunca sozinho. */}
+                              <Menu>
+                                <MenuTrigger
+                                  render={
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="min-h-[44px] min-w-[44px] shrink-0"
+                                      aria-label={`Mais ações de ${p.nome}`}
+                                    />
+                                  }
+                                >
+                                  <MoreVertical aria-hidden className="size-4" />
+                                </MenuTrigger>
+                                <MenuPortal>
+                                  <MenuPositioner align="end">
+                                    <MenuPopup>
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        aria-label={`Editar ${p.nome}`}
+                                        onClick={() => abrirEditar(p)}
+                                      >
+                                        <Pencil aria-hidden className="size-4" />
+                                        Editar
+                                      </MenuItem>
+                                      {/* [264/§13.4 item 5] O MESMO par de saídas
+                                          do aviso de `/painel/cardapios`, aqui no
+                                          kebab. Nenhuma das duas roda sozinha, e
+                                          devolver ao menu mexe só NESTE produto —
+                                          o sistema nunca converte `visibilidade`
+                                          por conta própria. */}
+                                      {sumicos[p.id] && hrefCardapios !== null && (
+                                        <MenuItem
+                                          className="min-h-[44px]"
+                                          onClick={() =>
+                                            router.push(hrefCardapios)
+                                          }
+                                        >
+                                          {rotuloReligarOuEstender(
+                                            sumicos[p.id].ativo,
+                                          )}
+                                        </MenuItem>
+                                      )}
+                                      {sumicos[p.id] && lote != null && (
+                                        <MenuItem
+                                          className="min-h-[44px]"
+                                          onClick={() => void devolverAoMenu(p)}
+                                        >
+                                          Devolver ao menu
+                                        </MenuItem>
+                                      )}
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        aria-label={`Remover ${p.nome}`}
+                                        onClick={() => setARemover(p)}
+                                      >
+                                        <Trash2
+                                          aria-hidden
+                                          className="size-4 text-destructive"
+                                        />
+                                        Remover
+                                      </MenuItem>
+                                    </MenuPopup>
+                                  </MenuPositioner>
+                                </MenuPortal>
+                              </Menu>
                             </div>
                           )}
                         </div>
