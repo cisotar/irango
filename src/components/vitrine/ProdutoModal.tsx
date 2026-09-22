@@ -91,19 +91,15 @@ type ProdutoModalProps = {
 
 /**
  * Modal centralizado de detalhe do produto na vitrine
- * (design-claude/vitrine/produto-modal.html). Responsivo, UM componente:
+ * (design-claude/vitrine/produto-modal.html). Responsivo, UM componente, MESMO
+ * layout RETRATO empilhado nos dois breakpoints — faixa primária com título,
+ * imagem grande (aspect 4/3), descrição, quantidade, opcionais e footer fixo
+ * com subtotal + CTA. O corpo inteiro rola.
  *
- *  - Mobile (< md): RETRATO empilhado — faixa primária com título, imagem grande
- *    (aspect 4/3), descrição, quantidade, opcionais e footer fixo com subtotal +
- *    CTA. O corpo inteiro rola.
- *  - Desktop (>= md): PAISAGEM 2 colunas — à esquerda imagem grande (flex-1) +
- *    DESCRIÇÃO logo abaixo dela (fonte menor, scroll próprio, sem vazar); à
- *    direita o conteúdo (título/preço/quantidade/opcionais/subtotal/CTA) com
- *    SCROLL PRÓPRIO e footer fixo. Modal full-screen (preenche a viewport toda).
- *
- * O container é FULL-SCREEN em ambos os breakpoints (mobile e desktop): ocupa a
- * tela inteira, sem cantos arredondados, parecendo uma página nova. É só a moldura
- * — o layout interno (retrato/paisagem) e toda a lógica de scroll não mudam.
+ * Mobile (< md): full-screen (preenche a viewport toda, sem cantos
+ * arredondados, parecendo uma página nova). Desktop (>= md): janela retrato
+ * centralizada (`max-w-lg`), cantos arredondados — a mesma coluna única, só
+ * numa moldura menor.
  *
  * Preço unitário e subtotal aqui são PREVIEW de UX — o servidor recalcula tudo a
  * partir do banco no checkout (seguranca.md §10). Nenhum valor monetário daqui é
@@ -250,17 +246,19 @@ export function ProdutoModal({
     onOpenChange(false);
   };
 
-  // Imagem em destaque. Mobile: bloco aspect-4/3 no fluxo do corpo. Desktop:
-  // ocupa o espaço flexível da coluna esquerda acima da descrição (flex-1,
-  // object-cover, sem scroll) — a descrição abaixo divide a altura da coluna.
+  // Imagem em destaque — bloco no fluxo do corpo, igual nos dois breakpoints
+  // (retrato único, ver docstring do componente). Proporção muda por
+  // breakpoint: 4/3 no mobile (janela estreita, imagem pode ser mais alta);
+  // 16/9 no desktop (janela mais larga — 4/3 tomaria mais da metade dos 700px
+  // de altura da janela e sobraria pouco pro resto do conteúdo).
   const imagem = (
-    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-[#eeeeee] bg-[linear-gradient(135deg,#4a3a22,#6b5131)] md:aspect-auto md:min-h-0 md:flex-1 md:rounded-none md:border-0">
+    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-[#eeeeee] bg-[linear-gradient(135deg,#4a3a22,#6b5131)] md:aspect-video">
       {foto ? (
         <Image
           src={foto}
           alt={produto.nome}
           fill
-          sizes="(max-width: 480px) 100vw, (max-width: 768px) 448px, 384px"
+          sizes="(max-width: 768px) 100vw, 512px"
           unoptimized
           className={`object-cover ${
             disponivel ? "" : "[filter:grayscale(0.7)_brightness(0.75)]"
@@ -278,57 +276,26 @@ export function ProdutoModal({
     </div>
   );
 
-  // Descrição do produto. Bloco reusado nos dois layouts, mas posicionado
-  // diferente: no MOBILE fica no corpo rolável (acima do preço, fluxo único);
-  // no DESKTOP é renderizado SÓ na coluna esquerda, ABAIXO da imagem, com fonte
-  // menor e scroll próprio se for longa (não empurra a imagem pra fora). Cada
-  // chamada passa `className` extra para ajustar tamanho/scroll ao contexto.
-  const descricao = produto.descricao ? (
-    <p className="text-sm leading-snug text-[var(--texto-muted)]">
-      {produto.descricao}
-    </p>
-  ) : null;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         // Esconde o botão de fechar padrão do primitivo — usamos o ✕ sobre a
         // faixa primária (contraste branco), abaixo. Sem padding no container:
-        // header/corpo/footer controlam o próprio espaçamento. FULL-SCREEN só no
+        // header/corpo/footer controlam o próprio espaçamento. FULL-SCREEN no
         // MOBILE (parece página nova): base sobrescreve o box do primitivo —
         // top-0/left-0 + translate zerado, w-screen/h-dvh + max-w/max-h-none,
-        // rounded-none (full-bleed). No DESKTOP (md:) restaura o box centralizado
-        // original do primitivo (top/left-1/2 + translate, w-[calc(100vw-2rem)],
-        // max-w-3xl, altura min(560px,…), rounded-2xl) e o layout paisagem
-        // (md:flex-row). h-dvh acompanha o viewport dinâmico do mobile (barra do browser).
+        // rounded-none (full-bleed). No DESKTOP (md:) vira uma janela retrato
+        // centralizada (top/left-1/2 + translate, max-w-lg, altura min(700px,…),
+        // rounded-2xl) — mesma coluna única, moldura menor. h-dvh acompanha o
+        // viewport dinâmico do mobile (barra do browser).
         showCloseButton={false}
         // [289/RN-6] Só quando quem abriu pediu: ausente ⇒ o Base UI devolve o
         // foco ao gatilho, exatamente como hoje no caminho do card/linha.
         {...(focoDeSaida ? { finalFocus: focoDeSaida } : {})}
-        className="gap-0 p-0 top-0 left-0 translate-x-0 translate-y-0 h-dvh max-h-none w-screen max-w-none rounded-none md:top-1/2 md:left-1/2 md:h-[min(560px,calc(100dvh-2rem))] md:max-h-[calc(100dvh-2rem)] md:w-[calc(100vw-2rem)] md:max-w-3xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:flex-row [&>button.absolute]:hidden"
+        className="gap-0 p-0 top-0 left-0 translate-x-0 translate-y-0 h-dvh max-h-none w-screen max-w-none rounded-none md:top-1/2 md:left-1/2 md:h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-2rem)] md:w-[calc(100vw-2rem)] md:max-w-lg md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl [&>button.absolute]:hidden"
       >
-        {/* Coluna ESQUERDA (desktop) — imagem em destaque + descrição abaixo.
-            É uma flex-column de altura cheia: a imagem ocupa o espaço flexível
-            (flex-1) e a descrição fica colada embaixo com altura limitada e
-            SCROLL PRÓPRIO se for longa, sem empurrar a imagem pra fora (§height).
-            No mobile esta coluna some — imagem e descrição vão pro corpo rolável
-            (renderizados de novo abaixo). min-h-0 deixa o overflow funcionar. */}
-        <div className="hidden md:flex md:w-[44%] md:shrink-0 md:flex-col md:self-stretch md:min-h-0">
-          {imagem}
-          {descricao ? (
-            <div className="max-h-[38%] shrink-0 overflow-y-auto border-t border-[#eeeeee] bg-[#f9f9f9] px-5 py-3">
-              {/* Fonte menor que no mobile (text-xs) p/ caber mais descrição sem
-                  estourar; scroll próprio garante que nada vaze da viewport. */}
-              <p className="text-xs leading-relaxed text-[var(--texto-muted)]">
-                {produto.descricao}
-              </p>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Coluna CONTEÚDO — header faixa primária + corpo rolável + footer fixo.
-            No desktop é a coluna direita (flex-1) com seu PRÓPRIO scroll interno;
-            no mobile é a coluna única. min-h-0/min-w-0 deixam o overflow funcionar. */}
+        {/* Coluna ÚNICA — header faixa primária + corpo rolável + footer fixo,
+            igual nos dois breakpoints. min-h-0/min-w-0 deixam o overflow funcionar. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* Header — faixa cor primária da loja, título centralizado, ✕ no canto */}
           <div className="relative shrink-0 bg-[var(--cor-primaria)] px-12 py-4">
@@ -355,13 +322,12 @@ export function ProdutoModal({
               opcionais. No desktop o scroll é AQUI (coluna de conteúdo), nunca na
               imagem. min-h-0 garante que o flex permita o overflow-y-auto. */}
           <div ref={corpoRef} className="min-h-0 flex-1 overflow-y-auto">
-            {/* Imagem grande em destaque — SÓ no mobile (no desktop é a coluna esq.) */}
-            <div className="p-4 pb-3 md:hidden">{imagem}</div>
+            {/* Imagem grande em destaque — igual nos dois breakpoints. */}
+            <div className="p-4 pb-3">{imagem}</div>
 
-            {/* Descrição (SÓ mobile — no desktop ela fica na coluna esquerda
-                abaixo da imagem). Colapsável: 2 linhas por padrão, toque expande. */}
+            {/* Descrição. Colapsável: 2 linhas por padrão, toque expande. */}
             {produto.descricao ? (
-              <div className="px-4 pb-4 text-center md:hidden">
+              <div className="px-4 pb-4 text-center">
                 <p
                   onClick={() => setDescricaoExpandida((v) => !v)}
                   className={`text-sm leading-snug text-[var(--texto-muted)] ${descricaoExpandida ? "" : "line-clamp-2"} cursor-pointer`}
@@ -445,7 +411,7 @@ export function ProdutoModal({
                     role="group"
                     aria-label="Selecionar quantidade"
                     aria-disabled={!disponivel}
-                    className={`flex items-center overflow-hidden rounded-[10px] border-[1.5px] border-[#dccbb0] bg-white ${
+                    className={`flex items-center rounded-[10px] border-[1.5px] border-[#dccbb0] bg-white ${
                       disponivel ? "" : "pointer-events-none opacity-45"
                     }`}
                   >
@@ -456,7 +422,11 @@ export function ProdutoModal({
                       aria-label="Diminuir quantidade"
                       disabled={!disponivel || quantidade <= 0}
                       onClick={() => setQuantidade((q) => Math.max(0, q - 1))}
-                      className="size-8 rounded-none text-[var(--cor-destaque)]"
+                      // Caixa visível 32px (`size-8` do variant); alvo de toque
+                      // real 44px via pseudo-elemento (design-system §5), sem
+                      // inflar o visual do controle. `rounded-l` acompanha o
+                      // raio do grupo (sem overflow-hidden, que cortaria o alvo).
+                      className="relative rounded-l-[8.5px] rounded-r-none text-[var(--cor-destaque)] after:absolute after:-inset-1.5 after:content-['']"
                     >
                       <Minus aria-hidden />
                     </Button>
@@ -464,7 +434,7 @@ export function ProdutoModal({
                       role="status"
                       aria-live="polite"
                       aria-label={`Quantidade: ${quantidade}`}
-                      className="min-w-9 border-x border-[#dccbb0] px-1 text-center text-base font-bold tabular-nums text-[var(--texto)]"
+                      className="min-w-9 border-x-[1.5px] border-[#dccbb0] px-1 text-center text-base font-bold tabular-nums text-[var(--texto)]"
                     >
                       {quantidade}
                     </span>
@@ -475,7 +445,7 @@ export function ProdutoModal({
                       aria-label="Aumentar quantidade"
                       disabled={!disponivel}
                       onClick={() => setQuantidade((q) => q + 1)}
-                      className="size-8 rounded-none text-[var(--cor-destaque)]"
+                      className="relative rounded-r-[8.5px] rounded-l-none text-[var(--cor-destaque)] after:absolute after:-inset-1.5 after:content-['']"
                     >
                       <Plus aria-hidden />
                     </Button>
