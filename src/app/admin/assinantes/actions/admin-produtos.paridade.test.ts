@@ -88,6 +88,11 @@ vi.mock("@/lib/auth/admin", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { criarProdutoAdmin, atualizarProdutoAdmin } from "./admin-produtos";
+// [290 — RED] `atualizarNomeEPrecoAdmin` AINDA NÃO EXISTE: um named import
+// quebraria a avaliação do módulo e derrubaria os 4 blocos de paridade já
+// verdes. Resolvedor por namespace (mesmo padrão do RED da 175); na fase GREEN
+// vira import direto.
+import * as adminProdutos from "./admin-produtos";
 
 function payloadProduto(over: Record<string, unknown> = {}) {
   return {
@@ -426,5 +431,177 @@ describe("auditoria 260/261 — UPDATE admin sem `visibilidade` não toca a colu
     expect(opEscrita("produtos")?.insert).toMatchObject({
       visibilidade: "menu",
     });
+  });
+});
+
+/** Lixo hostil reusado pelo bloco 290 (espelha o `HOSTIL` da paridade 3). */
+const HOSTIL_INLINE = {
+  loja_id: LOJA_OUTRA,
+  id: "99999999-9999-9999-9999-999999999999",
+  visibilidade: "cardapio",
+  foto_url: "https://evil.example/x.png",
+  ordem: 99,
+};
+
+// ── PARIDADE 5: edição inline de nome+preço (issue 290) ──────────────────────
+//
+// O hub admin escreve com `service_role` (BYPASSRLS): nenhuma regra que more só
+// na RLS protege esta via, e o CHECK de desconto da 20260920120000 protege o
+// DADO, não a MENSAGEM. O que protege a UX aqui é a PARIDADE — mesma frase de
+// D10 byte a byte, mesmo patch de DUAS chaves, mesma recusa antes do I/O.
+describe("290 — paridade da edição inline: atualizarNomeEPrecoAdmin", () => {
+  type AtualizarNomeEPrecoAdmin = (
+    lojaId: string,
+    id: string,
+    payload: unknown,
+  ) => Promise<{ ok: true } | { ok: false; erro: string }>;
+
+  function atualizarNomeEPrecoAdmin(
+    ...args: Parameters<AtualizarNomeEPrecoAdmin>
+  ): ReturnType<AtualizarNomeEPrecoAdmin> {
+    const fn = (adminProdutos as unknown as Record<string, unknown>)
+      .atualizarNomeEPrecoAdmin;
+    if (typeof fn !== "function") {
+      throw new Error(
+        "[290 RED] `atualizarNomeEPrecoAdmin` ainda não existe em " +
+          "src/app/admin/assinantes/actions/admin-produtos.ts — GREEN.",
+      );
+    }
+    return (fn as AtualizarNomeEPrecoAdmin)(...args);
+  }
+
+  /** A linha como o BANCO a devolve: promoção DESLIGADA, mas fixa em 30,00. */
+  function linhaComDescontoFixo(over: Record<string, unknown> = {}) {
+    return {
+      id: PRODUTO_ID,
+      loja_id: LOJA_ALVO,
+      preco: 100,
+      desconto_ativo: false,
+      desconto_tipo: "fixo",
+      desconto_valor: 30,
+      ...over,
+    };
+  }
+
+  beforeEach(() => {
+    respostaPorTabela.produtos = {
+      data: {
+        id: PRODUTO_ID,
+        loja_id: LOJA_ALVO,
+        preco: 100,
+        desconto_ativo: false,
+        desconto_tipo: null,
+        desconto_valor: null,
+      },
+      error: null,
+      count: 1,
+    };
+  });
+
+  it("D10: preço abaixo do fixo LIDO DO BANCO é recusado com a MESMA mensagem literal do lojista", async () => {
+    respostaPorTabela.produtos = {
+      data: linhaComDescontoFixo(),
+      error: null,
+      count: 1,
+    };
+
+    const r = await atualizarNomeEPrecoAdmin(LOJA_ALVO, PRODUTO_ID, {
+      nome: "Feijoada",
+      preco: 20,
+    });
+
+    // MSG_D10_20_30 é a mesma constante já usada pelos blocos de criar/atualizar.
+    expect(r).toEqual({ ok: false, erro: MSG_D10_20_30 });
+    expect(opEscrita("produtos")).toBeUndefined();
+    expect(ops.every((o) => o.update === undefined)).toBe(true);
+  });
+
+  it("ATAQUE: desconto vindo no payload admin não substitui o do banco", async () => {
+    respostaPorTabela.produtos = {
+      data: linhaComDescontoFixo(),
+      error: null,
+      count: 1,
+    };
+
+    const r = await atualizarNomeEPrecoAdmin(LOJA_ALVO, PRODUTO_ID, {
+      nome: "Feijoada",
+      preco: 20,
+      desconto_tipo: "fixo",
+      desconto_valor: 1,
+    });
+
+    expect(r).toEqual({ ok: false, erro: MSG_D10_20_30 });
+    expect(opEscrita("produtos")).toBeUndefined();
+  });
+
+  it("o patch admin tem EXATAMENTE as mesmas duas chaves `nome` e `preco`", async () => {
+    const r = await atualizarNomeEPrecoAdmin(LOJA_ALVO, PRODUTO_ID, {
+      nome: "Feijoada completa",
+      preco: 89.9,
+    });
+
+    expect(r).toEqual({ ok: true });
+    const update = opEscrita("produtos")?.update ?? {};
+    expect(Object.keys(update).sort()).toEqual(["nome", "preco"]);
+    expect(update).toEqual({ nome: "Feijoada completa", preco: 89.9 });
+  });
+
+  it("nenhum spread do payload: lixo hostil não entra no patch admin", async () => {
+    const r = await atualizarNomeEPrecoAdmin(LOJA_ALVO, PRODUTO_ID, {
+      nome: "Feijoada",
+      preco: 50,
+      ...HOSTIL_INLINE,
+    });
+
+    expect(r.ok).toBe(true);
+    const update = opEscrita("produtos")?.update ?? {};
+    expect(Object.keys(update).sort()).toEqual(["nome", "preco"]);
+    expect("loja_id" in update).toBe(false);
+    expect("visibilidade" in update).toBe(false);
+  });
+
+  it("escopo duplo: loja_id da URL admin + id, e nunca a loja do payload", async () => {
+    await atualizarNomeEPrecoAdmin(LOJA_ALVO, PRODUTO_ID, {
+      nome: "Feijoada",
+      preco: 50,
+      loja_id: LOJA_OUTRA,
+    });
+
+    const escrita = opEscrita("produtos");
+    expect(escrita?.filtros).toEqual(
+      expect.arrayContaining([
+        ["loja_id", LOJA_ALVO],
+        ["id", PRODUTO_ID],
+      ]),
+    );
+    for (const op of ops) {
+      expect(op.filtros.some(([, v]) => v === LOJA_OUTRA)).toBe(false);
+    }
+  });
+
+  it("lojaId não-UUID é recusado com a mensagem literal, SEM tocar no banco", async () => {
+    const r = await atualizarNomeEPrecoAdmin("loja-b", PRODUTO_ID, {
+      nome: "Feijoada",
+      preco: 50,
+    });
+
+    expect(r).toEqual({ ok: false, erro: "Loja inválida." });
+    expect(ops).toHaveLength(0);
+  });
+
+  it("id de produto não-UUID e nome vazio são recusados SEM tocar no banco", async () => {
+    const r1 = await atualizarNomeEPrecoAdmin(LOJA_ALVO, "nao-uuid", {
+      nome: "Feijoada",
+      preco: 50,
+    });
+    expect(r1.ok).toBe(false);
+    expect(ops).toHaveLength(0);
+
+    const r2 = await atualizarNomeEPrecoAdmin(LOJA_ALVO, PRODUTO_ID, {
+      nome: "   ",
+      preco: 50,
+    });
+    expect(r2.ok).toBe(false);
+    expect(ops).toHaveLength(0);
   });
 });
