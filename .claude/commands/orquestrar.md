@@ -15,10 +15,19 @@ Passe `$ARGUMENTS` como a tarefa, somado ao contexto que esta sessão já tem e 
 
 O agente roda em `opus` e carrega as regras canônicas em `.claude/agents/orquestrar.md`. Não repita essas regras aqui nem no prompt: o agente já as tem.
 
+Passe também, quando existir, o **diagnóstico que esta sessão já fez** — causa raiz lida no
+código, chamadores levantados, blast radius. É insumo: o agente não deve pagar um `planejar`
+para reproduzir o que já está pronto.
+
 Quando o plano voltar:
 
-1. Apresente-o ao usuário — agentes e skills envolvidos, ordem, travas, custo estimado.
-2. **Pare.** Só execute o plano após confirmação explícita. Plano aprovado para uma tarefa não autoriza a próxima.
+1. Apresente-o ao usuário — agentes e skills envolvidos, ordem, travas, e o custo nas **duas**
+   unidades: número de invocações (com quantas em modelo caro) **e duração estimada**. Apresente
+   junto o corte disponível dentro do degrau (seção 7 do plano), para ele poder escolher a
+   versão mais rápida em uma linha.
+2. Diga em que **branch ou PR** o trabalho entra, conforme a seção 5 do plano — e, se for emenda
+   de PR aberto, avise que o push invalida o CI verde atual.
+3. **Pare.** Só execute o plano após confirmação explícita. Plano aprovado para uma tarefa não autoriza a próxima.
 
 Ao executar um plano já aprovado (nesta sessão ou numa futura), o próprio arquivo do plano
 traz, como último passo do "Passo a passo da execução", a higiene de arquivar-se em
