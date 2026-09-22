@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linha de produto — painel — desktop</title>
+<style>
+  /* ------------------------------------------------------------------
+     Mockup do PAINEL (/painel/produtos). Não é vitrine: o tema por loja
+     (primaria/fundo/destaque) NÃO se aplica aqui — o painel usa a
+     superfície fixa do design-system §10.
+     Tokens copiados de src/app/globals.css.
+     ------------------------------------------------------------------ */
+  :root {
+    --fundo-painel: #f5f0e6;   /* creme da marca */
+    --card: #ffffff;
+    --limite-card: #8a8a8a;    /* .superficie-painel — 3,45:1 sobre branco */
+    --foreground: #252525;
+    --muted-foreground: #737373;
+    --secondary: #f5f5f5;
+    --secondary-foreground: #333333;
+    --destructive: #d13a2c;
+    --promo-texto: #166534;
+    --promo-fundo: #dcfce7;
+    --radius: 0.625rem;
+    --anota: #e11d48;
+    --ok: #15803d;
+  }
+  /* base de 120% do projeto: 1rem = 19.2px. Mantida para que as medidas
+     de 44px apareçam na proporção real. */
+  html { font-size: 120%; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    background: #e8e2d6;
+    color: var(--foreground);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.875rem;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 1.15rem; margin: 0 0 4px; }
+  h2 { font-size: 1rem; margin: 40px 0 4px; display: flex; align-items: center; gap: 8px; }
+  .legenda { color: #5b5b5b; font-size: 0.72rem; margin: 0 0 16px; line-height: 1.5; max-width: 62ch; }
+  .tag { font-size: .6rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+         padding: 3px 8px; border-radius: 999px; }
+  .tag-antes { background: #fde2e2; color: #9b1c1c; }
+  .tag-depois { background: #dcfce7; color: #14532d; }
+
+  /* moldura que simula a largura do viewport */
+  .viewport {
+    width: 920px; max-width: 100%;
+    background: var(--fundo-painel);
+    border: 1px solid var(--limite-card);
+    border-radius: 12px; padding: 16px; overflow: hidden;
+  }
+  .viewport-rotulo { font-size: .68rem; color: #5b5b5b; margin: 0 0 6px; }
+
+  /* ---- primitivos shadcn recriados ---- */
+  .card { background: var(--card); border-radius: var(--radius);
+          box-shadow: 0 0 0 1px var(--limite-card); overflow: hidden; }
+  .cab-cat { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+  .cab-cat h3 { font-size: 1.05rem; margin: 0; font-weight: 700; }
+  .cab-cat .espaco { flex: 1; }
+  .divisor { height: 1px; background: rgba(0,0,0,.1); }
+  .linhas > .linha + .linha { border-top: 1px solid rgba(0,0,0,.1); }
+
+  .thumb { width: 44px; height: 44px; border-radius: 8px; flex: none;
+           background: #cbb994 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><rect width='44' height='44' fill='%23c8b189'/><ellipse cx='22' cy='24' rx='15' ry='10' fill='%23a8814f'/><path d='M12 20 q10 -8 20 0' stroke='%23e8d6b5' stroke-width='2' fill='none'/></svg>") center/cover; }
+
+  .nome { font-size: 1rem; font-weight: 600; line-height: 1.3; }
+  .preco { font-size: .875rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: .75rem;
+          padding: 3px 9px; border-radius: 999px; background: var(--secondary);
+          color: var(--secondary-foreground); white-space: nowrap; }
+  .chip-outline { background: transparent; box-shadow: inset 0 0 0 1px var(--limite-card);
+                  color: var(--foreground); font-weight: 400; }
+  .chip-promo { background: var(--promo-fundo); color: var(--promo-texto); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+         min-height: 44px; padding: 0 14px; border-radius: 8px; font-size: .8rem;
+         font-weight: 500; cursor: pointer; background: transparent; white-space: nowrap; }
+  .btn-outline { box-shadow: inset 0 0 0 1px var(--limite-card); color: var(--foreground); }
+  .btn-ghost { color: var(--foreground); }
+  .btn-primario { background: #1a1a1a; color: #fff; }
+  .btn-icone { min-width: 44px; padding: 0; }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #4b5563; }
+
+  /* gatilho de edição da proposta: nome+preço viram um botão */
+  .gatilho-editar { display: block; width: 100%; text-align: left; background: transparent;
+                    border: 0; padding: 4px 6px; margin: -4px -6px; border-radius: 8px; cursor: pointer;
+                    font: inherit; color: inherit; }
+  .gatilho-editar:hover { background: #f3f3f3; }
+  .gatilho-editar:focus-visible { outline: none; box-shadow: 0 0 0 2px #4b5563; }
+  .lapis { opacity: 0; transition: opacity .1s; color: var(--muted-foreground); font-size: .7rem; }
+  .gatilho-editar:hover .lapis, .gatilho-editar:focus-visible .lapis { opacity: 1; }
+
+  /* switch */
+  .switch-wrap { display: inline-flex; align-items: center; gap: 8px; min-height: 44px;
+                 padding: 0 4px; cursor: pointer; font-size: .8rem; white-space: nowrap; }
+  .switch { width: 40px; height: 24px; border-radius: 999px; background: #c9c9c9;
+            position: relative; flex: none; transition: background .12s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+                   border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3);
+                   transition: transform .12s; }
+  .switch.on { background: #1a1a1a; }
+  .switch.on::after { transform: translateX(16px); }
+
+  /* ponto de status (proposta 5) — cor + TEXTO, nunca cor sozinha */
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 500;
+            white-space: nowrap; }
+  .ponto { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .ponto-esgotado { background: #111; }
+  .ponto-disp { background: var(--ok); }
+  .ponto-oculto { background: transparent; box-shadow: inset 0 0 0 2px var(--muted-foreground); }
+
+  /* inputs da edição inline */
+  .input { min-height: 44px; border-radius: 8px; padding: 0 10px; font: inherit;
+           font-size: .9rem; background: #fff; box-shadow: inset 0 0 0 1px var(--limite-card); }
+  .input:focus { outline: none; box-shadow: inset 0 0 0 1px #1a1a1a, 0 0 0 2px #cbd5e1; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ---------- ANTES: a linha real de hoje ---------- */
+  .linha-antes { display: flex; flex-wrap: wrap; align-items: flex-start;
+                 column-gap: 12px; row-gap: 8px; padding: 12px 16px; }
+  .linha-antes .texto { min-width: 14rem; flex: 1; }  /* sm:min-w-[14rem] */
+  .linha-antes .chips { display: flex; gap: 6px; flex: none; }  /* não encolhe */
+  .linha-antes .acoes { display: flex; gap: 8px; flex: none; }
+  .linha-antes .kebab-orfao { order: 99; }            /* order-last → quebra e alinha à ESQUERDA */
+
+  /* ---------- DEPOIS: a linha proposta ---------- */
+  .linha-depois { display: flex; align-items: center; column-gap: 12px; padding: 10px 16px; }
+  .linha-depois .texto { min-width: 0; flex: 1; }
+  .linha-depois .grupo-acao { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+
+  /* anotações vermelhas iguais às da screenshot */
+  .anotado { position: relative; }
+  .marca { position: absolute; z-index: 3; width: 26px; height: 26px; border-radius: 50%;
+           background: var(--anota); color: #fff; font-size: .7rem; font-weight: 700;
+           display: flex; align-items: center; justify-content: center; }
+  .cerca { position: absolute; z-index: 2; border: 2px solid var(--anota); border-radius: 8px; pointer-events: none; }
+  .nota { display: flex; gap: 8px; align-items: flex-start; font-size: .72rem; color: #4b4b4b;
+          margin: 6px 0 0; line-height: 1.5; }
+  .nota b { color: #111; }
+  .num { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--anota);
+         color: #fff; font-size: .62rem; font-weight: 700; display: flex; align-items: center;
+         justify-content: center; }
+  .ganho { border-left: 3px solid var(--ok); background: #f2fbf4; padding: 10px 12px;
+           border-radius: 0 8px 8px 0; font-size: .74rem; color: #14532d; margin-top: 12px; line-height: 1.55; }
+  .ganho b { color: #0b3d1c; }
+  .medida { font-size: .66rem; color: #8a5a00; background: #fff7e6; border: 1px dashed #d9a441;
+            border-radius: 6px; padding: 2px 6px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Linha de produto — <code>/painel/produtos</code> — desktop</h1>
+  <p class="legenda">
+    Painel do lojista, não vitrine: as cores da loja (<code>tema.primaria/fundo/destaque</code>)
+    não se aplicam aqui. Superfície creme + card branco com limite <code>#8a8a8a</code>,
+    conforme <code>design-system.md</code> §10. Base de fonte em 120%, como o projeto real,
+    para que os alvos de 44px apareçam na proporção certa.
+  </p>
+
+  <!-- ============================ ANTES ============================ -->
+  <h2><span class="tag tag-antes">Antes</span> como está hoje</h2>
+  <p class="viewport-rotulo">viewport 920px — o mesmo da screenshot anotada</p>
+
+  <div class="viewport anotado">
+    <div class="card">
+      <div class="cab-cat">
+        <h3>Pães</h3>
+        <span class="espaco"></span>
+        <button class="btn btn-ghost">⌃</button>
+        <button class="btn btn-ghost">⚙ Opcionais</button>
+        <button class="btn btn-ghost">＋ Novo produto</button>
+      </div>
+      <div class="divisor"></div>
+
+      <div class="linhas">
+        <!-- produto 1 -->
+        <div class="linha linha-antes">
+          <div class="thumb"></div>
+          <div class="texto">
+            <div class="nome">Pão de campanha</div>
+            <div style="margin-top:4px;display:flex;gap:8px;align-items:center">
+              <span class="preco">R$ 30,00</span>
+              <span class="chip">Esgotado</span>
+            </div>
+          </div>
+          <ul class="chips" style="list-style:none;margin:0;padding:0">
+            <li><span class="chip">Coloração</span></li>
+            <li><span class="chip">Antipasti</span></li>
+            <li><span class="chip">Bebidas</span></li>
+          </ul>
+          <div class="acoes">
+            <button class="btn btn-outline">Ocultar</button>
+            <button class="btn btn-outline">Disponibilizar</button>
+          </div>
+          <button class="btn btn-outline btn-icone kebab-orfao" aria-label="Mais ações de Pão de campanha">⋮</button>
+        </div>
+
+        <!-- produto 2 -->
+        <div class="linha linha-antes">
+          <div class="thumb"></div>
+          <div class="texto">
+            <div class="nome">Pão italiano</div>
+            <div style="margin-top:4px;display:flex;gap:8px;align-items:center">
+              <span class="preco">R$ 30,00</span>
+              <span class="chip">Esgotado</span>
+            </div>
+          </div>
+          <ul class="chips" style="list-style:none;margin:0;padding:0">
+            <li><span class="chip">Coloração</span></li>
+            <li><span class="chip">Antipasti</span></li>
+            <li><span class="chip">Bebidas</span></li>
+          </ul>
+          <div class="acoes">
+            <button class="btn btn-outline">Ocultar</button>
+            <button class="btn btn-outline">Disponibilizar</button>
+          </div>
+          <button class="btn btn-outline btn-icone kebab-orfao" aria-label="Mais ações de Pão italiano">⋮</button>
+        </div>
+
+        <!-- produto 3 -->
+        <div class="linha linha-antes">
+          <div class="thumb"></div>
+          <div class="texto">
+            <div class="nome">Focaccia bianca</div>
+            <div style="margin-top:4px;display:flex;gap:8px;align-items:center">
+              <span class="preco">R$ 25,00</span>
+              <span class="chip">Esgotado</span>
+            </div>
+          </div>
+          <ul class="chips" style="list-style:none;margin:0;padding:0">
+            <li><span class="chip">Coloração</span></li>
+            <li><span class="chip">Antipasti</span></li>
+            <li><span class="chip">Bebidas</span></li>
+          </ul>
+          <div class="acoes">
+            <button class="btn btn-outline">Ocultar</button>
+            <button class="btn btn-outline">Disponibilizar</button>
+          </div>
+          <button class="btn btn-outline btn-icone kebab-orfao" aria-label="Mais ações de Focaccia bianca">⋮</button>
+        </div>
+
+        <!-- produto 4 -->
+        <div class="linha linha-antes">
+          <div class="thumb"></div>
+          <div class="texto">
+            <div class="nome">Focaccia cipolla e oliva</div>
+            <div style="margin-top:4px;display:flex;gap:8px;align-items:center">
+              <span class="preco">R$ 25,00</span>
+              <span class="chip">Disponível</span>
+            </div>
+          </div>
+          <ul class="chips" style="list-style:none;margin:0;padding:0">
+            <li><span class="chip">Coloração</span></li>
+            <li><span class="chip">Antipasti</span></li>
+            <li><span class="chip">Bebidas</span></li>
+          </ul>
+          <div class="acoes">
+            <button class="btn btn-outline">Ocultar</button>
+            <button class="btn btn-outline">Marcar esgotado</button>
+          </div>
+          <button class="btn btn-outline btn-icone kebab-orfao" aria-label="Mais ações de Focaccia cipolla e oliva">⋮</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="nota"><span class="num">1</span><span><b>Kebab órfão.</b> A linha é
+    <code>flex flex-wrap</code> e o kebab é <code>order-last</code>
+    (<code>ProdutosClient.tsx:1014</code>). Thumb + nome com piso <code>sm:min-w-[14rem]</code>
+    + 3 chips que não encolhem + 2 botões estouram a largura: o kebab quebra para uma linha
+    nova e ancora à <b>esquerda</b>. O ⋮ do "Pão de campanha" fica mais perto do
+    "Pão italiano" do que do produto que ele controla.</span></p>
+  <p class="nota"><span class="num">2</span><span><b>Os dois botões são o único elemento
+    com peso visual</b> — e são as duas ações menos frequentes. Os três controles
+    (kebab, Ocultar, Disponibilizar) são <code>variant="outline"</code>: nada é primário.</span></p>
+  <p class="nota"><span class="num">3</span><span><b>12 chips dizendo 3 coisas.</b>
+    Vêm de <code>opcionaisPorCategoria[p.categoria_id]</code> — são atributo da
+    <b>categoria</b>, idênticos em toda linha do grupo. E são <code>&lt;li&gt;&lt;Badge&gt;</code>
+    inertes com silhueta de botão.</span></p>
+  <p class="nota"><span class="num">4</span><span><b>Banda morta.</b> A faixa vazia é
+    consequência do 1: ~50px por produto. Quatro produtos = ~200px de nada.
+    <span class="medida">"Esgotado" e "Coloração" são literalmente a mesma pílula cinza —
+    <code>Badge variant="secondary"</code> nos dois</span></span></p>
+
+  <!-- ============================ DEPOIS ============================ -->
+  <h2><span class="tag tag-depois">Depois</span> proposta</h2>
+  <p class="viewport-rotulo">mesmo viewport de 920px</p>
+
+  <div class="viewport">
+    <div class="card">
+      <div class="cab-cat">
+        <h3>Pães</h3>
+        <span class="espaco"></span>
+        <!-- proposta 1: os opcionais da categoria aparecem UMA vez, aqui -->
+        <button class="btn btn-ghost" aria-label="Editar os opcionais de Pães">
+          ⚙ Opcionais: <span style="font-weight:400;color:var(--muted-foreground)">Coloração · Antipasti · Bebidas</span>
+        </button>
+        <button class="btn btn-ghost">⌃</button>
+        <button class="btn btn-primario">＋ Novo produto</button>
+      </div>
+      <div class="divisor"></div>
+
+      <div class="linhas">
+        <!-- produto 1 -->
+        <div class="linha linha-depois">
+          <div class="thumb"></div>
+          <div class="texto">
+            <button class="gatilho-editar" aria-label="Editar Pão de campanha">
+              <span class="nome">Pão de campanha</span> <span class="lapis">✎ editar</span>
+              <div class="preco" style="margin-top:2px">R$ 30,00</div>
+            </button>
+          </div>
+          <span class="status"><span class="ponto ponto-esgotado"></span>Esgotado</span>
+          <div class="grupo-acao">
+            <label class="switch-wrap"><span class="switch on"></span> Na vitrine</label>
+            <button class="btn btn-ghost btn-icone" aria-label="Mais ações de Pão de campanha">⋮</button>
+          </div>
+        </div>
+
+        <!-- produto 2 -->
+        <div class="linha linha-depois">
+          <div class="thumb"></div>
+          <div class="texto">
+            <button class="gatilho-editar" aria-label="Editar Pão italiano">
+              <span class="nome">Pão italiano</span> <span class="lapis">✎ editar</span>
+              <div class="preco" style="margin-top:2px">R$ 30,00</div>
+            </button>
+          </div>
+          <span class="status"><span class="ponto ponto-esgotado"></span>Esgotado</span>
+          <div class="grupo-acao">
+            <label class="switch-wrap"><span class="switch on"></span> Na vitrine</label>
+            <button class="btn btn-ghost btn-icone" aria-label="Mais ações de Pão italiano">⋮</button>
+          </div>
+        </div>
+
+        <!-- produto 3: com a procedência de cardápio, subordinada -->
+        <div class="linha linha-depois">
+          <div class="thumb"></div>
+          <div class="texto">
+            <button class="gatilho-editar" aria-label="Editar Focaccia bianca">
+              <span class="nome">Focaccia bianca</span> <span class="lapis">✎ editar</span>
+              <div style="margin-top:2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <span class="preco">R$ 25,00</span>
+                <span class="chip chip-outline">Pães · seg-sex</span>
+                <span class="chip chip-promo">-20% até 30/09</span>
+              </div>
+            </button>
+          </div>
+          <span class="status"><span class="ponto ponto-esgotado"></span>Esgotado</span>
+          <div class="grupo-acao">
+            <label class="switch-wrap"><span class="switch on"></span> Na vitrine</label>
+            <button class="btn btn-ghost btn-icone" aria-label="Mais ações de Focaccia bianca">⋮</button>
+          </div>
+        </div>
+
+        <!-- produto 4: oculto, para mostrar o switch desligado + o aviso RN-12 -->
+        <div class="linha linha-depois" style="align-items:flex-start">
+          <div class="thumb"></div>
+          <div class="texto">
+            <button class="gatilho-editar" aria-label="Editar Focaccia cipolla e oliva">
+              <span class="nome">Focaccia cipolla e oliva</span> <span class="lapis">✎ editar</span>
+              <div style="margin-top:2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <span class="preco">R$ 25,00</span>
+                <span class="chip chip-outline">Pães · seg-sex · fora da janela agora</span>
+              </div>
+            </button>
+            <p role="alert" style="margin:6px 0 0;font-size:.72rem;color:#b45309;display:flex;gap:6px">
+              <span aria-hidden="true">⚠</span> Sumiu da vitrine: o cardápio Pães está fora da janela agora.
+            </p>
+          </div>
+          <span class="status" style="margin-top:8px"><span class="ponto ponto-oculto"></span>Oculto</span>
+          <div class="grupo-acao" style="margin-top:4px">
+            <label class="switch-wrap"><span class="switch"></span> Na vitrine</label>
+            <button class="btn btn-ghost btn-icone" aria-label="Mais ações de Focaccia cipolla e oliva">⋮</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ganho">
+    <b>O que mudou, e por quê.</b><br>
+    <b>1.</b> Os chips de opcionais subiram uma vez só para o cabeçalho da categoria — de onde
+    vêm. Isso tira da linha o único filho que não encolhe, e <b>o wrap do kebab some sozinho</b>:
+    as marcas 1 e 4 morrem juntas, sem tocar em regra de negócio.<br>
+    <b>2.</b> Kebab e controle de estado viram um grupo <code>shrink-0</code> com
+    <code>margin-left:auto</code> — se um dia quebrar, quebra ancorado à direita, junto do
+    produto dele.<br>
+    <b>3.</b> Nome+preço viram o gatilho de edição (a ação mais frequente, que hoje custa
+    3 toques e abre um formulário de 764 linhas). O kebab desce para <code>ghost</code> e
+    guarda só o raro/destrutivo.<br>
+    <b>4.</b> Os dois botões viram um <code>Switch</code> "Na vitrine" (eixo <code>oculto</code>);
+    "Marcar esgotado" (eixo <code>disponivel</code>) vai para o kebab. Rótulo que alterna
+    obrigava a inferir o estado pelo texto do botão.<br>
+    <b>5.</b> O estado ganhou forma própria (ponto + texto) e deixou de ter a mesma silhueta
+    do ruído. Cor <b>e</b> texto, nunca cor sozinha — WCAG 1.4.1.<br>
+    <b>Saldo:</b> 4 produtos passam a caber onde hoje cabem dois e meio, e some 1 linha de
+    controles por produto.
+  </div>
+
+  <!-- ===================== EDIÇÃO INLINE ===================== -->
+  <h2><span class="tag tag-depois">Depois</span> edição inline</h2>
+  <p class="legenda">
+    A linha inteira entra em <b>modo edição</b> e esconde o resto — mesmo mecanismo do
+    <code>leitura → confirmando</code> de <code>LinhaItemOpcional.tsx</code>.
+    <b>Recomendação:</b> nesta iteração entra <b>só o nome</b>. O campo de preço está
+    desenhado aqui, mas marcado como iteração 2 — ver o porquê em
+    <code>mockups/produtos-linha.md</code>.
+  </p>
+
+  <div class="viewport">
+    <div class="card">
+      <div class="cab-cat"><h3>Pães</h3><span class="espaco"></span>
+        <button class="btn btn-ghost">⚙ Opcionais: <span style="font-weight:400;color:var(--muted-foreground)">Coloração · Antipasti · Bebidas</span></button>
+      </div>
+      <div class="divisor"></div>
+      <div class="linhas">
+
+        <!-- ITERAÇÃO 1: só o nome -->
+        <div class="linha linha-depois" style="background:#fbfbfb">
+          <div class="thumb"></div>
+          <div class="texto" style="display:flex;gap:8px;align-items:center">
+            <label class="sr" for="n1">Nome do produto</label>
+            <input class="input" id="n1" style="flex:1" value="Pão de campanha" />
+            <span class="preco" style="color:var(--muted-foreground)">R$ 30,00</span>
+          </div>
+          <div class="grupo-acao">
+            <button class="btn btn-primario">Salvar</button>
+            <button class="btn btn-ghost">Cancelar</button>
+          </div>
+        </div>
+        <div style="padding:2px 16px 10px 72px;font-size:.7rem;color:var(--muted-foreground)">
+          Enter salva · Esc cancela &nbsp;·&nbsp;
+          <span class="medida">iteração 1 — nome não tem regra cruzada</span>
+        </div>
+
+        <!-- ITERAÇÃO 2: nome + preço -->
+        <div class="linha linha-depois" style="background:#fffdf5">
+          <div class="thumb"></div>
+          <div class="texto" style="display:flex;gap:8px;align-items:center">
+            <label class="sr" for="n2">Nome do produto</label>
+            <input class="input" id="n2" style="flex:1" value="Pão italiano" />
+            <label class="sr" for="p2">Preço</label>
+            <input class="input" id="p2" style="width:130px" value="R$ 30,00" inputmode="decimal" />
+          </div>
+          <div class="grupo-acao">
+            <button class="btn btn-primario">Salvar</button>
+            <button class="btn btn-ghost">Cancelar</button>
+          </div>
+        </div>
+        <div style="padding:2px 16px 10px 72px;font-size:.7rem;color:var(--muted-foreground)">
+          <span class="medida">iteração 2 — preço é fatia de dinheiro: TDD red-first, action
+          estreita que relê o desconto e reaplica D10, gêmea admin + teste de paridade</span>
+        </div>
+
+        <!-- erro de D10, o caso que a inline NÃO pode deixar passar -->
+        <div class="linha linha-depois" style="background:#fff5f5;align-items:flex-start">
+          <div class="thumb"></div>
+          <div class="texto">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="input" style="flex:1" value="Focaccia bianca" />
+              <input class="input" style="width:130px;box-shadow:inset 0 0 0 2px var(--destructive)"
+                     value="R$ 20,00" aria-invalid="true" aria-describedby="erro-d10" />
+            </div>
+            <p id="erro-d10" role="alert" style="margin:6px 0 0;font-size:.72rem;color:#9b1c1c">
+              Não dá para salvar: o preço novo (R$ 20,00) é menor que o desconto configurado
+              (R$ 30,00). Reduza o desconto para no máximo R$ 20,00 ou desligue a promoção
+              deste produto.
+            </p>
+          </div>
+          <div class="grupo-acao" style="margin-top:0">
+            <button class="btn btn-primario">Salvar</button>
+            <button class="btn btn-ghost">Cancelar</button>
+          </div>
+        </div>
+        <div style="padding:2px 16px 12px 72px;font-size:.7rem;color:var(--muted-foreground)">
+          Mensagem literal de D10 (<code>validacoes/produto.ts:269-295</code>). A UI mostra;
+          quem decide é o servidor.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="legenda" style="margin-top:32px">
+    <b>Acessibilidade já embutida neste mockup:</b> todo alvo tem 44px literais
+    (nunca <code>min-h-11</code> = 52,8px nem <code>size="icon-sm"</code> = 33,6px na base de
+    120% — design-system §5); <code>aria-label</code> nominal em cada ícone; status com
+    cor <b>e</b> texto; <code>&lt;label class="sr-only"&gt;</code> em cada input inline;
+    erro com <code>aria-invalid</code> + <code>aria-describedby</code> + <code>role="alert"</code>;
+    <code>focus-visible</code> com anel de 2px em tudo que é interativo (dê Tab na página para ver).
+  </p>
+</div>
+</body>
+</html>

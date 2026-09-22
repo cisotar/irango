@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Linha de produto — painel — mobile 360px</title>
+<style>
+  /* ------------------------------------------------------------------
+     Mockup do PAINEL (/painel/produtos) em 360px — o piso do projeto.
+     Não é vitrine: o tema por loja não se aplica. Tokens copiados de
+     src/app/globals.css; superfície conforme design-system.md §10.
+     ------------------------------------------------------------------ */
+  :root {
+    --fundo-painel: #f5f0e6;
+    --card: #ffffff;
+    --limite-card: #8a8a8a;
+    --foreground: #252525;
+    --muted-foreground: #737373;
+    --secondary: #f5f5f5;
+    --secondary-foreground: #333333;
+    --destructive: #d13a2c;
+    --promo-texto: #166534;
+    --promo-fundo: #dcfce7;
+    --radius: 0.625rem;
+    --anota: #e11d48;
+    --ok: #15803d;
+  }
+  html { font-size: 120%; }  /* base real do projeto: 1rem = 19.2px */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px; background: #e8e2d6; color: var(--foreground);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.875rem;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.1rem; margin: 0 0 4px; }
+  h2 { font-size: .95rem; margin: 36px 0 4px; display: flex; align-items: center; gap: 8px; }
+  .legenda { color: #5b5b5b; font-size: .72rem; margin: 0 0 14px; line-height: 1.55; max-width: 62ch; }
+  .tag { font-size: .6rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+         padding: 3px 8px; border-radius: 999px; }
+  .tag-antes { background: #fde2e2; color: #9b1c1c; }
+  .tag-depois { background: #dcfce7; color: #14532d; }
+
+  /* lado a lado quando a tela permite */
+  .par { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+
+  /* MOLDURA DE 360px — a medida real, sem trapaça */
+  .fone { width: 360px; flex: none; background: var(--fundo-painel);
+          border: 10px solid #2b2b2b; border-radius: 26px; padding: 10px 8px 14px;
+          overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  .fone-rotulo { font-size: .68rem; color: #5b5b5b; margin: 0 0 6px; text-align: center; }
+
+  /* ---- primitivos shadcn recriados ---- */
+  .card { background: var(--card); border-radius: var(--radius);
+          box-shadow: 0 0 0 1px var(--limite-card); overflow: hidden; }
+  .cab-cat { display: flex; align-items: center; gap: 6px; padding: 10px 12px; }
+  .cab-cat h3 { font-size: .95rem; margin: 0; font-weight: 700; flex: 1; }
+  .divisor { height: 1px; background: rgba(0,0,0,.1); }
+  .linhas > .linha + .linha { border-top: 1px solid rgba(0,0,0,.1); }
+
+  .thumb { width: 44px; height: 44px; border-radius: 8px; flex: none;
+           background: #cbb994 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><rect width='44' height='44' fill='%23c8b189'/><ellipse cx='22' cy='24' rx='15' ry='10' fill='%23a8814f'/><path d='M12 20 q10 -8 20 0' stroke='%23e8d6b5' stroke-width='2' fill='none'/></svg>") center/cover; }
+
+  .nome { font-size: .95rem; font-weight: 600; line-height: 1.3; display: block; }
+  .preco { font-size: .82rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: .7rem;
+          padding: 3px 8px; border-radius: 999px; background: var(--secondary);
+          color: var(--secondary-foreground); }
+  .chip-outline { background: transparent; box-shadow: inset 0 0 0 1px var(--limite-card);
+                  color: var(--foreground); font-weight: 400; white-space: normal; }
+  .chip-promo { background: var(--promo-fundo); color: var(--promo-texto); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+         min-height: 44px; padding: 0 12px; border-radius: 8px; font-size: .78rem;
+         font-weight: 500; cursor: pointer; background: transparent; }
+  .btn-outline { box-shadow: inset 0 0 0 1px var(--limite-card); color: var(--foreground); }
+  .btn-ghost { color: var(--foreground); }
+  .btn-primario { background: #1a1a1a; color: #fff; }
+  .btn-icone { min-width: 44px; padding: 0; }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #4b5563; }
+
+  .gatilho-editar { display: block; width: 100%; text-align: left; background: transparent;
+                    border: 0; padding: 4px 6px; margin: -4px -6px; border-radius: 8px;
+                    cursor: pointer; font: inherit; color: inherit; }
+  .gatilho-editar:active { background: #f3f3f3; }
+  .gatilho-editar:focus-visible { outline: none; box-shadow: 0 0 0 2px #4b5563; }
+
+  .switch-wrap { display: inline-flex; align-items: center; gap: 8px; min-height: 44px;
+                 padding: 0 4px; cursor: pointer; font-size: .78rem; white-space: nowrap; }
+  .switch { width: 40px; height: 24px; border-radius: 999px; background: #c9c9c9;
+            position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+                   border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .switch.on { background: #1a1a1a; }
+  .switch.on::after { transform: translateX(16px); }
+
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem;
+            font-weight: 500; white-space: nowrap; }
+  .ponto { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .ponto-esgotado { background: #111; }
+  .ponto-disp { background: var(--ok); }
+  .ponto-oculto { background: transparent; box-shadow: inset 0 0 0 2px var(--muted-foreground); }
+
+  .input { min-height: 44px; width: 100%; border-radius: 8px; padding: 0 10px; font: inherit;
+           font-size: .85rem; background: #fff; box-shadow: inset 0 0 0 1px var(--limite-card); }
+  .input:focus { outline: none; box-shadow: inset 0 0 0 1px #1a1a1a, 0 0 0 2px #cbd5e1; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ---------- ANTES: a linha real de hoje em 360px ---------- */
+  /* ordem real: thumb, texto, kebab(order-3), chips(order-4), botões(order-last) */
+  .linha-antes { display: flex; flex-wrap: wrap; align-items: flex-start;
+                 column-gap: 10px; row-gap: 8px; padding: 12px; }
+  .linha-antes .texto { min-width: 0; flex: 1; }
+  .linha-antes .kebab { order: 3; }
+  .linha-antes .chips { order: 4; width: 100%; display: flex; gap: 6px; flex-wrap: wrap;
+                        list-style: none; margin: 0; padding: 0; }
+  .linha-antes .acoes { order: 9; width: 100%; display: flex; gap: 8px; }
+  .linha-antes .acoes .btn { flex: 1; }
+
+  /* ---------- DEPOIS ---------- */
+  .linha-depois { display: flex; flex-wrap: wrap; align-items: flex-start;
+                  column-gap: 10px; row-gap: 6px; padding: 12px; }
+  .linha-depois .texto { min-width: 0; flex: 1; }
+  .linha-depois .kebab { order: 3; }
+  .linha-depois .rodape { order: 9; width: 100%; display: flex; justify-content: flex-end; }
+
+  .nota { display: flex; gap: 8px; align-items: flex-start; font-size: .72rem; color: #4b4b4b;
+          margin: 6px 0 0; line-height: 1.5; }
+  .nota b { color: #111; }
+  .num { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--anota);
+         color: #fff; font-size: .62rem; font-weight: 700; display: flex; align-items: center;
+         justify-content: center; }
+  .ganho { border-left: 3px solid var(--ok); background: #f2fbf4; padding: 10px 12px;
+           border-radius: 0 8px 8px 0; font-size: .74rem; color: #14532d; margin-top: 14px;
+           line-height: 1.55; max-width: 70ch; }
+  .medida { font-size: .66rem; color: #8a5a00; background: #fff7e6; border: 1px dashed #d9a441;
+            border-radius: 6px; padding: 2px 6px; display: inline-block; }
+  .altura { font-size: .66rem; color: #9b1c1c; background: #fff1f1; border: 1px dashed #e11d48;
+            border-radius: 6px; padding: 2px 6px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Linha de produto — <code>/painel/produtos</code> — mobile 360px</h1>
+  <p class="legenda">
+    360px é o piso declarado do projeto. A moldura abaixo tem 360px reais e a base de fonte
+    é 120%, como em <code>globals.css</code> — nada foi encolhido para o mockup caber.
+    Painel, não vitrine: o tema da loja não se aplica.
+  </p>
+
+  <div class="par">
+
+    <!-- ============================ ANTES ============================ -->
+    <div>
+      <h2 style="margin-top:0"><span class="tag tag-antes">Antes</span> hoje</h2>
+      <p class="fone-rotulo">360px</p>
+      <div class="fone">
+        <div class="card">
+          <div class="cab-cat">
+            <h3>Pães</h3>
+            <button class="btn btn-ghost btn-icone" aria-label="Recolher">⌃</button>
+            <button class="btn btn-ghost btn-icone" aria-label="Opcionais">⚙</button>
+            <button class="btn btn-ghost btn-icone" aria-label="Novo produto em Pães">＋</button>
+          </div>
+          <div class="divisor"></div>
+          <div class="linhas">
+
+            <div class="linha linha-antes">
+              <div class="thumb"></div>
+              <div class="texto">
+                <span class="nome">Pão de campanha</span>
+                <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <span class="preco">R$ 30,00</span><span class="chip">Esgotado</span>
+                </div>
+              </div>
+              <button class="btn btn-outline btn-icone kebab" aria-label="Mais ações de Pão de campanha">⋮</button>
+              <ul class="chips">
+                <li><span class="chip">Coloração</span></li>
+                <li><span class="chip">Antipasti</span></li>
+                <li><span class="chip">Bebidas</span></li>
+              </ul>
+              <div class="acoes">
+                <button class="btn btn-outline">Ocultar</button>
+                <button class="btn btn-outline">Disponibilizar</button>
+              </div>
+            </div>
+
+            <div class="linha linha-antes">
+              <div class="thumb"></div>
+              <div class="texto">
+                <span class="nome">Focaccia cipolla e oliva</span>
+                <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <span class="preco">R$ 25,00</span><span class="chip">Disponível</span>
+                </div>
+              </div>
+              <button class="btn btn-outline btn-icone kebab" aria-label="Mais ações de Focaccia cipolla e oliva">⋮</button>
+              <ul class="chips">
+                <li><span class="chip">Coloração</span></li>
+                <li><span class="chip">Antipasti</span></li>
+                <li><span class="chip">Bebidas</span></li>
+              </ul>
+              <div class="acoes">
+                <button class="btn btn-outline">Ocultar</button>
+                <button class="btn btn-outline">Marcar esgotado</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      <p class="nota" style="max-width:360px"><span class="num">1</span><span>
+        <b>Três faixas de controle por produto:</b> o kebab entra em
+        <code>order-3</code> — antes dos chips — depois vem a faixa de chips
+        (<code>w-full</code>) e só então a faixa de botões. A ordem de leitura fica
+        nome → ⋮ → chips → ações.</span></p>
+      <p class="nota" style="max-width:360px"><span class="num">3</span><span>
+        Os 3 chips se repetem em <b>toda</b> linha e ocupam uma faixa inteira de altura,
+        para dizer algo que é da categoria.</span></p>
+      <p style="max-width:360px;margin-top:8px">
+        <span class="altura">2 produtos já consomem a tela inteira</span>
+      </p>
+    </div>
+
+    <!-- ============================ DEPOIS ============================ -->
+    <div>
+      <h2 style="margin-top:0"><span class="tag tag-depois">Depois</span> proposta</h2>
+      <p class="fone-rotulo">360px</p>
+      <div class="fone">
+        <div class="card">
+          <div class="cab-cat">
+            <h3>Pães</h3>
+            <button class="btn btn-ghost btn-icone" aria-label="Recolher">⌃</button>
+            <button class="btn btn-ghost btn-icone" aria-label="Novo produto em Pães">＋</button>
+          </div>
+          <!-- proposta 1: os opcionais da categoria, UMA vez, no cabeçalho -->
+          <button class="btn btn-ghost" style="width:100%;justify-content:flex-start;
+                  padding:0 12px 8px;min-height:auto;font-weight:400;font-size:.72rem;
+                  color:var(--muted-foreground);text-align:left"
+                  aria-label="Editar os opcionais de Pães">
+            ⚙ Opcionais: Coloração · Antipasti · Bebidas
+          </button>
+          <div class="divisor"></div>
+          <div class="linhas">
+
+            <div class="linha linha-depois">
+              <div class="thumb"></div>
+              <div class="texto">
+                <button class="gatilho-editar" aria-label="Editar Pão de campanha">
+                  <span class="nome">Pão de campanha</span>
+                  <span style="margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <span class="preco">R$ 30,00</span>
+                    <span class="status"><span class="ponto ponto-esgotado"></span>Esgotado</span>
+                  </span>
+                </button>
+              </div>
+              <button class="btn btn-ghost btn-icone kebab" aria-label="Mais ações de Pão de campanha">⋮</button>
+              <div class="rodape">
+                <label class="switch-wrap"><span class="switch on"></span> Na vitrine</label>
+              </div>
+            </div>
+
+            <div class="linha linha-depois">
+              <div class="thumb"></div>
+              <div class="texto">
+                <button class="gatilho-editar" aria-label="Editar Pão italiano">
+                  <span class="nome">Pão italiano</span>
+                  <span style="margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <span class="preco">R$ 30,00</span>
+                    <span class="status"><span class="ponto ponto-esgotado"></span>Esgotado</span>
+                  </span>
+                </button>
+              </div>
+              <button class="btn btn-ghost btn-icone kebab" aria-label="Mais ações de Pão italiano">⋮</button>
+              <div class="rodape">
+                <label class="switch-wrap"><span class="switch on"></span> Na vitrine</label>
+              </div>
+            </div>
+
+            <div class="linha linha-depois">
+              <div class="thumb"></div>
+              <div class="texto">
+                <button class="gatilho-editar" aria-label="Editar Focaccia bianca">
+                  <span class="nome">Focaccia bianca</span>
+                  <span style="margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <span class="preco">R$ 25,00</span>
+                    <span class="status"><span class="ponto ponto-esgotado"></span>Esgotado</span>
+                    <span class="chip chip-promo">-20% até 30/09</span>
+                  </span>
+                </button>
+              </div>
+              <button class="btn btn-ghost btn-icone kebab" aria-label="Mais ações de Focaccia bianca">⋮</button>
+              <div class="rodape">
+                <label class="switch-wrap"><span class="switch on"></span> Na vitrine</label>
+              </div>
+            </div>
+
+            <!-- caso cheio: procedência de cardápio + aviso RN-12 + oculto -->
+            <div class="linha linha-depois">
+              <div class="thumb"></div>
+              <div class="texto">
+                <button class="gatilho-editar" aria-label="Editar Focaccia cipolla e oliva">
+                  <span class="nome">Focaccia cipolla e oliva</span>
+                  <span style="margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <span class="preco">R$ 25,00</span>
+                    <span class="status"><span class="ponto ponto-oculto"></span>Oculto</span>
+                  </span>
+                  <span style="margin-top:5px;display:block">
+                    <span class="chip chip-outline">Pães · seg-sex · fora da janela agora</span>
+                  </span>
+                </button>
+                <p role="alert" style="margin:6px 0 0;font-size:.7rem;color:#b45309;display:flex;gap:6px">
+                  <span aria-hidden="true">⚠</span> Sumiu da vitrine: o cardápio Pães está fora da janela agora.
+                </p>
+              </div>
+              <button class="btn btn-ghost btn-icone kebab" aria-label="Mais ações de Focaccia cipolla e oliva">⋮</button>
+              <div class="rodape">
+                <label class="switch-wrap"><span class="switch"></span> Na vitrine</label>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      <p style="max-width:360px;margin-top:10px">
+        <span class="medida">4 produtos na mesma altura onde hoje cabem 2</span>
+      </p>
+    </div>
+
+    <!-- ===================== EDIÇÃO INLINE ===================== -->
+    <div>
+      <h2 style="margin-top:0"><span class="tag tag-depois">Depois</span> edição inline</h2>
+      <p class="fone-rotulo">360px — modo edição</p>
+      <div class="fone">
+        <div class="card">
+          <div class="cab-cat"><h3>Pães</h3></div>
+          <div class="divisor"></div>
+          <div class="linhas">
+
+            <!-- ITERAÇÃO 1: só o nome. Em 360px a linha ESCONDE o resto. -->
+            <div class="linha" style="padding:12px;background:#fbfbfb">
+              <div style="display:flex;gap:10px;align-items:center">
+                <div class="thumb"></div>
+                <div style="flex:1;min-width:0">
+                  <label class="sr" for="m1">Nome do produto</label>
+                  <input class="input" id="m1" value="Pão de campanha" />
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-primario" style="flex:1">Salvar</button>
+                <button class="btn btn-ghost" style="flex:1">Cancelar</button>
+              </div>
+              <p style="margin:6px 0 0;font-size:.68rem;color:var(--muted-foreground)">
+                Enter salva · Esc cancela
+              </p>
+            </div>
+
+            <!-- linha vizinha em leitura, para mostrar o contraste de modo -->
+            <div class="linha linha-depois">
+              <div class="thumb"></div>
+              <div class="texto">
+                <span class="nome">Pão italiano</span>
+                <span style="margin-top:3px;display:flex;gap:8px;align-items:center">
+                  <span class="preco">R$ 30,00</span>
+                  <span class="status"><span class="ponto ponto-esgotado"></span>Esgotado</span>
+                </span>
+              </div>
+              <button class="btn btn-ghost btn-icone kebab" aria-label="Mais ações de Pão italiano">⋮</button>
+              <div class="rodape">
+                <label class="switch-wrap"><span class="switch on"></span> Na vitrine</label>
+              </div>
+            </div>
+
+            <!-- ITERAÇÃO 2: nome + preço, empilhados -->
+            <div class="linha" style="padding:12px;background:#fffdf5">
+              <div style="display:flex;gap:10px;align-items:flex-start">
+                <div class="thumb"></div>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px">
+                  <div>
+                    <label class="sr" for="m2">Nome do produto</label>
+                    <input class="input" id="m2" value="Focaccia bianca" />
+                  </div>
+                  <div>
+                    <label class="sr" for="m3">Preço</label>
+                    <input class="input" id="m3" value="R$ 25,00" inputmode="decimal" />
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-primario" style="flex:1">Salvar</button>
+                <button class="btn btn-ghost" style="flex:1">Cancelar</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      <p class="nota" style="max-width:360px"><span class="num">!</span><span>
+        Em 360px os dois campos <b>não cabem lado a lado</b> — empilham. É a mesma régua
+        "comprimir, não estourar" do design-system §5. A linha inteira troca para o estado
+        <code>editando</code> e esconde chips, switch e kebab: mesmo mecanismo do
+        <code>leitura → confirmando</code> de <code>LinhaItemOpcional.tsx</code>.</span></p>
+      <p style="max-width:360px">
+        <span class="medida">iteração 1 = só o nome · iteração 2 = preço, com TDD red-first e D10</span>
+      </p>
+    </div>
+
+  </div>
+
+  <div class="ganho">
+    <b>O que a comparação em 360px mostra.</b><br>
+    Hoje cada produto gasta <b>três faixas</b>: nome/preço, a faixa de chips
+    (<code>w-full</code>) e a faixa de botões (<code>basis-full</code>, dois botões
+    <code>flex-1</code>) — dois produtos consomem a tela inteira.<br>
+    Na proposta, os chips saem (são da categoria, sobem para o cabeçalho uma vez só) e os
+    dois botões viram um <code>Switch</code>: sobra <b>uma</b> faixa de controle, e a mesma
+    altura passa a mostrar 4 produtos.<br>
+    O kebab deixa de vir antes do conteúdo: a ordem de leitura vira nome → preço → estado →
+    ⋮ → "Na vitrine".<br>
+    <b>Nada disso mexe em regra de negócio</b> — as propostas 1 e 2 são puramente visuais
+    (<code>/polir</code>). Só a edição inline abre Server Action.
+  </div>
+
+  <p class="legenda" style="margin-top:24px">
+    <b>Acessibilidade verificada neste mockup:</b> todo alvo com 44px literais
+    (design-system §5 proíbe <code>size="icon-sm"</code> = 33,6px e <code>min-h-11</code> =
+    52,8px na base de 120%); status com cor <b>e</b> texto (WCAG 1.4.1); um
+    <code>&lt;label class="sr-only"&gt;</code> por input; <code>aria-label</code> nominal em
+    cada ícone; <code>focus-visible</code> de 2px em tudo que é interativo — dê Tab para ver.
+  </p>
+</div>
+</body>
+</html>
