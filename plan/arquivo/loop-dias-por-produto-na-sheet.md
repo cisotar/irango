@@ -237,3 +237,26 @@ invocações para 5. `tdd` e `auditar` ficam. Abaixo de 5 só se corta protegend
 
 Nenhuma. Todo passo é coberto por agente, skill ou primitivo existente; o único componente de UI necessário
 (`PilulasDeDias`) já existe e é reusado sem variante. Nenhum agente ou skill novo é proposto.
+
+---
+
+## 9. Resultado da execução (2026-09-22)
+
+Loop rodado inteiro, sem parada intermediária, a pedido do usuário.
+
+- **5 invocações, 3 opus**, dentro do orçamento. `escriba` pulado: o grep em `references/` não
+  achou o contrato de payload do lote documentado (só a linha de débito da issue 281, que fala de
+  outra coisa).
+- `tdd` deu 26 vermelhos em quatro arquivos; `executar` fechou todos.
+- **Auditoria:** zero crítico, alto ou médio. Um BAIXA (mapa sem teto de cardinalidade) corrigido
+  no mesmo ciclo com `.refine` de `TETO_LOTE`. O agente também provou que `__proto__` no mapa não
+  polui protótipo nem escapa da validação, porque o `z.record` constrói objeto novo.
+- **Revisão:** dois achados, os dois corrigidos. `resolverDiasDoProduto` estava exportada e testada
+  mas sem consumidor — agora `montarDiasDoLote` a usa, uma regra num lugar só. E limpar a última
+  pílula de um produto liberava todos os dias em silêncio: a linha do produto passou a mostrar por
+  escrito se segue o cardápio ou só alguns dias.
+- **`verificar` no cloud:** um `upsert` só gravou três linhas com `[1,3,5]`, `[0,6]` e `NULL`, a
+  terceira herdando o rodapé. Chave fora da seleção recusada pelo schema antes de I/O. Cardápio de
+  outra loja barrado pela FK composta; dia fora da faixa barrado pelo CHECK. Nada tocou outra loja.
+- Branch mantida (`feat/refat-detalhe-cardapio`), PR #150 amendado antes do merge, como decidido
+  em §5. O push invalidou o verde anterior e disparou CI novo, comportamento esperado.
