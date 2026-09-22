@@ -1858,3 +1858,191 @@ describe("[287] paridade de dias no lote: admin grava a MESMA linha do lojista",
     }
   });
 });
+
+// ══════════════ [289] paridade do MAPA por produto: admin == lojista ═════════
+//
+// Fase RED da issue 289, lado ADMIN. Harness MOCK, o mesmo deste arquivo — o
+// gate de paridade compara LINHA a LINHA o que cada mundo manda ao banco, e é
+// essa captura que prova a paridade; um segundo padrão em pglite aqui não
+// provaria nada a mais e criaria dois lugares onde a mesma regra é afirmada.
+
+const PRODUTO_3 = "88888888-8888-8888-8888-888888888888";
+
+describe("[289] dias POR PRODUTO no lote admin — a MESMA linha do lojista", () => {
+  it("o MESMO gesto grava `dias_semana` DIFERENTES por linha, com o `loja_id` do ESCOPO", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1, PRODUTO_2],
+      dias_semana: [1],
+      dias_por_produto: { [PRODUTO_1]: [2], [PRODUTO_2]: [5, 3] },
+    });
+    expect(r).toEqual({ ok: true });
+
+    expect(opEscrita("cardapio_produtos")?.upsert).toEqual([
+      {
+        loja_id: LOJA_ALVO,
+        cardapio_id: CARDAPIO_ID,
+        produto_id: PRODUTO_1,
+        dias_semana: [2],
+      },
+      {
+        loja_id: LOJA_ALVO,
+        cardapio_id: CARDAPIO_ID,
+        produto_id: PRODUTO_2,
+        dias_semana: [3, 5],
+      },
+    ]);
+  });
+
+  it("produto FORA do mapa grava o RODAPÉ; rodapé 'todos os dias' grava `null`", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    for (const rodape of [{}, { dias_semana: [] }, { dias_semana: null }]) {
+      ops = [];
+      const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+        cardapio_id: CARDAPIO_ID,
+        produto_ids: [PRODUTO_1, PRODUTO_2],
+        ...rodape,
+        dias_por_produto: { [PRODUTO_2]: [6] },
+      });
+      expect(r, JSON.stringify(rodape)).toEqual({ ok: true });
+      expect(opEscrita("cardapio_produtos")?.upsert, JSON.stringify(rodape)).toEqual([
+        {
+          loja_id: LOJA_ALVO,
+          cardapio_id: CARDAPIO_ID,
+          produto_id: PRODUTO_1,
+          dias_semana: null,
+        },
+        {
+          loja_id: LOJA_ALVO,
+          cardapio_id: CARDAPIO_ID,
+          produto_id: PRODUTO_2,
+          dias_semana: [6],
+        },
+      ]);
+    }
+  });
+
+  it("`[]` NO MAPA grava `null` naquele produto, mesmo com o rodapé restrito", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1, PRODUTO_2],
+      dias_semana: [1],
+      dias_por_produto: { [PRODUTO_1]: [] },
+    });
+    expect(opEscrita("cardapio_produtos")?.upsert).toEqual([
+      { loja_id: LOJA_ALVO, cardapio_id: CARDAPIO_ID, produto_id: PRODUTO_1, dias_semana: null },
+      { loja_id: LOJA_ALVO, cardapio_id: CARDAPIO_ID, produto_id: PRODUTO_2, dias_semana: [1] },
+    ]);
+  });
+
+  it("id FORA de `produto_ids` no mapa: MESMA frase, zero escrita, zero log admin", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    for (const mapa of [
+      { [PRODUTO_3]: [1] },
+      { [PRODUTO_1]: [1], [PRODUTO_3]: [5] },
+      { "nao-e-guid": [1] },
+    ]) {
+      ops = [];
+      const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+        cardapio_id: CARDAPIO_ID,
+        produto_ids: [PRODUTO_1, PRODUTO_2],
+        dias_por_produto: mapa,
+      });
+      await flush();
+      expect(r, JSON.stringify(mapa)).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+      expect(opEscrita("cardapio_produtos"), JSON.stringify(mapa)).toBeUndefined();
+      expect(logouAcesso(), JSON.stringify(mapa)).toBe(false);
+    }
+  });
+
+  it("mesma recusa de domínio DENTRO do mapa, sem I/O de escrita", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    for (const dias of [[7], [-1], [1.5], ["3"], [1, 1, 1, 1, 1, 1, 1, 1], null, "3"]) {
+      ops = [];
+      const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+        cardapio_id: CARDAPIO_ID,
+        produto_ids: [PRODUTO_1],
+        dias_por_produto: { [PRODUTO_1]: dias },
+      });
+      await flush();
+      expect(r, JSON.stringify(dias)).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+      expect(opEscrita("cardapio_produtos"), JSON.stringify(dias)).toBeUndefined();
+      expect(logouAcesso(), JSON.stringify(dias)).toBe(false);
+    }
+  });
+
+  it("[270] cardápio de OUTRA loja COM mapa: fragmento LITERAL, ZERO upsert e ZERO log", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_OUTRO,
+      produto_ids: [PRODUTO_1, PRODUTO_2],
+      dias_semana: [1],
+      dias_por_produto: { [PRODUTO_1]: [2], [PRODUTO_2]: [5] },
+    });
+    await flush();
+
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect((r as { erro: string }).erro).toContain(
+      "Não foi possível aplicar o cardápio aos produtos selecionados.",
+    );
+    // A recusa veio da POSSE, não do parse: sem esta asserção o caso passaria
+    // hoje (o `dias_por_produto` que o schema ainda não conhece derruba tudo).
+    expect(
+      ops.filter((o) => o.tabela === "cardapios" && o.colunas === "id"),
+      "o payload nem chegou à prova de posse — a recusa foi do parse",
+    ).toHaveLength(1);
+    expect(opEscrita("cardapio_produtos")).toBeUndefined();
+    expect(ops.some((o) => o.insert || o.upsert || o.update || o.deleted)).toBe(false);
+    expect(logouAcesso(), "registrarAcessoAdmin foi chamado mesmo sem posse").toBe(false);
+  });
+
+  it("a trilha de auditoria NÃO ganha o mapa: `metadados` continua só com a contagem", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1, PRODUTO_2],
+      dias_semana: [1],
+      dias_por_produto: { [PRODUTO_1]: [2] },
+    });
+    await flush();
+
+    const log = ops.find((o) => o.tabela === "admin_acessos")?.insert ?? {};
+    expect(log).toMatchObject({
+      acao: "cardapio.aplicar_produtos",
+      entidade_id: CARDAPIO_ID,
+      metadados: { produtos: 2 },
+    });
+    expect(
+      JSON.stringify((log as { metadados?: unknown }).metadados ?? {}),
+      "a agenda por produto vazou para a trilha de auditoria",
+    ).not.toContain("dias_por_produto");
+  });
+
+  it("`tirarDeCardapioAdmin` continua RECUSANDO `dias_por_produto`", async () => {
+    const { tirarDeCardapioAdmin } = await acoes();
+    const r = await tirarDeCardapioAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1],
+      dias_por_produto: { [PRODUTO_1]: [1] },
+    });
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect(opEscrita("cardapio_produtos")).toBeUndefined();
+  });
+
+  it("paridade de FONTE: a resolução por linha é UMA, reusada nos dois mundos", async () => {
+    const RAIZ = process.cwd();
+    const ADMIN = join(RAIZ, "src/app/admin/assinantes/actions/admin-cardapios.ts");
+    const LOJISTA = join(RAIZ, "src/lib/actions/cardapio.ts");
+    for (const arquivo of [ADMIN, LOJISTA]) {
+      const texto = readFileSync(arquivo, "utf8");
+      expect(texto, `${arquivo} não resolve a agenda por produto`).toContain(
+        "dias_por_produto",
+      );
+      // A representação continua sendo decidida por UMA função, no servidor.
+      expect(texto).toContain("normalizarDiasDoVinculo");
+      expect(texto).not.toMatch(/function normalizarDiasDoVinculo/);
+    }
+  });
+});

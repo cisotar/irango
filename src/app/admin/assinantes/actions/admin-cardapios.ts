@@ -459,9 +459,8 @@ export async function aplicarCardapioEmProdutosAdmin(
 
   const parsed = schemaLoteDeProdutosComDias.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
-  const { cardapio_id, produto_ids } = parsed.data;
-  // [287] Mesma normalização do lojista — a paridade é a proteção desta via.
-  const dias = normalizarDiasDoVinculo(parsed.data.dias_semana);
+  const { cardapio_id, produto_ids, dias_semana, dias_por_produto } =
+    parsed.data;
 
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
@@ -474,10 +473,15 @@ export async function aplicarCardapioEmProdutosAdmin(
 
     const { error } = await escopo.inserirVarios(
       "cardapio_produtos",
+      // [287 · 289] Mesma resolução por linha do lojista — `dias_por_produto`
+      // vence o rodapé e `normalizarDiasDoVinculo` decide a representação. A
+      // paridade é a proteção desta via, que escreve com `service_role`.
       produto_ids.map((produto_id) => ({
         cardapio_id,
         produto_id,
-        dias_semana: dias,
+        dias_semana: normalizarDiasDoVinculo(
+          dias_por_produto?.[produto_id] ?? dias_semana,
+        ),
       })),
       { onConflict: "cardapio_id,produto_id", ignoreDuplicates: true },
     );

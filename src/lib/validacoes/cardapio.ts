@@ -66,8 +66,31 @@ export const schemaLoteDeProdutos = z
  * `[]` dizem a mesma coisa — "todos os dias do cardápio" (RN-11).
  */
 export const schemaLoteDeProdutosComDias = schemaLoteDeProdutos
-  .extend({ dias_semana: diasDaSemanaDoVinculo.nullish() })
-  .strict();
+  .extend({
+    dias_semana: diasDaSemanaDoVinculo.nullish(),
+    /**
+     * [289] A agenda POR LINHA do lote — ADITIVA e OPCIONAL: ausente, o lote
+     * inteiro segue `dias_semana`, que é o payload da barra de lote de
+     * `/painel/produtos`, intacto. O MESMO `diasDaSemanaDoVinculo` por valor:
+     * o domínio da agenda é declarado uma vez só.
+     */
+    dias_por_produto: z.record(z.guid(), diasDaSemanaDoVinculo).optional(),
+  })
+  .strict()
+  /**
+   * A TRAVA do campo novo: chave que não está em `produto_ids` derruba o lote
+   * INTEIRO, nunca é podada em silêncio. Um mapa que aceita id desconhecido é
+   * superfície de escrita a mais para enumerar — e "ignorado" é
+   * indistinguível de "aceito" para quem sonda.
+   */
+  .refine(
+    (v) =>
+      v.dias_por_produto == null ||
+      Object.keys(v.dias_por_produto).every((id) =>
+        v.produto_ids.includes(id),
+      ),
+    { message: "Agenda de produto fora da seleção", path: ["dias_por_produto"] },
+  );
 
 /** Aplicar por CATEGORIA INTEIRA — expandida dentro da RPC, nunca em JS (RN-10). */
 export const schemaLoteDeCategoria = z

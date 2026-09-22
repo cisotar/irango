@@ -54,3 +54,57 @@ export function diasDaEscolha(escolha: EscolhaDeDias): number[] {
   if (escolha.modo === "cardapio") return [];
   return [...escolha.dias].sort((a, b) => a - b);
 }
+
+// ═══════════════════ [289] A pílula do PRODUTO vence o rodapé da sheet ═══════
+//
+// O rodapé da sheet vale para o lote inteiro; cada produto selecionado pode ter
+// a sua própria escolha. A regra mora AQUI, e não num handler de clique, porque
+// o projeto não tem jsdom: regra em `onClick` não é observável em teste.
+
+/**
+ * O FRAGMENTO do payload de lote que a sheet monta. `dias_por_produto` é
+ * ADITIVO e OPCIONAL: quando ninguém tem pílula própria, a chave nem aparece e
+ * o payload é byte a byte o de hoje — é a compatibilidade da barra de lote de
+ * `/painel/produtos`, que não tem pílula por item.
+ */
+export type DiasDoLote = {
+  dias_semana: number[];
+  dias_por_produto?: Record<string, number[]>;
+};
+
+/**
+ * A escolha de UM produto: a dele quando existe, a do rodapé quando não.
+ *
+ * `undefined` é "não escolheu nada" — distinto de `{modo:"cardapio"}`, que é
+ * "escolheu seguir o cardápio" e, esse sim, vence um rodapé restrito.
+ */
+export function resolverDiasDoProduto(
+  rodape: EscolhaDeDias,
+  doProduto: EscolhaDeDias | undefined,
+): number[] {
+  return diasDaEscolha(doProduto ?? rodape);
+}
+
+/**
+ * A mesma regra aplicada à seleção inteira. Só id presente em `produtoIds`
+ * entra no mapa: escolha órfã (produto desmarcado depois) não pode vazar, e o
+ * servidor RECUSA o lote inteiro quando o mapa tem id fora da lista.
+ *
+ * Nada aqui deduplica: quem decide a REPRESENTAÇÃO é `normalizarDiasDoVinculo`,
+ * no servidor. O cliente manda intenção.
+ */
+export function montarDiasDoLote(
+  produtoIds: string[],
+  rodape: EscolhaDeDias,
+  porProduto: Record<string, EscolhaDeDias | undefined>,
+): DiasDoLote {
+  const mapa: Record<string, number[]> = {};
+  for (const id of produtoIds) {
+    const escolha = porProduto[id];
+    if (escolha !== undefined) mapa[id] = diasDaEscolha(escolha);
+  }
+  const dias_semana = diasDaEscolha(rodape);
+  return Object.keys(mapa).length === 0
+    ? { dias_semana }
+    : { dias_semana, dias_por_produto: mapa };
+}

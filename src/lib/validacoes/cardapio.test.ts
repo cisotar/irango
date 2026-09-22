@@ -568,3 +568,140 @@ describe("[287] schemaLoteDeProdutosComDias — a FORMA do lote COM agenda", () 
     expect(schemaLoteDeProdutos.safeParse(lote287()).success).toBe(true);
   });
 });
+
+// ═════════════════════ [289] `dias_por_produto` — a agenda POR LINHA do lote ═══
+//
+// Fase RED da issue 289. O campo é ADITIVO e OPCIONAL: `produto_ids` e
+// `dias_semana` ficam como estão, e o servidor resolve cada linha com
+// `normalizarDiasDoVinculo(dias_por_produto[id] ?? dias_semana)`.
+//
+// A TRAVA que estes casos existem para provar: chave do mapa que não está em
+// `produto_ids` é RECUSADA, nunca ignorada em silêncio. Um mapa que aceita id
+// desconhecido é superfície de escrita a mais para enumerar — e "ignorado em
+// silêncio" é indistinguível de "aceito" para quem sonda.
+
+const P3_289 = "a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3";
+
+describe("[289] schemaLoteDeProdutosComDias — `dias_por_produto` opcional", () => {
+  it("aceita o mapa quando TODAS as chaves estão em `produto_ids`", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    const r = schemaLoteDeProdutosComDias.safeParse(
+      lote287({ dias_semana: [1], dias_por_produto: { [P1_287]: [2], [P2_287]: [3, 4] } }),
+    );
+    expect(r.success, "o mapa por produto ainda não é aceito pelo schema").toBe(true);
+    expect(r.data).toEqual({
+      cardapio_id: CARD_287,
+      produto_ids: [P1_287, P2_287],
+      dias_semana: [1],
+      dias_por_produto: { [P1_287]: [2], [P2_287]: [3, 4] },
+    });
+  });
+
+  it("aceita o mapa PARCIAL — quem não está nele herda `dias_semana`", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    expect(
+      schemaLoteDeProdutosComDias.safeParse(
+        lote287({ dias_semana: [1], dias_por_produto: { [P2_287]: [0] } }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("RECUSA chave fora de `produto_ids` — a trava contra enumeração", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    // Id bem formado, de produto que pode até existir em OUTRA loja: o parse
+    // tem de derrubar o lote inteiro, não podar a chave e seguir.
+    const r = schemaLoteDeProdutosComDias.safeParse(
+      lote287({ dias_semana: [1], dias_por_produto: { [P3_289]: [2] } }),
+    );
+    expect(r.success, "id desconhecido no mapa passou pelo parse").toBe(false);
+    // E o caso misto (uma chave legítima + uma intrusa) também cai INTEIRO.
+    const misto = schemaLoteDeProdutosComDias.safeParse(
+      lote287({ dias_por_produto: { [P1_287]: [2], [P3_289]: [5] } }),
+    );
+    expect(misto.success, "o lote misto passou — a chave intrusa seria podada").toBe(false);
+    // A prova de que a recusa NÃO foi por poda silenciosa: se o schema tivesse
+    // ignorado a chave, `data` teria vindo com o mapa só de `P1_287`.
+    expect(misto.data).toBeUndefined();
+  });
+
+  it("chave que não é GUID é recusada", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    for (const chave of ["", "nao-e-guid", "1"]) {
+      expect(
+        schemaLoteDeProdutosComDias.safeParse(
+          lote287({ dias_por_produto: { [chave]: [1] } }),
+        ).success,
+        `chave: ${JSON.stringify(chave)}`,
+      ).toBe(false);
+    }
+  });
+
+  it("o DOMÍNIO por valor é o mesmo 0..6, com teto de 7", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    for (const dias of [[7], [-1], [1.5], ["3"], [1, 1, 1, 1, 1, 1, 1, 1], "3", 3, null]) {
+      expect(
+        schemaLoteDeProdutosComDias.safeParse(
+          lote287({ dias_por_produto: { [P1_287]: dias } }),
+        ).success,
+        `dias_por_produto[P1]: ${JSON.stringify(dias)}`,
+      ).toBe(false);
+    }
+    // Bordas e array VAZIO ("todos os dias do cardápio", RN-11) são válidos.
+    for (const dias of [[0], [6], [], [0, 1, 2, 3, 4, 5, 6]]) {
+      expect(
+        schemaLoteDeProdutosComDias.safeParse(
+          lote287({ dias_por_produto: { [P1_287]: dias } }),
+        ).success,
+        `dias_por_produto[P1]: ${JSON.stringify(dias)}`,
+      ).toBe(true);
+    }
+  });
+
+  it("AUSENTE continua válido — é a compatibilidade da barra de `/painel/produtos`", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    const r = schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: [1] }));
+    expect(r.success).toBe(true);
+    // O schema NÃO inventa o mapa: sem a chave, ela não aparece no parse.
+    expect(Object.keys(r.data as Record<string, unknown>)).toEqual([
+      "cardapio_id",
+      "produto_ids",
+      "dias_semana",
+    ]);
+    // Mapa VAZIO também é aceito (nenhum produto com pílula própria).
+    expect(
+      schemaLoteDeProdutosComDias.safeParse(lote287({ dias_por_produto: {} })).success,
+    ).toBe(true);
+  });
+
+  it("o valor tem de ser um OBJETO — array, string e `null` são recusados", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    for (const mapa of [[], "x", 3, null, true]) {
+      expect(
+        schemaLoteDeProdutosComDias.safeParse(lote287({ dias_por_produto: mapa })).success,
+        `dias_por_produto: ${JSON.stringify(mapa)}`,
+      ).toBe(false);
+    }
+  });
+
+  it("`.strict()` segue barrando chave desconhecida AO LADO do mapa", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    expect(
+      schemaLoteDeProdutosComDias.safeParse(
+        lote287({
+          dias_por_produto: { [P1_287]: [1] },
+          loja_id: "99999999-9999-4999-8999-999999999999",
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("o schema ORIGINAL continua RECUSANDO `dias_por_produto` — ele serve o DELETE", async () => {
+    // `schemaLoteDeProdutos` é o schema de `tirarDeCardapio`/`tirarDeCardapioAdmin`:
+    // um mapa de agendas aceito-e-ignorado num DELETE é payload confuso.
+    expect(
+      schemaLoteDeProdutos.safeParse(lote287({ dias_por_produto: { [P1_287]: [1] } })).success,
+      "`dias_por_produto` tem de continuar sendo chave desconhecida para o schema do DELETE",
+    ).toBe(false);
+    expect(schemaLoteDeProdutos.safeParse(lote287()).success).toBe(true);
+  });
+});

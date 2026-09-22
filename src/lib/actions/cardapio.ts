@@ -121,11 +121,8 @@ export async function aplicarCardapioEmProdutos(
 ): Promise<Resultado> {
   const parsed = schemaLoteDeProdutosComDias.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
-  const { cardapio_id, produto_ids } = parsed.data;
-  // [287] A REPRESENTAÇÃO é decidida aqui, no servidor: dedup, ordem crescente
-  // e `[]`/ausente/`null` → NULL ("todos os dias do cardápio", RN-11). O
-  // cliente manda a intenção; nunca a representação.
-  const dias = normalizarDiasDoVinculo(parsed.data.dias_semana);
+  const { cardapio_id, produto_ids, dias_semana, dias_por_produto } =
+    parsed.data;
 
   try {
     const supabase = await createClient();
@@ -138,11 +135,18 @@ export async function aplicarCardapioEmProdutos(
       return { ok: false, erro: MSG_GENERICA_LOTE };
     }
 
+    // [287 · 289] A REPRESENTAÇÃO é decidida aqui, no servidor, LINHA a linha:
+    // dedup, ordem crescente e `[]`/ausente/`null` → NULL ("todos os dias do
+    // cardápio", RN-11). O cliente manda a intenção; nunca a representação.
+    // `dias_por_produto[id]` vence o `dias_semana` do rodapé — `[]` no mapa é
+    // escolha explícita de "todos os dias" daquele produto, não ausência.
     const linhas = produto_ids.map((produto_id) => ({
       loja_id: loja.id,
       cardapio_id,
       produto_id,
-      dias_semana: dias,
+      dias_semana: normalizarDiasDoVinculo(
+        dias_por_produto?.[produto_id] ?? dias_semana,
+      ),
     }));
 
     const { error } = await supabase.from("cardapio_produtos").upsert(linhas, {

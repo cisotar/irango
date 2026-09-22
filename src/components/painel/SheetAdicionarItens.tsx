@@ -27,8 +27,8 @@ import {
   ESCOLHA_PADRAO,
   MOTIVO_CATEGORIA_SEM_DIAS,
   MOTIVO_SEM_DIA,
-  diasDaEscolha,
   escolhaValida,
+  montarDiasDoLote,
   type EscolhaDeDias,
 } from "@/components/painel/escolhaDeDias";
 import { rotuloCategoriaInteira } from "@/lib/utils/copiaCardapioPainel";
@@ -94,6 +94,7 @@ export type SheetAdicionarItensProps = {
       cardapio: CardapioParaLote,
       escopo: EscopoDoLote,
       dias?: number[],
+      diasPorProduto?: Record<string, number[]>,
     ) => void;
     prevendo: boolean;
     pendente: boolean;
@@ -205,6 +206,14 @@ export function ConteudoAdicionarItens({
     () => new Set(),
   );
   const [escolha, setEscolha] = useState<EscolhaDeDias>(ESCOLHA_PADRAO);
+  /**
+   * [289] A escolha PRÓPRIA de cada produto, quando ele tem uma. Ausente =
+   * "não escolheu", e o produto herda o rodapé — a regra mora em
+   * `montarDiasDoLote`, função pura, não neste handler.
+   */
+  const [porProduto, setPorProduto] = useState<
+    Record<string, EscolhaDeDias | undefined>
+  >({});
   const [verTodos, setVerTodos] = useState(false);
 
   const visiveis = useMemo(() => filtrar(grupos, busca), [grupos, busca]);
@@ -228,6 +237,10 @@ export function ConteudoAdicionarItens({
     });
   }
 
+  function definirDoProduto(id: string, propria: EscolhaDeDias): void {
+    setPorProduto((atual) => ({ ...atual, [id]: propria }));
+  }
+
   const semProduto = grupos.every((g) => g.produtos.length === 0);
   const escolhaOk = escolhaValida(escolha);
   const podeAdicionar = lista.length > 0 && escolhaOk && !lote.prevendo;
@@ -235,11 +248,19 @@ export function ConteudoAdicionarItens({
 
   function adicionarSelecionados(): void {
     if (!podeAdicionar) return;
+    // [289] O fragmento de payload sai da função PURA: só produto marcado entra
+    // no mapa, e sem ninguém com pílula própria a chave nem aparece.
+    const { dias_semana, dias_por_produto } = montarDiasDoLote(
+      lista,
+      escolha,
+      porProduto,
+    );
     lote.abrirCardapio(
       "adicionar",
       cardapio,
       { tipo: "produtos", produto_ids: lista },
-      diasDaEscolha(escolha),
+      dias_semana,
+      dias_por_produto,
     );
   }
 
@@ -401,19 +422,30 @@ export function ConteudoAdicionarItens({
                               </li>
                             ) : (
                               <li key={p.id}>
-                                <label className="flex min-h-[44px] cursor-pointer items-center gap-2">
-                                  <Checkbox
-                                    checked={selecionados.has(p.id)}
-                                    onCheckedChange={() => alternar(p.id)}
-                                    aria-label={`Selecionar ${p.nome}`}
-                                  />
-                                  <span className="min-w-0 flex-1 text-sm">
-                                    {p.nome}
-                                  </span>
-                                  <span className="text-xs text-texto-muted tabular-nums">
-                                    {p.precoRotulo}
-                                  </span>
-                                </label>
+                                <div className="rounded-lg border border-border bg-card p-2">
+                                  <label className="flex min-h-[44px] cursor-pointer items-center gap-2">
+                                    <Checkbox
+                                      checked={selecionados.has(p.id)}
+                                      onCheckedChange={() => alternar(p.id)}
+                                      aria-label={`Selecionar ${p.nome}`}
+                                    />
+                                    <span className="min-w-0 flex-1 text-sm">
+                                      {p.nome}
+                                    </span>
+                                    <span className="text-xs text-texto-muted tabular-nums">
+                                      {p.precoRotulo}
+                                    </span>
+                                  </label>
+                                  {selecionados.has(p.id) ? (
+                                    <DiasDoProduto
+                                      produto={p}
+                                      escolha={porProduto[p.id]}
+                                      onEscolha={(propria) =>
+                                        definirDoProduto(p.id, propria)
+                                      }
+                                    />
+                                  ) : null}
+                                </div>
                               </li>
                             ),
                           )}
@@ -486,6 +518,46 @@ export function ConteudoAdicionarItens({
         </>
       )}
     </>
+  );
+}
+
+/**
+ * [289] As pílulas do PRODUTO, sob o produto marcado — `PilulasDeDias` em reuso
+ * DIRETO, sem variante nova (é o mesmo componente do rodapé e do card do item).
+ *
+ * Só aparece com o produto marcado: pílula de produto que não vai no lote é
+ * estado que não escreve. Enquanto ninguém mexer aqui, o produto herda o
+ * rodapé — a regra é de `montarDiasDoLote`, não deste handler.
+ */
+function DiasDoProduto({
+  produto,
+  escolha,
+  onEscolha,
+}: {
+  produto: ProdutoDoSheet;
+  escolha: EscolhaDeDias | undefined;
+  onEscolha: (escolha: EscolhaDeDias) => void;
+}): ReactElement {
+  // Desmarcar a última pílula é escolher EXPLICITAMENTE "todos os dias" para
+  // este produto (entra no mapa como `[]`, que o servidor grava como NULL) —
+  // não é voltar a herdar o rodapé, e por isso nunca fica em estado inválido.
+  const dias =
+    escolha === undefined || escolha.modo === "cardapio" ? [] : escolha.dias;
+  return (
+    <div className="pl-8">
+      <PilulasDeDias
+        compacto
+        valor={dias}
+        onChange={(proximos) =>
+          onEscolha(
+            proximos.length === 0
+              ? ESCOLHA_PADRAO
+              : { modo: "dias", dias: proximos },
+          )
+        }
+        rotulo={`Dias em que ${produto.nome} aparece neste cardápio`}
+      />
+    </div>
   );
 }
 

@@ -331,3 +331,160 @@ describe("[287] `tirarDeCardapio` continua RECUSANDO `dias_semana`", () => {
     expect(escritas().filter((o) => o.deleted)).toHaveLength(1);
   });
 });
+
+// ══════════ [289] RED — `dias_por_produto`: agenda DIFERENTE por linha ═══════
+//
+// Fase RED da issue 289, lado LOJISTA. O harness é o MESMO deste arquivo
+// (mock de I/O com captura das linhas do upsert), deliberadamente: montar um
+// segundo padrão em pglite só para esta fatia criaria dois lugares onde a
+// mesma propagação é afirmada — e é a captura das LINHAS que prova o critério
+// de aceite ("dois produtos, dias diferentes, um gesto").
+
+const P3 = "a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3";
+
+describe("[289] aplicarCardapioEmProdutos — linha por produto", () => {
+  it("o MESMO gesto grava `dias_semana` DIFERENTES por linha", async () => {
+    const r = await aplicarCardapioEmProdutos({
+      cardapio_id: CARDAPIO,
+      produto_ids: [P1, P2],
+      dias_semana: [1],
+      dias_por_produto: { [P1]: [2], [P2]: [5, 3] },
+    });
+    expect(r).toEqual({ ok: true });
+
+    expect(escritas()).toHaveLength(1);
+    // UMA instrução, duas linhas, agendas distintas e normalizadas NA LINHA.
+    expect(escritas()[0].upsert).toEqual([
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P1, dias_semana: [2] },
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P2, dias_semana: [3, 5] },
+    ]);
+  });
+
+  it("produto FORA do mapa grava o valor do RODAPÉ; quem está nele, o próprio", async () => {
+    await aplicarCardapioEmProdutos({
+      cardapio_id: CARDAPIO,
+      produto_ids: [P1, P2],
+      dias_semana: [4, 4, 0],
+      dias_por_produto: { [P2]: [6] },
+    });
+    expect(upserts()[0]?.upsert).toEqual([
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P1, dias_semana: [0, 4] },
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P2, dias_semana: [6] },
+    ]);
+  });
+
+  it("rodapé em 'todos os dias' grava `null` em quem herda, e a agenda em quem escolheu", async () => {
+    for (const rodape of [{}, { dias_semana: [] }, { dias_semana: null }]) {
+      ops = [];
+      const r = await aplicarCardapioEmProdutos({
+        cardapio_id: CARDAPIO,
+        produto_ids: [P1, P2],
+        ...rodape,
+        dias_por_produto: { [P2]: [1, 3] },
+      });
+      expect(r, JSON.stringify(rodape)).toEqual({ ok: true });
+      expect(upserts()[0]?.upsert, JSON.stringify(rodape)).toEqual([
+        { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P1, dias_semana: null },
+        { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P2, dias_semana: [1, 3] },
+      ]);
+    }
+  });
+
+  it("`[]` NO MAPA é 'todos os dias' daquele produto — grava `null`, mesmo com rodapé restrito", async () => {
+    await aplicarCardapioEmProdutos({
+      cardapio_id: CARDAPIO,
+      produto_ids: [P1, P2],
+      dias_semana: [1],
+      dias_por_produto: { [P1]: [] },
+    });
+    expect(upserts()[0]?.upsert).toEqual([
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P1, dias_semana: null },
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P2, dias_semana: [1] },
+    ]);
+  });
+
+  it("id FORA de `produto_ids` no mapa: recusa com a frase genérica e ZERO I/O", async () => {
+    // A trava contra enumeração: nada de podar a chave e escrever o resto.
+    const r = await aplicarCardapioEmProdutos({
+      cardapio_id: CARDAPIO,
+      produto_ids: [P1, P2],
+      dias_semana: [1],
+      dias_por_produto: { [P1]: [2], [P3]: [5] },
+    });
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect((r as { erro: string }).erro).toContain(
+      "Não foi possível aplicar o cardápio aos produtos selecionados.",
+    );
+    // Parse ANTES de qualquer I/O: nem a loja é buscada, nem uma linha vai.
+    expect(buscarLojaDoDono).not.toHaveBeenCalled();
+    expect(ops).toHaveLength(0);
+  });
+
+  it("valor fora do domínio DENTRO do mapa é recusado, com ZERO I/O", async () => {
+    for (const dias of [[7], [-1], [1.5], ["3"], [1, 1, 1, 1, 1, 1, 1, 1]]) {
+      ops = [];
+      vi.mocked(buscarLojaDoDono).mockClear();
+      const r = await aplicarCardapioEmProdutos({
+        cardapio_id: CARDAPIO,
+        produto_ids: [P1, P2],
+        dias_por_produto: { [P1]: dias },
+      });
+      expect(r, JSON.stringify(dias)).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+      expect(buscarLojaDoDono).not.toHaveBeenCalled();
+      expect(ops).toHaveLength(0);
+    }
+  });
+
+  it("o mapa NÃO vira canal de escrita: só os ids de `produto_ids` viram linha", async () => {
+    await aplicarCardapioEmProdutos({
+      cardapio_id: CARDAPIO,
+      produto_ids: [P1],
+      dias_por_produto: { [P1]: [2] },
+    });
+    const linhas = upserts()[0]?.upsert ?? [];
+    expect(linhas).toHaveLength(1);
+    expect(linhas.map((l) => l.produto_id)).toEqual([P1]);
+    expect(JSON.stringify(linhas)).not.toContain(P3);
+  });
+});
+
+describe("[289] a trava de posse (270) não é afrouxada pelo MAPA", () => {
+  it("cardápio de OUTRA loja COM mapa: fragmento LITERAL e ZERO upsert capturado", async () => {
+    cardapioPertenceALoja.mockResolvedValue(false);
+
+    const r = await aplicarCardapioEmProdutos({
+      cardapio_id: CARDAPIO_ALHEIO,
+      produto_ids: [P1, P2],
+      dias_semana: [1],
+      dias_por_produto: { [P1]: [2], [P2]: [5] },
+    });
+
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect((r as { erro: string }).erro).toContain(
+      "Não foi possível aplicar o cardápio aos produtos selecionados.",
+    );
+    // A recusa veio da POSSE, não do parse: sem esta asserção o caso passaria
+    // hoje (o `dias_por_produto` que o schema ainda não conhece derruba tudo)
+    // e não provaria nada sobre a trava.
+    expect(
+      cardapioPertenceALoja,
+      "o payload nem chegou à prova de posse — a recusa foi do parse",
+    ).toHaveBeenCalledTimes(1);
+    expect(upserts(), "o lote alheio chegou ao banco").toHaveLength(0);
+    expect(escritas()).toHaveLength(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("[289] `tirarDeCardapio` continua RECUSANDO `dias_por_produto`", () => {
+  it("o DELETE não ganha mapa de agenda: recusa antes de qualquer I/O", async () => {
+    const r = await tirarDeCardapio({
+      cardapio_id: CARDAPIO,
+      produto_ids: [P1, P2],
+      dias_por_produto: { [P1]: [1] },
+    });
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect(ops).toHaveLength(0);
+    expect(buscarLojaDoDono).not.toHaveBeenCalled();
+  });
+});
