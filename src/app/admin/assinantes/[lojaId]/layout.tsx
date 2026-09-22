@@ -90,7 +90,7 @@ export default async function HubLojaLayout({
           </p>
         </div>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main className="superficie-painel flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
     </div>
   );

@@ -182,40 +182,44 @@ export function SeletorProdutosDoCardapio({
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2">
-        <h2 className="font-heading text-lg font-semibold">
-          {produtosNoCardapio.length === 0
-            ? "Nenhum produto neste cardápio ainda"
-            : produtosNoCardapio.length === 1
-              ? "1 produto neste cardápio"
-              : `${produtosNoCardapio.length} produtos neste cardápio`}
-        </h2>
-        {produtosNoCardapio.length > 0 ? (
-          <ul className="flex flex-wrap gap-2">
-            {produtosNoCardapio.map((p) => (
-              <li key={p.id}>
-                <Card className="w-40 shrink-0 gap-1 py-2">
-                  <CardContent className="flex flex-col gap-1 px-3">
-                    <span className="line-clamp-2 text-sm font-medium">
-                      {p.nome}
+      {/* §10.2 regra 4: o resumo é um card. Os itens dentro dele são chips com
+          limite próprio, não cards aninhados — card dentro de card embaralha a
+          leitura de qual superfície é a seção. */}
+      <Card>
+        <CardContent className="flex flex-col gap-2">
+          <h2 className="font-heading text-lg font-semibold">
+            {produtosNoCardapio.length === 0
+              ? "Nenhum produto neste cardápio ainda"
+              : produtosNoCardapio.length === 1
+                ? "1 produto neste cardápio"
+                : `${produtosNoCardapio.length} produtos neste cardápio`}
+          </h2>
+          {produtosNoCardapio.length > 0 ? (
+            <ul className="flex flex-wrap gap-2">
+              {produtosNoCardapio.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex w-40 shrink-0 flex-col gap-1 rounded-lg border p-3"
+                >
+                  <span className="line-clamp-2 text-sm font-medium">
+                    {p.nome}
+                  </span>
+                  {p.exclusivo ? (
+                    <Badge variant="secondary" className="w-fit">
+                      Exclusivo
+                    </Badge>
+                  ) : null}
+                  {p.fraseAgenda !== null ? (
+                    <span className="text-xs text-texto-muted">
+                      {p.fraseAgenda}
                     </span>
-                    {p.exclusivo ? (
-                      <Badge variant="secondary" className="w-fit">
-                        Exclusivo
-                      </Badge>
-                    ) : null}
-                    {p.fraseAgenda !== null ? (
-                      <span className="text-xs text-texto-muted">
-                        {p.fraseAgenda}
-                      </span>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <h2 className="font-heading text-lg font-semibold">
         Adicionar ou remover produtos
@@ -381,16 +385,15 @@ export function SeletorProdutosDoCardapio({
                           mais estouram 360px (design-system §5). */}
                       {p.noCardapio ? (
                         <div className="flex w-full flex-col gap-1 pl-[56px]">
-                          <p
-                            id={idAgenda}
-                            className="text-xs text-texto-muted"
-                          >
+                          <p id={idAgenda} className="text-xs text-texto-muted">
                             {p.fraseAgenda}
                           </p>
                           <PilulasDeDias
                             compacto
                             valor={dias}
-                            onChange={(proximos) => void salvarDias(p, proximos)}
+                            onChange={(proximos) =>
+                              void salvarDias(p, proximos)
+                            }
                             rotulo={`Dias em que ${p.nome} aparece neste cardápio`}
                             descritoPor={idAgenda}
                             desabilitado={salvando}

@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.2.6 | **Atualizado:** 2026-09-21
+**Versão:** 0.3.0 | **Atualizado:** 2026-09-22
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -17,7 +17,8 @@
 7. [Componentes Compartilhados](#7-componentes-compartilhados)
 8. [BadgeStatus — Cores por Status](#8-badgestatus--cores-por-status)
 9. [Espaçamento, Raio e Tipografia](#9-espaçamento-raio-e-tipografia)
-10. [Convenções de Nomenclatura](#10-convenções-de-nomenclatura)
+10. [Superfícies do Painel](#10-superfícies-do-painel)
+11. [Convenções de Nomenclatura](#11-convenções-de-nomenclatura)
 
 ---
 
@@ -305,7 +306,60 @@ Toda UI que controla o submit do checkout deve consultar `podeConfirmar` — nun
 
 ---
 
-## 10. Convenções de Nomenclatura
+## 10. Superfícies do Painel
+
+> Regra, não proposta. Ditada pelo dono do produto em 2026-09-21 depois de a queixa
+> "tudo parece solto e mal contrasta com o fundo" voltar em três telas diferentes.
+
+### 10.1 O que estava errado, medido
+
+| Par adjacente | Contraste | Mínimo WCAG 1.4.11 |
+|---|---|---|
+| Fundo creme `#f5f0e6` contra card branco | 1,14:1 | — |
+| Borda padrão `#e5e5e5` contra card branco | 1,26:1 | 3:1 |
+
+O card não tinha limite visível. Não era decisão de ninguém: é o default do shadcn, onde
+`--card` e `--background` são o mesmo branco no tema claro (no escuro eles diferem, e por
+isso o problema só aparecia de dia).
+
+### 10.2 A regra
+
+1. **A superfície do painel é a classe `.superficie-painel`** (`globals.css`), aplicada no
+   `<main>` de `(painel)/painel/layout.tsx`, de `admin/assinantes/[lojaId]/layout.tsx`,
+   `admin/assinantes/page.tsx` e `admin/page.tsx`. Ela faz **duas** coisas, e as duas são
+   necessárias:
+   - redefine `--border` para `#8a8a8a` — alcança input, pílula, separador e tudo que usa
+     a classe `border`;
+   - redefine `--tw-ring-color` em `[data-slot="card"]` para o mesmo valor. **O `Card` do
+     shadcn não usa `border`**, e sim `ring-1 ring-foreground/10`, invisível sobre o creme.
+     Mexer só em `--border` não alcança card nenhum — erro cometido e corrigido em
+     2026-09-22.
+   `#8a8a8a` mede 3,45:1 contra o card branco e 3,04:1 contra o creme, passando dos dois
+   lados.
+2. **O fundo da página não muda, o limite do card sim.** Atingir 3:1 pelo fundo exigiria
+   cinza médio (`#959595`) e mataria o creme da marca. A norma aceita o limite pela borda
+   **ou** pelo fundo; aqui é pelo limite do card.
+3. **`--cor-fundo` e os tokens de `:root` são proibidos nesta conversa.** A vitrine os
+   compartilha e está correta. Qualquer ajuste de superfície do painel é escopado por
+   classe.
+4. **Todo bloco de conteúdo do painel é um card branco.** Não existe "bloco com borda mas
+   sem card", nem `bg-muted` como container de seção: rótulo, campo, grupo de opções,
+   prévia e aviso vivem dentro de `<Card><CardContent>`, sobre `bg-card`. Texto ou campo
+   solto sobre o creme é o defeito que esta seção existe para impedir, e "quase um card"
+   conta como solto.
+5. **Cabeçalho de página é um bloco só, e também é card:** migalha, título, selo de estado
+   e ações juntos, com a mesma forma em todas as rotas do painel. O componente é
+   `components/painel/CabecalhoPagina.tsx` — `voltarHref` é prop obrigatória, porque o hub
+   admin reusa o mesmo cabeçalho com destino diferente.
+
+### 10.3 Como verificar
+
+A razão de contraste é medível, então não se discute por gosto: calcule antes de propor cor
+nova. Regra 4 e 5 são estruturais e se verificam lendo o JSX.
+
+---
+
+## 11. Convenções de Nomenclatura
 
 Fonte: architecture.md §8 (idioma português no domínio) e §3 (estrutura de pastas).
 

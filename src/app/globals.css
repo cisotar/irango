@@ -13,13 +13,13 @@
 :root {
   /* Tema por loja (customizável) — defaults */
   --cor-primaria: #332616; /* banda header/rodapé (marrom espresso) */
-  --cor-fundo: #f5f0e6;    /* fundo da página (creme) */
+  --cor-fundo: #f5f0e6; /* fundo da página (creme) */
   --cor-destaque: #2d3a27; /* preço, CTA, barra carrinho (verde militar) */
 
   /* Sistema (fixo, não depende do tema da loja) */
-  --marrom-cafe: #2e2610;  /* título de seção, linha gradiente */
+  --marrom-cafe: #2e2610; /* título de seção, linha gradiente */
   --texto: #3e2723;
-  --texto-muted: #6b5d4f;  /* legendas/captions — AA em fundo claro */
+  --texto-muted: #6b5d4f; /* legendas/captions — AA em fundo claro */
   --preto: #111111;
   --branco: #ffffff;
   --borda-nav: #dccbb0;
@@ -100,8 +100,9 @@
   --color-indisponivel-fundo: var(--indisponivel-fundo);
   --color-indisponivel-texto: var(--indisponivel-texto);
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, sans-serif;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+    sans-serif;
 
   --font-heading: var(--font-sans);
 
@@ -182,10 +183,49 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/**
+ * A DONA do fundo e da cor de texto da página. Não-layered, então vence o
+ * `@layer base` do shadcn por precedência de cascata — e por isso o `body` de
+ * lá não redeclara mais `bg-background`/`text-foreground` (era regra morta, que
+ * só fazia parecer que o fundo era branco).
+ */
 body {
   background: var(--cor-fundo);
   color: var(--texto);
   font-family: var(--font-sans);
+}
+
+/**
+ * Superfície do painel e do hub admin (design-system.md §10).
+ *
+ * O problema que ela resolve, medido: o card branco sobre o creme `#f5f0e6` dá
+ * 1,14:1, e a borda padrão `#e5e5e5` contra o card dá 1,26:1. WCAG 1.4.11 pede
+ * 3:1 para o limite visual de um componente, então nada delimitava card nenhum
+ * e tudo parecia solto no fundo.
+ *
+ * A escolha é a BORDA, não o fundo: exigir 3:1 do fundo contra o card branco
+ * obrigaria um cinza médio (`#959595`), e o creme da marca é o que o dono do
+ * produto quer manter. `#8a8a8a` mede 3,45:1 contra o card e 3,04:1 contra o
+ * creme — passa dos dois lados, que é o que a norma pede de um limite.
+ *
+ * Escopada por classe DE PROPÓSITO: `--cor-fundo` e os tokens de `:root` são
+ * compartilhados com a vitrine, que está correta e não pode mudar.
+ */
+.superficie-painel {
+  --border: #8a8a8a;
+}
+
+/**
+ * O `Card` do shadcn NÃO usa `border`: ele se delimita por `ring-1
+ * ring-foreground/10`, que sobre o creme é praticamente invisível. Redefinir
+ * `--border` sozinho não o alcança — este seletor é o que faz o card branco
+ * virar objeto de verdade sobre o fundo.
+ *
+ * Fora de `@layer`, então vence a utilitária do Tailwind por camada, não por
+ * especificidade.
+ */
+.superficie-painel [data-slot="card"] {
+  --tw-ring-color: #8a8a8a;
 }
 
 .dark {
@@ -230,9 +270,6 @@ body {
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
-  }
-  body {
-    @apply bg-background text-foreground;
   }
   html {
     @apply font-sans;

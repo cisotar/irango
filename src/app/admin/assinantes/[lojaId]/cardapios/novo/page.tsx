@@ -1,10 +1,10 @@
 import type { ReactElement } from "react";
-import Link from "next/link";
 
 import { carregarLojaAdmin } from "../../carga";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import { NovoCardapioAdminClient } from "./NovoCardapioAdminClient";
+import { CabecalhoPagina } from "@/components/painel/CabecalhoPagina";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +28,11 @@ export default async function NovoCardapioAdminPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href={rotaCardapiosAdmin(loja.id)} className="text-sm underline">
-        Voltar para cardápios
-      </Link>
-      <h1 className="text-xl font-semibold">Novo cardápio</h1>
+      <CabecalhoPagina
+        voltarHref={rotaCardapiosAdmin(loja.id)}
+        voltarRotulo="Voltar para cardápios"
+        titulo="Novo cardápio"
+      />
       <NovoCardapioAdminClient
         lojaId={loja.id}
         timezone={loja.timezone}

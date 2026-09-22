@@ -29,7 +29,7 @@ export default async function AssinantesPage(): Promise<ReactElement> {
   const assinantes = await listarAssinantes(svc);
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6">
+    <main className="superficie-painel mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6">
       <Link
         href="/admin"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
