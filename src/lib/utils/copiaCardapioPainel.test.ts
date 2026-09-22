@@ -12,6 +12,7 @@ import {
   fraseContinuamVendendo,
   fraseExclusividade,
   fraseSumiram,
+  rotuloCategoriaInteira,
   rotuloDevolverAoMenu,
   rotuloReligarOuEstender,
   tituloDevolverAoMenu,
@@ -153,5 +154,26 @@ describe("fraseEstaEm (278)", () => {
 
   it("lista vazia devolve string vazia (o caller nem renderiza a linha)", () => {
     expect(fraseEstaEm([])).toBe("");
+  });
+});
+
+describe("[288] rotuloCategoriaInteira — curto no botão, longo no aria-label", () => {
+  it("plural: número no curto e a categoria nomeada no longo", () => {
+    expect(rotuloCategoriaInteira(6, "Pratos principais")).toEqual({
+      curto: "+ os 6",
+      longo: "Adicionar os 6 produtos de Pratos principais que faltam",
+    });
+  });
+
+  it("singular: concorda em número nas duas formas", () => {
+    expect(rotuloCategoriaInteira(1, "Bebidas")).toEqual({
+      curto: "+ o 1",
+      longo: "Adicionar o 1 produto de Bebidas que falta",
+    });
+  });
+
+  it("zero (e negativo) não oferecem gesto nenhum", () => {
+    expect(rotuloCategoriaInteira(0, "Bebidas")).toBeNull();
+    expect(rotuloCategoriaInteira(-1, "Bebidas")).toBeNull();
   });
 });

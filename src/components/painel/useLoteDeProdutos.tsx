@@ -40,13 +40,30 @@ export type EscopoDoLote =
   | { tipo: "produtos"; produto_ids: string[] }
   | { tipo: "categoria"; categoria_id: string; categoriaNome: string };
 
-type Pedido = { alvo: AlvoDoLote; escopo: EscopoDoLote; previa: PreviaDoLote };
+type Pedido = {
+  alvo: AlvoDoLote;
+  escopo: EscopoDoLote;
+  previa: PreviaDoLote;
+  /**
+   * [288] A agenda escolhida no ATO de adicionar (issue 287). `undefined` = a
+   * superfície não oferece a escolha (a barra de `/painel/produtos`), e o
+   * payload sai byte a byte igual ao de antes — a chave nem aparece.
+   */
+  dias?: number[];
+  /**
+   * [289] A agenda de CADA produto que escolheu a sua, quando a superfície
+   * oferece pílula por item (a sheet de adicionar itens). `undefined` =
+   * ninguém escolheu, e a chave também não aparece no payload. O servidor
+   * resolve cada linha com `dias_por_produto[id] ?? dias_semana`.
+   */
+  diasPorProduto?: Record<string, number[]>;
+};
 
 /**
  * [260] O ciclo inteiro de uma ação em lote — prever no servidor, confirmar,
  * escrever — em um lugar só, para que as DUAS superfícies (`/painel/produtos`
- * e `SeletorProdutosDoCardapio`) usem as MESMAS Server Actions e o MESMO
- * diálogo (RN-09: não duplica).
+ * e o sheet de `DetalheDoCardapio`) usem as MESMAS Server Actions e a
+ * MESMA prévia do servidor (RN-09: não duplica).
  *
  * 🔴 A ordem é inegociável (M8): **prévia primeiro**. O diálogo é montado
  * apenas com a resposta do servidor em mãos; enquanto ela está em voo,
@@ -71,6 +88,10 @@ export function useLoteDeProdutos(
     acao: AcaoLote,
     cardapio: CardapioParaLote,
     escopo: EscopoDoLote,
+    /** [288/287] Só a superfície que escolhe dias no ato passa este argumento. */
+    dias?: number[],
+    /** [289] Só a superfície com pílula POR PRODUTO passa este. */
+    diasPorProduto?: Record<string, number[]>,
   ) => void;
   /** Declarar D14 para a seleção. */
   abrirVisibilidade: (acao: AcaoVisibilidade, produtoIds: string[]) => void;
@@ -84,6 +105,17 @@ export function useLoteDeProdutos(
   dialogoAberto: boolean;
   /** O diálogo, ou `null` enquanto não houver prévia do servidor. */
   dialogo: ReactNode;
+  /**
+   * [288] O pedido pendente — a prévia do SERVIDOR e o alvo —, para a
+   * superfície que renderiza o passo de confirmação DENTRO do próprio
+   * container (o sheet de adicionar itens, D7: overlay sobre overlay é o que
+   * `design-system.md` §6 proíbe). `null` enquanto não houver prévia.
+   */
+  pedido: { alvo: AlvoDoLote; previa: PreviaDoLote } | null;
+  /** Escreve o pedido pendente. Mesma função que o `dialogo` já dispara. */
+  confirmar: () => void;
+  /** Descarta o pedido pendente. Inerte com a escrita em voo. */
+  cancelar: () => void;
 } {
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [prevendo, setPrevendo] = useState(false);
@@ -96,7 +128,12 @@ export function useLoteDeProdutos(
   const [diasEscolhidos, setDiasEscolhidos] = useState<number[]>([]);
 
   const prever = useCallback(
-    async (alvo: AlvoDoLote, escopo: EscopoDoLote): Promise<void> => {
+    async (
+      alvo: AlvoDoLote,
+      escopo: EscopoDoLote,
+      dias?: number[],
+      diasPorProduto?: Record<string, number[]>,
+    ): Promise<void> => {
       if (acoes === undefined || prevendo || pendente) return;
       // O teto vale só para a SELEÇÃO EXPLÍCITA: a categoria inteira é
       // expandida dentro da transação (RN-10) e não trafega como lista.
@@ -121,7 +158,7 @@ export function useLoteDeProdutos(
           toast.error(previa.erro);
           return;
         }
-        setPedido({ alvo, escopo, previa });
+        setPedido({ alvo, escopo, previa, dias, diasPorProduto });
       } finally {
         setPrevendo(false);
       }
@@ -130,7 +167,13 @@ export function useLoteDeProdutos(
   );
 
   const abrirCardapio = useCallback(
-    (acao: AcaoLote, cardapio: CardapioParaLote, escopo: EscopoDoLote) => {
+    (
+      acao: AcaoLote,
+      cardapio: CardapioParaLote,
+      escopo: EscopoDoLote,
+      dias?: number[],
+      diasPorProduto?: Record<string, number[]>,
+    ) => {
       void prever(
         {
           tipo: "cardapio",
@@ -140,6 +183,8 @@ export function useLoteDeProdutos(
             escopo.tipo === "categoria" ? escopo.categoriaNome : null,
         },
         escopo,
+        dias,
+        diasPorProduto,
       );
     },
     [prever],
@@ -170,7 +215,7 @@ export function useLoteDeProdutos(
 
   const confirmar = useCallback(async (): Promise<void> => {
     if (pedido === null || acoes === undefined) return;
-    const { alvo, escopo } = pedido;
+    const { alvo, escopo, dias, diasPorProduto } = pedido;
     setPendente(true);
     try {
       /**
@@ -224,6 +269,15 @@ export function useLoteDeProdutos(
               ? await acoes.aplicarEmProdutos({
                   cardapio_id: alvo.cardapio.id,
                   produto_ids: escopo.produto_ids,
+                  // [287] A chave só existe quando a superfície ofereceu a
+                  // escolha de dias: sem ela o payload é byte a byte o de
+                  // antes, e a barra de `/painel/produtos` não muda.
+                  ...(dias === undefined ? {} : { dias_semana: dias }),
+                  // [289] Idem para o mapa por produto: só a sheet o manda, e
+                  // só quando algum produto tem pílula própria.
+                  ...(diasPorProduto === undefined
+                    ? {}
+                    : { dias_por_produto: diasPorProduto }),
                 })
               : await acoes.tirarDeCardapio({
                   cardapio_id: alvo.cardapio.id,
@@ -251,6 +305,10 @@ export function useLoteDeProdutos(
     }
   }, [acoes, diasEscolhidos, onConcluido, pedido]);
 
+  const cancelar = useCallback(() => {
+    if (!pendente) setPedido(null);
+  }, [pendente]);
+
   return {
     abrirCardapio,
     abrirVisibilidade,
@@ -258,6 +316,9 @@ export function useLoteDeProdutos(
     prevendo,
     pendente,
     dialogoAberto: pedido !== null,
+    pedido: pedido === null ? null : { alvo: pedido.alvo, previa: pedido.previa },
+    confirmar: () => void confirmar(),
+    cancelar,
     dialogo:
       pedido === null ? null : (
         <DialogoLoteCardapio
@@ -269,9 +330,7 @@ export function useLoteDeProdutos(
           }
           pendente={pendente}
           onConfirmar={() => void confirmar()}
-          onCancelar={() => {
-            if (!pendente) setPedido(null);
-          }}
+          onCancelar={cancelar}
         />
       ),
   };

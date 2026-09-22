@@ -30,6 +30,7 @@
 
 import {
   schemaLoteDeProdutos,
+  schemaLoteDeProdutosComDias,
   schemaLoteDeCategoria,
   schemaPreviaDeLote,
   schemaCardapio,
@@ -118,9 +119,10 @@ function revalidarCaminhosDoCardapio(slug: string, cardapioId?: string): void {
 export async function aplicarCardapioEmProdutos(
   payload: unknown,
 ): Promise<Resultado> {
-  const parsed = schemaLoteDeProdutos.safeParse(payload);
+  const parsed = schemaLoteDeProdutosComDias.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
-  const { cardapio_id, produto_ids } = parsed.data;
+  const { cardapio_id, produto_ids, dias_semana, dias_por_produto } =
+    parsed.data;
 
   try {
     const supabase = await createClient();
@@ -133,24 +135,32 @@ export async function aplicarCardapioEmProdutos(
       return { ok: false, erro: MSG_GENERICA_LOTE };
     }
 
+    // [287 · 289] A REPRESENTAÇÃO é decidida aqui, no servidor, LINHA a linha:
+    // dedup, ordem crescente e `[]`/ausente/`null` → NULL ("todos os dias do
+    // cardápio", RN-11). O cliente manda a intenção; nunca a representação.
+    // `dias_por_produto[id]` vence o `dias_semana` do rodapé — `[]` no mapa é
+    // escolha explícita de "todos os dias" daquele produto, não ausência.
     const linhas = produto_ids.map((produto_id) => ({
       loja_id: loja.id,
       cardapio_id,
       produto_id,
+      dias_semana: normalizarDiasDoVinculo(
+        dias_por_produto?.[produto_id] ?? dias_semana,
+      ),
     }));
 
-    const { error } = await supabase
-      .from("cardapio_produtos")
-      .upsert(linhas, {
-        onConflict: "cardapio_id,produto_id",
-        ignoreDuplicates: true,
-      });
+    const { error } = await supabase.from("cardapio_produtos").upsert(linhas, {
+      onConflict: "cardapio_id,produto_id",
+      ignoreDuplicates: true,
+    });
     if (error) {
       console.error("[aplicarCardapioEmProdutos]", error);
       return { ok: false, erro: MSG_GENERICA_LOTE };
     }
 
-    revalidarCaminhosDoCardapio(loja.slug);
+    // Com os dias no ato de adicionar, o detalhe do cardápio também fica
+    // desatualizado — a action irmã já passa o id, esta passou a passar.
+    revalidarCaminhosDoCardapio(loja.slug, cardapio_id);
     return { ok: true };
   } catch (e) {
     console.error("[aplicarCardapioEmProdutos]", e);
