@@ -162,12 +162,22 @@ function refinarDesconto(
         path: ["desconto_valor"],
         message: "Valor do desconto deve ser maior que zero",
       });
-    } else if (v.desconto_valor > v.preco) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["desconto_valor"],
-        message: mensagemDescontoMaiorQuePreco(v.preco, v.desconto_valor),
-      });
+    } else {
+      // [290] D10 tem UMA fonte: a função pura abaixo, também consumida pelas
+      // Server Actions de patch estreito (nome+preço), que não passam por este
+      // schema. Duplicar a comparação aqui seria a segunda fonte de verdade.
+      const recusa = validarPrecoContraDesconto(
+        v.preco,
+        v.desconto_tipo,
+        v.desconto_valor,
+      );
+      if (recusa != null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["desconto_valor"],
+          message: recusa,
+        });
+      }
     }
   }
 
@@ -284,6 +294,55 @@ export function mensagemDescontoMaiorQuePreco(
     `para no máximo ${formatarMoeda(preco)} ou desligue a promoção deste produto.`
   );
 }
+
+/**
+ * [290] D10 como regra PURA e reusável, fora do schema da linha inteira.
+ *
+ * A edição inline de nome+preço não passa por `schemaProdutoUpdate` (que exige
+ * a linha toda), mas D10 continua valendo: baixar o preço abaixo de um
+ * `desconto_valor` FIXO já gravado é recusa, e a recusa precisa da frase
+ * legível — não do `23514` cru do CHECK da 20260920120000, que protege o DADO
+ * e não a MENSAGEM.
+ *
+ * `tipo`/`valor` são sempre os LIDOS DO BANCO; nenhum caller pode passar o que
+ * o cliente mandou. Só `fixo` cruza com o preço — `percentual` não tem regra
+ * cruzada.
+ *
+ * 🔴 A aridade é 3 de propósito. A faixa por tipo é INDEPENDENTE de
+ * `desconto_ativo` (comentário de `refinarDesconto` acima), então um quarto
+ * parâmetro `ativo` seria a porta por onde quem desligou a promoção e baixou o
+ * preço escaparia para o 23514 genérico.
+ */
+export function validarPrecoContraDesconto(
+  preco: number,
+  tipo: string | null,
+  valor: number | null,
+): string | null {
+  // `>` e não `>=`: preço IGUAL ao desconto fixo é aceito, exatamente como o
+  // CHECK do banco (`desconto_valor <= preco`).
+  if (tipo === "fixo" && valor != null && valor > preco) {
+    return mensagemDescontoMaiorQuePreco(preco, valor);
+  }
+  return null;
+}
+
+/**
+ * [290] O PATCH ESTREITO da edição inline: só `nome` e `preco`.
+ *
+ * Não reusa `camposProduto` (nem um `.pick()` dele) por opção de segurança
+ * legível: este objeto é a allowlist do que a linha inline pode gravar, e o
+ * contrato de `preco` é o MESMO `preco` declarado no topo deste módulo — uma
+ * fonte só para numeric(10,2).
+ *
+ * Chave desconhecida é ESTRIPADA (comportamento padrão do `z.object`), não
+ * recusada: `loja_id`, `visibilidade`, `foto_url` e companhia vindos do
+ * cliente simplesmente não sobrevivem ao parse e não chegam ao patch. É o que
+ * as Server Actions gravam — nunca `{ ...payload }`.
+ */
+export const schemaNomeEPreco = z.object({
+  nome: z.string().trim().min(1).max(200),
+  preco,
+});
 
 // Prefixo estável da frase acima. A Server Action promove ao lojista APENAS
 // esta mensagem de validação (todo o resto do parse falho segue genérico), e
