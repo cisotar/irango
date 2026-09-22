@@ -107,7 +107,7 @@ export default async function PainelLayout({
           <SidebarPainel contexto={contexto} />
           <div className="flex min-w-0 flex-1 flex-col">
             <TopbarPainel contexto={contexto} />
-            <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+            <main className="superficie-painel flex-1 overflow-y-auto p-4 lg:p-6">
               {children}
             </main>
           </div>
