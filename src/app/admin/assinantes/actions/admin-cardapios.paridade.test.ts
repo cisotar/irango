@@ -1682,3 +1682,179 @@ describe("[284] removerCardapioAdmin(lojaId, id, modo) — os três modos", () =
     });
   });
 });
+
+// ═══════════════════ [287] paridade de DIAS no lote de produtos ═════════════
+//
+// Fase RED da issue 287. O admin escreve com `service_role` (BYPASSRLS):
+// `cardapio_produtos_escrita_propria` NÃO protege esta via. O que protege é a
+// paridade com `aplicarCardapioEmProdutos` do lojista — MESMO
+// `schemaLoteDeProdutosComDias`, MESMA `normalizarDiasDoVinculo`, MESMA frase —
+// mais o escopo do wrapper (`escopo.inserirVarios` põe o `loja_id` da URL) e a
+// prova de posse do cardápio ANTES de qualquer escrita e de qualquer log.
+//
+// O par lojista deste bloco é `src/lib/actions/cardapio.dias-no-lote.test.ts`:
+// os dois afirmam a MESMA linha, campo a campo. Se um mundo ganhar o campo e o
+// outro não, este arquivo fica vermelho.
+
+describe("[287] paridade de dias no lote: admin grava a MESMA linha do lojista", () => {
+  it("com dias: cada linha leva `dias_semana` normalizado, mais o `loja_id` do ESCOPO", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1, PRODUTO_2],
+      dias_semana: [3, 1, 3],
+    });
+    expect(r).toEqual({ ok: true });
+
+    // `toEqual` ESTRITO: nenhuma quinta chave, `loja_id` é o da URL VALIDADA
+    // (nunca o do payload), e a dedup+ordem é a mesma do lojista.
+    expect(opEscrita("cardapio_produtos")?.upsert).toEqual([
+      {
+        loja_id: LOJA_ALVO,
+        cardapio_id: CARDAPIO_ID,
+        produto_id: PRODUTO_1,
+        dias_semana: [1, 3],
+      },
+      {
+        loja_id: LOJA_ALVO,
+        cardapio_id: CARDAPIO_ID,
+        produto_id: PRODUTO_2,
+        dias_semana: [1, 3],
+      },
+    ]);
+  });
+
+  it("SEM o campo (e com `[]`/`null`): `dias_semana: null` explícito, como no lojista", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    for (const over of [{}, { dias_semana: [] }, { dias_semana: null }]) {
+      ops = [];
+      const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+        cardapio_id: CARDAPIO_ID,
+        produto_ids: [PRODUTO_1],
+        ...over,
+      });
+      expect(r, JSON.stringify(over)).toEqual({ ok: true });
+      expect(opEscrita("cardapio_produtos")?.upsert, JSON.stringify(over)).toEqual([
+        {
+          loja_id: LOJA_ALVO,
+          cardapio_id: CARDAPIO_ID,
+          produto_id: PRODUTO_1,
+          dias_semana: null,
+        },
+      ]);
+    }
+  });
+
+  it("mesma recusa de domínio e de chave desconhecida, com a MESMA frase, sem I/O de escrita", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    for (const over of [
+      { dias_semana: [7] },
+      { dias_semana: [-1] },
+      { dias_semana: [1.5] },
+      { dias_semana: ["3"] },
+      { dias_semana: [1, 1, 1, 1, 1, 1, 1, 1] },
+      { dias_semana: [1], loja_id: LOJA_OUTRA },
+    ]) {
+      ops = [];
+      const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+        cardapio_id: CARDAPIO_ID,
+        produto_ids: [PRODUTO_1],
+        ...over,
+      });
+      await flush();
+      expect(r, JSON.stringify(over)).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+      expect(opEscrita("cardapio_produtos"), JSON.stringify(over)).toBeUndefined();
+      expect(logouAcesso(), JSON.stringify(over)).toBe(false);
+    }
+  });
+
+  it("`tirarDeCardapioAdmin` continua RECUSANDO `dias_semana` — o DELETE não ganha agenda", async () => {
+    // É o motivo de o schema ser DERIVADO e não mutado (plano §"Validação"):
+    // `schemaLoteDeProdutos` também serve o DELETE nos dois mundos, e lá
+    // `dias_semana` tem de continuar sendo chave desconhecida.
+    const { tirarDeCardapioAdmin } = await acoes();
+    const r = await tirarDeCardapioAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1],
+      dias_semana: [1, 3],
+    });
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect(opEscrita("cardapio_produtos")).toBeUndefined();
+  });
+
+  it("[270] cardápio de OUTRA loja COM dias: fragmento literal, ZERO upsert e ZERO log", async () => {
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    const r = await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_OUTRO,
+      produto_ids: [PRODUTO_1, PRODUTO_2],
+      dias_semana: [1, 3],
+    });
+    await flush();
+
+    // Fragmento LITERAL afirmado, não só a forma do resultado.
+    expect(r).toEqual({ ok: false, erro: MSG_GENERICA_LOTE });
+    expect((r as { erro: string }).erro).toContain(
+      "Não foi possível aplicar o cardápio aos produtos selecionados.",
+    );
+    // A recusa veio da POSSE, não do parse: sem esta asserção o caso passaria
+    // hoje (o `dias_semana` que o schema ainda não conhece já derruba tudo) e
+    // não provaria nada sobre a trava.
+    expect(
+      ops.filter((o) => o.tabela === "cardapios" && o.colunas === "id"),
+      "o payload nem chegou à prova de posse — a recusa foi do parse",
+    ).toHaveLength(1);
+    expect(opEscrita("cardapio_produtos")).toBeUndefined();
+    // Nada escrito em tabela nenhuma — nem a linha do lote, nem a trilha de
+    // auditoria apontando para entidade alheia.
+    expect(ops.some((o) => o.insert || o.upsert || o.update || o.deleted)).toBe(false);
+    expect(logouAcesso(), "registrarAcessoAdmin foi chamado mesmo sem posse").toBe(false);
+  });
+
+  it("o log admin NÃO passa a carregar a agenda: `metadados` continua só com a contagem", async () => {
+    // Agenda do lojista é dado operacional; a trilha de auditoria não ganha
+    // campo novo sem decisão explícita (plano, contrato C5).
+    const { aplicarCardapioEmProdutosAdmin } = await acoes();
+    await aplicarCardapioEmProdutosAdmin(LOJA_ALVO, {
+      cardapio_id: CARDAPIO_ID,
+      produto_ids: [PRODUTO_1, PRODUTO_2],
+      dias_semana: [1, 3],
+    });
+    await flush();
+
+    const log = ops.find((o) => o.tabela === "admin_acessos")?.insert ?? {};
+    expect(log).toMatchObject({
+      acao: "cardapio.aplicar_produtos",
+      entidade_id: CARDAPIO_ID,
+      metadados: { produtos: 2 },
+    });
+    expect(
+      JSON.stringify((log as { metadados?: unknown }).metadados ?? {}),
+      "a agenda vazou para a trilha de auditoria",
+    ).not.toContain("dias_semana");
+  });
+
+  it("paridade de FONTE: os dois mundos importam `schemaLoteDeProdutosComDias`, nenhum redeclara", () => {
+    const RAIZ = process.cwd();
+    const VALIDACOES = join(RAIZ, "src/lib/validacoes/cardapio.ts");
+    const ADMIN = join(RAIZ, "src/app/admin/assinantes/actions/admin-cardapios.ts");
+    const LOJISTA = join(RAIZ, "src/lib/actions/cardapio.ts");
+
+    expect(existsSync(VALIDACOES)).toBe(true);
+    expect(readFileSync(VALIDACOES, "utf8")).toMatch(
+      /export const schemaLoteDeProdutosComDias\s*=/,
+    );
+    for (const arquivo of [ADMIN, LOJISTA]) {
+      const texto = readFileSync(arquivo, "utf8");
+      expect(texto, `${arquivo} não importa o schema derivado`).toContain(
+        "schemaLoteDeProdutosComDias",
+      );
+      expect(
+        texto,
+        "um schema paralelo aqui é exatamente o drift que a paridade fecha",
+      ).not.toMatch(/const schemaLoteDeProdutosComDias\s*=/);
+      // A normalização é UMA só, reusada — não reescrita em nenhum dos mundos.
+      expect(texto).toContain("normalizarDiasDoVinculo");
+      expect(texto).not.toMatch(/function normalizarDiasDoVinculo/);
+    }
+  });
+});

@@ -30,12 +30,43 @@ const listaDeProdutos = z
     message: "Ids repetidos na seleção",
   });
 
+/**
+ * [274 · 287] O DOMÍNIO da agenda de um VÍNCULO: inteiros 0..6 (0=dom..6=sab,
+ * mesma convenção de `partesNoFuso`) com teto de cardinalidade `.max(7)`
+ * (CWE-770) avaliado ANTES da dedup — oito elementos são recusados mesmo que
+ * normalizassem para um só.
+ *
+ * Declarado UMA vez porque DOIS schemas o consomem: `schemaDiasDoVinculo`
+ * (editar a agenda de um vínculo existente) e `schemaLoteDeProdutosComDias`
+ * (adicionar ao cardápio já com agenda). Uma segunda declaração da mesma regra
+ * de domínio é exatamente o drift que a paridade fecha.
+ */
+const diasDaSemanaDoVinculo = z.array(z.number().int().min(0).max(6)).max(7);
+
 /** Aplicar/tirar por SELEÇÃO EXPLÍCITA de produtos (RN-09). */
 export const schemaLoteDeProdutos = z
   .object({
     cardapio_id: z.guid(),
     produto_ids: listaDeProdutos,
   })
+  .strict();
+
+/**
+ * [287] O MESMO lote, mais a agenda opcional do vínculo — a forma que
+ * `aplicarCardapioEmProdutos` / `aplicarCardapioEmProdutosAdmin` aceitam desde
+ * que o lojista escolhe os dias no ato de adicionar.
+ *
+ * DERIVADO em vez de somado ao `schemaLoteDeProdutos`: aquele também é o schema
+ * de `tirarDeCardapio` / `tirarDeCardapioAdmin`, onde `dias_semana` tem de
+ * continuar sendo chave desconhecida — um DELETE que aceita e ignora em
+ * silêncio uma agenda é payload confuso que o `.strict()` hoje recusa.
+ *
+ * O schema NÃO deduplica e NÃO ordena: quem decide a REPRESENTAÇÃO é
+ * `normalizarDiasDoVinculo`, no servidor. `nullish()` porque ausente, `null` e
+ * `[]` dizem a mesma coisa — "todos os dias do cardápio" (RN-11).
+ */
+export const schemaLoteDeProdutosComDias = schemaLoteDeProdutos
+  .extend({ dias_semana: diasDaSemanaDoVinculo.nullish() })
   .strict();
 
 /** Aplicar por CATEGORIA INTEIRA — expandida dentro da RPC, nunca em JS (RN-10). */
@@ -75,6 +106,7 @@ export const schemaIdCardapio = z.guid();
 export const schemaModoRemocao = z.enum(["manter", "arquivar", "cascata"]);
 
 export type LoteDeProdutos = z.infer<typeof schemaLoteDeProdutos>;
+export type LoteDeProdutosComDias = z.infer<typeof schemaLoteDeProdutosComDias>;
 export type LoteDeCategoria = z.infer<typeof schemaLoteDeCategoria>;
 export type PreviaDeLote = z.infer<typeof schemaPreviaDeLote>;
 
@@ -314,7 +346,7 @@ export const schemaDiasDoVinculo = z
   .object({
     cardapio_id: z.guid(),
     produto_id: z.guid(),
-    dias_semana: z.array(z.number().int().min(0).max(6)).max(7),
+    dias_semana: diasDaSemanaDoVinculo,
   })
   .strict();
 

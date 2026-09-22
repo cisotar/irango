@@ -30,6 +30,7 @@
 
 import {
   schemaLoteDeProdutos,
+  schemaLoteDeProdutosComDias,
   schemaLoteDeCategoria,
   schemaPreviaDeLote,
   schemaCardapio,
@@ -118,9 +119,13 @@ function revalidarCaminhosDoCardapio(slug: string, cardapioId?: string): void {
 export async function aplicarCardapioEmProdutos(
   payload: unknown,
 ): Promise<Resultado> {
-  const parsed = schemaLoteDeProdutos.safeParse(payload);
+  const parsed = schemaLoteDeProdutosComDias.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
   const { cardapio_id, produto_ids } = parsed.data;
+  // [287] A REPRESENTAÇÃO é decidida aqui, no servidor: dedup, ordem crescente
+  // e `[]`/ausente/`null` → NULL ("todos os dias do cardápio", RN-11). O
+  // cliente manda a intenção; nunca a representação.
+  const dias = normalizarDiasDoVinculo(parsed.data.dias_semana);
 
   try {
     const supabase = await createClient();
@@ -137,6 +142,7 @@ export async function aplicarCardapioEmProdutos(
       loja_id: loja.id,
       cardapio_id,
       produto_id,
+      dias_semana: dias,
     }));
 
     const { error } = await supabase

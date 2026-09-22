@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   schemaCardapio,
+  schemaLoteDeProdutos,
   MSG_SEM_EIXO,
   MSG_HORA_PAR,
   MSG_HORA_ORDEM,
@@ -412,5 +413,158 @@ describe("[274] normalizarDiasDoVinculo — a REPRESENTAÇÃO (RN-11, D2)", () =
       hora_fim: null,
     }) as { dias_semana: number[] | null };
     expect(r.dias_semana).toEqual(normalizarDiasDoVinculo([6, 0, 6]));
+  });
+});
+
+// ═══════════ [287] dias da semana no LOTE de produtos do cardápio ═══════════
+//
+// Fase RED da issue 287. Nada aqui existe ainda em `./cardapio`:
+//  - `schemaLoteDeProdutosComDias` — o schema DERIVADO de `schemaLoteDeProdutos`
+//    com `dias_semana` OPCIONAL, mesmo domínio de `schemaDiasDoVinculo`
+//    (inteiros 0..6, teto 7) e `.strict()` preservado.
+//
+// Por que DERIVADO e não o campo somado ao `schemaLoteDeProdutos` (desvio
+// deliberado da letra da issue, mesmo efeito — plano §"Validação (zod)"):
+// `schemaLoteDeProdutos` também é o schema de `tirarDeCardapio` /
+// `tirarDeCardapioAdmin`. Somar o campo lá faria o DELETE ACEITAR e IGNORAR em
+// silêncio um `dias_semana` que ele não usa. Com o derivado, cada caminho de
+// escrita recusa exatamente o que não sabe usar — e é isso que o último caso
+// deste bloco trava: o schema ORIGINAL continua recusando `dias_semana`.
+//
+// Import por caminho em VARIÁVEL: o símbolo ainda não existe e um import
+// estático quebraria `npx tsc --noEmit` e a coleta do arquivo inteiro.
+
+type Validacoes287 = {
+  schemaLoteDeProdutosComDias: { safeParse(entrada: unknown): ParseCru };
+};
+
+async function validacoes287(): Promise<Validacoes287> {
+  const m = (await import(/* @vite-ignore */ MODULO_VALIDACOES_CARDAPIO)) as unknown as Partial<Validacoes287>;
+  if (m.schemaLoteDeProdutosComDias == null) {
+    throw new Error(
+      "[RED 287] `src/lib/validacoes/cardapio.ts` ainda não exporta `schemaLoteDeProdutosComDias`. " +
+        "É a fase GREEN da issue 287: `schemaLoteDeProdutos.extend({ dias_semana: … }).strict()`, " +
+        "NUNCA o campo somado ao `schemaLoteDeProdutos` (que também serve `tirarDeCardapio`).",
+    );
+  }
+  return m as Validacoes287;
+}
+
+const CARD_287 = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const P1_287 = "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1";
+const P2_287 = "a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2";
+
+const lote287 = (over: Record<string, unknown> = {}) => ({
+  cardapio_id: CARD_287,
+  produto_ids: [P1_287, P2_287],
+  ...over,
+});
+
+describe("[287] schemaLoteDeProdutosComDias — a FORMA do lote COM agenda", () => {
+  it("aceita `dias_semana` nas bordas do domínio (0 = domingo, 6 = sábado)", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    const r = schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: [0, 6] }));
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual({
+      cardapio_id: CARD_287,
+      produto_ids: [P1_287, P2_287],
+      dias_semana: [0, 6],
+    });
+  });
+
+  it("os sete dias cabem, e `[]` é aceito (vira NULL na normalização, não na forma)", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    expect(
+      schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: [0, 1, 2, 3, 4, 5, 6] }))
+        .success,
+    ).toBe(true);
+    expect(schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: [] })).success).toBe(
+      true,
+    );
+  });
+
+  it("o campo é OPCIONAL: o payload de HOJE (sem `dias_semana`) continua passando intacto", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    const r = schemaLoteDeProdutosComDias.safeParse(lote287());
+    expect(r.success).toBe(true);
+    // Sem `dias_semana`, o parse devolve exatamente as duas chaves de hoje —
+    // o schema NÃO inventa `dias_semana: null` (quem decide a representação é
+    // `normalizarDiasDoVinculo`, no servidor).
+    expect(r.data).toEqual({ cardapio_id: CARD_287, produto_ids: [P1_287, P2_287] });
+  });
+
+  it("`null` explícito também é aceito (nullish) — é 'todos os dias do cardápio'", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    expect(schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: null })).success).toBe(
+      true,
+    );
+  });
+
+  it("o schema NÃO normaliza: `[3,1,3]` passa como veio — quem deduplica é o servidor", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    const r = schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: [3, 1, 3] }));
+    expect(r.success, "repetição é redundância inofensiva, não payload hostil").toBe(true);
+    expect((r.data as { dias_semana: number[] }).dias_semana).toEqual([3, 1, 3]);
+  });
+
+  it("[domínio] 7, -1, 1.5, string e não-array são recusados", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    for (const dias of [[7], [-1], [1.5], ["3"], [0, 7], "3", 3, {}]) {
+      expect(
+        schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: dias })).success,
+        `${JSON.stringify(dias)} deveria ser recusado`,
+      ).toBe(false);
+    }
+  });
+
+  it("[CWE-770] 8 elementos são recusados MESMO normalizando para um só", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    expect(
+      schemaLoteDeProdutosComDias.safeParse(
+        lote287({ dias_semana: [1, 1, 1, 1, 1, 1, 1, 1] }),
+      ).success,
+      "`.max(7)` é teto do PAYLOAD, avaliado ANTES da dedup",
+    ).toBe(false);
+  });
+
+  it("`.strict()` sobrevive ao `.extend()`: chave desconhecida junto com `dias_semana` é recusada", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    expect(
+      schemaLoteDeProdutosComDias.safeParse(
+        lote287({ dias_semana: [1], loja_id: "99999999-9999-4999-8999-999999999999" }),
+      ).success,
+      "`loja_id` é SEMPRE derivado no servidor; `.extend()` não pode afrouxar isso",
+    ).toBe(false);
+    expect(
+      schemaLoteDeProdutosComDias.safeParse(lote287({ dias_semana: [1], ativo: true })).success,
+    ).toBe(false);
+  });
+
+  it("o resto do contrato de `schemaLoteDeProdutos` é herdado: ids, teto e sem duplicata", async () => {
+    const { schemaLoteDeProdutosComDias } = await validacoes287();
+    for (const over of [
+      { cardapio_id: "nao-e-uuid" },
+      { produto_ids: ["nao-e-uuid"] },
+      { produto_ids: [] },
+      { produto_ids: [P1_287, P1_287] },
+    ]) {
+      expect(
+        schemaLoteDeProdutosComDias.safeParse(lote287({ ...over, dias_semana: [1] })).success,
+        `${JSON.stringify(over)} deveria ser recusado`,
+      ).toBe(false);
+    }
+  });
+
+  it("o schema ORIGINAL continua RECUSANDO `dias_semana` — é o que trava o DELETE", async () => {
+    // `schemaLoteDeProdutos` serve `tirarDeCardapio`/`tirarDeCardapioAdmin`.
+    // Se a fase GREEN somar o campo nele em vez de derivar, o DELETE passa a
+    // aceitar e ignorar em silêncio uma agenda que ele não usa. Este é o caso
+    // que reprova a implementação "mais fácil".
+    expect(
+      schemaLoteDeProdutos.safeParse(lote287({ dias_semana: [1] })).success,
+      "`dias_semana` tem de continuar sendo chave desconhecida para o schema do DELETE",
+    ).toBe(false);
+    // E o original continua aceitando o payload de hoje.
+    expect(schemaLoteDeProdutos.safeParse(lote287()).success).toBe(true);
   });
 });

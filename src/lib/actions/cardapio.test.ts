@@ -206,10 +206,14 @@ describe("aplicarCardapioEmProdutos — lista de ids do cliente (RN-09)", () => 
     expect(escritas()).toHaveLength(1);
     const w = escritas()[0];
     expect(w.tabela).toBe("cardapio_produtos");
+    // [287] `dias_semana: null` é a chave SEMPRE escrita: no banco é idêntica
+    // à linha de antes (coluna nullable, sem default) e `null` é "todos os dias
+    // do cardápio" (RN-11). A agenda em si é provada em
+    // `cardapio.dias-no-lote.test.ts`.
     expect(w.upsert).toEqual([
-      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P1 },
-      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P2 },
-      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P3 },
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P1, dias_semana: null },
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P2, dias_semana: null },
+      { loja_id: LOJA_ID, cardapio_id: CARDAPIO, produto_id: P3, dias_semana: null },
     ]);
     // RN-10: reaplicar é idempotente pelo ON CONFLICT DO NOTHING, não por
     // um SELECT prévio de "quem já está".

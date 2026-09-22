@@ -40,6 +40,7 @@ import {
   schemaIdCardapio,
   schemaModoRemocao,
   schemaLoteDeProdutos,
+  schemaLoteDeProdutosComDias,
   schemaLoteDeCategoria,
   schemaPreviaDeLote,
   schemaDiasDoVinculo,
@@ -456,9 +457,11 @@ export async function aplicarCardapioEmProdutosAdmin(
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: MSG_LOJA_INVALIDA };
 
-  const parsed = schemaLoteDeProdutos.safeParse(payload);
+  const parsed = schemaLoteDeProdutosComDias.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: MSG_GENERICA_LOTE };
   const { cardapio_id, produto_ids } = parsed.data;
+  // [287] Mesma normalização do lojista — a paridade é a proteção desta via.
+  const dias = normalizarDiasDoVinculo(parsed.data.dias_semana);
 
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
@@ -471,7 +474,11 @@ export async function aplicarCardapioEmProdutosAdmin(
 
     const { error } = await escopo.inserirVarios(
       "cardapio_produtos",
-      produto_ids.map((produto_id) => ({ cardapio_id, produto_id })),
+      produto_ids.map((produto_id) => ({
+        cardapio_id,
+        produto_id,
+        dias_semana: dias,
+      })),
       { onConflict: "cardapio_id,produto_id", ignoreDuplicates: true },
     );
     if (error) {
