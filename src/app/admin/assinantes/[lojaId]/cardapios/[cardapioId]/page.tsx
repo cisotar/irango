@@ -1,5 +1,4 @@
 import type { ReactElement } from "react";
-import Link from "next/link";
 
 import { carregarCardapioDetalheAdmin } from "../../carga-cardapio-detalhe";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
@@ -14,6 +13,7 @@ import { cardapioAberto, visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import type { GrupoDoSeletor } from "@/components/painel/SeletorProdutosDoCardapio";
 import { CardapioDetalheAdminClient } from "./CardapioDetalheAdminClient";
+import { CabecalhoPagina } from "@/components/painel/CabecalhoPagina";
 
 export const dynamic = "force-dynamic";
 
@@ -80,10 +80,11 @@ export default async function CardapioDetalheAdminPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href={rotaCardapiosAdmin(loja.id)} className="text-sm underline">
-        Voltar para cardápios
-      </Link>
-      <h1 className="text-xl font-semibold">{cardapio.nome}</h1>
+      <CabecalhoPagina
+        voltarHref={rotaCardapiosAdmin(loja.id)}
+        voltarRotulo="Voltar para cardápios"
+        titulo={cardapio.nome}
+      />
       <CardapioDetalheAdminClient
         lojaId={loja.id}
         cardapioId={cardapio.id}

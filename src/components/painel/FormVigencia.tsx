@@ -137,48 +137,60 @@ export function FormVigencia({
 
   return (
     <form onSubmit={aoSubmeter} className="flex flex-col gap-6" noValidate>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="nome-cardapio">Nome do cardápio</Label>
-        <Input
-          id="nome-cardapio"
-          value={rascunho.nome}
-          onChange={(e) => alterar({ nome: e.target.value })}
-          aria-invalid={erros.nome != null}
-          aria-describedby={mensagens.length > 0 ? ID_ERROS : undefined}
-          className={ALVO}
-          maxLength={80}
-        />
-      </div>
+      {/* §10.2 regra 4: bloco de conteúdo do painel vive em card, nunca solto
+          sobre o creme do fundo. Mesma forma dos cards de eixo abaixo. */}
+      <Card>
+        <CardContent className="flex flex-col gap-2">
+          <Label htmlFor="nome-cardapio" className="text-sm font-semibold">
+            Nome do cardápio
+          </Label>
+          <Input
+            id="nome-cardapio"
+            value={rascunho.nome}
+            onChange={(e) => alterar({ nome: e.target.value })}
+            aria-invalid={erros.nome != null}
+            aria-describedby={mensagens.length > 0 ? ID_ERROS : undefined}
+            className={ALVO}
+            maxLength={80}
+          />
+        </CardContent>
+      </Card>
 
       {/* ── §9.1 Escolha do modo ─────────────────────────────────────────── */}
-      <fieldset className="flex flex-col gap-3">
-        <legend className="text-sm font-semibold">
-          Quando este cardápio aparece
-        </legend>
-        <RadioGroup
-          value={rascunho.modo}
-          onValueChange={(valor) => alterar({ modo: valor as ModoVigencia })}
-          aria-label="Quando este cardápio aparece"
-        >
-          {MODOS.map((modo) => (
-            <Label
-              key={modo.valor}
-              className={`flex ${ALVO} cursor-pointer items-start gap-3 rounded-lg border p-3 has-data-checked:border-primary`}
+      <Card>
+        <CardContent>
+          <fieldset className="flex flex-col gap-3">
+            <legend className="text-sm font-semibold">
+              Quando este cardápio aparece
+            </legend>
+            <RadioGroup
+              value={rascunho.modo}
+              onValueChange={(valor) =>
+                alterar({ modo: valor as ModoVigencia })
+              }
+              aria-label="Quando este cardápio aparece"
             >
-              <RadioGroupItem value={modo.valor} className="mt-1" />
-              <span className="flex flex-col gap-1 text-left">
-                <span className="font-semibold">{modo.titulo}</span>
-                <span className="text-xs font-normal text-texto-muted">
-                  {modo.descricao}
-                </span>
-              </span>
-            </Label>
-          ))}
-        </RadioGroup>
-        <p className="text-xs text-texto-muted">
-          Ao salvar, vale só o modo selecionado.
-        </p>
-      </fieldset>
+              {MODOS.map((modo) => (
+                <Label
+                  key={modo.valor}
+                  className={`flex ${ALVO} cursor-pointer items-start gap-3 rounded-lg border p-3 has-data-checked:border-primary`}
+                >
+                  <RadioGroupItem value={modo.valor} className="mt-1" />
+                  <span className="flex flex-col gap-1 text-left">
+                    <span className="font-semibold">{modo.titulo}</span>
+                    <span className="text-xs font-normal text-texto-muted">
+                      {modo.descricao}
+                    </span>
+                  </span>
+                </Label>
+              ))}
+            </RadioGroup>
+            <p className="text-xs text-texto-muted">
+              Ao salvar, vale só o modo selecionado.
+            </p>
+          </fieldset>
+        </CardContent>
+      </Card>
 
       {rascunho.modo === "recorrente" ? (
         <ModoRepeteSempre
@@ -339,7 +351,9 @@ function ModoRepeteSempre({
                       type="button"
                       aria-pressed={marcado}
                       onClick={() =>
-                        alterar({ dias_mes: alternarDia(rascunho.dias_mes, dia) })
+                        alterar({
+                          dias_mes: alternarDia(rascunho.dias_mes, dia),
+                        })
                       }
                       className={`${ALVO} rounded-lg border text-sm focus-visible:ring-3 focus-visible:ring-ring/50 ${
                         marcado
@@ -413,7 +427,9 @@ function ModoRepeteSempre({
                   value={rascunho.hora_fim}
                   onChange={(e) => alterar({ hora_fim: e.target.value })}
                   aria-invalid={erros.hora_fim != null}
-                  aria-describedby={erros.hora_fim != null ? ID_ERROS : undefined}
+                  aria-describedby={
+                    erros.hora_fim != null ? ID_ERROS : undefined
+                  }
                   className={`${ALVO} w-auto`}
                 />
               </div>

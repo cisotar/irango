@@ -1,5 +1,4 @@
 import type { ReactElement } from "react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
@@ -8,6 +7,7 @@ import { criarCardapio } from "@/lib/actions/cardapio";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
 import { FormVigencia } from "@/components/painel/FormVigencia";
+import { CabecalhoPagina } from "@/components/painel/CabecalhoPagina";
 
 export const dynamic = "force-dynamic";
 
@@ -31,10 +31,11 @@ export default async function NovoCardapioPage(): Promise<ReactElement> {
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href={ROTA_CARDAPIOS_LOJISTA} className="text-sm underline">
-        Voltar para cardápios
-      </Link>
-      <h1 className="text-xl font-semibold">Novo cardápio</h1>
+      <CabecalhoPagina
+        voltarHref={ROTA_CARDAPIOS_LOJISTA}
+        voltarRotulo="Voltar para cardápios"
+        titulo="Novo cardápio"
+      />
       <FormVigencia
         cardapio={null}
         timezone={loja.timezone}
