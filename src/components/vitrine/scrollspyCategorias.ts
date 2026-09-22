@@ -11,7 +11,8 @@
 // `NavCategorias.tsx` é só o fio entre este módulo e o `useEffect` do React.
 //
 // PROIBIDO listener de `scroll` (critério de aceite da 203): a marcação do chip
-// ativo sai inteiramente do IntersectionObserver.
+// ativo sai inteiramente do IntersectionObserver. A trava de alvo (issue do
+// flicker) usa apenas `setTimeout` como fallback — nunca `scroll`/`scrollend`.
 
 /** Superfície mínima de uma <section> observada. */
 export type SecaoObservavel = { id: string };
@@ -42,10 +43,22 @@ export type DepsScrollspy = {
   IntersectionObserverCtor?: ConstrutorIntersectionObserver;
   rootMargin: string;
   aoAtivar: (ancora: string) => void;
+  /** Janela máxima da trava de alvo (clique num chip). Default 1200ms. */
+  timeoutAlvoMs?: number;
+};
+
+/** Controlador devolvido por `criarScrollspy` (flicker do chip, issue 289+). */
+export type ControladorScrollspy = {
+  /** Desconecta o observer e cancela a trava pendente (unmount/troca de seções). */
+  desligar(): void;
+  /** Trava o chip de `ancora` como ativo até ele ficar visível ou o timeout expirar. */
+  irPara(ancora: string): void;
 };
 
 /** Recorte inferior do viewport: só a metade de cima decide quem está "em tela". */
 const RECORTE_INFERIOR = "-55%";
+
+const TIMEOUT_ALVO_MS_PADRAO = 1200;
 
 /**
  * Monta o `rootMargin` a partir da altura MEDIDA da barra sticky (a var
@@ -77,19 +90,59 @@ export function escolherAtivo(
 }
 
 /**
- * Liga o observer sobre as seções de `ordem` e devolve o cleanup.
+ * Decide o chip ativo considerando a trava de alvo (clique num chip).
+ *
+ * Com `alvo` travado: nenhuma seção intermediária marca chip (RN-1) — só o
+ * próprio alvo, quando ele entra no conjunto de visíveis, e aí sinaliza
+ * `destravar` para o chamador liberar a trava. Sem alvo, o comportamento é o
+ * da 203, inalterado: reusa `escolherAtivo` (RN-2/RN-3), sem duplicar a regra.
+ */
+export function decidirAtivo({
+  ordem,
+  visiveis,
+  alvo,
+}: {
+  ordem: readonly string[];
+  visiveis: ReadonlySet<string>;
+  alvo: string | null;
+}): { ativo: string | null; destravar: boolean } {
+  if (alvo !== null) {
+    if (visiveis.has(alvo)) return { ativo: alvo, destravar: true };
+    return { ativo: null, destravar: false };
+  }
+  return { ativo: escolherAtivo(ordem, visiveis), destravar: false };
+}
+
+/**
+ * Liga o observer sobre as seções de `ordem` e devolve o controlador.
  *
  * Sem `IntersectionObserverCtor` (browser antigo, SSR) degrada em SILÊNCIO:
- * cleanup no-op, nenhum chip marcado dinamicamente, links âncora intactos.
- * Nunca lança.
+ * `desligar`/`irPara` no-op, nenhum chip marcado dinamicamente, links âncora
+ * intactos. Nunca lança.
  */
-export function criarScrollspy(deps: DepsScrollspy): () => void {
-  const { ordem, obterSecao, IntersectionObserverCtor, rootMargin, aoAtivar } =
-    deps;
+export function criarScrollspy(deps: DepsScrollspy): ControladorScrollspy {
+  const {
+    ordem,
+    obterSecao,
+    IntersectionObserverCtor,
+    rootMargin,
+    aoAtivar,
+    timeoutAlvoMs = TIMEOUT_ALVO_MS_PADRAO,
+  } = deps;
 
-  if (!IntersectionObserverCtor) return () => {};
+  if (!IntersectionObserverCtor) {
+    return { desligar: () => {}, irPara: () => {} };
+  }
 
   const visiveis = new Set<string>();
+  let alvo: string | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  function cancelarTimer() {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
+  }
 
   const observador = new IntersectionObserverCtor(
     (entradas) => {
@@ -97,8 +150,12 @@ export function criarScrollspy(deps: DepsScrollspy): () => void {
         if (entrada.isIntersecting) visiveis.add(entrada.target.id);
         else visiveis.delete(entrada.target.id);
       }
-      const ativo = escolherAtivo(ordem, visiveis);
-      if (ativo) aoAtivar(ativo);
+      const decisao = decidirAtivo({ ordem, visiveis, alvo });
+      if (decisao.ativo) aoAtivar(decisao.ativo);
+      if (decisao.destravar) {
+        alvo = null;
+        cancelarTimer();
+      }
     },
     { rootMargin, threshold: 0 },
   );
@@ -108,5 +165,20 @@ export function criarScrollspy(deps: DepsScrollspy): () => void {
     if (secao) observador.observe(secao);
   }
 
-  return () => observador.disconnect();
+  return {
+    desligar: () => {
+      cancelarTimer();
+      observador.disconnect();
+    },
+    // Segundo `irPara` antes de o primeiro assentar cancela o timer anterior
+    // e substitui o alvo — nunca há dois alvos em disputa.
+    irPara: (ancora: string) => {
+      cancelarTimer();
+      alvo = ancora;
+      timer = setTimeout(() => {
+        alvo = null;
+        timer = null;
+      }, timeoutAlvoMs);
+    },
+  };
 }

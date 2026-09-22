@@ -8,10 +8,11 @@
  * efeitos); ESTE arquivo prova o desempate, o rootMargin medido e a degradação
  * silenciosa.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
   criarScrollspy,
+  decidirAtivo,
   escolherAtivo,
   montarRootMargin,
   type ConstrutorIntersectionObserver,
@@ -167,11 +168,11 @@ describe("203 criarScrollspy — observer injetado, cleanup e degradação", () 
     expect(aoAtivar).not.toHaveBeenCalled();
   });
 
-  it("cleanup desconecta o observer (unmount e troca do conjunto de seções)", () => {
+  it("desligar desconecta o observer (unmount e troca do conjunto de seções)", () => {
     const { obterSecao } = secoes("cat-a");
     const observer = observerFake();
 
-    const cleanup = criarScrollspy({
+    const controlador = criarScrollspy({
       ordem: ["cat-a"],
       obterSecao,
       IntersectionObserverCtor: observer.Ctor,
@@ -179,16 +180,16 @@ describe("203 criarScrollspy — observer injetado, cleanup e degradação", () 
       aoAtivar: vi.fn(),
     });
 
-    cleanup();
+    controlador.desligar();
 
     expect(observer.disconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("sem IntersectionObserver (browser antigo/SSR) degrada em silêncio: não lança e o cleanup é no-op", () => {
+  it("sem IntersectionObserver (browser antigo/SSR) degrada em silêncio: não lança e desligar/irPara são no-op", () => {
     const { obterSecao } = secoes("cat-a");
     const aoAtivar = vi.fn();
 
-    const cleanup = criarScrollspy({
+    const controlador = criarScrollspy({
       ordem: ["cat-a"],
       obterSecao,
       IntersectionObserverCtor: undefined,
@@ -197,6 +198,157 @@ describe("203 criarScrollspy — observer injetado, cleanup e degradação", () 
     });
 
     expect(aoAtivar).not.toHaveBeenCalled();
-    expect(() => cleanup()).not.toThrow();
+    expect(() => controlador.irPara("cat-a")).not.toThrow();
+    expect(() => controlador.desligar()).not.toThrow();
+  });
+});
+
+describe("decidirAtivo — desempate com trava de alvo (flicker do chip)", () => {
+  const ordem = ["cat-a", "cat-b", "cat-c"];
+
+  it("sem alvo, comporta-se como escolherAtivo (RN-2/RN-3, inalterado)", () => {
+    expect(decidirAtivo({ ordem, visiveis: new Set(["cat-b"]), alvo: null })).toEqual(
+      { ativo: "cat-b", destravar: false },
+    );
+    expect(decidirAtivo({ ordem, visiveis: new Set(), alvo: null })).toEqual({
+      ativo: null,
+      destravar: false,
+    });
+  });
+
+  it("com alvo travado, ignora seção intermediária visível (RN-1)", () => {
+    expect(
+      decidirAtivo({ ordem, visiveis: new Set(["cat-b"]), alvo: "cat-c" }),
+    ).toEqual({ ativo: null, destravar: false });
+  });
+
+  it("com alvo travado, quando o alvo fica visível ativa e sinaliza destravar", () => {
+    expect(
+      decidirAtivo({ ordem, visiveis: new Set(["cat-b", "cat-c"]), alvo: "cat-c" }),
+    ).toEqual({ ativo: "cat-c", destravar: true });
+  });
+});
+
+describe("criarScrollspy — trava de alvo (irPara), flicker do chip", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("irPara trava o alvo: seção intermediária visível não chama aoAtivar", () => {
+    const { obterSecao, mapa } = secoes("cat-a", "cat-b", "cat-c");
+    const observer = observerFake();
+    const aoAtivar = vi.fn();
+
+    const controlador = criarScrollspy({
+      ordem: ["cat-a", "cat-b", "cat-c"],
+      obterSecao,
+      IntersectionObserverCtor: observer.Ctor,
+      rootMargin: montarRootMargin("40px"),
+      aoAtivar,
+    });
+
+    controlador.irPara("cat-c");
+    observer.entregar([{ target: mapa.get("cat-b")!, isIntersecting: true }]);
+
+    expect(aoAtivar).not.toHaveBeenCalled();
+  });
+
+  it("alvo entrando em tela ativa e destrava — próxima interseção intermediária volta a marcar", () => {
+    const { obterSecao, mapa } = secoes("cat-a", "cat-b", "cat-c");
+    const observer = observerFake();
+    const aoAtivar = vi.fn();
+
+    const controlador = criarScrollspy({
+      ordem: ["cat-a", "cat-b", "cat-c"],
+      obterSecao,
+      IntersectionObserverCtor: observer.Ctor,
+      rootMargin: montarRootMargin("40px"),
+      aoAtivar,
+    });
+
+    controlador.irPara("cat-c");
+    observer.entregar([{ target: mapa.get("cat-c")!, isIntersecting: true }]);
+    expect(aoAtivar).toHaveBeenLastCalledWith("cat-c");
+
+    // Destravado: uma seção diferente agora volta a decidir (RN-2).
+    observer.entregar([{ target: mapa.get("cat-b")!, isIntersecting: true }]);
+    expect(aoAtivar).toHaveBeenLastCalledWith("cat-b");
+  });
+
+  it("timeout destrava mesmo sem o alvo nunca ficar visível", () => {
+    const { obterSecao, mapa } = secoes("cat-a", "cat-b", "cat-c");
+    const observer = observerFake();
+    const aoAtivar = vi.fn();
+
+    const controlador = criarScrollspy({
+      ordem: ["cat-a", "cat-b", "cat-c"],
+      obterSecao,
+      IntersectionObserverCtor: observer.Ctor,
+      rootMargin: montarRootMargin("40px"),
+      aoAtivar,
+      timeoutAlvoMs: 1200,
+    });
+
+    controlador.irPara("cat-c");
+    observer.entregar([{ target: mapa.get("cat-b")!, isIntersecting: true }]);
+    expect(aoAtivar).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1200);
+
+    // Destravado pelo timeout: a próxima interseção volta a decidir normalmente.
+    observer.entregar([{ target: mapa.get("cat-b")!, isIntersecting: true }]);
+    expect(aoAtivar).toHaveBeenLastCalledWith("cat-b");
+  });
+
+  it("segundo irPara antes de o primeiro assentar substitui o alvo e reinicia o timer", () => {
+    const { obterSecao, mapa } = secoes("cat-a", "cat-b", "cat-c");
+    const observer = observerFake();
+    const aoAtivar = vi.fn();
+
+    const controlador = criarScrollspy({
+      ordem: ["cat-a", "cat-b", "cat-c"],
+      obterSecao,
+      IntersectionObserverCtor: observer.Ctor,
+      rootMargin: montarRootMargin("40px"),
+      aoAtivar,
+      timeoutAlvoMs: 1200,
+    });
+
+    controlador.irPara("cat-c");
+    vi.advanceTimersByTime(800);
+    controlador.irPara("cat-b");
+
+    // O alvo antigo (cat-c) ficando visível não conta mais.
+    observer.entregar([{ target: mapa.get("cat-c")!, isIntersecting: true }]);
+    expect(aoAtivar).not.toHaveBeenCalled();
+
+    // O timer antigo (que venceria aos 1200ms totais) foi cancelado.
+    vi.advanceTimersByTime(500);
+    observer.entregar([{ target: mapa.get("cat-c")!, isIntersecting: true }]);
+    expect(aoAtivar).not.toHaveBeenCalled();
+
+    // O novo alvo (cat-b) ativa normalmente.
+    observer.entregar([{ target: mapa.get("cat-b")!, isIntersecting: true }]);
+    expect(aoAtivar).toHaveBeenLastCalledWith("cat-b");
+  });
+
+  it("desligar cancela o timer pendente (unmount não deixa setState órfão)", () => {
+    const { obterSecao } = secoes("cat-a", "cat-b");
+    const observer = observerFake();
+    const aoAtivar = vi.fn();
+
+    const controlador = criarScrollspy({
+      ordem: ["cat-a", "cat-b"],
+      obterSecao,
+      IntersectionObserverCtor: observer.Ctor,
+      rootMargin: montarRootMargin("40px"),
+      aoAtivar,
+      timeoutAlvoMs: 1200,
+    });
+
+    controlador.irPara("cat-b");
+    controlador.desligar();
+
+    expect(() => vi.advanceTimersByTime(2000)).not.toThrow();
+    expect(aoAtivar).not.toHaveBeenCalled();
   });
 });

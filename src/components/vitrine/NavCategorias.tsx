@@ -114,6 +114,12 @@ function TrilhoCategorias({ categorias, alturaBarra }: NavCategoriasProps) {
 
   const [ativo, setAtivo] = useState(ancoras[0]);
   const chipsRef = useRef(new Map<string, HTMLAnchorElement>());
+  // Lido pelo onClick do chip (fora do efeito) para travar o scrollspy no
+  // alvo do clique — ver `criarScrollspy`/`decidirAtivo` (flicker do chip).
+  const controladorRef = useRef<Pick<
+    ReturnType<typeof criarScrollspy>,
+    "irPara"
+  > | null>(null);
   // Achado acelerar/200-203: `useMediaQuery` retorna `false` no primeiro
   // paint e só resolve o valor real dentro do próprio efeito — se entrasse
   // nas deps do scrollIntoView abaixo, toda hidratação disparava o
@@ -148,7 +154,7 @@ function TrilhoCategorias({ categorias, alturaBarra }: NavCategoriasProps) {
       .getPropertyValue(VAR_ALTURA_BARRA)
       .trim();
 
-    return criarScrollspy({
+    const controlador = criarScrollspy({
       ordem: ancoras,
       obterSecao: (ancora) => document.getElementById(ancora),
       IntersectionObserverCtor:
@@ -158,6 +164,12 @@ function TrilhoCategorias({ categorias, alturaBarra }: NavCategoriasProps) {
       rootMargin: montarRootMargin(alturaVar),
       aoAtivar: setAtivo,
     });
+    controladorRef.current = controlador;
+
+    return () => {
+      controladorRef.current = null;
+      controlador.desligar();
+    };
     // `alturaBarra` não é lida aqui: é o gatilho de reconstrução (rootMargin é
     // congelado no construtor). A altura usada vem sempre da CSS var.
   }, [ancoras, alturaBarra]);
@@ -200,8 +212,13 @@ function TrilhoCategorias({ categorias, alturaBarra }: NavCategoriasProps) {
                 href={`#${ancora}`}
                 // D6: marca na hora, SEM preventDefault — quem rola continua
                 // sendo a navegação âncora nativa (é o que faz o trilho
-                // funcionar com JS desligado).
-                onClick={() => setAtivo(ancora)}
+                // funcionar com JS desligado). `irPara` trava o scrollspy no
+                // alvo para nenhuma seção intermediária piscar durante a
+                // rolagem (RN-1 do flicker).
+                onClick={() => {
+                  setAtivo(ancora);
+                  controladorRef.current?.irPara(ancora);
+                }}
                 aria-current={estaAtivo ? "true" : undefined}
                 className={`${CLASSES_CHIP} ${estaAtivo ? CLASSES_CHIP_ATIVO : CLASSES_CHIP_INATIVO}`}
                 style={estaAtivo ? ESTILO_CHIP_ATIVO : ESTILO_CHIP}
