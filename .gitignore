@@ -59,3 +59,6 @@ pnpm-workspace.yaml
 
 # Relatórios de auditoria de segurança — nunca pushar (detalham vulnerabilidades reais)
 plan/seguranca-auditoria-*.md
+
+# Scripts de dados — contêm emails/telefones reais de clientes, não compartilhar
+scripts/criar-lojas-*.mjs
