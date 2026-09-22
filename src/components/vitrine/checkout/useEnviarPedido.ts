@@ -14,7 +14,12 @@
 // — então o schema sai do bundle inicial e chega por import() em idle. Se o
 // clique acontecer antes de ele chegar, o payload CRU vai para o servidor, que
 // o valida como sempre fez (actions/pedido.ts:65, antes de qualquer I/O).
-// O caminho do clique permanece SÍNCRONO: nenhum await/then antes da RN-A5.
+//
+// [287] RN-A5 APOSENTADA: o checkout não pré-abre mais aba nenhuma. O aviso de
+// envio pelo WhatsApp migrou para a página de confirmação
+// (`confirmacao/ModalAvisoWhatsapp.tsx`), onde a navegação é top-level e não
+// exige user activation — então a mecânica anti-popup daqui perdeu a razão de
+// existir. Este hook NÃO abre, navega nem toca em janela alguma.
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -22,7 +27,6 @@ import { toast } from "sonner";
 
 import { criarPedido } from "@/lib/actions/pedido";
 import { montarPayloadPedido, type EstadoWizard, type ItemPayload } from "./estado";
-import { prepararAbaWhatsapp } from "./aberturaWhatsapp";
 
 // [163] Type-only: `typeof import(...)` é apagado na compilação, não puxa zod
 // para o bundle. O valor chega só pelo import() dinâmico abaixo.
@@ -30,8 +34,7 @@ type SchemaPedido = typeof import("@/lib/validacoes/pedido").schemaPayloadPedido
 
 // Escopo de MÓDULO, de propósito — não é useRef/useEffect. Um hook novo aqui
 // quebraria o harness de useEnviarPedido.test.ts, que chama este hook como
-// função comum fora de componente (environment: node, sem jsdom) e é o único
-// guarda da ordem da RN-A5 neste ambiente.
+// função comum fora de componente (environment: node, sem jsdom).
 let schemaPedido: SchemaPedido | null = null;
 let precarga: Promise<void> | null = null;
 
@@ -74,14 +77,6 @@ export type UsarEnviarPedidoArgs = {
   estado: EstadoWizard;
   onEstadoChange: (patch: Partial<EstadoWizard>) => void;
   /**
-   * [126] Preview de UX vindo do SSR (`whatsapp_envio_automatico` da loja +
-   * loja tem WhatsApp): pré-abre uma aba no gesto do clique para o link que o
-   * SERVIDOR vai (ou não) devolver. Fail-closed: default `false`. A DECISÃO de
-   * enviar é do servidor (RN-A2) — se ele não emitir `whatsappHref`, a aba é
-   * fechada e nada é enviado.
-   */
-  preAbrirWhatsapp?: boolean;
-  /**
    * [238/D11] `criarPedido` recusou com `codigo: "revisao_necessaria"`: a
    * promoção de algum item terminou entre o carrinho e o envio (RN-12-a).
    * Não é erro e não se repete o envio — a UI reconfirma o preço com o
@@ -103,7 +98,6 @@ export function useEnviarPedido({
   itens,
   estado,
   onEstadoChange,
-  preAbrirWhatsapp = false,
   onRevisaoNecessaria,
   indicesReconfirmados = [],
 }: UsarEnviarPedidoArgs) {
@@ -148,26 +142,18 @@ export function useEnviarPedido({
       return;
     }
 
-    // [126] RN-A5: pré-abre a aba AQUI — depois de todos os returns
-    // antecipados (nenhuma aba órfã com payload inválido) e FORA do
-    // startEnvio, ainda dentro do gesto do clique (o await invalidaria a user
-    // activation e o browser bloquearia o popup).
-    const aba = prepararAbaWhatsapp(preAbrirWhatsapp);
-
     startEnvio(async () => {
       let resultado;
       try {
         resultado = await criarPedido(parsed?.success ? parsed.data : payload);
       } catch (e) {
-        // [162] Server Action REJEITOU (queda de rede, 500 do RSC) — sem isso a
-        // aba pré-aberta ficava órfã em about:blank e o cliente sem aviso.
+        // [162] Server Action REJEITOU (queda de rede, 500 do RSC): detalhe só
+        // no log do servidor, mensagem genérica na UI (seguranca.md §14).
         console.error("[useEnviarPedido:criarPedido]", e);
-        aba.concluir(null);
         toast.error("Não foi possível enviar seu pedido. Tente novamente.");
         return;
       }
       if ("erro" in resultado) {
-        aba.concluir(null);
         // [238/D11] Preço subiu: nem repetir o envio, nem erro genérico — a
         // tela mostra o de/para e pede o segundo clique explícito.
         if (resultado.codigo === "revisao_necessaria" && onRevisaoNecessaria) {
@@ -180,9 +166,8 @@ export function useEnviarPedido({
       // [063] Pedido criado: descarta a chave p/ que um próximo carrinho gere
       // uma chave nova e NÃO deduplique com este.
       onEstadoChange({ idempotencyKey: null });
-      // [126] Best-effort (RN-A4): href autoritativo do servidor (125) navega a
-      // aba; ausente/inválido fecha. O router.push abaixo roda de qualquer jeito.
-      aba.concluir(resultado.whatsappHref);
+      // [287] O `whatsappHref` do servidor não é consumido aqui: a confirmação
+      // o remonta no SSR e o aviso de envio mora lá.
       router.push(
         `/loja/${lojaSlug}/confirmacao?pedido=${resultado.pedidoId}&token=${encodeURIComponent(
           resultado.token_acesso,

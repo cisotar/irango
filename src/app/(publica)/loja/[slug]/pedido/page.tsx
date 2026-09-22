@@ -94,13 +94,9 @@ export default async function CheckoutPage({ params }: PageProps) {
       return tipo === "pix" ? { ...base, ...extrairConfigPix(f.config) } : base;
     });
 
-  // [126] RN-A5: preview de UX para pré-abrir a aba do WhatsApp no clique de
-  // confirmar. `=== true` estrito (a view devolve boolean | null) e exige
-  // número cadastrado — fail-closed. A DECISÃO real de emitir o link é do
-  // servidor em `criarPedido` (125); aqui o cliente só reage.
-  const preAbrirWhatsapp =
-    loja.whatsapp_envio_automatico === true &&
-    (loja.whatsapp ?? "").trim() !== "";
+  // [287] RN-A5 aposentada: o checkout não pré-abre mais aba do WhatsApp, e
+  // `whatsapp_envio_automatico` deixa de ser lido aqui. O aviso de envio passou
+  // a viver na página de confirmação, que lê o toggle no próprio SSR.
 
   // [180-B] Número público de WhatsApp da loja (mesmo campo já exibido no
   // header da vitrine). Independente de `whatsapp_envio_automatico`: o modal de
@@ -122,7 +118,6 @@ export default async function CheckoutPage({ params }: PageProps) {
       lojaAberta={aberta}
       aceitaEntrega={aceitaEntrega}
       formasPagamento={formasPagamento}
-      preAbrirWhatsapp={preAbrirWhatsapp}
       whatsappLoja={whatsappLoja}
       enderecoLoja={enderecoLoja}
     />

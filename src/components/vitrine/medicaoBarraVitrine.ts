@@ -2,7 +2,7 @@
 //
 // Módulo NEUTRO (sem "use client"/"use server"), mesmo padrão de
 // `criarControladorPolling`/`DepsPolling` (`confirmacao/StatusPedidoLive.tsx`)
-// e `prepararAbaWhatsapp`/`AbrirJanela` (`checkout/aberturaWhatsapp.ts`): o
+// e `criarContagemAviso`/`TimerAviso` (`confirmacao/avisoWhatsapp.ts`): o
 // elemento medido e o `ResizeObserver` são INJETADOS por parâmetro, nunca
 // lidos direto de `document`/`window` dentro da função — permite cobrir em
 // `environment: node` (o repo não tem jsdom) com fakes.

@@ -1,6 +1,6 @@
 # Spec: Toggle de envio automático da mensagem de WhatsApp ao confirmar o pedido
 
-**Versão:** 0.1.0 | **Atualizado:** 2026-09-06
+**Versão:** 0.3.0 | **Atualizado:** 2026-09-22
 
 ## Status atual (2026-09-06)
 
@@ -53,6 +53,18 @@ ambiente:
 
 Fechar esses 4 exige subir o Supabase LOCAL (`npx supabase start` + `db reset`),
 onde a loja de teste é descartável. Depende de acesso ao Docker na máquina.
+
+## Status da revisão v0.3.0 (2026-09-22)
+
+Issue 287 (`plan/loop-aviso-envio-whatsapp-v2.md`) redesenhou a mecânica de disparo automático a
+pedido do usuário: um modal de aviso, com contagem regressiva de 5s e saída em dois passos, agora
+mora na **página de confirmação** — não mais no handler de clique do checkout. RN-A5 (pré-abrir
+aba em branco no checkout) foi **aposentada**; ver RN-A5 e RN-A7 abaixo. O host do link também
+mudou, de `api.whatsapp.com/send` para `wa.me` (RN-A6). As descrições de "Checkout" e
+"Confirmação do pedido" abaixo foram atualizadas para o desenho novo; os 4 behaviors do checkout
+seguem `[ ]` pelo mesmo motivo de antes (falta de Playwright/MCP de browser — issue 176), não por
+falta de implementação: 33 testes de `avisoWhatsapp.ts`/`.test.ts` (fase RED do `tdd` + bordas do
+`testar`) e a suíte inteira (5623 testes) cobrem a lógica; falta só o clique real.
 
 ## Visão Geral
 
@@ -162,19 +174,45 @@ gravando na loja-alvo (`lojaId`), não na loja do admin.
 
 **Mundo:** vitrine pública (sem auth) — leitura escopada por `token_acesso`.
 
-**Descrição:** sem mudança visual. O botão manual "Avisar a loja no WhatsApp"
-(spec 3) continua **sempre visível quando a loja tem WhatsApp**, independente do
-toggle (requisito fixo 2). O disparo automático **não** acontece aqui — acontece
-no handler de "Confirmar pedido" da página anterior (ver decisão técnica abaixo),
-para aproveitar o gesto real do usuário e não esbarrar em bloqueio de popup.
+**Descrição [rev v0.3.0]:** o botão manual "Avisar a loja no WhatsApp" (spec 3)
+continua **sempre visível quando a loja tem WhatsApp**, independente do toggle
+(requisito fixo 2). O disparo automático **agora acontece aqui**, via
+`ModalAvisoWhatsapp` (RN-A7): a decisão (`avisoHabilitado`) e o `href` vêm prontos
+do SSR desta própria página (`buscarLojaParaPedido` já traz
+`whatsapp_envio_automatico` e `whatsapp`; nenhuma query nova). O modal abre uma vez
+por pedido, mostra spinner + contagem regressiva de 5s, e navega para o WhatsApp
+automaticamente ao fim da contagem (`window.location.href`, navegação top-level —
+não exige gesto do usuário) ou por gesto explícito ("Enviar agora"/"Enviar
+mensagem", `window.open(..., "noopener")`, mantém a confirmação aberta).
 
-**Componentes:** inalterados (bloco "Avisar a loja" do spec 3).
+**Componentes:**
+- Bloco "Avisar a loja" do spec 3 — inalterado.
+- `ModalAvisoWhatsapp.tsx` (novo) — dois passos dentro do mesmo `Dialog` do shadcn
+  (molde: `ModalFreteIndisponivel.tsx`).
+- `avisoWhatsapp.ts` (novo, módulo puro) — decisão de exibir, gate
+  "uma vez por pedido" (`sessionStorage`, chave `aviso-wpp:<pedidoId>`, storage e
+  timer injetados por parâmetro), contagem regressiva e guard `https://`
+  (`urlHttpsSegura`, reuso — fonte única, `seguranca.md` §15).
 
 **Behaviors:**
-- [ ] Ver o botão manual sempre que a loja tem WhatsApp, com ou sem envio
+- [x] Ver o botão manual sempre que a loja tem WhatsApp, com ou sem envio
   automático ligado. Garantido em: cliente (UX) sobre dado server-side
   (`lojas.whatsapp`). (Comportamento já existente do spec 3; esta feature apenas
   **não o remove**.)
+- [ ] Ver o modal de aviso quando o envio automático está ligado, com spinner e
+  contagem regressiva de 5s. Garantido em: **servidor** (decisão `avisoHabilitado`)
+  + cliente (mecânica de contagem, `avisoWhatsapp.test.ts` cobre a lógica —
+  clique real pendente, issue 176).
+- [ ] Contagem esgotada sem interação leva ao WhatsApp automaticamente
+  (`window.location.href`). Garantido em: módulo puro `avisoWhatsapp.ts`
+  (33 testes) — clique real pendente, issue 176.
+- [ ] "Agora não" para a contagem e não deixa religar (WCAG 2.2.1); "Enviar
+  agora"/"Enviar mensagem" abre o WhatsApp numa aba nova sem tirar o cliente da
+  confirmação. Garantido em: `avisoWhatsapp.test.ts` +
+  `ModalAvisoWhatsapp.test.tsx` — clique real pendente, issue 176.
+- [ ] Voltar do WhatsApp para a confirmação não reabre o modal (gate de uma vez
+  por pedido). Garantido em: `sessionStorage` por pedido, testado com fake
+  injetado — clique real pendente, issue 176.
 
 ---
 
@@ -182,32 +220,32 @@ para aproveitar o gesto real do usuário e não esbarrar em bloqueio de popup.
 
 **Mundo:** vitrine pública (sem auth).
 
-**Descrição:** é aqui que o disparo automático nasce. O botão "Confirmar pedido"
-(`CheckoutWizard` / `useEnviarPedido`) passa a, **no mesmo clique**, abrir o
-WhatsApp automaticamente quando a loja optou por isso — sem bloqueio de popup,
-porque a abertura acontece dentro do gesto do usuário.
+**Descrição [rev v0.3.0]:** o checkout **não dispara mais nada de WhatsApp**. O
+botão "Confirmar pedido" (`CheckoutWizard` / `useEnviarPedido`) só chama
+`criarPedido` e navega para a confirmação (`router.push`) — nenhuma pré-abertura
+de aba, nenhuma prop `preAbrirWhatsapp`. O disparo automático se mudou inteiro
+para a página de confirmação (ver seção acima e RN-A7); a razão é que navegação
+top-level (`window.location.href`) não exige user activation, então a mecânica
+anti-bloqueio de popup do checkout deixou de ser necessária (RN-A5, aposentada).
 
 **Componentes:**
-- `useEnviarPedido.ts` — estender o handler `enviar`.
-- `criarPedido` (`src/lib/actions/pedido.ts`) — estender o retorno para incluir o
-  `whatsappHref` autoritativo (ver Modelos/Regras).
-- `montarLinkWhatsappPedido` — **reuso** (já monta o link server-side a partir do
-  `PedidoComItens` + loja). Nada de recriar montagem de mensagem.
-- checkout `page.tsx` — expor `envioAutomatico` (flag) + presença de WhatsApp ao
-  `CheckoutWizard`, para o cliente decidir se pré-abre a aba.
+- `useEnviarPedido.ts` — handler `enviar` simplificado: `criarPedido` →
+  `router.push`, sem ramificação de WhatsApp.
+- `criarPedido` (`src/lib/actions/pedido.ts`) — **inalterado nesta revisão**;
+  continua devolvendo `whatsappHref` (ver dívida registrada em `tasks/288-*`, o
+  campo segue no retorno mesmo sem consumidor no checkout).
+- `montarLinkWhatsappPedido` — **reuso**, consumido agora só pela página de
+  confirmação (SSR) e pelo botão manual do spec 3.
 
 **Behaviors:**
-- [ ] Ao confirmar, se a loja optou por envio automático e tem WhatsApp, o
-  WhatsApp abre sozinho com o resumo do pedido. Garantido em: **servidor
-  (autoritativo) para o CONTEÚDO e a DECISÃO de emitir o link** + cliente (UX)
-  para a mecânica de abrir a aba. Detalhe abaixo.
-- [ ] Se o navegador bloquear o popup (ou não for envio automático), o pedido é
-  confirmado normalmente e o cliente segue para a confirmação com o botão manual.
-  Garantido em: por design — envio é best-effort, não bloqueia o checkout (RN-A4).
-- [ ] O conteúdo da mensagem reflete o pedido real recém-criado. Garantido em:
-  **Server Action** — `criarPedido` monta o `href` com `montarLinkWhatsappPedido`
-  a partir do pedido autoritativo que acabou de gravar, nunca dos valores do
-  carrinho do cliente.
+- [x] O checkout não abre nem tenta abrir WhatsApp — só cria o pedido e navega
+  para a confirmação. Garantido em: `useEnviarPedido.test.ts` +
+  `.semSchema.test.ts` (ordem `criarPedido:inicio → criarPedido:fim →
+  router.push`, nenhuma janela aberta no gesto).
+- [x] O conteúdo da mensagem reflete o pedido real recém-criado. Garantido em:
+  **Server Action** — `criarPedido` grava o pedido; `montarLinkWhatsappPedido`
+  monta o `href` a partir do pedido autoritativo lido no SSR da confirmação,
+  nunca dos valores do carrinho do cliente.
 
 ## Modelos de Dados
 
@@ -260,33 +298,63 @@ do WhatsApp. Se o popup for bloqueado, se o `href` vier `null`, ou se a aba não
 abrir, o fluxo segue para a confirmação normalmente. Camada: por design (o
 `router.push` para a confirmação não depende do resultado do `window.open`).
 
-**RN-A5 — Mecânica anti-bloqueio de popup (decisão técnica).** Navegadores
-bloqueiam `window.open` fora de um gesto do usuário, e Safari invalida o gesto
-após um `await`. Padrão escolhido, dentro do handler de clique de "Confirmar
-pedido" (`useEnviarPedido.enviar`):
-  1. **Síncrono, antes do `await criarPedido`:** se o cliente sabe (via flag
-     exposta no SSR do checkout) que é envio automático e a loja tem WhatsApp,
-     abre uma aba em branco: `const janela = window.open("", "_blank")` — isso
-     preserva o gesto do usuário.
-  2. `await criarPedido(payload)` → retorno passa a incluir `whatsappHref: string
-     | null` (autoritativo, RN-A2).
-  3. Sucesso **e** `whatsappHref` **e** `janela`: `janela.location.href =
-     whatsappHref`. Caso contrário: `janela?.close()` (fecha a aba em branco).
-  4. `router.push(confirmacao...)` **na mesma aba** (fluxo inalterado).
-  - **Trade-off documentado:** há um flash de aba em branco antes do redirect
-    dela; em falha, fechamos a aba. Alternativas descartadas: (a) `window.open`
-    no `mount` da confirmação → bloqueado (sem gesto); (b) `window.location.href`
-    na confirmação → tira o cliente da página e re-dispara no F5; (c) auto-clique
-    no botão → não confiável. A opção escolhida é a única que sobrevive ao gap
-    assíncrono do `criarPedido` mantendo o cliente na confirmação.
-  - Camada: **cliente (UX/mecânica)**; o conteúdo e a permissão de emitir o link
-    são do **servidor** (RN-A1/RN-A2). A flag no cliente é só um preview para
-    pré-abrir a aba — se divergir do servidor (ex.: flag desligada de fato), a aba
-    em branco é fechada; nada é enviado. O servidor é a verdade.
+**RN-A5 — [APOSENTADA em v0.3.0, issue 287].** Mecânica anti-bloqueio de popup do
+checkout (pré-abrir `window.open("", "_blank")` sincronamente, antes do `await
+criarPedido`, para preservar o gesto do usuário e só depois apontar
+`janela.location.href`). Existiu porque o disparo automático vivia no handler de
+clique de "Confirmar pedido", onde o `await` mataria a user activation. **Deixou
+de ser necessária** quando o disparo se mudou para a página de confirmação
+(RN-A7): lá a navegação automática usa `window.location.href` (top-level, não
+exige gesto), e a navegação por gesto real usa `window.open(destino, "_blank",
+"noopener")` diretamente — sem gap assíncrono no meio, porque `href` já chega
+pronto do SSR da confirmação. O teste que travava a ORDEM da pré-abertura
+(`useEnviarPedido.test.ts`) foi removido **deliberadamente**: a invariante que
+ele protegia não existe mais. `aberturaWhatsapp.ts`/`.test.ts` foram removidos do
+código (código morto).
 
-**RN-A6 — Conteúdo da mensagem inalterado.** Mesma composição do spec 3 (RN-W1),
-montada por `montarLinkWhatsappPedido` server-side a partir do pedido
-autoritativo. `token_acesso` nunca entra na mensagem. Camada: **Server Action**.
+**RN-A6 — Conteúdo da mensagem inalterado; host trocado em v0.3.0.** Mesma
+composição de texto do spec 3 (RN-W1), montada por `montarLinkWhatsappPedido`
+server-side a partir do pedido autoritativo. `token_acesso` nunca entra na
+mensagem. **[rev v0.3.0]** O host do link mudou de `https://api.whatsapp.com/send`
+para `https://wa.me` (issue 287, entrega B) — pula a intersticial "Continue to
+chat" da Meta, reduzindo a latência sentida pelo comprador antes do WhatsApp
+carregar. Mesmo esquema `https://` (passa no guard `urlHttpsSegura`, §15 de
+`seguranca.md`); só o host muda, o corpo codificado (`encodeURIComponent`) é
+idêntico. Medido no pedido mais longo do `supabase/seed.sql`: URL final ~1,1KB,
+bem abaixo do limite prático de navegador (~2000 chars) — não é motivo para
+encurtar a mensagem. Camada: **Server Action**.
+
+**RN-A7 — [NOVA, v0.3.0, issue 287] Aviso com contagem regressiva antes da
+navegação automática.** Quando `avisoHabilitado` (RN-A2), a página de
+confirmação abre `ModalAvisoWhatsapp` uma vez por pedido
+(`sessionStorage`, chave `aviso-wpp:<pedidoId>`, por aba — reabrir o link de
+confirmação em outra aba reabre o aviso, aceito por design). Passo 1: spinner +
+contador de 5s, botão "Enviar agora", saída "Agora não". Contador esgotado sem
+interação → `window.location.href = destino` (navegação top-level, sem gesto).
+"Enviar agora"/"Enviar mensagem" (gesto real) → `window.open(destino, "_blank",
+"noopener")`; se o navegador bloquear o popup (retorno `null`), cai para
+`window.location.href` — mesmo destino, sem perder o aviso. "Agora não" **para a
+contagem e ela não volta a correr** (WCAG 2.2.1 — Timing Adjustable) e leva ao
+passo 2, com a copy:
+
+> **Envie a mensagem no WhatsApp e acelere seu pedido.**
+
+e os botões **[ Enviar mensagem ]** / **[ Sair mesmo assim ]**. **Trava de copy,
+obrigatória para qualquer edição futura deste texto:** o pedido **já está
+gravado** quando o modal aparece (`criarPedido` já retornou `pedidoId` +
+`token_acesso` — é por isso que a confirmação renderiza). A mensagem de WhatsApp
+é aviso, **nunca** a fonte de verdade do pedido (RN-W4, spec 3). Nenhuma copy do
+modal, em nenhum dos dois passos, pode sugerir cancelamento ou que o pedido não
+foi feito/enviado — "cancelar", "pedido não foi feito", "pedido não enviado" são
+proibidos por decisão de produto (não é gosto de estilo). O guard `https://`
+(`urlHttpsSegura`) é aplicado uma única vez, na criação da contagem
+(`criarContagemAviso`), e nenhum dos dois caminhos de navegação ocorre para um
+destino reprovado. Se `sessionStorage` estiver indisponível/lançar (aba privada,
+storage particionado), o gate falha **fechado**: a contagem não é armada e a
+navegação automática não acontece — só os botões manuais funcionam (issue 287,
+achado do `auditar`, corrigido antes do PR). Camada: decisão (`avisoHabilitado`,
+`href`) é do **servidor**; mecânica de contagem e navegação é **cliente**, sobre
+módulo puro testável (`avisoWhatsapp.ts`).
 
 ## Segurança (obrigatório)
 
@@ -313,13 +381,21 @@ autoritativo. `token_acesso` nunca entra na mensagem. Camada: **Server Action**.
   billing** — expor no caminho de leitura do checkout (ou na view `vitrine_lojas`,
   se for esse o caminho) é aceitável. O `whatsapp` da loja já é público (contato).
   Nenhum novo dado sensível é exposto.
-- **API externa com key? Não.** Continua `api.whatsapp.com/send` (link público,
-  sem chave, sem custo). Nada de WhatsApp Business API.
+- **API externa com key? Não.** **[rev v0.3.0]** `wa.me` no lugar de
+  `api.whatsapp.com/send` (RN-A6) — ainda link público, sem chave, sem custo.
+  Nada de WhatsApp Business API.
 - **XSS/injeção:** `href` montado por `montarLinkWhatsappPedido` (número
-  normalizado a dígitos, texto em `encodeURIComponent`) — inalterado do spec 3. O
-  `whatsappHref` trafega do servidor para o cliente como string já pronta; o
-  cliente só atribui a `janela.location.href` (URL `https://api.whatsapp.com/...`),
-  sem `dangerouslySetInnerHTML`.
+  normalizado a dígitos, texto em `encodeURIComponent`) — corpo inalterado do
+  spec 3, só o host mudou. O `whatsappHref` trafega do servidor (SSR da
+  confirmação, RN-A7) para o cliente como string já pronta, sempre revalidada por
+  `urlHttpsSegura` (guard `https://` — `seguranca.md` §15) antes de qualquer
+  navegação; o cliente nunca usa `dangerouslySetInnerHTML`.
+- **[rev v0.3.0] Anti reverse-tabnabbing.** O hack manual `janela.opener = null`
+  (RN-A5, aposentada) foi substituído por `noopener` real em
+  `window.open(destino, "_blank", "noopener")` — mitigação equivalente, aplicada
+  no ponto de abertura em vez de depois. O caminho sem gesto
+  (`window.location.href`) navega na própria aba: não há segunda aba nem
+  `opener`, logo nenhum vetor de reverse-tabnabbing ali.
 
 **Criticidade de segurança:** média. Não há dinheiro/RLS nova, mas **toca a
 superfície de escrita cross-tenant de `lojas`** — a issue de painel admin deve

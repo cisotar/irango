@@ -1,7 +1,7 @@
 // Mecânica temporal do retry do preview de frete (issue 180-B, §D8).
 //
 // Módulo NEUTRO (sem "use client"/"use server", igual a `estado.ts` e
-// `aberturaWhatsapp.ts`): só a MECÂNICA, com o relógio INJETADO por parâmetro —
+// `confirmacao/avisoWhatsapp.ts`): só a MECÂNICA, com o relógio INJETADO por parâmetro —
 // o repo não tem jsdom, então nada de `setTimeout` global aqui.
 //
 // O relógio é 100% CLIENTE e NÃO é autoridade sobre nada (mandato 1): o

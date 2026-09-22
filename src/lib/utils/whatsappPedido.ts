@@ -170,6 +170,10 @@ export function montarLinkWhatsappPedido(
 
   const mensagem = linhas.join("\n");
   return {
-    href: `https://api.whatsapp.com/send?phone=${numeroLimpo}&text=${encodeURIComponent(mensagem)}`,
+    // [287] `wa.me` é a rota canônica de redirecionamento: pula a intersticial
+    // "Continue to chat" que `api.whatsapp.com/send` serve antes do chat. Mesmo
+    // esquema `https` (passa no guard §15) e MESMA mensagem, byte a byte — só o
+    // host mudou, RN-A6 segue intacta.
+    href: `https://wa.me/${numeroLimpo}?text=${encodeURIComponent(mensagem)}`,
   };
 }

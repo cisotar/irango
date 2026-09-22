@@ -19,14 +19,14 @@
  *     quem valida, `actions/pedido.ts` antes de qualquer I/O — nada é
  *     enfraquecido; a prova de paridade está no describe "paridade (163)"
  *     mais abaixo, neste mesmo arquivo).
- *  2. `prepararAbaWhatsapp` RODA mesmo com payload que o schema rejeitaria —
- *     é o delta de comportamento aceito e registrado no plano da issue 163
- *     §2: "flash de aba, não aba órfã" — se o servidor rejeitar, o próprio
- *     `catch`/`if ("erro" in resultado)` fecha a aba via `aba.concluir(null)`.
+ *  2. [287] NENHUMA aba é pré-aberta — nem no estado degradado. A mecânica
+ *     anti-popup (RN-A5) foi aposentada: o aviso vive na confirmação e navega
+ *     em top-level. O que antes era "flash de aba, não aba órfã" vira agora
+ *     "nenhuma aba, em caminho nenhum".
  *  3. Payload válido continua funcionando normalmente sem o schema (o gate é
  *     só `schemaPedido?.safeParse` — `undefined?.` nunca lança).
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ESTADO_INICIAL, montarPayloadPedido, type EstadoWizard } from "./estado";
 import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
@@ -34,7 +34,6 @@ import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
 const routerPush = vi.fn();
 const toastError = vi.fn();
 const criarPedidoMock = vi.fn();
-const prepararAbaWhatsappMock = vi.fn();
 
 vi.mock("react", async (importOriginal) => {
   const real = await importOriginal<typeof import("react")>();
@@ -56,16 +55,36 @@ vi.mock("@/lib/actions/pedido", () => ({
   criarPedido: (...args: unknown[]) => criarPedidoMock(...args),
 }));
 
-vi.mock("./aberturaWhatsapp", () => ({
-  prepararAbaWhatsapp: (...args: unknown[]) => prepararAbaWhatsappMock(...args),
-}));
-
 // Import DEPOIS dos vi.mock (hoisted). CRÍTICO: NÃO chamar
 // `precarregarSchemaPedido` neste arquivo — é o próprio ponto do teste.
+// CRÍTICO 2 [287]: a janela falsa é instalada só DEPOIS deste import. Instalada
+// antes, o bloco `typeof window !== "undefined"` do módulo agendaria a pré-carga
+// do schema — justamente o estado que este arquivo precisa NÃO ter.
 const { useEnviarPedido } = await import("./useEnviarPedido");
 
 const LOJA_ID = "0d1e2f30-0000-4000-8000-000000000001";
 const PRODUTO_ID = "0d1e2f30-0000-4000-8000-000000000002";
+
+/** Destino fictício (sem PII, sem número real) só para o mock da action. */
+const HREF_DO_SERVIDOR = "https://wa.me/5500000000000?text=Novo%20pedido";
+
+/** Detector de pré-abertura: qualquer `window.open` do checkout registra aqui. */
+function instalarJanelaFalsa() {
+  const aba = {
+    location: { href: "" },
+    close: vi.fn(),
+    opener: {} as unknown,
+  };
+  const open = vi.fn(() => aba);
+  const g = globalThis as unknown as { window?: unknown };
+  g.window = { open };
+  return { aba, open };
+}
+
+function removerJanelaFalsa(): void {
+  const g = globalThis as unknown as { window?: unknown };
+  delete g.window;
+}
 
 function estadoValido(): EstadoWizard {
   return {
@@ -76,27 +95,34 @@ function estadoValido(): EstadoWizard {
   };
 }
 
-function useMontarHook(preAbrirWhatsapp: boolean, estado: EstadoWizard = estadoValido()) {
-  return useEnviarPedido({
+/**
+ * [287] A prop legada da pré-abertura já saiu do tipo do hook (fase GREEN):
+ * quem prova que o checkout não abre nem navega janela é o detector de janela
+ * falsa instalado em cada caso.
+ */
+function useMontarHook(estado: EstadoWizard = estadoValido()) {
+  const args = {
     lojaId: LOJA_ID,
     lojaSlug: "loja-teste",
     itens: [{ produtoId: PRODUTO_ID, quantidade: 1 }],
     estado,
     onEstadoChange: vi.fn(),
-    preAbrirWhatsapp,
-  });
+  };
+  return useEnviarPedido(args);
 }
 
 describe("useEnviarPedido — schema de preview AINDA NÃO carregado (163)", () => {
-  const abaConcluir = vi.fn();
+  let janela: ReturnType<typeof instalarJanelaFalsa>;
 
   beforeEach(() => {
     routerPush.mockClear();
     toastError.mockClear();
-    abaConcluir.mockClear();
     criarPedidoMock.mockReset();
-    prepararAbaWhatsappMock.mockReset();
-    prepararAbaWhatsappMock.mockImplementation(() => ({ concluir: abaConcluir }));
+    janela = instalarJanelaFalsa();
+  });
+
+  afterEach(() => {
+    removerJanelaFalsa();
   });
 
   it("payload que o schema REJEITARIA (nome vazio): criarPedido recebe o payload CRU, sem gate local", async () => {
@@ -106,7 +132,7 @@ describe("useEnviarPedido — schema de preview AINDA NÃO carregado (163)", () 
       whatsappHref: null,
     });
 
-    const { enviar } = useMontarHook(true, { ...estadoValido(), nome: "" });
+    const { enviar } = useMontarHook({ ...estadoValido(), nome: "" });
     enviar();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -121,53 +147,52 @@ describe("useEnviarPedido — schema de preview AINDA NÃO carregado (163)", () 
     );
   });
 
-  it("payload que o schema REJEITARIA: prepararAbaWhatsapp RODA (flash de aba, não aba órfã)", async () => {
+  it("[287] payload que o schema REJEITARIA: NENHUMA aba é pré-aberta (a mecânica saiu do checkout)", async () => {
     criarPedidoMock.mockResolvedValue({
       pedidoId: "p1",
       token_acesso: "t1",
       whatsappHref: null,
     });
 
-    const { enviar } = useMontarHook(true, { ...estadoValido(), nome: "" });
+    const { enviar } = useMontarHook({ ...estadoValido(), nome: "" });
     enviar();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(prepararAbaWhatsappMock).toHaveBeenCalledTimes(1);
+    expect(janela.open).not.toHaveBeenCalled();
   });
 
-  it("servidor rejeita o payload cru (nome_cliente vazio): aba pré-aberta é FECHADA por aba.concluir(null) — não fica órfã", async () => {
+  it("[287] servidor rejeita o payload cru: sem push, com aviso ao cliente e sem nenhuma aba para fechar", async () => {
     // actions/pedido.ts faz o safeParse e devolve { erro } antes de qualquer I/O
     // — reproduzido aqui pelo mock, já que a Server Action real não roda no
     // teste unitário do hook.
     criarPedidoMock.mockResolvedValue({ erro: "Dados do pedido inválidos." });
 
-    const { enviar } = useMontarHook(true, { ...estadoValido(), nome: "" });
+    const { enviar } = useMontarHook({ ...estadoValido(), nome: "" });
     enviar();
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(prepararAbaWhatsappMock).toHaveBeenCalledTimes(1);
-    expect(abaConcluir).toHaveBeenCalledWith(null);
+    expect(janela.open).not.toHaveBeenCalled();
+    expect(janela.aba.close).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith("Dados do pedido inválidos.");
   });
 
-  it("payload VÁLIDO: envio funciona normalmente mesmo sem o schema carregado", async () => {
+  it("[287] payload VÁLIDO: envio funciona sem o schema E sem abrir/navegar aba nenhuma", async () => {
     criarPedidoMock.mockResolvedValue({
       pedidoId: "p1",
       token_acesso: "t1",
-      whatsappHref: "https://api.whatsapp.com/send?phone=5511999999999",
+      whatsappHref: HREF_DO_SERVIDOR,
     });
 
-    const { enviar } = useMontarHook(true);
+    const { enviar } = useMontarHook();
     enviar();
     await new Promise((r) => setTimeout(r, 0));
 
     expect(criarPedidoMock).toHaveBeenCalledTimes(1);
     const payloadEnviado = criarPedidoMock.mock.calls[0][0] as { nome_cliente: string };
     expect(payloadEnviado.nome_cliente).toBe("Cliente Teste");
-    expect(abaConcluir).toHaveBeenCalledWith(
-      "https://api.whatsapp.com/send?phone=5511999999999",
-    );
+    expect(janela.open).not.toHaveBeenCalled();
+    expect(janela.aba.location.href).toBe("");
     expect(routerPush).toHaveBeenCalledWith(
       expect.stringContaining("/loja/loja-teste/confirmacao?pedido=p1&token=t1"),
     );

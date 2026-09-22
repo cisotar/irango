@@ -72,11 +72,6 @@ export type CheckoutWizardProps = {
   aceitaEntrega: boolean;
   formasPagamento: FormaPagamentoWizard[];
   /**
-   * [126] Derivada no SSR: loja com `whatsapp_envio_automatico = true` E número
-   * de WhatsApp preenchido. Pré-abre a aba no clique de confirmar (RN-A5).
-   */
-  preAbrirWhatsapp?: boolean;
-  /**
    * [180-B] WhatsApp PÚBLICO da loja (já exposto na vitrine). INDEPENDENTE de
    * `whatsapp_envio_automatico`: aqui a decisão depende só de TER canal para
    * combinar a entrega. `null` ⇒ o modal de frete indisponível oferece retirada.
@@ -102,7 +97,6 @@ export function CheckoutWizard({
   lojaAberta,
   aceitaEntrega,
   formasPagamento,
-  preAbrirWhatsapp = false,
   whatsappLoja = null,
   enderecoLoja = null,
 }: CheckoutWizardProps) {
@@ -296,7 +290,6 @@ export function CheckoutWizard({
     itens: itensPayload,
     estado,
     onEstadoChange: patch,
-    preAbrirWhatsapp,
     onRevisaoNecessaria: aoRevisaoNecessaria,
     indicesReconfirmados,
   });
@@ -492,7 +485,6 @@ export function CheckoutWizard({
           frete={fretePreviewEfetivo}
           onEstadoChange={patch}
           onVoltar={() => setEtapa(2)}
-          preAbrirWhatsapp={preAbrirWhatsapp}
         />
       )}
     </div>
@@ -573,7 +565,6 @@ export function CheckoutWizard({
             frete={fretePreviewEfetivo}
             onEstadoChange={patch}
             onVoltar={() => {}}
-            preAbrirWhatsapp={preAbrirWhatsapp}
           />
         </div>
 

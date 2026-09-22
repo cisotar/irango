@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { montarLinkWhatsappPedido } from "./whatsappPedido";
 import { formatarMoeda } from "./formatarMoeda";
+import { urlHttpsSegura } from "./urlHttpsSegura";
 import type {
   PedidoComItens,
   ItemPedidoComOpcionais,
@@ -511,5 +512,69 @@ describe("[197] RN-R7 entrega — endereço do cliente encurta (sem cidade/estad
   it("endereço parcial (sem bairro) → sem separador '·' órfão", () => {
     expect(mensagemEntrega({ rua: "Rua das Flores", numero: "100" })
       .split("\n")).toContain("Endereço: Rua das Flores, 100");
+  });
+});
+
+// ===========================================================================
+// [287] Fase RED — entrega (B): o host do link vira `wa.me`.
+//
+// `api.whatsapp.com/send` serve a intersticial "Continue to chat" e carrega os
+// próprios scripts antes de o comprador ver a mensagem — é ELA a latência que
+// se sente. `https://wa.me/<numero>?text=…` é a rota canônica e pula essa tela.
+//
+// Só o HOST muda. O CONTEÚDO da mensagem é decisão de produto e está
+// congelado nesta entrega (RN-A6): os dois casos abaixo travam isso — o corpo
+// codificado tem que sair byte a byte igual ao de hoje.
+// ===========================================================================
+
+/** `(11) 90000-0000` depois do `replace(/\D/g, "")` de `montarLinkWhatsappPedido`. */
+const NUMERO_LIMPO_LOJA = "11900000000";
+
+describe("[287] host do link — wa.me no lugar da intersticial do api.whatsapp.com", () => {
+  it("o href começa com `https://wa.me/` seguido do número limpo", () => {
+    const link = montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO);
+    expect(link!.href.startsWith(`https://wa.me/${NUMERO_LIMPO_LOJA}?text=`)).toBe(
+      true,
+    );
+  });
+
+  it("o host antigo e o parâmetro `phone=` somem por completo", () => {
+    const link = montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO);
+    expect(link!.href).not.toContain("api.whatsapp.com");
+    expect(link!.href).not.toContain("/send?");
+    expect(new URL(link!.href).searchParams.get("phone")).toBeNull();
+    // O número sai do query string e passa a viver no path.
+    expect(new URL(link!.href).pathname).toBe(`/${NUMERO_LIMPO_LOJA}`);
+  });
+
+  it("o corpo codificado é EXATAMENTE o de hoje — só o host mudou (RN-A6)", () => {
+    const link = montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO);
+    // Asserção sobre a string CRUA do href, não sobre o texto decodificado:
+    // é o que prova que o `encodeURIComponent` do corpo continua o mesmo.
+    expect(link!.href).toBe(
+      `https://wa.me/${NUMERO_LIMPO_LOJA}?text=${encodeURIComponent(
+        MENSAGEM_RETIRADA_ATUAL,
+      )}`,
+    );
+  });
+
+  it("o texto decodificado segue idêntico ao formato congelado", () => {
+    const link = montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO);
+    expect(mensagemDe(link!.href)).toBe(MENSAGEM_RETIRADA_ATUAL);
+  });
+
+  it("o link novo continua passando no guard §15 (`urlHttpsSegura`)", () => {
+    const link = montarLinkWhatsappPedido(pedidoCompleto(), LOJA_SEM_ENDERECO);
+    // Reuso do predicado único — não reimplementado aqui.
+    expect(urlHttpsSegura(link!.href)).toBe(link!.href);
+  });
+
+  it("loja sem WhatsApp continua devolvendo null (RN-W3 intacta)", () => {
+    expect(
+      montarLinkWhatsappPedido(pedidoCompleto(), {
+        ...LOJA_SEM_ENDERECO,
+        whatsapp: null,
+      }),
+    ).toBeNull();
   });
 });

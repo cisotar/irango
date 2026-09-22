@@ -1262,9 +1262,9 @@ describe("criarPedido — whatsappHref autoritativo (125 / RN-A2·A4·A6)", () =
     const r = (await criarPedido(payloadBase())) as SucessoPedido;
 
     expect(typeof r.whatsappHref).toBe("string");
-    expect(r.whatsappHref!).toMatch(
-      /^https:\/\/api\.whatsapp\.com\/send\?phone=5511999990000&text=/,
-    );
+    // [287] Host novo: `wa.me` pula a intersticial "Continue to chat". Só o
+    // host mudou — o corpo da mensagem (RN-A6) segue o mesmo.
+    expect(r.whatsappHref!).toMatch(/^https:\/\/wa\.me\/5511999990000\?text=/);
     const texto = decodeURIComponent(r.whatsappHref!);
     expect(texto).toContain("Novo pedido iRango");
     expect(texto).toContain("Pizza");

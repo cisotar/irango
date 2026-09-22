@@ -4,7 +4,7 @@
 // abaixo são VERMELHAS por asserção, não por import quebrado.
 //
 // Relógio INJETADO (plan/180-B §D8): `agendar`/`cancelar` chegam por parâmetro,
-// como em `aberturaWhatsapp.ts` e `criarControladorPolling`. Nada de timer real
+// como em `confirmacao/avisoWhatsapp.ts` e `criarControladorPolling`. Nada de timer real
 // aqui — o repo roda `environment: node`, sem jsdom, e um teste que espera 20s
 // de verdade não é teste.
 //
