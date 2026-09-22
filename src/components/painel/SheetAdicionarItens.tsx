@@ -32,6 +32,7 @@ import {
   type EscolhaDeDias,
 } from "@/components/painel/escolhaDeDias";
 import { rotuloCategoriaInteira } from "@/lib/utils/copiaCardapioPainel";
+import { rotuloDiasDoItem } from "@/lib/utils/descreverVigencia";
 import {
   fraseCategoriaEhFoto,
   fraseEMais,
@@ -543,8 +544,13 @@ function DiasDoProduto({
   // não é voltar a herdar o rodapé, e por isso nunca fica em estado inválido.
   const dias =
     escolha === undefined || escolha.modo === "cardapio" ? [] : escolha.dias;
+  // A transição "limpei a última pílula" é silenciosa demais sem isto: o
+  // lojista que desmarca tudo pensando em revisar depois liberaria o produto
+  // para todos os dias sem ver o estado mudar. A frase é a MESMA redação de
+  // `rotuloDiasDoItem`, usada no card do item — nenhuma copy nova.
+  const rotulo = rotuloDiasDoItem(dias.length === 0 ? null : dias);
   return (
-    <div className="pl-8">
+    <div className="flex flex-col gap-1 pl-8">
       <PilulasDeDias
         compacto
         valor={dias}
@@ -557,6 +563,9 @@ function DiasDoProduto({
         }
         rotulo={`Dias em que ${produto.nome} aparece neste cardápio`}
       />
+      <span className="text-xs text-texto-muted">
+        {rotulo === null ? "Todos os dias do cardápio" : `Só ${rotulo}`}
+      </span>
     </div>
   );
 }

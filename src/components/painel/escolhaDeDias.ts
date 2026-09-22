@@ -101,7 +101,11 @@ export function montarDiasDoLote(
   const mapa: Record<string, number[]> = {};
   for (const id of produtoIds) {
     const escolha = porProduto[id];
-    if (escolha !== undefined) mapa[id] = diasDaEscolha(escolha);
+    // Só quem escolheu entra no mapa; quem não escolheu é OMITIDO, e o
+    // servidor cai no `dias_semana` do rodapé. A resolução em si é a de
+    // `resolverDiasDoProduto` — uma regra, um lugar.
+    if (escolha !== undefined)
+      mapa[id] = resolverDiasDoProduto(rodape, escolha);
   }
   const dias_semana = diasDaEscolha(rodape);
   return Object.keys(mapa).length === 0

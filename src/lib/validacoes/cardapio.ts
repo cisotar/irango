@@ -74,7 +74,12 @@ export const schemaLoteDeProdutosComDias = schemaLoteDeProdutos
      * `/painel/produtos`, intacto. O MESMO `diasDaSemanaDoVinculo` por valor:
      * o domínio da agenda é declarado uma vez só.
      */
-    dias_por_produto: z.record(z.guid(), diasDaSemanaDoVinculo).optional(),
+    dias_por_produto: z
+      .record(z.guid(), diasDaSemanaDoVinculo)
+      // Mesmo teto de `produto_ids`: sem ele o zod parseia o mapa inteiro
+      // antes do refine, e um mapa gigante custa CPU por request (CWE-770).
+      .refine((m) => Object.keys(m).length <= TETO_LOTE)
+      .optional(),
   })
   .strict()
   /**
@@ -86,10 +91,11 @@ export const schemaLoteDeProdutosComDias = schemaLoteDeProdutos
   .refine(
     (v) =>
       v.dias_por_produto == null ||
-      Object.keys(v.dias_por_produto).every((id) =>
-        v.produto_ids.includes(id),
-      ),
-    { message: "Agenda de produto fora da seleção", path: ["dias_por_produto"] },
+      Object.keys(v.dias_por_produto).every((id) => v.produto_ids.includes(id)),
+    {
+      message: "Agenda de produto fora da seleção",
+      path: ["dias_por_produto"],
+    },
   );
 
 /** Aplicar por CATEGORIA INTEIRA — expandida dentro da RPC, nunca em JS (RN-10). */
@@ -150,14 +156,11 @@ export type PreviaDeLote = z.infer<typeof schemaPreviaDeLote>;
 /** As frases de `plan/design-promocoes-e-vigencia.md` §9.6, literais. */
 export const MSG_SEM_EIXO =
   "Escolha pelo menos um dia da semana, um dia do mês ou um horário. Sem nada marcado, este cardápio aparece sempre e não é sazonal.";
-export const MSG_HORA_PAR =
-  "Informe o horário de início e o de fim.";
+export const MSG_HORA_PAR = "Informe o horário de início e o de fim.";
 export const MSG_HORA_ORDEM =
   "O horário de fim precisa ser depois do de início.";
-export const MSG_PRAZO_FIM_AUSENTE =
-  "Informe a data de fim do período.";
-export const MSG_PRAZO_ORDEM =
-  "A data de fim precisa ser depois da de início.";
+export const MSG_PRAZO_FIM_AUSENTE = "Informe a data de fim do período.";
+export const MSG_PRAZO_ORDEM = "A data de fim precisa ser depois da de início.";
 
 /**
  * As únicas mensagens de validação de vigência que a Server Action promove
@@ -185,7 +188,10 @@ const horaDoDia = z
 /** Hora LOCAL da loja (`<input type="datetime-local">`), nunca um ISO com offset. */
 const prazoLocal = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/, "Data e hora inválidas");
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/,
+    "Data e hora inválidas",
+  );
 
 const nome = z.string().trim().min(1, "Dê um nome ao cardápio").max(80);
 
