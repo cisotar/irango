@@ -23,8 +23,7 @@
  * uma agenda fixa que deixa de seguir a vigência se ela mudar depois.
  */
 export type EscolhaDeDias =
-  | { modo: "cardapio" }
-  | { modo: "dias"; dias: number[] };
+  { modo: "cardapio" } | { modo: "dias"; dias: number[] };
 
 /** Pré-selecionada: zero clique extra para o caso comum. */
 export const ESCOLHA_PADRAO: EscolhaDeDias = { modo: "cardapio" };
@@ -54,23 +53,4 @@ export function escolhaValida(escolha: EscolhaDeDias): boolean {
 export function diasDaEscolha(escolha: EscolhaDeDias): number[] {
   if (escolha.modo === "cardapio") return [];
   return [...escolha.dias].sort((a, b) => a - b);
-}
-
-/** O payload EXATO de `aplicarCardapioEmProdutos` — três chaves, nunca uma quarta. */
-export type PayloadDeAdicao = {
-  cardapio_id: string;
-  produto_ids: string[];
-  dias_semana: number[];
-};
-
-export function payloadDeAdicao(
-  cardapioId: string,
-  produtoIds: readonly string[],
-  escolha: EscolhaDeDias,
-): PayloadDeAdicao {
-  return {
-    cardapio_id: cardapioId,
-    produto_ids: [...produtoIds],
-    dias_semana: diasDaEscolha(escolha),
-  };
 }

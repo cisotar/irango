@@ -145,18 +145,18 @@ export async function aplicarCardapioEmProdutos(
       dias_semana: dias,
     }));
 
-    const { error } = await supabase
-      .from("cardapio_produtos")
-      .upsert(linhas, {
-        onConflict: "cardapio_id,produto_id",
-        ignoreDuplicates: true,
-      });
+    const { error } = await supabase.from("cardapio_produtos").upsert(linhas, {
+      onConflict: "cardapio_id,produto_id",
+      ignoreDuplicates: true,
+    });
     if (error) {
       console.error("[aplicarCardapioEmProdutos]", error);
       return { ok: false, erro: MSG_GENERICA_LOTE };
     }
 
-    revalidarCaminhosDoCardapio(loja.slug);
+    // Com os dias no ato de adicionar, o detalhe do cardápio também fica
+    // desatualizado — a action irmã já passa o id, esta passou a passar.
+    revalidarCaminhosDoCardapio(loja.slug, cardapio_id);
     return { ok: true };
   } catch (e) {
     console.error("[aplicarCardapioEmProdutos]", e);
