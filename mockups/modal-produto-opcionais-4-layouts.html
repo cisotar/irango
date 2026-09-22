@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modal de produto — 4 layouts de opcionais</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // Tema da loja "Lanches base" (lojas.tema) — cores do lojista, não do componente.
+  tailwind.config = {
+    theme: { extend: { colors: {
+      primaria: '#332616', fundo: '#f5f0e6', destaque: '#2d3a27',
+      texto: '#3e2723', mutado: '#6b5d4f', marrom: '#2e2610'
+    } } }
+  };
+</script>
+<style>
+  :root{
+    --cor-primaria:#332616; --cor-fundo:#f5f0e6; --cor-destaque:#2d3a27;
+    --texto:#3e2723; --texto-muted:#6b5d4f; --marrom-cafe:#2e2610;
+    --borda-cartao:#d9d2c4; --superficie:#f9f9f9;
+  }
+  body{background:#eae4d6;color:var(--texto);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+
+  /* ---- moldura de preview ---- */
+  .frame{background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.18);display:flex;flex-direction:column}
+  .frame-paisagem{width:760px;height:520px;flex-direction:row}
+  .frame-retrato{width:440px;height:700px}
+  .frame-mobile{width:360px;height:720px;border-radius:24px}
+  .rolagem{max-width:100%;overflow-x:auto;padding-bottom:8px}
+
+  /* ---- chrome do modal (recriação do ProdutoModal) ---- */
+  .header-modal{position:relative;flex-shrink:0;background:var(--cor-primaria);padding:14px 52px}
+  .header-modal h3{color:#fff;font-weight:900;text-transform:uppercase;letter-spacing:.04em;font-size:15px;text-align:center;line-height:1.2}
+  .btn-fechar{position:absolute;right:10px;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:999px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.15);color:#fff;font-weight:900;font-size:13px}
+  .corpo{flex:1;min-height:0;overflow-y:auto}
+  .footer-modal{flex-shrink:0;border-top:1px solid #eee;padding:14px;display:flex;flex-direction:column;gap:8px;background:#fff}
+  .cta{min-height:52px;border-radius:12px;background:var(--cor-destaque);color:#fff;font-weight:900;font-size:15px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;width:100%}
+  .cta[disabled]{background:#9a9a9a;justify-content:center}
+  .cta-ghost{min-height:44px;width:100%;color:var(--cor-destaque);font-weight:800;text-transform:uppercase;letter-spacing:.05em;font-size:13px;border-radius:12px}
+
+  /* ---- cartões de seção (moldura existente) ---- */
+  .secao{border-radius:16px;border:1px solid #eee;background:var(--superficie);padding:14px}
+  .rotulo-secao{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--marrom-cafe)}
+
+  /* ---- D6: alvo de toque 44px literal ---- */
+  .stepper{display:inline-flex;align-items:center;overflow:hidden;border-radius:10px;border:1.5px solid #dccbb0;background:#fff;flex-shrink:0}
+  .stepper button{width:44px;height:44px;color:var(--cor-destaque);font-size:18px;font-weight:700;line-height:1}
+  .stepper button[disabled]{opacity:.35}
+  .stepper .valor{min-width:36px;padding:0 4px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums;border-left:1px solid #dccbb0;border-right:1px solid #dccbb0;align-self:stretch;display:flex;align-items:center;justify-content:center}
+
+  /* ---- D1..D5: o kit de diferenciação de categoria ---- */
+  .grupo{background:#fff;border:1.5px solid var(--borda-cartao);border-radius:12px;overflow:hidden;margin-bottom:8px;position:relative}
+  .grupo[open]{border-color:var(--cor-destaque);box-shadow:0 2px 8px rgba(45,58,39,.12)}
+  .grupo[open]::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cor-destaque)} /* D2 trilho */
+  .grupo > summary{list-style:none;cursor:pointer;min-height:48px;display:flex;align-items:center;gap:10px;padding:8px 12px 8px 14px;position:sticky;top:0;background:#fff;z-index:5} /* D5 sticky */
+  .grupo > summary::-webkit-details-marker{display:none}
+  .grupo[open] > summary{background:#f4f6f2;border-bottom:1px solid var(--borda-cartao)}
+  .grupo-num{flex-shrink:0;width:22px;height:22px;border-radius:999px;background:var(--cor-destaque);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .grupo[open] .grupo-num{background:var(--cor-destaque)}
+  .grupo:not([open]) .grupo-num{background:#cfc8b8;color:#3b342a}
+  .grupo-nome{font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--texto);line-height:1.25}
+  .grupo-regra{display:block;font-size:11px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--texto-muted);margin-top:1px} /* D3 */
+  .badge-cont{flex-shrink:0;background:var(--cor-destaque);color:#fff;font-size:10.5px;font-weight:800;border-radius:999px;padding:3px 8px;white-space:nowrap} /* D4 */
+  .badge-falta{flex-shrink:0;background:#fff;color:var(--marrom-cafe);border:1.5px solid var(--marrom-cafe);font-size:10.5px;font-weight:800;border-radius:999px;padding:2px 8px;white-space:nowrap}
+  .chevron{flex-shrink:0;color:var(--texto-muted);font-size:12px;transition:transform .15s}
+  .grupo[open] .chevron{transform:rotate(180deg)}
+  .grupo-corpo{padding:2px 12px 6px 14px}
+  .linha-opc{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #f0ece3}
+  .linha-opc:last-child{border-bottom:0}
+  .opc-nome{font-size:13.5px;font-weight:500;color:var(--texto)}
+  .opc-preco{font-size:11.5px;font-weight:800;color:var(--cor-destaque);margin-top:2px}
+
+  /* ---- estado A: sumário inerte ---- */
+  .sumario{border:1px dashed var(--borda-cartao);background:#fff;border-radius:12px;padding:12px}
+  .chip-inerte{display:inline-block;background:#f0ece3;color:var(--texto-muted);border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:600;margin:3px 3px 0 0}
+
+  /* ---- V4: trilho ---- */
+  .trilho{padding:12px 10px;border-top:1px solid #eee;background:var(--superficie);overflow-y:auto}
+  .trilho button{display:flex;gap:8px;align-items:flex-start;width:100%;text-align:left;min-height:44px;padding:6px 6px;border-radius:8px}
+  .trilho button[aria-current="true"]{background:#fff;box-shadow:inset 3px 0 0 var(--cor-destaque)}
+  .marcador{flex-shrink:0;width:18px;height:18px;border-radius:999px;border:2px solid var(--cor-destaque);margin-top:2px}
+  .marcador.cheio{background:var(--cor-destaque)}
+  .marcador.vazio{border-color:#b9b1a1}
+  .trilho-nome{font-size:12px;font-weight:700;color:var(--texto);line-height:1.2}
+  .trilho-estado{font-size:10.5px;color:var(--texto-muted)}
+  .chips-trilho{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:#fff;border-bottom:1px solid var(--borda-cartao);position:sticky;top:0;z-index:20}
+  .chip-trilho{flex-shrink:0;min-height:36px;display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:999px;border:1.5px solid var(--borda-cartao);font-size:12px;font-weight:700;color:var(--texto);background:#fff;white-space:nowrap}
+  .chip-trilho[aria-current="true"]{border-color:var(--cor-destaque);background:#f4f6f2}
+
+  /* ---- foco visível em tudo ---- */
+  button:focus-visible, summary:focus-visible{outline:3px solid var(--cor-destaque);outline-offset:2px}
+
+  .img-fake{background:linear-gradient(135deg,#4a3a22,#6b5131);display:flex;align-items:center;justify-content:center;color:#fff;font-size:44px}
+</style>
+</head>
+<body class="p-4 md:p-8">
+
+<header class="mx-auto max-w-5xl mb-8">
+  <p class="text-xs font-bold uppercase tracking-widest text-mutado">iRango · vitrine pública · loja "Lanches base"</p>
+  <h1 class="text-2xl md:text-3xl font-black text-marrom mt-1">Modal de produto — 4 layouts para diferenciar categoria de opcional</h1>
+  <p class="mt-2 text-sm text-mutado max-w-3xl">Sanfona mantida em todas as variações. O que muda é a <strong>superfície</strong>: cada grupo vira cartão com borda própria, trilho de acento quando aberto, cabeçalho de duas linhas com a regra da categoria, badge com texto e cabeçalho <em>sticky</em>. Preços são <strong>preview</strong> — o servidor recalcula no checkout.</p>
+  <p class="mt-2 text-xs text-mutado">Sanfonas são clicáveis. Cada variação aparece em dois estados: <strong>A</strong> quantidade 0 · <strong>B</strong> quantidade 2 com opcionais escolhidos.</p>
+</header>
+
+<main id="app" class="mx-auto max-w-[1400px] space-y-12"></main>
+
+<script>
+const GRUPOS = [
+  {n:1,nome:'Ponto da carne',regra:'Escolha 1 · obrigatório',obrig:true,opcionais:[
+    {nome:'Ao ponto',preco:'0,00',qtd:1},{nome:'Bem passado',preco:'0,00',qtd:0},{nome:'Mal passado',preco:'0,00',qtd:0}]},
+  {n:2,nome:'Adicionais',regra:'Até 5 · opcional',obrig:false,opcionais:[
+    {nome:'Bacon crocante',preco:'6,00',qtd:1},{nome:'Cheddar extra',preco:'4,50',qtd:1},{nome:'Ovo frito',preco:'3,00',qtd:0}]},
+  {n:3,nome:'Molhos',regra:'Até 2 · opcional',obrig:false,opcionais:[
+    {nome:'Barbecue defumado',preco:'2,00',qtd:0},{nome:'Maionese da casa',preco:'2,50',qtd:0}]},
+  {n:4,nome:'Bebidas',regra:'Escolha 1 · opcional',obrig:false,opcionais:[
+    {nome:'Guaraná lata 350ml',preco:'6,00',qtd:0},{nome:'Suco de laranja 400ml',preco:'9,00',qtd:0}]},
+];
+const escolhidos = g => g.opcionais.reduce((s,o)=>s+o.qtd,0);
+
+function linha(o, zerado){
+  const q = zerado ? 0 : o.qtd;
+  return `<div class="linha-opc">
+    <div class="min-w-0 flex-1">
+      <p class="opc-nome">${o.nome}</p>
+      <p class="opc-preco">+ R$ ${o.preco}</p>
+    </div>
+    <div class="stepper" role="group" aria-label="Quantidade de ${o.nome}">
+      <button type="button" aria-label="Remover ${o.nome}" ${q<=0?'disabled':''}>−</button>
+      <span class="valor" role="status" aria-label="${o.nome}: ${q}">${q}</span>
+      <button type="button" aria-label="Adicionar ${o.nome}">+</button>
+    </div>
+  </div>`;
+}
+
+// D1..D5 — um grupo da sanfona como CARTÃO
+function grupo(g,{aberto=false,compacto=false,idPrefixo=''}={}){
+  const e = escolhidos(g);
+  const badge = e>0
+    ? `<span class="badge-cont" aria-hidden="true">${e} escolhid${e>1?'os':'o'}</span>`
+    : (g.obrig ? `<span class="badge-falta" aria-hidden="true">falta escolher</span>` : '');
+  const cabecalho = compacto
+    ? `<span class="min-w-0 flex-1">
+         <span class="grupo-nome">${g.nome}</span>
+         <span class="grupo-regra">${g.regra}</span>
+         ${badge?`<span class="mt-1.5 block">${badge}</span>`:''}
+       </span>`
+    : `<span class="min-w-0 flex-1">
+         <span class="grupo-nome">${g.nome}</span>
+         <span class="grupo-regra">${g.regra}</span>
+       </span>${badge}`;
+  return `<details class="grupo" id="${idPrefixo}g${g.n}" ${aberto?'open':''}>
+    <summary aria-label="${g.nome}, ${g.regra}, ${e} escolhidos">
+      <span class="grupo-num" aria-hidden="true">${g.n}</span>
+      ${cabecalho}
+      <span class="chevron" aria-hidden="true">▼</span>
+    </summary>
+    <div class="grupo-corpo">${g.opcionais.map(o=>linha(o,false)).join('')}</div>
+  </details>`;
+}
+
+function sanfona(opts={}){
+  return `<div class="secao">
+    <div class="flex items-baseline justify-between mb-2">
+      <p class="rotulo-secao">Opcionais</p>
+      <p class="text-[11px] font-bold text-mutado tabular-nums">2 de 4 grupos</p>
+    </div>
+    ${GRUPOS.map((g,i)=>grupo(g,{...opts,aberto:i<2})).join('')}
+  </div>`;
+}
+
+// Estado A — sumário inerte no lugar da sanfona escondida
+const sumario = `<div class="sumario">
+  <p class="rotulo-secao">Personalize depois de escolher a quantidade</p>
+  <div class="mt-2">${GRUPOS.map(g=>`<span class="chip-inerte">${g.nome}</span>`).join('')}</div>
+</div>`;
+
+function blocoQuantidade(q){
+  return `<div class="secao">
+    <p class="rotulo-secao mb-3">Quantidade</p>
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <p class="text-[13.5px]">Unidades</p>
+        <p class="text-[11.5px] text-mutado mt-0.5">Cada unidade · <strong class="text-destaque">R$ 34,90</strong></p>
+      </div>
+      <div class="stepper" role="group" aria-label="Selecionar quantidade">
+        <button type="button" aria-label="Diminuir quantidade" ${q<=0?'disabled':''}>−</button>
+        <span class="valor" role="status" aria-label="Quantidade: ${q}">${q}</span>
+        <button type="button" aria-label="Aumentar quantidade">+</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+const observacoes = `<div class="secao">
+  <label class="rotulo-secao block mb-2" for="obs">Observações</label>
+  <textarea id="obs" rows="2" class="w-full rounded-lg border border-[#dccbb0] bg-white p-2 text-[13px]" placeholder="Ex: sem cebola, ponto da carne…"></textarea>
+  <p class="mt-1 text-[11px] text-mutado">A cozinha lê, mas não altera o preço.</p>
+</div>`;
+
+function footer(q){
+  return `<div class="footer-modal">
+    ${q>0
+      ? `<button class="cta" type="button" aria-label="Adicionar 2 Burger Base Duplo ao carrinho por R$ 80,30"><span>Adicionar ao carrinho</span><span class="tabular-nums">R$ 80,30</span></button>`
+      : `<button class="cta" type="button" disabled>Escolha a quantidade</button>`}
+    <button class="cta-ghost" type="button">Mais itens</button>
+  </div>`;
+}
+
+const header = `<div class="header-modal">
+  <h3>Burger Base Duplo</h3>
+  <button class="btn-fechar" type="button" aria-label="Fechar detalhes do produto">✕</button>
+</div>`;
+
+const imgFake = (classe) => `<div class="img-fake ${classe}"><span aria-hidden="true">🍔</span></div>`;
+
+/* ---------- V1 PAISAGEM ---------- */
+function v1(q){
+  return `<div class="frame frame-paisagem">
+    <div style="width:44%;flex-shrink:0;display:flex;flex-direction:column;min-height:0">
+      ${imgFake('flex-1')}
+      <div style="max-height:38%;overflow-y:auto;border-top:1px solid #eee;background:var(--superficie);padding:10px 16px">
+        <p class="text-[11.5px] leading-relaxed text-mutado">Dois hambúrgueres de 120g, queijo prato, alface, tomate e pão brioche. Vem com molho da casa à parte.</p>
+      </div>
+    </div>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      ${header}
+      <div class="corpo p-3 space-y-3">
+        ${blocoQuantidade(q)}
+        ${q>0 ? sanfona() : sumario}
+        ${q>0 ? observacoes : ''}
+      </div>
+      ${footer(q)}
+    </div>
+  </div>`;
+}
+
+/* ---------- V2 RETRATO ---------- */
+function v2(q){
+  return `<div class="frame frame-retrato">
+    ${header}
+    <div class="corpo">
+      ${imgFake('w-full')}
+      <div class="p-3 space-y-3">
+        <p class="text-[13px] leading-snug text-mutado text-center">Dois hambúrgueres de 120g, queijo prato, alface, tomate e pão brioche. <button class="font-bold text-destaque">ver mais</button></p>
+        ${blocoQuantidade(q)}
+        ${q>0 ? sanfona() : sumario}
+        ${q>0 ? observacoes : ''}
+      </div>
+    </div>
+    ${footer(q)}
+  </div>`;
+}
+
+/* ---------- V3 MOBILE ---------- */
+function v3(q){
+  return `<div class="frame frame-mobile">
+    ${header}
+    <div class="corpo">
+      <div class="p-3 pb-2">${imgFake('w-full rounded-2xl')}</div>
+      <div class="px-3 pb-3 text-center">
+        <p class="text-[13px] leading-snug text-mutado line-clamp-2">Dois hambúrgueres de 120g, queijo prato, alface, tomate e pão brioche.</p>
+        <button class="mt-1 text-[11.5px] font-bold text-destaque">ver mais</button>
+      </div>
+      <div class="px-3 pb-3 space-y-3">
+        ${blocoQuantidade(q)}
+        ${q>0 ? sanfona({compacto:true}) : sumario}
+        ${q>0 ? observacoes : ''}
+      </div>
+    </div>
+    ${footer(q)}
+  </div>`;
+}
+
+/* ---------- V4 TRILHO ---------- */
+function trilhoLateral(q){
+  return `<nav class="trilho flex-1" aria-label="Categorias de opcional">
+    ${q>0 ? GRUPOS.map((g,i)=>{
+      const e=escolhidos(g);
+      return `<button type="button" aria-current="${i===0}" data-alvo="v4g${g.n}">
+        <span class="marcador ${e>0?'cheio':'vazio'}" aria-hidden="true"></span>
+        <span>
+          <span class="trilho-nome">${g.n}. ${g.nome}</span>
+          <span class="trilho-estado">${e>0? e+' escolhido'+(e>1?'s':'') : (g.obrig?'falta escolher':'nenhum')}</span>
+        </span>
+      </button>`;
+    }).join('') : `<p class="text-[11.5px] text-mutado p-2">As categorias aparecem aqui assim que você escolher a quantidade.</p>`}
+    <p class="mt-2 px-2 text-[11px] font-bold text-mutado tabular-nums">2 de 4 grupos preenchidos</p>
+  </nav>`;
+}
+function v4desktop(q){
+  return `<div class="frame frame-paisagem">
+    <div style="width:38%;flex-shrink:0;display:flex;flex-direction:column;min-height:0">
+      <div style="height:34%;flex-shrink:0">${imgFake('w-full h-full')}</div>
+      ${trilhoLateral(q)}
+    </div>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      ${header}
+      <div class="corpo p-3 space-y-3">
+        ${blocoQuantidade(q)}
+        ${q>0 ? sanfona({idPrefixo:'v4'}) : sumario}
+      </div>
+      <div class="footer-modal">
+        ${q>0
+          ? `<button class="cta" type="button"><span>Adicionar ao carrinho</span><span class="tabular-nums">R$ 80,30</span></button>
+             <p class="text-center text-[11px] text-mutado">Tudo o que é obrigatório já foi escolhido.</p>`
+          : `<button class="cta" type="button" disabled>Escolha a quantidade</button>`}
+        <button class="cta-ghost" type="button">Mais itens</button>
+      </div>
+    </div>
+  </div>`;
+}
+function v4mobile(q){
+  return `<div class="frame frame-mobile">
+    ${header}
+    <div class="corpo">
+      ${q>0 ? `<div class="chips-trilho" role="navigation" aria-label="Categorias de opcional">
+        ${GRUPOS.map((g,i)=>{const e=escolhidos(g);return `<button class="chip-trilho" type="button" aria-current="${i===0}">${g.n}. ${g.nome}${e>0?` <span class="badge-cont">${e}</span>`:(g.obrig?' <span class="badge-falta">falta</span>':'')}</button>`;}).join('')}
+      </div>`:''}
+      <div class="p-3 pb-2">${imgFake('w-full rounded-2xl')}</div>
+      <div class="px-3 pb-3 space-y-3">
+        ${blocoQuantidade(q)}
+        ${q>0 ? sanfona({compacto:true}) : sumario}
+      </div>
+    </div>
+    <div class="footer-modal">
+      ${q>0
+        ? `<button class="cta" type="button"><span>Adicionar ao carrinho</span><span class="tabular-nums">R$ 80,30</span></button>`
+        : `<button class="cta" type="button" disabled>Escolha a quantidade</button>`}
+      <button class="cta-ghost" type="button">Mais itens</button>
+    </div>
+  </div>`;
+}
+
+const VARIACOES = [
+  {t:'Variação 1 — Paisagem (mantém o split atual)',
+   d:'Estrutura inalterada (imagem + descrição à esquerda, conteúdo rolável à direita). O ganho vem só do kit: cartão por grupo, trilho de acento no aberto, regra da categoria no cabeçalho, badge com texto e cabeçalho sticky. Menor risco de implementação.',
+   a:v1(0), b:v1(2), aN:'Estado A · quantidade 0', bN:'Estado B · quantidade 2'},
+  {t:'Variação 2 — Retrato (imagem em cima, conteúdo embaixo)',
+   d:'Coluna única no desktop (md:max-w-lg): mesmo fluxo de leitura do celular, então quem aprendeu no mobile reconhece aqui. Custo: a imagem sai da tela ao rolar.',
+   a:v2(0), b:v2(2), aN:'Estado A · quantidade 0', bN:'Estado B · quantidade 2'},
+  {t:'Variação 3 — Padrão mobile (360px, full-screen)',
+   d:'Moldura full-bleed atual. Em 360px o cabeçalho do grupo empilha nome / regra / badge para o nome não truncar. É a variação mais barata: só troca de classes em SecaoOpcionais.tsx.',
+   a:v3(0), b:v3(2), aN:'Estado A · quantidade 0', bN:'Estado B · quantidade 2'},
+  {t:'Variação 4 — Trilho de categorias (a ousada)',
+   d:'A sanfona continua, mas ganha um índice: trilho vertical no desktop (abaixo da foto reduzida), chips sticky no mobile. Tocar navega e abre o grupo. É a única variação que responde "o que ainda falta?" — obrigatório não preenchido fica marcado no trilho e no rodapé. Reusar o scrollspy que já existe em scrollspyCategorias.ts.',
+   a:v4desktop(0), b:v4desktop(2), aN:'Estado A · desktop, quantidade 0', bN:'Estado B · desktop, quantidade 2',
+   extra:{t:'Variação 4 — mesmo padrão no mobile',a:v4mobile(0),b:v4mobile(2),aN:'Estado A · mobile 360px',bN:'Estado B · mobile 360px'}},
+];
+
+document.getElementById('app').innerHTML = VARIACOES.map(v=>{
+  const par = (a,b,aN,bN)=>`<div class="rolagem"><div class="flex gap-6 items-start w-max">
+      <figure><figcaption class="mb-2 text-xs font-bold uppercase tracking-wide text-mutado">${aN}</figcaption>${a}</figure>
+      <figure><figcaption class="mb-2 text-xs font-bold uppercase tracking-wide text-mutado">${bN}</figcaption>${b}</figure>
+    </div></div>`;
+  return `<section>
+    <h2 class="text-xl font-black text-marrom">${v.t}</h2>
+    <p class="mt-1 mb-4 max-w-3xl text-sm text-mutado">${v.d}</p>
+    ${par(v.a,v.b,v.aN,v.bN)}
+    ${v.extra?`<h3 class="mt-6 text-sm font-bold text-marrom">${v.extra.t}</h3><div class="mt-3">${par(v.extra.a,v.extra.b,v.extra.aN,v.extra.bN)}</div>`:''}
+  </section>`;
+}).join('');
+
+// V4: tocar no trilho abre o grupo e rola até ele (mesmo mecanismo de scrollIntoView já usado no modal)
+document.querySelectorAll('.trilho button[data-alvo]').forEach(b=>{
+  b.addEventListener('click',()=>{
+    const alvo=document.getElementById(b.dataset.alvo);
+    if(!alvo) return;
+    alvo.open=true;
+    alvo.scrollIntoView({behavior:'smooth',block:'start'});
+    b.closest('.trilho').querySelectorAll('button').forEach(x=>x.setAttribute('aria-current','false'));
+    b.setAttribute('aria-current','true');
+  });
+});
+</script>
+</body>
+</html>
