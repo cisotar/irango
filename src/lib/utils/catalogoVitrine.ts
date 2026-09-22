@@ -2,7 +2,9 @@
 // `specs/desconto-por-produto-e-pratos-promocionais.md` §Contrato de catálogo.
 // Produzido SEMPRE no servidor. Todo número monetário aqui já é autoritativo na
 // origem; o que o cliente faz com ele depois é preview (seguranca.md §10).
+import type { ProdutoModalDados } from "@/components/vitrine/ProdutoModal";
 import type { CategoriaComProdutos } from "@/components/vitrine/SecaoCatalogo";
+import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { Tables } from "@/lib/database.types";
 import { precoEfetivo, type ProdutoComDesconto } from "./precoEfetivo";
 import {
@@ -372,4 +374,49 @@ export function agruparPorCardapio<C extends CardapioVigencia & { ordem: number 
 
   // Grupo sem nenhum produto visível NÃO é devolvido (issue 177, reaplicada).
   return [...secoes.values()].filter((secao) => secao.produtos.length > 0);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// [289] RN-15 — os pratos promocionais, prontos para o modal de DETALHE
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * [289/RN-9] Os pratos em promoção do catálogo JÁ CARREGADO, cada um enriquecido
+ * com o que o `ProdutoModal` precisa: os grupos de opcional da categoria dele e
+ * a frase de "quando volta".
+ *
+ * Antes isto era um `flatMap` + `filter` inline em `page.tsx` que produzia
+ * `ProdutoVitrine[]`, e o modal de promoções não tinha como abrir o detalhe —
+ * faltavam exatamente estes dois mapas, que só existem no servidor e só desciam
+ * pelo ramo do catálogo. Escrita aqui, a composição é a MESMA que
+ * `SecaoCatalogo` faz para o card, num lugar só e testada.
+ *
+ * **Zero query nova** (RN-15): filtra sobre a lista que a página já projetou.
+ * **Pura**: nenhum relógio entra — `temDesconto` já foi decidido na projeção,
+ * com o `agora` daquele request.
+ *
+ * As referências de `gruposOpcionais` e do produto são as MESMAS que já viajam
+ * no payload RSC pelo ramo do catálogo — nada é clonado nem espalhado a mais.
+ */
+export function derivarPromocionaisParaModal(
+  secoes: readonly CategoriaComProdutos[],
+  opcionaisPorCategoria: Readonly<Record<string, GrupoOpcional[]>>,
+  rotulosVigencia: Readonly<Record<string, string>>,
+): ProdutoModalDados[] {
+  return secoes
+    .flatMap((secao) => secao.produtos)
+    .filter((produto) => produto.temDesconto)
+    .map((produto) => ({
+      // O `ProdutoVitrine` INTEIRO, nunca remontado campo a campo: era a
+      // remontagem parcial que deixava comprabilidade e preço efetivo caírem no
+      // chão em silêncio (D13).
+      ...produto,
+      // Produto sem categoria (grupo "Outros") não tem opcional associado.
+      gruposOpcionais: produto.categoria_id
+        ? opcionaisPorCategoria[produto.categoria_id]
+        : undefined,
+      // Chave ausente ⇒ `undefined`: o modal cai no texto genérico dele. NUNCA
+      // se inventa uma frase de vigência aqui.
+      rotuloIndisponivel: rotulosVigencia[produto.id],
+    }));
 }

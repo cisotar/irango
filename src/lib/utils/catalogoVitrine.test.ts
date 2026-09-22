@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import {
   agruparPorCardapio,
+  derivarPromocionaisParaModal,
   projetarProdutoVitrine,
   // [247] RED — AINDA NÃO IMPLEMENTADOS (stub de assinatura em ./catalogoVitrine.ts).
   projetarCatalogoVitrine,
@@ -13,7 +14,12 @@ import {
 import type { CardapioVigencia, VinculoVigencia } from "./vigenciaCardapio";
 import { instanteNoFuso } from "./fusoLoja";
 import { rotuloVoltaQuando } from "./descreverVigencia";
-import { agruparCatalogo, type ProdutoPublico } from "@/lib/supabase/queries/produtos";
+import {
+  agruparCatalogo,
+  type GrupoOpcional,
+  type ProdutoPublico,
+} from "@/lib/supabase/queries/produtos";
+import type { CategoriaComProdutos } from "@/components/vitrine/SecaoCatalogo";
 import type { Categoria } from "@/lib/supabase/queries/categorias";
 
 /**
@@ -394,8 +400,13 @@ describe("224 — a página da vitrine (RN-15): sem cache e sem query nova", () 
 
   it("deriva 'pratos promocionais' por filtro sobre o catálogo já carregado", () => {
     // RN-15: zero query nova, zero tabela nova — `filter(p => p.temDesconto)`.
+    // [289] O filtro saiu de `page.tsx` para a camada pura: a página CHAMA a
+    // derivação e o `filter` continua existindo num lugar só, aqui do lado.
+    expect(/derivarPromocionaisParaModal\(/.test(pagina)).toBe(true);
     expect(
-      /\.filter\(\s*\(?\s*\w+\s*\)?\s*=>\s*\w+\.temDesconto\s*\)/.test(pagina),
+      /\.filter\(\s*\(?\s*\w+\s*\)?\s*=>\s*\w+\.temDesconto\s*\)/.test(
+        readFileSync(FONTE_CONTRATO, "utf8"),
+      ),
     ).toBe(true);
   });
 
@@ -1421,5 +1432,149 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
     expect(secao.produtos.map((p) => p.motivoNaoCompravel)).toEqual([
       "esgotado",
     ]);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [289] `derivarPromocionaisParaModal` — os promocionais prontos para o DETALHE.
+//
+// O que esta função decide: QUAIS pratos o modal de promoções lista (RN-15, o
+// mesmo filtro de sempre) e COM QUE dados cada um abre o `ProdutoModal` — os
+// opcionais da categoria dele e a frase de "quando volta". Nada de monetário é
+// calculado aqui: `temDesconto` já veio da projeção.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("289 — derivarPromocionaisParaModal", () => {
+  const prato = (
+    id: string,
+    patch: Partial<ProdutoVitrine> = {},
+  ): ProdutoVitrine => ({
+    id,
+    nome: `Prato ${id}`,
+    descricao: null,
+    foto_url: null,
+    categoria_id: null,
+    preco: 100,
+    precoEfetivo: 100,
+    temDesconto: false,
+    seloDesconto: null,
+    descontoFim: null,
+    compravel: true,
+    motivoNaoCompravel: null,
+    ...patch,
+  });
+
+  const emPromocao = (id: string, patch: Partial<ProdutoVitrine> = {}) =>
+    prato(id, {
+      precoEfetivo: 80,
+      temDesconto: true,
+      seloDesconto: "-20%",
+      ...patch,
+    });
+
+  const GRUPOS_LANCHE = [
+    { id: "g1", nome: "Ponto da carne", obrigatorio: false, opcionais: [] },
+  ] as unknown as GrupoOpcional[];
+  const GRUPOS_BEBIDA = [
+    { id: "g2", nome: "Gelo", obrigatorio: false, opcionais: [] },
+  ] as unknown as GrupoOpcional[];
+
+  const secao = (
+    id: string | null,
+    produtos: ProdutoVitrine[],
+  ): CategoriaComProdutos => ({ id, nome: `Cat ${id}`, produtos });
+
+  it("lista SÓ os pratos com desconto, na ordem do catálogo", () => {
+    const promocionais = derivarPromocionaisParaModal(
+      [
+        secao("c1", [prato("a"), emPromocao("b", { categoria_id: "c1" })]),
+        secao("c2", [emPromocao("c", { categoria_id: "c2" }), prato("d")]),
+      ],
+      {},
+      {},
+    );
+    expect(promocionais.map((p) => p.id)).toEqual(["b", "c"]);
+  });
+
+  it("catálogo sem promoção nenhuma devolve lista vazia", () => {
+    expect(derivarPromocionaisParaModal([secao("c1", [prato("a")])], {}, {})).toEqual(
+      [],
+    );
+  });
+
+  it("acopla os grupos de opcional da categoria CERTA, pela MESMA referência", () => {
+    const [lanche, bebida] = derivarPromocionaisParaModal(
+      [
+        secao("c1", [emPromocao("a", { categoria_id: "c1" })]),
+        secao("c2", [emPromocao("b", { categoria_id: "c2" })]),
+      ],
+      { c1: GRUPOS_LANCHE, c2: GRUPOS_BEBIDA },
+      {},
+    );
+    // Referência, não cópia: é o mesmo objeto que já viaja no payload RSC.
+    expect(lanche.gruposOpcionais).toBe(GRUPOS_LANCHE);
+    expect(bebida.gruposOpcionais).toBe(GRUPOS_BEBIDA);
+  });
+
+  it("produto SEM categoria não recebe opcionais de ninguém", () => {
+    const [semCategoria] = derivarPromocionaisParaModal(
+      [secao(null, [emPromocao("a", { categoria_id: null })])],
+      { c1: GRUPOS_LANCHE },
+      {},
+    );
+    expect(semCategoria.gruposOpcionais).toBeUndefined();
+  });
+
+  it("categoria sem opcional cadastrado não inventa grupo", () => {
+    const [p] = derivarPromocionaisParaModal(
+      [secao("c9", [emPromocao("a", { categoria_id: "c9" })])],
+      { c1: GRUPOS_LANCHE },
+      {},
+    );
+    expect(p.gruposOpcionais).toBeUndefined();
+  });
+
+  it("acopla o rótulo de vigência POR ID do produto", () => {
+    const [a, b] = derivarPromocionaisParaModal(
+      [secao("c1", [emPromocao("a"), emPromocao("b")])],
+      {},
+      { a: "Volta amanhã, às 11:00", b: "Volta no sábado" },
+    );
+    expect(a.rotuloIndisponivel).toBe("Volta amanhã, às 11:00");
+    expect(b.rotuloIndisponivel).toBe("Volta no sábado");
+  });
+
+  it("chave de vigência AUSENTE não inventa rótulo (fica `undefined`)", () => {
+    const [p] = derivarPromocionaisParaModal(
+      [secao("c1", [emPromocao("a")])],
+      {},
+      { outro: "Volta no sábado" },
+    );
+    expect(p.rotuloIndisponivel).toBeUndefined();
+  });
+
+  it("preserva o contrato INTEIRO do produto (nada remontado campo a campo, D13)", () => {
+    const origem = emPromocao("a", {
+      categoria_id: "c1",
+      compravel: false,
+      motivoNaoCompravel: "esgotado",
+      foto_url: "https://exemplo.test/foto.jpg",
+      descontoFim: "2026-09-30T00:00:00.000Z",
+    });
+    const [p] = derivarPromocionaisParaModal([secao("c1", [origem])], {}, {});
+    for (const chave of CHAVES_CONTRATO) {
+      expect(p[chave as keyof ProdutoVitrine]).toEqual(
+        origem[chave as keyof ProdutoVitrine],
+      );
+    }
+    // RN-8: esgotado em promoção continua listado — comprabilidade não filtra.
+    expect(p.compravel).toBe(false);
+  });
+
+  it("é pura: não lê relógio e não muta as seções de entrada", () => {
+    const secoes = [secao("c1", [emPromocao("a", { categoria_id: "c1" })])];
+    const antes = JSON.stringify(secoes);
+    derivarPromocionaisParaModal(secoes, { c1: GRUPOS_LANCHE }, { a: "x" });
+    expect(JSON.stringify(secoes)).toBe(antes);
   });
 });

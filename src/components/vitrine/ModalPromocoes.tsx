@@ -18,16 +18,27 @@ import {
   marcarVisualizado,
 } from "@/components/vitrine/decisaoModalPromocoes";
 import { PrecoProduto } from "@/components/vitrine/PrecoProduto";
+import type { ProdutoModalDados } from "@/components/vitrine/ProdutoModal";
 import { SeloDesconto } from "@/components/vitrine/SeloDesconto";
-import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
+import { abrirProdutoEmFoco } from "@/hooks/useProdutoEmFoco";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
+import { rotuloPrecoAcessivel } from "@/lib/utils/rotuloPrecoAcessivel";
 
 /** Máximo de pratos listados; o resto vira a linha "e mais N" (design §5.4). */
 const MAX_LISTADOS = 3;
 
+/** [289] O prato tocado, à espera do fim da animação de fechamento (RN-5). */
+type PratoPendente = ProdutoModalDados | null;
+
 type ModalPromocoesProps = {
-  /** Lista derivada do catálogo no SSR (RN-15). Vazia ⇒ o componente é `null`. */
-  promocoes: ProdutoVitrine[];
+  /**
+   * Lista derivada do catálogo no SSR (RN-15), já enriquecida para o DETALHE
+   * por `derivarPromocionaisParaModal` — opcionais e frase de vigência vêm
+   * prontos do servidor (289/RN-9). `ProdutoModalDados` é SUPERSET de
+   * `ProdutoVitrine`: a marcação de foto/nome/preço/selo não muda.
+   * Vazia ⇒ o componente é `null`.
+   */
+  promocoes: ProdutoModalDados[];
   /** Slug da loja — a chave do "já mostrei hoje" é POR loja (RN-18). */
   lojaSlug: string;
   /** `lojas.modal_promocoes`, do SSR via `vitrine_lojas`. */
@@ -55,8 +66,8 @@ type ModalPromocoesProps = {
  * 4. marca como visto NO INSTANTE DA DECISÃO, não no fechamento: fechar por
  *    ESC, ✕, clique-fora, CTA ou recarregar têm todos o mesmo efeito;
  * 5. um único `fechar()`, usado pelo `onOpenChange` do `Dialog` (que cobre ESC,
- *    clique-fora e o ✕) e pelos dois CTAs — não há segundo caminho para alguém
- *    esquecer de instrumentar;
+ *    clique-fora e o ✕), pelos dois CTAs e pelo toque num prato — não há
+ *    segundo caminho para alguém esquecer de instrumentar;
  * 6. nada no SSR: `aberto` começa `false` e só a hidratação pode mudá-lo. JS
  *    falhando ⇒ a vitrine inteira funciona e o modal simplesmente não existe;
  * 7. uma condição, um lugar: quem devolve `null` é este componente, não o pai.
@@ -67,7 +78,10 @@ type ModalPromocoesProps = {
  * começou na página e terminou sobre o modal não ativa CTA nenhum.
  *
  * Nada de monetário é decidido aqui: preço, selo e vigência chegam prontos do
- * servidor no `ProdutoVitrine` (contrato de catálogo, regra 6).
+ * servidor no `ProdutoVitrine` (contrato de catálogo, regra 6). Abrir o detalhe
+ * também não decide nada: o produto é entregue ao store de foco e quem monta o
+ * payload de `adicionar` (com `temDesconto`, origem de `promocaoExibida`,
+ * 238/RN-12-a) continua sendo o ÚNICO `confirmarAdicao`, em `SecaoCatalogo`.
  */
 export function ModalPromocoes({
   promocoes,
@@ -78,6 +92,12 @@ export function ModalPromocoes({
   destinoFoco,
 }: ModalPromocoesProps) {
   const [aberto, setAberto] = useState(false);
+  /**
+   * [289/RN-5] O prato tocado, guardado até o modal promocional TERMINAR de
+   * fechar. Nunca dois dialogs abertos ao mesmo tempo: uma trava de scroll e um
+   * focus-trap por vez.
+   */
+  const [pendente, setPendente] = useState<PratoPendente>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect -- trava 1: a decisão é
      tomada UMA vez, na montagem, e é justamente essa abertura SÍNCRONA que
@@ -110,14 +130,37 @@ export function ModalPromocoes({
   /** Trava 5: o ÚNICO caminho de fechamento. */
   const fechar = () => setAberto(false);
 
+  /**
+   * [289/RN-1] Tocar num prato: registra o pendente e fecha pelo MESMO
+   * `fechar()` de sempre. A abertura do detalhe é sequenciada abaixo.
+   */
+  const escolher = (produto: ProdutoModalDados) => {
+    setPendente(produto);
+    fechar();
+  };
+
   return (
-    <Dialog open={aberto} onOpenChange={(open) => (open ? null : fechar())}>
+    <Dialog
+      open={aberto}
+      onOpenChange={(open) => (open ? null : fechar())}
+      // [289/RN-5] "após terminarem as animações" (`DialogRoot.d.ts`): só então
+      // o outro dialog entra. O `ProdutoModal` é o de `SecaoCatalogo` — a
+      // instância ÚNICA da vitrine —, alcançado pelo store de foco (D1).
+      onOpenChangeComplete={(open) => {
+        if (open || !pendente) return;
+        abrirProdutoEmFoco(pendente, "promocoes");
+        setPendente(null);
+      }}
+    >
       <DialogContent
         // Trava do foco (design §5.3): o modal abre sem trigger, então sem isto
         // o foco cairia no `<body>` e o cliente de teclado/leitor de tela seria
         // jogado para o topo do documento. O destino é o MESMO alvo do CTA
         // "Ver promoções" — foco e scroll nunca divergem.
-        finalFocus={destinoFoco}
+        // [289/RN-6] Com prato pendente quem move o foco é o `ProdutoModal` que
+        // está prestes a abrir: `false` = "do nothing" (`DialogPopup.d.ts`), e
+        // sem isso o foco iria ao `<main>` só para saltar logo em seguida.
+        finalFocus={pendente ? false : destinoFoco}
         className="max-w-[420px]"
         // O ✕ gerado pelo shadcn usa `size="icon-sm"` (33,6px com a base de
         // fonte de 120% — abaixo do mínimo de toque, design-system §5). Como
@@ -145,38 +188,56 @@ export function ModalPromocoes({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Linhas NÃO interativas (design §5.4): sem `onClick`, sem `role`.
-            O único CTA é o do rodapé — tornar cada linha tocável adicionaria
-            três alvos dentro de um modal que o cliente não abriu. */}
+        {/* [289] Cada prato listado ABRE O DETALHE dele. A decisão anterior —
+            linhas não interativas, "o único CTA é o do rodapé"
+            (`specs/arquivo/desconto-por-produto-e-pratos-promocionais.md` §5.4)
+            — foi SUPERSEDIDA por
+            `specs/abrir-produto-a-partir-do-modal-de-promocoes.md`, seção
+            "Supersessão declarada": aquele CTA levava ao topo do `<main>` e
+            fazia da promoção um beco sem saída. O argumento original segue
+            válido quanto a TOQUE ACIDENTAL, e é por isso que aqui só existe
+            `onClick` (nunca `pointerdown`/`touchstart`/`mousedown`) e as sete
+            travas permanecem. */}
         <ul className="flex flex-col gap-3 px-4">
           {listados.map((produto) => {
             const foto = fotoSegura(produto.foto_url);
             return (
-              <li key={produto.id} className="flex items-center gap-3">
-                <div className="size-14 shrink-0 overflow-hidden rounded-lg">
-                  {foto ? (
-                    <Image
-                      src={foto}
-                      alt=""
-                      width={112}
-                      height={112}
-                      unoptimized
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <div
-                      aria-hidden
-                      className="size-full bg-[linear-gradient(135deg,#e8dcc4,#d8c4a0)]"
-                    />
-                  )}
-                </div>
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate font-semibold text-texto">
-                    {produto.nome}
+              <li key={produto.id}>
+                <button
+                  type="button"
+                  onClick={() => escolher(produto)}
+                  // Sem `rotuloPrecoAcessivel` o cliente cego ouviria só o preço
+                  // cheio, nunca o promocional (233).
+                  aria-label={`Ver detalhes de ${produto.nome}, ${rotuloPrecoAcessivel(produto)}`}
+                  // Alvo de toque em valor LITERAL (design-system §5): a base de
+                  // fonte do projeto é 120%, então `min-h-11` não vale 44px.
+                  className="flex min-h-[44px] w-full items-center gap-3 rounded-lg text-left focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[var(--cor-primaria)]"
+                >
+                  <span className="block size-14 shrink-0 overflow-hidden rounded-lg">
+                    {foto ? (
+                      <Image
+                        src={foto}
+                        alt=""
+                        width={112}
+                        height={112}
+                        unoptimized
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <span
+                        aria-hidden
+                        className="block size-full bg-[linear-gradient(135deg,#e8dcc4,#d8c4a0)]"
+                      />
+                    )}
                   </span>
-                  <PrecoProduto produto={produto} tamanho="lista" />
-                </div>
-                <SeloDesconto rotulo={produto.seloDesconto} ancoragem="inline" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate font-semibold text-texto">
+                      {produto.nome}
+                    </span>
+                    <PrecoProduto produto={produto} tamanho="lista" />
+                  </span>
+                  <SeloDesconto rotulo={produto.seloDesconto} ancoragem="inline" />
+                </button>
               </li>
             );
           })}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import Image from "next/image";
 import { Minus, Plus } from "lucide-react";
 
@@ -79,6 +79,14 @@ type ProdutoModalProps = {
      */
     observacao?: string,
   ) => void;
+  /**
+   * [289/RN-6] Para onde o foco volta quando ESTE modal fecha. Ausente (o caso
+   * do card/linha do catálogo) ⇒ o Base UI devolve ao elemento que abriu, como
+   * sempre. Vindo do modal de promoções aquele botão já não existe mais, e sem
+   * um destino explícito o foco cairia no `<body>`: quem chama aponta para o
+   * `<main>` da vitrine (`ID_MAIN_VITRINE`, mecanismo da 234).
+   */
+  focoDeSaida?: RefObject<HTMLElement | null>;
 };
 
 /**
@@ -106,6 +114,7 @@ export function ProdutoModal({
   open,
   onOpenChange,
   onAdicionar,
+  focoDeSaida,
 }: ProdutoModalProps) {
   // Só o teto de linhas (172) é lido daqui — a adição em si continua subindo
   // pelo `onAdicionar`, que é quem chama `adicionar` no componente pai.
@@ -293,6 +302,9 @@ export function ProdutoModal({
         // max-w-3xl, altura min(560px,…), rounded-2xl) e o layout paisagem
         // (md:flex-row). h-dvh acompanha o viewport dinâmico do mobile (barra do browser).
         showCloseButton={false}
+        // [289/RN-6] Só quando quem abriu pediu: ausente ⇒ o Base UI devolve o
+        // foco ao gatilho, exatamente como hoje no caminho do card/linha.
+        {...(focoDeSaida ? { finalFocus: focoDeSaida } : {})}
         className="gap-0 p-0 top-0 left-0 translate-x-0 translate-y-0 h-dvh max-h-none w-screen max-w-none rounded-none md:top-1/2 md:left-1/2 md:h-[min(560px,calc(100dvh-2rem))] md:max-h-[calc(100dvh-2rem)] md:w-[calc(100vw-2rem)] md:max-w-3xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:flex-row [&>button.absolute]:hidden"
       >
         {/* Coluna ESQUERDA (desktop) — imagem em destaque + descrição abaixo.

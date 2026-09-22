@@ -7,15 +7,18 @@ import { Carrinho } from "@/components/vitrine/Carrinho";
 import { ID_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
 import { ModalPromocoes } from "@/components/vitrine/ModalPromocoes";
 import { useCarrinho } from "@/hooks/useCarrinho";
-import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
+import type { ProdutoModalDados } from "@/components/vitrine/ProdutoModal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 
 type VitrineClientProps = {
   lojaSlug: string;
   /** [237] Id da loja — a gaveta revisa o carrinho no servidor (economia). */
   lojaId: string;
-  /** Pratos em promoção, derivados do catálogo no SSR (RN-15). */
-  promocoes: ProdutoVitrine[];
+  /**
+   * Pratos em promoção, derivados do catálogo no SSR (RN-15) e já enriquecidos
+   * para o detalhe (289): repasse puro ao `ModalPromocoes`.
+   */
+  promocoes: ProdutoModalDados[];
   /** `lojas.modal_promocoes` (SSR, via `vitrine_lojas`). */
   modalPromocoes: boolean;
   /** "YYYY-MM-DD" no fuso da LOJA, derivado no servidor (RN-16). */

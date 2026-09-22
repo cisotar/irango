@@ -21,6 +21,7 @@ import {
 } from "@/lib/supabase/queries/produtos";
 import {
   agruparPorCardapio,
+  derivarPromocionaisParaModal,
   projetarCatalogoVitrine,
   type SecaoVitrine,
 } from "@/lib/utils/catalogoVitrine";
@@ -277,9 +278,17 @@ export default async function VitrinePage({ params }: PageProps) {
   // projeção) e passou a ser só a ordem de exibição do modal — agrupada por
   // categoria, como o cliente vê o cardápio. A URL escondida não volta por
   // aqui nem por nenhuma superfície futura.
-  const promocionais = categoriasComProdutos
-    .flatMap((c) => c.produtos)
-    .filter((p) => p.temDesconto);
+  //
+  // [289/RN-9] E já ENRIQUECIDOS para o detalhe: o modal de promoções abre o
+  // `ProdutoModal` do prato tocado, então opcionais e frase de vigência saem
+  // daqui prontos, pelos mapas que esta página já tem em escopo. Nada é
+  // buscado no caminho do modal, e as referências são as MESMAS que já descem
+  // pelo ramo do catálogo — o Flight serializa uma vez.
+  const promocionais = derivarPromocionaisParaModal(
+    categoriasComProdutos,
+    opcionaisPorCategoria,
+    rotulosVigencia,
+  );
 
   // "Hoje" da LOJA (RN-16), no servidor: o cliente que vira a meia-noite no
   // próprio fuso não reabre o modal de uma loja onde ainda é o mesmo dia.
