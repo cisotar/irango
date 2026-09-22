@@ -169,10 +169,56 @@ export function SeletorProdutosDoCardapio({
     lista,
   );
 
+  /**
+   * Quem JÁ está vinculado, para o resumo em cards — sem isso o lojista só
+   * descobre "o que tem aqui" rolando a lista da loja INTEIRA procurando o
+   * badge "Neste cardápio" no meio dos produtos que não estão. Deriva de
+   * `grupos`, o mesmo dado do checklist abaixo — nenhuma leitura nova.
+   */
+  const produtosNoCardapio = useMemo(
+    () => grupos.flatMap((g) => g.produtos).filter((p) => p.noCardapio),
+    [grupos],
+  );
+
   return (
     <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
+        <h2 className="font-heading text-lg font-semibold">
+          {produtosNoCardapio.length === 0
+            ? "Nenhum produto neste cardápio ainda"
+            : produtosNoCardapio.length === 1
+              ? "1 produto neste cardápio"
+              : `${produtosNoCardapio.length} produtos neste cardápio`}
+        </h2>
+        {produtosNoCardapio.length > 0 ? (
+          <ul className="flex flex-wrap gap-2">
+            {produtosNoCardapio.map((p) => (
+              <li key={p.id}>
+                <Card className="w-40 shrink-0 gap-1 py-2">
+                  <CardContent className="flex flex-col gap-1 px-3">
+                    <span className="line-clamp-2 text-sm font-medium">
+                      {p.nome}
+                    </span>
+                    {p.exclusivo ? (
+                      <Badge variant="secondary" className="w-fit">
+                        Exclusivo
+                      </Badge>
+                    ) : null}
+                    {p.fraseAgenda !== null ? (
+                      <span className="text-xs text-texto-muted">
+                        {p.fraseAgenda}
+                      </span>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
       <h2 className="font-heading text-lg font-semibold">
-        Produtos deste cardápio
+        Adicionar ou remover produtos
       </h2>
 
       {/* A mesma forma da barra de `/painel/produtos`: `fixed` no rodapé do

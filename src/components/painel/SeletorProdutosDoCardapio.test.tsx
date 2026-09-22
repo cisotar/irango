@@ -148,3 +148,45 @@ describe("SeletorProdutosDoCardapio — gatilho de 'Definir dias' (277)", () => 
     expect(montar([produto()])).not.toContain("Definir dias em");
   });
 });
+
+/**
+ * [fix] Resumo em cards de quem JÁ está vinculado — sem ele o lojista só
+ * descobria "o que tem aqui" rolando o checklist da loja inteira atrás do
+ * badge "Neste cardápio".
+ */
+describe("SeletorProdutosDoCardapio — resumo em cards de quem já está no cardápio", () => {
+  it("produto vinculado ganha um card no resumo, com nome e agenda", () => {
+    const html = montar([produto({ nome: "Feijoada da casa" })]);
+    expect(html).toContain("1 produto neste cardápio");
+    expect(html).toContain("Feijoada da casa");
+    expect(html).toContain("Aparece: qua e sáb");
+  });
+
+  it("produto NÃO vinculado não entra no resumo, só no checklist completo", () => {
+    const html = montar([
+      produto({ id: "p1", nome: "No cardápio", noCardapio: true }),
+      produto({
+        id: "p2",
+        nome: "Fora do cardápio",
+        noCardapio: false,
+        dias: null,
+        fraseAgenda: null,
+      }),
+    ]);
+    expect(html).toContain("1 produto neste cardápio");
+    const resumo = html.slice(0, html.indexOf("Adicionar ou remover produtos"));
+    expect(resumo).toContain("No cardápio");
+    expect(resumo).not.toContain("Fora do cardápio");
+  });
+
+  it("sem nenhum vinculado, avisa em vez de mostrar um resumo vazio", () => {
+    const html = montar([produto({ noCardapio: false, dias: null, fraseAgenda: null })]);
+    expect(html).toContain("Nenhum produto neste cardápio ainda");
+  });
+
+  it("produto exclusivo ganha o badge no card do resumo", () => {
+    const html = montar([produto({ exclusivo: true })]);
+    const resumo = html.slice(0, html.indexOf("Adicionar ou remover produtos"));
+    expect(resumo).toContain("Exclusivo");
+  });
+});
