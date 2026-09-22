@@ -26,10 +26,12 @@ import {
   chaveAvisoWhatsapp,
   criarContagemAviso,
   decidirAvisoWhatsapp,
+  decidirEMarcarAvisoUmaVez,
   jaExibiuAvisoWhatsapp,
   marcarAvisoWhatsappExibido,
   type DepsContagemAviso,
   type EntradaDecisaoAviso,
+  type MemoDecisaoAviso,
 } from "./avisoWhatsapp";
 
 const PEDIDO_ID = "11111111-1111-1111-1111-111111111111";
@@ -471,5 +473,107 @@ describe("[287] borda — storage indisponível (aba privativa) não trava a dec
     expect(() => marcarAvisoWhatsappExibido(storage, PEDIDO_ID)).not.toThrow();
     // ...mas a gravação REPROVA: o componente não pode auto-navegar aqui.
     expect(marcarAvisoWhatsappExibido(storage, PEDIDO_ID)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Montagem dupla — a decisão vale por INSTÂNCIA, não por execução do efeito
+// ---------------------------------------------------------------------------
+
+/**
+ * O React Strict Mode (ligado por default no App Router) monta, desmonta e
+ * remonta cada componente em dev, e o Fast Refresh faz o mesmo. Decidir e
+ * marcar soltos dentro do efeito criavam uma armadilha: a primeira passada
+ * gravava a marca, a segunda LIA essa mesma marca, concluía "já exibi" e saía
+ * sem armar a contagem — com o modal já aberto pela primeira. O comprador
+ * ficava com spinner eterno, contador travado em 5 e nenhuma navegação.
+ *
+ * A memória por instância (`memo`, vivo num `useRef`) é o que separa "o efeito
+ * rodou de novo" de "o comprador voltou à confirmação": a primeira repete a
+ * decisão, a segunda merece o gate.
+ */
+describe("[287] decidirEMarcarAvisoUmaVez — o efeito roda 2x, a decisão vale 1x", () => {
+  const ENTRADA = {
+    avisoHabilitado: true,
+    href: HREF_VALIDO,
+    pedidoId: PEDIDO_ID,
+  };
+
+  it("REGRESSÃO: a segunda passada repete a decisão da primeira — nunca relê a marca que ela própria gravou", () => {
+    const storage = storageFake();
+    const memo: MemoDecisaoAviso = { current: null };
+
+    const primeira = decidirEMarcarAvisoUmaVez(memo, { ...ENTRADA, storage });
+    const segunda = decidirEMarcarAvisoUmaVez(memo, { ...ENTRADA, storage });
+
+    expect(primeira).toEqual({ exibir: true, persistiu: true });
+    expect(segunda).toEqual({ exibir: true, persistiu: true });
+  });
+
+  it("a marca é gravada UMA vez, por mais que o efeito rode", () => {
+    const storage = storageFake();
+    const setItem = vi.spyOn(storage, "setItem");
+    const memo: MemoDecisaoAviso = { current: null };
+
+    decidirEMarcarAvisoUmaVez(memo, { ...ENTRADA, storage });
+    decidirEMarcarAvisoUmaVez(memo, { ...ENTRADA, storage });
+    decidirEMarcarAvisoUmaVez(memo, { ...ENTRADA, storage });
+
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("instância NOVA (revisita da confirmação) respeita a marca: não exibe de novo", () => {
+    const storage = storageFake();
+    decidirEMarcarAvisoUmaVez({ current: null }, { ...ENTRADA, storage });
+    // Montagem nova = memo novo, porque o `useRef` morre com a instância.
+    expect(
+      decidirEMarcarAvisoUmaVez({ current: null }, { ...ENTRADA, storage }),
+    ).toEqual({ exibir: false, persistiu: false });
+  });
+
+  it("toggle do lojista desligado ⇒ não exibe e NÃO grava marca", () => {
+    const storage = storageFake();
+    expect(
+      decidirEMarcarAvisoUmaVez(
+        { current: null },
+        { ...ENTRADA, storage, avisoHabilitado: false },
+      ),
+    ).toEqual({ exibir: false, persistiu: false });
+    expect(storage.getItem(chaveAvisoWhatsapp(PEDIDO_ID))).toBeNull();
+  });
+
+  it("href reprovado pelo guard §15 ⇒ não exibe e NÃO grava marca", () => {
+    for (const href of HREFS_REPROVADOS) {
+      const storage = storageFake();
+      expect(
+        decidirEMarcarAvisoUmaVez(
+          { current: null },
+          { ...ENTRADA, storage, href },
+        ),
+      ).toEqual({ exibir: false, persistiu: false });
+      expect(storage.getItem(chaveAvisoWhatsapp(PEDIDO_ID))).toBeNull();
+    }
+  });
+
+  it("storage que lança: exibe com persistiu=false nas DUAS passadas (nenhuma navega sozinha)", () => {
+    const storage = storageQueLanca();
+    const memo: MemoDecisaoAviso = { current: null };
+    const esperado = { exibir: true, persistiu: false };
+
+    expect(decidirEMarcarAvisoUmaVez(memo, { ...ENTRADA, storage })).toEqual(
+      esperado,
+    );
+    expect(decidirEMarcarAvisoUmaVez(memo, { ...ENTRADA, storage })).toEqual(
+      esperado,
+    );
+  });
+
+  it("storage null ⇒ exibe sem persistir: só o gesto navega", () => {
+    expect(
+      decidirEMarcarAvisoUmaVez(
+        { current: null },
+        { ...ENTRADA, storage: null },
+      ),
+    ).toEqual({ exibir: true, persistiu: false });
   });
 });

@@ -91,6 +91,57 @@ export function decidirAvisoWhatsapp(entrada: EntradaDecisaoAviso): boolean {
   return urlHttpsSegura(entrada.href) !== null;
 }
 
+export type DecisaoAviso = {
+  /** Abrir o aviso nesta montagem? */
+  exibir: boolean;
+  /** A marca do gate REALMENTE gravou? Só então a contagem pode navegar. */
+  persistiu: boolean;
+};
+
+/** Memória da decisão, viva enquanto a instância do componente vive. */
+export type MemoDecisaoAviso = { current: DecisaoAviso | null };
+
+/**
+ * Decide e marca UMA vez por instância, por mais vezes que o efeito rode.
+ *
+ * Sem a memória, o efeito se autossabota: a primeira passada grava a marca, a
+ * segunda LÊ essa mesma marca, conclui "já exibi" e sai sem armar a contagem —
+ * com o modal já aberto pela primeira. Spinner eterno, contador travado,
+ * nenhuma navegação. Acontece em toda remontagem da MESMA instância: Strict
+ * Mode em dev, Fast Refresh, remount do router.
+ *
+ * O gate de uma vez por pedido continua valendo entre montagens de VERDADE
+ * (revisita da confirmação), porque aí o `memo` é novo e a marca é lida.
+ */
+export function decidirEMarcarAvisoUmaVez(
+  memo: MemoDecisaoAviso,
+  entrada: {
+    storage: Storage | null;
+    pedidoId: string;
+    avisoHabilitado: boolean;
+    href: string | null;
+  },
+): DecisaoAviso {
+  if (memo.current !== null) return memo.current;
+
+  const exibir = decidirAvisoWhatsapp({
+    avisoHabilitado: entrada.avisoHabilitado,
+    href: entrada.href,
+    jaExibido: jaExibiuAvisoWhatsapp(entrada.storage, entrada.pedidoId),
+  });
+
+  // Marca ANTES de exibir: voltar do WhatsApp para a confirmação não pode
+  // reabrir o aviso e criar laço de redirecionamento. Quem não vai exibir não
+  // marca — o pedido segue avisável numa próxima visita.
+  memo.current = {
+    exibir,
+    persistiu: exibir
+      ? marcarAvisoWhatsappExibido(entrada.storage, entrada.pedidoId)
+      : false,
+  };
+  return memo.current;
+}
+
 /**
  * Timer INJETADO. `agendar` é one-shot (a contagem se reagenda a cada tick,
  * igual a `criarControladorPolling`) — não é `setInterval`.

@@ -34,10 +34,9 @@ import {
 import {
   SEGUNDOS_AVISO_WHATSAPP,
   criarContagemAviso,
-  decidirAvisoWhatsapp,
-  jaExibiuAvisoWhatsapp,
-  marcarAvisoWhatsappExibido,
+  decidirEMarcarAvisoUmaVez,
   type ContagemAviso,
+  type MemoDecisaoAviso,
 } from "./avisoWhatsapp";
 
 /**
@@ -79,25 +78,26 @@ export function ModalAvisoWhatsapp({
   const [passo, setPasso] = useState<1 | 2>(1);
   const [restante, setRestante] = useState(SEGUNDOS_AVISO_WHATSAPP);
   const contagemRef = useRef<ContagemAviso | null>(null);
+  /* A decisão e a marca valem por INSTÂNCIA, não por execução do efeito: o
+     remount do Strict Mode rodaria o efeito de novo e leria a marca que a
+     primeira passada acabou de gravar, decidindo "não exibir" com o modal já
+     aberto — spinner sem contagem. */
+  const decisaoRef = useRef<MemoDecisaoAviso["current"]>(null);
 
-  /* eslint-disable react-hooks/set-state-in-effect -- mesmo padrão de
-     `ModalPromocoes.tsx`: a decisão é tomada UMA vez, na montagem, e depende de
-     `sessionStorage`, que não existe no SSR. Abrir de forma síncrona é o que
-     impede o aviso de piscar depois que o comprador já começou a ler a tela. */
+  /* Mesmo padrão de `ModalPromocoes.tsx`: a decisão é tomada UMA vez, na
+     montagem, e depende de `sessionStorage`, que não existe no SSR. Abrir de
+     forma síncrona é o que impede o aviso de piscar depois que o comprador já
+     começou a ler a tela. */
   useEffect(() => {
-    const storage = lerSessionStorage();
-    const exibir = decidirAvisoWhatsapp({
+    // Se a marca NÃO persistiu (storage bloqueado), o gate falhou aberto — e aí
+    // a contagem automática é exatamente o que produziria laço de redirecionamento.
+    const { exibir, persistiu } = decidirEMarcarAvisoUmaVez(decisaoRef, {
+      storage: lerSessionStorage(),
+      pedidoId,
       avisoHabilitado,
       href,
-      jaExibido: jaExibiuAvisoWhatsapp(storage, pedidoId),
     });
     if (!exibir) return;
-
-    // Marca ANTES de exibir: voltar do WhatsApp para a confirmação não pode
-    // reabrir o aviso e criar laço de redirecionamento. Se a marca NÃO
-    // persistiu (storage bloqueado), o gate falhou aberto — e aí a contagem
-    // automática é exatamente o que produziria o laço.
-    const persistiu = marcarAvisoWhatsappExibido(storage, pedidoId);
 
     const contagem = criarContagemAviso({
       href,
@@ -139,7 +139,6 @@ export function ModalAvisoWhatsapp({
     // Deps `[]` de propósito: nenhuma mudança de prop reabre o aviso.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   /** Gesto do comprador: abre o WhatsApp em aba nova e fecha o aviso. */
   function aoEnviar(): void {

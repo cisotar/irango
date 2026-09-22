@@ -118,7 +118,22 @@ describe("[287] efeito de montagem — estrutura do cleanup (bordas §5 do plano
     const efeito = /useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[\]\);/.exec(CODIGO);
     expect(efeito).not.toBeNull();
     expect(CODIGO.match(/useEffect\(/g)).toHaveLength(1);
-    expect(efeito?.[1]).toContain("decidirAvisoWhatsapp(");
+    expect(efeito?.[1]).toContain("decidirEMarcarAvisoUmaVez(");
+  });
+
+  it("REGRESSÃO: a decisão vem do helper memoizado por instância, nunca solta no efeito", () => {
+    // O Strict Mode (e o Fast Refresh) roda o efeito duas vezes na MESMA
+    // instância. Decidir e marcar soltos aqui faziam a segunda passada ler a
+    // marca gravada pela primeira, concluir "já exibi" e sair sem armar a
+    // contagem — modal aberto, spinner eterno, nenhuma navegação.
+    expect(CODIGO).toMatch(
+      /const \{ exibir, persistiu \} = decidirEMarcarAvisoUmaVez\(decisaoRef, \{/,
+    );
+    expect(CODIGO).toMatch(/const decisaoRef = useRef</);
+    // As primitivas cruas não podem voltar a ser chamadas pelo componente.
+    expect(CODIGO).not.toMatch(/decidirAvisoWhatsapp\(/);
+    expect(CODIGO).not.toMatch(/marcarAvisoWhatsappExibido\(/);
+    expect(CODIGO).not.toMatch(/jaExibiuAvisoWhatsapp\(/);
   });
 
   it("a desmontagem (cleanup do useEffect) CHAMA contagem.parar() e limpa a ref", () => {
@@ -132,11 +147,14 @@ describe("[287] efeito de montagem — estrutura do cleanup (bordas §5 do plano
     expect(cleanup![1]).toContain("contagemRef.current = null");
   });
 
-  it("marca como exibido ANTES de abrir (revisita não pode reabrir o aviso)", () => {
+  it("decide e marca ANTES de abrir (revisita não pode reabrir o aviso)", () => {
+    // A marcação em si mora dentro de `decidirEMarcarAvisoUmaVez` (travada em
+    // `avisoWhatsapp.test.ts`); aqui trava-se a ORDEM: nada é aberto antes de
+    // a marca ter sido tentada.
     const efeito = /useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[\]\);/.exec(CODIGO);
     const corpo = efeito![1];
-    expect(corpo.indexOf("marcarAvisoWhatsappExibido(")).toBeGreaterThan(-1);
-    expect(corpo.indexOf("marcarAvisoWhatsappExibido(")).toBeLessThan(
+    expect(corpo.indexOf("decidirEMarcarAvisoUmaVez(")).toBeGreaterThan(-1);
+    expect(corpo.indexOf("decidirEMarcarAvisoUmaVez(")).toBeLessThan(
       corpo.indexOf("setAberto(true)"),
     );
   });
@@ -170,7 +188,7 @@ describe("[287] borda — storage indisponível não pode quebrar o componente",
     // isso viraria laço. A única navegação automática do componente é
     // `contagem.iniciar()` — e ela fica atrás do retorno da marcação.
     expect(CODIGO).toMatch(
-      /const persistiu = marcarAvisoWhatsappExibido\(storage, pedidoId\);/,
+      /const \{ exibir, persistiu \} = decidirEMarcarAvisoUmaVez\(/,
     );
     expect(CODIGO.match(/contagem\.iniciar\(\)/g)).toHaveLength(1);
     expect(CODIGO).toMatch(
