@@ -1,7 +1,7 @@
 /**
  * [260][261] Contrato do MODO DE SELEÇÃO — fonte única das formas que as duas
  * superfícies de lote compartilham: a barra de `/painel/produtos` e o
- * `SeletorProdutosDoCardapio` de `/painel/cardapios/[cardapioId]` (RN-09).
+ * `DetalheDoCardapio` de `/painel/cardapios/[cardapioId]` (RN-09).
  *
  * Módulo NEUTRO (sem `'use client'`, sem `'use server'`): é só tipo. As Server
  * Actions reais moram em `lib/actions/cardapio.ts` e `lib/actions/produto.ts`,

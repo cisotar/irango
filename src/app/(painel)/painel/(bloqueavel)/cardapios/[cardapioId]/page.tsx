@@ -28,12 +28,13 @@ import {
 import { fraseAgendaDoItem } from "@/lib/utils/copiaCardapioPainel";
 import { cardapioAberto, visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
-import { FormVigencia } from "@/components/painel/FormVigencia";
+import { VigenciaRecolhida } from "@/components/painel/VigenciaRecolhida";
 import { CabecalhoPagina } from "@/components/painel/CabecalhoPagina";
-import {
-  SeletorProdutosDoCardapio,
-  type GrupoDoSeletor,
-} from "@/components/painel/SeletorProdutosDoCardapio";
+import { Badge } from "@/components/ui/badge";
+import { DetalheDoCardapio } from "@/components/painel/DetalheDoCardapio";
+import type { ItemDoCardapio } from "@/components/painel/ItensDoCardapio";
+import type { GrupoDoSheet } from "@/components/painel/SheetAdicionarItens";
+import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +76,13 @@ export default async function CardapioDetalhePage({
     buscarCardapiosComProdutos(supabase, loja.id),
   ]);
 
-  const grupos: GrupoDoSeletor[] = [
+  /**
+   * [288] A loja INTEIRA agrupada por categoria — o insumo do SHEET de
+   * adicionar. `noCardapio` sai do índice `produto → vínculos` que a vitrine já
+   * consome; `precoRotulo` é projeção nova sobre dado que a página já tinha
+   * (`buscarProdutosDoLojista`), não leitura nova.
+   */
+  const grupos: GrupoDoSheet[] = [
     ...categorias.map((categoria) => ({
       id: categoria.id as string | null,
       nome: categoria.nome,
@@ -91,31 +98,52 @@ export default async function CardapioDetalhePage({
     .map((grupo) => ({
       id: grupo.id,
       nome: grupo.nome,
-      produtos: grupo.produtos.map((p) => {
-        // [276] O vínculo com ESTE cardápio, achado uma vez: dele saem
-        // `noCardapio`, os dias do item, a frase da linha e o aviso de RN-06 —
-        // os três REDIGIDOS aqui, no servidor, com o fuso da loja. O browser
-        // nunca redige janela de vigência nem avalia dia.
-        const vinculo =
-          (vinculosPorProduto.get(p.id) ?? []).find(
-            (v) => v.cardapio.id === cardapioId,
-          ) ?? null;
-        return {
-          id: p.id,
-          nome: p.nome,
-          // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
-          exclusivo: visibilidadeDe(p) === "cardapio",
-          noCardapio: vinculo !== null,
-          dias: vinculo?.dias_semana ?? null,
-          fraseAgenda:
-            vinculo === null
-              ? null
-              : fraseAgendaDoItem(rotuloDiasDoItem(vinculo.dias_semana)),
-          avisoNuncaAbre:
-            vinculo === null ? null : avisoAgendaQueNuncaAbre(vinculo),
-        };
-      }),
+      produtos: grupo.produtos.map((p) => ({
+        id: p.id,
+        nome: p.nome,
+        noCardapio: (vinculosPorProduto.get(p.id) ?? []).some(
+          (v) => v.cardapio.id === cardapioId,
+        ),
+        precoRotulo: formatarMoeda(p.preco),
+      })),
     }));
+
+  const nomeDaCategoria = new Map(categorias.map((c) => [c.id, c.nome]));
+
+  /**
+   * [288] Os itens DESTE cardápio — o objeto da página. Toda frase é REDIGIDA
+   * aqui, no servidor, com o fuso da loja: o browser nunca redige janela de
+   * vigência nem avalia dia.
+   */
+  const itens: ItemDoCardapio[] = produtos.flatMap((p) => {
+    const vinculo =
+      (vinculosPorProduto.get(p.id) ?? []).find(
+        (v) => v.cardapio.id === cardapioId,
+      ) ?? null;
+    if (vinculo === null) return [];
+    return [
+      {
+        id: p.id,
+        nome: p.nome,
+        // Estreitamento FAIL-OPEN de D14, o mesmo da vitrine (247/D6).
+        exclusivo: visibilidadeDe(p) === "cardapio",
+        dias: vinculo.dias_semana ?? null,
+        fraseAgenda: fraseAgendaDoItem(rotuloDiasDoItem(vinculo.dias_semana)),
+        avisoNuncaAbre: avisoAgendaQueNuncaAbre(vinculo),
+        precoRotulo: formatarMoeda(p.preco),
+        categoriaNome:
+          p.categoria_id == null
+            ? null
+            : (nomeDaCategoria.get(p.categoria_id) ?? null),
+      },
+    ];
+  });
+
+  const linhaAgora = rotuloAgora(
+    agora,
+    loja.timezone,
+    cardapioAberto(cardapio, agora, loja.timezone),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -123,30 +151,39 @@ export default async function CardapioDetalhePage({
         voltarHref={ROTA_CARDAPIOS_LOJISTA}
         voltarRotulo="Voltar para cardápios"
         titulo={cardapio.nome}
-      />
-      <FormVigencia
+      >
+        {/* O selo de estado, com a frase que o SERVIDOR escreveu. */}
+        <Badge variant="secondary" className="whitespace-normal">
+          {linhaAgora}
+        </Badge>
+      </CabecalhoPagina>
+
+      <VigenciaRecolhida
+        resumo={descreverVigencia(cardapio, loja.timezone, agora)}
         cardapio={cardapio}
         timezone={loja.timezone}
         fusoRotulo={rotuloFusoLoja(loja.timezone, agora)}
         agoraLocal={horaLocalNoFuso(agora.toISOString(), loja.timezone)}
-        linhaAgora={rotuloAgora(
-          agora,
-          loja.timezone,
-          cardapioAberto(cardapio, agora, loja.timezone),
-        )}
+        linhaAgora={linhaAgora}
         salvar={atualizarCardapio.bind(null, cardapioId)}
         voltarHref={ROTA_CARDAPIOS_LOJISTA}
       />
 
-      <SeletorProdutosDoCardapio
+      <DetalheDoCardapio
         cardapio={{
           id: cardapio.id,
           nome: cardapio.nome,
-          // A frase de vigência que o diálogo de confirmação mostra — redigida
-          // no SERVIDOR, com o fuso da loja (a mesma de `/painel/cardapios`).
+          // A frase de vigência que a confirmação mostra — redigida no
+          // SERVIDOR, com o fuso da loja (a mesma de `/painel/cardapios`).
           descricao: descreverVigencia(cardapio, loja.timezone, agora),
         }}
+        itens={itens}
         grupos={grupos}
+        hrefProdutos="/painel/produtos"
+        // Não existe rota de EDIÇÃO de produto por id neste painel (o form
+        // abre dentro de `/painel/produtos`): o item do kebab simplesmente não
+        // é oferecido, em vez de virar um link que cai em 404.
+        hrefEditarProduto={null}
         acoes={{
           aplicarEmProdutos: aplicarCardapioEmProdutos,
           aplicarEmCategoria: aplicarCardapioEmCategoria,

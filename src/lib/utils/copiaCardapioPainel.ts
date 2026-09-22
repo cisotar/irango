@@ -142,3 +142,30 @@ export function fraseEstaEm(
   );
   return `Está em: ${itens.join(", ")}.`;
 }
+
+/**
+ * [288/D6] O botão "categoria inteira" no cabeçalho da sanfona do sheet.
+ *
+ * Duas formas do MESMO rótulo porque em 360px o texto longo estoura a linha:
+ * `curto` vai no botão, `longo` no `aria-label`. Um botão "+ os 6" sem nome
+ * acessível seria um alvo mudo para leitor de tela.
+ *
+ * `faltantes` é quantos produtos da categoria ainda NÃO estão no cardápio —
+ * contagem derivada da lista que a tela já tem, não uma leitura nova. Zero
+ * devolve `null`: não há gesto a oferecer quando a categoria inteira já entrou.
+ */
+export function rotuloCategoriaInteira(
+  faltantes: number,
+  categoria: string,
+): { curto: string; longo: string } | null {
+  if (faltantes <= 0) return null;
+  return faltantes === 1
+    ? {
+        curto: "+ o 1",
+        longo: `Adicionar o 1 produto de ${categoria} que falta`,
+      }
+    : {
+        curto: `+ os ${faltantes}`,
+        longo: `Adicionar os ${faltantes} produtos de ${categoria} que faltam`,
+      };
+}
