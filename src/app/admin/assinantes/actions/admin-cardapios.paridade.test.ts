@@ -1264,3 +1264,421 @@ describe("[274 · B] D8 — as quatro actions admin leem o `count` e recusam ANT
     expect(await removerCardapioAdmin(LOJA_ALVO, CARDAPIO_ID)).toEqual({ ok: true });
   });
 });
+
+// ═══ 11 · [284] RED — remoção com escolha no HUB ADMIN: manter/arquivar/cascata
+//
+// Spec: `specs/remocao-cardapio-exclusivos.md`. Os 12 critérios mecânicos, lado
+// ADMIN, em paridade com `src/lib/actions/cardapio.crud.test.ts`.
+//
+// Por que a paridade É a prova principal aqui: `service_role` tem BYPASSRLS.
+// `produtos_escrita_propria` NÃO alcança este caminho. O que protege a escrita
+// em lote — e um DELETE em lote é IRREVERSÍVEL — é, nesta ordem:
+// `verificarAdminSaaS` antes de elevar, `lojaId` da URL validado,
+// `cardapioPertenceALoja` (RN-04), `.eq("loja_id")` explícito em toda escrita,
+// as FKs compostas e o trigger.
+//
+// O `modo` ainda não existe na assinatura: o módulo continua sendo alcançado
+// por `acoes()` (import por caminho em VARIÁVEL), e o tipo local abaixo é o
+// contrato que a fase GREEN tem de satisfazer. `tsc --noEmit` fica limpo.
+
+type ModoRemocaoExclusivos = "manter" | "arquivar" | "cascata";
+
+type RemocaoComModo = {
+  removerCardapioAdmin(
+    lojaId: string,
+    id: string,
+    modo?: ModoRemocaoExclusivos,
+  ): Promise<ResultadoRemocao>;
+};
+
+async function removerComModo(): Promise<
+  RemocaoComModo["removerCardapioAdmin"]
+> {
+  const mod = (await acoes()) as unknown as RemocaoComModo;
+  return mod.removerCardapioAdmin;
+}
+
+const MSG_REMOVER_284 = "Não foi possível remover o cardápio.";
+
+describe("[284] removerCardapioAdmin(lojaId, id, modo) — os três modos", () => {
+  /**
+   * Modela o banco da LOJA-ALVO para `buscarProdutosQueFicariamOrfaos`, que
+   * roda de verdade aqui (três leituras): vínculos DESTE cardápio → quais são
+   * exclusivos → TODOS os vínculos desses exclusivos.
+   *
+   * `produtos` discrimina pelo `select("id")` da leitura; a ESCRITA (update ou
+   * delete) não tem colunas e cai no `count: 1`.
+   */
+  function bancoDaLojaAlvo(
+    vinculadosAqui: string[],
+    exclusivos: string[],
+    todosOsVinculos: Array<{ produto_id: string; cardapio_id: string }>,
+  ): void {
+    respostaPorTabela.cardapio_produtos = (op) =>
+      op.colunas?.includes("cardapio_id")
+        ? { data: todosOsVinculos, error: null }
+        : { data: vinculadosAqui.map((id) => ({ produto_id: id })), error: null };
+    respostaPorTabela.produtos = (op) =>
+      op.colunas === "id"
+        ? { data: exclusivos.map((id) => ({ id })), error: null }
+        : { data: null, error: null, count: 1 };
+  }
+
+  /** O log admin, já materializado (fire-and-forget). */
+  function logAdmin(): Record<string, unknown> | undefined {
+    return ops.find((o) => o.tabela === "admin_acessos" && o.insert != null)?.insert;
+  }
+
+  function escritaEmProdutos(): Op | undefined {
+    return ops.find((o) => o.tabela === "produtos" && (o.update || o.deleted));
+  }
+
+  function deleteDoCardapio(): Op | undefined {
+    return ops.find((o) => o.tabela === "cardapios" && o.deleted);
+  }
+
+  // ════════════════════════════════════════ critério 7 · modo inválido, 0 I/O ═
+  describe("critério 7 — modo fora do domínio ⇒ MSG_INVALIDO, sem NENHUM I/O", () => {
+    const LIXO: unknown[] = ["apagar", "", "cascade", "CASCATA", null, 0, {}, []];
+
+    it.each(LIXO.map((m) => [JSON.stringify(m) ?? String(m), m] as const))(
+      "modo %s não abre contexto admin, não lê a loja e não escreve",
+      async (_rotulo, modo) => {
+        const remover = await removerComModo();
+        const r = await remover(LOJA_ALVO, CARDAPIO_ID, modo as ModoRemocaoExclusivos);
+        await flush();
+        expect(r).toEqual({ ok: false, erro: MSG_INVALIDO, exclusivos: 0 });
+        expect(ops, "parse do modo é ANTES de qualquer I/O (RN-01)").toHaveLength(0);
+        expect(logouAcesso()).toBe(false);
+      },
+    );
+  });
+
+  // ══════════════════════════ critério 1 (RN-10) · a linha de base do admin ══
+  describe("critério 1 (RN-10) — `manter` e a ausência do parâmetro são o de hoje", () => {
+    it("mesma resposta e mesma sequência de ops, sem escrita em produtos", async () => {
+      bancoDaLojaAlvo([PRODUTO_1], [PRODUTO_1], [
+        { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_ID },
+      ]);
+      const remover = await removerComModo();
+
+      const semModo = await remover(LOJA_ALVO, CARDAPIO_ID);
+      await flush();
+      const tabelasSemModo = ops.map((o) => o.tabela);
+
+      ops = [];
+      const comManter = await remover(LOJA_ALVO, CARDAPIO_ID, "manter");
+      await flush();
+      const tabelasComManter = ops.map((o) => o.tabela);
+
+      expect(semModo).toEqual({ ok: false, erro: MSG_EXCLUSIVOS_1, exclusivos: 1 });
+      expect(comManter).toEqual(semModo);
+      expect(tabelasComManter).toEqual(tabelasSemModo);
+      expect(escritaEmProdutos()).toBeUndefined();
+      expect(deleteDoCardapio()).toBeUndefined();
+    });
+
+    /**
+     * RN-04 é explícita: o gate de posse NÃO entra no `manter`. Uma leitura a
+     * mais mudaria a sequência e quebraria a preservação byte a byte.
+     */
+    it("`manter` NÃO ganha o gate de posse — a 1ª ida ao banco continua a dos vínculos", async () => {
+      respostaPorTabela.cardapio_produtos = { data: [], error: null };
+      const remover = await removerComModo();
+      expect(await remover(LOJA_ALVO, CARDAPIO_ID, "manter")).toEqual({ ok: true });
+      expect(ops[0].tabela).toBe("cardapio_produtos");
+    });
+  });
+
+  // ════════════════════════ critério 2 · `arquivar` — RN-05, RN-06, RN-13 ════
+  describe("critério 2 — `arquivar` grava { oculto, visibilidade } e SÓ isso", () => {
+    it("um UPDATE com o objeto INTEIRO, escopado pelo lojaId da URL, ANTES do DELETE", async () => {
+      bancoDaLojaAlvo([PRODUTO_1, PRODUTO_2], [PRODUTO_1, PRODUTO_2], [
+        { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_ID },
+        { produto_id: PRODUTO_2, cardapio_id: CARDAPIO_ID },
+      ]);
+      const remover = await removerComModo();
+      const r = await remover(LOJA_ALVO, CARDAPIO_ID, "arquivar");
+      await flush();
+      expect(r).toEqual({ ok: true });
+
+      const w = escritaEmProdutos();
+      // RN-05: o objeto INTEIRO. `disponivel` é "esgotado" (CONTINUA visível na
+      // vitrine) e não pode entrar aqui — §Ressalva de vocabulário.
+      expect(w?.update).toEqual({ oculto: true, visibilidade: "menu" });
+      expect(w?.update).not.toHaveProperty("disponivel");
+      expect(w?.update).not.toHaveProperty("loja_id");
+      // Critério 5: `loja_id` da URL validada + 2º cinto de visibilidade.
+      expect(w?.filtros).toEqual([
+        ["loja_id", LOJA_ALVO],
+        ["visibilidade", "cardapio"],
+        ["id", [PRODUTO_1, PRODUTO_2]],
+      ]);
+
+      // RN-06: produtos PRIMEIRO, cardápio DEPOIS.
+      const semLog = ops.filter((o) => o.tabela !== "admin_acessos");
+      expect(semLog.indexOf(w as Op)).toBeLessThan(
+        semLog.indexOf(deleteDoCardapio() as Op),
+      );
+      expect(deleteDoCardapio()?.deleteOpts).toEqual({ count: "exact" });
+
+      // RN-13: o rastro do gesto de OUTRA pessoa, com modo e contagem.
+      expect(logAdmin()).toMatchObject({
+        loja_id: LOJA_ALVO,
+        acao: "cardapio.remover",
+        entidade_id: CARDAPIO_ID,
+        metadados: { modo: "arquivar", produtos: 2 },
+      });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════ critério 3 · `cascata` ═
+  describe("critério 3 — `cascata` apaga os órfãos e SÓ depois o cardápio", () => {
+    it("DELETE em produtos escopado, depois o DELETE do cardápio, com log do modo", async () => {
+      bancoDaLojaAlvo([PRODUTO_1, PRODUTO_2], [PRODUTO_1, PRODUTO_2], [
+        { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_ID },
+        { produto_id: PRODUTO_2, cardapio_id: CARDAPIO_ID },
+      ]);
+      const remover = await removerComModo();
+      const r = await remover(LOJA_ALVO, CARDAPIO_ID, "cascata");
+      await flush();
+      expect(r).toEqual({ ok: true });
+
+      const w = escritaEmProdutos();
+      expect(w?.deleted).toBe(true);
+      expect(w?.update).toBeUndefined();
+      expect(w?.filtros).toEqual([
+        ["loja_id", LOJA_ALVO],
+        ["visibilidade", "cardapio"],
+        ["id", [PRODUTO_1, PRODUTO_2]],
+      ]);
+      const semLog = ops.filter((o) => o.tabela !== "admin_acessos");
+      expect(semLog.indexOf(w as Op)).toBeLessThan(
+        semLog.indexOf(deleteDoCardapio() as Op),
+      );
+      expect(logAdmin()).toMatchObject({
+        acao: "cardapio.remover",
+        metadados: { modo: "cascata", produtos: 2 },
+      });
+    });
+  });
+
+  // ══════════════ critério 4 (RN-02) · a lista é do SERVIDOR, nunca do cliente
+  describe("critério 4 (RN-02) — o in() é o recálculo do servidor", () => {
+    /**
+     * Conjunto DIFERENTE do "esperado ingênuo": PRODUTO_1 é exclusivo e está
+     * neste cardápio, mas TAMBÉM em outro — não ficaria órfão. Só PRODUTO_2
+     * pode entrar no `in()`. Uma implementação que apagasse "todos os
+     * exclusivos vinculados" (o que um cliente mandaria) destruiria um prato
+     * que continua vivo em outro cardápio — e sem desfazer.
+     */
+    it("o exclusivo com OUTRO vínculo NÃO entra no in(), e o log conta 1, não 2", async () => {
+      bancoDaLojaAlvo([PRODUTO_1, PRODUTO_2], [PRODUTO_1, PRODUTO_2], [
+        { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_ID },
+        { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_OUTRO },
+        { produto_id: PRODUTO_2, cardapio_id: CARDAPIO_ID },
+      ]);
+      const remover = await removerComModo();
+      expect(await remover(LOJA_ALVO, CARDAPIO_ID, "cascata")).toEqual({ ok: true });
+      await flush();
+
+      const w = escritaEmProdutos();
+      expect(w?.filtros.at(-1)).toEqual(["id", [PRODUTO_2]]);
+      expect(JSON.stringify(w?.filtros)).not.toContain(PRODUTO_1);
+      expect(logAdmin()).toMatchObject({ metadados: { produtos: 1 } });
+    });
+
+    it("um 3º argumento com ids do cliente é ignorado — o in() continua o do servidor", async () => {
+      bancoDaLojaAlvo([PRODUTO_2], [PRODUTO_2], [
+        { produto_id: PRODUTO_2, cardapio_id: CARDAPIO_ID },
+      ]);
+      const remover = await removerComModo();
+      const hostil = remover as unknown as (...a: unknown[]) => Promise<unknown>;
+      expect(
+        await hostil(LOJA_ALVO, CARDAPIO_ID, "cascata", [PRODUTO_1, CARDAPIO_OUTRO]),
+      ).toEqual({ ok: true });
+      await flush();
+      expect(escritaEmProdutos()?.filtros.at(-1)).toEqual(["id", [PRODUTO_2]]);
+    });
+  });
+
+  // ═══════════════ critério 5 · o escopo é o `lojaId` da URL, sempre ═════════
+  describe("critério 5 — isolamento entre lojas", () => {
+    it("`lojaId` de OUTRA loja não vira escopo: sem posse, MSG_REMOVER e zero escrita", async () => {
+      bancoDaLojaAlvo([PRODUTO_1], [PRODUTO_1], [
+        { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_ID },
+      ]);
+      const remover = await removerComModo();
+      // A posse do `beforeEach` global só é concedida ao par
+      // (CARDAPIO_ID, LOJA_ALVO): a loja hostil da URL não alcança o cardápio.
+      const r = await remover(LOJA_OUTRA, CARDAPIO_ID, "cascata");
+      await flush();
+
+      expect(r).toEqual({ ok: false, erro: MSG_REMOVER_284, exclusivos: 0 });
+      expect(escritaEmProdutos()).toBeUndefined();
+      expect(deleteDoCardapio()).toBeUndefined();
+      expect(logouAcesso()).toBe(false);
+      // E nenhuma leitura de órfãos rodou sobre a loja alheia.
+      expect(ops.every((o) => o.tabela !== "cardapio_produtos")).toBe(true);
+    });
+
+    it("`lojaId` que não é UUID é recusado antes de tudo, nos modos novos", async () => {
+      const remover = await removerComModo();
+      for (const modo of ["arquivar", "cascata"] as const) {
+        ops = [];
+        const r = await remover("nao-uuid", CARDAPIO_ID, modo);
+        expect(r).toEqual({ ok: false, erro: MSG_LOJA_INVALIDA, exclusivos: 0 });
+        expect(ops).toHaveLength(0);
+      }
+    });
+  });
+
+  // ══════════════════ critério 6 (RN-04) · posse ANTES da leitura E do log ═══
+  describe("critério 6 (RN-04) — cardápio alheio/inexistente nos modos novos", () => {
+    it.each(["arquivar", "cascata"] as const)(
+      "%s sem posse ⇒ MSG_REMOVER, zero leitura de órfãos, zero escrita, zero log",
+      async (modo) => {
+        const remover = await removerComModo();
+        const r = await remover(LOJA_ALVO, CARDAPIO_OUTRO, modo);
+        await flush();
+
+        expect(r).toEqual({ ok: false, erro: MSG_REMOVER_284, exclusivos: 0 });
+        expect(
+          ops.some((o) => o.tabela === "cardapio_produtos"),
+          "sob service_role, ler órfãos sem posse roda sobre OUTRO tenant (RN-04)",
+        ).toBe(false);
+        expect(escritaEmProdutos()).toBeUndefined();
+        expect(deleteDoCardapio()).toBeUndefined();
+        expect(
+          logouAcesso(),
+          "entidade_id de outro tenant não pode virar auditoria desta loja",
+        ).toBe(false);
+      },
+    );
+
+    it("a recusa de alheio é byte a byte a de inexistente — nenhum oráculo (§14)", async () => {
+      const remover = await removerComModo();
+      const alheio = await remover(LOJA_ALVO, CARDAPIO_OUTRO, "cascata");
+      const inexistente = await remover(LOJA_ALVO, CARDAPIO_OUTRO, "arquivar");
+      expect(alheio).toEqual({ ok: false, erro: MSG_REMOVER_284, exclusivos: 0 });
+      expect(inexistente).toEqual(alheio);
+    });
+  });
+
+  // ══════ critério 8 · falha no request 1 não segue para o 2, e não loga ═════
+  describe("critério 8 (RN-06) — erro na escrita dos produtos aborta antes do DELETE", () => {
+    it.each(["arquivar", "cascata"] as const)(
+      "%s: erro no request 1 ⇒ MSG_REMOVER, nenhum DELETE de cardápio, nenhum log",
+      async (modo) => {
+        bancoDaLojaAlvo([PRODUTO_1], [PRODUTO_1], [
+          { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_ID },
+        ]);
+        const leitura = respostaPorTabela.produtos as (op: Op) => Resposta;
+        respostaPorTabela.produtos = (op) =>
+          op.colunas === "id"
+            ? leitura(op)
+            : {
+                data: null,
+                error: { code: "42501", message: "permission denied for table produtos" },
+                count: 0,
+              };
+
+        const remover = await removerComModo();
+        const r = await remover(LOJA_ALVO, CARDAPIO_ID, modo);
+        await flush();
+
+        expect(r).toEqual({ ok: false, erro: MSG_REMOVER_284, exclusivos: 0 });
+        expect(
+          deleteDoCardapio(),
+          "o cardápio tem de sobreviver — estado reconciliável, não corrompido",
+        ).toBeUndefined();
+        expect(logouAcesso()).toBe(false);
+        expect(JSON.stringify(r)).not.toContain("42501");
+        expect(JSON.stringify(r)).not.toContain("permission denied");
+      },
+    );
+  });
+
+  // ═════════════════════ critério 9 · backstop da corrida nos modos novos ════
+  describe("critério 9 (RN-09) — o 23000 do trigger vira a frase SEM número", () => {
+    it.each(["arquivar", "cascata"] as const)(
+      "%s: DELETE do cardápio com 23000 + fragmento ⇒ MSG_EXCLUSIVOS_SEM_NUMERO",
+      async (modo) => {
+        bancoDaLojaAlvo([PRODUTO_1], [PRODUTO_1], [
+          { produto_id: PRODUTO_1, cardapio_id: CARDAPIO_ID },
+        ]);
+        const posse = respostaPorTabela.cardapios as (op: Op) => Resposta;
+        respostaPorTabela.cardapios = (op) =>
+          op.deleted ? { data: null, error: ERRO_TRIGGER_RN14, count: 0 } : posse(op);
+
+        const remover = await removerComModo();
+        const r = await remover(LOJA_ALVO, CARDAPIO_ID, modo);
+        await flush();
+
+        expect(r).toEqual({
+          ok: false,
+          erro: MSG_EXCLUSIVOS_SEM_NUMERO,
+          exclusivos: 0,
+        });
+        expect(JSON.stringify(r)).not.toContain("23000");
+
+        // [achado da auditoria 284/285] O gesto em `produtos` JÁ commitou
+        // antes da corrida derrubar o request 2 — o rastro não pode
+        // desaparecer só porque o cardápio sobreviveu desta vez.
+        expect(logAdmin()).toMatchObject({
+          acao: "cardapio.remover",
+          entidade_id: CARDAPIO_ID,
+          metadados: { modo, produtos: 1, etapa: "produtos" },
+        });
+      },
+    );
+  });
+
+  // ══════════════════════ critérios 11 e 12 · paridade e anti-drift de fonte ═
+  describe("critérios 11 e 12 — paridade de fonte", () => {
+    const RAIZ = process.cwd();
+    const CONTRATO = join(RAIZ, "src/lib/actions/cardapio-contrato.ts");
+    const ADMIN = join(RAIZ, "src/app/admin/assinantes/actions/admin-cardapios.ts");
+    const LOJISTA = join(RAIZ, "src/lib/actions/cardapio.ts");
+    const VALIDACOES = join(RAIZ, "src/lib/validacoes/cardapio.ts");
+
+    it("`ModoRemocaoExclusivos` mora no contrato NEUTRO e os dois mundos o importam", () => {
+      const contrato = readFileSync(CONTRATO, "utf8");
+      expect(contrato).toMatch(/export type ModoRemocaoExclusivos\s*=/);
+      for (const arquivo of [ADMIN, LOJISTA]) {
+        const texto = readFileSync(arquivo, "utf8");
+        expect(texto).toContain("ModoRemocaoExclusivos");
+        expect(
+          texto,
+          "o tipo não pode ser redeclarado em nenhum dos dois mundos",
+        ).not.toMatch(/type ModoRemocaoExclusivos\s*=/);
+      }
+    });
+
+    it("`schemaModoRemocao` é UM zod isomórfico em `lib/validacoes/cardapio.ts`", () => {
+      expect(readFileSync(VALIDACOES, "utf8")).toMatch(
+        /export const schemaModoRemocao\s*=/,
+      );
+      for (const arquivo of [ADMIN, LOJISTA]) {
+        const texto = readFileSync(arquivo, "utf8");
+        expect(texto).toContain("schemaModoRemocao");
+        expect(
+          texto,
+          "um enum/union paralelo aqui é o drift que a paridade fecha",
+        ).not.toMatch(/const schemaModoRemocao\s*=/);
+      }
+    });
+
+    /**
+     * Critério 12: D1 resolveu sem RPC. Se `tests/migrations/` ganhar cenário
+     * novo, a decisão foi revertida — e aí T1–T7 voltam à mesa. Esta é a
+     * asserção que força a conversa em vez de deixar a RPC entrar calada.
+     */
+    it("nenhuma RPC nova: os dois mundos escrevem com statement direto", () => {
+      for (const arquivo of [ADMIN, LOJISTA]) {
+        const texto = readFileSync(arquivo, "utf8");
+        expect(texto).not.toContain("remover_cardapio_com_exclusivos");
+      }
+    });
+  });
+});

@@ -64,6 +64,16 @@ export const schemaPreviaDeLote = z.union([
  */
 export const schemaIdCardapio = z.guid();
 
+/**
+ * [284 · RN-01] O modo de remoção do cardápio quando há exclusivos órfãos.
+ * UMA declaração, isomórfica entre o diálogo do painel e as duas Server Actions
+ * (lojista e hub admin): qualquer valor fora dos três literais — ausente sob
+ * cast, `null`, string arbitrária, objeto — falha o parse e a action recusa com
+ * `MSG_INVALIDO` ANTES de qualquer I/O. O tipo correspondente é
+ * `ModoRemocaoExclusivos`, em `lib/actions/cardapio-contrato.ts`.
+ */
+export const schemaModoRemocao = z.enum(["manter", "arquivar", "cascata"]);
+
 export type LoteDeProdutos = z.infer<typeof schemaLoteDeProdutos>;
 export type LoteDeCategoria = z.infer<typeof schemaLoteDeCategoria>;
 export type PreviaDeLote = z.infer<typeof schemaPreviaDeLote>;

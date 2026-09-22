@@ -49,3 +49,50 @@ export function rotuloConverter(quantidade: number): string {
     ? "Converter 1 produto para o menu"
     : `Converter os ${quantidade} produtos para o menu`;
 }
+
+// ═══════ [284] As três saídas do diálogo de remoção (spec §Mensagens) ════════
+//
+// Frases puras, aqui e não no `.tsx`, pelo mesmo motivo das de cima: sem jsdom
+// a única forma de travar o texto byte a byte é o módulo ao lado do teste.
+//
+// §Ressalva de vocabulário (não negociável): "arquivar" é `oculto = true` —
+// some da vitrine e volta num clique. `disponivel = false` é "esgotado", que
+// CONTINUA visível, e por isso nenhuma frase daqui fala em esgotado.
+
+/** Rótulo do 2º botão da recusa — gesto reversível, sem segunda confirmação. */
+export function rotuloArquivar(quantidade: number): string {
+  return quantidade === 1
+    ? "Arquivar 1 produto"
+    : `Arquivar os ${quantidade} produtos`;
+}
+
+/** Rótulo do 3º botão (destrutivo). Não executa: abre a 2ª confirmação. */
+export function rotuloRemoverProdutos(quantidade: number): string {
+  return quantidade === 1
+    ? "Remover 1 produto"
+    : `Remover os ${quantidade} produtos`;
+}
+
+/** O que "arquivar" faz, dito sem jargão — some da vitrine, não é apagado. */
+export function fraseArquivar(quantidade: number): string {
+  return quantidade === 1
+    ? "O produto fica guardado e some da vitrine. Você pode exibi-lo de novo quando quiser."
+    : `Os ${quantidade} produtos ficam guardados e somem da vitrine. Você pode exibi-los de novo quando quiser.`;
+}
+
+/**
+ * A 2ª confirmação da cascata. Literal, curta, sem eufemismo: não há desfazer
+ * nem lixeira (§Fora do Escopo), e a UI declara isso ANTES do clique.
+ */
+export function fraseCascataPermanente(quantidade: number): string {
+  return quantidade === 1
+    ? "1 produto será apagado permanentemente e não poderá ser recuperado."
+    : `${quantidade} produtos serão apagados permanentemente e não poderão ser recuperados.`;
+}
+
+/** Rótulo do botão que confirma a cascata de verdade. */
+export function rotuloConfirmarCascata(quantidade: number): string {
+  return quantidade === 1
+    ? "Apagar 1 produto e remover o cardápio"
+    : `Apagar ${quantidade} produtos e remover o cardápio`;
+}
