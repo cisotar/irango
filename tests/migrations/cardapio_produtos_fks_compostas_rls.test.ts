@@ -250,16 +250,26 @@ describe("243 · cardapio_produtos: FKs compostas e RLS", () => {
     } catch (err) {
       msg = (err as Error).message;
     }
-    expect(msg).toMatch(/row-level security/i);
+    // anon tem só SELECT nessa tabela desde a 20260920129000: a negação vem do grant, antes da RLS (294).
+    expect(msg).toMatch(/row-level security|permission denied/i);
   });
 
   it("[§Seg 6] anon NÃO faz UPDATE nem DELETE em cardapio_produtos", async () => {
-    const r = await t.asAnon(async (db) => {
-      const up = await db.query(`update public.cardapio_produtos set loja_id = $1`, [c.lojaB]);
-      const del = await db.query(`delete from public.cardapio_produtos`);
-      return { up: up.affectedRows ?? 0, del: del.affectedRows ?? 0 };
-    });
-    expect(r).toEqual({ up: 0, del: 0 });
+    // anon tem só SELECT nessa tabela desde a 20260920129000: UPDATE/DELETE são
+    // recusados pelo grant (42501), antes da RLS filtrar linha (294). Cada
+    // tentativa em transação própria — a primeira recusa abortaria a segunda.
+    const tentar = async (sql: string, params: unknown[] = []) => {
+      try {
+        await t.asAnon(async (db) => db.query(sql, params));
+      } catch (err) {
+        return (err as Error).message;
+      }
+      return "";
+    };
+    const up = await tentar(`update public.cardapio_produtos set loja_id = $1`, [c.lojaB]);
+    const del = await tentar(`delete from public.cardapio_produtos`);
+    expect(up).toMatch(/permission denied for table cardapio_produtos/i);
+    expect(del).toMatch(/permission denied for table cardapio_produtos/i);
 
     const real = await t.asService(async (db) =>
       db.query(`select 1 from public.cardapio_produtos where cardapio_id = $1`, [c.cardapioA]),

@@ -61,35 +61,29 @@ grant select on auth.users to service_role;
 `;
 
 /**
- * Concede a anon/authenticated os privilégios de tabela que o Supabase dá por
- * padrão. RLS continua filtrando LINHAS; o grant só libera a OPERAÇÃO. Rodar
- * DEPOIS das migrations para cobrir as tabelas criadas por elas.
+ * Concede a anon/authenticated a LEITURA que o Supabase dá por padrão, mais os
+ * privilégios de service_role e das sequences. RLS continua filtrando LINHAS; o
+ * grant só libera a OPERAÇÃO. Rodar DEPOIS das migrations para cobrir as tabelas
+ * criadas por elas.
  *
- * Escrita (insert/update/delete) só em TABELAS BASE — nunca em views. Motivo:
- * este bloco roda DEPOIS de todas as migrations; se re-concedesse escrita em
- * views, qualquer `revoke insert, update, delete` feito por migration (ex.:
- * vitrine_lojas SELECT-only) seria desfeito aqui e o teste ficaria falso-verde
- * para sempre. O pior caso (GRANT amplo em views) continua emulado com
- * fidelidade: a própria migration 20260614008500 (`GRANT ALL ON ALL TABLES` +
- * `ALTER DEFAULT PRIVILEGES GRANT ALL`) roda dentro do pglite e reabre escrita
- * na view a cada drop+create — exatamente como no cloud. Assim, só um revoke
- * em migration POSTERIOR à recriação da view deixa o teste verde (como em prod).
+ * ESCRITA (insert/update/delete) NÃO é reconcedida aqui — nem em views, nem em
+ * TABELAS BASE (294). Motivo, o mesmo nos dois casos: este bloco roda DEPOIS de
+ * todas as migrations, então qualquer `revoke insert, update, delete` feito por
+ * migration (ex.: vitrine_lojas SELECT-only; `revoke insert on public.pedidos`)
+ * seria desfeito aqui e o teste ficaria falso-verde para sempre.
+ *
+ * O ACL de escrita do cloud é reproduzido pelas PRÓPRIAS migrations, que rodam
+ * dentro do pglite: os roles `anon`/`authenticated`/`service_role` já existem
+ * antes delas (BOOTSTRAP_SQL, ver `do $$ ... pg_roles ...`), então
+ * `20260614008500_grants_roles_supabase.sql` (`GRANT ALL ON ALL TABLES` +
+ * `ALTER DEFAULT PRIVILEGES GRANT ALL`) e `20260702150000` (revoke dos default
+ * privileges de TABLES) produzem aqui o mesmo ACL final que em produção. Só um
+ * revoke em migration POSTERIOR ao grant deixa o teste verde — como em prod.
+ * Consequência desejada: "grant esquecido em tabela nova" vira teste vermelho
+ * aqui, em vez de `42501` só no cloud.
  */
 const GRANTS_SQL = `
 grant select on all tables in schema public to anon, authenticated;
-
-do $grants$
-declare t record;
-begin
-  for t in select schemaname, tablename from pg_tables where schemaname = 'public'
-  loop
-    execute format(
-      'grant insert, update, delete on table %I.%I to anon, authenticated',
-      t.schemaname, t.tablename
-    );
-  end loop;
-end
-$grants$;
 
 grant all on all tables in schema public to service_role;
 grant usage, select on all sequences in schema public to anon, authenticated, service_role;
