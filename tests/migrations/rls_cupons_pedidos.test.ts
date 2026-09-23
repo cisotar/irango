@@ -562,7 +562,7 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
  *   pedidos_insert_publico       INSERT WITH CHECK (public.loja_esta_ativa(loja_id)),
  *                                       sem `to` → {public} (anon e authenticated) —
  *                                       REMOVIDA pela migration
- *                                       <ts>_pedidos_remove_insert_publico (issue 294,
+ *                                       20260923060457_pedidos_remove_insert_publico (issue 294,
  *                                       auditoria 2026-09-22), junto com o revoke de
  *                                       INSERT de anon/authenticated: INSERT só via
  *                                       RPC criar_pedido (service_role).
@@ -581,7 +581,7 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
  *  - [1][5][6][13][14][21] (leitura/CRUD do dono) só passam com as policies do lojista.
  *  - [4] cupom INSERT do dono pela cupons_acesso_proprio (FOR ALL cobre INSERT).
  *  - [10] anon NÃO insere pedido nem em loja ativa: pedidos_insert_publico foi
- *    REMOVIDA pela migration <ts>_pedidos_remove_insert_publico (auditoria
+ *    REMOVIDA pela migration 20260923060457_pedidos_remove_insert_publico (auditoria
  *    2026-09-22); INSERT só via RPC criar_pedido (service_role).
  *  - [19] anon NÃO insere item: itens_pedido_insert_publico foi REMOVIDA (pentest
  *    #3A); a única escrita de item é a RPC criar_pedido (service_role), fora de RLS.
