@@ -298,14 +298,18 @@ Schema exige coluna nova (ver `schema.md`):
 ALTER TABLE pedidos ADD COLUMN token_acesso uuid NOT NULL DEFAULT gen_random_uuid();
 ```
 
-Policies:
+> **INSERT público removido** (migration `20260923060457_pedidos_remove_insert_publico.sql`, auditoria
+> 2026-09-22): a policy `pedidos_insert_publico` foi dropada **e** o grant de INSERT foi revogado de
+> `anon`/`authenticated` (segunda camada — se uma policy permissiva voltar por engano, o grant continua
+> fechado). INSERT em `pedidos` é exclusivo da RPC `public.criar_pedido(...)` sob `service_role`
+> (`SECURITY INVOKER`, com `service_role` tendo BYPASSRLS). Efeito colateral aceito: o lojista perde o
+> INSERT direto em `pedidos` da própria loja via PostgREST — `pedidos_acesso_lojista` é `FOR ALL` e
+> cobriria INSERT do dono por policy, mas o grant torna isso inalcançável. Nenhum código do painel usava
+> esse caminho.
+
+Policy restante:
 
 ```sql
--- Cliente cria pedido sem login — só em loja ativa (endurecida: não mais WITH CHECK (true))
-CREATE POLICY "pedidos_insert_publico"
-  ON pedidos FOR INSERT
-  WITH CHECK (public.loja_esta_ativa(loja_id));
-
 -- Lojista vê e gerencia pedidos da própria loja
 -- WITH CHECK anti-troca de loja_id: impede UPDATE que mova pedido para outra loja
 CREATE POLICY "pedidos_acesso_lojista"
@@ -324,12 +328,17 @@ const pedido = await buscarPedidoPorToken(pedidoId, token)
 if (!pedido) notFound()
 ```
 
-O token é gerado no INSERT e funciona como senha do pedido. Sem token + id corretos, ninguém lê o pedido. Não criar policy de SELECT público em `pedidos`.
+O token é gerado no INSERT (pela RPC, sob `service_role`) e funciona como senha do pedido. Sem token +
+id corretos, ninguém lê o pedido. Não criar policy de SELECT público em `pedidos`.
 
 **Regra para devs e agentes:**
-- INSERT anon em `pedidos` não usa `RETURNING` (não há SELECT anon; `RETURNING` exige SELECT policy).
+- INSERT em `pedidos` é exclusivo da RPC `public.criar_pedido(...)` (service_role). `anon`: sem policy e
+  sem grant. `authenticated`: sem grant (a policy `pedidos_acesso_lojista` é `FOR ALL` e cobriria INSERT
+  do dono, mas o grant a torna inalcançável — não reintroduzir grant de INSERT para reabrir isso).
 - A Server Action lê o token do pedido **depois** via `service_role` (`WHERE id = $1 AND token_acesso = $2`), nunca via anon.
 - Toda leitura de pedido pelo cliente final (confirmação, status) usa `service_role` com o token como segundo fator — nunca SELECT anon.
+- O harness pglite (`tests/helpers/pglite.ts`) não reconcede INSERT/UPDATE/DELETE em tabela base depois
+  das migrations desde a 294 — `has_table_privilege` em teste reflete o ACL real do cloud.
 
 #### `itens_pedido`
 
@@ -468,7 +477,9 @@ Firebase cobra por leitura — DDoS gera conta ilimitada. Supabase Pro = $25 fix
 
 ### Abuso de criação de pedido (spam)
 
-INSERT público em `pedidos` sem trava = bot enche a tabela de graça. Mitigar com rate limiting na Server Action de criar pedido (ver seção 12) + validação de payload (seção 6) + recálculo de valores (seção 10).
+O INSERT direto em `pedidos` pelo PostgREST foi fechado (migration `20260923060457`, ver seção 2): a
+única escrita é a RPC `criarPedido`, protegida por rate limiting na Server Action (ver seção 12) +
+validação de payload (seção 6) + recálculo de valores (seção 10).
 
 ### Se DDoS virar problema sério
 

@@ -13,7 +13,9 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  * falham hoje:
  *  - dono A NÃO lê o próprio cupom                                    → FALHA agora
  *  - dono A NÃO faz CRUD do próprio cupom                             → FALHA agora
- *  - anon NÃO insere pedido (deveria, WITH CHECK true)               → FALHA agora
+ *  - anon NÃO insere pedido (deveria, WITH CHECK loja_esta_ativa)    → FALHA agora
+ *    (inversão posterior — issue 294: pedidos_insert_publico foi REMOVIDA;
+ *    anon/authenticated não inserem mais pedido, só a RPC criar_pedido)
  *  - anon NÃO insere item de pedido (deveria, WITH CHECK true)       → FALHA agora
  *  - dono A NÃO lê os pedidos da própria loja                        → FALHA agora
  *  - dono A NÃO atualiza status do próprio pedido                    → FALHA agora
@@ -284,14 +286,16 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
   });
 
   // ═══════════════════════════ PEDIDOS
-  it("[10] anon INSERE pedido sem login (aceito; persistiu via service)", async () => {
-    // SEM `returning`: no Postgres o RETURNING é avaliado contra a policy de
-    // SELECT da linha, e o design PROÍBE SELECT anon em pedidos (anti-enumeração
-    // — testes [11]/[15]). O fluxo real (seguranca.md §2 linhas 213-223): anon
-    // INSERE (WITH CHECK true autoriza a operação) e a leitura do id/token_acesso
-    // é feita depois por service_role (`where id=$1 and token_acesso=$2`), nunca
-    // pelo anon. Provamos a permissão por affectedRows e reconferimos a linha via
-    // service_role por um marcador único (nome_cliente).
+  it("[10] anon NÃO insere pedido em loja ativa (deny-all pós-remoção de pedidos_insert_publico)", async () => {
+    // Antes (issue 006): a policy pedidos_insert_publico (WITH CHECK
+    // loja_esta_ativa(loja_id), sem cláusula `to` → {public}) deixava anon — e
+    // qualquer authenticated — gravar pedido com total/token/status arbitrários
+    // em loja ativa, fora do recálculo (seguranca.md §10). Issue 294 (auditoria
+    // 2026-09-22): a policy é REMOVIDA e o INSERT revogado de anon/authenticated;
+    // pedido só nasce pela RPC criar_pedido sob service_role. SEM `returning`
+    // (RETURNING seria avaliado contra SELECT, que anon não tem): a recusa é
+    // provada por exceção/affectedRows e reconferida via service_role por um
+    // marcador único (nome_cliente) — anti-falso-verde.
     const MARCADOR = "Cliente Anon [10]";
     let inseriu = false;
     try {
@@ -306,8 +310,8 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
     } catch {
       inseriu = false;
     }
-    expect(inseriu).toBe(true);
-    expect(await existePorMarcador(t, "pedidos", "nome_cliente", MARCADOR)).toBe(1);
+    expect(inseriu).toBe(false);
+    expect(await existePorMarcador(t, "pedidos", "nome_cliente", MARCADOR)).toBe(0);
   });
 
   it("[11] anon NÃO lê pedidos via SELECT (0 linhas; existem via service) — anti-listagem", async () => {
@@ -448,6 +452,10 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
   });
 
   it("[19b] anon NÃO insere pedido em loja INATIVA (hardening auditoria 006)", async () => {
+    // Na auditoria 006 a negação vinha de loja_esta_ativa no WITH CHECK de
+    // pedidos_insert_publico. Desde a issue 294 a policy não existe e o INSERT
+    // foi revogado de anon: a negação vem da ausência de policy E de grant,
+    // independente de a loja estar ativa. O caso segue como guard de regressão.
     const lojaInativa = await t.asService((db) =>
       db.query<{ id: string }>(
         `insert into public.lojas (dono_id, slug, nome, ativo) values ($1,'loja-off','Off',false) returning id`,
@@ -551,7 +559,13 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
  *
  *   cupons_acesso_proprio        ALL    USING/WITH CHECK (EXISTS loja onde dono_id=auth.uid())
  *                                       — NENHUMA policy de SELECT para anon (deny-all)
- *   pedidos_insert_publico       INSERT WITH CHECK (true)
+ *   pedidos_insert_publico       INSERT WITH CHECK (public.loja_esta_ativa(loja_id)),
+ *                                       sem `to` → {public} (anon e authenticated) —
+ *                                       REMOVIDA pela migration
+ *                                       20260923060457_pedidos_remove_insert_publico (issue 294,
+ *                                       auditoria 2026-09-22), junto com o revoke de
+ *                                       INSERT de anon/authenticated: INSERT só via
+ *                                       RPC criar_pedido (service_role).
  *   pedidos_acesso_lojista       ALL    USING/WITH CHECK (EXISTS loja do dono)
  *                                       — NENHUMA policy de SELECT para anon
  *   itens_pedido_insert_publico  INSERT — endurecida na auditoria 006 para
@@ -566,7 +580,9 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
  * Casos que precisam passar após a migration: [1]..[23].
  *  - [1][5][6][13][14][21] (leitura/CRUD do dono) só passam com as policies do lojista.
  *  - [4] cupom INSERT do dono pela cupons_acesso_proprio (FOR ALL cobre INSERT).
- *  - [10] anon INSERE pedido pela pedidos_insert_publico (loja ativa).
+ *  - [10] anon NÃO insere pedido nem em loja ativa: pedidos_insert_publico foi
+ *    REMOVIDA pela migration 20260923060457_pedidos_remove_insert_publico (auditoria
+ *    2026-09-22); INSERT só via RPC criar_pedido (service_role).
  *  - [19] anon NÃO insere item: itens_pedido_insert_publico foi REMOVIDA (pentest
  *    #3A); a única escrita de item é a RPC criar_pedido (service_role), fora de RLS.
  *  - [7] cupom forjado e [16] troca de loja_id rejeitados pelo WITH CHECK.
