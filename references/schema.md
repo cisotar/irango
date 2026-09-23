@@ -508,7 +508,8 @@ Ver detalhes completos em `references/seguranca.md`.
 Regra geral:
 - **Vitrine pública** (produtos, categorias) → SELECT público onde `ativo = true`; loja: leitura anon via `public.vitrine_lojas` (view — nunca `public.lojas` diretamente); projeta `logo_url` entre as colunas públicas
 - **Dados do lojista** (cupons, pedidos, formas_pagamento, zonas) → somente `auth.uid() = lojas.dono_id`
-- **INSERT de pedido** → público (cliente não precisa de login)
+- **INSERT de pedido** → só pela RPC `criar_pedido` sob `service_role` (Server Action de checkout;
+  cliente sem login); `anon`/`authenticated` sem INSERT direto (migration `20260923060457`)
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`
 - **`admin_acessos`** → deny-all permanente; acesso exclusivo via `service_role` (trilha de auditoria de acesso admin, issues 146/147)
 - **`taxas_entrega_duplicadas_182`** → deny-all permanente; acesso exclusivo via `service_role` (arquivo de dedup do índice único de `taxas_entrega.zona_id`, issue 182)
