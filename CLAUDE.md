@@ -80,6 +80,12 @@ Specs em `specs/` (concluídas em `specs/arquivo/`), issues em `tasks/`, planos 
   no PR #126, que absorveu um `docs(188)` não relacionado).
 - Issue entregue é **removida** de `tasks/`. `tasks/arquivo/` é só para issue engavetada
   SEM implementação, com nota no topo dizendo por quê (ver 157, 158).
+- **Issue com `Spec:` marca o behavior correspondente em `specs/` no mesmo PR que a implementa.**
+  Ao fechar a issue, `[x]` no(s) checkbox(es) do spec que ela resolve, com o commit/PR como
+  evidência implícita (o `git blame` da linha já aponta pra isso). Se o spec ficar 100% `[x]`,
+  `git mv` para `specs/arquivo/` no mesmo commit. Checkbox de spec sem `[x]` correspondente a
+  código já mesclado é dívida silenciosa — não empurre para uma triagem futura resolver o que
+  o PR que implementou já sabia.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

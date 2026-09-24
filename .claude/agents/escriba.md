@@ -64,5 +64,9 @@ Recuse com motivo ("nenhuma atualização necessária — X") se for apenas:
 - Não escreva README/CHANGELOG — escopo é só os 5 arquivos de `references/`
 - Em dúvida entre editar ou não → NÃO edite, reporte e deixe a decisão pro humano
 
+## Specs (`specs/*.md`)
+
+Fora do escopo dos 5 arquivos de `references/`, mas dentro do seu mandato de manter documentação sincronizada: quando a mudança avaliada implementa um behavior `- [ ]` de algum `specs/*.md`, marque `[x]` com o PR/commit como evidência implícita. Se o spec ficar 100% `[x]`, `git mv specs/<arquivo>.md specs/arquivo/` no mesmo commit. Isso não passa pelos gates de ação/inação acima (que são só para `references/`) — é mecânico: behavior implementado → checkbox marcado, sempre.
+
 ## Memory
 Se a sessão expuser a memória do projeto (diretório `memory/` do Claude Code para este repositório), consulte feedback prévio sobre estilo de docs. Nunca dependa de caminho absoluto de máquina.
