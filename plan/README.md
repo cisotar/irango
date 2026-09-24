@@ -35,7 +35,7 @@ Arquiva-se por **entregável no disco**, nunca por menção em commit:
 Ambos os itens da triagem de 2026-09-08 foram entregues e arquivados desde então
 (`loop-160-props-action-obrigatorias.md` — série `feat(160)`; `verify-handoff-146-teto-itens.md`
 — PRs #111/#112). `plan/` (raiz) hoje só contém trabalho genuinamente aberto: `orquestrar`
-(agente e skill) agora inclui, no próprio plano gerado, um passo final de higiene que arquiva o
-loop em `plan/arquivo/` assim que o entregável estiver no disco — ver `.claude/agents/orquestrar.md`
+(agente e skill) agora inclui, no próprio plano gerado, um passo final de higiene que arquiva os dois arquivos do
+loop (`loop-*.md` e `loop-*.resumo.md`) em `plan/arquivo/` assim que o entregável estiver no disco — ver `.claude/agents/orquestrar.md`
 regra 8. Não repita a varredura manual completa sem motivo; confira `plan/` (raiz) para o que
 ainda está pendente.
