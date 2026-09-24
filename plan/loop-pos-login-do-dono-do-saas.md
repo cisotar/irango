@@ -73,6 +73,28 @@ A causa do sintoma relatado ("caio direto no `/painel`") era config, não códig
 **Ramificação B — `CONFERE`:**
 O diagnóstico do spec se confirma: o dono chega ao hub e o problema real é a porta de mão única. Segue para o passo 1. Todo o resto deste plano assume a ramificação B.
 
+## Status (2026-09-24) — passo 3 já resolvido por outro trabalho, fora deste loop
+
+O item de navegação de retorno ao hub admin (passo 3 abaixo) **já está implementado**, confirmado por investigação
+no código atual (`main`). Não veio da execução deste loop — foi introduzido de carona no commit `b262502`
+(`feat(194): redesenho da sidebar do painel (#130)`, 2026-09-15), como parte do redesenho geral da barra lateral
+do painel, não como consequência deste spec.
+
+- `src/app/(painel)/painel/layout.tsx:94-104` decide `voltarHref`/`voltarRotulo` no `ContextoNav` só quando
+  `ehAdminSaaS(user!.id)` é `true` (`src/lib/auth/admin.ts:25-32`, fail-safe: erro de env vira `false`).
+- `src/components/painel/NavPainel.tsx:505-513` renderiza o link só se `contexto.voltarHref` existir.
+- Nomes reais diferem do previsto no passo 3 (`voltarHref`/`voltarRotulo` dentro do `ContextoNav` já existente,
+  não um `ContextoNav.voltarPara` novo) — a decisão arquitetural do plano (booleano de identidade só controla
+  markup, nunca outra decisão) foi seguida na prática, mesmo sem o `/fluxo` formal deste loop.
+- Cobertura de teste existe: `src/components/painel/NavPainel.test.tsx:313` (describe "rodapé: voltarHref/voltarRotulo"),
+  cobrindo lojista comum sem link, admin com `voltarHref`+`voltarRotulo`, e admin com `voltarHref` sem rótulo (default "Voltar").
+
+**O que segue de fato pendente, sem rastro no código:** passo 2 (teste de regressão do destino por identidade —
+admin → `/admin`, não-admin → `/painel`, `next` explícito vence identidade) e passo 5 (comentário + teste de
+determinismo de `buscarLojaDoDono`). Passo 4 (copy/nome da loja no card do hub) não verificado nesta rodada.
+Este loop pode ser retomado só para os passos 2 e 5 (ambos degrau leve — `testar`/`fix`), ou arquivado se o
+usuário considerar cobertura suficiente sem eles.
+
 ### Passo 1 — `quebrar` (1 agente, opus)
 
 Entrada: `specs/pos-login-do-dono-do-saas.md` + a instrução explícita de que o **passo 0 já foi resolvido** e não deve virar issue.
