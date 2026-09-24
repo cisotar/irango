@@ -46,7 +46,9 @@ Skills de manutenção (fora do ciclo de feature):
 
 ## Agentes
 
-18 agentes em `.claude/agents/`, descritos em `.claude/agents/README.md`. Antes de disparar vários agentes para uma tarefa fora do `/fluxo`, use `/orquestrar`: ele devolve o plano mais barato e seguro com reuso do que já existe. Ciclo por issue no `/fluxo`: planejar → `tdd` (só issue crítica) → `executar` → `revisar` ‖ `testar` ‖ `auditar` [‖ `acelerar`] → `verificar` → `escriba`. `pentester` é sob demanda.
+19 agentes em `.claude/agents/`, descritos em `.claude/agents/README.md`. `orquestrar-autonomo` é a
+variante de `orquestrar` que executa o loop sozinho, sem parar para aprovação humana — opt-in
+explícito, maior risco; use `orquestrar`/`/orquestrar` por padrão. Antes de disparar vários agentes para uma tarefa fora do `/fluxo`, use `/orquestrar`: ele devolve o plano mais barato e seguro com reuso do que já existe. Ciclo por issue no `/fluxo`: planejar → `tdd` (só issue crítica) → `executar` → `revisar` ‖ `testar` ‖ `auditar` [‖ `acelerar`] → `verificar` → `escriba`. `pentester` é sob demanda.
 
 ## Referências — leia antes de propor escopo
 

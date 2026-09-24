@@ -40,6 +40,7 @@ Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
 | `verificar` | Roda o app (contra cloud) e confirma comportamento real | sonnet |
 | `escriba` | Mantém `references/` sincronizado (conservador) | sonnet |
 | `orquestrar` | Projeta o loop mais barato/seguro para uma tarefa, reusando agentes, skills e primitivos do harness; devolve `plan/loop-*.md` (para IA) e `plan/loop-*.resumo.md` (para humano), não executa | opus |
+| `orquestrar-autonomo` | Variante do `orquestrar` que projeta **e executa** o loop de ponta a ponta sem parar para aprovação humana, incluindo `db push`/`git push`/PR quando o plano exigir; opt-in explícito, maior risco | opus |
 
 ## Como invocar
 Pelo orquestrador (Task/Agent) passando o `subagent_type` (ex.: `auditar`) e o caminho do alvo (issue, arquivo, ou descrição). Issues críticas: `tdd` antes de `executar`.
