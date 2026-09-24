@@ -201,22 +201,22 @@ seguro. O link do Maps entra só na Etapa 2.
 
 **Behaviors:**
 
-- [ ] **Ver o endereço da loja ao marcar "Retirada no local".** O bloco aparece
+- [x] **Ver o endereço da loja ao marcar "Retirada no local".** O bloco aparece
   no mesmo instante da seleção, sem request. Garantido em: **SSR (dado) + cliente
   (UX)** — a string vem pronta do servidor no primeiro render da página
   (`buscarLojaPorSlug` → `vitrine_lojas`); o cliente só decide **mostrar ou não**
   conforme o rádio. Nenhuma chamada de rede no toggle.
-- [ ] **Não ver o bloco ao marcar "Entrega"** (ou sem tipo escolhido). Garantido
+- [x] **Não ver o bloco ao marcar "Entrega"** (ou sem tipo escolhido). Garantido
   em: cliente (UX) — condicional sobre `tipoEntrega === "retirada"`.
-- [ ] **Trocar de retirada para entrega depois de ver o endereço** ("é longe
+- [x] **Trocar de retirada para entrega depois de ver o endereço** ("é longe
   demais"). Garantido em: cliente (UX) — comportamento já existente do
   `RadioGroup`; esta feature **não pode** alterar o gate `podeConfirmar`
   (`estado.ts:67`) nem o gate de frete `chaveFrete` (`estado.ts:89`), que continua
   retornando `null` em retirada.
-- [ ] **Confirmar o pedido normalmente quando a loja não tem endereço
+- [x] **Confirmar o pedido normalmente quando a loja não tem endereço
   cadastrado.** O bloco mostra o fallback (RN-R5) e o checkout segue. Garantido
   em: por design — o aviso é informativo e **nunca** entra em `podeConfirmar`.
-- [ ] **Ver o mesmo bloco no celular e no computador.** Garantido em: cliente
+- [x] **Ver o mesmo bloco no celular e no computador.** Garantido em: cliente
   (UX) — prop passada nas duas instâncias de `EtapaEntrega` (achado 6).
   Verificação obrigatória nas duas larguras.
 
@@ -258,19 +258,19 @@ Supabase) e não é alcançável por `renderToStaticMarkup`; extrair o link torn
 
 **Behaviors:**
 
-- [ ] **Ver o endereço de retirada na confirmação.** Garantido em: **SSR** — a
+- [x] **Ver o endereço de retirada na confirmação.** Garantido em: **SSR** — a
   loja é lida server-side por `ped.loja_id` (service_role) na página já protegida
   por `token_acesso`.
-- [ ] **Abrir o Google Maps a partir da confirmação**, em nova aba, já com o
+- [x] **Abrir o Google Maps a partir da confirmação**, em nova aba, já com o
   endereço da loja buscado. Garantido em: **SSR (a URL é montada no servidor a
   partir do endereço do banco)** + cliente (o clique). Nenhuma API externa é
   chamada pelo iRango — quem chama o Google é o navegador do cliente, se ele
   clicar.
-- [ ] **Não ver o bloco nem o link quando o pedido é de entrega.** Garantido em:
+- [x] **Não ver o bloco nem o link quando o pedido é de entrega.** Garantido em:
   **SSR** — condicional sobre `pedidos.tipo_entrega`, coluna gravada pelo servidor.
-- [ ] **Não ver o link quando a loja não tem endereço** — vê só o texto de
+- [x] **Não ver o link quando a loja não tem endereço** — vê só o texto de
   fallback (RN-R5). Garantido em: **SSR** — `formatarEnderecoLoja` devolve `null`.
-- [ ] **Continuar vendo o botão manual "Avisar a loja no WhatsApp"** na mesma
+- [x] **Continuar vendo o botão manual "Avisar a loja no WhatsApp"** na mesma
   condição de hoje; a mensagem que ele abre **muda apenas nas duas linhas da
   RN-R7** (endereço da loja em retirada; endereço do cliente encurtado em
   entrega) — todo o resto do texto e a condição de renderização do botão
@@ -318,7 +318,7 @@ já cobre as seis colunas (`patches-loja.ts:42-48`).
   que o endereço aparece para clientes que escolhem retirada. Garantido em:
   cliente (UX puro) — texto estático, zero lógica. Corte limpo se quiser a entrega
   mínima.
-- [ ] **Salvar o endereço continua gravando exatamente as mesmas colunas, pela
+- [x] **Salvar o endereço continua gravando exatamente as mesmas colunas, pela
   mesma allowlist.** Garantido em: **Server Action + RLS** (lojista) e **Server
   Action + binding por tenant** (admin, `escopo.atualizarLoja` com `lojaId` da
   rota validada, nunca do payload). Esta feature **não adiciona nenhuma escrita**

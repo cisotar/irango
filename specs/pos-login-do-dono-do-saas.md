@@ -62,10 +62,10 @@ Fecha o ciclo do hub de escolha do dono do SaaS: garante que ele **chegue** ao h
 - Nenhum componente novo.
 
 **Behaviors:**
-- [ ] Ver o hub após login (Google ou email/senha), sem passo extra. **Garantido em: Server Action / Route Handler** — `ehAdminSaaS(user.id)` sobre `user.id` de sessão verificada, em `auth.ts` e `callback/route.ts`. Já implementado; cobre com teste de regressão.
-- [ ] Ser bloqueado no hub se não for o dono do SaaS. **Garantido em: Server Component** — `verificarAdminSaaS()` fail-closed dentro do `try`, `redirect("/painel")` no `catch` (fora do try, para o `NEXT_REDIRECT` propagar — `seguranca.md` §7). Já implementado.
-- [ ] Escolher "Minha loja" → `/painel`. Garantido em: cliente (navegação); a autoridade de acesso é o guard de `/painel`.
-- [ ] Escolher "Clientes" → `/admin/assinantes`. Garantido em: cliente (navegação); a autoridade é `verificarAdminSaaS()` no `admin/assinantes/layout.tsx`.
+- [x] Ver o hub após login (Google ou email/senha), sem passo extra. **Garantido em: Server Action / Route Handler** — `ehAdminSaaS(user.id)` sobre `user.id` de sessão verificada, em `auth.ts` e `callback/route.ts`. Já implementado; cobre com teste de regressão.
+- [x] Ser bloqueado no hub se não for o dono do SaaS. **Garantido em: Server Component** — `verificarAdminSaaS()` fail-closed dentro do `try`, `redirect("/painel")` no `catch` (fora do try, para o `NEXT_REDIRECT` propagar — `seguranca.md` §7). Já implementado.
+- [x] Escolher "Minha loja" → `/painel`. Garantido em: cliente (navegação); a autoridade de acesso é o guard de `/painel`.
+- [x] Escolher "Clientes" → `/admin/assinantes`. Garantido em: cliente (navegação); a autoridade é `verificarAdminSaaS()` no `admin/assinantes/layout.tsx`.
 - [ ] Ver, no card "Minha loja", o nome da própria loja quando ela existe, ou o rótulo "Sua loja ainda não foi criada" quando não existe. **Garantido em: Server Component** — leitura da própria loja pelo `dono_id` da sessão. Nunca aceita `lojaId` da URL ou do cliente.
 
 ---
@@ -81,9 +81,9 @@ Fecha o ciclo do hub de escolha do dono do SaaS: garante que ele **chegue** ao h
 - Nenhum componente novo; nenhuma edição em `components/ui/`.
 
 **Behaviors:**
-- [ ] Dono do SaaS vê, no shell do painel, um item de retorno ao hub (ex.: "Painel do iRango" → `/admin`). **Garantido em: Server Component (renderização) + guard de `/admin` (autoridade).** O booleano que decide renderizar o item é calculado por `ehAdminSaaS(user.id)` **no `layout.tsx`**, sobre o `user.id` de `getUser()` — nunca por flag vinda do cliente, nunca por env `NEXT_PUBLIC_`. Renderizar o link é UX; quem autoriza o acesso é `verificarAdminSaaS()` dentro de `/admin`, que roda de novo a cada request.
-- [ ] Lojista comum **não** vê esse item e não percebe diferença alguma no painel. **Garantido em: Server Component** — `contexto.voltarPara` fica `undefined`, o item não é renderizado (ausência de markup, nunca `hidden`/CSS — `architecture.md` §6, mesma regra do entitlement por feature).
-- [ ] Lojista comum que force `/admin` na URL cai em `/painel`. **Garantido em: Server Component** — guard já existente. Cobrir com teste.
+- [x] Dono do SaaS vê, no shell do painel, um item de retorno ao hub (ex.: "Painel do iRango" → `/admin`). **Garantido em: Server Component (renderização) + guard de `/admin` (autoridade).** O booleano que decide renderizar o item é calculado por `ehAdminSaaS(user.id)` **no `layout.tsx`**, sobre o `user.id` de `getUser()` — nunca por flag vinda do cliente, nunca por env `NEXT_PUBLIC_`. Renderizar o link é UX; quem autoriza o acesso é `verificarAdminSaaS()` dentro de `/admin`, que roda de novo a cada request.
+- [x] Lojista comum **não** vê esse item e não percebe diferença alguma no painel. **Garantido em: Server Component** — `contexto.voltarPara` fica `undefined`, o item não é renderizado (ausência de markup, nunca `hidden`/CSS — `architecture.md` §6, mesma regra do entitlement por feature).
+- [x] Lojista comum que force `/admin` na URL cai em `/painel`. **Garantido em: Server Component** — guard já existente. Cobrir com teste.
 
 ---
 
@@ -96,8 +96,8 @@ Fecha o ciclo do hub de escolha do dono do SaaS: garante que ele **chegue** ao h
 - `Link` + ícone `ArrowLeft` (reuso — mesmo padrão do "Voltar para assinantes" já existente em `admin/assinantes/[lojaId]/layout.tsx:55`). Nenhum componente novo.
 
 **Behaviors:**
-- [ ] Voltar de `/admin/assinantes` para o hub `/admin`. Garantido em: cliente (navegação); toda a subárvore continua sob `verificarAdminSaaS()` no `layout.tsx`.
-- [ ] Não alterar a faixa de contexto de `/admin/assinantes/[lojaId]` (que já volta para a lista, um nível acima — comportamento correto, definido em `specs/paridade-hub-admin-painel.md`). Garantido em: escopo desta feature (não-mudança).
+- [x] Voltar de `/admin/assinantes` para o hub `/admin`. Garantido em: cliente (navegação); toda a subárvore continua sob `verificarAdminSaaS()` no `layout.tsx`.
+- [x] Não alterar a faixa de contexto de `/admin/assinantes/[lojaId]` (que já volta para a lista, um nível acima — comportamento correto, definido em `specs/paridade-hub-admin-painel.md`). Garantido em: escopo desta feature (não-mudança).
 
 ---
 

@@ -128,20 +128,20 @@ e o lojista recebe a frase acionável — nunca o `23000` cru (RN-09).
   pelo `CardapiosAdminClient.tsx:46`
 
 **Behaviors:**
-- [ ] Abrir o diálogo de remoção e confirmar — chama `acoes.remover(id, "manter")`. Garantido em: Server Action + RLS.
-- [ ] Ler a recusa com o número N de exclusivos — **preview de UX** no cliente; o N exibido vem de
+- [x] Abrir o diálogo de remoção e confirmar — chama `acoes.remover(id, "manter")`. Garantido em: Server Action + RLS.
+- [x] Ler a recusa com o número N de exclusivos — **preview de UX** no cliente; o N exibido vem de
       `resultado.exclusivos`, **calculado no servidor** na mesma resposta. Nenhuma decisão do servidor
       depende dele.
-- [ ] Clicar "Converter os N produtos para o menu" — `acoes.converter(id)`, inalterado. Garantido em: Server Action + RLS.
-- [ ] Clicar "Arquivar os N produtos" — `acoes.remover(id, "arquivar")`. Sem segunda confirmação
+- [x] Clicar "Converter os N produtos para o menu" — `acoes.converter(id)`, inalterado. Garantido em: Server Action + RLS.
+- [x] Clicar "Arquivar os N produtos" — `acoes.remover(id, "arquivar")`. Sem segunda confirmação
       (gesto reversível). Garantido em: Server Action + RLS.
-- [ ] Clicar "Remover os N produtos" (botão destrutivo, o terceiro) — **não executa nada ainda**:
+- [x] Clicar "Remover os N produtos" (botão destrutivo, o terceiro) — **não executa nada ainda**:
       troca o bloco de alerta para o estado de segunda confirmação, com
       `FRASE_CASCATA_PERMANENTE(N)` e os botões "Cancelar" / "Apagar N produtos e remover o cardápio".
       Garantido em: cliente (UX). A segunda confirmação é ergonomia, **não** é a proteção.
-- [ ] Confirmar a segunda vez — `acoes.remover(id, "cascata")`. Garantido em: Server Action + RLS.
+- [x] Confirmar a segunda vez — `acoes.remover(id, "cascata")`. Garantido em: Server Action + RLS.
       A lista de produtos apagados é **recalculada no servidor** (RN-02); o cliente manda só o modo.
-- [ ] Cancelar/fechar em qualquer ponto — nada é escrito. Garantido em: cliente (UX).
+- [x] Cancelar/fechar em qualquer ponto — nada é escrito. Garantido em: cliente (UX).
 
 ### Cardápios da loja-alvo no hub admin — `/admin/assinantes/[lojaId]/cardapios`
 **Mundo:** painel admin (auth obrigatório + `verificarAdminSaaS`)
@@ -151,10 +151,10 @@ e o lojista recebe a frase acionável — nunca o `23000` cru (RN-09).
 **Componentes:** os mesmos (o client é compartilhado por construção).
 
 **Behaviors:** idênticos aos do lojista, com `acoes.remover: (id, modo) => removerCardapioAdmin(lojaId, id, modo)`.
-- [ ] Executar qualquer dos três modos na loja-alvo — Garantido em: Server Action + `verificarAdminSaaS`
+- [x] Executar qualquer dos três modos na loja-alvo — Garantido em: Server Action + `verificarAdminSaaS`
       (fail-closed, antes de elevar) + escopo por `lojaId` da URL validado. **RLS não protege aqui**
       (`service_role` tem `BYPASSRLS`): o que protege é o escopo explícito, as FKs compostas e o trigger.
-- [ ] Cada uma das três escritas grava `admin_acessos` (`cardapio.remover` com
+- [x] Cada uma das três escritas grava `admin_acessos` (`cardapio.remover` com
       `metadados: { modo, produtos: N }`). Garantido em: Server Action (fire-and-forget, nunca derruba a action).
 
 ---

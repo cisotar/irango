@@ -50,10 +50,10 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 - ~~Assinatura~~ (oculto — autogestão do lojista, fora de escopo)
 
 **Behaviors:**
-- [ ] Ver a sidebar/topbar idênticas ao painel, com o item ativo derivado de `usePathname` sobre o `basePath` admin. Garantido em: cliente (UX de navegação).
-- [ ] Ver o banner amber persistente de "editando loja de terceiro" em todas as áreas. Garantido em: cliente (UX) — o dado de posse/permissão real é o guard `verificarAdminSaaS()` no servidor.
+- [x] Ver a sidebar/topbar idênticas ao painel, com o item ativo derivado de `usePathname` sobre o `basePath` admin. Garantido em: cliente (UX de navegação).
+- [x] Ver o banner amber persistente de "editando loja de terceiro" em todas as áreas. Garantido em: cliente (UX) — o dado de posse/permissão real é o guard `verificarAdminSaaS()` no servidor.
 - [ ] Não ver o item Assinatura no menu admin. Garantido em: cliente (UX); a ausência de rota `.../assinatura` é a barreira real.
-- [ ] Navegar entre áreas sem recarregar contexto de admin (o guard roda por request no layout). Garantido em: Server Component (guard) + RLS-equivalente (escopo por `lojaId`).
+- [x] Navegar entre áreas sem recarregar contexto de admin (o guard roda por request no layout). Garantido em: Server Component (guard) + RLS-equivalente (escopo por `lojaId`).
 
 ---
 
@@ -67,8 +67,8 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 - `TabelaPedidos` (reuso — `components/painel/TabelaPedidos.tsx`) — **parametrizar com `basePedidos`** para os links apontarem a `/admin/assinantes/[lojaId]/pedidos/[id]` (hoje o link é fixo em `/painel/pedidos/[id]`). Default mantém `/painel`.
 
 **Behaviors:**
-- [ ] Ver métricas do dia (pedidos hoje, pendentes, total do dia). Garantido em: Server Action/Component — `total` é o valor autoritativo já gravado no pedido; a métrica só soma valores persistidos, sem recálculo de preço. Escopo por `lojaId` via loader admin (`service_role`).
-- [ ] Ver os 20 pedidos recentes e clicar em "Ver todos". Garantido em: Server Component (leitura escopada por `lojaId`); navegação no cliente.
+- [x] Ver métricas do dia (pedidos hoje, pendentes, total do dia). Garantido em: Server Action/Component — `total` é o valor autoritativo já gravado no pedido; a métrica só soma valores persistidos, sem recálculo de preço. Escopo por `lojaId` via loader admin (`service_role`).
+- [x] Ver os 20 pedidos recentes e clicar em "Ver todos". Garantido em: Server Component (leitura escopada por `lojaId`); navegação no cliente.
 
 ---
 
@@ -82,8 +82,8 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 - `TabelaPedidos` (reuso parametrizado, ver Dashboard).
 
 **Behaviors:**
-- [ ] Filtrar pedidos por status (Todos / Pendentes / …). Garantido em: cliente (UX) — filtro de apresentação, nunca barreira de segurança; a lista já chega escopada por `lojaId` do servidor.
-- [ ] Abrir o detalhe de um pedido. Garantido em: cliente (navegação); a leitura do detalhe é escopada por `lojaId` no servidor.
+- [x] Filtrar pedidos por status (Todos / Pendentes / …). Garantido em: cliente (UX) — filtro de apresentação, nunca barreira de segurança; a lista já chega escopada por `lojaId` do servidor.
+- [x] Abrir o detalhe de um pedido. Garantido em: cliente (navegação); a leitura do detalhe é escopada por `lojaId` no servidor.
 
 ---
 
@@ -97,8 +97,8 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 - `AcoesStatus` (reuso — `painel/pedidos/[id]/AcoesStatus.tsx`) — **parametrizar com `acao?`** (default = `atualizarStatusPedido` do lojista); o wrapper admin injeta `atualizarStatusPedidoAdmin(lojaId, id, novoStatus)`. Continua exibindo só transições permitidas via a função pura `transicaoPermitida` (mesma que o servidor).
 
 **Behaviors:**
-- [ ] Ver dados e itens do pedido, incluindo PII do cliente (nome, telefone, endereço). Garantido em: Server Component com leitura por `service_role` escopada por `lojaId` + `id` (nunca por token público; o admin já tem autoridade).
-- [ ] Mudar o status do pedido (Confirmar / Iniciar preparo / Saiu / Entregue / Cancelar). **Garantido em: Server Action + escopo (RLS-equivalente).** A máquina de estados (`transicaoPermitida`) é revalidada no servidor; a UI é só conveniência. Salto/reversão de estado é rejeitado no servidor. Escopo cross-loja garantido pelo wrapper `escopo` (`.eq("loja_id", lojaId).eq("id", id)`) sob `service_role`.
+- [x] Ver dados e itens do pedido, incluindo PII do cliente (nome, telefone, endereço). Garantido em: Server Component com leitura por `service_role` escopada por `lojaId` + `id` (nunca por token público; o admin já tem autoridade).
+- [x] Mudar o status do pedido (Confirmar / Iniciar preparo / Saiu / Entregue / Cancelar). **Garantido em: Server Action + escopo (RLS-equivalente).** A máquina de estados (`transicaoPermitida`) é revalidada no servidor; a UI é só conveniência. Salto/reversão de estado é rejeitado no servidor. Escopo cross-loja garantido pelo wrapper `escopo` (`.eq("loja_id", lojaId).eq("id", id)`) sob `service_role`.
 
 ---
 
@@ -113,10 +113,10 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 - `CuponsAdminClient.tsx` (novo wrapper admin) — injeta `criarCupomAdmin` / `atualizarCupomAdmin` / `removerCupomAdmin` com `lojaId` fixado em closure.
 
 **Behaviors:**
-- [ ] Listar cupons da loja-alvo (código, valor, usos, validade, status). Garantido em: Server Component, leitura por `service_role` escopada por `lojaId`. (Nunca há SELECT público de cupons — `seguranca.md` §cupons.)
-- [ ] Criar cupom (código, tipo, valor, pedido mínimo, usos máximos, expiração, ativo). **Garantido em: Server Action + escopo.** `cupomSchema` revalidado no servidor; `loja_id` injetado por construção pelo wrapper (nunca do payload); código único por loja (violação `23505` → "Este código já existe"). O **valor** do cupom é definição comercial, não valor cobrado: a autoridade de quanto o cliente paga permanece em `validarCupom` + RPC `criar_pedido` no checkout (inalterado).
-- [ ] Editar cupom. **Garantido em: Server Action + escopo** (`.eq("loja_id").eq("id")`), `patch` sem `loja_id`/`id` (Omit por tipo do wrapper).
-- [ ] Remover cupom. **Garantido em: Server Action + escopo.**
+- [x] Listar cupons da loja-alvo (código, valor, usos, validade, status). Garantido em: Server Component, leitura por `service_role` escopada por `lojaId`. (Nunca há SELECT público de cupons — `seguranca.md` §cupons.)
+- [x] Criar cupom (código, tipo, valor, pedido mínimo, usos máximos, expiração, ativo). **Garantido em: Server Action + escopo.** `cupomSchema` revalidado no servidor; `loja_id` injetado por construção pelo wrapper (nunca do payload); código único por loja (violação `23505` → "Este código já existe"). O **valor** do cupom é definição comercial, não valor cobrado: a autoridade de quanto o cliente paga permanece em `validarCupom` + RPC `criar_pedido` no checkout (inalterado).
+- [x] Editar cupom. **Garantido em: Server Action + escopo** (`.eq("loja_id").eq("id")`), `patch` sem `loja_id`/`id` (Omit por tipo do wrapper).
+- [x] Remover cupom. **Garantido em: Server Action + escopo.**
 
 ---
 
@@ -131,12 +131,12 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 - Loader admin dos dados (categorias de opcional, opcionais, categorias de produto, associações) escopados por `lojaId` via `service_role`.
 
 **Behaviors:**
-- [ ] Listar/buscar biblioteca de opcionais da loja-alvo. Garantido em: Server Component, leitura escopada por `lojaId`.
-- [ ] Criar/editar/remover categoria de opcional. **Garantido em: Server Action + escopo.**
-- [ ] Criar/editar opcional com preço (acréscimo). **Garantido em: Server Action + escopo.** `schemaOpcional` revalidado no servidor (preço ≥ 0). O preço do opcional é **valor autoritativo do servidor** usado no checkout (snapshot em `itens_pedido_opcionais` via RPC `criar_pedido`); o admin o define aqui, mas o cliente nunca o influencia. Posse da `categoria_opcional_id` sob `lojaId` provada por `escopo.buscarPorId` antes de gravar (anti cross-tenant, já que `service_role` bypassa RLS).
-- [ ] Alternar opcional ativo/inativo. **Garantido em: Server Action + escopo.**
-- [ ] Remover opcional. **Garantido em: Server Action + escopo** (pedidos passados preservados por snapshot).
-- [ ] Salvar associação categoria-de-produto ⋈ categorias-de-opcional. **Garantido em: Server Action + escopo.** Ambas as pontas (`categoria_id` de produto e cada `categoria_opcional_id`) revalidadas como da loja-alvo sob `lojaId` antes da escrita (RN-O8). O DELETE-por-`categoria_id` (substituição do conjunto) é escrita não-single: exceção documentada ao wrapper — `svc` cru com `.eq("loja_id", lojaId).eq("categoria_id", …)` explícitos (`seguranca.md` §EscopoLoja, "exceções legítimas").
+- [x] Listar/buscar biblioteca de opcionais da loja-alvo. Garantido em: Server Component, leitura escopada por `lojaId`.
+- [x] Criar/editar/remover categoria de opcional. **Garantido em: Server Action + escopo.**
+- [x] Criar/editar opcional com preço (acréscimo). **Garantido em: Server Action + escopo.** `schemaOpcional` revalidado no servidor (preço ≥ 0). O preço do opcional é **valor autoritativo do servidor** usado no checkout (snapshot em `itens_pedido_opcionais` via RPC `criar_pedido`); o admin o define aqui, mas o cliente nunca o influencia. Posse da `categoria_opcional_id` sob `lojaId` provada por `escopo.buscarPorId` antes de gravar (anti cross-tenant, já que `service_role` bypassa RLS).
+- [x] Alternar opcional ativo/inativo. **Garantido em: Server Action + escopo.**
+- [x] Remover opcional. **Garantido em: Server Action + escopo** (pedidos passados preservados por snapshot).
+- [x] Salvar associação categoria-de-produto ⋈ categorias-de-opcional. **Garantido em: Server Action + escopo.** Ambas as pontas (`categoria_id` de produto e cada `categoria_opcional_id`) revalidadas como da loja-alvo sob `lojaId` antes da escrita (RN-O8). O DELETE-por-`categoria_id` (substituição do conjunto) é escrita não-single: exceção documentada ao wrapper — `svc` cru com `.eq("loja_id", lojaId).eq("categoria_id", …)` explícitos (`seguranca.md` §EscopoLoja, "exceções legítimas").
 
 ---
 
@@ -150,8 +150,8 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 - `ProdutosClient` (reuso — já parametrizado por `acoes?`; adicionar `salvarAssociacaoOpcionais?` ao objeto `acoes`).
 
 **Behaviors:**
-- [ ] Ver os opcionais associados no rodapé de cada produto. Garantido em: Server Component (leitura escopada por `lojaId`).
-- [ ] Editar a associação de opcionais pela categoria no cardápio. **Garantido em: Server Action + escopo** (mesma action admin da rota 6).
+- [x] Ver os opcionais associados no rodapé de cada produto. Garantido em: Server Component (leitura escopada por `lojaId`).
+- [x] Editar a associação de opcionais pela categoria no cardápio. **Garantido em: Server Action + escopo** (mesma action admin da rota 6).
 
 ---
 
@@ -166,7 +166,7 @@ Todas as rotas abaixo vivem sob `/admin/assinantes/[lojaId]/*`. O guard autorita
 **Nota (Princípio arquitetural):** a reflexão automática já é garantida no nível dos componentes — `PerfilClient`, `HorariosClient`, `EntregasClient`, `PagamentosClient` e `TemaClient` são os mesmos arquivos consumidos pelo painel e pelo admin; mudança futura neles reflete nos dois. A única divergência intencional é de *organização de página* (consolidada no admin vs subpáginas no painel), não de conteúdo/UI.
 
 **Behaviors:**
-- [ ] Editar perfil, horários, entregas, pagamentos, tema, logo e publicar/despublicar. **Garantido em: Server Actions admin existentes + escopo** (inalterado; geocoding, taxa, chave Pix e `ativo` decididos no servidor). Nenhum recálculo novo introduzido nesta rota.
+- [x] Editar perfil, horários, entregas, pagamentos, tema, logo e publicar/despublicar. **Garantido em: Server Actions admin existentes + escopo** (inalterado; geocoding, taxa, chave Pix e `ativo` decididos no servidor). Nenhum recálculo novo introduzido nesta rota.
 
 ---
 
