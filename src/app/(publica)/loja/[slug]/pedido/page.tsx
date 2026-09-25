@@ -10,6 +10,10 @@ import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/loja
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
 import { CheckoutWizard } from "@/components/vitrine/checkout/CheckoutWizard";
 import { formatarEnderecoLoja } from "@/lib/utils/enderecoLoja";
+import {
+  entregaDisponivel,
+  retiradaDisponivel,
+} from "@/lib/utils/modalidadesEntrega";
 import type {
   FormaPagamentoWizard,
   TipoPagamento,
@@ -79,11 +83,11 @@ export default async function CheckoutPage({ params }: PageProps) {
     loja.timezone ?? "America/Sao_Paulo",
   ).aberta;
 
-  // RN-C4 (edge): loja aceita entrega se tem alguma zona ativa com taxa OU
-  // taxa_entrega_fora_zona configurada. Sem nenhuma → só retirada.
-  const temZonaAtiva = zonasComTaxa.some((z) => z.ativo && z.taxa !== null);
-  const aceitaEntrega =
-    temZonaAtiva || loja.taxa_entrega_fora_zona != null;
+  // Modalidades (spec modalidades-entrega-loja, RN-C4, D4) — preview de UX pela
+  // MESMA regra do aviso do painel; `criarPedido` relê a loja e recusa a
+  // modalidade desligada.
+  const aceitaEntrega = entregaDisponivel(loja, zonasComTaxa);
+  const aceitaRetirada = retiradaDisponivel(loja);
 
   // Formas de pagamento ativas, hidratadas (Pix carrega chave + QR do banco).
   const formasPagamento: FormaPagamentoWizard[] = formas
@@ -117,6 +121,7 @@ export default async function CheckoutPage({ params }: PageProps) {
       lojaNome={loja.nome}
       lojaAberta={aberta}
       aceitaEntrega={aceitaEntrega}
+      aceitaRetirada={aceitaRetirada}
       formasPagamento={formasPagamento}
       whatsappLoja={whatsappLoja}
       enderecoLoja={enderecoLoja}

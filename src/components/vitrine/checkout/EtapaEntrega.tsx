@@ -25,10 +25,12 @@ import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { EstadoCupom } from "@/lib/actions/revisarCarrinho-contrato";
 import { ResumoValores } from "./ResumoValores";
 import {
+  VEREDITO_A_COMBINAR_LOJA,
   VEREDITO_CEP_NAO_EXISTE,
   VEREDITO_LOJA_SEM_COORDS,
   type VereditoACombinar,
 } from "@/lib/utils/freteDegradado";
+import { linkWhatsappLoja } from "@/lib/utils/linkWhatsappLoja";
 import { ModalFreteIndisponivel } from "./ModalFreteIndisponivel";
 import {
   criarRetryFrete,
@@ -39,6 +41,7 @@ import { ROTULO_FRETE_A_COMBINAR } from "@/lib/utils/rotuloFrete";
 import {
   chaveFrete,
   precisaCalcularFrete,
+  textoForaDaArea,
   totalPreviewEstimado,
   type TipoEntrega,
 } from "./estado";
@@ -56,8 +59,13 @@ export type EtapaEntregaProps = {
   cupom?: EstadoCupom | null;
   /** [237] Economia de produto, pronta do servidor. */
   economiaProdutos?: number | null;
-  /** false se a loja não aceita entrega (sem zonas e sem fallback fora-de-zona). */
+  /**
+   * false se a loja desligou a entrega, ou se em modo automático não tem zona
+   * ativa nem fallback fora-de-zona (D4). Derivado no SSR.
+   */
   aceitaEntrega: boolean;
+  /** false se a loja desligou a retirada (spec modalidades-entrega-loja). */
+  aceitaRetirada: boolean;
   tipoEntrega: TipoEntrega;
   endereco: EnderecoEntrega | null;
   onTipoEntregaChange: (tipo: TipoEntrega) => void;
@@ -116,6 +124,7 @@ export function EtapaEntrega({
   cupom = null,
   economiaProdutos = null,
   aceitaEntrega,
+  aceitaRetirada,
   tipoEntrega,
   endereco,
   onTipoEntregaChange,
@@ -179,7 +188,10 @@ export function EtapaEntrega({
         // o rótulo exibido vem do status, nunca do número.
         onFreteChange(0);
         onFreteStatusChange?.("a_combinar");
-        // NÃO fixa a chave de dedupe: trocar o CEP deve permitir novo cálculo.
+        // Falha de cálculo NÃO fixa a chave de dedupe: o mesmo endereço pode
+        // ser recalculado. A combinar POR CONFIGURAÇÃO DA LOJA não é falha —
+        // recalcular o mesmo endereço daria o mesmo veredito.
+        if (r.veredito === VEREDITO_A_COMBINAR_LOJA) setChaveCalculada(chaveDestaChamada);
         return;
       }
       if (
@@ -233,6 +245,9 @@ export function EtapaEntrega({
       aplicarResultado(r, chaveDestaChamada);
 
       if (!r.ok || !("a_combinar" in r)) return;
+      // (modalidades, D5) A loja combina o frete no WhatsApp: não é falha, sem
+      // modal e sem retry.
+      if (r.veredito === VEREDITO_A_COMBINAR_LOJA) return;
 
       // (180-B) Esta chamada JÁ foi a tentativa 1. O relógio agenda no máximo
       // mais duas (t=10s e t=20s) e só para o motivo retriável; `esgotado` e
@@ -282,6 +297,12 @@ export function EtapaEntrega({
     : false;
 
   const desktop = variante === "desktop";
+  // Link para falar com a loja antes de existir pedido (fora da área / D4).
+  // Sem WhatsApp cadastrado → null e nenhum link é renderizado (fail-closed).
+  const hrefWhatsappLoja = linkWhatsappLoja(
+    whatsappLoja,
+    `Olá, ${lojaNome}! Quero fazer um pedido. Mensagem enviada pelo cardápio digital.`,
+  );
 
   return (
     <section
@@ -293,10 +314,31 @@ export function EtapaEntrega({
       <div className={SECAO}>
         <h2 className={SECAO_TITULO}>Tipo de entrega</h2>
         <div className="space-y-3 p-4">
-          {!aceitaEntrega && (
+          {!aceitaEntrega && aceitaRetirada && (
             <p className="rounded-lg bg-cinza-claro px-3 py-2 text-xs text-texto-muted">
               Esta loja oferece apenas <strong>retirada no local</strong>.
             </p>
+          )}
+          {/* D4: nenhuma modalidade disponível pelo cardápio (entrega sem zona
+              nem fallback e retirada desligada). O pedido não sai daqui. */}
+          {!aceitaEntrega && !aceitaRetirada && (
+            <div className="space-y-2 rounded-lg bg-cinza-claro px-3 py-2 text-xs text-texto-muted">
+              <p>
+                {hrefWhatsappLoja
+                  ? "Esta loja não está recebendo pedidos pelo cardápio agora. Fale com a loja no WhatsApp para pedir."
+                  : "Esta loja não está recebendo pedidos pelo cardápio agora. Fale com a loja para pedir."}
+              </p>
+              {hrefWhatsappLoja && (
+                <a
+                  href={hrefWhatsappLoja}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center font-bold text-[var(--cor-destaque)] underline underline-offset-2"
+                >
+                  Falar com a loja no WhatsApp
+                </a>
+              )}
+            </div>
           )}
 
           <RadioGroup
@@ -320,20 +362,22 @@ export function EtapaEntrega({
                 </span>
               </Label>
             )}
-            <Label
-              htmlFor="tipo-retirada"
-              className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
-            >
-              <RadioGroupItem value="retirada" id="tipo-retirada" />
-              <span className="flex-1">
-                <span className="block text-sm font-medium text-texto">
-                  Retirada no local
+            {aceitaRetirada && (
+              <Label
+                htmlFor="tipo-retirada"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
+              >
+                <RadioGroupItem value="retirada" id="tipo-retirada" />
+                <span className="flex-1">
+                  <span className="block text-sm font-medium text-texto">
+                    Retirada no local
+                  </span>
+                  <span className="block text-xs text-texto-muted">
+                    Sem custo de entrega
+                  </span>
                 </span>
-                <span className="block text-xs text-texto-muted">
-                  Sem custo de entrega
-                </span>
-              </span>
-            </Label>
+              </Label>
+            )}
           </RadioGroup>
 
           {/* [197] Retirada: onde ir. Reusa as classes do aviso "apenas
@@ -388,17 +432,33 @@ export function EtapaEntrega({
                 {formatarMoeda(frete.taxa)}
               </p>
             )}
-            {frete.status === "a_combinar" && (
-              <p className="text-xs text-texto-muted">
-                Entrega: <strong>{ROTULO_FRETE_A_COMBINAR}</strong>. Você pode
-                concluir o pedido normalmente.
-              </p>
-            )}
+            {frete.status === "a_combinar" &&
+              (frete.veredito === VEREDITO_A_COMBINAR_LOJA ? (
+                <p className="text-xs text-texto-muted">
+                  A loja vai te chamar no WhatsApp para combinar o frete.
+                </p>
+              ) : (
+                <p className="text-xs text-texto-muted">
+                  Entrega: <strong>{ROTULO_FRETE_A_COMBINAR}</strong>. Você pode
+                  concluir o pedido normalmente.
+                </p>
+              ))}
             {frete.status === "indisponivel" && (
-              <p className="text-xs text-destructive">
-                Entrega indisponível para o seu bairro. Tente outro endereço ou
-                escolha retirada.
-              </p>
+              <div className="space-y-1">
+                <p className="text-xs text-destructive">
+                  {textoForaDaArea(aceitaRetirada, hrefWhatsappLoja != null)}
+                </p>
+                {hrefWhatsappLoja && (
+                  <a
+                    href={hrefWhatsappLoja}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-11 items-center text-xs font-bold text-[var(--cor-destaque)] underline underline-offset-2"
+                  >
+                    Falar com a loja no WhatsApp
+                  </a>
+                )}
+              </div>
             )}
             {frete.status === "indisponivel_cep" && (
               <p className="text-xs text-destructive">
@@ -459,13 +519,14 @@ export function EtapaEntrega({
         </>
       )}
 
-      {frete.status === "a_combinar" && (
+      {frete.status === "a_combinar" && frete.veredito !== VEREDITO_A_COMBINAR_LOJA && (
         <ModalFreteIndisponivel
           aberto={modalAberto}
           veredito={frete.veredito}
           estadoRetry={estadoRetry}
           whatsappLoja={whatsappLoja}
           nomeLoja={lojaNome}
+          aceitaRetirada={aceitaRetirada}
           onFechar={() => {
             retryRef.current?.parar();
             setModalAberto(false);

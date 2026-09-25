@@ -55,6 +55,7 @@ import {
   podeConfirmar,
   salvarEstadoWizard,
   SEM_REVISAO,
+  tipoEntregaInicial,
   totalPreviewEstimado,
   type EstadoRevisao,
   type EstadoWizard,
@@ -68,8 +69,13 @@ export type CheckoutWizardProps = {
   lojaSlug: string;
   lojaNome: string;
   lojaAberta: boolean;
-  /** false se a loja não aceita entrega (sem zonas e sem fallback fora-de-zona). */
+  /**
+   * false se a loja desligou a entrega, ou se em modo automático não tem zona
+   * ativa nem fallback fora-de-zona (D4). Derivado no SSR.
+   */
   aceitaEntrega: boolean;
+  /** false se a loja desligou a retirada (spec modalidades-entrega-loja). */
+  aceitaRetirada: boolean;
   formasPagamento: FormaPagamentoWizard[];
   /**
    * [180-B] WhatsApp PÚBLICO da loja (já exposto na vitrine). INDEPENDENTE de
@@ -96,6 +102,7 @@ export function CheckoutWizard({
   lojaNome,
   lojaAberta,
   aceitaEntrega,
+  aceitaRetirada,
   formasPagamento,
   whatsappLoja = null,
   enderecoLoja = null,
@@ -117,7 +124,8 @@ export function CheckoutWizard({
   const [freteStatusPreview, setFreteStatusPreview] = useState("ocioso");
 
   // Estado do wizard hidratado do sessionStorage (pós-mount, SSR-safe).
-  // Se a loja só aceita retirada, força tipoEntrega='retirada'.
+  // Com uma só modalidade disponível, ela já vem selecionada (spec
+  // modalidades-entrega-loja); com as duas, o cliente escolhe.
   const [estado, setEstado] = useState<EstadoWizard>(ESTADO_INICIAL);
 
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -131,10 +139,10 @@ export function CheckoutWizard({
       tipoEntrega: null,
       endereco: null,
     };
-    if (!aceitaEntrega) base.tipoEntrega = "retirada";
+    base.tipoEntrega = tipoEntregaInicial(aceitaEntrega, aceitaRetirada);
     setEstado(base);
     setMontado(true);
-  }, [aceitaEntrega]);
+  }, [aceitaEntrega, aceitaRetirada]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Persiste o estado a cada mudança (após hidratar).
@@ -451,6 +459,7 @@ export function CheckoutWizard({
           cupom={estadoCupom}
           economiaProdutos={economiaProdutos}
           aceitaEntrega={aceitaEntrega}
+          aceitaRetirada={aceitaRetirada}
           tipoEntrega={estado.tipoEntrega}
           endereco={estado.endereco}
           onTipoEntregaChange={handleTipoEntregaChange}
@@ -533,6 +542,7 @@ export function CheckoutWizard({
             cupom={estadoCupom}
             economiaProdutos={economiaProdutos}
             aceitaEntrega={aceitaEntrega}
+            aceitaRetirada={aceitaRetirada}
             tipoEntrega={estado.tipoEntrega}
             endereco={estado.endereco}
             onTipoEntregaChange={handleTipoEntregaChange}

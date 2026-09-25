@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 
-import { carregarZonasAdmin } from "../../carga";
+import { carregarLojaAdminBase, carregarZonasAdmin } from "../../carga";
+import { modalidadesDaLoja } from "@/lib/utils/modalidadesEntrega";
 import { EntregasAdminClient } from "./EntregasAdminClient";
 
 /**
@@ -17,7 +18,19 @@ export default async function EntregasConfiguracaoAdminPage({
   params: Promise<{ lojaId: string }>;
 }): Promise<ReactElement> {
   const { lojaId } = await params;
-  const zonas = await carregarZonasAdmin(lojaId);
+  // Loja (modalidades + fallback fora-de-zona) e zonas: loaders de seção
+  // independentes, cada um com o próprio guard admin — em paralelo.
+  const [loja, zonas] = await Promise.all([
+    carregarLojaAdminBase(lojaId),
+    carregarZonasAdmin(lojaId),
+  ]);
 
-  return <EntregasAdminClient lojaId={lojaId} zonas={zonas} />;
+  return (
+    <EntregasAdminClient
+      lojaId={lojaId}
+      zonas={zonas}
+      modalidades={modalidadesDaLoja(loja)}
+      taxaForaZona={loja.taxa_entrega_fora_zona}
+    />
+  );
 }

@@ -60,6 +60,14 @@ export const VEREDITO_A_COMBINAR_RETRIAVEL = "a_combinar_retriavel";
 export const VEREDITO_A_COMBINAR_ESGOTADO = "a_combinar_esgotado";
 /** O CEP não foi localizado — pede conferir o CEP, sem retry. */
 export const VEREDITO_A_COMBINAR_CEP = "a_combinar_cep";
+/**
+ * (spec modalidades-entrega-loja, D5) A LOJA escolheu combinar o frete no
+ * WhatsApp (`lojas.modo_frete = 'a_combinar'`). Não é falha nem input errado:
+ * sem modal, sem retry, sem pedir para conferir o CEP. Não sai de
+ * `classificarFrete` (que classifica falha de cálculo); quem o emite é o
+ * preview quando a configuração da loja manda não calcular.
+ */
+export const VEREDITO_A_COMBINAR_LOJA = "a_combinar_loja";
 
 /**
  * (auditoria 180-B / achado 1 + decisão de UX) O ViaCEP AFIRMOU que o CEP não
@@ -74,7 +82,8 @@ export const VEREDITO_CEP_NAO_EXISTE = "indisponivel_cep";
 export type VereditoACombinar =
   | typeof VEREDITO_A_COMBINAR_RETRIAVEL
   | typeof VEREDITO_A_COMBINAR_ESGOTADO
-  | typeof VEREDITO_A_COMBINAR_CEP;
+  | typeof VEREDITO_A_COMBINAR_CEP
+  | typeof VEREDITO_A_COMBINAR_LOJA;
 
 export type VereditoFrete =
   | { tipo: "ok" }

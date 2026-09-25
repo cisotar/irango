@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { urlHttpsSegura } from "@/lib/utils/urlHttpsSegura";
+import { linkWhatsappLoja } from "@/lib/utils/linkWhatsappLoja";
 import {
   VEREDITO_A_COMBINAR_CEP,
   VEREDITO_A_COMBINAR_RETRIAVEL,
@@ -50,6 +50,11 @@ export type ModalFreteIndisponivelProps = {
   /** WhatsApp da loja (já público na vitrine). `null` ⇒ oferece retirada. */
   whatsappLoja: string | null;
   nomeLoja: string;
+  /**
+   * (modalidades) false se a loja desligou a retirada: o modal não oferece
+   * "Retirar no balcão" (o servidor recusaria o pedido). Default true.
+   */
+  aceitaRetirada?: boolean;
   onFechar: () => void;
   /** Segue com o pedido, combinando o frete no chat com a loja. */
   onContinuar: () => void;
@@ -87,6 +92,7 @@ export function ModalFreteIndisponivel({
   estadoRetry,
   whatsappLoja,
   nomeLoja,
+  aceitaRetirada = true,
   onFechar,
   onContinuar,
   onEscolherRetirada,
@@ -99,14 +105,10 @@ export function ModalFreteIndisponivel({
     estadoRetry.fase !== "esgotado" &&
     estadoRetry.fase !== "sucesso";
 
-  const numero = (whatsappLoja ?? "").replace(/\D/g, "");
-  const href = numero
-    ? urlHttpsSegura(
-        `https://wa.me/${numero}?text=${encodeURIComponent(
-          `Olá, ${nomeLoja}! Quero fazer um pedido e combinar a entrega. ${MENSAGEM_GENERICA}`,
-        )}`,
-      )
-    : null;
+  const href = linkWhatsappLoja(
+    whatsappLoja,
+    `Olá, ${nomeLoja}! Quero fazer um pedido e combinar a entrega. ${MENSAGEM_GENERICA}`,
+  );
 
   return (
     <Dialog open={aberto} onOpenChange={(v) => !v && onFechar()}>
@@ -149,7 +151,7 @@ export function ModalFreteIndisponivel({
             Continuar e combinar o frete no pedido
           </Button>
 
-          {href == null && (
+          {href == null && aceitaRetirada && (
             // Loja sem WhatsApp: a saída é retirada, pelo MESMO caminho que o
             // wizard já usa quando a loja não aceita entrega.
             <Button

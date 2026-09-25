@@ -75,7 +75,16 @@ const COLUNAS_ANTERIORES = [
 
 const COLUNA_NOVA = "modal_promocoes";
 
-const COLUNAS_ESPERADAS = [...COLUNAS_ANTERIORES, COLUNA_NOVA];
+/**
+ * Colunas acrescentadas à view DEPOIS desta migration, por
+ * 20260925120000_lojas_modalidades_entrega.sql (spec modalidades-entrega-loja).
+ * O contrato exato vigente da projeção mora em
+ * tests/migrations/lojas_modalidades_entrega.test.ts [5a]; aqui elas só entram
+ * no conjunto esperado para não serem lidas como "coluna extra".
+ */
+const COLUNAS_POSTERIORES = ["aceita_retirada", "aceita_entrega", "modo_frete"] as const;
+
+const COLUNAS_ESPERADAS = [...COLUNAS_ANTERIORES, COLUNA_NOVA, ...COLUNAS_POSTERIORES];
 
 /** Colunas que NUNCA podem entrar na projeção pública (PII, billing, entitlement, coords). */
 const COLUNAS_PROIBIDAS = [

@@ -118,6 +118,32 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       return { erro: "Loja fechada no momento." };
     }
 
+    // (2b) Modalidade (spec modalidades-entrega-loja): a configuração é relida
+    //      da LOJA a cada submit, nunca do payload. Carrinho aberto antes de o
+    //      lojista desligar a modalidade chega aqui e é recusado ANTES da onda
+    //      de leituras (produtos, zonas, CEP, geocoding) e da RPC.
+    //      `=== false` (não `!== true`): as colunas são NOT NULL com default
+    //      true; ausência só acontece com código novo contra banco sem a
+    //      migration, e aí o comportamento certo é o de hoje (as duas ligadas),
+    //      não recusar todo pedido da plataforma.
+    const modalidadeDesligada =
+      dados.tipo_entrega === "retirada"
+        ? loja.aceita_retirada === false
+        : loja.aceita_entrega === false;
+    if (modalidadeDesligada) {
+      return {
+        erro:
+          dados.tipo_entrega === "retirada"
+            ? "Esta loja não está aceitando retirada no momento. Escolha outra forma de entrega."
+            : "Esta loja não está aceitando entrega no momento. Escolha outra forma de entrega.",
+      };
+    }
+    // Frete a combinar POR CONFIGURAÇÃO DA LOJA: o sistema não calcula o frete,
+    // então nem zona, nem ViaCEP, nem distância são consultados. Ortogonal à
+    // retirada (que continua com frete zero).
+    const freteACombinarPelaLoja =
+      dados.tipo_entrega === "entrega" && loja.modo_frete === "a_combinar";
+
     // (3/4/4b/5-zonas) [159] ONDA ÚNICA de leituras independentes — antes eram
     //     round trips em série. Nenhuma depende do resultado da outra: as chaves de
     //     busca (`ids`, `opcionalIds`) saem do payload JÁ validado pelo zod, sem I/O.
@@ -145,7 +171,8 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         listarFormasPagamento(svc, dados.loja_id),
         buscarProdutosPorIds(svc, ids),
         buscarOpcionaisPorIds(svc, opcionalIds),
-        dados.tipo_entrega === "retirada"
+        // Modo a combinar: zonas irrelevantes (o sistema não calcula o frete).
+        dados.tipo_entrega === "retirada" || freteACombinarPelaLoja
           ? Promise.resolve<ZonaVitrine[]>([])
           : listarZonasComTaxas(svc, dados.loja_id),
         // (249) A MESMA query que o SSR da vitrine usa (247), aqui sob
@@ -326,6 +353,13 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     if (dados.tipo_entrega === "retirada") {
       // RN-C2: servidor força frete zero e ignora qualquer endereço enviado.
       frete = { atendido: true, taxa: 0, zonaId: null, gratis: false };
+    } else if (freteACombinarPelaLoja) {
+      // (modalidades) A loja combina o frete no WhatsApp: pedido nasce SEM taxa
+      // (NULL, nunca 0 = "grátis"), sem zona, sem frete grátis por pedido mínimo
+      // e sem distância no snapshot. O endereço continua obrigatório (refine do
+      // schema) e é gravado como enviado. O cupom sobre os produtos segue valendo.
+      frete = { atendido: true, taxa: 0, zonaId: null, gratis: false };
+      freteACombinar = true;
     } else {
       // [159] já lido na onda de leituras acima, sob esta MESMA condição (só o ramo
       // `entrega` dispara a query).

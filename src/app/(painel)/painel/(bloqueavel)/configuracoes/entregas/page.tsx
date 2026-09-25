@@ -9,7 +9,9 @@ import {
   atualizarZona,
   removerZona,
   alternarZonaAtiva,
+  salvarModalidadesEntrega,
 } from "@/lib/actions/entrega";
+import { modalidadesDaLoja } from "@/lib/utils/modalidadesEntrega";
 import { EntregasClient } from "./EntregasClient";
 
 /**
@@ -32,9 +34,17 @@ export default async function EntregasPage(): Promise<ReactElement> {
   return (
     <EntregasClient
       zonas={zonas}
+      modalidades={modalidadesDaLoja(loja)}
+      taxaForaZona={loja.taxa_entrega_fora_zona}
       // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
       // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
-      acoes={{ criarZona, atualizarZona, removerZona, alternarZonaAtiva }}
+      acoes={{
+        criarZona,
+        atualizarZona,
+        removerZona,
+        alternarZonaAtiva,
+        salvarModalidades: salvarModalidadesEntrega,
+      }}
     />
   );
 }

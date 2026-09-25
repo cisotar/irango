@@ -8,6 +8,8 @@
 // autoritativas (dono_id, ativo, assinatura_*, hotmart_*, consentimento_*, id,
 // latitude, longitude) JAMAIS entram, mesmo que cheguem num payload hostil.
 
+import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
+
 /** Campos que o caller pode tentar gravar no perfil (já validados a montante). */
 export type DadosPerfil = {
   nome: string;
@@ -55,6 +57,22 @@ export function montarPatchPerfil(
   // modal de promoções; um `if (d.modal_promocoes)` o engoliria em silêncio.
   if (d.modal_promocoes !== undefined) patch.modal_promocoes = d.modal_promocoes;
   return patch;
+}
+
+/**
+ * Patch das modalidades de entrega (spec modalidades-entrega-loja), mesma regra
+ * de `montarPatchPerfil`: allowlist COLUNA A COLUNA, nunca spread. Sai daqui
+ * EXATAMENTE `aceita_retirada`, `aceita_entrega` e `modo_frete`, mesmo que o
+ * objeto recebido carregue `dono_id`, `ativo`, `id` ou billing. Usado pelo
+ * painel (`salvarModalidadesEntrega`) e pelo hub admin
+ * (`salvarModalidadesEntregaAdmin`), que por isso não podem divergir.
+ */
+export function montarPatchModalidades(d: DadosModalidadesEntrega): DadosModalidadesEntrega {
+  return {
+    aceita_retirada: d.aceita_retirada,
+    aceita_entrega: d.aceita_entrega,
+    modo_frete: d.modo_frete,
+  };
 }
 
 /**

@@ -35,6 +35,7 @@ import { buscarCoordsLoja, buscarLojaPublicaPorId } from "@/lib/supabase/queries
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
 import {
   classificarFrete,
+  VEREDITO_A_COMBINAR_LOJA,
   type VereditoACombinar,
 } from "@/lib/utils/freteDegradado";
 import {
@@ -93,6 +94,9 @@ export type ResultadoFretePreview =
  *     localizado) → { ok:true, a_combinar:true, veredito } — NUNCA um número
  *     (180-B): cobrar o fallback fora-de-zona aqui seria cobrar o cliente por
  *     uma falha de infraestrutura nossa
+ *   - loja com `modo_frete = 'a_combinar'` → { ok:true, a_combinar:true,
+ *     veredito: VEREDITO_A_COMBINAR_LOJA } — antes de ViaCEP e geocoding
+ *     (spec modalidades-entrega-loja, D5)
  *   - payload inválid → { ok:false, erro }  (sem I/O)
  *   - erro interno    → { ok:false, erro }  (genérico)
  */
@@ -124,6 +128,14 @@ export async function calcularFreteAction(
       listarZonasComTaxas(supabase, loja_id),
       buscarLojaPublicaPorId(supabase, loja_id),
     ]);
+
+    // 3a) (spec modalidades-entrega-loja, D5) Loja que combina o frete no
+    //     WhatsApp: o sistema não calcula. Sai ANTES do ViaCEP e do geocoding —
+    //     paridade com `criarPedido`, que no mesmo modo grava
+    //     `frete_a_combinar = true` sem consultar zona, CEP nem distância.
+    if (loja?.modo_frete === "a_combinar") {
+      return { ok: true, a_combinar: true, veredito: VEREDITO_A_COMBINAR_LOJA };
+    }
 
     // 3b) (067) Reconciliação CEP↔bairro — MESMA política fail-closed do
     //     autoritativo `criarPedido` (064, pedido.ts ~194-217). O bairro declarado
