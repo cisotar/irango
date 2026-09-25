@@ -299,11 +299,15 @@ describe("pedidos_protege_valor — dono NÃO reescreve valor via UPDATE direto"
     );
   });
 
-  it("[5] D3: taxa_entrega acima do teto (1000.01) na transição, total coerente → recusado", async () => {
+  it("[5] D3: taxa_entrega acima do teto na transição, total coerente → recusado", async () => {
+    // Usa TETO_FRETE_COMBINADO (não um número fixo): se o teto do app mudar
+    // sem o trigger acompanhar, este caso precisa acusar a divergência junto
+    // com [7] ("frete no TETO exato"), nunca ficar verde sozinho.
     const id = await novoPedido(); // 50 − 0
+    const taxa = TETO_FRETE_COMBINADO + 0.01;
     await esperarRecusa(
       id,
-      `update public.pedidos set taxa_entrega = 1000.01, total = 1050.01, frete_a_combinar = false where id = $1`,
+      `update public.pedidos set taxa_entrega = ${taxa}, total = ${50 + taxa}, frete_a_combinar = false where id = $1`,
       [id],
       FRAG_INTERVALO,
     );
