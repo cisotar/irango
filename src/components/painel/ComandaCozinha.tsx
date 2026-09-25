@@ -44,7 +44,17 @@ export function ComandaCozinha({ pedido }: { pedido: PedidoComItens }): ReactEle
 
       <div className="mt-2 text-sm">
         <p className="font-bold">{pedido.nome_cliente}</p>
-        <p className="uppercase">{tipoEntrega}</p>
+        {/* RETIRADA em destaque (spec modalidades-entrega-loja): moldura e
+            peso máximo — a bancada separa o pedido do balcão sem ler detalhe. */}
+        <p
+          className={
+            pedido.tipo_entrega === "retirada"
+              ? "mt-1 inline-block border-2 border-black px-1.5 font-black uppercase"
+              : "uppercase"
+          }
+        >
+          {tipoEntrega}
+        </p>
         {bairro && <p>Bairro: {bairro}</p>}
       </div>
 

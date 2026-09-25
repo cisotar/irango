@@ -20,6 +20,7 @@ const PEDIDO: PedidoLinha = {
   total: 4200,
   status: "pendente",
   criado_em: "2026-07-03T12:00:00.000Z",
+  tipo_entrega: "entrega",
 };
 
 function render(props: Partial<Parameters<typeof TabelaPedidos>[0]> = {}): string {

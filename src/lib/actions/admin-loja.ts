@@ -89,7 +89,12 @@ type RespostaPostgrest = { data: unknown; error: { message: string } | null; cou
 // (`T extends TabelaComLojaId`, `Omit<Insert,"loja_id">`); a de ESCOPO, no corpo
 // (todo helper injeta `.eq`). O cast é isolado num único ponto: `from`.
 interface Encadeavel extends PromiseLike<RespostaPostgrest> {
-  eq(coluna: string, valor: string): Encadeavel;
+  // `boolean` e `in`: filtros de CONDIÇÃO que a action encadeia DEPOIS do escopo
+  // (ex.: frete combinado — `frete_a_combinar = true` e status fora de
+  // `cancelado` no próprio UPDATE). Só estreitam; o `.eq("loja_id")` continua
+  // injetado pelo helper.
+  eq(coluna: string, valor: string | boolean): Encadeavel;
+  in(coluna: string, valores: readonly string[]): Encadeavel;
   select(colunas?: string): Encadeavel;
   maybeSingle(): PromiseLike<RespostaPostgrest>;
 }

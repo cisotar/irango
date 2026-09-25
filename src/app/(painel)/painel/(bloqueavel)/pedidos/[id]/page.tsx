@@ -6,6 +6,7 @@ import { buscarPedidoDoDono } from "@/lib/supabase/queries/pedidos";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { variantesHabilitadas } from "@/lib/utils/variantesHabilitadas";
 import { DetalhePedido } from "@/components/painel/DetalhePedido";
+import { registrarFreteCombinado } from "@/lib/actions/freteCombinado";
 
 /**
  * Detalhe do pedido (issue 049) — casca fina (issue 125).
@@ -21,6 +22,9 @@ import { DetalhePedido } from "@/components/painel/DetalhePedido";
  * lê a loja mas NÃO propaga props a children, então a page decide o entitlement
  * ela mesma. Fail-closed: loja `null` → `[]` → sem seletor. `DetalhePedido` recebe
  * a lista PRONTA (nunca as flags cruas) e o nome da loja p/ o recibo.
+ *
+ * `acaoFrete`: registro do frete combinado (spec modalidades-entrega-loja) — a
+ * action do lojista, sob o mesmo client autenticado/RLS.
  */
 export default async function DetalhePedidoPage({
   params,
@@ -43,6 +47,7 @@ export default async function DetalhePedidoPage({
   return (
     <DetalhePedido
       pedido={pedido}
+      acaoFrete={registrarFreteCombinado}
       modulosImpressao={modulosImpressao}
       nomeLoja={loja?.nome ?? ""}
     />

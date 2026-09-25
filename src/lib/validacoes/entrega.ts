@@ -96,6 +96,22 @@ export const schemaModalidadesEntrega = z
 
 export type DadosModalidadesEntrega = z.infer<typeof schemaModalidadesEntrega>;
 
+// ─── Registro do frete combinado (spec modalidades-entrega-loja, D1/D2/D3) ──
+// ISOMÓRFICO: gate de UX no form do detalhe e autoridade nas duas Server
+// Actions (lojista `registrarFreteCombinado` e admin
+// `registrarFreteCombinadoAdmin`). `.strict()`: o payload só pode carregar o
+// pedido e o valor — `desconto`/`subtotal`/`total`/`frete_a_combinar` extras
+// são RECUSADOS (não descartados), porque o total é recalculado do banco.
+/** D3: teto de sanidade do frete combinado, em reais. */
+export const TETO_FRETE_COMBINADO = 1000;
+
+export const schemaRegistroFreteCombinado = z
+  .object({
+    pedidoId: z.guid(),
+    valor: valorFrete.max(TETO_FRETE_COMBINADO),
+  })
+  .strict();
+
 // Payload completo do form de zona (issue 046): zona + taxa (1:1) + bairros
 // (1:N) num só envio. ISOMÓRFICO — usado no client (gate de UX) e revalidado
 // na Server Action (autoridade). FORA daqui: loja_id/zona_id (derivados no

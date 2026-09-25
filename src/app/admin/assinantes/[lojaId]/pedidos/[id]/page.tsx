@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 
 import { DetalhePedido } from "@/components/painel/DetalhePedido";
 import { atualizarStatusPedidoAdmin } from "@/app/admin/assinantes/actions/admin-status";
+import { registrarFreteCombinadoAdmin } from "@/app/admin/assinantes/actions/admin-frete-combinado";
 import { carregarPedidoDetalheAdmin } from "../../carga-pedido-detalhe";
 
 /**
@@ -20,6 +21,8 @@ import { carregarPedidoDetalheAdmin } from "../../carga-pedido-detalhe";
  * servidor (nunca vem do payload do cliente) e produz uma Server Action ligada com
  * assinatura `(id, novoStatus) => Promise<ResultadoAtualizarStatus>`, que casa o
  * tipo `AcaoStatus`. A autoridade da transição vive inteiramente na action (133).
+ * `acaoFrete` segue o mesmo padrão com `registrarFreteCombinadoAdmin` (spec
+ * modalidades-entrega-loja): `lojaId` fixado no servidor, payload `{ pedidoId, valor }`.
  *
  * RN-M2 (issue 137 — espelho do entitlement): o loader devolve `modulosImpressao`
  * (variantes da loja-ALVO, já computadas por `variantesHabilitadas` sob service_role
@@ -42,6 +45,7 @@ export default async function DetalhePedidoAdminPage({
       pedido={pedido}
       basePedidos={`/admin/assinantes/${lojaId}/pedidos`}
       acaoStatus={atualizarStatusPedidoAdmin.bind(null, lojaId)}
+      acaoFrete={registrarFreteCombinadoAdmin.bind(null, lojaId)}
       modulosImpressao={modulosImpressao}
       nomeLoja={nomeLoja}
     />

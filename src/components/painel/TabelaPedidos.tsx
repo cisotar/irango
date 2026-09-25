@@ -6,6 +6,7 @@ import {
   Bike,
   CheckCheck,
   X,
+  Store,
   type LucideIcon,
 } from "lucide-react";
 
@@ -13,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
+import { ROTULO_TIPO_ENTREGA } from "@/lib/utils/rotulosPedido";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 /**
@@ -26,6 +28,8 @@ export type PedidoLinha = {
   total: number;
   status: StatusPedido;
   criado_em: string;
+  /** `'retirada'` ganha o selo RETIRADA na linha (spec modalidades-entrega-loja). */
+  tipo_entrega: string;
 };
 
 type TabelaPedidosProps = {
@@ -99,6 +103,17 @@ function BadgeStatusPedido({ status }: { status: StatusPedido }) {
   );
 }
 
+/** Selo RETIRADA — só pedido de retirada; entrega não ganha selo nenhum. */
+function SeloRetirada({ tipoEntrega }: { tipoEntrega: string }) {
+  if (tipoEntrega !== "retirada") return null;
+  return (
+    <Badge variant="outline" className="font-semibold uppercase">
+      <Store aria-hidden className="size-3.5" />
+      {ROTULO_TIPO_ENTREGA.retirada}
+    </Badge>
+  );
+}
+
 /**
  * Tabela de pedidos reutilizável (dashboard + gestão). Linha inteira navega ao
  * detalhe. Desktop = tabela densa; mobile = lista de cards (sem scroll
@@ -144,7 +159,12 @@ export function TabelaPedidos({
                     #{formatarNumeroPedido(pedido.id)}
                   </Link>
                 </td>
-                <td className="px-4 py-3">{pedido.nome_cliente}</td>
+                <td className="px-4 py-3">
+                  <span className="flex flex-wrap items-center gap-2">
+                    {pedido.nome_cliente}
+                    <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
+                  </span>
+                </td>
                 <td className="px-4 py-3">{formatarMoeda(pedido.total)}</td>
                 <td className="px-4 py-3">
                   <BadgeStatusPedido status={pedido.status} />
@@ -170,7 +190,10 @@ export function TabelaPedidos({
                   </span>
                   <BadgeStatusPedido status={pedido.status} />
                 </div>
-                <p className="font-medium">{pedido.nome_cliente}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{pedido.nome_cliente}</p>
+                  <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
+                </div>
                 <p className="text-sm text-muted-foreground">
                   {formatarMoeda(pedido.total)} · {horaLocal(pedido.criado_em)}
                 </p>

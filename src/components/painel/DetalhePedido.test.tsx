@@ -54,7 +54,10 @@ function pedido(over: Partial<PedidoComItens> = {}): PedidoComItens {
     // objeto mas NUNCA deve ser renderizado (caso 5).
     token_acesso: TOKEN_ACESSO_SECRETO,
     criado_em: "2026-07-07T17:32:00Z",
-    tipo_entrega: "retirada",
+    // "entrega" (não "retirada"): os fallbacks de endereço abaixo só valem
+    // para entrega — retirada mostra RETIRADA no lugar do bloco de endereço
+    // (spec modalidades-entrega-loja, coberto em superficiesDoPedido.test).
+    tipo_entrega: "entrega",
     troco_para: null,
     itens_pedido: [
       {

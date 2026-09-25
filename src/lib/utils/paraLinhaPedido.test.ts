@@ -10,13 +10,14 @@ function pedido(overrides: Partial<PedidoComItens> = {}): PedidoComItens {
     total: 42.5,
     status: "pendente",
     criado_em: "2026-07-03T12:00:00.000Z",
+    tipo_entrega: "retirada",
     itens_pedido: [],
     ...overrides,
   } as unknown as PedidoComItens;
 }
 
 describe("paraLinhaPedido", () => {
-  it("projeta os 5 campos exatos que TabelaPedidos/PedidoLinha consomem", () => {
+  it("projeta os 6 campos exatos que TabelaPedidos/PedidoLinha consomem", () => {
     const linha = paraLinhaPedido(pedido());
     expect(linha).toEqual({
       id: "11111111-1111-1111-1111-111111111111",
@@ -24,6 +25,7 @@ describe("paraLinhaPedido", () => {
       total: 42.5,
       status: "pendente",
       criado_em: "2026-07-03T12:00:00.000Z",
+      tipo_entrega: "retirada",
     });
   });
 
