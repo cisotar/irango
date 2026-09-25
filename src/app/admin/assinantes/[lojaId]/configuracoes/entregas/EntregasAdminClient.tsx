@@ -2,12 +2,14 @@
 
 import { EntregasClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/entregas/EntregasClient";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
+import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 
 import {
   criarZonaAdmin,
   atualizarZonaAdmin,
   removerZonaAdmin,
   alternarZonaAtivaAdmin,
+  salvarModalidadesEntregaAdmin,
 } from "@/app/admin/assinantes/actions/admin-entrega";
 
 /**
@@ -22,14 +24,21 @@ import {
 export function EntregasAdminClient({
   lojaId,
   zonas,
+  modalidades,
+  taxaForaZona,
 }: {
   lojaId: string;
   zonas: ZonaVitrine[];
+  modalidades: DadosModalidadesEntrega;
+  taxaForaZona: number | null;
 }) {
   return (
     <EntregasClient
       zonas={zonas}
+      modalidades={modalidades}
+      taxaForaZona={taxaForaZona}
       acoes={{
+        salvarModalidades: (payload) => salvarModalidadesEntregaAdmin(lojaId, payload),
         criarZona: (payload) => criarZonaAdmin(lojaId, payload),
         atualizarZona: (id, payload) => atualizarZonaAdmin(lojaId, id, payload),
         removerZona: (id) => removerZonaAdmin(lojaId, id),

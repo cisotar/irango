@@ -19,17 +19,24 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { FormZona } from "@/components/painel/FormZona";
+import { ModalidadesEntrega } from "@/components/painel/ModalidadesEntrega";
 import type {
   alternarZonaAtiva as alternarZonaAtivaLojista,
   removerZona as removerZonaLojista,
   criarZona as criarZonaLojista,
   atualizarZona as atualizarZonaLojista,
+  salvarModalidadesEntrega as salvarModalidadesLojista,
 } from "@/lib/actions/entrega";
+import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 
 export type EntregasClientProps = {
   zonas: ZonaVitrine[];
+  /** Modalidades GRAVADAS da loja (spec modalidades-entrega-loja). */
+  modalidades: DadosModalidadesEntrega;
+  /** `lojas.taxa_entrega_fora_zona` — só para o aviso D4 das modalidades. */
+  taxaForaZona: number | null;
   /**
    * Actions injetadas. OBRIGATÓRIAS (issue 160): a page do painel passa as do
    * lojista, a via admin passa as variantes escopadas por `lojaId`. Sem default —
@@ -40,6 +47,7 @@ export type EntregasClientProps = {
     removerZona: typeof removerZonaLojista;
     criarZona: typeof criarZonaLojista;
     atualizarZona: typeof atualizarZonaLojista;
+    salvarModalidades: typeof salvarModalidadesLojista;
   };
 };
 
@@ -49,7 +57,12 @@ const ROTULO_TIPO: Record<string, string> = {
   faixa_cep: "Por faixa de CEP",
 };
 
-export function EntregasClient({ zonas, acoes }: EntregasClientProps) {
+export function EntregasClient({
+  zonas,
+  modalidades,
+  taxaForaZona,
+  acoes,
+}: EntregasClientProps) {
   const router = useRouter();
 
   const { alternarZonaAtiva, removerZona } = acoes;
@@ -105,7 +118,14 @@ export function EntregasClient({ zonas, acoes }: EntregasClientProps) {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
-      <div className="mb-6 flex items-center justify-between gap-2">
+      <ModalidadesEntrega
+        inicial={modalidades}
+        zonas={zonas}
+        taxaForaZona={taxaForaZona}
+        salvar={acoes.salvarModalidades}
+      />
+
+      <div className="mb-2 flex items-center justify-between gap-2">
         <h1 className="font-heading text-xl font-semibold text-foreground">
           Zonas de entrega
         </h1>
@@ -114,6 +134,15 @@ export function EntregasClient({ zonas, acoes }: EntregasClientProps) {
           Nova zona
         </Button>
       </div>
+      {/* As zonas ficam guardadas mesmo quando não são usadas: religar a
+          entrega ou voltar ao frete calculado não exige recadastrar nada. */}
+      <p className="mb-6 text-sm text-muted-foreground">
+        {!modalidades.aceita_entrega
+          ? "A entrega está desligada. As zonas ficam guardadas para quando você religar."
+          : modalidades.modo_frete === "a_combinar"
+            ? "O frete está sendo combinado no WhatsApp. As zonas ficam guardadas para quando você voltar ao frete calculado."
+            : "O frete de cada pedido é calculado por estas zonas."}
+      </p>
 
       {zonas.length === 0 && (
         <Card>

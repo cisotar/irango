@@ -176,6 +176,37 @@ export function totalPreviewEstimado(
   return Math.max(0, subtotal - desconto) + frete;
 }
 
+/**
+ * Tipo de entrega com que o wizard abre (spec modalidades-entrega-loja): com UMA
+ * só modalidade disponível, ela já vem selecionada; com as duas, o cliente
+ * escolhe ativamente; com nenhuma, nada é selecionável. Preview de UX — a loja
+ * é relida por `criarPedido`, que recusa a modalidade desligada.
+ */
+export function tipoEntregaInicial(
+  aceitaEntrega: boolean,
+  aceitaRetirada: boolean,
+): TipoEntrega {
+  if (aceitaEntrega && !aceitaRetirada) return "entrega";
+  if (aceitaRetirada && !aceitaEntrega) return "retirada";
+  return null;
+}
+
+/**
+ * Aviso de endereço fora da área de entrega (spec modalidades-entrega-loja).
+ * Só oferece a saída que existe: sem retirada, some "Escolha retirada na
+ * loja"; sem WhatsApp cadastrado, some "fale com a loja no WhatsApp" (não há
+ * link para onde mandar o cliente).
+ */
+export function textoForaDaArea(aceitaRetirada: boolean, temWhatsapp: boolean): string {
+  const inicio = "Este endereço fica fora da área de entrega.";
+  if (aceitaRetirada && temWhatsapp) {
+    return `${inicio} Escolha retirada na loja ou fale com a loja no WhatsApp.`;
+  }
+  if (aceitaRetirada) return `${inicio} Escolha retirada na loja.`;
+  if (temWhatsapp) return `${inicio} Fale com a loja no WhatsApp.`;
+  return `${inicio} Tente outro endereço.`;
+}
+
 /** Item do carrinho na fronteira do builder — só intenção, NUNCA preço. */
 export type ItemPayload = {
   produtoId: string;

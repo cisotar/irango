@@ -29,11 +29,58 @@ import {
   prepararContextoAdmin,
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
-import { schemaZonaCompleta } from "@/lib/validacoes/entrega";
+import {
+  schemaModalidadesEntrega,
+  schemaZonaCompleta,
+} from "@/lib/validacoes/entrega";
+import { montarPatchModalidades } from "@/lib/actions/patches-loja";
 
 type ResultadoEntregaAdmin = { ok: true } | { ok: false; erro: string };
 
 const ERRO_GENERICO = "Não foi possível concluir a operação.";
+
+/**
+ * Par admin de `salvarModalidadesEntrega` (spec modalidades-entrega-loja,
+ * paridade hub ↔ painel). Mesma ordem fail-closed das demais: lojaId validado
+ * → zod (as duas desligadas / modo fora do enum recusados SEM elevar) → prova
+ * de admin FORA do try (propaga) → `escopo.atualizarLoja` (`eq("id", lojaId)`)
+ * com o patch da MESMA allowlist do painel. `atualizarLoja` só filtra billing,
+ * dono e id: é a allowlist que impede `ativo` de passar.
+ */
+export async function salvarModalidadesEntregaAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<ResultadoEntregaAdmin> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaModalidadesEntrega.safeParse(payload);
+  if (!parsed.success) {
+    const regra = parsed.error.issues.find((i) => i.code === "custom");
+    return { ok: false, erro: regra?.message ?? "Dados inválidos." };
+  }
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    const { error } = await escopo.atualizarLoja(montarPatchModalidades(parsed.data));
+    if (error) {
+      console.error("[salvarModalidadesEntregaAdmin]", error);
+      return { ok: false, erro: ERRO_GENERICO };
+    }
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "salvar_modalidades_entrega",
+      metadados: { ...parsed.data },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarModalidadesEntregaAdmin]", e);
+    return { ok: false, erro: ERRO_GENERICO };
+  }
+}
 
 export async function criarZonaAdmin(
   lojaId: string,

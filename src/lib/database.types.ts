@@ -514,6 +514,8 @@ export type Database = {
       }
       lojas: {
         Row: {
+          aceita_entrega: boolean
+          aceita_retirada: boolean
           assinatura_atualizada_em: string | null
           assinatura_fim_periodo: string | null
           assinatura_inicio: string | null
@@ -539,6 +541,7 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           modal_promocoes: boolean
+          modo_frete: string
           modulo_impressao_a4: boolean
           modulo_impressao_termica: boolean
           nome: string
@@ -553,6 +556,8 @@ export type Database = {
           whatsapp_envio_automatico: boolean
         }
         Insert: {
+          aceita_entrega?: boolean
+          aceita_retirada?: boolean
           assinatura_atualizada_em?: string | null
           assinatura_fim_periodo?: string | null
           assinatura_inicio?: string | null
@@ -578,6 +583,7 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           modal_promocoes?: boolean
+          modo_frete?: string
           modulo_impressao_a4?: boolean
           modulo_impressao_termica?: boolean
           nome: string
@@ -592,6 +598,8 @@ export type Database = {
           whatsapp_envio_automatico?: boolean
         }
         Update: {
+          aceita_entrega?: boolean
+          aceita_retirada?: boolean
           assinatura_atualizada_em?: string | null
           assinatura_fim_periodo?: string | null
           assinatura_inicio?: string | null
@@ -617,6 +625,7 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           modal_promocoes?: boolean
+          modo_frete?: string
           modulo_impressao_a4?: boolean
           modulo_impressao_termica?: boolean
           nome?: string
@@ -1179,6 +1188,8 @@ export type Database = {
     Views: {
       vitrine_lojas: {
         Row: {
+          aceita_entrega: boolean | null
+          aceita_retirada: boolean | null
           assinatura_fim_periodo: string | null
           assinatura_status: string | null
           ativo: boolean | null
@@ -1192,6 +1203,7 @@ export type Database = {
           id: string | null
           logo_url: string | null
           modal_promocoes: boolean | null
+          modo_frete: string | null
           nome: string | null
           slug: string | null
           taxa_entrega_fora_zona: number | null
@@ -1202,6 +1214,8 @@ export type Database = {
           whatsapp_envio_automatico: boolean | null
         }
         Insert: {
+          aceita_entrega?: boolean | null
+          aceita_retirada?: boolean | null
           assinatura_fim_periodo?: string | null
           assinatura_status?: string | null
           ativo?: boolean | null
@@ -1215,6 +1229,7 @@ export type Database = {
           id?: string | null
           logo_url?: string | null
           modal_promocoes?: boolean | null
+          modo_frete?: string | null
           nome?: string | null
           slug?: string | null
           taxa_entrega_fora_zona?: number | null
@@ -1225,6 +1240,8 @@ export type Database = {
           whatsapp_envio_automatico?: boolean | null
         }
         Update: {
+          aceita_entrega?: boolean | null
+          aceita_retirada?: boolean | null
           assinatura_fim_periodo?: string | null
           assinatura_status?: string | null
           ativo?: boolean | null
@@ -1238,6 +1255,7 @@ export type Database = {
           id?: string | null
           logo_url?: string | null
           modal_promocoes?: boolean | null
+          modo_frete?: string | null
           nome?: string | null
           slug?: string | null
           taxa_entrega_fora_zona?: number | null
@@ -1406,6 +1424,8 @@ export type Database = {
       loja_por_email_dono: {
         Args: { p_email: string }
         Returns: {
+          aceita_entrega: boolean
+          aceita_retirada: boolean
           assinatura_atualizada_em: string | null
           assinatura_fim_periodo: string | null
           assinatura_inicio: string | null
@@ -1431,6 +1451,7 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           modal_promocoes: boolean
+          modo_frete: string
           modulo_impressao_a4: boolean
           modulo_impressao_termica: boolean
           nome: string
@@ -1454,6 +1475,8 @@ export type Database = {
       loja_por_subscription_id: {
         Args: { p_provider: string; p_subscription_id: string }
         Returns: {
+          aceita_entrega: boolean
+          aceita_retirada: boolean
           assinatura_atualizada_em: string | null
           assinatura_fim_periodo: string | null
           assinatura_inicio: string | null
@@ -1479,6 +1502,7 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           modal_promocoes: boolean
+          modo_frete: string
           modulo_impressao_a4: boolean
           modulo_impressao_termica: boolean
           nome: string

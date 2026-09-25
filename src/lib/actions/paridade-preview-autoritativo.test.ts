@@ -54,8 +54,20 @@ vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
 }));
 
 const buscarLojaParaPedido = vi.fn();
+// [modalidades] O preview de frete (`calcularFreteAction`) lê a loja pela view
+// pública (`buscarLojaPublicaPorId`) e as coords por `buscarCoordsLoja`. As duas
+// exports entram no MESMO mock: nenhum teste anterior as usa.
+const buscarLojaPublicaPorId = vi.fn();
+const buscarCoordsLoja = vi.fn(async () => null);
 vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarLojaParaPedido: (...a: unknown[]) => buscarLojaParaPedido(...a),
+  buscarLojaPublicaPorId: (...a: unknown[]) => buscarLojaPublicaPorId(...a),
+  buscarCoordsLoja: (...a: unknown[]) => buscarCoordsLoja(...(a as [])),
+}));
+// [modalidades] `calcularFreteAction` usa o client ANON do servidor (cookies);
+// fora de request scope ele quebra — o client é irrelevante (queries mockadas).
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({ __fake: "anon-client" }),
 }));
 
 // (249/252) A onda de leituras de `criarPedido`/`revisarCarrinhoAction` passou a
@@ -82,6 +94,10 @@ vi.mock("@/lib/actions/distanciaFrete", () => ({
 
 import { revisarCarrinhoAction } from "./revisarCarrinho";
 import { criarPedido } from "./pedido";
+import { calcularFreteAction } from "./frete";
+import { VEREDITO_A_COMBINAR_LOJA } from "@/lib/utils/freteDegradado";
+import { distanciaDaLojaAoCep } from "@/lib/actions/distanciaFrete";
+import { resolverCepServidor } from "@/lib/utils/resolverCepServidor";
 
 // ─────────────────────────── fixtures compartilhadas pelos DOIS caminhos
 const LOJA_A = "11111111-1111-1111-1111-111111111111";
@@ -378,5 +394,133 @@ describe("[228/RN-11/D5-b] preview e autoritativo dizem o MESMO número", () => 
 
     expect(r.subtotal).toBe(140);
     expect(args.p_subtotal).toBe(r.subtotal);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Spec `specs/modalidades-entrega-loja.md`, fatia B — paridade do FRETE no modo
+// a combinar (fase RED). O preview (`calcularFreteAction`) e a gravação
+// (`criarPedido`) leem o MESMO banco; o invariante é o bicondicional:
+//
+//   preview devolve `a_combinar`  ⟺  a RPC recebe `p_frete_a_combinar: true`
+//
+// D5: "a combinar por configuração da loja" é um veredito NOVO do union
+// `VereditoFrete` (`VEREDITO_A_COMBINAR_LOJA`, freteDegradado.ts), sem retry.
+// O caso automático é o espelho: os dois lados cobram o MESMO número.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ENDERECO_CENTRO = { cep: "01000-000", rua: "Rua X", numero: "10", bairro: "Centro" };
+
+/** Zona 'Centro' R$ 5,00 — casaria se o sistema calculasse o frete. */
+const ZONA_CENTRO = [
+  {
+    id: "z1",
+    loja_id: LOJA_A,
+    nome: "Centro",
+    tipo: "bairro",
+    ativo: true,
+    taxa: { taxa: 5.0, pedido_minimo_gratis: null, raio_max_km: null },
+    bairros: [{ nome: "Centro" }],
+  },
+];
+
+/** A MESMA loja para o preview (view) e para o autoritativo (tabela). */
+function mesmaLojaModalidades(over: Record<string, unknown>) {
+  const loja = {
+    id: LOJA_A,
+    nome: "Loja A",
+    slug: "loja-a",
+    ativo: true,
+    horarios: HORARIOS_SEMPRE,
+    timezone: "America/Sao_Paulo",
+    assinatura_status: "ativa",
+    assinatura_fim_periodo: "2099-01-01T00:00:00.000Z",
+    taxa_entrega_fora_zona: null,
+    whatsapp: null,
+    whatsapp_envio_automatico: false,
+    aceita_retirada: true,
+    aceita_entrega: true,
+    modo_frete: "automatico",
+    ...over,
+  };
+  buscarLojaParaPedido.mockResolvedValue(loja);
+  buscarLojaPublicaPorId.mockResolvedValue(loja);
+  listarFormasPagamento.mockResolvedValue([{ id: "f1", loja_id: LOJA_A, tipo: "pix", config: {} }]);
+  listarZonasComTaxas.mockResolvedValue(ZONA_CENTRO);
+  buscarProdutosPorIds.mockResolvedValue([produtoRow()]); // Refrigerante R$ 50,00
+  buscarOpcionaisPorIds.mockResolvedValue([]);
+  buscarOpcionaisPorCategoria.mockResolvedValue({});
+  buscarCupomPorCodigo.mockResolvedValue(null);
+  buscarPedidoPorToken.mockResolvedValue(null);
+  fakeClient.rpc.mockResolvedValue({
+    data: [{ pedido_id: PEDIDO_ID, token_acesso: TOKEN }],
+    error: null,
+  });
+}
+
+async function previewDoFrete() {
+  return calcularFreteAction({
+    loja_id: LOJA_A,
+    bairro: ENDERECO_CENTRO.bairro,
+    cep: ENDERECO_CENTRO.cep,
+  });
+}
+
+async function gravacaoDoFrete() {
+  const r = await criarPedido({
+    loja_id: LOJA_A,
+    tipo_entrega: "entrega",
+    itens: [{ produto_id: REFRI, quantidade: 1 }],
+    endereco_entrega: ENDERECO_CENTRO,
+    forma_pagamento: "pix",
+    nome_cliente: "Fulano",
+  });
+  if ("erro" in r) throw new Error(`criarPedido recusou o pedido: ${r.erro}`);
+  return fakeClient.rpc.mock.calls.at(-1)?.[1] as {
+    p_taxa_entrega: number | null;
+    p_frete_a_combinar: boolean;
+    p_total: number;
+  };
+}
+
+describe("[modalidades · B] preview e autoritativo concordam no modo do frete", () => {
+  it("D5: VEREDITO_A_COMBINAR_LOJA existe em freteDegradado.ts", () => {
+    expect(VEREDITO_A_COMBINAR_LOJA).toEqual(expect.any(String));
+  });
+
+  it("modo a combinar: preview devolve a_combinar (veredito da LOJA) ⟺ a gravação recebe frete_a_combinar true e taxa null", async () => {
+    mesmaLojaModalidades({ modo_frete: "a_combinar" });
+
+    const preview = await previewDoFrete();
+    const gravado = await gravacaoDoFrete();
+
+    expect(preview).toEqual({ ok: true, a_combinar: true, veredito: VEREDITO_A_COMBINAR_LOJA });
+    expect(gravado.p_frete_a_combinar).toBe(true);
+    expect(gravado.p_taxa_entrega).toBeNull();
+    expect(gravado.p_total).toBe(50);
+    // o bicondicional, dito literalmente
+    expect("a_combinar" in preview && preview.a_combinar === true).toBe(gravado.p_frete_a_combinar);
+  });
+
+  it("modo a combinar: nenhum dos dois lados consulta geocoding nem ViaCEP", async () => {
+    mesmaLojaModalidades({ modo_frete: "a_combinar" });
+    await previewDoFrete();
+    await gravacaoDoFrete();
+    expect(vi.mocked(distanciaDaLojaAoCep)).not.toHaveBeenCalled();
+    expect(vi.mocked(resolverCepServidor)).not.toHaveBeenCalled();
+  });
+
+  it("espelho — modo automático, fora de zona com fallback 8: preview mostra 8 e a gravação cobra 8, nenhum a combinar", async () => {
+    // resolverCepServidor deste arquivo cai em 'transitorio' → o bairro
+    // declarado é descartado (064) e os dois lados caem no fallback.
+    mesmaLojaModalidades({ modo_frete: "automatico", taxa_entrega_fora_zona: 8 });
+
+    const preview = await previewDoFrete();
+    const gravado = await gravacaoDoFrete();
+
+    expect(preview).toEqual({ ok: true, taxa_preview: 8, zona_nome: "fora_zona" });
+    expect(gravado.p_frete_a_combinar).toBe(false);
+    expect(gravado.p_taxa_entrega).toBe(8);
+    expect(gravado.p_total).toBe(58);
   });
 });

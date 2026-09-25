@@ -20,13 +20,17 @@ export const schemaZona = z.object({
  *  máscara é do form (`payloadZona.ts`), não do schema. */
 const cepInteiro = z.number().int().min(0).max(99999999).nullable().default(null);
 
+/**
+ * Valor de frete em reais: não-negativo e com centavos. CRÍTICO: taxa negativa
+ * abriria valor de entrega que reduz o total. Regra única, reusada pela taxa da
+ * zona e por quem mais gravar um valor de frete (frete combinado, spec
+ * modalidades-entrega-loja), que só acrescenta o próprio teto.
+ */
+export const valorFrete = z.number().min(0).multipleOf(0.01);
+
 export const schemaTaxa = z
   .object({
-    // CRÍTICO: taxa negativa abriria valor de entrega que reduz o total.
-    taxa: z
-      .number()
-      .min(0)
-      .multipleOf(0.01),
+    taxa: valorFrete,
     pedido_minimo_gratis: z.number().min(0).nullable(),
     raio_max_km: z.number().positive().nullable(),
     // Faixa de CEP (issue 183). `.nullable().default(null)` mantém compat com
@@ -61,6 +65,52 @@ export const schemaTaxa = z
 export const schemaBairro = z.object({
   nome: nomeObrigatorio,
 });
+
+// ─── Modalidades de entrega da loja (spec modalidades-entrega-loja) ─────────
+// ISOMÓRFICO: gate de UX no form e autoridade na Server Action (lojista e
+// admin). Espelha no zod os dois CHECKs de `lojas` para recusar ANTES de
+// qualquer I/O: `lojas_modo_frete_check` (enum) e
+// `lojas_ao_menos_uma_modalidade` (superRefine). Chave extra é descartada pelo
+// zod e, de novo, pela allowlist `montarPatchModalidades` (patches-loja.ts).
+export const MODOS_FRETE = ["automatico", "a_combinar"] as const;
+export type ModoFrete = (typeof MODOS_FRETE)[number];
+
+export const MENSAGEM_AO_MENOS_UMA_MODALIDADE =
+  "Deixe ligada pelo menos a retirada ou a entrega.";
+
+export const schemaModalidadesEntrega = z
+  .object({
+    aceita_retirada: z.boolean(),
+    aceita_entrega: z.boolean(),
+    modo_frete: z.enum(MODOS_FRETE),
+  })
+  .superRefine((m, ctx) => {
+    if (!m.aceita_retirada && !m.aceita_entrega) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["aceita_entrega"],
+        message: MENSAGEM_AO_MENOS_UMA_MODALIDADE,
+      });
+    }
+  });
+
+export type DadosModalidadesEntrega = z.infer<typeof schemaModalidadesEntrega>;
+
+// ─── Registro do frete combinado (spec modalidades-entrega-loja, D1/D2/D3) ──
+// ISOMÓRFICO: gate de UX no form do detalhe e autoridade nas duas Server
+// Actions (lojista `registrarFreteCombinado` e admin
+// `registrarFreteCombinadoAdmin`). `.strict()`: o payload só pode carregar o
+// pedido e o valor — `desconto`/`subtotal`/`total`/`frete_a_combinar` extras
+// são RECUSADOS (não descartados), porque o total é recalculado do banco.
+/** D3: teto de sanidade do frete combinado, em reais. */
+export const TETO_FRETE_COMBINADO = 1000;
+
+export const schemaRegistroFreteCombinado = z
+  .object({
+    pedidoId: z.guid(),
+    valor: valorFrete.max(TETO_FRETE_COMBINADO),
+  })
+  .strict();
 
 // Payload completo do form de zona (issue 046): zona + taxa (1:1) + bairros
 // (1:N) num só envio. ISOMÓRFICO — usado no client (gate de UX) e revalidado

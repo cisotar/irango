@@ -15,5 +15,6 @@ export function paraLinhaPedido(pedido: PedidoComItens): PedidoLinha {
     total: pedido.total,
     status: pedido.status as StatusPedido,
     criado_em: pedido.criado_em,
+    tipo_entrega: pedido.tipo_entrega,
   };
 }

@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.4.4 | **Atualizado:** 2026-09-22
+**Versão:** 0.4.5 | **Atualizado:** 2026-09-25
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -861,6 +861,12 @@ A parte que precisa de atomicidade (trava de cupom + INSERT pedido + INSERT iten
 - INSERT `pedidos` + INSERT `itens_pedido` (snapshot `nome`/`preco`) na mesma transação — atomicidade garantida.
 
 **Regra para devs e agentes:** toda operação multi-tabela com trava de concorrência segue este padrão — função Postgres `SECURITY INVOKER` + REVOKE/GRANT service_role + `SET search_path`. Nunca INSERT direto de pedido sem passar pela RPC.
+
+### §10-B — Registro de frete combinado: recálculo + trigger de defesa em profundidade (spec modalidades-entrega-loja)
+
+Quando a loja está em `modo_frete = 'a_combinar'` (ou o geocoding falhou), o pedido nasce com `frete_a_combinar = true` e `taxa_entrega IS NULL`. O lojista registra o valor combinado pela Server Action `registrarFreteCombinado` (`src/lib/actions/freteCombinado.ts`): o payload do cliente é só `{ pedidoId, valor }` — `subtotal`/`desconto` são lidos do banco e o `total` é recalculado no servidor com `calcularTotal` (mesma aritmética do checkout), nunca aceito do client.
+
+A RLS filtra **linha**, não **coluna** — o dono autenticado tem UPDATE na linha inteira do próprio pedido, então um PATCH direto ao PostgREST poderia reescrever `subtotal`/`desconto`/`taxa_entrega`/`total`/`frete_a_combinar` fora dessa Server Action. Defesa em profundidade: trigger `pedidos_protege_valor_trg` (BEFORE UPDATE, `SECURITY INVOKER` — nunca DEFINER, senão `current_user` vira o dono da função) rejeita qualquer mudança nessas colunas exceto a vinda de `service_role`/`postgres`/`supabase_admin` ou a transição legítima `frete_a_combinar` true→false, revalidando no próprio trigger que `total = greatest(0, subtotal - desconto) + taxa_entrega`. Migration: `20260925130000_pedidos_protege_valor.sql`.
 
 ---
 

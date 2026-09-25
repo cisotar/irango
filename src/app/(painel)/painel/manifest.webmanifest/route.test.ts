@@ -74,6 +74,9 @@ function lojaFake(overrides: Partial<LojaCompleta>): LojaCompleta {
     whatsapp_envio_automatico: true,
     // [220] modal de promoções nasce ligado (D6).
     modal_promocoes: true,
+    aceita_retirada: true,
+    aceita_entrega: true,
+    modo_frete: "automatico",
   };
   return { ...base, ...overrides };
 }

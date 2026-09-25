@@ -252,6 +252,14 @@ export default async function ConfirmacaoPage({
               <dd>{formatarMoeda(ped.total)}</dd>
             </div>
           </dl>
+          {/* (spec modalidades-entrega-loja) Pedido gravado com frete a
+              combinar: o pedido está feito (RN-W4), só o valor do frete fica
+              para a conversa com a loja. */}
+          {!freteConhecido(ped) && (
+            <p className="text-sm text-muted-foreground">
+              A loja vai te chamar no WhatsApp para combinar o frete.
+            </p>
+          )}
 
           <Separator />
 

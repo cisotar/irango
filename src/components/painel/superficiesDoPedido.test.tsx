@@ -27,6 +27,8 @@ vi.mock("next/navigation", () => ({
 
 import { DetalhePedido } from "@/components/painel/DetalhePedido";
 import { ReciboCliente } from "@/components/painel/ReciboCliente";
+import { ComandaCozinha } from "@/components/painel/ComandaCozinha";
+import { TabelaPedidos, type PedidoLinha } from "@/components/painel/TabelaPedidos";
 import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
@@ -150,5 +152,134 @@ describe("[239/RN-14] o par de/por é unitário e aparece nas superfícies", () 
     expect(htmlDetalhe(semPromo)).not.toContain("de R$");
     expect(htmlRecibo(semPromo)).not.toContain("de R$");
     expect(textoWhatsapp(semPromo)).not.toContain("(de R$");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Spec `specs/modalidades-entrega-loja.md`, fatia D (fase RED).
+//
+// "Pedido de retirada mostra RETIRADA em destaque na lista, no detalhe, na
+// comanda e no recibo, no lugar de 'Sem endereço de entrega.'", e o frete a
+// combinar nunca vira "Grátis"/"R$ 0,00" — nem antes, nem depois do registro.
+//
+// As quatro superfícies do LOJISTA renderizáveis em `environment: node`:
+// DetalhePedido, ComandaCozinha, ReciboCliente e TabelaPedidos (a lista).
+// Comanda e recibo JÁ imprimem "Retirada" via ROTULO_TIPO_ENTREGA: aqui são
+// travas de regressão. Detalhe e lista são o RED.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function pedidoRetirada(): PedidoComItens {
+  return {
+    ...pedido(),
+    tipo_entrega: "retirada",
+    endereco_entrega: null,
+    taxa_entrega: 0,
+    frete_a_combinar: false,
+    total: 90,
+  } as unknown as PedidoComItens;
+}
+
+/** Entrega a combinar: taxa NULL + flag (o par do CHECK chk_pedidos_frete_a_combinar). */
+function pedidoACombinar(over: Record<string, unknown> = {}): PedidoComItens {
+  return {
+    ...pedido(),
+    tipo_entrega: "entrega",
+    endereco_entrega: { rua: "Rua X", numero: "10", bairro: "Centro", cep: "01000-000" },
+    taxa_entrega: null,
+    frete_a_combinar: true,
+    subtotal: 90,
+    desconto: 0,
+    total: 90,
+    ...over,
+  } as unknown as PedidoComItens;
+}
+
+function htmlComanda(p: PedidoComItens): string {
+  return norm(renderToStaticMarkup(<ComandaCozinha pedido={p} />));
+}
+
+const LINHA_BASE = {
+  id: "abcdef12-3456-7890-abcd-ef1234567890",
+  nome_cliente: "Fulano de Teste",
+  total: 90,
+  status: "pendente",
+  criado_em: "2026-07-07T17:32:00Z",
+} as const;
+
+function htmlLista(tipo: "retirada" | "entrega"): string {
+  // `tipo_entrega` ainda não faz parte de `PedidoLinha` (o GREEN acrescenta).
+  const linha = { ...LINHA_BASE, tipo_entrega: tipo } as unknown as PedidoLinha;
+  return norm(renderToStaticMarkup(<TabelaPedidos pedidos={[linha]} />));
+}
+
+describe("[modalidades · D] pedido de RETIRADA aparece como retirada nas superfícies do lojista", () => {
+  it("DetalhePedido: mostra 'Retirada' no lugar de 'Sem endereço de entrega.'", () => {
+    const html = htmlDetalhe(pedidoRetirada());
+    expect(html).toMatch(/retirada/i);
+    expect(html).not.toContain("Sem endereço de entrega");
+  });
+
+  it("ComandaCozinha: mostra 'Retirada' e nenhum bloco de endereço vazio", () => {
+    const html = htmlComanda(pedidoRetirada());
+    expect(html).toMatch(/retirada/i);
+    expect(html).not.toContain("Sem endereço");
+    expect(html).not.toContain("Bairro:");
+  });
+
+  it("ReciboCliente: mostra 'Retirada' e nenhum bloco de endereço vazio", () => {
+    const html = htmlRecibo(pedidoRetirada());
+    expect(html).toMatch(/retirada/i);
+    expect(html).not.toContain("Sem endereço");
+  });
+
+  it("TabelaPedidos (lista): linha de retirada é marcada como retirada", () => {
+    expect(htmlLista("retirada")).toMatch(/retirada/i);
+  });
+
+  it("TabelaPedidos (lista): linha de ENTREGA não ganha o selo de retirada", () => {
+    expect(htmlLista("entrega")).not.toMatch(/retirada/i);
+  });
+
+  it("DetalhePedido: pedido de ENTREGA continua mostrando o endereço (sem o rótulo de retirada no lugar)", () => {
+    const html = htmlDetalhe(pedidoACombinar({ frete_a_combinar: false, taxa_entrega: 5, total: 95 }));
+    expect(html).toContain("Rua X, 10");
+    expect(html).not.toContain("Sem endereço de entrega");
+  });
+});
+
+describe("[modalidades · D] frete a combinar nunca vira 'Grátis' nem 'R$ 0,00'", () => {
+  it("DetalhePedido: pedido a combinar mostra 'A combinar' na taxa, nunca R$ 0,00 nem Grátis", () => {
+    const html = htmlDetalhe(pedidoACombinar());
+    expect(html).toContain("A combinar");
+    expect(html).not.toContain("R$ 0,00");
+    expect(html).not.toMatch(/gr[aá]tis/i);
+  });
+
+  it("ReciboCliente: pedido a combinar mostra 'A combinar', nunca R$ 0,00 nem Grátis", () => {
+    const html = htmlRecibo(pedidoACombinar());
+    expect(html).toContain("A combinar");
+    expect(html).not.toContain("R$ 0,00");
+    expect(html).not.toMatch(/gr[aá]tis/i);
+  });
+
+  it("após o registro com valor 0: DetalhePedido mostra R$ 0,00 (valor), não 'A combinar'", () => {
+    const html = htmlDetalhe(pedidoACombinar({ frete_a_combinar: false, taxa_entrega: 0 }));
+    expect(html).toContain("R$ 0,00");
+    expect(html).not.toContain("A combinar");
+  });
+
+  it("após o registro com valor 0: ReciboCliente mostra R$ 0,00 (valor), não 'A combinar'", () => {
+    const html = htmlRecibo(pedidoACombinar({ frete_a_combinar: false, taxa_entrega: 0 }));
+    expect(html).toContain("R$ 0,00");
+    expect(html).not.toContain("A combinar");
+  });
+
+  it("após o registro com valor 7 (subtotal 90): detalhe e recibo mostram R$ 7,00 e o total R$ 97,00", () => {
+    const registrado = pedidoACombinar({ frete_a_combinar: false, taxa_entrega: 7, total: 97 });
+    for (const html of [htmlDetalhe(registrado), htmlRecibo(registrado)]) {
+      expect(html).toContain("R$ 7,00");
+      expect(html).toContain("R$ 97,00");
+      expect(html).not.toContain("A combinar");
+    }
   });
 });

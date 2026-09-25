@@ -74,7 +74,13 @@ export function ReciboCliente({
 
       <div className="mt-2 text-sm">
         <p className="font-bold">{pedido.nome_cliente}</p>
-        <p className="uppercase">
+        {/* RETIRADA em destaque (spec modalidades-entrega-loja): negrito
+            máximo — sem bairro, o cliente sabe que busca no balcão. */}
+        <p
+          className={
+            pedido.tipo_entrega === "retirada" ? "font-black uppercase" : "uppercase"
+          }
+        >
           {tipoEntrega}
           {bairro ? ` — ${bairro}` : ""}
         </p>

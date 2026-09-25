@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Store } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,12 +15,17 @@ import {
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import {
   ROTULO_FORMA_PAGAMENTO,
+  ROTULO_TIPO_ENTREGA,
   mapearOpcionaisExibicao,
 } from "@/lib/utils/rotulosPedido";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { SeletorImprimirPedido } from "@/components/painel/SeletorImprimirPedido";
 import { ComandaCozinha } from "@/components/painel/ComandaCozinha";
 import { ReciboCliente } from "@/components/painel/ReciboCliente";
+import {
+  RegistrarFreteCombinado,
+  type AcaoFrete,
+} from "@/components/painel/RegistrarFreteCombinado";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 import type { VarianteImpressao } from "@/lib/utils/variantesHabilitadas";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
@@ -40,7 +45,10 @@ import {
  * painel; loader `service_role` no admin). `basePedidos` só dirige a navegação
  * do link "Voltar" — não é barreira de segurança. `acaoStatus` é repassado a
  * `AcoesStatus` como `acao`; ambas as variantes revalidam `transicaoPermitida`
- * no servidor (RN-08).
+ * no servidor (RN-08). `acaoFrete` (spec modalidades-entrega-loja) é a Server
+ * Action de registro do frete combinado — lojista ou admin `.bind(null, lojaId)`;
+ * sem ela o campo não é montado (fail-closed). A autoridade (D1/D2/D3, total
+ * recalculado do banco) é da action.
  */
 const APARENCIA_STATUS: Record<
   StatusPedido,
@@ -81,6 +89,7 @@ export function DetalhePedido({
   pedido,
   basePedidos = "/painel/pedidos",
   acaoStatus,
+  acaoFrete,
   // RN-M1 (server-autoritativo): a decisão de entitlement chega PRONTA em
   // `modulosImpressao` (calculada por `variantesHabilitadas` no caller). O
   // componente só monta o que o servidor autorizou — nunca recebe as flags
@@ -94,12 +103,21 @@ export function DetalhePedido({
   pedido: PedidoComItens;
   basePedidos?: string;
   acaoStatus?: AcaoStatus;
+  acaoFrete?: AcaoFrete;
   modulosImpressao?: VarianteImpressao[];
   nomeLoja?: string;
 }): ReactElement {
   const status = pedido.status as StatusPedido;
   const aparencia = APARENCIA_STATUS[status];
   const endereco = lerEndereco(pedido.endereco_entrega);
+  const retirada = pedido.tipo_entrega === "retirada";
+  // Espelho de UX das travas da action (D1/D2): o campo só existe enquanto o
+  // frete de uma ENTREGA não cancelada ainda está a combinar.
+  const podeRegistrarFrete =
+    acaoFrete != null &&
+    pedido.frete_a_combinar &&
+    pedido.tipo_entrega === "entrega" &&
+    status !== "cancelado";
 
   return (
     <>
@@ -169,7 +187,12 @@ export function DetalhePedido({
             <CardTitle className="text-base">Entrega</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-muted-foreground">
-            {endereco ? (
+            {retirada ? (
+              <p className="inline-flex items-center gap-2 text-base font-semibold tracking-wide text-foreground uppercase">
+                <Store aria-hidden className="size-5" />
+                {ROTULO_TIPO_ENTREGA.retirada}
+              </p>
+            ) : endereco ? (
               <>
                 <p>
                   {endereco.rua}
@@ -187,6 +210,17 @@ export function DetalhePedido({
             )}
           </CardContent>
         </Card>
+
+        {podeRegistrarFrete && (
+          <Card className="no-print">
+            <CardHeader>
+              <CardTitle className="text-base">Frete a combinar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RegistrarFreteCombinado pedidoId={pedido.id} acao={acaoFrete} />
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
