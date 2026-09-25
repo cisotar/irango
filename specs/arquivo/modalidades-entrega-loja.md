@@ -68,61 +68,61 @@ anterior nem o `grant select`.
 
 ### Configuração (painel e hub admin)
 
-- [ ] Loja que já existe fica com retirada e entrega ligadas e frete automático.
-- [ ] O banco recusa uma loja com retirada e entrega desligadas (CHECK
+- [x] Loja que já existe fica com retirada e entrega ligadas e frete automático.
+- [x] O banco recusa uma loja com retirada e entrega desligadas (CHECK
       `lojas_ao_menos_uma_modalidade`).
-- [ ] O banco recusa `modo_frete` fora de `automatico` / `a_combinar`.
-- [ ] A view `vitrine_lojas` expõe `aceita_retirada`, `aceita_entrega` e
+- [x] O banco recusa `modo_frete` fora de `automatico` / `a_combinar`.
+- [x] A view `vitrine_lojas` expõe `aceita_retirada`, `aceita_entrega` e
       `modo_frete` e mantém todas as colunas anteriores.
-- [ ] O lojista liga e desliga retirada e entrega e escolhe o modo do frete na
+- [x] O lojista liga e desliga retirada e entrega e escolhe o modo do frete na
       página de Entregas do painel.
-- [ ] O zod recusa retirada e entrega desligadas antes de qualquer I/O.
-- [ ] O salvar grava só as três colunas de modalidade, na loja do dono logado.
-- [ ] O admin edita as mesmas configurações pelo hub, escopado pela loja
+- [x] O zod recusa retirada e entrega desligadas antes de qualquer I/O.
+- [x] O salvar grava só as três colunas de modalidade, na loja do dono logado.
+- [x] O admin edita as mesmas configurações pelo hub, escopado pela loja
       selecionada, com as mesmas travas.
-- [ ] Zonas de entrega continuam salvas quando a entrega é desligada ou o modo
+- [x] Zonas de entrega continuam salvas quando a entrega é desligada ou o modo
       muda para a combinar.
 
 ### Vitrine e checkout
 
-- [ ] A vitrine esconde a modalidade desligada.
-- [ ] Com uma só modalidade ligada, ela já vem selecionada.
-- [ ] O servidor recusa um pedido com modalidade desligada, mesmo que o cliente a
+- [x] A vitrine esconde a modalidade desligada.
+- [x] Com uma só modalidade ligada, ela já vem selecionada.
+- [x] O servidor recusa um pedido com modalidade desligada, mesmo que o cliente a
       envie (carrinho aberto antes da mudança). A RPC não é chamada.
-- [ ] Modo a combinar: o pedido nasce com `frete_a_combinar = true` e
+- [x] Modo a combinar: o pedido nasce com `frete_a_combinar = true` e
       `taxa_entrega = null`.
-- [ ] Modo a combinar: o cupom sobre os produtos vale (R$ 50,00 com 10% → total
+- [x] Modo a combinar: o cupom sobre os produtos vale (R$ 50,00 com 10% → total
       R$ 45,00).
-- [ ] Modo a combinar: o frete grátis por pedido mínimo não é aplicado.
-- [ ] Modo a combinar: sem verificação de zona, ViaCEP ou distância. O endereço
+- [x] Modo a combinar: o frete grátis por pedido mínimo não é aplicado.
+- [x] Modo a combinar: sem verificação de zona, ViaCEP ou distância. O endereço
       continua obrigatório e é gravado.
-- [ ] Modo a combinar: o checkout e a confirmação dizem "A loja vai te chamar no
+- [x] Modo a combinar: o checkout e a confirmação dizem "A loja vai te chamar no
       WhatsApp para combinar o frete".
-- [ ] O preview do frete e a gravação do pedido concordam no modo a combinar.
-- [ ] Modo automático, fora de todas as zonas, sem `taxa_entrega_fora_zona`: o
+- [x] O preview do frete e a gravação do pedido concordam no modo a combinar.
+- [x] Modo automático, fora de todas as zonas, sem `taxa_entrega_fora_zona`: o
       servidor recusa o pedido.
-- [ ] A vitrine mostra "Este endereço fica fora da área de entrega. Escolha
+- [x] A vitrine mostra "Este endereço fica fora da área de entrega. Escolha
       retirada na loja ou fale com a loja no WhatsApp." com link wa.me. Sem
       retirada, a frase perde "Escolha retirada na loja". Sem WhatsApp, sem link.
 
 ### Pedido no painel
 
-- [ ] Pedido de retirada mostra RETIRADA em destaque na lista, no detalhe, na
+- [x] Pedido de retirada mostra RETIRADA em destaque na lista, no detalhe, na
       comanda e no recibo, no lugar de "Sem endereço de entrega.".
-- [ ] Frete a combinar aparece como "A combinar", nunca "Grátis" nem "R$ 0,00".
-- [ ] O lojista registra o frete combinado no detalhe do pedido.
-- [ ] O registro recalcula `total = subtotal − desconto + taxa` com subtotal e
+- [x] Frete a combinar aparece como "A combinar", nunca "Grátis" nem "R$ 0,00".
+- [x] O lojista registra o frete combinado no detalhe do pedido.
+- [x] O registro recalcula `total = subtotal − desconto + taxa` com subtotal e
       desconto lidos do banco, e grava `frete_a_combinar = false`.
-- [ ] O registro recusa payload com campo extra (`desconto`, `total`).
-- [ ] O registro recusa valor negativo e acima de R$ 1.000,00. Zero é aceito
+- [x] O registro recusa payload com campo extra (`desconto`, `total`).
+- [x] O registro recusa valor negativo e acima de R$ 1.000,00. Zero é aceito
       (frete grátis concedido).
-- [ ] O registro recusa pedido de retirada, pedido cancelado e pedido sem frete a
+- [x] O registro recusa pedido de retirada, pedido cancelado e pedido sem frete a
       combinar.
-- [ ] O segundo registro no mesmo pedido é recusado (D1).
-- [ ] Lojista de outra loja não registra frete (RLS).
-- [ ] O admin registra o frete pelo hub, escopado pela loja, com as mesmas travas
+- [x] O segundo registro no mesmo pedido é recusado (D1).
+- [x] Lojista de outra loja não registra frete (RLS).
+- [x] O admin registra o frete pelo hub, escopado pela loja, com as mesmas travas
       e com log de acesso.
-- [ ] Depois do registro, lista, detalhe, comanda e recibo mostram o valor
+- [x] Depois do registro, lista, detalhe, comanda e recibo mostram o valor
       registrado (zero aparece como valor, não como "A combinar").
 
 ---

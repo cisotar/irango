@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.2.1 | **Atualizado:** 2026-09-21
+**Versão:** 0.3.0 | **Atualizado:** 2026-09-25
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -135,6 +135,15 @@ CREATE TABLE lojas (
 
   -- Slug: apenas letras minúsculas, dígitos e hífens (defesa em profundidade)
   CONSTRAINT lojas_slug_formato CHECK (slug ~ '^[a-z0-9-]+$'),
+
+  -- Modalidades de entrega (spec modalidades-entrega-loja). Default = comportamento
+  -- de hoje (ambas ligadas, frete automático). Exposto em vitrine_lojas.
+  -- Migration: 20260925120000_lojas_modalidades_entrega.sql
+  aceita_retirada  boolean NOT NULL DEFAULT true,
+  aceita_entrega   boolean NOT NULL DEFAULT true,
+  modo_frete       text    NOT NULL DEFAULT 'automatico'
+                   CHECK (modo_frete IN ('automatico', 'a_combinar')),
+  CONSTRAINT lojas_ao_menos_uma_modalidade CHECK (aceita_retirada OR aceita_entrega),
 
   criado_em        timestamptz NOT NULL DEFAULT now(),
   atualizado_em    timestamptz NOT NULL DEFAULT now()
@@ -272,8 +281,17 @@ CREATE TABLE pedidos (
   endereco_entrega  jsonb,
   subtotal          numeric(10,2) NOT NULL,
   desconto          numeric(10,2) NOT NULL DEFAULT 0,
-  taxa_entrega      numeric(10,2) NOT NULL DEFAULT 0,
+  taxa_entrega      numeric(10,2),                   -- NULL <=> frete_a_combinar = true (nunca 0, que é frete grátis legítimo)
   total             numeric(10,2) NOT NULL,
+  -- true = frete não pôde ser calculado (geocoding do CEP indisponível) e será
+  -- combinado com a loja; implica taxa_entrega IS NULL. Registro autoritativo
+  -- pela Server Action registrarFreteCombinado (seguranca.md §10-B).
+  -- Migration: 20260913120000_pedidos_frete_a_combinar.sql
+  frete_a_combinar  boolean NOT NULL DEFAULT false,
+  CONSTRAINT chk_pedidos_frete_a_combinar CHECK (
+    (frete_a_combinar AND taxa_entrega IS NULL)
+    OR (NOT frete_a_combinar AND taxa_entrega IS NOT NULL)
+  ),
   status            text NOT NULL DEFAULT 'pendente'
                     CHECK (status IN ('pendente','confirmado','em_preparo','saiu_entrega','entregue','cancelado')),
   forma_pagamento   text,
@@ -286,6 +304,14 @@ CREATE TABLE pedidos (
   criado_em         timestamptz NOT NULL DEFAULT now()
 );
 ```
+
+**Trigger `pedidos_protege_valor_trg`** (BEFORE UPDATE, `SECURITY INVOKER`): defesa em
+profundidade contra reescrita direta de `subtotal`/`desconto`/`taxa_entrega`/`total`/
+`frete_a_combinar` via PostgREST (a RLS filtra linha, não coluna). Libera `service_role`/
+`postgres`/`supabase_admin` e a única transição legítima do dono — registro de frete
+combinado (`frete_a_combinar` true→false) com `total` recalculado no próprio trigger.
+Qualquer outra escrita de valor é rejeitada. Ver seguranca.md §10-B.
+Migration: `20260925130000_pedidos_protege_valor.sql`.
 
 ### `itens_pedido`
 
@@ -529,6 +555,7 @@ Valores válidos:
 | `formas_pagamento.tipo` | `pix`, `dinheiro`, `link`, `cartao` |
 | `pedidos.status` | `pendente`, `confirmado`, `em_preparo`, `saiu_entrega`, `entregue`, `cancelado` |
 | `lojas.assinatura_status` | `trial`, `ativa`, `inadimplente`, `cancelada`, `suspensa`, `cortesia` |
+| `lojas.modo_frete` | `automatico`, `a_combinar` |
 
 ---
 
