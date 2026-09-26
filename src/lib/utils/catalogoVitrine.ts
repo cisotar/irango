@@ -406,17 +406,100 @@ export function derivarPromocionaisParaModal(
   return secoes
     .flatMap((secao) => secao.produtos)
     .filter((produto) => produto.temDesconto)
-    .map((produto) => ({
-      // O `ProdutoVitrine` INTEIRO, nunca remontado campo a campo: era a
-      // remontagem parcial que deixava comprabilidade e preço efetivo caírem no
-      // chão em silêncio (D13).
-      ...produto,
-      // Produto sem categoria (grupo "Outros") não tem opcional associado.
-      gruposOpcionais: produto.categoria_id
-        ? opcionaisPorCategoria[produto.categoria_id]
-        : undefined,
-      // Chave ausente ⇒ `undefined`: o modal cai no texto genérico dele. NUNCA
-      // se inventa uma frase de vigência aqui.
-      rotuloIndisponivel: rotulosVigencia[produto.id],
-    }));
+    .map((produto) =>
+      enriquecerParaModal(produto, opcionaisPorCategoria, rotulosVigencia),
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// [303] RN-10 — os produtos CURADOS do modal sazonal, prontos para o DETALHE
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Enriquece um `ProdutoVitrine` para o `ProdutoModal` — opcionais da categoria
+ * dele e frase de "quando volta". Extraído de `derivarPromocionaisParaModal`
+ * para ser reusado pela derivação sazonal: os dois modais abrem o MESMO
+ * `ProdutoModal`, então a composição do detalhe é uma só (mandato 2).
+ *
+ * As referências de `gruposOpcionais` e do produto são as MESMAS que já viajam
+ * no payload RSC — nada é clonado nem espalhado a mais.
+ */
+function enriquecerParaModal(
+  produto: ProdutoVitrine,
+  opcionaisPorCategoria: Readonly<Record<string, GrupoOpcional[]>>,
+  rotulosVigencia: Readonly<Record<string, string>>,
+): ProdutoModalDados {
+  return {
+    // O `ProdutoVitrine` INTEIRO, nunca remontado campo a campo: era a
+    // remontagem parcial que deixava comprabilidade e preço efetivo caírem no
+    // chão em silêncio (D13).
+    ...produto,
+    // Produto sem categoria (grupo "Outros") não tem opcional associado.
+    gruposOpcionais: produto.categoria_id
+      ? opcionaisPorCategoria[produto.categoria_id]
+      : undefined,
+    // Chave ausente ⇒ `undefined`: o modal cai no texto genérico dele. NUNCA
+    // se inventa uma frase de vigência aqui.
+    rotuloIndisponivel: rotulosVigencia[produto.id],
+  };
+}
+
+/**
+ * [303/RN-10] Os produtos que o lojista CUROU para o modal sazonal, prontos
+ * para o detalhe — a UNIÃO dos produtos das categorias selecionadas com os
+ * produtos dos cardápios selecionados, deduplicados por `id`, na ORDEM DO
+ * CATÁLOGO.
+ *
+ * **Zero query nova de produto** (RN-10): filtra sobre o que a página já tem em
+ * escopo — `categoriasComProdutos` (seções de categoria, ordem do catálogo) e
+ * `secoesDestaque` (seções de cardápio ABERTO, produzidas por `agruparPorCardapio`,
+ * onde o filtro `itemAberto` já rodou). O cardápio FORA DE VIGÊNCIA não tem seção
+ * em `secoesDestaque` e portanto não contribui produto nenhum — a vigência do
+ * cardápio filtra aqui, e só aqui, reusando `catalogoVitrine`, sem `itemAberto`
+ * duplicado.
+ *
+ * **Pura**: nenhum relógio entra — comprabilidade/preço/selo já foram decididos
+ * na projeção, e a janela do cardápio já foi avaliada ao montar `secoesDestaque`.
+ * As duas listas de `SecaoVitrine` são a fonte da ordem: percorre as seções de
+ * categoria e as de destaque na ordem em que vieram, coletando os produtos cujas
+ * seções o lojista selecionou, e dedup por id preserva a PRIMEIRA aparição.
+ *
+ * `categoriasSelecionadas`/`cardapiosSelecionados` são ids; uma `Set` os torna
+ * a busca O(1). Seleção vazia dos dois eixos ⇒ lista vazia (o modal vira `null`).
+ */
+export function derivarProdutosDoModalSazonal(
+  categoriasComProdutos: readonly CategoriaComProdutos[],
+  secoesDestaque: readonly CategoriaComProdutos[],
+  opcionaisPorCategoria: Readonly<Record<string, GrupoOpcional[]>>,
+  rotulosVigencia: Readonly<Record<string, string>>,
+  selecao: { categorias: readonly string[]; cardapios: readonly string[] },
+): ProdutoModalDados[] {
+  const categoriasSelecionadas = new Set(selecao.categorias);
+  const cardapiosSelecionados = new Set(selecao.cardapios);
+
+  const vistos = new Set<string>();
+  const resultado: ProdutoModalDados[] = [];
+
+  const coletar = (secoes: readonly CategoriaComProdutos[], ids: Set<string>) => {
+    for (const secao of secoes) {
+      // Grupo "Outros" tem `id === null` e nunca é selecionável — `has(null)`
+      // é sempre `false`, então ele não entra por engano.
+      if (secao.id === null || !ids.has(secao.id)) continue;
+      for (const produto of secao.produtos) {
+        if (vistos.has(produto.id)) continue;
+        vistos.add(produto.id);
+        resultado.push(
+          enriquecerParaModal(produto, opcionaisPorCategoria, rotulosVigencia),
+        );
+      }
+    }
+  };
+
+  // Categorias primeiro (a ordem em que o cliente vê o cardápio), depois os
+  // cardápios abertos. Dedup por id: o produto que está numa categoria E num
+  // cardápio selecionado aparece uma vez, na primeira posição encontrada.
+  coletar(categoriasComProdutos, categoriasSelecionadas);
+  coletar(secoesDestaque, cardapiosSelecionados);
+
+  return resultado;
 }

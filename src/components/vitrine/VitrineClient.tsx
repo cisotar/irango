@@ -6,9 +6,16 @@ import { ShoppingCart } from "lucide-react";
 import { Carrinho } from "@/components/vitrine/Carrinho";
 import { ID_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
 import { ModalPromocoes } from "@/components/vitrine/ModalPromocoes";
+import { ModalSazonal } from "@/components/vitrine/ModalSazonal";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import type { ProdutoModalDados } from "@/components/vitrine/ProdutoModal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+
+/** [303] O modal sazonal já resolvido no SSR: título + produtos curados. */
+export type ModalSazonalDados = {
+  titulo: string;
+  produtos: ProdutoModalDados[];
+};
 
 type VitrineClientProps = {
   lojaSlug: string;
@@ -23,6 +30,17 @@ type VitrineClientProps = {
   modalPromocoes: boolean;
   /** "YYYY-MM-DD" no fuso da LOJA, derivado no servidor (RN-16). */
   diaDeHojeNaLoja: string;
+  /**
+   * [303] O modal sazonal ativo dentro da janela, já derivado no SSR (título +
+   * produtos curados), ou `null` quando não há um a mostrar (RN-02/RN-10).
+   */
+  modalSazonal: ModalSazonalDados | null;
+  /**
+   * [303/RN-09] Decisão de PRECEDÊNCIA já tomada no SERVIDOR: `true` suprime o
+   * `ModalPromocoes` enquanto há sazonal no ar. Repasse puro — o cliente não
+   * resolve qual modal abre.
+   */
+  suprimirPromocoes: boolean;
 };
 
 /**
@@ -37,6 +55,8 @@ export function VitrineClient({
   promocoes,
   modalPromocoes,
   diaDeHojeNaLoja,
+  modalSazonal,
+  suprimirPromocoes,
 }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
@@ -91,15 +111,35 @@ export function VitrineClient({
           `null` quando não há promoção ou o lojista desligou o modal é o
           próprio componente. Duas guardas seria uma a mais para alguém
           remover. `localStorage` só é tocado dentro do `ModalPromocoes`, por
-          `decisaoModalPromocoes`, sempre em try/catch (RN-18). */}
+          `decisaoModalPromocoes`, sempre em try/catch (RN-18).
+          [303/RN-09] A SUPRESSÃO entra pelo input `toggleDaLoja` já existente
+          — decidida no SSR e descida pronta. Nenhuma trava nova no componente:
+          `toggleDaLoja = false` já é coberto pela trava 1 de
+          `decidirModalPromocoes`. */}
       <ModalPromocoes
         promocoes={promocoes}
         lojaSlug={lojaSlug}
-        toggleDaLoja={modalPromocoes}
+        toggleDaLoja={modalPromocoes && !suprimirPromocoes}
         diaDeHojeNaLoja={diaDeHojeNaLoja}
         storage={typeof window === "undefined" ? null : window.localStorage}
         destinoFoco={destinoFoco}
       />
+
+      {/* [303] O modal SAZONAL, quando há um ativo dentro da janela com
+          produtos curados (resolvido no SSR — RN-02/RN-10). Ausente ⇒ não
+          renderiza; presente ⇒ as 7 travas anti-gesto vivem dentro dele. Chave
+          de `localStorage` SEPARADA (`irango:promo-sazonal:{slug}` — RN-07). Os
+          dois modais nunca abrem juntos: a supressão é a garantia (RN-09). */}
+      {modalSazonal !== null ? (
+        <ModalSazonal
+          titulo={modalSazonal.titulo}
+          produtos={modalSazonal.produtos}
+          lojaSlug={lojaSlug}
+          diaDeHojeNaLoja={diaDeHojeNaLoja}
+          storage={typeof window === "undefined" ? null : window.localStorage}
+          destinoFoco={destinoFoco}
+        />
+      ) : null}
     </>
   );
 }

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cupomSchema } from "@/lib/validacoes/cupom";
+import { isoParaDatetimeLocal } from "@/lib/utils/formatarDataLocal";
 import type { criarCupom, atualizarCupom } from "@/lib/actions/cupom";
 import type { Cupom } from "@/lib/supabase/queries/entregaPagamento";
 
@@ -46,15 +47,6 @@ export type FormCupomProps = {
 
 const selectClassName =
   "flex h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
-
-/** Converte ISO (com offset) para o valor de um <input type="datetime-local">. */
-function isoParaDatetimeLocal(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /**
  * Form de cupom (issue 045). Client component.

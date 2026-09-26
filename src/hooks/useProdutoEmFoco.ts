@@ -9,7 +9,7 @@ import type { ProdutoModalDados } from "@/components/vitrine/ProdutoModal";
  * só para onde o foco volta quando ele fecha (RN-6/289): vindo da promoção, o
  * botão que abriu já não existe, então o destino é o `<main>`.
  */
-export type OrigemProdutoEmFoco = "catalogo" | "promocoes";
+export type OrigemProdutoEmFoco = "catalogo" | "promocoes" | "modal-sazonal";
 
 export type ProdutoEmFoco = {
   /** O produto do modal, INTEIRO e já montado no servidor/no catálogo. */
