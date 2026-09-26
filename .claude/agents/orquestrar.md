@@ -134,6 +134,11 @@ Degrau 5 só quando o paralelismo é o gargalo (dezenas de arquivos independente
 **Ações que o loop nunca executa sozinho** (parar e pedir confirmação humana):
 `npx supabase db push` · `git push` · `gh pr create/merge/close` · `rm`/`git rm`/`git reset --hard` · qualquer escrita no Supabase cloud fora de teste · edição de `.env*` · envio para serviço externo · rotação de chave · `npm audit fix --force`.
 
+**Deletar PR não é uma ação do loop, em nenhuma variante.** PR mesclado/fechado fica no
+histórico do GitHub (decisão de 2026-09-26, `CLAUDE.md` §Higiene) — não há passo de plano
+legítimo que remova um PR. Se uma tarefa parecer pedir isso, é sinal de escopo errado: pare e
+pergunte ao usuário.
+
 **Limites:**
 - `max_iterations`: padrão **3**, teto **5**. Acima disso a tarefa está mal definida, não precisa de mais voltas.
 - **Estagnação:** 2 iterações sem mudança observável (mesmo erro, diff vazio, mesma contagem de testes) → parar e reportar, nunca "tentar de novo".

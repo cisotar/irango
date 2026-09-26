@@ -99,7 +99,7 @@ gh pr checks --watch               # o PR só está "aberto" quando o CI DELE es
 
 Mostre a URL do PR **junto com o resultado dos checks**. Check vermelho = PR não está pronto: leia o log (`gh run view <id> --log-failed`), corrija na branch, faça push e espere de novo. Nunca anuncie o PR como concluído com check pendente ou vermelho — o usuário não pode descobrir isso pelo GitHub. Se `gh` não estiver instalada, instale o binário em `~/.local/bin` (sem sudo) antes de seguir; não é motivo para pular a etapa.
 
-**Não faça merge**, não aprove, não marque auto-merge.
+**Não faça merge**, não aprove, não marque auto-merge. **Não delete o PR** (mesclado ou fechado) em nenhuma etapa — o histórico fica no GitHub como `merged`/`closed`; deletar é decisão exclusiva do usuário, fora deste comando.
 
 ## Etapa 5 — Smoke pós-merge (só com `--smoke <url>`)
 
