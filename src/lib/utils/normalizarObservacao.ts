@@ -15,6 +15,9 @@ import { LIMITE_OBSERVACAO } from "@/lib/constants/pedido";
 export function normalizarObservacao(texto: string): string {
   // 1. CRLF/CR → LF: uma só representação de quebra de linha (a comanda imprime LF).
   const semCR = texto.replace(/\r\n?/g, "\n");
+  // Passos 2, 3 e 3b (este vale também aqui, issue 316): a observação perde os
+  // invisíveis não-bidi e TODAS as tags (bandeira de subdivisão vira U+1F3F4).
+  // Afeta `schemaObservacao` e `linhaCarrinhoId`. Zalgo NÃO é cortado aqui.
   const semInvisiveis = removerControlesEInvisiveisBidi(semCR, false);
   const espacado = semInvisiveis
     // 4. TODO espaço horizontal (tab, NBSP, U+2000-200A, U+202F, U+205F,

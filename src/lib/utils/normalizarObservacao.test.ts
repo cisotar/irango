@@ -83,6 +83,47 @@ describe("normalizarObservacao — passo 3: invisíveis, bidi e BOM", () => {
   });
 });
 
+// Issue 316: o passo 3b também vale para a observação de pedido (e, por tabela,
+// para `schemaObservacao` e `linhaCarrinhoId`). Code points montados com
+// `String.fromCodePoint` para não depender de escape no fonte.
+describe("normalizarObservacao — passo 3b: invisíveis não-bidi (issue 316)", () => {
+  const cp = (...n: number[]) => String.fromCodePoint(...n);
+  const PRETA = cp(0x1f3f4);
+  const TAGS_ENG = cp(0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
+
+  it("remove SOFT HYPHEN, CGJ, fillers Hangul, U+180E, Braille em branco e âncoras", () => {
+    for (const n of [0xad, 0x34f, 0x115f, 0x1160, 0x3164, 0xffa0, 0x180e, 0x2800, 0xfff9, 0xfffa, 0xfffb]) {
+      expect(normalizarObservacao(`sem${cp(n)}cebola`)).toBe("semcebola");
+    }
+  });
+
+  it("observação só de Hangul filler vira vazia", () => {
+    expect(normalizarObservacao(cp(0x3164).repeat(5))).toBe("");
+  });
+
+  it("remove seletores U+FE00-FE0D e U+FE0E solto; mantém U+FE0E colado a pictograma", () => {
+    expect(normalizarObservacao(`a${cp(0xfe00)}b${cp(0xfe0d)}c${cp(0xfe0e)}d`)).toBe("abcd");
+    expect(normalizarObservacao(`${cp(0x2764, 0xfe0e)} extra`)).toBe(`${cp(0x2764, 0xfe0e)} extra`);
+  });
+
+  it("mantém U+FE0F (apresentação emoji)", () => {
+    expect(normalizarObservacao(`${cp(0x2764, 0xfe0f)} extra`)).toBe(`${cp(0x2764, 0xfe0f)} extra`);
+  });
+
+  it("bandeira de subdivisão perde as tags e vira bandeira preta (observação não preserva tags)", () => {
+    expect(normalizarObservacao(`sem cebola ${PRETA}${TAGS_ENG}`)).toBe(`sem cebola ${PRETA}`);
+  });
+
+  it("tags soltas com ASCII escondido saem", () => {
+    expect(normalizarObservacao(`ok${cp(0xe0068, 0xe0069)}`)).toBe("ok");
+  });
+
+  it("NÃO corta Zalgo: 6 marcas combinantes seguidas sobrevivem na observação", () => {
+    const zalgo = `a${cp(0x301, 0x302, 0x303, 0x304, 0x305, 0x306)}`;
+    expect(normalizarObservacao(zalgo)).toBe(zalgo);
+  });
+});
+
 describe("normalizarObservacao — passo 4: tab → espaço", () => {
   it("troca tab por espaço (tab quebra alinhamento de comanda)", () => {
     expect(normalizarObservacao("bem\tpassado")).toBe("bem passado");

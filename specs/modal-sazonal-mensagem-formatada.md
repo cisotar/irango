@@ -145,8 +145,9 @@ dele, e sempre no título, as tags saem e fica a 🏴. Marcas combinantes seguid
 - **Normalização Unicode**: os passos de `normalizarObservacao` (`src/lib/utils/normalizarObservacao.ts`)
   que removem controles C0/C1, invisíveis e bidi (Trojan Source, CVE-2021-42574) e substitutos
   desemparelhados são **extraídos** para `removerInvisiveisEControles(texto, opcoes?)` no **mesmo**
-  módulo. `normalizarObservacao` a compõe **com as opções padrão**, sem mudança de comportamento (a suíte
-  `normalizarObservacao.test.ts` guarda a refatoração). A opção nova `preservarJuncaoDeEmoji` (padrão
+  módulo. `normalizarObservacao` a compõe **com as opções padrão**. A extração em si não muda comportamento (a suíte
+  `normalizarObservacao.test.ts` guarda a refatoração); a issue 316 depois estendeu a remoção, e isso **muda** a
+  observação de pedido, `schemaObservacao` e `linhaCarrinhoId` (ver RN-M03). A opção nova `preservarJuncaoDeEmoji` (padrão
   `false`) só é ligada pela mensagem (§Esclarecimento sobre emoji). O trecho **não** usa
   `normalizarObservacao` inteira, porque o `trim()` e o colapso de espaço apagariam o espaço entre
   trechos (`"Olá "` + **`mundo`**).
@@ -503,8 +504,8 @@ alter table public.modais_sazonais
   **Obrigatório:** teste pglite provando isso para a coluna nova (matriz A9/A10).
 - **GRANTs:** inalterados (grant de tabela cobre a coluna nova).
 - **Linhas existentes:** `mensagem` nasce `NULL`. Os CHECKs de título validam as linhas atuais. Se alguma
-  violar, o `db push` aborta inteiro (transacional), fail-closed. A issue de migration inclui a query de
-  pré-checagem no cloud.
+  violar, a migration falha e é revertida, mas as anteriores do mesmo push podem já ter sido aplicadas (a
+  transação é por arquivo). Por isso a pré-checagem no cloud é obrigatória antes do push, com zero linhas.
 - **Tipos:** o tipo manual `ModalSazonal` em `modaisSazonais.ts` ganha `mensagem: unknown`, **de propósito
   `unknown`**: o consumidor é obrigado a passar por `lerMensagemModal` (RN-M04).
 - **Rollback (manual):** ordem reversa. `drop function public.salvar_modal_sazonal(...)` (a Server
@@ -659,7 +660,10 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
     subdivisão (U+1F3F4 + 2 a 7 tags em U+E0030–E0039/U+E0061–E007A + U+E007F) fica no trecho. Depois da
     remoção, marcas combinantes seguidas são cortadas em 3 (`/(\p{Mn}{3})\p{Mn}+/gu → "$1"`, anti-Zalgo),
     antes de qualquer teto ser medido. A observação de pedido (`normalizarObservacao`) ganha só a remoção,
-    não o corte de Zalgo;
+    não o corte de Zalgo. Na observação todas as tags saem (a bandeira de subdivisão vira U+1F3F4), porque ali
+    `preservarJuncaoDeEmoji` é `false`; isso também muda `linhaCarrinhoId`, então um carrinho salvo antes do deploy
+    com duas linhas que diferiam só por U+00AD passa a ter o mesmo id nas duas (efeito de UX, sem valor monetário,
+    coberto em `normalizarObservacao.test.ts` §passo 3b);
     *(Divergência conferida em 2026-09-27: o passo 2 de `normalizarObservacao` preserva `\t`/`\n` e o
     passo 3 apaga U+2028/2029; na ordem original, U+2028 sumia em vez de virar espaço e `\t` sobrevivia.)*;
   - **canonização** (transform), nesta ordem:
@@ -745,7 +749,7 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
   | URL de link | bruto **2048**; canônico **1000** | zod (antes e depois de canonizar) |
   | documento serializado | **64 KB** | CHECK `modais_sazonais_mensagem_tamanho` |
   | corpo da Server Action | 2 MB | `next.config` `serverActions.bodySizeLimit` (já existe) |
-  | modais por loja (`TETO_MODAIS_POR_LOJA`, `validacoes/modalSazonal.ts`) | **50** | trigger `before insert` `modais_sazonais_teto_por_loja` (P0001 `modal_sazonal: teto de modais`, cobre INSERT direto e RPC; serializado por loja com advisory lock) + `.limit(50)` em `listarModaisSazonaisDoDono` (issue 318) |
+  | modais por loja (`TETO_MODAIS_POR_LOJA`, `validacoes/modalSazonal.ts`) | **50** | trigger `after insert` `modais_sazonais_teto_por_loja` (AFTER para não virar oráculo de contagem antes da RLS) (P0001 `modal_sazonal: teto de modais`, cobre INSERT direto e RPC; serializado por loja com advisory lock) + `.limit(50)` em `listarModaisSazonaisDoDono` (issue 318) |
 
   Garantido em: **Server Action** (zod) + **CHECK no banco** + **trigger** (teto de modais).
 

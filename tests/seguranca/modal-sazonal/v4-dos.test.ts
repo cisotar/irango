@@ -573,7 +573,7 @@ describe("V4 · banco (pglite)", () => {
 // CONTRATO FIXADO PARA A FASE GREEN (executar):
 //   - Constante `TETO_MODAIS_POR_LOJA = 50` exportada de
 //     `src/lib/validacoes/modalSazonal.ts` (ao lado de `TETO_SELECAO`).
-//   - Trigger `before insert` em `public.modais_sazonais` (cobre INSERT direto
+//   - Trigger `after insert` em `public.modais_sazonais` (cobre INSERT direto
 //     pelo PostgREST e a criação via RPC `salvar_modal_sazonal`): com 50 ou mais
 //     modais na MESMA `loja_id`, `raise exception 'modal_sazonal: teto de modais'`
 //     (SQLSTATE P0001; mensagem sem id nem número da loja). A contagem é por
@@ -658,6 +658,15 @@ describe("V4 · 318 · teto de modais por loja (pglite)", () => {
       ),
     );
     esperarTeto(e);
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("com A no teto, dono de B inserindo com loja_id de A recebe a recusa da RLS, não a do teto (sem oráculo de contagem)", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() => insertDireto(c.b.donoId, c.a.id, "B tentando em A"));
+    expect(e.code).toBe("42501");
+    expect(e.message).toContain("row-level security");
+    expect(e.message).not.toContain("teto de modais");
     expect(await estado()).toEqual(antes);
   });
 

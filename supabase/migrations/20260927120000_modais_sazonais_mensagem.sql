@@ -14,9 +14,10 @@
 -- zod (`src/lib/validacoes/mensagemModal.ts`), na escrita E na leitura. Os CHECKs
 -- aqui são o backstop para quem escreve direto no PostgREST com a própria sessão.
 --
--- Os CHECKs de TÍTULO validam as linhas JÁ existentes. Se alguma violar, o
--- `db push` aborta inteiro (transacional) — fail-closed. Rodar ANTES do push, no
--- SQL editor do cloud (leitura apenas):
+-- Os CHECKs de TÍTULO validam as linhas JÁ existentes. Se alguma violar, ESTA
+-- migration falha e é revertida — mas as anteriores do mesmo push podem já ter
+-- sido aplicadas (a transação é por arquivo). Rodar ANTES do push, no SQL editor
+-- do cloud (leitura apenas), e só dar push com zero linhas:
 --
 --   select id, loja_id, char_length(titulo) as tam
 --   from public.modais_sazonais

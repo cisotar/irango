@@ -6,7 +6,12 @@
 -- `rpc/salvar_modal_sazonal` ou fazer INSERT direto em `modais_sazonais` com o
 -- próprio JWT, em laço, e encher a tabela de rascunhos (a vitrine está
 -- protegida pelo índice único parcial de `ativo`, o painel não). Um trigger
--- `before insert` cobre os dois caminhos de uma vez. UPDATE não é afetado.
+-- `after insert` cobre os dois caminhos de uma vez. UPDATE não é afetado.
+--
+-- AFTER, não BEFORE: o Postgres roda BEFORE antes do WITH CHECK da RLS. Com
+-- BEFORE, o dono de outra loja inserindo com o `loja_id` alheio recebia
+-- `teto de modais` em vez de 42501 quando a loja alvo estava no teto — um
+-- oráculo de contagem. AFTER só dispara para linhas que já passaram na RLS.
 --
 -- Espelho TS: `TETO_MODAIS_POR_LOJA` (src/lib/validacoes/modalSazonal.ts), que
 -- também limita a listagem do painel.
@@ -31,29 +36,32 @@ set search_path = ''
 as $$
 begin
   -- Serializa os INSERTs da MESMA loja até o fim da transação: sem isso, dois
-  -- INSERTs concorrentes com 49 linhas contariam 49 cada e gravariam o 51º
-  -- (o `count` não enxerga a linha não commitada do outro). O pglite tem uma
-  -- conexão só e não prova isto — fica para revisão. Chave de dois inteiros
-  -- (namespace, loja) para não colidir com outro advisory lock do projeto.
+  -- INSERTs concorrentes com 49 linhas contariam 50 cada e gravariam o 51º
+  -- (o `count` não enxerga a linha não commitada do outro). Em READ COMMITTED
+  -- o `count` abaixo tira snapshot novo depois do lock, então enxerga a linha
+  -- que a outra transação commitou ao soltá-lo. O pglite tem uma conexão só e
+  -- não prova isto — fica para revisão. Chave de dois inteiros (namespace,
+  -- loja) para não colidir com outro advisory lock do projeto.
   perform pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtext('modais_sazonais_teto'),
     pg_catalog.hashtext(new.loja_id::text)
   );
 
+  -- A contagem já inclui a própria linha nova: o 51º dá 51.
   if (
     select count(*) from public.modais_sazonais where loja_id = new.loja_id
-  ) >= 50 then
+  ) > 50 then
     raise exception 'modal_sazonal: teto de modais';
   end if;
 
-  return new;
+  return null;
 end;
 $$;
 
 revoke all on function public.modais_sazonais_teto_por_loja() from public, anon, authenticated;
 
 create trigger modais_sazonais_teto_por_loja
-  before insert on public.modais_sazonais
+  after insert on public.modais_sazonais
   for each row execute function public.modais_sazonais_teto_por_loja();
 
 -- ─────────────────────────────────────────────────────────────────────────────
