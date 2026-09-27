@@ -59,3 +59,16 @@ export const CLASSES_COR_MENSAGEM: Readonly<Record<CorMensagem, string>> = Objec
 
 /** Classe da cor fixa do link (mesmo tom de `COR_LINK_MENSAGEM`). */
 export const CLASSE_COR_LINK_MENSAGEM = "text-[#1e40af]";
+
+/** Classe fixa por tamanho de trecho (RN-M05). Fonte única: renderer e editor. */
+export const CLASSES_TAMANHO_MENSAGEM: Readonly<Record<string, string>> = Object.freeze({
+  pequeno: "text-sm",
+  grande: "text-lg",
+  enorme: "text-xl",
+});
+
+/** Classe fixa por fonte de trecho (pilhas de sistema, sem download). Fonte única. */
+export const CLASSES_FONTE_MENSAGEM: Readonly<Record<string, string>> = Object.freeze({
+  serifa: "font-serif",
+  mono: "font-mono",
+});

@@ -41,4 +41,8 @@ describe("urlLinkExternoSegura — casos felizes", () => {
   it("recusa host terminado em ponto (rótulo final vazio)", () => {
     expect(urlLinkExternoSegura("https://exemplo.com./")).toBeNull();
   });
+
+  it("recusa host com rótulo vazio no meio (auditoria V2, I1)", () => {
+    expect(urlLinkExternoSegura("https://a..com/")).toBeNull();
+  });
 });

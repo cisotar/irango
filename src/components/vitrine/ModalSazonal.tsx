@@ -208,7 +208,7 @@ export function ModalSazonal({
         <DialogHeader className="pr-14">
           {/* RN-01: título do lojista renderizado como TEXTO do React (escape
               automático), NUNCA innerHTML. */}
-          <DialogTitle className="text-base font-extrabold tracking-wide uppercase">
+          <DialogTitle className="overflow-hidden text-base font-extrabold tracking-wide uppercase">
             <span>{titulo}</span>
           </DialogTitle>
           {/* Sem mensagem e com pratos: a contagem descreve o dialog. Com

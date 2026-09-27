@@ -29,7 +29,7 @@ function hostnameAceito(hostname: string): boolean {
   if (RE_IPV4.test(hostname)) return false;
   if (hostname === "localhost" || hostname.endsWith(".localhost")) return false;
   const rotulos = hostname.split(".");
-  if (rotulos.length < 2) return false;
+  if (rotulos.length < 2 || rotulos.some((r) => r === "")) return false;
   const final = rotulos[rotulos.length - 1];
   return final !== "" && !/^\d+$/.test(final);
 }

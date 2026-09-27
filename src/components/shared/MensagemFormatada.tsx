@@ -1,7 +1,12 @@
 import { ExternalLink } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 
-import { CLASSE_COR_LINK_MENSAGEM, CLASSES_COR_MENSAGEM } from "@/lib/constants/paletaMensagem";
+import {
+  CLASSE_COR_LINK_MENSAGEM,
+  CLASSES_COR_MENSAGEM,
+  CLASSES_FONTE_MENSAGEM,
+  CLASSES_TAMANHO_MENSAGEM,
+} from "@/lib/constants/paletaMensagem";
 import { urlLinkExternoSegura } from "@/lib/utils/urlLinkExternoSegura";
 import type {
   LinkExternoValidado,
@@ -26,16 +31,8 @@ import type {
  * prévia do painel. Sem `aoEscolherLink` (prévia), o link vira `<span>`.
  */
 
-const CLASSES_TAMANHO: Readonly<Record<string, string>> = Object.freeze({
-  pequeno: "text-sm",
-  grande: "text-lg",
-  enorme: "text-xl",
-});
-
-const CLASSES_FONTE: Readonly<Record<string, string>> = Object.freeze({
-  serifa: "font-serif",
-  mono: "font-mono",
-});
+const CLASSES_TAMANHO = CLASSES_TAMANHO_MENSAGEM;
+const CLASSES_FONTE = CLASSES_FONTE_MENSAGEM;
 
 const CLASSES_ALINHAMENTO: Readonly<Record<string, string>> = Object.freeze({
   centro: "text-center",
