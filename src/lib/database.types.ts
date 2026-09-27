@@ -20,10 +20,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      aplicar_frequencia_em_produtos: {
-        Args: { p_frequencia: Json; p_ids: string[]; p_loja_id: string }
-        Returns: number
-      }
       graphql: {
         Args: {
           extensions?: Json
@@ -32,10 +28,6 @@ export type Database = {
           variables?: Json
         }
         Returns: Json
-      }
-      salvar_grade_de_dias: {
-        Args: { p_itens: Json; p_loja_id: string }
-        Returns: number
       }
     }
     Enums: {
@@ -1409,6 +1401,10 @@ export type Database = {
         }
         Returns: number
       }
+      aplicar_frequencia_em_produtos: {
+        Args: { p_frequencia: Json; p_ids: string[]; p_loja_id: string }
+        Returns: number
+      }
       criar_pedido:
         | {
             Args: {
@@ -1598,6 +1594,10 @@ export type Database = {
       }
       reordenar_produtos: {
         Args: { p_categoria_id: string; p_ids: string[]; p_loja_id: string }
+        Returns: number
+      }
+      salvar_grade_de_dias: {
+        Args: { p_itens: Json; p_loja_id: string }
         Returns: number
       }
     }
