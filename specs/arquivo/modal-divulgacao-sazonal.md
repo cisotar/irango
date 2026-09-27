@@ -411,6 +411,7 @@ Cada regra marca **em qual camada é garantida**.
   valida que `categorias.length + cardapios.length >= 1` antes de gravar as junções) + **Server
   Action** (a gravação das junções é atômica com a criação). (Não é CHECK no banco porque a seleção
   vive em tabelas de junção, não em colunas da linha; a atomicidade é da transação da Action.)
+  > Substituída por specs/modal-sazonal-mensagem-formatada.md (RN-M02).
 - **RN-07 — "1× por dia por loja" no fuso da LOJA.** `diaDeHojeNaLoja` é derivado no **servidor**
   (`diaNoFuso(agora, timezoneLoja)`, o mesmo já usado pelo `ModalPromocoes`), e comparado no cliente
   contra o `localStorage` `irango:promo-sazonal:{slug}`. Chave **separada** da de promoções. Garantido

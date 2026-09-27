@@ -22,7 +22,8 @@
 > tudo o que este documento não altera explicitamente. Criei um spec **novo e vinculado** em vez de
 > reabrir o arquivado: o arquivado está 100% entregue, e reabri-lo misturaria "o que foi entregue" com
 > "o que muda". O PR que implementar esta spec acrescenta **uma linha** ao RN-06 do arquivado, sem mexer
-> em checkbox: `> Removida por specs/modal-sazonal-mensagem-formatada.md (RN-M02); atomicidade real em RN-M15.`
+> em checkbox: `> Substituída por specs/modal-sazonal-mensagem-formatada.md (RN-M02).`
+> *(Divergência corrigida na implementação, 2026-09-27: o texto da linha segue a instrução do usuário.)*
 >
 > **O que este spec altera no de origem:**
 >
@@ -141,8 +142,9 @@ preservado.
   `temModalSazonal`: deixa de ser `produtos.length > 0` e passa a ser "o SSR mandou um modal" (RN-M01).
 - **Janela, precedência e derivação de pratos**: `dentroDaJanelaExibicao`,
   `derivarProdutosDoModalSazonal`, `buscarModalSazonalAtivo`/`listarModaisSazonaisDoDono`
-  (`src/lib/supabase/queries/modaisSazonais.ts`) são reusadas. As queries só acrescentam `mensagem` a
-  `COLUNAS_MODAL`.
+  (`src/lib/supabase/queries/modaisSazonais.ts`) são reusadas. As queries acrescentam `mensagem` a
+  `COLUNAS_MODAL` **e** a `hidratar` (divergência conferida no código em 2026-09-27: sem `hidratar` a
+  coluna era lida e descartada).
 - **Tipografia sem fonte externa**: as famílias da mensagem são as **pilhas de sistema padrão do
   Tailwind** (`font-sans`, que já é a do projeto em `globals.css`, mais `font-serif` e `font-mono`).
   Nenhum download, nenhum `next/font`, nenhum `@font-face`. O design system hoje carrega **uma** família
@@ -424,9 +426,10 @@ aditivas, sobre a tabela de `20260925140000_modais_sazonais_rls.sql`, em ordem:
 2. `supabase/migrations/<ts2>_rpc_salvar_modal_sazonal.sql`: a RPC transacional de RN-M15
    (§RPC `salvar_modal_sazonal`). Depende da 1 porque grava `mensagem`.
 
-> **Dependência de deploy:** esta migration depende da 300 estar aplicada no cloud (os comentários de
-> `modaisSazonais.ts` dizem que ela ainda não estava). Rodar `npx supabase migration list` antes. As duas
-> sobem juntas com as duas novas no `db push`, que é irreversível e **exige autorização explícita do
+> **Dependência de deploy:** esta migration depende da 300 estar aplicada no cloud. *(Conferido em
+> 2026-09-27 com `npx supabase migration list`: `20260925140000` **já está no Remote**; os comentários de
+> `modaisSazonais.ts` que diziam o contrário estavam desatualizados.)* Rodar `npx supabase migration list` antes. Só as duas
+> novas sobem no `db push`, que é irreversível e **exige autorização explícita do
 > usuário**. O deploy do código que chama a RPC só pode ir ao ar **depois** do push (sem a função,
 > criar/editar quebram com `PGRST202`).
 
@@ -620,9 +623,11 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
     (`"normal"`, `"automatica"`, `"padrao"`, `"paragrafo"`, `"esquerda"`) são aceitos na entrada e
     canonizados para ausente;
   - `link`: RN-M12;
-  - `texto`: teto bruto antes do transform (`.max(3200)`), depois
-    `removerInvisiveisEControles(t, { preservarJuncaoDeEmoji: true })` e troca de qualquer quebra
-    (`\r`, `\n`, U+2028/2029) por espaço. Parágrafo é a **única** forma de quebra;
+  - `texto`: teto bruto antes do transform (`.max(3200)`), depois troca de qualquer quebra ou tab
+    (`\t`, `\n`, `\v`, `\f`, `\r`, U+0085, U+2028/2029) por espaço e **só então**
+    `removerInvisiveisEControles(t, { preservarJuncaoDeEmoji: true })`. Parágrafo é a **única** forma de quebra.
+    *(Divergência conferida em 2026-09-27: o passo 2 de `normalizarObservacao` preserva `\t`/`\n` e o
+    passo 3 apaga U+2028/2029; na ordem original, U+2028 sumia em vez de virar espaço e `\t` sobrevivia.)*;
   - **canonização** (transform), nesta ordem:
     1. remove trechos de texto vazio;
     2. em trecho com `link`, remove `cor` e `sublinhado` (o visual do link é fixo, RN-M12);
@@ -637,7 +642,8 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
   Garantido em: **Server Action** (escrita) + **zod na leitura** (RN-M04).
 
 - **RN-M04 — Parse na leitura, fail-closed.** Todo caminho que **exibe** a mensagem (SSR da vitrine,
-  SSR do painel) obtém o valor por `lerMensagemModal(raw: unknown): MensagemModalValidada | null`, que
+  SSR do painel) obtém o valor por `lerMensagemModal(raw: unknown, ctx: { lojaId; modalId }): MensagemModalValidada | null`
+  (o `ctx` só alimenta o log; assinatura fixada na quebra em issues), que
   roda o **mesmo** `schemaMensagemModal.safeParse`. Falha devolve `null` e faz
   `console.error("[modalSazonal] mensagem inválida", { lojaId, modalId })`, **sem** logar conteúdo nem
   URL. Motivo: a RLS `modais_sazonais_escrita_propria` permite ao dono gravar a própria linha **direto no
@@ -708,9 +714,11 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
 
   Garantido em: **Server Action** (zod) + **CHECK no banco**.
 
-- **RN-M09 — Título do modal endurecido** (amplia RN-01). `titulo` no zod passa por
-  `removerInvisiveisEControles` (sem `preservarJuncaoDeEmoji`, igual à observação) e pela troca de
-  quebra de linha por espaço antes de `trim().min(1).max(120)`. No banco, CHECK de tamanho e de ausência
+- **RN-M09 — Título do modal endurecido** (amplia RN-01). `titulo` no zod passa pela troca de quebra
+  de linha **e tab** por espaço e **depois** por `removerInvisiveisEControles` (sem
+  `preservarJuncaoDeEmoji`, igual à observação), antes de `trim().min(1).max(120)`. *(Divergência
+  conferida em 2026-09-27: `normalizarObservacao` preserva `\t`, e o CHECK `modais_sazonais_titulo_sem_invisiveis`
+  recusa U+0009; sem a troca, um título com tab passava no zod e caía em `23514`.)* No banco, CHECK de tamanho e de ausência
   de controles/bidi. Renderização continua como texto do React. Garantido em: **Server Action** +
   **CHECK no banco**.
 
@@ -923,7 +931,7 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
 | # | Ataque | Defesa | Teste obrigatório |
 |---|---|---|---|
 | A5 | 10 mil trechos, 1 mil parágrafos, texto de 1 MB, URL de 1 MB | tetos brutos + `bodySizeLimit` | zod reprova sem transformar; fronteiras 120/121 trechos, 800/801 caracteres, 10/11 links, 1000/1001 URL canônica, 20/21 parágrafos |
-| A7 | Padding para contornar teto: trechos vazios, parágrafos vazios, trechos idênticos picados | canonização antes de medir | 300 trechos idênticos viram 1 e passam; 50 vazios entre textos viram 1 |
+| A7 | Padding para contornar teto: trechos vazios, parágrafos vazios, trechos idênticos picados | canonização antes de medir | 200 trechos idênticos num parágrafo viram 1 e passam (300 = 150+150 em dois parágrafos); 38 vazios entre dois textos viram 1. *(Corrigido em 2026-09-27: "300 num parágrafo" e "50 vazios" contradiziam os tetos brutos de 200 trechos/parágrafo e 40 parágrafos do RN-M08, que vencem.)* |
 | A22 | Profundidade forçada: `nivel: 5`, `filhos: [...]`, parágrafo dentro de `trechos`, 1 mil níveis de aninhamento | estrutura plana, sem `z.lazy`, render sem recursão | zod reprova sem `RangeError`; o conversor do editor achata lista aninhada |
 | A30 | RPC chamada **direto** com arrays hostis: 10 mil ids, array 2D (`'{{a,b},{c,d}}'`), `null` dentro, duplicatas | S3 (`cardinality`, `array_ndims`, `count(distinct)`) | pglite `asUser(dono)`: cada caso faz `raise` com fragmento afirmado, e nada muda na linha nem nas junções |
 | A8b | Documento de 70 KB gravado direto na tabela | CHECK `modais_sazonais_mensagem_tamanho` | pglite: `23514` + nome da constraint (a parte de forma/contorno mora em V6-A8) |
