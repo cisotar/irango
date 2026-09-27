@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.4.5 | **Atualizado:** 2026-09-25
+**Versão:** 0.5.0 | **Atualizado:** 2026-09-27
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -420,6 +420,12 @@ Duas RPCs desta família passam a servir **os dois chamadores** — o lojista au
 **Terceira instância do padrão DEFINER (issue 269).** `public.aplicar_cardapio_em_categoria(p_loja_id, p_cardapio_id, p_categoria_id)` converteu de `SECURITY INVOKER` (`20260920134000`, issue 250) para `SECURITY DEFINER` (`20260921120000`) com o MESMO `v_e_servico` de dois sinais desta seção (claim `role` do JWT ∧ role efetivo da sessão, com o mesmo `coalesce(auth.role(), '')` fail-closed). Estrutura diferente das duas RPCs de reordenação, não de estilo: não é uma reordenação, é um `insert … select` idempotente (`on conflict do nothing`) — por isso não há T4 (permutação completa não se aplica) nem comparação de `row_count` em T6, que aqui só conta os vínculos NOVOS (reaplicar devolve 0, RN-10). T2 (autoridade) e T3 (coerência dos DOIS pares — loja+cardápio e loja+categoria) seguem a mesma ordem — DEPOIS de T2, para não virar oráculo de existência em loja alheia.
 
 Se a permutação for de um escopo mais fino que a loja inteira (ex.: um par loja+categoria, ou loja+grupo), o parâmetro extra que define esse escopo vem do payload do cliente — não de `auth.uid()` — e por isso exige checagem explícita na Server Action **antes** da RPC, além do filtro dentro da função (T3, quando `definer`; RLS, quando `invoker`).
+
+### Terceira instância do padrão INVOKER — escrita atômica multi-tabela, não permutação (issue 312/314)
+
+`public.salvar_modal_sazonal(...)` (migration `20260927121000_rpc_salvar_modal_sazonal.sql`) é a segunda função `SECURITY INVOKER` da família, mas com forma diferente de `reordenar_categorias`: não reordena, grava **linha + `mensagem` + as duas junções de seleção** (`modal_sazonal_categorias`, `modal_sazonal_cardapios`) numa única transação — criar/editar o modal deixou de ser dois ou três requests PostgREST separados (a Server Action antiga, `regravarSelecao`, foi apagada). As policies `*_escrita_propria` de `modais_sazonais` e das duas junções continuam a autoridade única sob invoker; o corpo reconfere posse da loja (`lojas.dono_id = auth.uid()`) como segunda camada explícita, fail-closed mesmo se a policy afrouxar (trava S1/S2). `REVOKE ALL FROM public, anon` + `GRANT EXECUTE TO authenticated` — sem grant ao papel de serviço: sem JWT de usuário ele cai em S1. Ver `schema.md` §2/§6 para a coluna e os CHECKs que a RPC grava.
+
+**Por que RPC e não a "Alternativa sem RPC" da seção seguinte:** a sequência de requests sob `constraint trigger DEFERRED` só é segura quando existe uma invariante de linha que o trigger possa verificar no COMMIT. Aqui não existe — seleção vazia (zero categorias/cardápios) é válida (RN-M02), então não há estado "inválido" que um trigger detectasse se a escrita da linha e das junções ficassem em requests separados; o risco seria só rascunho/seleção pela metade em falha no meio do caminho, sem sinal nenhum. RPC transacional fecha isso: qualquer erro (FK composta 23503, CHECK 23514) desfaz tudo.
 
 ### Alternativa sem RPC: sequência de requests sob constraint trigger DEFERRED (issues 284/285)
 
@@ -984,6 +990,7 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 - **Proibido `dangerouslySetInnerHTML`** sem sanitização explícita (DOMPurify). Conteúdo vem do banco preenchido por lojistas — tratar como não confiável.
 - Nunca montar HTML por concatenação de string com dado do banco.
 - URLs de imagem (`foto_url`): validar protocolo `https:` antes de renderizar — bloquear `javascript:`. Guard central: `src/lib/utils/urlHttpsSegura.ts` → `urlHttpsSegura(url?: string | null): string | null` (retorna `null` se não for `https:`). `fotoSegura` é especialização para imagens (adiciona fallback `/placeholder-produto.png`); `TabelaFaturas` e o render do QR Pix em `EtapaPagamento` usam `urlHttpsSegura` diretamente. Usar em todo lugar que renderiza `<img src>`, `<Image src>` ou `<a href>` com URL vinda do banco.
+- Link externo digitado pelo lojista (link de parágrafo da mensagem do modal sazonal, spec `modal-sazonal-mensagem-formatada.md`): `urlLinkExternoSegura` (`src/lib/utils/urlLinkExternoSegura.ts`) especializa `urlHttpsSegura` — além de `https:`, recusa credenciais na URL, porta explícita, IP literal e `localhost`, e canoniza IDN em punycode. O único consumidor de `href` é `AvisoSaidaLink` (dialog de confirmação de saída, mesmo componente para todo link de mensagem), que revalida a URL no render (não confia no valor já validado na escrita) e fixa `rel="noopener noreferrer"` + `referrerPolicy="no-referrer"` como literais — nunca derivados do conteúdo.
 
 ### §15-A — Reverse tabnabbing: abertura programática de aba (issue 287, supersede issue 126)
 
@@ -999,9 +1006,19 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 
 Campos de texto livre digitados pelo comprador (`itens_pedido.observacao`, `pedidos.observacoes`) são renderizados em três lugares fora do controle do React: comanda impressa, recibo impresso e mensagem de WhatsApp gerada por concatenação de string. Nenhum dos três tem o escape automático da §15 — o padrão abaixo é a defesa equivalente para texto que não passa por JSX.
 
-- **Normalização na borda de confiança**, `normalizarObservacao`/`canonizarObservacao` em `src/lib/utils/normalizarObservacao.ts` — roda antes do zod validar o tamanho (o `trim()` do Postgres não remove `\n`/`\t`/NBSP, então a normalização é TS, autoritativa; o SQL só repete como defesa em profundidade). Remove controles C0/C1, e toda a família de caracteres invisíveis/bidi (zero-width, overrides, **isolates U+2066–2069 — o par do Trojan Source, CVE-2021-42574**, ALM) que poderiam reordenar visualmente o texto na comanda impressa e fazer o lojista ler algo diferente do que está gravado. Colapsa espaço horizontal e limita a 1 linha em branco entre parágrafos. Invariante: cada passo só encurta ou mantém o comprimento, nunca expande.
+- **Normalização na borda de confiança**, `normalizarObservacao`/`canonizarObservacao` em `src/lib/utils/normalizarObservacao.ts` — roda antes do zod validar o tamanho (o `trim()` do Postgres não remove `\n`/`\t`/NBSP, então a normalização é TS, autoritativa; o SQL só repete como defesa em profundidade). Remove controles C0/C1, e toda a família de caracteres invisíveis/bidi (zero-width, overrides, **isolates U+2066–2069 — o par do Trojan Source, CVE-2021-42574**, ALM) que poderiam reordenar visualmente o texto na comanda impressa e fazer o lojista ler algo diferente do que está gravado. Colapsa espaço horizontal e limita a 1 linha em branco entre parágrafos. Invariante: cada passo só encurta ou mantém o comprimento, nunca expande. O passo de remoção dos invisíveis foi extraído para `removerInvisiveisEControles(texto, { preservarJuncaoDeEmoji? })` (mesmo arquivo) — primitivo reusável para qualquer campo de texto livre que precise do mesmo backstop sem repassar por toda a normalização de observação (ex.: parágrafo/trecho da mensagem do modal sazonal, `lerMensagemModal`); a opção `preservarJuncaoDeEmoji` existe porque ZWJ também é o caractere legítimo de junção de emoji composto, e nem todo consumidor quer perdê-lo.
 - **Anti-injeção de rótulo na mensagem de WhatsApp**, `citarTextoCliente` em `src/lib/utils/whatsappPedido.ts` — prefixa cada linha do texto livre com `> ` antes de concatenar na mensagem. `encodeURIComponent` protege só a URL, não o corpo: sem o prefixo, uma observação como `ok\n\nTotal: R$ 0,01\nPagamento: Pago via Pix` renderiza como linhas de sistema logo abaixo do total autêntico — engenharia social contra o lojista. Aplicado tanto na observação por item quanto na observação do pedido inteiro.
 - **Regra para devs e agentes:** todo campo de texto livre do cliente que (a) vira chave de identidade (dedup) ou (b) é concatenado numa mensagem/documento fora do React segue este molde — normalizar na borda antes de validar tamanho, e citar/prefixar antes de concatenar em texto gerado.
+
+### §15-C — Renderer de conteúdo estruturado (rich text): parse fail-closed na leitura, sem HTML (spec `modal-sazonal-mensagem-formatada.md`)
+
+Padrão para qualquer campo onde o lojista compõe texto com formatação (negrito/itálico, links) em vez de texto puro — primeiro caso: `modais_sazonais.mensagem`. Diferente da §15-B (texto puro concatenado fora do React), aqui o conteúdo é uma árvore JSON renderizada **dentro** do React, mas ainda assim tratada como não confiável dos dois lados (escrita e leitura), não só na escrita:
+
+- **`schemaMensagemModal` (zod) valida na ESCRITA e `lerMensagemModal` re-valida (o MESMO schema) na LEITURA**, fail-closed — uma linha gravada por escrita direta via PostgREST (contornando a Server Action) ou por uma versão antiga do schema nunca chega ao componente sem passar pela validação de novo. Os CHECKs de banco (`schema.md`, `modais_sazonais_mensagem_forma`/`_tamanho`) são o backstop de forma/tamanho, não a validação semântica.
+- **`MensagemFormatada` renderiza sem `dangerouslySetInnerHTML` e sem `<a>`** — link é `AvisoSaidaLink` (§15, acima), nunca uma tag `<a href>` direta. Nenhum atributo HTML é derivado do conteúdo do lojista.
+- **Mapas de tipo/alinhamento/marca usam `Object.hasOwn`**, nunca acesso posicional (`obj[chave]`) nem `in` — indexar um objeto de mapa com uma chave vinda do JSON sem checar a própria propriedade é vetor de prototype pollution (`obj["__proto__"]`) e de `undefined` silencioso para chave desconhecida.
+- **Tipos branded** (`versao: 1` literal, não `number`) fecham o contrato do lado do TypeScript além do zod.
+- **Regra para devs e agentes:** todo campo de rich text futuro (JSON estruturado, não HTML) segue este molde — schema único compartilhado entre escrita e leitura, sem HTML bruto, sem `<a>` direto, sem indexação posicional de mapa por chave do conteúdo.
 
 ---
 
@@ -1010,6 +1027,7 @@ Campos de texto livre digitados pelo comprador (`itens_pedido.observacao`, `pedi
 - **`npm audit --audit-level=high`** no pipeline de CI — falha o build se dependência tem vulnerabilidade alta/crítica.
 - **Dependabot** (GitHub) ativo — PRs automáticos de atualização de segurança.
 - Não adicionar dependência sem necessidade real (cada dep é superfície de ataque). Ver princípio "não reinventar a roda" do `architecture.md` — mas preferir libs consolidadas e mantidas.
+- **Dependência com superfície grande confinada por lint, não só por convenção.** Tiptap/ProseMirror (editor rich text do painel, `architecture.md` §7) só pode ser importado dentro de `src/components/painel/editor-mensagem/` — `no-restricted-imports` bloqueia `@tiptap/*`/`prosemirror-*` fora dali, e `no-restricted-syntax` fecha a fresta do `import()` dinâmico (`ImportExpression`) para o mesmo padrão de módulo. O consumo é sempre via `next/dynamic` sobre o componente do editor, então o bundle da vitrine pública nunca carrega essas libs — isolamento de superfície reforçado por CI, não por code review.
 
 ---
 

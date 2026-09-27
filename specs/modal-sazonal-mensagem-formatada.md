@@ -43,6 +43,21 @@
 > decidir. **Cada recurso novo é um enum fechado ou uma estrutura fixa**, e o link é a única string
 > além do texto: validado por protocolo **e** formato, canonizado e revalidado no render.
 
+> **Notas da implementação (2026-09-27, loop autônomo; o código manda):**
+> - `preservarJuncaoDeEmoji` também mantém o ZWJ quando o pictograma da esquerda vem seguido de U+FE0F
+>   ou de modificador de tom de pele (U+1F3FB–1F3FF); sem isso 🏳️‍🌈 e família com tom de pele se
+>   desmontariam. ZWJ entre letras continua removido.
+> - Parágrafo **comum** só com espaços também é tratado como vazio na canonização (reforça o anti-padding).
+> - O rótulo acessível "(link externo, abre aviso)" é um `<span className="sr-only">`, não `aria-label`:
+>   nenhum atributo é montado com texto do lojista.
+> - Link inválido forçado no renderer vira texto comum (defesa extra além do `AvisoSaidaLink`).
+> - A RPC trata `p_categorias`/`p_cardapios` `NULL` como seleção vazia (RN-M02).
+> - Tiptap 3.31.3 em pacotes individuais; desfazer/refazer é `UndoRedo` de `@tiptap/extensions/undo-redo`.
+>   O `npx shadcn add toggle-group` trouxe a dependência `cn` (shadcn-ui/cn, fixada em 0.4.0), usada só
+>   pelos arquivos gerados em `components/ui/toggle*.tsx`.
+> - Behaviors `[ ]` com "verificar após db push": implementados e cobertos por teste nas suas camadas, mas
+>   só observáveis no app depois de `npx supabase db push` das migrations `20260927120000` e `20260927121000`.
+
 ---
 
 ## Visão Geral
@@ -227,44 +242,44 @@ prato continuam **idênticos**.
 - `Dialog`: **reuso**, sem alteração.
 
 **Behaviors:**
-- [ ] **Ver o modal só com o título** quando o lojista não escreveu mensagem e não há prato selecionado à
+- [ ] **Ver o modal só com o título** *(verificar após db push)* quando o lojista não escreveu mensagem e não há prato selecionado à
   venda agora (sem seleção, ou com os selecionados fora de vigência). Garantido em: **SSR** (RN-M01:
   ativo + janela bastam).
-- [ ] **Ver o modal com título e mensagem**, sem lista de pratos, quando não há prato selecionado à venda
+- [ ] **Ver o modal com título e mensagem** *(verificar após db push)*, sem lista de pratos, quando não há prato selecionado à venda
   agora. Garantido em: **SSR** (RN-M01).
-- [ ] **Ver título, mensagem e pratos juntos** quando o modal tem os dois. Garantido em: **SSR**
+- [ ] **Ver título, mensagem e pratos juntos** *(verificar após db push)* quando o modal tem os dois. Garantido em: **SSR**
   (RN-M01, RN-10 inalterada).
-- [ ] **Ver o modal com título e pratos**, como hoje, quando não há mensagem. Garantido em: **SSR**.
-- [ ] **Ver a formatação de trecho aplicada** (negrito, itálico, sublinhado, tachado, 4 tamanhos, cor
+- [ ] **Ver o modal com título e pratos** *(verificar após db push)*, como hoje, quando não há mensagem. Garantido em: **SSR**.
+- [ ] **Ver a formatação de trecho aplicada** *(verificar após db push)* (negrito, itálico, sublinhado, tachado, 4 tamanhos, cor
   da paleta, fonte da lista) exatamente como o lojista viu na prévia. Garantido em: **renderizador**
   (`MensagemFormatada`, mapas constantes de classe, RN-M05).
-- [ ] **Ver títulos, listas com marcador, listas numeradas e alinhamento** como o lojista montou, com
+- [ ] **Ver títulos, listas com marcador, listas numeradas e alinhamento** *(verificar após db push)* como o lojista montou, com
   listas de um nível só. Garantido em: **renderizador** (RN-M05/RN-M14) + **zod** (estrutura plana, sem
   aninhamento, RN-M14).
-- [ ] **Ler toda cor da mensagem com contraste AA** sobre o fundo do modal. Garantido em: **paleta
+- [x] **Ler toda cor da mensagem com contraste AA** sobre o fundo do modal. Garantido em: **paleta
   fixa** pré-validada por teste (RN-M13). O lojista não escolhe hex.
-- [ ] **Tocar num link e ver o aviso de saída** com o domínio de destino antes de sair da vitrine.
+- [ ] **Tocar num link e ver o aviso de saída** *(verificar após db push)* com o domínio de destino antes de sair da vitrine.
   Garantido em: **renderizador** (link é `<button>`, nunca `<a href>` na mensagem, RN-M05/RN-M12) +
   **cliente (UX)** (vista de aviso no mesmo dialog).
-- [ ] **Continuar pelo aviso** e abrir o site numa aba nova, sem que ele consiga controlar a vitrine
+- [ ] **Continuar pelo aviso** *(verificar após db push)* e abrir o site numa aba nova, sem que ele consiga controlar a vitrine
   (`window.opener`) nem receber a URL da loja como referrer. Garantido em: **renderizador**
   (`AvisoSaidaLink` com `rel="noopener noreferrer"` + `referrerPolicy="no-referrer"` e URL revalidada no
   render) + **zod** (só `https://` canônico gravado e lido, RN-M12).
-- [ ] **Voltar do aviso** para a mensagem sem sair da loja, ou fechar o modal inteiro pelo ✕/ESC.
+- [ ] **Voltar do aviso** *(verificar após db push)* para a mensagem sem sair da loja, ou fechar o modal inteiro pelo ✕/ESC.
   Garantido em: **cliente (UX)** (`linkPendente` zerado pelo "Voltar" ou pelo `fechar()` único).
-- [ ] **Nunca executar script, carregar recurso externo (fonte, imagem, CSS), seguir link sem aviso ou
+- [x] **Nunca executar script, carregar recurso externo (fonte, imagem, CSS), seguir link sem aviso ou
   herdar estilo livre** vindo da mensagem, mesmo que o banco contenha lixo hostil. Garantido em: **SSR**
   (parse na leitura, fail-closed, RN-M04) + **renderizador** (RN-M05) + **CHECK no banco** (RN-M08).
-- [ ] **Ver o modal sem a mensagem, e não uma vitrine quebrada**, quando a mensagem gravada é inválida
+- [ ] **Ver o modal sem a mensagem, e não uma vitrine quebrada** *(verificar após db push)*, quando a mensagem gravada é inválida
   (escrita direta via PostgREST contornando a Server Action). O modal abre sem a mensagem: título, mais
   os pratos se houver. Garantido em: **SSR** (`lerMensagemModal` devolve `null`; o log leva só `loja_id`
   e `modal_id`, nunca conteúdo nem URL).
-- [ ] **Fechar o modal mesmo com uma mensagem de tamanho máximo**: ✕ e CTAs sempre visíveis, e a
+- [ ] **Fechar o modal mesmo com uma mensagem de tamanho máximo** *(verificar após db push)*: ✕ e CTAs sempre visíveis, e a
   mensagem rola por dentro. Garantido em: **cliente (UX)** (RN-M06).
-- [ ] **Ter o `ModalPromocoes` suprimido só quando o sazonal de fato é enviado para abrir** (e o
+- [x] **Ter o `ModalPromocoes` suprimido só quando o sazonal de fato é enviado para abrir** (e o
   lojista não ligou "mostrar promoções junto"). Nunca por um sazonal que o SSR não mandou. Garantido em:
   **SSR** (RN-M07).
-- [ ] **Nunca ver mensagem de outra loja nem rascunho**. Garantido em: **RLS**
+- [x] **Nunca ver mensagem de outra loja nem rascunho**. Garantido em: **RLS**
   (`modais_sazonais_leitura_publica`: `ativo = true` + `loja_esta_ativa`; a coluna nova herda a política
   por ser da mesma linha) + **query** (`.eq("loja_id", lojaId)` + `.eq("ativo", true)`).
 
@@ -343,76 +358,76 @@ agir"). O aviso some assim que houver mensagem ou seleção.
   Inválida vira `null` (editor vazio) com log no servidor, sem derrubar a página.
 
 **Behaviors:**
-- [ ] **Salvar um modal só com título, janela e mensagem**, sem categoria nem cardápio. Garantido em:
+- [ ] **Salvar um modal só com título, janela e mensagem** *(verificar após db push)*, sem categoria nem cardápio. Garantido em:
   **Server Action** (`schemaModalSazonal` sem o `.refine` de seleção, RN-M02) + **RPC transacional**
   (RN-M15) + **RLS** (`modais_sazonais_escrita_propria`, USING + WITH CHECK). `loja_id` sai de
   `buscarLojaDoDono`, nunca do payload.
-- [ ] **Salvar um modal só com seleção, sem mensagem**, como hoje. Garantido em: **Server Action** +
+- [ ] **Salvar um modal só com seleção, sem mensagem** *(verificar após db push)*, como hoje. Garantido em: **Server Action** +
   **RPC transacional** + **RLS**.
-- [ ] **Salvar um modal só com título e janela**, sem mensagem e sem seleção, vendo antes o aviso "Este
+- [ ] **Salvar um modal só com título e janela** *(verificar após db push)*, sem mensagem e sem seleção, vendo antes o aviso "Este
   modal vai aparecer só com o título…", que não bloqueia. Garantido em: **cliente (UX)** para o aviso +
   **Server Action + RPC + RLS** para a gravação. Salvar assim é decisão consciente do lojista (RN-M02).
-- [ ] **Gravar título, janela, mensagem, "mostrar promoções junto", categorias e cardápios de uma vez:
+- [x] **Gravar título, janela, mensagem, "mostrar promoções junto", categorias e cardápios de uma vez:
   ou tudo grava, ou nada grava.** Garantido em: **RPC transacional** `salvar_modal_sazonal` (uma
   transação Postgres, RN-M15) + **RLS** + **FK composta**.
-- [ ] **Ver o modal exatamente como estava antes** quando uma edição falha no meio (ex.: uma categoria
+- [ ] **Ver o modal exatamente como estava antes** *(verificar após db push)* quando uma edição falha no meio (ex.: uma categoria
   escolhida foi apagada por outra aba entre abrir o form e salvar). Linha, mensagem e seleção antigas
   ficam intactas, e a UI mostra "Não foi possível salvar. Tente novamente." Garantido em: **RPC
   transacional** (rollback total) + **Server Action** (erro genérico, `seguranca.md` §14).
-- [ ] **Não ficar com um rascunho órfão** quando a criação de um modal falha no meio. Garantido em:
+- [x] **Não ficar com um rascunho órfão** quando a criação de um modal falha no meio. Garantido em:
   **RPC transacional** (INSERT da linha revertido junto com as junções).
-- [ ] **Escrever a mensagem em parágrafos** (Enter cria parágrafo). Garantido em: **cliente (UX)** +
+- [ ] **Escrever a mensagem em parágrafos** *(verificar após db push)* (Enter cria parágrafo). Garantido em: **cliente (UX)** +
   **Server Action** (tetos de RN-M08, recontados no servidor).
-- [ ] **Aplicar negrito, itálico, sublinhado ou tachado** a um trecho selecionado, pela barra ou pelos
+- [ ] **Aplicar negrito, itálico, sublinhado ou tachado** *(verificar após db push)* a um trecho selecionado, pela barra ou pelos
   atalhos. Garantido em: **cliente (UX)**. No servidor, cada marca é só `true` validado pelo zod.
-- [ ] **Mudar o tamanho de um trecho** (Pequeno, Normal, Grande, Enorme). Garantido em: **cliente (UX)**
+- [ ] **Mudar o tamanho de um trecho** *(verificar após db push)* (Pequeno, Normal, Grande, Enorme). Garantido em: **cliente (UX)**
   + **Server Action** (enum fechado; nunca px, rem ou CSS).
-- [ ] **Mudar a cor de um trecho** para uma das cores da paleta, ou voltar para a automática. Garantido
+- [ ] **Mudar a cor de um trecho** *(verificar após db push)* para uma das cores da paleta, ou voltar para a automática. Garantido
   em: **cliente (UX)** + **Server Action** (enum fechado da paleta; hex, `rgb()`, nome CSS ou qualquer
   string fora da lista reprova, RN-M13).
-- [ ] **Mudar a fonte de um trecho** (Padrão, Serifada, Monoespaçada). Garantido em: **cliente (UX)** +
+- [ ] **Mudar a fonte de um trecho** *(verificar após db push)* (Padrão, Serifada, Monoespaçada). Garantido em: **cliente (UX)** +
   **Server Action** (enum fechado; nome de família, `url()` ou `@font-face` reprovam; nada é baixado).
-- [ ] **Alinhar um parágrafo** à esquerda, ao centro ou à direita. Garantido em: **cliente (UX)** +
+- [ ] **Alinhar um parágrafo** *(verificar após db push)* à esquerda, ao centro ou à direita. Garantido em: **cliente (UX)** +
   **Server Action** (enum fechado, RN-M14).
-- [ ] **Transformar um parágrafo em título.** Garantido em: **cliente (UX)** + **Server Action**
+- [ ] **Transformar um parágrafo em título.** *(verificar após db push)* Garantido em: **cliente (UX)** + **Server Action**
   (`tipo: "titulo"`, enum, RN-M14).
-- [ ] **Criar uma lista com marcadores ou numerada**, de um nível só. Garantido em: **cliente (UX)**
+- [ ] **Criar uma lista com marcadores ou numerada** *(verificar após db push)*, de um nível só. Garantido em: **cliente (UX)**
   (`ListItem` sem sub-blocos) + **Server Action** (item de lista é um tipo de parágrafo plano; não existe
   campo de nível nem filho, RN-M14).
-- [ ] **Pôr um link num trecho** digitando uma URL `https://`. URL sem `https://`, com usuário/senha,
+- [ ] **Pôr um link num trecho** *(verificar após db push)* digitando uma URL `https://`. URL sem `https://`, com usuário/senha,
   com IP, `localhost`, porta explícita ou malformada é recusada já no campo. Garantido em: **cliente
   (UX)** (`urlLinkExternoSegura` no campo) + **Server Action** (mesma função no zod, com canonização,
   RN-M12).
-- [ ] **Remover o link** de um trecho. Garantido em: **cliente (UX)** + **Server Action** (trecho sem
+- [ ] **Remover o link** *(verificar após db push)* de um trecho. Garantido em: **cliente (UX)** + **Server Action** (trecho sem
   `link`).
-- [ ] **Colar texto de outro app** e ver só o texto entrar, sem formatação, link ou imagem. Garantido
+- [ ] **Colar texto de outro app** *(verificar após db push)* e ver só o texto entrar, sem formatação, link ou imagem. Garantido
   em: **cliente (UX)** (`handlePaste`). Mesmo contornando o editor, o servidor só aceita o formato iRango.
-- [ ] **Digitar emoji pelo teclado do sistema** e vê-lo inteiro na prévia e na vitrine, inclusive
+- [ ] **Digitar emoji pelo teclado do sistema** *(verificar após db push)* e vê-lo inteiro na prévia e na vitrine, inclusive
   sequências como 👨‍👩‍👧. Garantido em: **Server Action** (normalização com `preservarJuncaoDeEmoji`,
   §Esclarecimento sobre emoji).
-- [ ] **Ver o contador "N/800"** e o aviso ao passar do limite. Garantido em: **cliente (UX, preview)**
+- [ ] **Ver o contador "N/800"** *(verificar após db push)* e o aviso ao passar do limite. Garantido em: **cliente (UX, preview)**
   com `contarCaracteresMensagem`, a mesma função do zod. **Autoridade:** Server Action recontando depois
   de normalizar.
-- [ ] **Ver a prévia da mensagem** como o cliente verá. Garantido em: **cliente (UX)**, com o mesmo
+- [ ] **Ver a prévia da mensagem** *(verificar após db push)* como o cliente verá. Garantido em: **cliente (UX)**, com o mesmo
   `MensagemFormatada` da vitrine.
-- [ ] **Apagar toda a mensagem** e salvar. O modal fica com título e, se houver, pratos. Garantido em:
+- [ ] **Apagar toda a mensagem** *(verificar após db push)* e salvar. O modal fica com título e, se houver, pratos. Garantido em:
   **Server Action** (documento sem texto visível é canonizado para `null`, RN-M03).
-- [ ] **Reabrir um modal salvo e ver a mensagem de volta no editor** com toda a formatação. Garantido
+- [ ] **Reabrir um modal salvo e ver a mensagem de volta no editor** *(verificar após db push)* com toda a formatação. Garantido
   em: **SSR do painel** (`lerMensagemModal` + `mensagemParaDocumentoEditor`).
-- [ ] **Não conseguir gravar nada fora do contrato**, nem com payload forjado na Server Action: HTML,
+- [x] **Não conseguir gravar nada fora do contrato**, nem com payload forjado na Server Action: HTML,
   `style`, chave extra, cor/fonte/alinhamento/tipo fora do enum, link não-`https`, lista aninhada,
   milhares de trechos, mais de 10 links, caracteres invisíveis/bidi. Garantido em: **Server Action**
   (`schemaMensagemModal` com `.strict()` em todos os níveis, tetos antes da transformação,
   normalização, canonização, RN-M03/RN-M08/RN-M12/RN-M14).
-- [ ] **Não conseguir gravar mensagem fora do limite nem com escrita direta no PostgREST** usando a
+- [x] **Não conseguir gravar mensagem fora do limite nem com escrita direta no PostgREST** usando a
   própria sessão, seja na tabela, seja chamando a RPC direto. Garantido em: **CHECK no banco** (bytes e
   forma de topo, RN-M08) + **travas do corpo da RPC** (cardinalidade e duplicata dos arrays, RN-M15). O
   conteúdo que passa no CHECK mas não no zod é neutralizado na leitura (RN-M04).
-- [ ] **Não conseguir ler nem editar a mensagem do modal de outra loja**, nem por `id` forjado, nem
+- [x] **Não conseguir ler nem editar a mensagem do modal de outra loja**, nem por `id` forjado, nem
   chamando a RPC com `p_loja_id`/`p_modal_id` alheios. Garantido em: **Server Action + RPC + RLS**
   (`loja_id` de `buscarLojaDoDono`; trava de posse explícita no corpo da RPC; RLS avaliada nos
   INSERT/UPDATE/DELETE da RPC `invoker`; `id` validado como uuid, RN-M10).
-- [ ] **Ter o título com caracteres invisíveis/bidi removidos** antes de salvar. Garantido em:
+- [ ] **Ter o título com caracteres invisíveis/bidi removidos** *(verificar após db push; invisíveis não-bidi pendentes na issue 316)* antes de salvar. Garantido em:
   **Server Action** (RN-M09) + **CHECK no banco**.
 
 ---
@@ -520,7 +535,7 @@ as $$ ... $$;
 | S4 | `p_modal_id` nulo: `INSERT` da linha (`ativo` no default `false`, `loja_id = p_loja_id`) `returning id`. Não nulo: `UPDATE ... where id = p_modal_id and loja_id = p_loja_id returning id`; **0 linhas** faz `raise` (modal de outra loja ou inexistente, sem oráculo: mesma mensagem nos dois casos) | a linha é escrita primeiro para que as FKs compostas das junções tenham alvo. `atualizado_em = now()` no UPDATE. `mostrar_promocoes_junto = coalesce(p_mostrar_promocoes_junto, mostrar_promocoes_junto)` no UPDATE preserva a semântica "ausente = manter" de hoje. **`ativo` nunca é escrito aqui** (transição de estado é de `ativar`/`desativar`, RN-05) |
 | S5 | `delete from modal_sazonal_categorias where loja_id = p_loja_id and modal_sazonal_id = v_id`, idem cardápios | escopo duplo explícito além da RLS |
 | S6 | `insert ... select p_loja_id, v_id, unnest(p_categorias)`, idem cardápios; confere `row_count = cardinality(...)`, senão `raise` | a **FK composta** `(categoria_id, loja_id)` / `(cardapio_id, loja_id)` recusa (`23503`) id de outra loja ou apagado, e isso **desfaz a transação inteira** (RN-11 + RN-M15) |
-| S7 | `revoke all on function ... from public, anon;` `grant execute ... to authenticated;` (**sem** `service_role`) | `anon` recebe `EXECUTE` por entrada própria na ACL via default privileges (`seguranca.md` §2). Sem o revoke nominal, a anon key do bundle chamaria a RPC |
+| S7 | `revoke all on function ... from public, anon;` `grant execute ... to authenticated;` (**sem grant novo** a `service_role`) *(corrigido 2026-09-27: `service_role` mantém EXECUTE pelos default privileges de `20260614008500`, que o revoke não alcança — `seguranca.md` §2; é barrado por S1, provado em V6 com `asService`)* | `anon` recebe `EXECUTE` por entrada própria na ACL via default privileges (`seguranca.md` §2). Sem o revoke nominal, a anon key do bundle chamaria a RPC |
 
 - **Mensagens de `raise`:** códigos e textos internos estáveis (ex.: `P0001 'modal_sazonal: sem posse'`)
   para o teste afirmar **o fragmento da mensagem junto do SQLSTATE** (memória "SQLSTATE não basta em
@@ -618,7 +633,7 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
   - `.strict()` em **todos** os níveis (documento, parágrafo, trecho): `href`, `style`, `class`, `html`,
     `target`, `rel`, `nivel`, `filhos`, `__proto__`, `constructor` ou qualquer chave fora da allowlist
     **reprova**;
-  - marcas booleanas: `z.literal(true).optional()` (aceita `false` na entrada e canoniza para ausente);
+  - marcas booleanas: `z.boolean().optional()` na entrada, `false` canonizado para ausente (a saída só tem `true`). *(Corrigido 2026-09-27: `z.literal(true)` recusaria o `false` que a própria regra manda aceitar; o render continua lendo com `=== true`.)*;
   - `tamanho`, `cor`, `fonte`, `tipo`, `alinhamento`: `z.enum([...])` fechados. Os valores-padrão
     (`"normal"`, `"automatica"`, `"padrao"`, `"paragrafo"`, `"esquerda"`) são aceitos na entrada e
     canonizados para ausente;

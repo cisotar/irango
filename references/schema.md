@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.3.0 | **Atualizado:** 2026-09-25
+**Versão:** 0.3.1 | **Atualizado:** 2026-09-27
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -526,7 +526,8 @@ CREATE TABLE cardapio_produtos (
 -- Toggle mostrar_promocoes_junto: com este modal ativo, o ModalPromocoes também
 -- abre? Mora aqui (por modal), não em lojas.
 -- Migration: 20260925140000_modais_sazonais_rls.sql
--- Spec: specs/modal-divulgacao-sazonal.md
+-- mensagem + CHECKs: 20260927120000_modais_sazonais_mensagem.sql (issue 312).
+-- Spec: specs/modal-divulgacao-sazonal.md, specs/modal-sazonal-mensagem-formatada.md
 CREATE TABLE modais_sazonais (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   loja_id                 uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
@@ -534,11 +535,19 @@ CREATE TABLE modais_sazonais (
   ativo                   boolean NOT NULL DEFAULT false,
   exibicao_inicio         timestamptz NOT NULL,   -- INCLUSIVO
   exibicao_fim            timestamptz NOT NULL,   -- EXCLUSIVO
+  mensagem                jsonb NULL,             -- NULL = sem mensagem; contrato versao 1, RN-M08
   mostrar_promocoes_junto boolean NOT NULL DEFAULT false,
   criado_em               timestamptz NOT NULL DEFAULT now(),
   atualizado_em           timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT modais_sazonais_id_loja_unico UNIQUE (id, loja_id),
-  CONSTRAINT modais_sazonais_janela_ordem CHECK (exibicao_fim > exibicao_inicio)
+  CONSTRAINT modais_sazonais_janela_ordem CHECK (exibicao_fim > exibicao_inicio),
+  -- octet_length(mensagem::text) <= 65536 (RN-M08, CWE-770)
+  CONSTRAINT modais_sazonais_mensagem_tamanho CHECK (...),
+  -- topo = {versao:1, paragrafos: array 1..20} (RN-M08); validação semântica é do zod (lerMensagemModal)
+  CONSTRAINT modais_sazonais_mensagem_forma CHECK (...),
+  CONSTRAINT modais_sazonais_titulo_tamanho CHECK (char_length(titulo) BETWEEN 1 AND 120),
+  -- backstop de banco contra Trojan Source (CVE-2021-42574) — mesmo conjunto de normalizarObservacao
+  CONSTRAINT modais_sazonais_titulo_sem_invisiveis CHECK (...)
 );
 -- Índice único parcial (invariante um ativo por loja):
 --   CREATE UNIQUE INDEX modais_sazonais_um_ativo_por_loja ON modais_sazonais(loja_id) WHERE ativo=true
@@ -689,5 +698,5 @@ Valores válidos:
 - Tipos gerados automaticamente: `npx supabase gen types typescript > src/lib/database.types.ts`
 - **Operações multi-tabela atômicas com trava de concorrência** usam função Postgres `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon, authenticated` + `GRANT EXECUTE TO service_role`. Exemplo: `public.criar_pedido(...)` (migration `20260614003000_rpc_criar_pedido.sql`). Nunca INSERT direto da action quando atomicidade ou trava de linha for necessária.
 - **Escrita em lote com valor diferente por linha** (PostgREST não faz `update-many` heterogêneo) tem duas variantes, não uma regra só — ver `seguranca.md` §2 para o racional completo e as sete travas da segunda:
-  - **`SECURITY INVOKER`** quando só o lojista escreve e a RLS avaliada sob o invoker é a autoridade única. Único exemplo hoje: `public.reordenar_categorias(...)` (migration `20260908120000_rpc_reordenar_categorias.sql`, permutação é da loja inteira), `SET search_path = public` + `GRANT EXECUTE TO authenticated`.
+  - **`SECURITY INVOKER`** quando só o lojista escreve e a RLS avaliada sob o invoker é a autoridade única. Exemplo: `public.reordenar_categorias(...)` (migration `20260908120000_rpc_reordenar_categorias.sql`, permutação é da loja inteira), `SET search_path = public` + `GRANT EXECUTE TO authenticated`. Segundo exemplo, estruturalmente diferente (não é permutação, é escrita atômica de linha + junções): `public.salvar_modal_sazonal(...)` (migration `20260927121000_rpc_salvar_modal_sazonal.sql`, issue 312/314) — grava `modais_sazonais` + `modal_sazonal_categorias` + `modal_sazonal_cardapios` numa única transação; as policies `*_escrita_propria` continuam a autoridade, com posse da loja (`lojas.dono_id = auth.uid()`) reconferida explicitamente no corpo como segunda camada — ver `seguranca.md` §2.
   - **`SECURITY DEFINER` + travas T1–T7 no corpo** (`SET search_path = public, pg_temp` + `GRANT EXECUTE TO authenticated, service_role`) quando a mesma função precisa servir também a via admin sob `service_role`, que tem `BYPASSRLS` e por isso nunca foi coberta pela RLS em nenhum dos dois modos. Exemplos: `public.reordenar_opcionais_da_categoria(...)` (migration `20260917121000_rpc_reordenar_opcionais_da_categoria.sql`, issue 208 — permutação do **par** loja+categoria de produto, `categoria_id` como escopo extra vindo do cliente; convertida de invoker para definer pela migration `20260918121000_rpc_reordenar_opcionais_da_categoria_definer.sql`, issue 215) e `public.reordenar_itens_do_grupo_opcional(...)` (migration `20260918120000_rpc_reordenar_itens_do_grupo_opcional.sql`, issue 215/216 — nova, permutação do **par** loja+grupo de opcional, inclusive itens `ativo = false`). Fail-open de `auth.role()` sem JWT corrigido por `20260918130000_rpc_ordem_t2_fail_closed.sql`. Terceira instância: `public.aplicar_cardapio_em_categoria(...)` (migration `20260921120000_rpc_aplicar_cardapio_em_categoria_definer.sql`, issue 269 — convertida de invoker, `20260920134000`), estruturalmente diferente das duas anteriores: não é reordenação, é `insert … select` idempotente (`on conflict do nothing`), sem T4 (permutação completa) nem comparação de `row_count` — ver `seguranca.md` §2.
