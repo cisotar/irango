@@ -4,14 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * Server Actions do modal sazonal (issue 301; caminho RPC da issue 314).
  *
  * criar/editar gravam por UMA chamada `rpc("salvar_modal_sazonal", args)`
- * (RN-M15); ativar segue pelo query-builder `.from(...)`.
+ * (RN-M15); ativar grava por UMA `rpc("ativar_modal_sazonal", { p_modal_id })` (RN-M16).
  *
  * Segurança coberta:
  *  - loja_id sempre de buscarLojaDoDono, NUNCA do payload (RN-11 / seguranca.md §10)
  *  - seleção vazia e mensagem null são aceitas (RN-M02)
  *  - schema .strict(): chave extra no payload é recusada antes de qualquer I/O
  *  - teto de cardinalidade nas listas: .max(50) (CWE-770)
- *  - ativar um modal desativa o anterior na mesma transação (RN-05)
+ *  - ativar um modal desativa o anterior na mesma transação da RPC (RN-05/RN-M16)
  *  - editar modal de loja alheia é recusado (RLS / buscarLojaDoDono fail-closed)
  *
  * Molde: src/lib/actions/cupomGestao.test.ts (query-builder chainable, mocks de
@@ -222,31 +222,53 @@ describe("criarModalSazonal (Server Action)", () => {
 // ─────────────────────────────────── ativarModalSazonal
 
 describe("ativarModalSazonal (Server Action)", () => {
-  it("[RN-05] ativar um modal desativa o anterior OU falha com 23505 tratado genericamente", async () => {
-    // Cenário 1: o banco recusa com 23505 (índice único parcial — backstop estrutural).
-    // A action deve tratar como erro genérico, sem vazar o código do banco.
+  it("[RN-M16] sucesso: uma rpc('ativar_modal_sazonal', { p_modal_id }) e nenhum .from", async () => {
+    respostaBanco = { data: null, error: null }; // a RPC devolve void
+    const r = await ativarModalSazonal(MODAL_ID);
+    expect(r).toEqual({ ok: true });
+    expect(captura.rpc).toEqual({ nome: "ativar_modal_sazonal", args: { p_modal_id: MODAL_ID } });
+    expect(captura.tabela).toBeUndefined();
+    expect(captura.update).toBeUndefined();
+  });
+
+  it("[RN-05] 23505 (índice único parcial, corrida) vira erro genérico sem vazar o código", async () => {
     respostaBanco = { data: null, error: { code: "23505", message: "duplicate key" } };
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await ativarModalSazonal(MODAL_ID);
     expect(r.ok).toBe(false);
     // O erro retornado NÃO pode vazar a mensagem interna do banco (seguranca.md §14).
-    if (!r.ok) {
-      expect(JSON.stringify(r)).not.toContain("duplicate key");
-      expect(JSON.stringify(r)).not.toContain("23505");
-    }
+    expect(JSON.stringify(r)).not.toContain("duplicate key");
+    expect(JSON.stringify(r)).not.toContain("23505");
     spy.mockRestore();
   });
 
-  it("[RN-11] ativar modal de loja alheia (buscarLojaDoDono retorna loja diferente) é recusado", async () => {
-    // buscarLojaDoDono retorna a loja do dono — o modal ativado é da loja B.
-    // A action deve verificar posse ANTES de ativar.
-    buscarLojaDoDono.mockResolvedValue({ ...lojaDoDono(), id: LOJA_OUTRA });
+  it("[RN-11] modal de loja alheia: a RPC recusa (modal inexistente) e a action devolve erro genérico", async () => {
+    respostaBanco = {
+      data: null,
+      error: { code: "P0001", message: "modal_sazonal: modal inexistente" },
+    };
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await ativarModalSazonal(MODAL_ALHEIO);
-    // A action deve falhar quando o modal não pertence à loja do dono.
-    // (O próprio banco via RLS também bariria, mas a action deve checar.)
     expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toContain("modal_sazonal");
+    // O id vai para a RPC, que confere a posse contra auth.uid(); nada de loja_id do cliente.
+    expect(captura.rpc).toEqual({ nome: "ativar_modal_sazonal", args: { p_modal_id: MODAL_ALHEIO } });
+    expect(captura.tabela).toBeUndefined();
     spy.mockRestore();
+  });
+
+  it("[RN-11] sem loja do dono: recusa antes da RPC", async () => {
+    buscarLojaDoDono.mockResolvedValue(null);
+    const r = await ativarModalSazonal(MODAL_ID);
+    expect(r).toEqual({ ok: false, erro: "Loja não encontrada." });
+    expect(captura.rpc).toBeUndefined();
+  });
+
+  it("[RN-M10] id que não é uuid: recusa antes de client e RPC", async () => {
+    const r = await ativarModalSazonal("nao-e-uuid");
+    expect(r.ok).toBe(false);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(captura.rpc).toBeUndefined();
   });
 });
 

@@ -56,7 +56,8 @@
 >   O `npx shadcn add toggle-group` trouxe a dependência `cn` (shadcn-ui/cn, fixada em 0.4.0), usada só
 >   pelos arquivos gerados em `components/ui/toggle*.tsx`.
 > - Behaviors `[ ]` com "verificar após db push": implementados e cobertos por teste nas suas camadas, mas
->   só observáveis no app depois de `npx supabase db push` das migrations `20260927120000` e `20260927121000`.
+>   só observáveis no app depois de `npx supabase db push` das migrations `20260927120000` e `20260927121000`
+  (e, desde as issues 316–319, também `20260927122000` a `20260927125000`).
 
 ---
 
@@ -105,7 +106,11 @@ implementação é **não quebrar sequências de emoji**: a normalização remov
 desmontaria 👨‍👩‍👧 em três emojis. Por isso a mensagem usa a opção `preservarJuncaoDeEmoji`
 (§Reuso), que mantém o ZWJ **só entre dois pictogramas** (`\p{Extended_Pictographic}`). Um ZWJ solto
 entre letras continua removido. O seletor de variação U+FE0F não está na lista de remoção e fica
-preservado.
+preservado. O U+FE0E (apresentação texto do coração, U+2764 U+FE0E) só fica **logo depois de um pictograma**; solto, sai
+(issue 316). Bandeiras de subdivisão (🏴 + tags + CANCEL TAG, ex.: Inglaterra) ficam **só no trecho da
+mensagem** (`preservarJuncaoDeEmoji`) e só no molde U+1F3F4 + 2 a 7 tags em `[0-9a-z]` + U+E007F; fora
+dele, e sempre no título, as tags saem e fica a 🏴. Marcas combinantes seguidas são limitadas a 3
+(anti-Zalgo) no trecho e no título; vietnamita decomposto usa 2 e passa intacto.
 
 ---
 
@@ -427,7 +432,7 @@ agir"). O aviso some assim que houver mensagem ou seleção.
   chamando a RPC com `p_loja_id`/`p_modal_id` alheios. Garantido em: **Server Action + RPC + RLS**
   (`loja_id` de `buscarLojaDoDono`; trava de posse explícita no corpo da RPC; RLS avaliada nos
   INSERT/UPDATE/DELETE da RPC `invoker`; `id` validado como uuid, RN-M10).
-- [ ] **Ter o título com caracteres invisíveis/bidi removidos** *(verificar após db push; invisíveis não-bidi pendentes na issue 316)* antes de salvar. Garantido em:
+- [x] **Ter o título com caracteres invisíveis/bidi removidos** antes de salvar. Garantido em:
   **Server Action** (RN-M09) + **CHECK no banco**.
 
 ---
@@ -440,6 +445,13 @@ aditivas, sobre a tabela de `20260925140000_modais_sazonais_rls.sql`, em ordem:
 1. `supabase/migrations/<ts1>_modais_sazonais_mensagem.sql`: coluna `mensagem` + CHECKs (abaixo);
 2. `supabase/migrations/<ts2>_rpc_salvar_modal_sazonal.sql`: a RPC transacional de RN-M15
    (§RPC `salvar_modal_sazonal`). Depende da 1 porque grava `mensagem`.
+
+> **Endurecimento das issues 316–319** (quatro migrations aditivas depois das duas acima):
+> `20260927122000_modais_sazonais_titulo_invisiveis_nao_bidi.sql` (CHECK do título ampliado, RN-M09),
+> `20260927123000_modal_sazonal_juncoes_leitura_por_modal_ativo.sql` (leitura pública das junções só
+> para modal ativo de loja ativa, RN-03 do spec de origem),
+> `20260927124000_modais_sazonais_teto_por_loja.sql` (teto de 50 modais por loja, RN-M08) e
+> `20260927125000_rpc_ativar_modal_sazonal.sql` (RN-M16).
 
 > **Dependência de deploy:** esta migration depende da 300 estar aplicada no cloud. *(Conferido em
 > 2026-09-27 com `npx supabase migration list`: `20260925140000` **já está no Remote**; os comentários de
@@ -483,7 +495,7 @@ alter table public.modais_sazonais
 
 alter table public.modais_sazonais
   add constraint modais_sazonais_titulo_sem_invisiveis
-  check (titulo !~ '[\u0001-\u001F\u007F-\u009F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\uFEFF]');  -- escapes ARE; nunca caractere invisível literal (corrigido 2026-09-27)
+  check (titulo !~ '[\u0001-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u180E\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\u2800\u3164\uFE00-\uFE0D\uFEFF\uFFA0\uFFF9-\uFFFB\U000E0000-\U000E007F]');  -- escapes ARE; nunca caractere invisível literal (corrigido 2026-09-27; conjunto ampliado pela issue 316 em 20260927122000)
 ```
 
 - **RLS:** nenhuma política nova. A coluna pertence à linha, e as três políticas de `modais_sazonais`
@@ -641,6 +653,13 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
   - `texto`: teto bruto antes do transform (`.max(3200)`), depois troca de qualquer quebra ou tab
     (`\t`, `\n`, `\v`, `\f`, `\r`, U+0085, U+2028/2029) por espaço e **só então**
     `removerInvisiveisEControles(t, { preservarJuncaoDeEmoji: true })`. Parágrafo é a **única** forma de quebra.
+    Além de controles e bidi, a função remove os invisíveis **não-bidi** (issue 316): U+00AD, U+034F,
+    U+115F, U+1160, U+180E, U+2800, U+3164, U+FFA0, U+FFF9–U+FFFB, U+FE00–U+FE0E e as tags
+    U+E0000–U+E007F. Exceções: U+FE0E logo depois de `\p{Extended_Pictographic}` fica; a bandeira de
+    subdivisão (U+1F3F4 + 2 a 7 tags em U+E0030–E0039/U+E0061–E007A + U+E007F) fica no trecho. Depois da
+    remoção, marcas combinantes seguidas são cortadas em 3 (`/(\p{Mn}{3})\p{Mn}+/gu → "$1"`, anti-Zalgo),
+    antes de qualquer teto ser medido. A observação de pedido (`normalizarObservacao`) ganha só a remoção,
+    não o corte de Zalgo;
     *(Divergência conferida em 2026-09-27: o passo 2 de `normalizarObservacao` preserva `\t`/`\n` e o
     passo 3 apaga U+2028/2029; na ordem original, U+2028 sumia em vez de virar espaço e `\t` sobrevivia.)*;
   - **canonização** (transform), nesta ordem:
@@ -726,15 +745,20 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
   | URL de link | bruto **2048**; canônico **1000** | zod (antes e depois de canonizar) |
   | documento serializado | **64 KB** | CHECK `modais_sazonais_mensagem_tamanho` |
   | corpo da Server Action | 2 MB | `next.config` `serverActions.bodySizeLimit` (já existe) |
+  | modais por loja (`TETO_MODAIS_POR_LOJA`, `validacoes/modalSazonal.ts`) | **50** | trigger `before insert` `modais_sazonais_teto_por_loja` (P0001 `modal_sazonal: teto de modais`, cobre INSERT direto e RPC; serializado por loja com advisory lock) + `.limit(50)` em `listarModaisSazonaisDoDono` (issue 318) |
 
-  Garantido em: **Server Action** (zod) + **CHECK no banco**.
+  Garantido em: **Server Action** (zod) + **CHECK no banco** + **trigger** (teto de modais).
 
 - **RN-M09 — Título do modal endurecido** (amplia RN-01). `titulo` no zod passa pela troca de quebra
   de linha **e tab** por espaço e **depois** por `removerInvisiveisEControles` (sem
   `preservarJuncaoDeEmoji`, igual à observação), antes de `trim().min(1).max(120)`. *(Divergência
   conferida em 2026-09-27: `normalizarObservacao` preserva `\t`, e o CHECK `modais_sazonais_titulo_sem_invisiveis`
   recusa U+0009; sem a troca, um título com tab passava no zod e caía em `23514`.)* No banco, CHECK de tamanho e de ausência
-  de controles/bidi. Renderização continua como texto do React. Garantido em: **Server Action** +
+  de controles/bidi **e dos invisíveis não-bidi** (issue 316: U+00AD, U+034F, U+115F, U+1160, U+180E,
+  U+2800, U+3164, U+FE00–U+FE0D, U+FFA0, U+FFF9–U+FFFB, U+E0000–U+E007F; U+FE0E/U+FE0F ficam fora do
+  CHECK porque o regex do Postgres não avalia contexto de pictograma, e o zod remove o U+FE0E solto). No
+  título as tags de bandeira saem sempre, e o Zalgo é cortado em 3 marcas antes do `max(120)` (sem CHECK:
+  o Postgres não tem `\p{Mn}`). Renderização continua como texto do React. Garantido em: **Server Action** +
   **CHECK no banco**.
 
 - **RN-M10 — `id` de rota validado antes de I/O.** `editarModalSazonal`, `ativarModalSazonal`,
@@ -838,7 +862,8 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
     (RN-M10). A RPC é a **unidade de escrita**, com travas próprias (S1–S7) porque também pode ser chamada
     direto pelo PostgREST;
   - `regravarSelecao` é **apagada** (não fica como caminho morto);
-  - `ativar`/`desativar`/`remover` **não mudam** (fora do pedido; ver Fora do Escopo).
+  - `desativar`/`remover` **não mudam**; `ativar` passa a ser **uma** chamada à RPC
+    `ativar_modal_sazonal` (RN-M16, issue 319).
 
   Garantido em: **RPC transacional (banco)** + **RLS** (invoker) + **FK composta** + **Server Action**.
 
@@ -854,6 +879,19 @@ Numeração `RN-M*` para não colidir com RN-01 a RN-11 do spec de origem.
      a existir, o que prova o rollback do DELETE, e não só a ausência das novas;
   6. `p_modal_id` de outra loja: `raise` de S4 com fragmento de mensagem afirmado, e nada muda em nenhuma
      das duas lojas.
+
+- **RN-M16 — Ativar um modal é atômico: desativar o anterior e ligar o alvo numa transação só**
+  (issue 319; ajusta RN-05). `ativarModalSazonal` faz **uma** chamada
+  `rpc("ativar_modal_sazonal", { p_modal_id })`, sem `.from(...)`; antes eram dois UPDATEs em requests
+  separados, e uma falha entre eles deixava a loja com **zero** modais ativos. A RPC
+  (`20260927125000_rpc_ativar_modal_sazonal.sql`) segue o molde de RN-M15: `security invoker` (RLS vale
+  nos dois UPDATEs), `raise 'modal_sazonal: sem sessao'` sem `auth.uid()`, posse conferida (modal de uma
+  loja do chamador) **antes** de tocar em linha, `raise 'modal_sazonal: modal inexistente'` idêntico para
+  modal de outra loja e inexistente, `revoke` de `public` e `anon`, `grant` a `authenticated`. Ativar o
+  que já está ativo é idempotente. Só `ativo` (e `atualizado_em`) mudam. A Server Action mantém `id`
+  como uuid (RN-M10) e o rate limit antes, e traduz qualquer erro para `ERRO_GENERICO`, com detalhe só no
+  log. Garantido em: **RPC transacional (banco)** + **RLS** (invoker) + **índice único parcial** (backstop
+  contra corrida) + **Server Action**.
 
 ---
 
@@ -1042,11 +1080,6 @@ verificada na issue que instala o Tiptap.
   `irango:promo-sazonal:{slug}` por `atualizado_em`). Mesma regra de hoje (RN-07).
 - **Mensagem no `ModalPromocoes`.** Esta spec só toca o modal sazonal.
 - **Gestão pelo hub admin** (herdado do spec de origem, com a mesma consequência de segurança).
-- **Atomicidade de `ativarModalSazonal`.** A ação faz "desativar o ativo anterior" e "ativar o novo" em
-  dois requests. Uma falha entre eles deixa a loja **sem** modal ativo por um instante, o que é
-  degradação, não estado misto. O índice único parcial já impede dois ativos (RN-05). Não foi pedida.
-  Candidata natural a uma segunda RPC no mesmo molde de RN-M15, em issue própria. (A atomicidade do
-  **salvar**, que era o item deste lugar na v0.2.0, **entrou no escopo**: RN-M15.)
 - **Analytics de leitura da mensagem ou de cliques em link.** Fase 3 (`modelo-negocio.md` §8).
 - **Rich text em outros campos** (descrição de produto, "sobre a loja"). Se vier, reusa
   `schemaMensagemModal`, `MensagemFormatada` e `urlLinkExternoSegura` generalizados, em outro spec.

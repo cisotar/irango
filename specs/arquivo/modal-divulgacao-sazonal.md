@@ -398,6 +398,7 @@ Cada regra marca **em qual camada é garantida**.
 - **RN-03 — Modal inativo nunca abre e nunca vaza.** `ativo = false` é rascunho. Garantido em:
   **RLS** (`modais_sazonais_leitura_publica` exige `ativo = true`) + **SSR** (a query da vitrine
   filtra `ativo = true` explicitamente — cinto e suspensório, como `cardapios`).
+  > Endurecido em specs/modal-sazonal-mensagem-formatada.md (junções filtradas por modal ativo, issue 317).
 - **RN-04 — A janela de exibição é do MODAL, não do cardápio.** Nenhuma leitura de vigência de
   cardápio entra na decisão de **abrir** o modal. A vigência do cardápio só decide **quais produtos**
   daquele cardápio entram na lista curada (RN-10). Garantido em: **SSR** (duas avaliações distintas,

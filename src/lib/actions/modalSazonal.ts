@@ -16,8 +16,9 @@
 //   - args por allowlist COLUNA A COLUNA (`montarPatchModalSazonal`), nunca spread;
 //     criar/editar fazem UMA chamada à RPC transacional `salvar_modal_sazonal`
 //     (RN-M15): linha, mensagem e junções gravadas juntas ou nada.
-//   - ativar desativa o anterior na mesma transição de estado (RN-05); o índice
-//     único parcial `WHERE ativo = true` é o backstop — `23505` vira erro genérico.
+//   - ativar faz UMA chamada à RPC transacional `ativar_modal_sazonal` (RN-M16):
+//     desativa o anterior e liga o alvo na mesma transação; o índice único
+//     parcial `WHERE ativo = true` é o backstop contra corrida.
 //   - erro do banco (23505/23503/23514) → mensagem genérica na UI, detalhe no
 //     `console.error` do servidor (seguranca.md §14).
 
@@ -56,7 +57,7 @@ function revalidar(slug: string): void {
 
 // Fronteira de acesso às tabelas do modal sazonal (migration 300). A migration JÁ
 // está aplicada no cloud, mas `database.types.ts` ainda não foi regenerado, então
-// o acesso a `modais_sazonais` e à RPC `salvar_modal_sazonal` é por este mínimo
+// o acesso a `modais_sazonais` e às RPCs `salvar_modal_sazonal`/`ativar_modal_sazonal` é por este mínimo
 // client — só os métodos que as actions usam. `loja_id` e `ativo` continuam
 // derivados/controlados pelo servidor: a fronteira não afrouxa trava.
 type RespostaModal = {
@@ -68,7 +69,6 @@ interface CadeiaModal extends PromiseLike<RespostaModal> {
   update(row: Record<string, unknown>): CadeiaModal;
   delete(): CadeiaModal;
   eq(coluna: string, valor: unknown): CadeiaModal;
-  neq(coluna: string, valor: unknown): CadeiaModal;
   maybeSingle(): PromiseLike<RespostaModal>;
 }
 type ClientModal = {
@@ -160,10 +160,12 @@ export async function editarModalSazonal(
 }
 
 /**
- * Ativa um modal (RN-05). Verifica a POSSE ANTES de ativar (o modal é da loja do
- * dono?), desativa o ativo anterior na mesma transição de estado e liga o alvo.
- * O índice único parcial `WHERE ativo = true` é o backstop estrutural contra
- * corrida — `23505` vira erro genérico (seguranca.md §14), sem vazar o código.
+ * Ativa um modal (RN-05, RN-M16) por UMA chamada à RPC transacional
+ * `ativar_modal_sazonal`: desativa o ativo anterior e liga o alvo na mesma
+ * transação — nunca fica zero ativos por falha entre dois requests. A RPC deriva
+ * a loja do próprio modal e confere a posse contra `auth.uid()` antes de tocar
+ * em linha; modal de outra loja ou inexistente recusa com a mesma mensagem.
+ * Erro da RPC → log com o detalhe e `ERRO_GENERICO` ao cliente (seguranca.md §14).
  */
 export async function ativarModalSazonal(
   id: string,
@@ -175,44 +177,21 @@ export async function ativarModalSazonal(
 
   try {
     const supabase = await createClient();
+    // Só para o slug do revalidate e o fail-closed de "sem loja": a posse do
+    // modal é conferida DENTRO da RPC.
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: ERRO_SEM_LOJA };
     const db = supabase as unknown as ClientModal;
 
-    // POSSE (RN-11): o modal existe E é da loja do dono? `.eq("loja_id")`
-    // explícito além da RLS; comparação também no servidor — modal de outra loja
-    // (ou inexistente) recusa, sem virar oráculo de existência de id.
-    const { data: modal, error: erroPosse } = await db
-      .from("modais_sazonais")
-      .select("loja_id")
-      .eq("id", id)
-      .maybeSingle();
-    if (erroPosse) throw erroPosse;
-    if (modal == null || (modal as { loja_id: string }).loja_id !== loja.id) {
-      return { ok: false, erro: ERRO_SEM_LOJA };
+    const { error } = await db.rpc("ativar_modal_sazonal", { p_modal_id: id });
+    if (error) {
+      console.error("[ativarModalSazonal] rpc ativar_modal_sazonal:", error);
+      return { ok: false, erro: ERRO_GENERICO };
     }
-
-    // Transição de estado (RN-05): desativa o ativo anterior ANTES de ligar o
-    // novo. O índice único parcial é o backstop se uma corrida escapar.
-    const { error: erroDesativar } = await db
-      .from("modais_sazonais")
-      .update({ ativo: false })
-      .eq("loja_id", loja.id)
-      .eq("ativo", true)
-      .neq("id", id);
-    if (erroDesativar) throw erroDesativar;
-
-    const { error: erroAtivar } = await db
-      .from("modais_sazonais")
-      .update({ ativo: true })
-      .eq("id", id)
-      .eq("loja_id", loja.id);
-    if (erroAtivar) throw erroAtivar;
 
     revalidar(loja.slug);
     return { ok: true };
   } catch (e) {
-    // 23505 (índice único parcial) e qualquer outro erro do banco → genérico.
     console.error("[ativarModalSazonal]", e);
     return { ok: false, erro: ERRO_GENERICO };
   }

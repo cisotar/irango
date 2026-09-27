@@ -38,6 +38,13 @@ import { schemaMensagemModal } from "@/lib/validacoes/mensagemModal";
 export const TETO_SELECAO = 50;
 
 /**
+ * Teto de modais sazonais por loja (CWE-770, RN-M08). Espelho do trigger
+ * `modais_sazonais_teto_por_loja` (o banco é a autoridade, cobre INSERT direto e
+ * a RPC) e limite da listagem do painel (`listarModaisSazonaisDoDono`).
+ */
+export const TETO_MODAIS_POR_LOJA = 50;
+
+/**
  * Quebra de linha e tab viram ESPAÇO antes de `removerInvisiveisEControles`
  * (que preserva `\t`/`\n` e apagaria U+2028/2029 em vez de espaçar).
  */

@@ -25,6 +25,7 @@
 // dono gravar direto no PostgREST, então o que vem do banco é tão hostil quanto
 // um payload.
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { TETO_MODAIS_POR_LOJA } from "@/lib/validacoes/modalSazonal";
 
 /** Client sem o genérico de `Database` — os tipos gerados ainda não têm as tabelas. */
 type ClientAny = SupabaseClient;
@@ -83,7 +84,8 @@ function hidratar(linha: LinhaModal): ModalSazonalComSelecao {
  * Os modais do DONO (painel), inclusive rascunhos/inativos, com as duas listas
  * de seleção embutidas num único round trip. `.eq("loja_id", lojaId)` explícito
  * além da RLS `modais_sazonais_leitura_propria`. Ordena do mais recente ao mais
- * antigo, com `id` como desempate determinístico. Propaga `error` (§14).
+ * antigo, com `id` como desempate determinístico, até `TETO_MODAIS_POR_LOJA`
+ * linhas (CWE-770). Propaga `error` (§14).
  */
 export async function listarModaisSazonaisDoDono(
   client: ClientAny,
@@ -94,7 +96,9 @@ export async function listarModaisSazonaisDoDono(
     .select(SELECT_COM_SELECAO)
     .eq("loja_id", lojaId)
     .order("criado_em", { ascending: false })
-    .order("id", { ascending: true });
+    .order("id", { ascending: true })
+    // O trigger do banco já barra o 51º modal; o `.limit` é o cinto do painel.
+    .limit(TETO_MODAIS_POR_LOJA);
   if (error) throw error;
   return ((data ?? []) as unknown as LinhaModal[]).map(hidratar);
 }
