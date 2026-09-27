@@ -667,6 +667,166 @@ export type Database = {
           },
         ]
       }
+      modais_sazonais: {
+        Row: {
+          ativo: boolean
+          atualizado_em: string
+          criado_em: string
+          exibicao_fim: string
+          exibicao_inicio: string
+          id: string
+          loja_id: string
+          mensagem: Json | null
+          mostrar_promocoes_junto: boolean
+          titulo: string
+        }
+        Insert: {
+          ativo?: boolean
+          atualizado_em?: string
+          criado_em?: string
+          exibicao_fim: string
+          exibicao_inicio: string
+          id?: string
+          loja_id: string
+          mensagem?: Json | null
+          mostrar_promocoes_junto?: boolean
+          titulo: string
+        }
+        Update: {
+          ativo?: boolean
+          atualizado_em?: string
+          criado_em?: string
+          exibicao_fim?: string
+          exibicao_inicio?: string
+          id?: string
+          loja_id?: string
+          mensagem?: Json | null
+          mostrar_promocoes_junto?: boolean
+          titulo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modais_sazonais_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modais_sazonais_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modal_sazonal_cardapios: {
+        Row: {
+          cardapio_id: string
+          criado_em: string
+          id: string
+          loja_id: string
+          modal_sazonal_id: string
+        }
+        Insert: {
+          cardapio_id: string
+          criado_em?: string
+          id?: string
+          loja_id: string
+          modal_sazonal_id: string
+        }
+        Update: {
+          cardapio_id?: string
+          criado_em?: string
+          id?: string
+          loja_id?: string
+          modal_sazonal_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modal_sazonal_cardapios_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modal_sazonal_cardapios_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mscard_cardapio_fk"
+            columns: ["cardapio_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "cardapios"
+            referencedColumns: ["id", "loja_id"]
+          },
+          {
+            foreignKeyName: "mscard_modal_fk"
+            columns: ["modal_sazonal_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "modais_sazonais"
+            referencedColumns: ["id", "loja_id"]
+          },
+        ]
+      }
+      modal_sazonal_categorias: {
+        Row: {
+          categoria_id: string
+          criado_em: string
+          id: string
+          loja_id: string
+          modal_sazonal_id: string
+        }
+        Insert: {
+          categoria_id: string
+          criado_em?: string
+          id?: string
+          loja_id: string
+          modal_sazonal_id: string
+        }
+        Update: {
+          categoria_id?: string
+          criado_em?: string
+          id?: string
+          loja_id?: string
+          modal_sazonal_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modal_sazonal_categorias_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modal_sazonal_categorias_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "msc_categoria_fk"
+            columns: ["categoria_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "categorias"
+            referencedColumns: ["id", "loja_id"]
+          },
+          {
+            foreignKeyName: "msc_modal_fk"
+            columns: ["modal_sazonal_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "modais_sazonais"
+            referencedColumns: ["id", "loja_id"]
+          },
+        ]
+      }
       opcionais: {
         Row: {
           ativo: boolean
@@ -1405,6 +1565,7 @@ export type Database = {
         Args: { p_frequencia: Json; p_ids: string[]; p_loja_id: string }
         Returns: number
       }
+      ativar_modal_sazonal: { Args: { p_modal_id: string }; Returns: undefined }
       criar_pedido:
         | {
             Args: {
@@ -1599,6 +1760,20 @@ export type Database = {
       salvar_grade_de_dias: {
         Args: { p_itens: Json; p_loja_id: string }
         Returns: number
+      }
+      salvar_modal_sazonal: {
+        Args: {
+          p_cardapios: string[]
+          p_categorias: string[]
+          p_exibicao_fim: string
+          p_exibicao_inicio: string
+          p_loja_id: string
+          p_mensagem: Json
+          p_modal_id: string
+          p_mostrar_promocoes_junto: boolean
+          p_titulo: string
+        }
+        Returns: string
       }
     }
     Enums: {
