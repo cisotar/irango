@@ -12,7 +12,6 @@ import {
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
 import { montarModalSazonal } from "./montarModalSazonal";
 import { createClient } from "@/lib/supabase/server";
-import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
 import { buscarModalSazonalAtivo } from "@/lib/supabase/queries/modaisSazonais";
@@ -22,13 +21,11 @@ import {
   buscarProdutosPublicos,
 } from "@/lib/supabase/queries/produtos";
 import {
-  agruparPorCardapio,
   derivarProdutosDoModalSazonal,
   derivarPromocionaisParaModal,
   projetarCatalogoVitrine,
   type SecaoVitrine,
 } from "@/lib/utils/catalogoVitrine";
-import { rotuloJanelaDestaque } from "@/lib/utils/descreverVigencia";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { lerMensagemModal } from "@/lib/validacoes/mensagemModal";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
@@ -129,7 +126,8 @@ export default async function VitrinePage({ params }: PageProps) {
   if (!loja || !loja.id || !loja.nome) notFound();
 
   // Fuso da LOJA — nunca o do browser: é ele que decide horário de
-  // funcionamento (222), "hoje" do modal (RN-16) e a janela do cardápio (246).
+  // funcionamento (222), "hoje" do modal (RN-16) e a frequência de exibição
+  // de produto e categoria (323).
   const timezoneLoja = loja.timezone ?? "America/Sao_Paulo";
 
   // Gate de assinatura (RN-A7) — SEMPRE server-side, mesma fonte de verdade do
@@ -177,30 +175,32 @@ export default async function VitrinePage({ params }: PageProps) {
   // 265: `buscarProdutosPublicos` lê a view definer `public.vitrine_produtos`,
   // que já projeta as colunas públicas e mascara desconto não-vigente (RN-03) —
   // a tabela base não é mais legível por anon/authenticated.
-  // 247: a 5ª query entra na MESMA onda — `cardapios` ⋈ `cardapio_produtos` num
-  // round trip só, sem custo de latência de parede.
+  // [323] A query de cardápios SAIU: o cardápio sazonal virou função morta, e a
+  // frequência de exibição mora nas colunas de `produtos` e `categorias` que as
+  // duas queries acima já trazem. Sob role anon a policy de `categorias` e a
+  // view `vitrine_produtos` já escondem a categoria OCULTA e os produtos dela.
   // [303] O modal sazonal ATIVO entra na MESMA onda: a query filtra `ativo` e
   // escopa por `loja_id`, mas a JANELA de exibição NÃO é avaliada em SQL (RN-02)
   // — é decidida abaixo pela função pura, no instante do request. Sob role anon
   // a RLS `modais_sazonais_leitura_publica` só revela o ativo de loja ativa.
-  const [categorias, produtos, { vinculosPorProduto }, modalSazonalAtivo] =
-    await Promise.all([
-      buscarCategorias(db, lojaId),
-      buscarProdutosPublicos(db, lojaId),
-      buscarCardapiosComProdutos(db, lojaId),
-      buscarModalSazonalAtivo(db, lojaId),
-    ]);
+  const [categorias, produtos, modalSazonalAtivo] = await Promise.all([
+    buscarCategorias(db, lojaId),
+    buscarProdutosPublicos(db, lojaId),
+    buscarModalSazonalAtivo(db, lojaId),
+  ]);
   // Contrato de catálogo (224): UM objeto por produto, produzido no servidor e
   // fonte única de preço/selo/comprabilidade. `agora` injetado — a vigência da
   // promoção é avaliada por request, e é por isso que esta página NÃO pode ser
   // cacheada (ver o bloco de `carregarLoja`): catálogo cacheado serve promoção
   // expirada.
   //
-  // 247: a ordem é PROJETAR → AGRUPAR, invertida de propósito. O produto fora
-  // de temporada (RN-13) some dentro de `projetarCatalogoVitrine`, enquanto a
-  // lista ainda é uma lista — e a regra "grupo sem produto visível não é
-  // devolvido" (issue 177, dentro de `agruparCatalogo`) passa a cobrir a
-  // categoria esvaziada pela temporada de graça, sem código de agrupamento novo.
+  // 247 → 323: a ordem é PROJETAR → AGRUPAR, invertida de propósito. O produto
+  // de categoria oculta ou de período encerrado (RN-2/RN-7) some dentro de
+  // `projetarCatalogoVitrine`, enquanto a lista ainda é uma lista; e
+  // `categoriasVisiveis` sai da MESMA projeção, para que a categoria escondida
+  // não vire cabeçalho nem jogue produto no grupo "Outros". A regra "grupo sem
+  // produto visível não é devolvido" (issue 177, dentro de `agruparCatalogo`)
+  // continua cobrindo a categoria esvaziada, sem código de agrupamento novo.
   //
   // 248/RN-06: o zeramento de `foto_url` em categoria "ocultar" entra AQUI, na
   // projeção, e não mais por grupo depois do agrupamento. A URL escondida vira
@@ -214,41 +214,15 @@ export default async function VitrinePage({ params }: PageProps) {
   const {
     produtos: produtosVitrine,
     rotulosVigencia,
-    cardapiosAbertos,
+    categoriasVisiveis,
   } = projetarCatalogoVitrine({
     produtos,
-    vinculosPorProduto,
+    categorias,
     agora,
     timezone: timezoneLoja,
     exibirImagensPorCategoria,
   });
-  const grupos = agruparCatalogo(produtosVitrine, categorias);
-
-  // [263/D16/RN-15] As seções de DESTAQUE saem da MESMA lista projetada que as
-  // categorias — é isso que faz os dois cards do mesmo produto carregarem a
-  // MESMA referência de objeto e, portanto, dizerem sempre a mesma coisa.
-  // A janela do CARDÁPIO não é reavaliada aqui: `cardapiosAbertos` já veio
-  // decidido uma vez por request, e `agruparPorCardapio` (248) já ordena e já
-  // descarta seção vazia. Cardápio que fecha ⇒ a seção some sozinha, sem
-  // ninguém publicar nada — e, desde [279], o mesmo vale para o cardápio cujo
-  // nenhum item é do dia de hoje.
-  // [279/RN-05] `agora` e o fuso da LOJA entram porque a seção lista só os
-  // ITENS DO DIA: o cardápio aberto cujo nenhum item é de hoje não vira seção.
-  const secoesDestaque = agruparPorCardapio(
-    produtosVitrine,
-    cardapiosAbertos,
-    vinculosPorProduto,
-    agora,
-    timezoneLoja,
-  );
-  // O rótulo de janela do cabeçalho (design §13.1 item 3), redigido pelo mesmo
-  // módulo das outras três frases de vigência (M6) — no fuso da LOJA.
-  const rotulosJanela: Record<string, string> = Object.fromEntries(
-    cardapiosAbertos.map((c) => [
-      c.id,
-      rotuloJanelaDestaque(c, agora, timezoneLoja),
-    ]),
-  );
+  const grupos = agruparCatalogo(produtosVitrine, categoriasVisiveis);
 
   // Opcionais (issue 087): SSR sob role anon — a RLS pública (080) só revela
   // opcionais ativos de loja ativa. Buscados pelas categorias do catálogo.
@@ -320,7 +294,9 @@ export default async function VitrinePage({ params }: PageProps) {
       modalSazonalAtivo !== null
         ? derivarProdutosDoModalSazonal(
             categoriasComProdutos,
-            secoesDestaque,
+            // [323/S6] Sem seção de cardápio na vitrine: o eixo `cardapios` do
+            // modal não contribui produto (as junções ficam no banco).
+            [],
             opcionaisPorCategoria,
             rotulosVigencia,
             {
@@ -384,11 +360,6 @@ export default async function VitrinePage({ params }: PageProps) {
             // é o que garante que nenhum produto marcado chegue à tela sem a
             // frase que diz quando ele volta.
             rotulosVigencia={rotulosVigencia}
-            // [263/RN-16] Lista SEPARADA: `filtrarCatalogo` e `contarProdutos`
-            // nunca a recebem, então a busca não pode duplicar card nem o
-            // `ResumoBusca` passar a mentir. Não é filtro — é ausência.
-            secoesDestaque={secoesDestaque}
-            rotulosJanela={rotulosJanela}
           />
         )}
 

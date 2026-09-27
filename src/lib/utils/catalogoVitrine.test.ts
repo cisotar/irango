@@ -7,14 +7,22 @@ import {
   derivarPromocionaisParaModal,
   derivarProdutosDoModalSazonal,
   projetarProdutoVitrine,
-  // [247] RED — AINDA NÃO IMPLEMENTADOS (stub de assinatura em ./catalogoVitrine.ts).
   projetarCatalogoVitrine,
   type ProdutoParaVitrine,
   type ProdutoVitrine,
 } from "./catalogoVitrine";
-import type { CardapioVigencia, VinculoVigencia } from "./vigenciaCardapio";
+import {
+  cardapioAberto,
+  type CardapioVigencia,
+  type VinculoVigencia,
+} from "./vigenciaCardapio";
 import { instanteNoFuso } from "./fusoLoja";
-import { rotuloVoltaQuando } from "./descreverVigencia";
+import { ROTULO_SEM_VOLTA } from "./descreverVigencia";
+import {
+  FREQUENCIA_PERMANENTE,
+  type AvaliacaoFrequencia,
+  type Frequencia,
+} from "./frequencia";
 import {
   agruparCatalogo,
   type GrupoOpcional,
@@ -44,8 +52,8 @@ import type { Categoria } from "@/lib/supabase/queries/categorias";
  */
 
 const AGORA = new Date("2026-09-20T12:00:00.000Z");
-/** [247] fuso da LOJA — 3º/4º parâmetros passaram a ser obrigatórios. */
-const TZ = "America/Sao_Paulo";
+/** [323] A avaliação de frequência chega PRONTA à projeção de um produto. */
+const DENTRO: AvaliacaoFrequencia = { disponivel: true, motivo: null };
 
 /** As 12 chaves do contrato v1, e SÓ elas (§Contrato de catálogo). */
 const CHAVES_CONTRATO = [
@@ -72,12 +80,12 @@ const COLUNAS_CRUAS = [
   "desconto_fim",
 ] as const;
 
-/** [247] `projetarProdutoVitrine` passou a exigir `visibilidade` na entrada. */
-type ProdutoParaVitrineComVisibilidade = ProdutoParaVitrine & { visibilidade: string };
+/** [323] A entrada do catálogo carrega os 5 eixos de frequência (permanente). */
+type ProdutoParaVitrineComFrequencia = ProdutoParaVitrine & Frequencia;
 
 function base(
-  over: Partial<ProdutoParaVitrineComVisibilidade> = {},
-): ProdutoParaVitrineComVisibilidade {
+  over: Partial<ProdutoParaVitrineComFrequencia> = {},
+): ProdutoParaVitrineComFrequencia {
   return {
     id: "11111111-1111-4111-8111-111111111111",
     nome: "Feijoada",
@@ -91,7 +99,7 @@ function base(
     desconto_valor: null,
     desconto_inicio: null,
     desconto_fim: null,
-    visibilidade: "menu",
+    ...FREQUENCIA_PERMANENTE,
     ...over,
   };
 }
@@ -101,7 +109,7 @@ const semNbsp = (s: string | null) => (s == null ? s : s.replace(/\u00a0/g, " ")
 
 describe("224 — formato do objeto projetado", () => {
   it("devolve EXATAMENTE as 12 chaves do contrato, sem sobra e sem falta", () => {
-    const v = projetarProdutoVitrine(base(), [], AGORA, TZ);
+    const v = projetarProdutoVitrine(base(), DENTRO, AGORA);
     expect(Object.keys(v).sort()).toEqual([...CHAVES_CONTRATO].sort());
   });
 
@@ -110,9 +118,8 @@ describe("224 — formato do objeto projetado", () => {
     // valor e a projeção preguiçosa (spread da row) as deixaria vazar.
     const v = projetarProdutoVitrine(
       base({ desconto_ativo: true, desconto_tipo: "percentual", desconto_valor: 20 }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
     );
     const chaves = Object.keys(v);
     for (const coluna of COLUNAS_CRUAS) {
@@ -122,7 +129,7 @@ describe("224 — formato do objeto projetado", () => {
   });
 
   it("NÃO carrega `loja_id`, `ordem`, `disponivel` nem `oculto` crus", () => {
-    const chaves = Object.keys(projetarProdutoVitrine(base(), [], AGORA, TZ));
+    const chaves = Object.keys(projetarProdutoVitrine(base(), DENTRO, AGORA));
     for (const coluna of ["loja_id", "ordem", "disponivel", "oculto"]) {
       expect(chaves).not.toContain(coluna);
     }
@@ -131,14 +138,14 @@ describe("224 — formato do objeto projetado", () => {
   it("não muta a entrada (função pura)", () => {
     const entrada = base({ desconto_ativo: true, desconto_tipo: "fixo", desconto_valor: 30 });
     const copia = structuredClone(entrada);
-    projetarProdutoVitrine(entrada, [], AGORA, TZ);
+    projetarProdutoVitrine(entrada, DENTRO, AGORA);
     expect(entrada).toEqual(copia);
   });
 });
 
 describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
   it("sem desconto: precoEfetivo === preco, temDesconto false, selo e fim null", () => {
-    const v = projetarProdutoVitrine(base(), [], AGORA, TZ);
+    const v = projetarProdutoVitrine(base(), DENTRO, AGORA);
     expect(v.preco).toBe(100);
     expect(v.precoEfetivo).toBe(100);
     expect(v.temDesconto).toBe(false);
@@ -156,9 +163,8 @@ describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
         desconto_inicio: "2026-09-01T00:00:00.000Z",
         desconto_fim: fim,
       }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
     );
     expect(v.precoEfetivo).toBe(80);
     expect(v.temDesconto).toBe(true);
@@ -169,9 +175,8 @@ describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
   it("fixo vigente: 100 − R$ 30 ⇒ 70, selo '-R$ 30,00'", () => {
     const v = projetarProdutoVitrine(
       base({ desconto_ativo: true, desconto_tipo: "fixo", desconto_valor: 30 }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
     );
     expect(v.precoEfetivo).toBe(70);
     expect(v.temDesconto).toBe(true);
@@ -191,9 +196,8 @@ describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
         desconto_inicio: "2026-08-01T00:00:00.000Z",
         desconto_fim: "2026-09-01T00:00:00.000Z", // terminou antes de AGORA
       }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
     );
     expect(v.precoEfetivo).toBe(100);
     expect(v.temDesconto).toBe(false);
@@ -207,7 +211,7 @@ describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
     // A view `vitrine_produtos` zera as cinco colunas fora da janela (D5): o
     // resultado projetado tem de ser byte a byte o mesmo dos dois lados, senão
     // vitrine (view) e recálculo (tabela) divergem em silêncio.
-    const mascarada = projetarProdutoVitrine(base(), [], AGORA, TZ);
+    const mascarada = projetarProdutoVitrine(base(), DENTRO, AGORA);
     const crua = projetarProdutoVitrine(
       base({
         desconto_ativo: true,
@@ -215,15 +219,14 @@ describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
         desconto_valor: 20,
         desconto_fim: "2026-09-01T00:00:00.000Z",
       }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
     );
     expect(crua).toEqual(mascarada);
   });
 
   it("invariante temDesconto ⇔ precoEfetivo < preco em todos os casos", () => {
-    const casos: ProdutoParaVitrineComVisibilidade[] = [
+    const casos: ProdutoParaVitrineComFrequencia[] = [
       base(),
       base({ desconto_ativo: true, desconto_tipo: "percentual", desconto_valor: 20 }),
       base({ desconto_ativo: true, desconto_tipo: "fixo", desconto_valor: 30 }),
@@ -236,7 +239,7 @@ describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
       }),
     ];
     for (const caso of casos) {
-      const v = projetarProdutoVitrine(caso, [], AGORA, TZ);
+      const v = projetarProdutoVitrine(caso, DENTRO, AGORA);
       expect(v.temDesconto).toBe(v.precoEfetivo < v.preco);
       // Selo e temDesconto andam juntos — selo órfão vira "-20%" sem preço novo.
       expect(v.seloDesconto === null).toBe(!v.temDesconto);
@@ -247,13 +250,13 @@ describe("224 — preço e desconto (D1, RN-02, reuso de precoEfetivo)", () => {
 
 describe("224 — comprabilidade (D13 / RN-19)", () => {
   it("disponivel = true ⇒ compravel true e motivoNaoCompravel null", () => {
-    const v = projetarProdutoVitrine(base({ disponivel: true }), [], AGORA, TZ);
+    const v = projetarProdutoVitrine(base({ disponivel: true }), DENTRO, AGORA);
     expect(v.compravel).toBe(true);
     expect(v.motivoNaoCompravel).toBe(null);
   });
 
   it("disponivel = false ⇒ compravel false e motivo 'esgotado'", () => {
-    const v = projetarProdutoVitrine(base({ disponivel: false }), [], AGORA, TZ);
+    const v = projetarProdutoVitrine(base({ disponivel: false }), DENTRO, AGORA);
     expect(v.compravel).toBe(false);
     expect(v.motivoNaoCompravel).toBe("esgotado");
   });
@@ -266,9 +269,8 @@ describe("224 — comprabilidade (D13 / RN-19)", () => {
         desconto_tipo: "percentual",
         desconto_valor: 20,
       }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
     );
     expect(v.compravel).toBe(false);
     expect(v.precoEfetivo).toBe(80);
@@ -304,7 +306,7 @@ describe("224 — encaixe nas peças existentes", () => {
       periodo_inicio: null,
       periodo_fim: null,
     };
-    const v = projetarProdutoVitrine(daView, [], AGORA, TZ);
+    const v = projetarProdutoVitrine(daView, DENTRO, AGORA);
     expect(v).toMatchObject({ id: daView.id, preco: 8, precoEfetivo: 8, categoria_id: null });
 
     // O conjunto de chaves é travado, não só conferido por amostragem: um
@@ -332,8 +334,8 @@ describe("224 — encaixe nas peças existentes", () => {
 
   it("`agruparCatalogo` agrupa ProdutoVitrine sem edição da suíte dele", () => {
     const projetados: ProdutoVitrine[] = [
-      projetarProdutoVitrine(base(), [], AGORA, TZ),
-      projetarProdutoVitrine(base({ id: "x", categoria_id: null }), [], AGORA, TZ),
+      projetarProdutoVitrine(base(), DENTRO, AGORA),
+      projetarProdutoVitrine(base({ id: "x", categoria_id: null }), DENTRO, AGORA),
     ];
     const grupos = agruparCatalogo(projetados, []);
     expect(grupos).toHaveLength(1);
@@ -426,10 +428,10 @@ describe("224 — a página da vitrine (RN-15): sem cache e sem query nova", () 
       "buscarCategorias",
       "buscarProdutosPublicos",
       "buscarOpcionaisPorCategoria",
-      // [247] 5ª query.
-      "buscarCardapiosComProdutos",
-      // [303] 6ª query: o modal sazonal ATIVO da loja (RN-02). A guarda
-      // continua letal para a 7ª. Os PRODUTOS do modal são DERIVADOS do
+      // [247] A 5ª query (`buscarCardapiosComProdutos`) SAIU na 323: o cardápio
+      // sazonal virou função morta e a frequência mora em produtos/categorias.
+      // [303] O modal sazonal ATIVO da loja (RN-02). A guarda continua letal
+      // para qualquer query nova. Os PRODUTOS do modal são DERIVADOS do
       // catálogo já carregado (`derivarProdutosDoModalSazonal`) — zero query
       // nova de produto (RN-10).
       "buscarModalSazonalAtivo",
@@ -439,499 +441,314 @@ describe("224 — a página da vitrine (RN-15): sem cache e sem query nova", () 
     expect(/\.from\(/.test(codigo)).toBe(false);
   });
 
+  it("[323] sem seção de cardápio: nenhuma leitura nem agrupamento de cardápio", () => {
+    for (const proibido of [
+      "buscarCardapiosComProdutos",
+      "agruparPorCardapio",
+      "rotuloJanelaDestaque",
+      "secoesDestaque",
+    ]) {
+      expect(codigo.includes(proibido), proibido).toBe(false);
+    }
+    // O agrupamento recebe as categorias que a MESMA projeção liberou.
+    expect(/agruparCatalogo\(\s*produtosVitrine\s*,\s*categoriasVisiveis\s*\)/.test(codigo)).toBe(true);
+  });
+
   it("não manipula nenhuma coluna crua de desconto no SSR (regra 6)", () => {
     expect(COLUNAS_CRUAS.filter((coluna) => codigo.includes(coluna))).toEqual([]);
   });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// [247] Fase RED — extensão do contrato com VIGÊNCIA de cardápio.
+// [323] Frequência de exibição na projeção — substitui a vigência de cardápio
+// (247/254/273), que virou função morta (S5).
 //
-// Spec: `specs/cardapio-sazonal.md` cenários 3 e 6 · RN-05, RN-06, RN-13 ·
-// D4, D14. Plano técnico da issue 247, §"O que o RED precisa provar" (§5.7).
-//
-// Nada aqui reproduz a fórmula da produção: as linhas do cenário 3 são a TABELA
-// da spec transcrita, com o veredito literal escrito à mão coluna a coluna.
+// Spec: `specs/frequencia-exibicao.md` RN-1, RN-2, RN-3, RN-7, RN-8 · plano C7.
+// Os vereditos são escritos à mão; a regra de janela é de `./frequencia`.
 // ═════════════════════════════════════════════════════════════════════════════
 
 const SP = "America/Sao_Paulo";
 /** Instante absoluto a partir do horário LOCAL da loja (primitivo da 222). */
 const emSP = (local: string) => new Date(instanteNoFuso(local, SP));
 
-/** Cenário 1 da spec: recorrente sáb+dom, 11:00–15:00. */
 /**
- * [273] O vínculo SEM dias do item — a forma de 100% das linhas no deploy da
- * 272. A projeção tem de sair byte a byte igual à de antes do eixo mudar.
+ * [273/S5] O vínculo SEM dias do item — usado pelos testes de
+ * `agruparPorCardapio` (função morta) mais abaixo.
  */
 const semDias = <C extends CardapioVigencia>(cardapio: C): VinculoVigencia<C> => ({
   cardapio,
   dias_semana: null,
 });
 
-const FIM_DE_SEMANA: CardapioVigencia = {
-  id: "c0000000-0000-4000-8000-000000000001",
-  nome: "Fim de semana",
-  ativo: true,
-  modo: "recorrente",
-  dias_semana: [6, 0],
-  dias_mes: null,
-  hora_inicio: "11:00",
-  hora_fim: "15:00",
-  prazo_inicio: null,
-  prazo_fim: null,
-};
-
-/** Cenário 6: prazo fixo 01/06/2026 → 01/09/2026, EXPIRADO em dezembro. */
-const INVERNO: CardapioVigencia = {
-  id: "c0000000-0000-4000-8000-000000000002",
-  nome: "Cardápio de Inverno",
-  ativo: true,
-  modo: "prazo_fixo",
-  dias_semana: null,
-  dias_mes: null,
-  hora_inicio: null,
-  hora_fim: null,
-  prazo_inicio: "2026-06-01T00:00:00.000Z",
-  prazo_fim: "2026-09-01T00:00:00.000Z",
-};
-
-/** Terça 13/10/2026 12:00 — FORA da janela sáb+dom (cenário 3). */
-const TERCA = emSP("2026-10-13T12:00");
-/** Sábado 17/10/2026 12:00 — DENTRO da janela 11:00–15:00. */
+/** Sábado 17/10/2026 12:00 — dentro de cardápio de fim de semana. */
 const SABADO = emSP("2026-10-17T12:00");
-/** Domingo 20/12/2026 12:00 — "Inverno" já expirou (cenário 6). */
-const DEZEMBRO = emSP("2026-12-20T12:00");
+/** Sábado 16/01/2027 12:00 — o instante dos cenários de frequência. */
+const JANEIRO_SABADO = emSP("2027-01-16T12:00");
 
-describe("247 — cenário 3 literal: compravel === disponivel && dentroDaJanela", () => {
-  // As SEIS linhas renderizáveis da tabela do cenário 3 (as duas de `oculto`
-  // não chegam a virar `ProdutoVitrine`: a view não as devolve).
+const FORA: AvaliacaoFrequencia = { disponivel: false, motivo: "fora_da_frequencia" };
+
+const LOJA = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+/** Linha INTEIRA de categoria (o `agruparCatalogo` recebe `Categoria[]`). */
+function categoriaRow(id: string, nome: string, ordem: number, over: Partial<Categoria> = {}): Categoria {
+  return {
+    id,
+    loja_id: LOJA,
+    nome,
+    ordem,
+    exibir_imagens: true,
+    criado_em: "2026-01-01T00:00:00.000Z",
+    oculta: false,
+    dias_semana: null,
+    hora_inicio: null,
+    hora_fim: null,
+    periodo_inicio: null,
+    periodo_fim: null,
+    ...over,
+  };
+}
+
+describe("323 — projetarProdutoVitrine: compravel = disponivel && avaliação", () => {
   const LINHAS: Array<{
     linha: string;
-    agora: Date;
-    visibilidade: "menu" | "cardapio";
+    avaliacao: AvaliacaoFrequencia;
     disponivel: boolean;
     compravel: boolean;
     motivo: "esgotado" | "fora_da_janela" | null;
   }> = [
+    { linha: "dentro, disponível ⇒ comprável", avaliacao: DENTRO, disponivel: true, compravel: true, motivo: null },
+    { linha: "dentro, esgotado ⇒ esgotado", avaliacao: DENTRO, disponivel: false, compravel: false, motivo: "esgotado" },
+    { linha: "fora, disponível ⇒ fora_da_janela", avaliacao: FORA, disponivel: true, compravel: false, motivo: "fora_da_janela" },
     {
-      linha: "dentro da janela, disponivel=false, 'cardapio' ⇒ esgotado",
-      agora: SABADO,
-      visibilidade: "cardapio",
-      disponivel: false,
-      compravel: false,
-      motivo: "esgotado",
-    },
-    {
-      linha: "dentro da janela, disponivel=false, 'menu' ⇒ esgotado",
-      agora: SABADO,
-      visibilidade: "menu",
-      disponivel: false,
-      compravel: false,
-      motivo: "esgotado",
-    },
-    {
-      linha: "fora da janela, disponivel=true, 'cardapio' ⇒ fora_da_janela",
-      agora: TERCA,
-      visibilidade: "cardapio",
-      disponivel: true,
-      compravel: false,
-      motivo: "fora_da_janela",
-    },
-    {
-      // PRECEDÊNCIA (RN-05): numa terça a feijoada não acabou — ela não é
-      // servida hoje. "Esgotado" seria factualmente errado.
-      linha: "fora da janela E disponivel=false, 'cardapio' ⇒ fora_da_janela",
-      agora: TERCA,
-      visibilidade: "cardapio",
+      // PRECEDÊNCIA: fora da frequência o item não "acabou" — ele não é
+      // servido agora. "Esgotado" seria factualmente errado.
+      linha: "fora E esgotado ⇒ fora_da_janela",
+      avaliacao: FORA,
       disponivel: false,
       compravel: false,
       motivo: "fora_da_janela",
-    },
-    {
-      // D14: cardápio não afeta produto do menu.
-      linha: "fora da janela, disponivel=true, 'menu' ⇒ COMPRÁVEL, sem motivo",
-      agora: TERCA,
-      visibilidade: "menu",
-      disponivel: true,
-      compravel: true,
-      motivo: null,
-    },
-    {
-      // O motivo de janela NÃO se aplica a produto do menu: não há precedência.
-      linha: "fora da janela, disponivel=false, 'menu' ⇒ esgotado",
-      agora: TERCA,
-      visibilidade: "menu",
-      disponivel: false,
-      compravel: false,
-      motivo: "esgotado",
     },
   ];
 
   for (const caso of LINHAS) {
     it(caso.linha, () => {
-      const v = projetarProdutoVitrine(
-        base({ visibilidade: caso.visibilidade, disponivel: caso.disponivel }),
-        [semDias(FIM_DE_SEMANA)],
-        caso.agora,
-        SP,
-      );
+      const v = projetarProdutoVitrine(base({ disponivel: caso.disponivel }), caso.avaliacao, SABADO);
       expect(v.compravel).toBe(caso.compravel);
       expect(v.motivoNaoCompravel).toBe(caso.motivo);
     });
   }
 
-  it("lista de cardápios VAZIA ⇒ saída idêntica ao v1 (não-regressão)", () => {
-    // 100% da produção hoje: nenhuma loja tem cardápio. O catálogo tem de sair
-    // byte a byte igual ao de antes da issue.
-    for (const disponivel of [true, false]) {
-      const v = projetarProdutoVitrine(base({ disponivel }), [], TERCA, SP);
-      expect(v.compravel).toBe(disponivel);
-      expect(v.motivoNaoCompravel).toBe(disponivel ? null : "esgotado");
-    }
-  });
-
-  it("produto 'cardapio' SEM vínculo nenhum não é comprável fora de janela alguma", () => {
-    // Fail-closed: exclusivo de cardápio sem cardápio aberto não vende.
-    const v = projetarProdutoVitrine(
-      base({ visibilidade: "cardapio", disponivel: true }),
-      [],
-      TERCA,
-      SP,
-    );
-    expect(v.compravel).toBe(false);
-    expect(v.motivoNaoCompravel).toBe("fora_da_janela");
-  });
-
-  it("cardápio INATIVO não abre janela nenhuma (RN-03), mesmo no horário", () => {
-    const v = projetarProdutoVitrine(
-      base({ visibilidade: "cardapio", disponivel: true }),
-      [semDias({ ...FIM_DE_SEMANA, ativo: false })],
-      SABADO,
-      SP,
-    );
-    expect(v.compravel).toBe(false);
-    expect(v.motivoNaoCompravel).toBe("fora_da_janela");
-  });
-
-  it("UNIÃO (cenário 4): basta UM cardápio aberto entre dois", () => {
-    const v = projetarProdutoVitrine(
-      base({ visibilidade: "cardapio", disponivel: true }),
-      [
-        semDias(FIM_DE_SEMANA), // fechado na quarta
-        semDias({ ...INVERNO, prazo_inicio: "2026-06-01T00:00:00.000Z", prazo_fim: "2026-09-01T00:00:00.000Z" }),
-      ],
-      emSP("2026-07-15T12:00"), // quarta, dentro do prazo do Inverno
-      SP,
-    );
-    expect(v.compravel).toBe(true);
-    expect(v.motivoNaoCompravel).toBe(null);
-  });
-
-  it("`visibilidade` continua AUSENTE das chaves do objeto projetado (regra 6)", () => {
+  it("nenhuma coluna crua de FREQUÊNCIA entra no objeto projetado (regra 6)", () => {
     const projetado = projetarProdutoVitrine(
-      base({ visibilidade: "cardapio" }),
-      [semDias(FIM_DE_SEMANA)],
-      TERCA,
-      SP,
+      base({ dias_semana: [6], hora_inicio: "11:00", hora_fim: "15:00", periodo_inicio: "2026-12-01" }),
+      FORA,
+      SABADO,
     );
-    // Asserção sobre as CHAVES, não sobre o valor: um `...produto` a vazaria
-    // com valor correto e `toMatchObject` não veria nada.
-    expect(Object.keys(projetado)).not.toContain("visibilidade");
-    expect("visibilidade" in projetado).toBe(false);
-    // E as 12 chaves do contrato continuam lá, sem sobra e sem falta.
+    for (const coluna of ["dias_semana", "hora_inicio", "hora_fim", "periodo_inicio", "periodo_fim", "visibilidade"]) {
+      expect(Object.keys(projetado)).not.toContain(coluna);
+    }
     expect(Object.keys(projetado).sort()).toEqual([...CHAVES_CONTRATO].sort());
   });
-
-  it("nenhuma coluna crua de VIGÊNCIA entra no objeto projetado", () => {
-    const chaves = Object.keys(
-      projetarProdutoVitrine(base({ visibilidade: "cardapio" }), [semDias(FIM_DE_SEMANA)], TERCA, SP),
-    );
-    for (const coluna of ["dias_semana", "dias_mes", "hora_inicio", "hora_fim", "prazo_inicio", "prazo_fim"]) {
-      expect(chaves).not.toContain(coluna);
-    }
-  });
 });
 
-describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", () => {
-  const CAT_SOPAS = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
-  const CAT_BEBIDAS = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
+describe("323 — projetarCatalogoVitrine: frequência produto ∩ categoria", () => {
+  const CAT_LIVRE = categoriaRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", "Bebidas", 1);
+  const CAT_ALMOCO = categoriaRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", "Almoço executivo", 2, {
+    dias_semana: [1, 2, 3, 4, 5],
+  });
+  const CAT_OCULTA = categoriaRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3", "Sobremesas", 3, { oculta: true });
+  const CAT_NATAL = categoriaRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4", "Especiais de Natal", 4, {
+    periodo_inicio: "2026-12-01",
+    periodo_fim: "2026-12-31",
+  });
+  const CAT_NUNCA = categoriaRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5", "Pausa", 5, { dias_semana: [] });
+  const CAT_CARNAVAL = categoriaRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6", "Carnaval", 6, {
+    periodo_inicio: "2027-02-01",
+  });
+  const CATEGORIAS = [CAT_LIVRE, CAT_ALMOCO, CAT_OCULTA, CAT_NATAL, CAT_NUNCA, CAT_CARNAVAL];
 
-  const categorias: Categoria[] = [
-    {
-      id: CAT_SOPAS,
-      loja_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-      nome: "Sopas",
-      ordem: 1,
-      exibir_imagens: true,
-      criado_em: "2026-01-01T00:00:00.000Z",
-      oculta: false,
-      dias_semana: null,
-      hora_inicio: null,
-      hora_fim: null,
-      periodo_inicio: null,
-      periodo_fim: null,
-    },
-    {
-      id: CAT_BEBIDAS,
-      loja_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-      nome: "Bebidas",
-      ordem: 2,
-      exibir_imagens: true,
-      criado_em: "2026-01-01T00:00:00.000Z",
-      oculta: false,
-      dias_semana: null,
-      hora_inicio: null,
-      hora_fim: null,
-      periodo_inicio: null,
-      periodo_fim: null,
-    },
+  let n = 0;
+  const produto = (nome: string, categoria: Categoria | null, over: Partial<ProdutoParaVitrineComFrequencia> = {}) =>
+    base({
+      id: `bbbbbbbb-bbbb-4bbb-8bbb-${String(++n).padStart(12, "0")}`,
+      nome,
+      categoria_id: categoria?.id ?? null,
+      ...over,
+    });
+
+  const COCA = produto("Coca-Cola", CAT_LIVRE);
+  const COCA_ESGOTADA = produto("Guaraná", CAT_LIVRE, { disponivel: false });
+  const SUCO_NUNCA = produto("Suco do dia", CAT_LIVRE, { dias_semana: [] });
+  const PANETONE = produto("Panetone", CAT_LIVRE, { periodo_inicio: "2027-01-01", periodo_fim: "2027-01-10" });
+  const PASCOA = produto("Ovo de Páscoa", CAT_LIVRE, { periodo_inicio: "2027-03-01" });
+  const JANTA = produto("Janta", CAT_LIVRE, { hora_inicio: "18:00", hora_fim: "23:00" });
+  const FEIJOADA = produto("Feijoada", CAT_ALMOCO);
+  const PF = produto("PF", CAT_ALMOCO, { disponivel: false });
+  const PUDIM = produto("Pudim", CAT_OCULTA);
+  const RABANADA = produto("Rabanada", CAT_NATAL);
+  const PAUSADO = produto("Pausado", CAT_NUNCA);
+  const MARCHINHA = produto("Marchinha", CAT_CARNAVAL);
+  const AVULSO = produto("Avulso", null);
+  const ORFAO = produto("Órfão", categoriaRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9", "Removida", 9));
+
+  const TODOS = [
+    COCA, COCA_ESGOTADA, SUCO_NUNCA, PANETONE, PASCOA, JANTA, FEIJOADA, PF,
+    PUDIM, RABANADA, PAUSADO, MARCHINHA, AVULSO, ORFAO,
   ];
 
-  const SOPA = base({
-    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
-    nome: "Sopa de cebola",
-    categoria_id: CAT_SOPAS,
-    visibilidade: "cardapio",
-    disponivel: true,
+  const r = projetarCatalogoVitrine({
+    produtos: TODOS,
+    categorias: CATEGORIAS,
+    agora: JANEIRO_SABADO,
+    timezone: SP,
   });
-  const COCA = base({
-    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
-    nome: "Coca-Cola 2L",
-    categoria_id: CAT_BEBIDAS,
-    visibilidade: "menu",
-    disponivel: true,
-  });
+  const porId = new Map(r.produtos.map((p) => [p.id, p]));
+  const ids = r.produtos.map((p) => p.id);
 
-  /** Cenário 6: os dois produtos estão no MESMO cardápio expirado. */
-  const vinculosPorProduto = new Map<string, VinculoVigencia[]>([
-    [SOPA.id, [semDias(INVERNO)]],
-    [COCA.id, [semDias(INVERNO)]],
-  ]);
-
-  it("cenário 6 — a sopa 'cardapio' NÃO está na lista devolvida (RN-13/D14)", () => {
-    const { produtos } = projetarCatalogoVitrine({
-      produtos: [SOPA, COCA],
-      vinculosPorProduto,
-      agora: DEZEMBRO,
-      timezone: SP,
-    });
-    expect(produtos.map((p) => p.id)).toEqual([COCA.id]);
+  it("RN-2: categoria OCULTA some — ela e os produtos dela, sem cair em 'Outros'", () => {
+    expect(ids).not.toContain(PUDIM.id);
+    expect(r.categoriasVisiveis.map((c) => c.id)).not.toContain(CAT_OCULTA.id);
+    const grupos = agruparCatalogo(r.produtos, r.categoriasVisiveis);
+    expect(grupos.map((g) => g.nome)).not.toContain("Sobremesas");
+    expect(grupos.flatMap((g) => g.produtos.map((p) => p.id))).not.toContain(PUDIM.id);
   });
 
-  it("cenário 6 — a Coca 'menu' do mesmo cardápio expirado segue COMPRÁVEL", () => {
-    const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
-      produtos: [SOPA, COCA],
-      vinculosPorProduto,
-      agora: DEZEMBRO,
-      timezone: SP,
-    });
-    const coca = produtos.find((p) => p.id === COCA.id);
-    expect(coca?.compravel).toBe(true);
-    expect(coca?.motivoNaoCompravel).toBe(null);
-    // Produto do menu NUNCA tem rótulo de vigência.
-    expect(COCA.id in rotulosVigencia).toBe(false);
+  it("RN-2: categoria FORA da frequência aparece, com TODOS os itens fora_da_janela", () => {
+    expect(r.categoriasVisiveis.map((c) => c.id)).toContain(CAT_ALMOCO.id);
+    for (const p of [FEIJOADA, PF]) {
+      expect(porId.get(p.id)?.compravel).toBe(false);
+      // Inclusive o esgotado: a janela vence (precedência).
+      expect(porId.get(p.id)?.motivoNaoCompravel).toBe("fora_da_janela");
+      expect(r.rotulosVigencia[p.id]).toBe("Só seg a sex");
+    }
   });
 
-  it("cenário 6 — a categoria que só tinha a sopa NÃO é devolvida por agruparCatalogo", () => {
-    // A composição REAL da página: projetar → agrupar (ordem invertida na 247).
-    const { produtos } = projetarCatalogoVitrine({
-      produtos: [SOPA, COCA],
-      vinculosPorProduto,
-      agora: DEZEMBRO,
-      timezone: SP,
-    });
-    const grupos = agruparCatalogo(produtos, categorias);
-    expect(grupos.map((g) => g.nome)).toEqual(["Bebidas"]);
-    expect(grupos.map((g) => g.id)).not.toContain(CAT_SOPAS);
+  it("RN-7: produto com período ENCERRADO está AUSENTE", () => {
+    expect(ids).not.toContain(PANETONE.id);
   });
 
-  it("produto 'menu' fora da janela: compravel true e NENHUM rótulo", () => {
-    const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
-      produtos: [COCA],
-      vinculosPorProduto: new Map([[COCA.id, [semDias(FIM_DE_SEMANA)]]]),
-      agora: TERCA,
-      timezone: SP,
-    });
-    expect(produtos[0].compravel).toBe(true);
-    expect(rotulosVigencia).toEqual({});
+  it("RN-7: categoria ENCERRADA some de categoriasVisiveis, com todos os produtos (nem em 'Outros')", () => {
+    expect(r.categoriasVisiveis.map((c) => c.id)).not.toContain(CAT_NATAL.id);
+    expect(ids).not.toContain(RABANADA.id);
+    const outros = agruparCatalogo(r.produtos, r.categoriasVisiveis).find((g) => g.id === null);
+    expect(outros?.produtos.map((p) => p.id) ?? []).not.toContain(RABANADA.id);
   });
 
-  it("TODO produto com motivo 'fora_da_janela' tem rótulo; nenhum comprável tem", () => {
-    const marcado = base({
-      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
-      visibilidade: "cardapio",
+  it("RN-7: período que ainda NÃO começou ⇒ presente e marcado, 'A partir de dd/MM'", () => {
+    expect(porId.get(PASCOA.id)?.motivoNaoCompravel).toBe("fora_da_janela");
+    expect(r.rotulosVigencia[PASCOA.id]).toBe("A partir de 01/03");
+    expect(r.categoriasVisiveis.map((c) => c.id)).toContain(CAT_CARNAVAL.id);
+    expect(porId.get(MARCHINHA.id)?.motivoNaoCompravel).toBe("fora_da_janela");
+    expect(r.rotulosVigencia[MARCHINHA.id]).toBe("A partir de 01/02");
+  });
+
+  it("RN-8: produto `[]` presente, fora_da_janela, rótulo ROTULO_SEM_VOLTA", () => {
+    expect(porId.get(SUCO_NUNCA.id)?.compravel).toBe(false);
+    expect(porId.get(SUCO_NUNCA.id)?.motivoNaoCompravel).toBe("fora_da_janela");
+    expect(r.rotulosVigencia[SUCO_NUNCA.id]).toBe(ROTULO_SEM_VOLTA);
+  });
+
+  it("RN-8: categoria `[]` presente, com todos os itens marcados", () => {
+    expect(r.categoriasVisiveis.map((c) => c.id)).toContain(CAT_NUNCA.id);
+    expect(porId.get(PAUSADO.id)?.motivoNaoCompravel).toBe("fora_da_janela");
+    expect(r.rotulosVigencia[PAUSADO.id]).toBe(ROTULO_SEM_VOLTA);
+  });
+
+  it("RN-3: produto fora do horário fica marcado na PRÓPRIA categoria, com o horário", () => {
+    expect(porId.get(JANTA.id)?.categoria_id).toBe(CAT_LIVRE.id);
+    expect(porId.get(JANTA.id)?.motivoNaoCompravel).toBe("fora_da_janela");
+    expect(r.rotulosVigencia[JANTA.id]).toBe("Das 18:00 às 23:00");
+  });
+
+  it("dentro da frequência: comprável sem rótulo; esgotado sem rótulo", () => {
+    expect(porId.get(COCA.id)).toMatchObject({ compravel: true, motivoNaoCompravel: null });
+    expect(porId.get(COCA_ESGOTADA.id)?.motivoNaoCompravel).toBe("esgotado");
+    expect(COCA.id in r.rotulosVigencia).toBe(false);
+    expect(COCA_ESGOTADA.id in r.rotulosVigencia).toBe(false);
+  });
+
+  it("D5: categoria AUSENTE da lista ⇒ produto omitido (fail-closed); sem categoria ⇒ 'Outros'", () => {
+    expect(ids).not.toContain(ORFAO.id);
+    expect(ids).toContain(AVULSO.id);
+    const outros = agruparCatalogo(r.produtos, r.categoriasVisiveis).find((g) => g.id === null);
+    expect(outros?.produtos.map((p) => p.id)).toEqual([AVULSO.id]);
+  });
+
+  it("TODO produto 'fora_da_janela' tem rótulo; nenhum rótulo órfão", () => {
+    const fora = r.produtos.filter((p) => p.motivoNaoCompravel === "fora_da_janela");
+    expect(fora.length).toBeGreaterThan(0);
+    expect(Object.keys(r.rotulosVigencia).sort()).toEqual(fora.map((p) => p.id).sort());
+  });
+
+  it("categoriasVisiveis preserva a linha inteira e a ordem de entrada (genérica em C)", () => {
+    expect(r.categoriasVisiveis).toEqual([CAT_LIVRE, CAT_ALMOCO, CAT_NUNCA, CAT_CARNAVAL]);
+    expect(r.categoriasVisiveis[1]).toBe(CAT_ALMOCO);
+  });
+
+  it("S5: `visibilidade = 'cardapio'` é IGNORADA — permanente vende", () => {
+    const legado: ProdutoPublico = {
+      id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      loja_id: LOJA,
+      categoria_id: CAT_LIVRE.id,
+      nome: "Legado",
+      descricao: null,
+      preco: 10,
       disponivel: true,
-    });
-    const esgotado = base({
-      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4",
-      visibilidade: "menu",
-      disponivel: false,
-    });
-    const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
-      produtos: [marcado, esgotado, COCA],
-      vinculosPorProduto: new Map([[marcado.id, [semDias(FIM_DE_SEMANA)]]]),
-      agora: TERCA,
-      timezone: SP,
-    });
-
-    // Propriedade sobre a lista inteira — não amostragem.
-    const foraDaJanela = produtos.filter((p) => p.motivoNaoCompravel === "fora_da_janela");
-    expect(foraDaJanela.length).toBeGreaterThan(0);
-    expect(foraDaJanela.every((p) => p.id in rotulosVigencia)).toBe(true);
-    expect(produtos.filter((p) => p.compravel).every((p) => !(p.id in rotulosVigencia))).toBe(true);
-    // E nenhum rótulo órfão: o mapa não tem chave sem produto marcado.
-    expect(Object.keys(rotulosVigencia).sort()).toEqual(foraDaJanela.map((p) => p.id).sort());
-    // O esgotado do menu não ganha rótulo de vigência.
-    expect(esgotado.id in rotulosVigencia).toBe(false);
-  });
-
-  it("[254] o rótulo é a frase REAL do cardápio que abre mais cedo (RN-07)", () => {
-    const marcado = base({
-      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5",
+      ordem: 0,
+      foto_url: null,
+      desconto_ativo: false,
+      desconto_tipo: null,
+      desconto_valor: null,
+      desconto_inicio: null,
+      desconto_fim: null,
       visibilidade: "cardapio",
-      disponivel: true,
-    });
-    const { rotulosVigencia } = projetarCatalogoVitrine({
-      produtos: [marcado],
-      vinculosPorProduto: new Map([[marcado.id, [semDias(FIM_DE_SEMANA)]]]),
-      agora: TERCA,
-      timezone: SP,
-    });
-    // A 247 afirmava aqui o provisório "Indisponível no momento", pelo nome e
-    // pelo texto, para que a troca fosse obrigatória e visível. A 254 fez a
-    // troca: o texto agora é o de `rotuloVoltaQuando` para o FIM_DE_SEMANA
-    // (sáb+dom, 11:00–15:00) numa terça — a volta real, e não um genérico.
-    expect(rotulosVigencia[marcado.id]).toBe(
-      rotuloVoltaQuando(semDias(FIM_DE_SEMANA), TERCA, SP),
-    );
-    expect(rotulosVigencia[marcado.id]).toBe("Sáb e dom, 11:00–15:00");
-    expect(rotulosVigencia[marcado.id]).not.toBe("Indisponível no momento");
-  });
-
-  // [testar/273] Lacuna: TODOS os testes acima de "fora_da_janela" usam
-  // `semDias(...)` — o vínculo SEM dias do item, herdando a janela inteira do
-  // cardápio. Nenhum prova o caso central da 273: cardápio ABERTO agora (o
-  // "Especiais do Dia", 7 dias) com um ITEM cujo `dias_semana` não bate com
-  // hoje. Sem este teste, um bug que trocasse `escolherVinculoParaRotulo` +
-  // `rotuloVoltaQuando` para ler sempre o CARDÁPIO (em vez do vínculo)
-  // passaria despercebido: o rótulo diria "Todos os dias" para um prato que só
-  // sai na quarta e no sábado — uma mentira para o cliente. Escopo apenas de
-  // 273 (produto + rótulo): o filtro da SEÇÃO de destaque por item é a 279.
-  describe("273 — item fora do dia dentro de um cardápio ABERTO", () => {
-    const ESPECIAIS_TODOS_OS_DIAS: CardapioVigencia = {
-      id: "c0000000-0000-4000-8000-000000000009",
-      nome: "Especiais do Dia",
-      ativo: true,
-      modo: "recorrente",
-      dias_semana: [0, 1, 2, 3, 4, 5, 6],
-      dias_mes: null,
+      dias_semana: null,
       hora_inicio: null,
       hora_fim: null,
-      prazo_inicio: null,
-      prazo_fim: null,
+      periodo_inicio: null,
+      periodo_fim: null,
     };
-    // 2026-10-12 é segunda (o dia seguinte ao domingo 11/10) — fora do dia do
-    // item {qua, sáb}, mas o cardápio está aberto (ele abre os 7 dias).
-    const SEGUNDA = emSP("2026-10-12T12:00");
-
-    it("marca fora_da_janela e o rótulo é o do ITEM, nunca 'Todos os dias' do cardápio", () => {
-      const feijoada = base({
-        id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-        nome: "Feijoada",
-        visibilidade: "cardapio",
-        disponivel: true,
-      });
-      const vinculo: VinculoVigencia = {
-        cardapio: ESPECIAIS_TODOS_OS_DIAS,
-        dias_semana: [3, 6],
-      };
-
-      const { produtos, rotulosVigencia } = projetarCatalogoVitrine({
-        produtos: [feijoada],
-        vinculosPorProduto: new Map([[feijoada.id, [vinculo]]]),
-        agora: SEGUNDA,
-        timezone: SP,
-      });
-
-      const projetado = produtos.find((p) => p.id === feijoada.id);
-      // Continua na lista: cardápio recorrente sem faixa degenerada sempre
-      // tem volta (RN-03) — o produto fica MARCADO, não some.
-      expect(projetado).toBeDefined();
-      expect(projetado?.compravel).toBe(false);
-      expect(projetado?.motivoNaoCompravel).toBe("fora_da_janela");
-
-      expect(rotulosVigencia[feijoada.id]).toBe(rotuloVoltaQuando(vinculo, SEGUNDA, SP));
-      expect(rotulosVigencia[feijoada.id]).toBe("Só às quartas e sábados");
-      expect(rotulosVigencia[feijoada.id]).not.toBe("Todos os dias");
-    });
-  });
-
-  it("cardapiosAbertos traz só os ativos ABERTOS agora, e preserva `ordem` (D4)", () => {
-    type CardapioDaLoja = CardapioVigencia & { ordem: number };
-    const abertoComOrdem: CardapioDaLoja = { ...FIM_DE_SEMANA, ordem: 7 };
-    const fechado: CardapioDaLoja = { ...INVERNO, ordem: 1 };
-    const desligado: CardapioDaLoja = {
-      ...FIM_DE_SEMANA,
-      id: "c0000000-0000-4000-8000-000000000003",
-      ativo: false,
-      ordem: 2,
-    };
-
-    const { cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
-      produtos: [SOPA],
-      vinculosPorProduto: new Map([[SOPA.id, [semDias(abertoComOrdem), semDias(fechado), semDias(desligado)]]]),
-      agora: SABADO,
-      timezone: SP,
-    });
-
-    expect(cardapiosAbertos.map((c) => c.id)).toEqual([abertoComOrdem.id]);
-    // A genérica é o que faz `ordem` sobreviver à projeção sem que o módulo de
-    // vigência conheça um campo de apresentação.
-    expect(cardapiosAbertos[0].ordem).toBe(7);
-  });
-
-  it("cardápio sem NENHUM produto do catálogo não vira produto fantasma", () => {
     const { produtos } = projetarCatalogoVitrine({
-      produtos: [COCA],
-      vinculosPorProduto: new Map([
-        [COCA.id, [semDias(FIM_DE_SEMANA)]],
-        ["produto-oculto-fora-do-catalogo", [semDias(FIM_DE_SEMANA)]],
-      ]),
-      agora: SABADO,
+      produtos: [legado],
+      categorias: [CAT_LIVRE],
+      agora: JANEIRO_SABADO,
       timezone: SP,
     });
-    expect(produtos.map((p) => p.id)).toEqual([COCA.id]);
+    expect(produtos[0]).toMatchObject({ compravel: true, motivoNaoCompravel: null });
   });
 
-  it("loja SEM cardápio nenhum ⇒ catálogo idêntico ao de hoje (não-regressão)", () => {
-    const entrada = [SOPA, COCA].map((p) => ({ ...p, visibilidade: "menu" }));
-    const { produtos, rotulosVigencia, cardapiosAbertos } = projetarCatalogoVitrine({
+  it("loja toda permanente ⇒ catálogo idêntico ao de hoje (não-regressão)", () => {
+    const entrada = [COCA, COCA_ESGOTADA, AVULSO];
+    const { produtos, rotulosVigencia, categoriasVisiveis } = projetarCatalogoVitrine({
       produtos: entrada,
-      vinculosPorProduto: new Map(),
-      agora: DEZEMBRO,
+      categorias: [CAT_LIVRE],
+      agora: JANEIRO_SABADO,
       timezone: SP,
     });
-    expect(produtos.map((p) => p.id)).toEqual(entrada.map((p) => p.id));
-    expect(produtos).toEqual(
-      entrada.map((p) => projetarProdutoVitrine(p, [], DEZEMBRO, SP)),
-    );
+    expect(produtos).toEqual(entrada.map((p) => projetarProdutoVitrine(p, DENTRO, JANEIRO_SABADO)));
     expect(rotulosVigencia).toEqual({});
-    expect(cardapiosAbertos).toEqual([]);
+    expect(categoriasVisiveis).toEqual([CAT_LIVRE]);
+  });
+
+  it("fuso da loja: o mesmo instante encerra em São Paulo e ainda vende em Manaus", () => {
+    const VIRADA = new Date("2027-01-01T03:30:00.000Z");
+    const natal = base({ id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2", categoria_id: null, periodo_fim: "2026-12-31" });
+    const emSp = projetarCatalogoVitrine({ produtos: [natal], categorias: [], agora: VIRADA, timezone: SP });
+    const emManaus = projetarCatalogoVitrine({ produtos: [natal], categorias: [], agora: VIRADA, timezone: "America/Manaus" });
+    expect(emSp.produtos).toEqual([]);
+    expect(emManaus.produtos[0]?.compravel).toBe(true);
   });
 });
 
-describe("247/254 — guarda estática: o provisório do rótulo NÃO sobreviveu", () => {
+describe("247/254/323 — guarda estática da projeção", () => {
   const fonte = readFileSync(FONTE_CONTRATO, "utf8");
 
   // Montados por partes de propósito: o critério de aceite da 254 é que
-  // `grep -rn` por qualquer um dos dois volte VAZIO em `src/` — e um teste que
-  // os escrevesse por extenso seria justamente o resultado que sobra no grep.
+  // `grep -rn` por qualquer um dos dois volte VAZIO em `src/`.
   const CONSTANTE_PROVISORIA = ["ROTULO", "VIGENCIA", "PROVISORIO"].join("_");
   const MARCADOR = `TEMP(${254})`;
 
   it("nem a constante provisória nem o marcador de dívida existem mais", () => {
-    // O inverso exato da guarda da 247: enquanto o provisório vivia, o marcador
-    // era obrigatório; entregue a 254, é a PRESENÇA dele que vira regressão.
     expect(fonte).not.toContain(CONSTANTE_PROVISORIA);
     expect(fonte).not.toContain(MARCADOR);
   });
@@ -942,19 +759,24 @@ describe("247/254 — guarda estática: o provisório do rótulo NÃO sobreviveu
     expect(fonte).not.toContain('"Indisponível no momento"');
   });
 
-  it("`MotivoNaoCompravel` ACRESCENTA 'fora_da_janela' sem remover 'esgotado'", () => {
+  it("`MotivoNaoCompravel` continua com 'esgotado' e 'fora_da_janela', sem motivo novo (D8)", () => {
     const bloco = fonte.match(/export type MotivoNaoCompravel = ([^;]*);/);
     expect(bloco?.[1]).toContain('"esgotado"');
     expect(bloco?.[1]).toContain('"fora_da_janela"');
+    expect(bloco?.[1]).not.toContain("encerrado");
+    expect(bloco?.[1]).not.toContain("categoria_oculta");
   });
 
-  it("a decisão de janela vem toda de `vigenciaCardapio` — sem segunda cópia", () => {
+  it("[323] a decisão de janela vem toda de `./frequencia` — sem segunda cópia", () => {
     const corpo = fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(corpo).toMatch(/from\s+"\.\/vigenciaCardapio"/);
+    expect(corpo).toMatch(/from\s+"\.\/frequencia"/);
+    expect(corpo).toContain("avaliarFrequenciaNaLoja(");
+    expect(corpo).toContain("categoriaVisivel(");
+    // A projeção de catálogo não avalia mais vigência de cardápio (S5).
+    expect(corpo).not.toContain("avaliarVigenciaDoProduto");
     // Nenhuma aritmética de fuso nem de dia da semana reescrita aqui.
     expect(corpo).not.toContain("Intl.");
     expect(corpo).not.toContain("getDay(");
-    expect(corpo).not.toMatch(/\bas\s+CardapioVigencia\b/);
   });
 });
 
@@ -974,9 +796,8 @@ describe("248 — foto_url é propriedade do PRODUTO, não do grupo (RN-06)", ()
   it("categoria 'ocultar' ⇒ foto_url null já na projeção", () => {
     const v = projetarProdutoVitrine(
       base({ categoria_id: CAT_OCULTA }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
       mapa,
     );
     expect(v.foto_url).toBe(null);
@@ -985,9 +806,8 @@ describe("248 — foto_url é propriedade do PRODUTO, não do grupo (RN-06)", ()
   it("categoria que EXIBE imagens ⇒ a URL passa intacta", () => {
     const v = projetarProdutoVitrine(
       base({ categoria_id: CAT_MOSTRA }),
-      [],
+      DENTRO,
       AGORA,
-      TZ,
       mapa,
     );
     expect(v.foto_url).toBe("https://cdn.exemplo.test/feijoada.jpg");
@@ -995,23 +815,22 @@ describe("248 — foto_url é propriedade do PRODUTO, não do grupo (RN-06)", ()
 
   it("produto SEM categoria ('Outros') e categoria fora do mapa seguem com foto (RN-5)", () => {
     expect(
-      projetarProdutoVitrine(base({ categoria_id: null }), [], AGORA, TZ, mapa)
+      projetarProdutoVitrine(base({ categoria_id: null }), DENTRO, AGORA, mapa)
         .foto_url,
     ).not.toBe(null);
     expect(
       projetarProdutoVitrine(
         base({ categoria_id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd9" }),
-        [],
+        DENTRO,
         AGORA,
-        TZ,
         mapa,
       ).foto_url,
     ).not.toBe(null);
   });
 
   it("sem o mapa (recálculo/painel) o objeto é byte a byte o de antes", () => {
-    expect(projetarProdutoVitrine(base(), [], AGORA, TZ, undefined)).toEqual(
-      projetarProdutoVitrine(base(), [], AGORA, TZ),
+    expect(projetarProdutoVitrine(base(), DENTRO, AGORA, undefined)).toEqual(
+      projetarProdutoVitrine(base(), DENTRO, AGORA),
     );
   });
 
@@ -1020,15 +839,43 @@ describe("248 — foto_url é propriedade do PRODUTO, não do grupo (RN-06)", ()
     // seção (destaque, D16-a) copiaria o produto cru e traria a foto de volta.
     // Com ele dentro da projeção, existe UM objeto e UM `foto_url`.
     const { produtos } = projetarCatalogoVitrine({
-      produtos: [base({ categoria_id: CAT_OCULTA, visibilidade: "menu" })],
-      vinculosPorProduto: new Map(),
+      produtos: [base({ categoria_id: CAT_OCULTA })],
+      categorias: [categoriaRow(CAT_OCULTA, "Ocultar imagens", 1, { exibir_imagens: false })],
       agora: AGORA,
-      timezone: TZ,
+      timezone: SP,
       exibirImagensPorCategoria: mapa,
     });
     expect(produtos[0].foto_url).toBe(null);
   });
 });
+
+/**
+ * [323/S5] `agruparPorCardapio` virou função morta: a página não monta mais
+ * seção de cardápio. Os testes dela ficam, e montam aqui a entrada que a página
+ * montava — os produtos projetados (permanentes, a regra de compra de cardápio
+ * saiu da projeção) e os cardápios ABERTOS agora, por `cardapioAberto`.
+ */
+function projetarLegado<C extends CardapioVigencia>(entrada: {
+  produtos: ProdutoParaVitrineComFrequencia[];
+  vinculosPorProduto: ReadonlyMap<string, VinculoVigencia<C>[]>;
+  agora: Date;
+  timezone: string;
+  exibirImagensPorCategoria?: ReadonlyMap<string, boolean>;
+}): { produtos: ProdutoVitrine[]; cardapiosAbertos: C[] } {
+  const produtos = entrada.produtos.map((p) =>
+    projetarProdutoVitrine(p, DENTRO, entrada.agora, entrada.exibirImagensPorCategoria),
+  );
+  const vistos = new Set<string>();
+  const cardapiosAbertos: C[] = [];
+  for (const lista of entrada.vinculosPorProduto.values()) {
+    for (const { cardapio } of lista) {
+      if (vistos.has(cardapio.id)) continue;
+      vistos.add(cardapio.id);
+      if (cardapioAberto(cardapio, entrada.agora, entrada.timezone)) cardapiosAbertos.push(cardapio);
+    }
+  }
+  return { produtos, cardapiosAbertos };
+}
 
 describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
   type CardapioDaLoja = CardapioVigencia & { ordem: number };
@@ -1086,19 +933,16 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
     id: "c8000000-0000-4000-8000-000000000001",
     nome: "Lasanha",
     categoria_id: CAT_MASSAS,
-    visibilidade: "menu",
   });
   const NHOQUE = base({
     id: "c8000000-0000-4000-8000-000000000002",
     nome: "Nhoque",
     categoria_id: CAT_MASSAS,
-    visibilidade: "menu",
   });
   const SOPA_CEBOLA = base({
     id: "c8000000-0000-4000-8000-000000000003",
     nome: "Sopa de cebola",
     categoria_id: CAT_SOPAS,
-    visibilidade: "cardapio",
   });
 
   const vinculos = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
@@ -1107,7 +951,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
   ]);
 
   function projetarCenario8() {
-    return projetarCatalogoVitrine<CardapioDaLoja>({
+    return projetarLegado<CardapioDaLoja>({
       produtos: [LASANHA, NHOQUE, SOPA_CEBOLA],
       vinculosPorProduto: vinculos,
       agora: SABADO,
@@ -1164,7 +1008,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
   });
 
   it("produto ESGOTADO aparece na seção de destaque, com o motivo 'esgotado'", () => {
-    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+    const { produtos, cardapiosAbertos } = projetarLegado<CardapioDaLoja>({
       produtos: [{ ...LASANHA, disponivel: false }],
       vinculosPorProduto: new Map([[LASANHA.id, [semDias(INVERNO_ABERTO)]]]),
       agora: SABADO,
@@ -1186,7 +1030,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
     const dois = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
       [LASANHA.id, [semDias(INVERNO_ABERTO), semDias(VERAO)]],
     ]);
-    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+    const { produtos, cardapiosAbertos } = projetarLegado<CardapioDaLoja>({
       produtos: [LASANHA],
       vinculosPorProduto: dois,
       agora: SABADO,
@@ -1228,7 +1072,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
     const vinculosOrdem = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
       [LASANHA.id, [semDias(b1), semDias(a2), semDias(z1), semDias(a1)]],
     ]);
-    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+    const { produtos, cardapiosAbertos } = projetarLegado<CardapioDaLoja>({
       produtos: [LASANHA],
       vinculosPorProduto: vinculosOrdem,
       agora: SABADO,
@@ -1244,7 +1088,7 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
 
   it("foto_url de categoria 'ocultar' é null TAMBÉM na seção de destaque", () => {
     const mapa = new Map([[CAT_SOPAS, false]]);
-    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
+    const { produtos, cardapiosAbertos } = projetarLegado<CardapioDaLoja>({
       produtos: [SOPA_CEBOLA],
       vinculosPorProduto: vinculos,
       agora: SABADO,
@@ -1290,17 +1134,14 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
   const FEIJOADA = base({
     id: "27900000-0000-4000-8000-000000000001",
     nome: "Feijoada",
-    visibilidade: "cardapio",
   });
   const VIRADO = base({
     id: "27900000-0000-4000-8000-000000000002",
     nome: "Virado à paulista",
-    visibilidade: "cardapio",
   });
   const DOBRADINHA = base({
     id: "27900000-0000-4000-8000-000000000003",
     nome: "Dobradinha",
-    visibilidade: "cardapio",
   });
 
   /** Feijoada {qua,sáb}, Virado {seg}, Dobradinha {ter} — um cardápio só. */
@@ -1315,7 +1156,7 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
   const DOMINGO = emSP("2026-10-18T12:00");
 
   function projetar(agora: Date) {
-    return projetarCatalogoVitrine<CardapioDaLoja>({
+    return projetarLegado<CardapioDaLoja>({
       produtos: [FEIJOADA, VIRADO, DOBRADINHA],
       vinculosPorProduto: agenda,
       agora,
@@ -1343,19 +1184,6 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
     expect(secoes[0].produtos.map((p) => p.nome)).toEqual(["Feijoada"]);
   });
 
-  it("quarta — o item fora do dia fica MARCADO, com o selo dos dias do ITEM (RN-08)", () => {
-    const { produtos, rotulosVigencia } = projetar(QUARTA);
-    const porNome = new Map(produtos.map((p) => [p.nome, p]));
-
-    expect(porNome.get("Feijoada")?.compravel).toBe(true);
-    expect(porNome.get("Virado à paulista")?.motivoNaoCompravel).toBe(
-      "fora_da_janela",
-    );
-    expect(rotulosVigencia[VIRADO.id]).toBe("Só às segundas");
-    expect(rotulosVigencia[DOBRADINHA.id]).toBe("Só às terças");
-    expect(rotulosVigencia[FEIJOADA.id]).toBeUndefined();
-  });
-
   it("domingo sem NENHUM item do dia — a seção não é devolvida", () => {
     const { produtos, cardapiosAbertos } = projetar(DOMINGO);
 
@@ -1370,13 +1198,12 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
     const refri = base({
       id: "27900000-0000-4000-8000-000000000004",
       nome: "Refrigerante",
-      visibilidade: "menu",
     });
     const soQuarta = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
       [refri.id, [comDias(ESPECIAIS, [3])]],
     ]);
     const { produtos, cardapiosAbertos } =
-      projetarCatalogoVitrine<CardapioDaLoja>({
+      projetarLegado<CardapioDaLoja>({
         produtos: [refri],
         vinculosPorProduto: soQuarta,
         agora: DOMINGO,
@@ -1402,7 +1229,7 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
       [FEIJOADA.id, [comDias(ESPECIAIS, [3, 6]), comDias(NOITE, [1])]],
     ]);
     const { produtos, cardapiosAbertos } =
-      projetarCatalogoVitrine<CardapioDaLoja>({
+      projetarLegado<CardapioDaLoja>({
         produtos: [FEIJOADA],
         vinculosPorProduto: dois,
         agora: QUARTA,
@@ -1428,7 +1255,7 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
     ]);
     for (const agora of [QUARTA, DOMINGO]) {
       const { produtos, cardapiosAbertos } =
-        projetarCatalogoVitrine<CardapioDaLoja>({
+        projetarLegado<CardapioDaLoja>({
           produtos: [FEIJOADA],
           vinculosPorProduto: semAgenda,
           agora,
@@ -1451,7 +1278,7 @@ describe("279 — agruparPorCardapio filtra por ITEM, não por cardápio", () =>
       [FEIJOADA.id, [comDias(ESPECIAIS, [3, 6])]],
     ]);
     const { produtos, cardapiosAbertos } =
-      projetarCatalogoVitrine<CardapioDaLoja>({
+      projetarLegado<CardapioDaLoja>({
         produtos: [{ ...FEIJOADA, disponivel: false }],
         vinculosPorProduto: soFeijoada,
         agora: QUARTA,

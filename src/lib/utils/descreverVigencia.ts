@@ -25,6 +25,14 @@ import {
   type CardapioVigencia,
   type VinculoVigencia,
 } from "./vigenciaCardapio";
+import {
+  combinarFrequencias,
+  dentroDaFrequencia,
+  FREQUENCIA_PERMANENTE,
+  frequenciaNuncaAbre,
+  periodoEncerrado,
+  type Frequencia,
+} from "./frequencia";
 
 /**
  * Fallback de render, e SÓ isso: por RN-13 todo produto que chega marcado à
@@ -601,4 +609,179 @@ export function rotuloAgora(
   const { data, hora } = partesLocais(agora.toISOString(), timezone);
   const veredito = aparecendo ? "APARECENDO" : "NÃO APARECE";
   return `Agora (${DIAS_CURTOS[diaIndex]}, ${data}, ${hora}): ${veredito}`;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// [323] Frequência de exibição — as frases da vitrine e do painel
+// ───────────────────────────────────────────────────────────────────────────
+//
+// Mesma casa das frases de cardápio (M6): a tabela de dias é uma só. A DECISÃO
+// continua fora daqui — quem diz se está dentro é `./frequencia`
+// (`dentroDaFrequencia`, `periodoEncerrado`, `combinarFrequencias`); este bloco
+// só escolhe a frase verdadeira.
+//
+// D13: `dias_semana = []` é NUNCA e `null` é TODO DIA. `rotuloDiasDoItem` e
+// `ordenarSemana` tratam `[]` como "sem restrição", então aqui `[]` é testado
+// ANTES (`nuncaDisponivel`) e `ordenarSemana` só recebe lista não vazia.
+
+const RE_DATA_CIVIL = /^\d{4}-\d{2}-\d{2}$/;
+
+/** "YYYY-MM-DD" → "dd/MM". Data malformada volta crua (fail-open só no texto). */
+function diaMesCivil(data: string): string {
+  if (!RE_DATA_CIVIL.test(data)) return data;
+  const [, mes, dia] = data.split("-");
+  return `${dia}/${mes}`;
+}
+
+/** RN-8: o eixo de dias existe e está vazio. Nunca `!dias`/`dias?.length`. */
+function nuncaDisponivel(f: Frequencia | null): boolean {
+  return f !== null && f.dias_semana !== null && f.dias_semana.length === 0;
+}
+
+/** "01/12 a 31/12" · "desde 01/12" · "até 31/12" · `null` sem período. */
+function trechoPeriodo(f: Frequencia): string | null {
+  const { periodo_inicio: inicio, periodo_fim: fim } = f;
+  if (inicio !== null && fim !== null) return `${diaMesCivil(inicio)} a ${diaMesCivil(fim)}`;
+  if (inicio !== null) return `desde ${diaMesCivil(inicio)}`;
+  if (fim !== null) return `até ${diaMesCivil(fim)}`;
+  return null;
+}
+
+/**
+ * [323/C7] O chip de frequência do PAINEL (produto e categoria):
+ * `"seg a sex · 11:00–15:00 · 01/12 a 31/12"`, `"desde 01/12"`, `"sáb"`.
+ *
+ * `null` = permanente (sem chip: é o default e não merece ruído em toda
+ * linha). `dias_semana = []` ⇒ `"Nunca disponível"`, sozinho — os outros
+ * eixos não mudam nada quando nenhum dia abre (RN-8).
+ */
+export function rotuloFrequencia(f: Frequencia): string | null {
+  if (nuncaDisponivel(f)) return "Nunca disponível";
+  const partes: string[] = [];
+  if (f.dias_semana !== null) {
+    const semana = ordenarSemana(f.dias_semana);
+    if (semana.length > 0) partes.push(descreverDiasDaSemana(semana, "curta"));
+  }
+  if (f.hora_inicio !== null && f.hora_fim !== null) {
+    partes.push(`${hhmm(f.hora_inicio)}–${hhmm(f.hora_fim)}`);
+  }
+  const periodo = trechoPeriodo(f);
+  if (periodo !== null) partes.push(periodo);
+  return partes.length === 0 ? null : partes.join(" · ");
+}
+
+/**
+ * [323/C7] A pílula da VITRINE para o produto fora da frequência (RN-2/RN-3),
+ * sobre a interseção produto ∩ categoria (RN-1). Diz o EIXO QUE FALHA agora,
+ * nesta ordem: período que ainda não começou ⇒ `"A partir de dd/MM"`; dia ⇒
+ * `"Só seg a sex"`; horário ⇒ `"Das 18:00 às 23:00"`.
+ *
+ * Interseção vazia ou algum `dias_semana = []` ⇒ `ROTULO_SEM_VOLTA`: não há
+ * volta a anunciar. Período ENCERRADO nunca chega aqui — esse produto é
+ * omitido antes (RN-7); se chegar, o fallback também é `ROTULO_SEM_VOLTA`.
+ *
+ * Cada eixo é perguntado a `dentroDaFrequencia` isolado dos outros: a regra
+ * de dia, hora e período continua com UM dono.
+ */
+export function rotuloForaDaFrequencia(
+  produto: Frequencia,
+  categoria: Frequencia | null,
+  agora: Date,
+  timezone: string,
+): string {
+  if (nuncaDisponivel(produto) || nuncaDisponivel(categoria)) return ROTULO_SEM_VOLTA;
+  const combinacao = combinarFrequencias(produto, categoria);
+  if (combinacao.vazia) return ROTULO_SEM_VOLTA;
+  const f = combinacao.frequencia;
+
+  const soPeriodo: Frequencia = {
+    ...FREQUENCIA_PERMANENTE,
+    periodo_inicio: f.periodo_inicio,
+    periodo_fim: f.periodo_fim,
+  };
+  if (!dentroDaFrequencia(soPeriodo, agora, timezone)) {
+    const inicio = f.periodo_inicio;
+    if (
+      inicio !== null &&
+      RE_DATA_CIVIL.test(inicio) &&
+      diaNoFuso(agora, timezone) < inicio
+    ) {
+      return cortar(`A partir de ${diaMesCivil(inicio)}`, MAX_ROTULO);
+    }
+    return ROTULO_SEM_VOLTA;
+  }
+
+  if (f.dias_semana !== null) {
+    const soDias: Frequencia = { ...FREQUENCIA_PERMANENTE, dias_semana: f.dias_semana };
+    if (!dentroDaFrequencia(soDias, agora, timezone)) {
+      const semana = ordenarSemana(f.dias_semana);
+      if (semana.length === 0) return ROTULO_SEM_VOLTA;
+      return cortar(`Só ${descreverDiasDaSemana(semana, "curta")}`, MAX_ROTULO);
+    }
+  }
+
+  if (f.hora_inicio !== null && f.hora_fim !== null) {
+    const soHora: Frequencia = {
+      ...FREQUENCIA_PERMANENTE,
+      hora_inicio: f.hora_inicio,
+      hora_fim: f.hora_fim,
+    };
+    if (!dentroDaFrequencia(soHora, agora, timezone)) {
+      return cortar(`Das ${hhmm(f.hora_inicio)} às ${hhmm(f.hora_fim)}`, MAX_ROTULO);
+    }
+  }
+
+  return ROTULO_SEM_VOLTA;
+}
+
+/**
+ * [323/C7] Aviso RN-1/RN-8 do painel para o PRODUTO (molde
+ * `avisoAgendaQueNuncaAbre`). Preview de UX: não bloqueia salvar e nada
+ * depende dele. A primeira causa que se aplica decide o texto:
+ *
+ *  1. produto `[]` ⇒ `null` — escolha explícita; o chip "Nunca disponível"
+ *     já diz, e avisar seria ruído;
+ *  2. categoria `[]`;
+ *  3. interseção produto ∩ categoria vazia (RN-1);
+ *  4. período fechado sem nenhum dos dias marcados.
+ *
+ * Não olha `agora`: "já encerrou" é `avisoPeriodoEncerrado`.
+ */
+export function avisoFrequenciaQueNuncaAbre(
+  produto: Frequencia,
+  categoria: Frequencia | null,
+): string | null {
+  if (nuncaDisponivel(produto)) return null;
+  if (nuncaDisponivel(categoria)) {
+    return "Este item nunca vai ficar disponível: a categoria está sem nenhum dia marcado. Marque os dias na categoria.";
+  }
+  if (categoria !== null && combinarFrequencias(produto, categoria).vazia) {
+    return "Este item nunca vai ficar disponível: os dias e horários dele não batem com os da categoria. Ajuste a frequência do item ou da categoria.";
+  }
+  if (frequenciaNuncaAbre(produto, categoria)) {
+    return "Este item nunca vai ficar disponível: o período marcado não tem nenhum dos dias escolhidos. Ajuste os dias ou o período.";
+  }
+  return null;
+}
+
+/** [323/C7] O mesmo aviso, para a CATEGORIA sozinha. `[]` ⇒ `null` (chip). */
+export function avisoCategoriaQueNuncaAbre(categoria: Frequencia): string | null {
+  if (nuncaDisponivel(categoria)) return null;
+  if (frequenciaNuncaAbre(categoria, null)) {
+    return "Esta categoria nunca vai ficar disponível: o período marcado não tem nenhum dos dias escolhidos. Ajuste os dias ou o período.";
+  }
+  return null;
+}
+
+/**
+ * [323/C7] RN-7 no painel: o período terminou (dia civil da LOJA) e o item —
+ * ou a categoria — sumiu da vitrine. `agora` e `timezone` vêm do servidor.
+ */
+export function avisoPeriodoEncerrado(
+  f: Frequencia,
+  agora: Date,
+  timezone: string,
+): string | null {
+  if (f.periodo_fim === null || !periodoEncerrado(f, agora, timezone)) return null;
+  return `Período encerrado em ${diaMesCivil(f.periodo_fim)}: não aparece mais na vitrine. Mude o período para voltar a vender.`;
 }
