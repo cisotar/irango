@@ -6,8 +6,8 @@
 // testável.
 //
 // 🛑 Não decide comprabilidade e não avalia janela nenhuma: `compravel` e
-// `motivoNaoCompravel` chegam DECIDIDOS do servidor (252/RN-06), pela mesma
-// `avaliarVigenciaDoProduto` que o SSR da vitrine e `criarPedido` usam. Aqui só
+// `motivoNaoCompravel` chegam DECIDIDOS do servidor (252 → 321), pela mesma
+// `avaliarFrequenciaNaLoja` que o SSR da vitrine e `criarPedido` usam. Aqui só
 // se pareia a linha revisada com a linha exibida, para nomear o produto certo.
 //
 // 🛑 Não calcula dinheiro: o subtotal que a tela mostra já vem do servidor SEM

@@ -61,8 +61,8 @@ export interface LinhaRevisada {
   precoEfetivo: number;
   temDesconto: boolean;
   /**
-   * (252) `disponivel && dentroDaJanela`, pela MESMA `avaliarVigenciaDoProduto`
-   * que o SSR da vitrine e `criarPedido` usam (RN-06). Linha não comprável NÃO
+   * (252 → 321) `disponivel && frequencia.disponivel`, pela MESMA
+   * `avaliarFrequenciaNaLoja` que o SSR da vitrine e `criarPedido` usam. Linha não comprável NÃO
    * entra no subtotal, mas NUNCA some da lista: omitir seria alterar o carrinho
    * do cliente por omissão.
    */

@@ -47,11 +47,8 @@ import {
 } from "@/lib/utils/derivarBasesCupom";
 import { validarUsoCupom } from "@/lib/utils/validarUsoCupom";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
-import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
-import {
-  avaliarVigenciaDoProduto,
-  visibilidadeDe,
-} from "@/lib/utils/vigenciaCardapio";
+import { buscarCategorias } from "@/lib/supabase/queries/categorias";
+import { avaliarFrequenciaNaLoja } from "@/lib/utils/frequencia";
 import {
   assinaturaPermiteAcesso,
   type StatusAssinatura,
@@ -69,8 +66,9 @@ const ERRO_GENERICO = "Não foi possível criar o pedido. Tente novamente.";
 // promoção — pagaria MAIS do que viu. D11 exige reconfirmação explícita, e a
 // garantia é de SERVIDOR: nenhum componente precisa ser confiável para isso.
 const ERRO_REVISAO = "Os preços do seu carrinho mudaram. Revise o pedido antes de confirmar.";
-// (249/RN-08) Item que saiu da janela do cardápio entre montar o carrinho e
-// confirmar. Específica como "Loja fechada no momento." e deliberadamente SEM
+// (249/RN-08 → 321) Item que saiu da frequência de exibição (do produto ou da
+// categoria) ou cujo período encerrou (RN-7) entre montar o carrinho e
+// confirmar. O literal fica inalterado (o checkout já o conhece). Específica como "Loja fechada no momento." e deliberadamente SEM
 // nomear o item: quem nomeia é `revisarCarrinhoAction` (252), para quem o
 // cliente já provou conhecer os ids. Não é oráculo — a mesma informação está
 // pública no selo da vitrine.
@@ -166,7 +164,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         dados.itens.flatMap((i) => (i.opcionais ?? []).map((o) => o.opcional_id)),
       ),
     ];
-    const [formas, produtos, opcionaisBanco, zonasPreCarregadas, cardapios] =
+    const [formas, produtos, opcionaisBanco, zonasPreCarregadas, categorias] =
       await Promise.all([
         listarFormasPagamento(svc, dados.loja_id),
         buscarProdutosPorIds(svc, ids),
@@ -175,13 +173,14 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         dados.tipo_entrega === "retirada" || freteACombinarPelaLoja
           ? Promise.resolve<ZonaVitrine[]>([])
           : listarZonasComTaxas(svc, dados.loja_id),
-        // (249) A MESMA query que o SSR da vitrine usa (247), aqui sob
-        // `service_role`. Sem `.eq("ativo", true)`: RN-03 mora na função pura,
-        // e o recálculo precisa ENXERGAR o cardápio para poder recusar.
+        // (321) A MESMA query de categorias que a vitrine usa, aqui sob
+        // `service_role` (enxerga a categoria OCULTA para poder recusar). A
+        // frequência e o `oculta` vêm SEMPRE do banco, nunca do cliente (§10).
         // Deliberadamente SEM try/catch local — rejeição sobe ao `Promise.all`
         // e ao catch externo, e o pedido é recusado (fail-closed, §14).
-        buscarCardapiosComProdutos(svc, dados.loja_id),
+        buscarCategorias(svc, dados.loja_id),
       ]);
+    const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
 
     // (3) Forma de pagamento ∈ formas configuradas pela loja.
     if (!formas.some((f) => f.tipo === dados.forma_pagamento)) {
@@ -244,18 +243,19 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         return { erro: ERRO_GENERICO };
       }
 
-      // (249/RN-08) A janela do cardápio, pela MESMA função pura da vitrine e
-      // da revisão (246) — nenhuma aritmética de fuso/prazo nova aqui. Fora da
-      // janela recusa o PEDIDO INTEIRO, antes da RPC: nada gravado, nenhum item
-      // descartado em silêncio. Sem `codigo` — não é a recusa de RN-12-a.
-      const vigencia = avaliarVigenciaDoProduto(
-        { visibilidade: visibilidadeDe(produto) },
-        cardapios.vinculosPorProduto.get(produto.id) ?? [],
-        agora,
-        loja.timezone,
-      );
-      if (!vigencia.dentroDaJanela) {
-        return { erro: ERRO_FORA_DA_JANELA };
+      // (321) Frequência de exibição produto ∩ categoria, pela MESMA função
+      // pura da vitrine e da revisão — nenhuma aritmética de fuso nova aqui.
+      // Indisponível recusa o PEDIDO INTEIRO, antes da RPC: nada gravado,
+      // nenhum item descartado em silêncio. Sem `codigo` — não é RN-12-a.
+      //   categoria_oculta (RN-3, inclui categoria ausente do mapa) ⇒ genérica:
+      //     não revela a decisão editorial do lojista;
+      //   encerrado (RN-7, D12) e fora_da_frequencia ⇒ ERRO_FORA_DA_JANELA,
+      //     que manda o cliente à revisão em vez de repetir o envio.
+      const frequencia = avaliarFrequenciaNaLoja(produto, categoriasPorId, agora, loja.timezone);
+      if (!frequencia.disponivel) {
+        return {
+          erro: frequencia.motivo === "categoria_oculta" ? ERRO_GENERICO : ERRO_FORA_DA_JANELA,
+        };
       }
 
       // Conjunto de categorias de opcional permitidas para a categoria do produto.
