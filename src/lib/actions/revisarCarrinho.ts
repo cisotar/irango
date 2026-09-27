@@ -187,6 +187,18 @@ export async function revisarCarrinhoAction(
         return { ok: false, mensagem: ERRO_GENERICO };
       }
 
+      // (321) A MESMA função pura do SSR da vitrine e de `criarPedido`, com o
+      // MESMO `agora` e o `timezone` da LOJA — o cliente não manda horário,
+      // frequência, categoria nem `oculta`.
+      const frequencia = avaliarFrequenciaNaLoja(produto, categoriasPorId, agora, loja.timezone);
+      // (P6) Categoria OCULTA (ou ausente do mapa, fail-closed) é o gate de
+      // `oculto`: recusa genérica ANTES de montar a linha, como `criarPedido`
+      // (ERRO_GENERICO). Como linha bloqueada ela devolvia o preço de um item
+      // que o lojista escondeu.
+      if (!frequencia.disponivel && frequencia.motivo === "categoria_oculta") {
+        return { ok: false, mensagem: ERRO_GENERICO };
+      }
+
       const permitidas = new Set(
         (produto.categoria_id
           ? allowlistPorCategoria[produto.categoria_id] ?? []
@@ -223,12 +235,8 @@ export async function revisarCarrinhoAction(
       // O desconto de produto vira PREÇO aqui (D8) — fonte única `precoEfetivo`.
       const preco = precoEfetivo(produto, agora);
 
-      // (321) A MESMA função pura do SSR da vitrine e de `criarPedido`, com o
-      // MESMO `agora` e o `timezone` da LOJA — o cliente não manda horário,
-      // frequência, categoria nem `oculta`. Os três motivos (categoria oculta,
-      // período encerrado, fora da frequência) viram `fora_da_janela`: a linha
-      // fica bloqueada e o cliente a remove.
-      const frequencia = avaliarFrequenciaNaLoja(produto, categoriasPorId, agora, loja.timezone);
+      // (321) Período encerrado e fora da frequência viram `fora_da_janela`: a
+      // linha fica bloqueada e o cliente a remove.
       // `disponivel` aqui é sempre true (o gate acima já derrubou o contrário):
       // a composição fica explícita para espelhar `projetarProdutoVitrine`.
       const compravel = produto.disponivel && frequencia.disponivel;

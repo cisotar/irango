@@ -217,8 +217,11 @@ afterEach(() => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// P6 (volta da auditoria, item 2): a categoria OCULTA saiu desta tabela. A
+// revisão não a trata mais como linha bloqueada (que devolvia o PREÇO do
+// produto): recusa com a genérica, igual ao gate de `oculto` e ao `criarPedido`.
+// Ver o bloco "[P6-2]" abaixo.
 const BLOQUEIOS: [string, ProdutoRow, CategoriaRow][] = [
-  ["categoria OCULTA", feijoada(), pratos({ oculta: true })],
   ["produto ENCERRADO (periodo_fim ontem)", feijoada({ periodo_fim: ONTEM }), pratos()],
   ["categoria ENCERRADA (produto sem período)", feijoada(), pratos({ periodo_fim: ONTEM })],
   ["produto FORA da frequência (seg–sex no sábado)", feijoada({ dias_semana: [1, 2, 3, 4, 5] }), pratos()],
@@ -290,5 +293,41 @@ describe("[321] a revisão lê categorias, não cardápios", () => {
 
     expect(buscarCategorias).toHaveBeenCalledWith(fakeClient, LOJA_A);
     expect(buscarCardapiosComProdutos).toHaveBeenCalledTimes(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P6 (volta da auditoria, item 2, BAIXO): produto de categoria OCULTA na
+// revisão devolvia a linha com `preco`/`precoEfetivo`, revelando o preço de um
+// item que o lojista escondeu. Passa a ser o gate de `oculto`: `ok: false` com a
+// genérica, antes de montar qualquer linha — o mesmo que `criarPedido` faz
+// (`ERRO_GENERICO`). Categoria AUSENTE do mapa (outra loja, removida) é o mesmo
+// motivo `categoria_oculta` (fail-closed) e cai no mesmo lugar.
+const MSG_REVISAO_GENERICA = "Não foi possível revisar o carrinho. Tente novamente.";
+
+describe("[P6-2] categoria oculta na revisão ⇒ recusa genérica, sem preço", () => {
+  it.each([
+    ["categoria OCULTA", () => buscarCategorias.mockResolvedValue([pratos({ oculta: true })])],
+    ["categoria AUSENTE do mapa", () => buscarCategorias.mockResolvedValue([])],
+  ])("%s ⇒ ok false, mensagem genérica, nenhum preço no retorno", async (_nome, prepara) => {
+    buscarProdutosPorIds.mockResolvedValue([COCA_ROW, feijoada()]);
+    prepara();
+
+    const r = await preview();
+
+    expect(r).toEqual({ ok: false, mensagem: MSG_REVISAO_GENERICA });
+    const json = JSON.stringify(r);
+    expect(json).not.toContain("preco");
+    expect(json).not.toContain("45");
+  });
+
+  it("espelho: criarPedido recusa com ERRO_GENERICO e a RPC não é chamada", async () => {
+    buscarProdutosPorIds.mockResolvedValue([COCA_ROW, feijoada()]);
+    buscarCategorias.mockResolvedValue([pratos({ oculta: true })]);
+
+    const pedido = await autoritativo();
+
+    expect(pedido).toEqual({ erro: "Não foi possível criar o pedido. Tente novamente." });
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(0);
   });
 });
