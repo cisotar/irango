@@ -297,6 +297,12 @@ describe("224 — encaixe nas peças existentes", () => {
       desconto_inicio: null,
       desconto_fim: null,
       visibilidade: "menu",
+      // 320: as 5 colunas de frequência (permanente).
+      dias_semana: null,
+      hora_inicio: null,
+      hora_fim: null,
+      periodo_inicio: null,
+      periodo_fim: null,
     };
     const v = projetarProdutoVitrine(daView, [], AGORA, TZ);
     expect(v).toMatchObject({ id: daView.id, preco: 8, precoEfetivo: 8, categoria_id: null });
