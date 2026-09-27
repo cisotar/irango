@@ -1639,25 +1639,6 @@ export function ProdutosClient({
                                 <ChipFrequencia rotulo={frequencias.produtos[p.id]?.rotulo} />
                               </div>
                             )}
-                            {/* [323] As 7 pílulas na própria linha: marcar dia
-                                é a edição mais frequente da frequência, e
-                                abrir o diálogo (ou o modo grade) para um
-                                clique era o caminho longo. Compactas porque
-                                sete alvos de 44px não cabem em 360px ao lado
-                                do resto da linha (design §5, exceção §8-A).
-                                Produto permanente nasce com as 7 marcadas —
-                                `null` e `[]` continuam distintos no banco. */}
-                            {!modoSelecao && (
-                              <div className="mt-1.5">
-                                <PilulasDeDias
-                                  compacto
-                                  valor={pilulasDoProduto(p)}
-                                  onChange={(novas) => void salvarDiasDoProduto(p, novas)}
-                                  rotulo={`Dias de ${p.nome}`}
-                                  desabilitado={diasEmVoo.has(p.id)}
-                                />
-                              </div>
-                            )}
                             {!modoSelecao && (
                               <AvisoFrequencia
                                 aviso={frequencias.produtos[p.id]?.aviso}
@@ -1686,6 +1667,36 @@ export function ProdutosClient({
                               </p>
                             )}
                           </div>
+
+                          {/* [323] As 7 pílulas: marcar dia é a edição mais
+                              frequente da frequência, e abrir o diálogo (ou o
+                              modo grade) para um clique era o caminho longo.
+
+                              Filha DIRETA da linha, com `basis-full`, e não da
+                              coluna de texto, que em 360px deixa só ~240px.
+
+                              E NÃO `compacto`: as 7 numa linha só pedem ~304px
+                              (7×40 + 6 gaps) e a linha do produto no admin tem
+                              ~262px. `grid-cols-7` deixa a COLUNA encolher, mas
+                              `min-w-[40px]` não deixa o BOTÃO encolher junto —
+                              o resultado era pílula por cima de pílula. O modo
+                              normal resolve com 4+3 no mobile e 7 em linha a
+                              partir de `sm`, sem furar o alvo de 44px e com
+                              "Dom/Seg/Ter" em vez de "D S T Q Q S S", onde os
+                              dois S e os dois Q não se distinguem.
+
+                              Produto permanente nasce com as 7 marcadas —
+                              `null` e `[]` continuam distintos no banco. */}
+                          {!modoSelecao && (
+                            <div className="w-full basis-full">
+                              <PilulasDeDias
+                                valor={pilulasDoProduto(p)}
+                                onChange={(novas) => void salvarDiasDoProduto(p, novas)}
+                                rotulo={`Dias de ${p.nome}`}
+                                desabilitado={diasEmVoo.has(p.id)}
+                              />
+                            </div>
+                          )}
 
                           {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
                               52.8px na base de 120% do projeto (globals.css). */}
