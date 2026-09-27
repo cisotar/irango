@@ -13,6 +13,8 @@ import { AlertDialog } from "@base-ui/react/alert-dialog";
 import {
   AlertTriangle,
   ArrowUpDown,
+  CalendarDays,
+  Clock,
   Pencil,
   PencilLine,
   Plus,
@@ -28,6 +30,13 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AvisoFrequencia, ChipFrequencia } from "@/components/painel/RotuloFrequencia";
+import { PilulasDeDias } from "@/components/painel/PilulasDeDias";
+import {
+  diasDasPilulas,
+  mesmosDias,
+  pilulasDosDias,
+} from "@/components/painel/gradeFrequencia";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Accordion,
@@ -76,6 +85,15 @@ import {
 } from "@/components/painel/ReordenarProdutos";
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
 import { BarraSelecaoLote } from "@/components/painel/BarraSelecaoLote";
+import { BarraSelecaoFrequencia } from "@/components/painel/BarraSelecaoFrequencia";
+import {
+  DialogoFrequencia,
+  type AlvoFrequencia,
+} from "@/components/painel/DialogoFrequencia";
+import { GradeFrequencia } from "@/components/painel/GradeFrequencia";
+import { frequenciaComum } from "@/components/painel/rascunhoFrequencia";
+import { FREQUENCIA_PERMANENTE, frequenciaDe } from "@/lib/utils/frequencia";
+import type { FrequenciasDoPainel } from "@/lib/utils/frequenciaPainel";
 import { useLoteDeProdutos } from "@/components/painel/useLoteDeProdutos";
 import type {
   LoteDeProdutos,
@@ -112,6 +130,10 @@ import type {
   alternarExibirImagens as alternarExibirImagensLojista,
   reordenarCategorias as reordenarCategoriasLojista,
   reordenarProdutos as reordenarProdutosLojista,
+  aplicarFrequenciaEmProdutos as aplicarFrequenciaEmProdutosLojista,
+  salvarGradeDeDias as salvarGradeDeDiasLojista,
+  alternarOcultaCategoria as alternarOcultaCategoriaLojista,
+  definirFrequenciaCategoria as definirFrequenciaCategoriaLojista,
 } from "@/lib/actions/produto";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
@@ -200,6 +222,14 @@ export type ProdutosClientProps = {
    */
   sumicos?: Record<string, SumicoDoProduto>;
   /**
+   * [323/C8] A frequência de exibição PROJETADA no Server Component
+   * (`projetarFrequenciasDoPainel`, relógio do servidor e fuso da loja): chip
+   * e aviso por produto, estado por categoria. OBRIGATÓRIA nos dois mundos —
+   * o painel e o hub admin usam o MESMO helper. Preview de UX: a autoridade
+   * de compra é `criarPedido`.
+   */
+  frequencias: FrequenciasDoPainel;
+  /**
    * Actions injetadas. Todas OBRIGATÓRIAS (issue 160): a page do painel passa
    * as 21 do lojista, a via admin passa as 21 variantes escopadas por `lojaId`.
    * Sem default — omitir uma chave aqui quebra o build em vez de cair na action
@@ -241,6 +271,15 @@ export type AcoesProdutosClient = {
    * categoria), e o payload carrega o `categoria_id` do grupo.
    */
   reordenarProdutos: typeof reordenarProdutosLojista;
+  /**
+   * [323] Frequência de exibição. OBRIGATÓRIAS (padrão issue 160): o hub admin
+   * passa as variantes `*Admin` com o `lojaId` da URL; omitir uma quebra o
+   * build em vez de gravar na loja do admin logado.
+   */
+  aplicarFrequenciaEmProdutos: typeof aplicarFrequenciaEmProdutosLojista;
+  salvarGradeDeDias: typeof salvarGradeDeDiasLojista;
+  alternarOcultaCategoria: typeof alternarOcultaCategoriaLojista;
+  definirFrequenciaCategoria: typeof definirFrequenciaCategoriaLojista;
 } & OpcionaisClientAcoes;
 
 type GrupoProdutos = {
@@ -248,6 +287,21 @@ type GrupoProdutos = {
   nome: string;
   produtos: Produto[];
 };
+
+/*
+  [323] Alcance do modo grade. Discriminado, e não `{ id, nome } | null`, pelo
+  mesmo motivo que `grupoReordenando` é um objeto: `id: null` é o grupo "Sem
+  categoria", não "nenhum grupo" — com duas ausências no mesmo valor, a grade de
+  "Sem categoria" viraria a grade de todo mundo.
+*/
+type EscopoGrade =
+  | { tipo: "todas" }
+  | { tipo: "grupo"; id: string | null; nome: string };
+
+/** Id do botão que abre a grade de um grupo, para devolver o foco na saída. */
+function idBotaoGrade(id: string | null): string {
+  return `abrir-grade-${id ?? "sem-categoria"}`;
+}
 
 /**
  * Agrupa produtos por categoria, na ordem das categorias; "Sem categoria" por
@@ -338,6 +392,7 @@ export function ProdutosClient({
   vinculosPorProduto,
   hrefCardapios,
   sumicos = {},
+  frequencias,
   acoes,
 }: ProdutosClientProps) {
   const router = useRouter();
@@ -476,6 +531,18 @@ export function ProdutosClient({
   // Para onde o foco volta ao sair do modo (ESC ou "Cancelar").
   const botaoSelecionarRef = useRef<HTMLButtonElement>(null);
 
+  /*
+    [323] O diálogo de frequência (produto, seleção ou categoria) — `null` =
+    fechado — e o MODO GRADE produto × dia, irmão de "Reordenar": troca de
+    BARRA, a listagem dá lugar à grade. `escopoGrade` null = fora do modo.
+  */
+  const [alvoFrequencia, setAlvoFrequencia] = useState<AlvoFrequencia | null>(null);
+  const [escopoGrade, setEscopoGrade] = useState<EscopoGrade | null>(null);
+  const botaoGradeRef = useRef<HTMLButtonElement>(null);
+  // Chave curta de cada abertura da variante SELEÇÃO (zera o rascunho e
+  // prefixa ids de DOM — juntar até 200 uuids ali seria um id gigante).
+  const aberturasDaSelecaoRef = useRef(0);
+
   /**
    * A seleção que vai ao servidor, DERIVADA da lista renderizada — nunca o
    * `Set` cru. Depois de um `router.refresh()` (lote aplicado, produto
@@ -513,11 +580,14 @@ export function ProdutosClient({
   useEffect(() => {
     if (!modoSelecao) return;
     function aoTeclar(e: KeyboardEvent) {
-      if (e.key === "Escape" && !loteUI.dialogoAberto) sairDoModoSelecao();
+      // [323] Nem por cima do diálogo de frequência: o ESC fecha só ele.
+      if (e.key === "Escape" && !loteUI.dialogoAberto && alvoFrequencia === null) {
+        sairDoModoSelecao();
+      }
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [modoSelecao, loteUI.dialogoAberto, sairDoModoSelecao]);
+  }, [modoSelecao, loteUI.dialogoAberto, alvoFrequencia, sairDoModoSelecao]);
 
   function alternarSelecao(id: string) {
     setSelecionados((atual) => {
@@ -616,6 +686,20 @@ export function ProdutosClient({
         ? []
         : (grupos.find((g) => g.id === grupoReordenando.id)?.produtos ?? []),
     [grupos, grupoReordenando],
+  );
+
+  /**
+   * [323] Grupos que a grade mostra. Escopar é só filtrar a MESMA lista da
+   * tela: `salvar_grade_de_dias` recebe `{ produto_id, dias_semana }[]` e não
+   * conhece categoria, então a categoria aqui não é autoridade de nada — só
+   * encurta a grade para o que o lojista quer mexer.
+   */
+  const gruposDaGrade = useMemo(
+    () =>
+      escopoGrade == null || escopoGrade.tipo === "todas"
+        ? grupos
+        : grupos.filter((g) => g.id === escopoGrade.id),
+    [grupos, escopoGrade],
   );
 
   /** Mesma ordem do modo de categorias: flush → desmonta → refresh. */
@@ -762,6 +846,158 @@ export function ProdutosClient({
     });
   }
 
+  /** [323] Kebab do produto → "Frequência de exibição" (1 id). */
+  function abrirFrequenciaDoProduto(p: Produto) {
+    setAlvoFrequencia({
+      chave: `produto-${p.id}`,
+      tipo: "produto",
+      descricao: p.nome,
+      nome: p.nome,
+      inicial: frequenciaDe(p),
+      nota: null,
+      categoria:
+        p.categoria_id == null
+          ? null
+          : (frequencias.categorias[p.categoria_id]?.frequencia ?? null),
+      rotuloSalvar: "Salvar",
+      mensagemSucesso: "Frequência salva.",
+      salvar: (frequencia) =>
+        acoes.aplicarFrequenciaEmProdutos({ produto_ids: [p.id], frequencia }),
+    });
+  }
+
+  /**
+   * [323] Barra de seleção → "Definir frequência…" (N ids). Frequências
+   * iguais abrem preenchidas; divergentes abrem permanentes, com a nota de
+   * que salvar SUBSTITUI a de todos (mockup §2.3).
+   */
+  function abrirFrequenciaDaSelecao() {
+    const ids = [...lista];
+    if (ids.length === 0) return;
+    const escolhidos = produtos.filter((p) => selecionados.has(p.id)).map(frequenciaDe);
+    const comum = frequenciaComum(escolhidos);
+    const n = ids.length;
+    const rotulo = `${n} ${n === 1 ? "produto" : "produtos"}`;
+    setAlvoFrequencia({
+      chave: `selecao-${++aberturasDaSelecaoRef.current}`,
+      tipo: "selecao",
+      descricao: `${rotulo} ${n === 1 ? "selecionado" : "selecionados"}`,
+      nome: "os produtos selecionados",
+      inicial: comum ?? FREQUENCIA_PERMANENTE,
+      nota:
+        comum === null
+          ? "Os produtos selecionados têm frequências diferentes. A que você salvar aqui substitui a de todos."
+          : null,
+      categoria: null,
+      rotuloSalvar: `Aplicar a ${rotulo}`,
+      mensagemSucesso: `Frequência aplicada a ${rotulo}.`,
+      salvar: (frequencia) =>
+        acoes.aplicarFrequenciaEmProdutos({ produto_ids: ids, frequencia }),
+    });
+  }
+
+  /** [323] "Frequência…" do Sheet de categorias. */
+  function abrirFrequenciaDaCategoria(categoria: Categoria) {
+    // O Sheet fecha antes: Sheet e Dialog não ficam empilhados, e o ESC não
+    // vaza de um para o outro (design-system §6).
+    setCategoriasAbertas(false);
+    setAlvoFrequencia({
+      chave: `categoria-${categoria.id}`,
+      tipo: "categoria",
+      descricao: `Categoria ${categoria.nome}`,
+      nome: categoria.nome,
+      inicial: frequencias.categorias[categoria.id]?.frequencia ?? FREQUENCIA_PERMANENTE,
+      nota: "Vale para todos os produtos desta categoria, junto com a frequência de cada um.",
+      categoria: null,
+      rotuloSalvar: "Salvar",
+      mensagemSucesso: "Frequência salva.",
+      salvar: (frequencia) =>
+        acoes.definirFrequenciaCategoria({ categoria_id: categoria.id, frequencia }),
+    });
+  }
+
+  function aoSalvarFrequencia() {
+    const eraSelecao = alvoFrequencia?.tipo === "selecao";
+    setAlvoFrequencia(null);
+    if (eraSelecao) sairDoModoSelecao();
+    router.refresh();
+  }
+
+  /**
+   * [323] Sai do modo grade e devolve o foco ao botão que o abriu — o do topo
+   * ou o do cabeçalho da categoria. O `getElementById` roda dentro do rAF
+   * porque o botão da categoria só existe depois que a listagem volta.
+   */
+  function sairDoModoGrade(salvou: boolean) {
+    const escopo = escopoGrade;
+    setEscopoGrade(null);
+    if (salvou) router.refresh();
+    requestAnimationFrame(() => {
+      const botao =
+        escopo?.tipo === "grupo"
+          ? document.getElementById(idBotaoGrade(escopo.id))
+          : botaoGradeRef.current;
+      botao?.focus();
+    });
+  }
+
+  /*
+    [323] Dias do produto direto na LINHA, com escrita otimista — a mesma
+    mecânica de `ItensDoCardapio` (276). Guardamos junto a `base`: o valor
+    salvo de onde o rascunho saiu. Quando o servidor devolve um `dias_semana`
+    diferente da `base` — porque a escrita voltou, ou porque o diálogo de
+    frequência gravou outra coisa — o rascunho é DESCARTADO. Sem isso, o
+    otimista ficaria por cima do valor fresco do SSR e a linha mostraria um
+    dia que não está mais no banco.
+  */
+  const [diasOtimistas, setDiasOtimistas] = useState<
+    Record<string, { base: number[] | null; pilulas: number[] }>
+  >({});
+  const [diasEmVoo, setDiasEmVoo] = useState<ReadonlySet<string>>(() => new Set());
+
+  function pilulasDoProduto(p: Produto): number[] {
+    const rascunho = diasOtimistas[p.id];
+    return rascunho != null && mesmosDias(rascunho.base, p.dias_semana)
+      ? rascunho.pilulas
+      : pilulasDosDias(p.dias_semana);
+  }
+
+  /**
+   * Grava SÓ `dias_semana` (`salvarGradeDeDias`): hora e período do produto
+   * sobrevivem a um clique de pílula. O grupo fica desabilitado em voo porque
+   * duas escritas concorrentes do array inteiro teriam como vencedor o último
+   * a CHEGAR, não o último CLICADO.
+   */
+  async function salvarDiasDoProduto(p: Produto, pilulas: number[]): Promise<void> {
+    setDiasOtimistas((atual) => ({
+      ...atual,
+      [p.id]: { base: p.dias_semana, pilulas },
+    }));
+    setDiasEmVoo((atual) => new Set(atual).add(p.id));
+    try {
+      const resultado = await acoes.salvarGradeDeDias({
+        itens: [{ produto_id: p.id, dias_semana: diasDasPilulas(pilulas) }],
+      });
+      if (!resultado.ok) {
+        setDiasOtimistas((atual) => {
+          const proximo = { ...atual };
+          delete proximo[p.id];
+          return proximo;
+        });
+        // A frase é a da action; nenhum detalhe de banco é redigido aqui.
+        toast.error(resultado.erro);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setDiasEmVoo((atual) => {
+        const proximo = new Set(atual);
+        proximo.delete(p.id);
+        return proximo;
+      });
+    }
+  }
+
   const formProduto = (
     <FormProduto
       // Recria o form ao alternar entre produtos / criar (global ou por
@@ -844,6 +1080,14 @@ export function ProdutosClient({
           <p className="text-sm text-muted-foreground">
             Marque os produtos que a ação deve atingir.
           </p>
+        ) : escopoGrade != null ? (
+          // [323] Mesma troca de BARRA: a barra do modo grade (Cancelar /
+          // Salvar tudo) mora na própria `GradeFrequencia`.
+          <p className="text-sm text-muted-foreground">
+            {escopoGrade.tipo === "grupo"
+              ? `Dias da semana em ${escopoGrade.nome}.`
+              : "Dias da semana de cada produto."}
+          </p>
         ) : (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
@@ -862,8 +1106,10 @@ export function ProdutosClient({
                 Reordenar categorias
               </Button>
             )}
-            {/* Só existe onde a ação em lote existe (ver a prop `lote`). */}
-            {lote != null && produtos.length > 0 && (
+            {/* [323] Existe sempre que há produto: a ação em lote de
+                frequência tem variante admin (`aplicarFrequenciaEmProdutosAdmin`),
+                então o gate não depende mais de `lote` (que era de cardápio). */}
+            {produtos.length > 0 && (
               <Button
                 ref={botaoSelecionarRef}
                 variant="outline"
@@ -873,6 +1119,16 @@ export function ProdutosClient({
                 Selecionar
               </Button>
             )}
+            {produtos.length > 0 && (
+              <Button
+                ref={botaoGradeRef}
+                variant="outline"
+                onClick={() => setEscopoGrade({ tipo: "todas" })}
+              >
+                <CalendarDays className="size-4" />
+                Dias da semana
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -880,6 +1136,16 @@ export function ProdutosClient({
       {/* A barra de ação do modo (design §10.1): `fixed` no rodapé do mobile,
           `sticky top` no desktop. Fica ACIMA da lista na árvore para que o
           `sticky` se ancore no topo do scroll da página. */}
+      {/* [323] A barra de FREQUÊNCIA é a do modo; a de cardápio (`lote`)
+          continua atrás da prop, que nenhuma página passa mais (S5). */}
+      {modoSelecao && lote == null && (
+        <BarraSelecaoFrequencia
+          selecionados={lista}
+          onDefinirFrequencia={abrirFrequenciaDaSelecao}
+          onLimpar={limparSelecao}
+          onCancelar={sairDoModoSelecao}
+        />
+      )}
       {modoSelecao && lote != null && (
         <BarraSelecaoLote
           selecionados={lista}
@@ -900,7 +1166,14 @@ export function ProdutosClient({
       {/* No modo reordenar a listagem normal dá lugar à lista de reordenação:
           é o que colapsa tudo e faz a tela ler de `categorias` (todas, sem o
           grupo sintético "Sem categoria", que não é ordenável). */}
-      {modoReordenar ? (
+      {escopoGrade != null ? (
+        <GradeFrequencia
+          grupos={gruposDaGrade}
+          frequencias={frequencias}
+          salvar={acoes.salvarGradeDeDias}
+          onSair={sairDoModoGrade}
+        />
+      ) : modoReordenar ? (
         <>
           <p className="mb-3 text-sm text-muted-foreground">
             Ordene as categorias. A ordem daqui é a do cardápio.
@@ -994,7 +1267,7 @@ export function ProdutosClient({
                           </Button>
                         </div>
                       )
-                    ) : grupo.id != null || grupo.produtos.length >= 2 ? (
+                    ) : grupo.id != null || grupo.produtos.length > 0 ? (
                       <div className="flex shrink-0 items-center">
                         {/* [293] Ponto de entrada do modo reordenar PRODUTOS —
                             no cabeçalho do grupo, porque a permutação é
@@ -1018,6 +1291,30 @@ export function ProdutosClient({
                           >
                             <ArrowUpDown className="size-4" />
                             <span className="hidden sm:inline">Reordenar</span>
+                          </Button>
+                        )}
+                        {/* [323] A grade produto × dia ESCOPADA a este grupo.
+                            Fica fora do `grupo.id != null` abaixo porque "Sem
+                            categoria" também tem dias por produto. Grupo vazio
+                            não ganha o botão: grade de zero produto é controle
+                            para operação impossível (mesma régua de
+                            "Selecionar os {n}"). */}
+                        {grupo.produtos.length > 0 && (
+                          <Button
+                            id={idBotaoGrade(grupo.id)}
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Dias da semana dos produtos de ${grupo.nome}`}
+                            onClick={() =>
+                              setEscopoGrade({
+                                tipo: "grupo",
+                                id: grupo.id,
+                                nome: grupo.nome,
+                              })
+                            }
+                          >
+                            <CalendarDays className="size-4" />
+                            <span className="hidden sm:inline">Dias</span>
                           </Button>
                         )}
                         {grupo.id != null && (
@@ -1052,6 +1349,45 @@ export function ProdutosClient({
                       </div>
                     ) : null}
                   </div>
+                  {/* [323] Faixa de ESTADO da categoria (mockup §1.2), só
+                      leitura: sem ela o lojista vê "Disponível" em todos os
+                      produtos de uma categoria oculta e não entende a vitrine
+                      vazia. A ação continua no Sheet "Categorias". */}
+                  {grupo.id != null &&
+                    (() => {
+                      const estado = frequencias.categorias[grupo.id];
+                      if (
+                        estado === undefined ||
+                        (!estado.oculta && estado.rotulo === null && estado.aviso === null)
+                      ) {
+                        return null;
+                      }
+                      const n = grupo.produtos.length;
+                      return (
+                        <div className="flex flex-col gap-1.5 border-b px-4 py-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {estado.oculta && (
+                              <Badge variant="outline" className="text-muted-foreground">
+                                <EyeOff aria-hidden className="size-3" />
+                                Oculta da vitrine
+                              </Badge>
+                            )}
+                            <ChipFrequencia rotulo={estado.rotulo} />
+                          </div>
+                          {estado.oculta && (
+                            <p className="text-xs text-muted-foreground">
+                              {n === 0
+                                ? "Esta categoria não aparece para o cliente."
+                                : n === 1
+                                  ? "O produto desta categoria não aparece para o cliente."
+                                  : `Os ${n} produtos desta categoria não aparecem para o cliente.`}{" "}
+                              Mostre a categoria em &ldquo;Categorias&rdquo; para voltar a vender.
+                            </p>
+                          )}
+                          <AvisoFrequencia aviso={estado.aviso} />
+                        </div>
+                      );
+                    })()}
                   <AccordionContent className="pt-0 pb-0">
                     <CardContent className="divide-y divide-foreground/10 p-0">
                       {/* Categoria vazia diz que está vazia, em vez de sumir
@@ -1292,6 +1628,23 @@ export function ProdutosClient({
                                 ))}
                               </ul>
                             )}
+                            {/* [323] Chip de frequência (texto do servidor,
+                                `rotuloFrequencia`) e aviso RN-1/RN-7. O
+                                permanente não ganha chip. Aviso âmbar SEM
+                                `role="alert"`: é estático desde o primeiro
+                                paint, e o leitor anunciaria a lista inteira
+                                ao carregar (mockup §1.1). */}
+                            {!modoSelecao && frequencias.produtos[p.id]?.rotulo != null && (
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <ChipFrequencia rotulo={frequencias.produtos[p.id]?.rotulo} />
+                              </div>
+                            )}
+                            {!modoSelecao && (
+                              <AvisoFrequencia
+                                aviso={frequencias.produtos[p.id]?.aviso}
+                                className="mt-1"
+                              />
+                            )}
                             {/* [264/RN-12] O aviso REDUZIDO: com D14 este
                                 produto sumiu da vitrine e o painel é o único
                                 lugar onde isso é observável. Âmbar, nunca
@@ -1314,6 +1667,36 @@ export function ProdutosClient({
                               </p>
                             )}
                           </div>
+
+                          {/* [323] As 7 pílulas: marcar dia é a edição mais
+                              frequente da frequência, e abrir o diálogo (ou o
+                              modo grade) para um clique era o caminho longo.
+
+                              Filha DIRETA da linha, com `basis-full`, e não da
+                              coluna de texto, que em 360px deixa só ~240px.
+
+                              E NÃO `compacto`: as 7 numa linha só pedem ~304px
+                              (7×40 + 6 gaps) e a linha do produto no admin tem
+                              ~262px. `grid-cols-7` deixa a COLUNA encolher, mas
+                              `min-w-[40px]` não deixa o BOTÃO encolher junto —
+                              o resultado era pílula por cima de pílula. O modo
+                              normal resolve com 4+3 no mobile e 7 em linha a
+                              partir de `sm`, sem furar o alvo de 44px e com
+                              "Dom/Seg/Ter" em vez de "D S T Q Q S S", onde os
+                              dois S e os dois Q não se distinguem.
+
+                              Produto permanente nasce com as 7 marcadas —
+                              `null` e `[]` continuam distintos no banco. */}
+                          {!modoSelecao && (
+                            <div className="w-full basis-full">
+                              <PilulasDeDias
+                                valor={pilulasDoProduto(p)}
+                                onChange={(novas) => void salvarDiasDoProduto(p, novas)}
+                                rotulo={`Dias de ${p.nome}`}
+                                desabilitado={diasEmVoo.has(p.id)}
+                              />
+                            </div>
+                          )}
 
                           {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
                               52.8px na base de 120% do projeto (globals.css). */}
@@ -1400,6 +1783,17 @@ export function ProdutosClient({
                                         />
                                         Editar nome e preço
                                       </MenuItem>
+                                      {/* [323] Abre o `DialogoFrequencia` com
+                                          1 id. O chip da linha NÃO vira botão:
+                                          o kebab é o lugar das ações (290). */}
+                                      <MenuItem
+                                        className="min-h-[44px]"
+                                        aria-label={`Frequência de exibição de ${p.nome}`}
+                                        onClick={() => abrirFrequenciaDoProduto(p)}
+                                      >
+                                        <Clock aria-hidden className="size-4" />
+                                        Frequência de exibição
+                                      </MenuItem>
                                       {/* [264/§13.4 item 5] O MESMO par de saídas
                                           do aviso de `/painel/cardapios`, aqui no
                                           kebab. Nenhuma das duas roda sozinha, e
@@ -1467,6 +1861,19 @@ export function ProdutosClient({
         onAtualizar={acoes.atualizarCategoria}
         onRemover={acoes.removerCategoria}
         onAlternarExibirImagens={acoes.alternarExibirImagens}
+        onAlternarOculta={acoes.alternarOcultaCategoria}
+        onAbrirFrequencia={abrirFrequenciaDaCategoria}
+        frequencias={frequencias.categorias}
+      />
+
+      {/* [323] UM diálogo para produto, seleção e categoria. */}
+      <DialogoFrequencia
+        alvo={alvoFrequencia}
+        onFechar={() => setAlvoFrequencia(null)}
+        onSalvo={aoSalvarFrequencia}
+        fusoRotulo={fusoLojaRotulo}
+        agora={frequencias.agora}
+        timezone={frequencias.timezone}
       />
 
       {/* Criar/editar: Dialog centralizado no desktop (aproveita a largura da

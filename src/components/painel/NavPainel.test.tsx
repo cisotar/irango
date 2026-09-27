@@ -150,53 +150,46 @@ describe("NavPainel — default (lojista, sem contexto)", () => {
 });
 
 /**
- * `rotasAusentes` — o item existe no menu do lojista e é OMITIDO sob uma base
- * que não tem a rota. Sem isso, "Cardápios" apareceria no hub admin apontando
- * para `/admin/assinantes/[lojaId]/cardapios`, que não tem `page.tsx`: link
- * nascido 404, o mesmo defeito de `/painel/configuracoes` (issue 194/F3).
+ * [323] "Cardápios" SAIU do menu nos DOIS mundos (o cardápio sazonal virou
+ * função morta). As rotas `/painel/cardapios` e `/admin/.../cardapios`
+ * continuam existindo — só deixam de ter entrada no menu.
+ *
+ * `rotasAusentes` continua valendo para o que ainda é omitido por base (o hub
+ * admin omite `configuracoes/promocoes`).
  */
-describe("NavPainel — rotasAusentes", () => {
-  it("o lojista vê Cardápios no menu", () => {
+describe("NavPainel — Cardápios fora do menu (323) e rotasAusentes", () => {
+  it("o lojista NÃO vê Cardápios no menu", () => {
     const html = render("/painel");
-    expect(links(html).map((l) => l.href)).toContain("/painel/cardapios");
-    expect(html).toContain("Cardápios");
+    expect(links(html).map((l) => l.href)).not.toContain("/painel/cardapios");
+    expect(html).not.toContain(">Cardápios<");
   });
 
-  it("acende Cardápios na própria rota e em sub-rota /painel/cardapios/[id]", () => {
-    const naRaiz = links(render("/painel/cardapios")).find(
-      (l) => l.href === "/painel/cardapios",
+  it("o hub admin também não, mesmo sem `rotasAusentes`", () => {
+    const hrefs = links(render("/admin/assinantes/L1", { basePath: "/admin/assinantes/L1" })).map(
+      (l) => l.href,
     );
-    expect(naRaiz?.ativo).toBe(true);
-
-    const emSub = links(render("/painel/cardapios/abc-123")).find(
-      (l) => l.href === "/painel/cardapios",
-    );
-    expect(emSub?.ativo).toBe(true);
-  });
-
-  it("some sob a base admin, que não tem a rota", () => {
-    const ctx: ContextoNav = {
-      basePath: "/admin/assinantes/L1",
-      rotasAusentes: ["cardapios"],
-    };
-    const hrefs = links(render("/admin/assinantes/L1", ctx)).map((l) => l.href);
-
     expect(hrefs).not.toContain("/admin/assinantes/L1/cardapios");
-    // E some SÓ ele: o resto do menu continua inteiro.
+    // E o resto do menu continua inteiro.
     expect(hrefs).toContain("/admin/assinantes/L1/pedidos");
     expect(hrefs).toContain("/admin/assinantes/L1/produtos");
     expect(hrefs).toContain("/admin/assinantes/L1/cupons");
   });
 
-  it("vale também no mobile (Sheet), que lê a MESMA ListaNav", () => {
+  it("nem no mobile (Sheet), que lê a MESMA ListaNav", () => {
+    expect(renderMobile("/painel")).not.toContain("/painel/cardapios");
+    expect(
+      renderMobile("/admin/assinantes/L1", { basePath: "/admin/assinantes/L1" }),
+    ).not.toContain("/admin/assinantes/L1/cardapios");
+  });
+
+  it("`rotasAusentes` ainda omite o item pedido, e só ele", () => {
     const ctx: ContextoNav = {
       basePath: "/admin/assinantes/L1",
-      rotasAusentes: ["cardapios"],
+      rotasAusentes: ["cupons"],
     };
-    expect(renderMobile("/admin/assinantes/L1", ctx)).not.toContain(
-      "/admin/assinantes/L1/cardapios",
-    );
-    expect(renderMobile("/painel")).toContain("/painel/cardapios");
+    const hrefs = links(render("/admin/assinantes/L1", ctx)).map((l) => l.href);
+    expect(hrefs).not.toContain("/admin/assinantes/L1/cupons");
+    expect(hrefs).toContain("/admin/assinantes/L1/pedidos");
   });
 });
 

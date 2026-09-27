@@ -309,7 +309,7 @@ describe("FormProduto — 'Está em:' com os dias do vínculo (278)", () => {
   });
 
   it("sem dias, nada é anexado — nunca '(todos os dias)'", () => {
-    const html = renderForm({ id: "p1", nome: "Feijoada", visibilidade: "menu" }, [
+    const html = renderForm({ id: "p1", nome: "Feijoada", visibilidade: "cardapio" }, [
       { id: "c1", nome: "Especiais do Dia", rotuloDias: null },
     ]);
     expect(html).toContain("Está em: Especiais do Dia.");

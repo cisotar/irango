@@ -181,7 +181,7 @@ export function ehMensagemDeVigencia(mensagem: string): boolean {
 }
 
 /** `"HH:MM"` — o value nativo de `<input type="time">`. */
-const horaDoDia = z
+export const horaDoDia = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Horário inválido");
 

@@ -8,26 +8,25 @@ import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { Tables } from "@/lib/database.types";
 import { precoEfetivo, type ProdutoComDesconto } from "./precoEfetivo";
 import {
-  avaliarVigenciaDoProduto,
-  cardapioAberto,
   itemAberto,
-  visibilidadeDe,
   type CardapioVigencia,
   type VinculoVigencia,
 } from "./vigenciaCardapio";
 import {
-  escolherVinculoParaRotulo,
-  proximaAbertura,
-  rotuloVoltaQuando,
-  ROTULO_SEM_VOLTA,
-} from "./descreverVigencia";
+  avaliarFrequenciaNaLoja,
+  categoriaVisivel,
+  type AvaliacaoFrequencia,
+  type CategoriaFrequencia,
+  type Frequencia,
+} from "./frequencia";
+import { rotuloForaDaFrequencia } from "./descreverVigencia";
 
 /**
  * Entrada da projeção. A spec escreveu `produto: Produto`, mas depois da issue
  * 265 a vitrine NÃO lê mais a tabela `produtos`: lê a view
- * `public.vitrine_produtos` e recebe `ProdutoPublico` (14 colunas). Exigir a row
- * inteira faria `projetarProdutoVitrine` recusar justamente o seu único caller
- * de vitrine. O tipo é ESTRUTURAL e mínimo: o que a projeção realmente lê —
+ * `public.vitrine_produtos` e recebe `ProdutoPublico`. Exigir a row inteira
+ * faria `projetarProdutoVitrine` recusar justamente o seu único caller de
+ * vitrine. O tipo é ESTRUTURAL e mínimo: o que a projeção realmente lê —
  * satisfeito por `ProdutoPublico` (view) e por `Produto` (tabela, recálculo).
  */
 export type ProdutoParaVitrine = ProdutoComDesconto &
@@ -63,48 +62,41 @@ export type ProdutoVitrine = {
   motivoNaoCompravel: MotivoNaoCompravel | null;
 };
 
-/** v1 tinha um membro só. O Spec B (247) ACRESCENTA; não remove nem renomeia. */
+/**
+ * v1 tinha um membro só. O Spec B (247) ACRESCENTA; não remove nem renomeia.
+ * [323/D8] A frequência REUSA `fora_da_janela`: categoria oculta e período
+ * encerrado nunca chegam aqui (o produto é omitido antes).
+ */
 export type MotivoNaoCompravel = "esgotado" | "fora_da_janela";
 
 /**
- * Projeção do catálogo. PURA; `agora` injetado (determinismo no teste, e
+ * Projeção de UM produto. PURA; `agora` injetado (determinismo no teste, e
  * vigência avaliada por request — nenhuma leitura de relógio aqui).
  *
  * Campo a campo, NUNCA por spread da row: as cinco colunas cruas de desconto
- * (e `loja_id`/`ordem`/`disponivel`/`oculto`) não trafegam ao cliente — o que a
- * UI não precisa, o payload RSC não carrega (regra 6 do contrato, precedente da
- * issue 201 com `foto_url`).
+ * (e `loja_id`/`ordem`/`disponivel`/`oculto`, e as cinco de frequência) não
+ * trafegam ao cliente — o que a UI não precisa, o payload RSC não carrega
+ * (regra 6 do contrato, precedente da issue 201 com `foto_url`).
  *
  * Preço, selo e vigência saem TODOS de `precoEfetivo` (issue 223): é a única
- * fórmula de "desconto vira preço" no projeto, e duplicá-la aqui seria criar a
- * segunda verdade que a vitrine e o recálculo do pedido passariam a divergir.
+ * fórmula de "desconto vira preço" no projeto.
  *
- * `compravel === disponivel` em v1 (D13/RN-19); `motivoNaoCompravel` é o ponto
- * de extensão do Spec B. Esgotado e promoção são ORTOGONAIS: produto sem
- * estoque continua mostrando o preço promocional.
+ * [323] `compravel = disponivel && avaliacao.disponivel`. A decisão de janela
+ * chega PRONTA em `avaliacao` (`avaliarFrequenciaNaLoja`, a mesma função de
+ * `criarPedido`): nenhuma aritmética de fuso, dia ou período é feita aqui.
  */
-// 247 — `compravel` compõe `disponivel` com a vigência do cardápio. A decisão
-// de janela vem TODA de `avaliarVigenciaDoProduto` (246): nenhuma aritmética de
-// fuso, de dia da semana ou de prazo é reescrita aqui.
 export function projetarProdutoVitrine(
-  produto: ProdutoParaVitrine & { visibilidade: string },
-  vinculos: VinculoVigencia[],
+  produto: ProdutoParaVitrine,
+  avaliacao: AvaliacaoFrequencia,
   agora: Date,
-  timezone: string,
   /**
    * [248/RN-06] `categoria_id → exibir_imagens`. Categoria com `false` ⇒ a
    * `foto_url` sai `null` DAQUI — a decisão vira PROPRIEDADE DO PRODUTO, não
-   * do grupo que o renderiza.
+   * do grupo que o renderiza: o produto viaja com UM `foto_url` para onde for
+   * (categoria, promocionais, modal sazonal), e nenhuma seção nova pode
+   * escapar — a regressão da 201 fica impossível, em vez de corrigida.
    *
-   * Era decidida por grupo em `page.tsx` (issue 201). Com D16-a o mesmo produto
-   * passa a aparecer TAMBÉM na seção de destaque, que não é de categoria
-   * nenhuma: a cópia de lá carregaria a URL da foto que o lojista mandou
-   * esconder, regredindo a 201. Movendo o zeramento para cá, o produto viaja
-   * com UM `foto_url` para onde for, e nenhuma seção nova pode escapar — a
-   * regressão fica impossível, em vez de corrigida.
-   *
-   * Ausente (default) ⇒ nada é zerado: o recálculo e os testes que não conhecem
-   * categoria continuam vendo exatamente o objeto de antes.
+   * Ausente (default) ⇒ nada é zerado.
    */
   exibirImagensPorCategoria?: ReadonlyMap<string, boolean>,
 ): ProdutoVitrine {
@@ -114,13 +106,7 @@ export function projetarProdutoVitrine(
     produto.categoria_id !== null &&
     exibirImagensPorCategoria?.get(produto.categoria_id) === false;
   const preco = precoEfetivo(produto, agora);
-  const vigencia = avaliarVigenciaDoProduto(
-    { visibilidade: visibilidadeDe(produto) },
-    vinculos,
-    agora,
-    timezone,
-  );
-  const compravel = produto.disponivel && vigencia.dentroDaJanela;
+  const compravel = produto.disponivel && avaliacao.disponivel;
 
   return {
     id: produto.id,
@@ -137,124 +123,94 @@ export function projetarProdutoVitrine(
     seloDesconto: preco.seloDesconto,
     // Sem desconto vigente não existe contagem regressiva a exibir. Amarrar o
     // prazo à vigência mantém o objeto IDÊNTICO vindo da view `vitrine_produtos`
-    // (que mascara as colunas fora da janela, 265) e da tabela crua (que não) —
-    // sem isso, vitrine e recálculo divergiriam em silêncio num campo só.
+    // (que mascara as colunas fora da janela, 265) e da tabela crua (que não).
     descontoFim: preco.temDesconto ? produto.desconto_fim : null,
 
     compravel,
-    // PRECEDÊNCIA de RN-05: a janela ganha de "esgotado". Numa terça a feijoada
-    // do cardápio de fim de semana não acabou — ela não é servida hoje, e só a
-    // restrição de janela sabe dizer quando volta (D4).
+    // PRECEDÊNCIA (RN-05 do cardápio, mantida na 323): a janela ganha de
+    // "esgotado". Num sábado a feijoada de seg a sex não acabou — ela não é
+    // servida hoje, e só a frequência sabe dizer quando volta.
     motivoNaoCompravel: compravel
       ? null
-      : !vigencia.dentroDaJanela
+      : !avaliacao.disponivel
         ? "fora_da_janela"
         : "esgotado",
   };
 }
 
 /**
- * Ponto de entrada por CATÁLOGO (247). Dono das três saídas correlacionadas,
- * para que não exista caminho que produza o produto marcado sem o rótulo dele.
+ * Ponto de entrada por CATÁLOGO (247 → 323). Dono das três saídas
+ * correlacionadas, para que não exista caminho que produza o produto marcado
+ * sem o rótulo dele, nem a categoria escondida com os produtos dela à mostra.
  *
- * RN-13/D14: o produto sem `visivelNaVitrine` NÃO entra na lista devolvida —
- * some antes de qualquer agrupamento, do mesmo jeito que `oculto` nunca entra.
- * É o que faz a regra do grupo vazio (issue 177, dentro de `agruparCatalogo`)
- * cobrir a categoria esvaziada pela temporada sem uma linha de código nova, e o
- * que garante que o produto fora de temporada nunca chega ao payload RSC.
+ * Por produto, `avaliarFrequenciaNaLoja` (produto ∩ categoria, RN-1):
+ *  - `categoria_oculta` ou `encerrado` ⇒ OMITIDO (RN-2/RN-7), antes de
+ *    qualquer agrupamento, do mesmo jeito que `oculto` nunca entra. Categoria
+ *    ausente de `categorias` é tratada como oculta (fail-closed, D5): sem isso
+ *    o produto cairia no grupo "Outros" de `agruparCatalogo`;
+ *  - `fora_da_frequencia` ⇒ marcado `fora_da_janela`, com a frase do eixo que
+ *    falha em `rotulosVigencia` (inclusive `dias_semana = []`, RN-8, e período
+ *    que ainda não começou);
+ *  - dentro ⇒ comprável se `disponivel`.
  *
- * Genérica em `C extends CardapioVigencia` (D4): `ordem` — que é de
- * apresentação e a 248 consome — sobrevive à projeção sem que o módulo de
- * vigência precise conhecê-la.
+ * `categoriasVisiveis` = as categorias que a vitrine pode exibir
+ * (`categoriaVisivel`: nem oculta nem encerrada) — a MESMA regra que omitiu os
+ * produtos. É ela que vai para `agruparCatalogo`.
+ *
+ * Genérica em `C` para que `ordem`, `nome` e `exibir_imagens` sobrevivam à
+ * projeção sem que o módulo de frequência precise conhecê-los.
  */
-export function projetarCatalogoVitrine<C extends CardapioVigencia>(entrada: {
-  produtos: (ProdutoParaVitrine & { visibilidade: string })[];
-  vinculosPorProduto: Map<string, VinculoVigencia<C>[]>;
+export function projetarCatalogoVitrine<
+  C extends { id: string } & CategoriaFrequencia,
+>(entrada: {
+  produtos: readonly (ProdutoParaVitrine & Frequencia)[];
+  categorias: readonly C[];
   agora: Date;
   timezone: string;
-  /**
-   * [248/RN-06] `categoria_id → exibir_imagens`, repassado a cada produto.
-   * Opcional para não quebrar caller nenhum; sem ele nada é zerado.
-   */
+  /** [248/RN-06] `categoria_id → exibir_imagens`, repassado a cada produto. */
   exibirImagensPorCategoria?: ReadonlyMap<string, boolean>;
 }): {
   produtos: ProdutoVitrine[];
   rotulosVigencia: Record<string, string>;
-  cardapiosAbertos: C[];
+  categoriasVisiveis: C[];
 } {
-  const {
-    produtos: entradaProdutos,
-    vinculosPorProduto,
-    agora,
-    timezone,
-    exibirImagensPorCategoria,
-  } = entrada;
+  const { produtos: entradaProdutos, categorias, agora, timezone, exibirImagensPorCategoria } =
+    entrada;
+
+  const categoriasPorId = new Map<string, C>(categorias.map((c) => [c.id, c]));
 
   const produtos: ProdutoVitrine[] = [];
   const rotulosVigencia: Record<string, string> = {};
 
-  // 254/RN-07 — "quando volta" é calculado UMA VEZ POR CARDÁPIO por request,
-  // nunca por produto: a varredura adiante do recorrente é cara e uma loja tem
-  // poucos cardápios, enquanto o mesmo cardápio serve dezenas de produtos.
-  const aberturaPorCardapio = new Map<string, Date | null>();
-  const proxima = (cardapio: C): Date | null => {
-    const memoizado = aberturaPorCardapio.get(cardapio.id);
-    if (memoizado !== undefined) return memoizado;
-    const valor = proximaAbertura(cardapio, agora, timezone);
-    aberturaPorCardapio.set(cardapio.id, valor);
-    return valor;
-  };
-
   for (const produto of entradaProdutos) {
-    const vinculos = vinculosPorProduto.get(produto.id) ?? [];
-    const vigencia = avaliarVigenciaDoProduto(
-      { visibilidade: visibilidadeDe(produto) },
-      vinculos,
-      agora,
-      timezone,
-    );
-    if (!vigencia.visivelNaVitrine) continue;
+    const avaliacao = avaliarFrequenciaNaLoja(produto, categoriasPorId, agora, timezone);
+    if (!avaliacao.disponivel && avaliacao.motivo !== "fora_da_frequencia") continue;
 
     const projetado = projetarProdutoVitrine(
       produto,
-      vinculos,
+      avaliacao,
       agora,
-      timezone,
       exibirImagensPorCategoria,
     );
     produtos.push(projetado);
     // O par produto-marcado/rótulo é indivisível: nasce no MESMO passo.
     if (projetado.motivoNaoCompravel === "fora_da_janela") {
-      // 254/RN-07 — de N cardápios fechados, a frase é a do que ABRE MAIS
-      // CEDO, por escada determinística (`proximaAbertura` → `nome` → `id`). A
-      // UI nunca escolhe, e o texto desce pronto do servidor. Sem volta
-      // conhecida, o fallback defensivo de render (design §4.1): por RN-13 o
-      // produto de cardápio nesse estado nem chega aqui.
-      // [273/R2] A escada continua sendo `proximaAbertura` DO CARDÁPIO: com um
-      // cardápio aberto hoje (item só na quarta) e outro fechado que abre
-      // amanhã, ganha o aberto e a frase é a do item. Verdadeira, não ótima —
-      // e manter a escada idêntica à ordem das seções de destaque é o que
-      // evita "a frase mudou sozinha".
-      const dono = escolherVinculoParaRotulo(vinculos, proxima);
-      rotulosVigencia[projetado.id] = dono
-        ? rotuloVoltaQuando(dono, agora, timezone)
-        : ROTULO_SEM_VOLTA;
+      const categoria =
+        produto.categoria_id === null
+          ? null
+          : (categoriasPorId.get(produto.categoria_id) ?? null);
+      rotulosVigencia[projetado.id] = rotuloForaDaFrequencia(
+        produto,
+        categoria,
+        agora,
+        timezone,
+      );
     }
   }
 
-  // Os cardápios abertos AGORA, deduplicados por id (um cardápio aparece uma vez
-  // por produto vinculado). Consumido pela 248, que NÃO reavalia a janela.
-  const vistos = new Set<string>();
-  const cardapiosAbertos: C[] = [];
-  for (const lista of vinculosPorProduto.values()) {
-    for (const { cardapio } of lista) {
-      if (vistos.has(cardapio.id)) continue;
-      vistos.add(cardapio.id);
-      if (cardapioAberto(cardapio, agora, timezone)) cardapiosAbertos.push(cardapio);
-    }
-  }
+  const categoriasVisiveis = categorias.filter((c) => categoriaVisivel(c, agora, timezone));
 
-  return { produtos, rotulosVigencia, cardapiosAbertos };
+  return { produtos, rotulosVigencia, categoriasVisiveis };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -275,6 +231,13 @@ export type SecaoVitrine = CategoriaComProdutos & {
 };
 
 /**
+ * [323/S5] FUNÇÃO MORTA: a vitrine não tem mais seção de cardápio (a frequência
+ * de exibição substituiu o cardápio sazonal) e nenhuma página a chama. Fica,
+ * com os testes dela, porque o cardápio vira função morta sem ser apagado
+ * (`specs/frequencia-exibicao.md`, Fora do escopo). Quem a chamar de novo monta
+ * `cardapiosAbertos` com `cardapioAberto` — a projeção do catálogo não os
+ * devolve mais.
+ *
  * [248/D16/RN-15] As seções de DESTAQUE: uma por cardápio ABERTO agora, com os
  * produtos vinculados a ele.
  *
@@ -466,6 +429,10 @@ function enriquecerParaModal(
  *
  * `categoriasSelecionadas`/`cardapiosSelecionados` são ids; uma `Set` os torna
  * a busca O(1). Seleção vazia dos dois eixos ⇒ lista vazia (o modal vira `null`).
+ *
+ * [323/S6] A vitrine não tem mais seção de cardápio: a página passa
+ * `secoesDestaque = []`, e o eixo `cardapios` da seleção não contribui produto
+ * (as junções continuam no banco). A assinatura fica para não mexer no contrato.
  */
 export function derivarProdutosDoModalSazonal(
   categoriasComProdutos: readonly CategoriaComProdutos[],

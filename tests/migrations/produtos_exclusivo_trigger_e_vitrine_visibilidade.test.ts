@@ -719,13 +719,16 @@ describe("245 · trigger do produto exclusivo (RN-14) + predicado de vitrine_pro
 
   // ══════════════════════════════════ contrato de colunas e reloptions da view
 
-  it("[n] a view expõe 15 colunas: as 14 da 124000 na MESMA ordem + visibilidade no fim", async () => {
+  it("[n] as 15 primeiras colunas da view são as 14 da 124000 na MESMA ordem + visibilidade", async () => {
+    // 320: a view passa a ter 20 colunas (frequência no fim). O que esta issue
+    // protege é o PREFIXO intacto — o contrato completo de 20 colunas mora em
+    // `vitrine_produtos.test.ts` [5a] e `frequencia_schema_e_view.test.ts` [v5].
     const r = await t.db.query<{ column_name: string }>(
       `select column_name from information_schema.columns
         where table_schema = 'public' and table_name = 'vitrine_produtos'
         order by ordinal_position`,
     );
-    expect(r.rows.map((x) => x.column_name)).toEqual([...COLUNAS_VITRINE_15]);
+    expect(r.rows.map((x) => x.column_name).slice(0, 15)).toEqual([...COLUNAS_VITRINE_15]);
   });
 
   it("[n2] anon lê a 15ª coluna e ela traz o valor real do produto", async () => {

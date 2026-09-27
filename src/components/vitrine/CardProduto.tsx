@@ -119,12 +119,22 @@ export function CardProduto({
               aria-hidden
               className="absolute inset-0 bg-black/35 [backdrop-filter:grayscale(1)]"
             />
-            {/* MESMA pílula de 225 — só o texto muda (D4). `max-w`/`truncate`
-                entram porque a frase de vigência é longa: sem eles ela
-                estouraria os 168px do card e cobriria o prato. O corte é
-                visual; a frase inteira está no `aria-label` do "+" e no modal,
-                que este card abre. */}
-            <span className="absolute bottom-[10px] left-1/2 z-[2] max-w-[calc(100%-16px)] -translate-x-1/2 truncate whitespace-nowrap rounded-full bg-[#111111] px-[18px] py-2 text-sm font-extrabold uppercase tracking-wide text-white shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+            {/* MESMA pílula de 225 — só o texto muda (D4). `max-w` segura a
+                frase dentro dos ~151px do card em 360px. [323/mockup §6.1] Na
+                frequência a frase É a resposta ("Só seg a sex", "Das 18:00 às
+                23:00"), então em `fora_da_janela` ela quebra em até 2 linhas
+                (`text-xs`, 18,9:1) em vez de ser cortada — `w-max` porque, com
+                `left-1/2`, a largura disponível do `absolute` seria só metade do
+                card e a frase quebraria cedo. "Esgotado" continua
+                numa linha só. A frase inteira segue no `aria-label` do "+" e
+                no modal, que este card abre. */}
+            <span
+              className={`absolute bottom-[10px] left-1/2 z-[2] max-w-[calc(100%-16px)] -translate-x-1/2 rounded-full bg-[#111111] px-[18px] py-2 font-extrabold uppercase tracking-wide text-white shadow-[0_2px_10px_rgba(0,0,0,0.35)] ${
+                motivoNaoCompravel === "fora_da_janela"
+                  ? "line-clamp-2 w-max whitespace-normal text-center text-xs leading-tight"
+                  : "truncate whitespace-nowrap text-sm"
+              }`}
+            >
               {rotulo}
             </span>
           </>

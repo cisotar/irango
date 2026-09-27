@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frequência de exibição — vitrine</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          // TEMA DA LOJA (lojas.tema). Aqui com os defaults de globals.css.
+          // Troque os 3 valores para simular outra loja.
+          primaria: "#332616",
+          fundo: "#f5f0e6",
+          destaque: "#2d3a27",
+          // Sistema (fixo, independente do tema da loja)
+          "marrom-cafe": "#2e2610",
+          texto: "#3e2723",
+          "texto-muted": "#6b5d4f",
+          "borda-nav": "#dccbb0",
+          "cinza-medio": "#eeeeee",
+          "cinza-claro": "#f9f9f9",
+          "indisponivel-fundo": "#111111",
+          "indisponivel-texto": "#ffffff",
+        },
+      },
+    },
+  };
+</script>
+<style>
+  /* globals.css: base rem = 19.2px. Alvo de toque sempre em valor LITERAL. */
+  html { font-size: 120%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+  :root { --cor-primaria: #332616; --cor-fundo: #f5f0e6; --cor-destaque: #2d3a27; --marrom-cafe: #2e2610; }
+  .tela { width: 360px; flex: none; border: 1px solid #8a8a8a; border-radius: 18px; overflow: hidden;
+          background: var(--cor-fundo); position: relative; }
+  .foto-a { background: linear-gradient(135deg,#6b3f1d,#2b1a0e); }
+  .foto-b { background: linear-gradient(135deg,#d9a55b,#8a5a1f); }
+  .foto-c { background: linear-gradient(135deg,#a3c47c,#4d7a2c); }
+  .foto-d { background: linear-gradient(135deg,#e8c7a0,#8a5a2b); }
+  .nota { font-size: .62rem; color: #7c2d12; background: #fff7ed; border: 1px dashed #fdba74;
+          border-radius: 8px; padding: 6px 8px; line-height: 1.45; }
+  .ausente { font-size: .62rem; color: #6b5d4f; border: 1.5px dashed #dccbb0; border-radius: 10px;
+             padding: 8px 10px; line-height: 1.45; background: repeating-linear-gradient(45deg,transparent 0 6px,rgba(0,0,0,.025) 6px 12px); }
+</style>
+</head>
+<body class="bg-[#e8e2d6] p-4 pb-16 text-texto">
+<div class="mx-auto max-w-[1180px]">
+  <h1 class="text-lg font-bold">Frequência de exibição · vitrine <span class="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-[.6rem] font-bold uppercase tracking-wide text-blue-900">issue 323</span></h1>
+  <p class="mb-4 max-w-[72ch] text-xs leading-relaxed text-[#5b5b5b]">
+    Visita num <b>sábado às 12:00</b> (fuso da loja). Não nasce componente nem motivo novo: o produto fora da frequência chega
+    como <code>fora_da_janela</code>, e <code>CardProduto</code>/<code>ItemProdutoLista</code>/<code>ProdutoModal</code> fazem
+    o que já fazem. Só o texto da pílula muda (<code>rotuloForaDaFrequencia</code>, teto de 32 caracteres).
+  </p>
+
+  <div class="flex flex-wrap items-start gap-6">
+
+    <!-- ================= FRAME 1: catálogo ================= -->
+    <div>
+      <p class="mb-1.5 text-[.68rem] text-[#5b5b5b]">360px · catálogo (pílula com a proposta 6.1: até 2 linhas)</p>
+      <div class="tela">
+        <!-- HeaderLoja: banda na cor primária da loja, texto branco fixo -->
+        <header class="bg-primaria px-4 py-3 text-white">
+          <div class="flex items-center gap-3">
+            <div class="grid size-10 place-items-center rounded-full bg-white/15 text-sm font-black">CB</div>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-base font-bold leading-tight">Cantina do Bairro</p>
+              <span class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[.62rem] font-bold text-green-800">● Aberto agora</span>
+            </div>
+          </div>
+        </header>
+
+        <main class="px-4 pb-24 pt-4">
+          <!-- Seção: categoria FORA da frequência (seg a sex). RN-2: aparece, todos os itens indisponíveis. -->
+          <div class="mb-3 flex items-center gap-3">
+            <span class="h-0.5 flex-1 bg-[linear-gradient(90deg,transparent,var(--marrom-cafe),transparent)]"></span>
+            <h2 class="whitespace-nowrap text-sm font-bold uppercase tracking-widest text-marrom-cafe">Almoço executivo</h2>
+            <span class="h-0.5 flex-1 bg-[linear-gradient(90deg,transparent,var(--marrom-cafe),transparent)]"></span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <article class="relative flex flex-col overflow-hidden rounded-xl border border-[#eeeeee] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+              <div class="relative aspect-[4/3] w-full foto-a">
+                <span aria-hidden class="absolute inset-0 bg-black/35 [backdrop-filter:grayscale(1)]"></span>
+                <!-- PROPOSTA 6.1: line-clamp-2, text-xs, whitespace-normal, text-center -->
+                <span class="absolute bottom-[8px] left-1/2 z-[2] line-clamp-2 w-max max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl bg-indisponivel-fundo px-3 py-1.5 text-center text-xs font-extrabold uppercase leading-tight tracking-wide text-indisponivel-texto shadow-[0_2px_10px_rgba(0,0,0,0.35)]">Só seg a sex</span>
+              </div>
+              <div class="flex flex-1 flex-col gap-2 p-3 opacity-60">
+                <h3 class="line-clamp-2 text-sm font-bold leading-tight text-[#111111]">Feijoada completa</h3>
+                <div class="mt-auto flex items-end justify-between gap-2">
+                  <span class="text-sm font-extrabold text-destaque">R$ 42,90</span>
+                  <button disabled aria-label="Feijoada completa — Só seg a sex" class="pointer-events-none flex h-8 w-8 items-center justify-center rounded-lg bg-[#9a9a9a] text-base font-black text-white">+</button>
+                </div>
+              </div>
+            </article>
+
+            <article class="relative flex flex-col overflow-hidden rounded-xl border border-[#eeeeee] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+              <div class="relative aspect-[4/3] w-full foto-c">
+                <span aria-hidden class="absolute inset-0 bg-black/35 [backdrop-filter:grayscale(1)]"></span>
+                <span class="absolute bottom-[8px] left-1/2 z-[2] line-clamp-2 w-max max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl bg-indisponivel-fundo px-3 py-1.5 text-center text-xs font-extrabold uppercase leading-tight tracking-wide text-indisponivel-texto shadow-[0_2px_10px_rgba(0,0,0,0.35)]">Só seg a sex</span>
+              </div>
+              <div class="flex flex-1 flex-col gap-2 p-3 opacity-60">
+                <h3 class="line-clamp-2 text-sm font-bold leading-tight text-[#111111]">Prato feito de frango</h3>
+                <div class="mt-auto flex items-end justify-between gap-2">
+                  <span class="text-sm font-extrabold text-destaque">R$ 28,00</span>
+                  <button disabled aria-label="Prato feito de frango — Só seg a sex" class="pointer-events-none flex h-8 w-8 items-center justify-center rounded-lg bg-[#9a9a9a] text-base font-black text-white">+</button>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <!-- Seção em modo LISTA (exibir_imagens = false): ItemProdutoLista -->
+          <div class="mb-1 mt-6 flex items-center gap-3">
+            <span class="h-0.5 flex-1 bg-[linear-gradient(90deg,transparent,var(--marrom-cafe),transparent)]"></span>
+            <h2 class="whitespace-nowrap text-sm font-bold uppercase tracking-widest text-marrom-cafe">Lanches</h2>
+            <span class="h-0.5 flex-1 bg-[linear-gradient(90deg,transparent,var(--marrom-cafe),transparent)]"></span>
+          </div>
+          <div class="overflow-hidden rounded-xl bg-white">
+            <!-- comprável: linha inteira é alvo, 44px -->
+            <div role="button" tabindex="0" aria-label="Ver detalhes de X-Salada, R$ 26,00" class="flex min-h-[44px] cursor-pointer flex-col justify-center border-b border-cinza-medio px-4 py-3 hover:bg-cinza-claro">
+              <div class="flex items-baseline gap-2">
+                <span class="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold">X-Salada</span>
+                <span aria-hidden class="mb-1 min-w-4 flex-1 border-b-2 border-dotted border-borda-nav"></span>
+                <span class="flex-shrink-0 text-sm font-bold text-destaque">R$ 26,00</span>
+              </div>
+            </div>
+            <!-- fora da faixa de horário -->
+            <div class="flex min-h-[44px] flex-col justify-center border-b border-cinza-medio px-4 py-3">
+              <div aria-hidden class="flex flex-wrap items-baseline gap-2 opacity-60">
+                <span class="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold">X-Tudo</span>
+                <span class="mb-1 min-w-4 flex-1 border-b-2 border-dotted border-borda-nav"></span>
+                <span class="flex-shrink-0 text-sm font-bold text-destaque">R$ 32,00</span>
+                <span class="flex-shrink-0 whitespace-nowrap rounded-full bg-indisponivel-fundo px-2.5 py-0.5 text-[0.625rem] font-extrabold uppercase tracking-wide text-indisponivel-texto">Das 18:00 às 23:00</span>
+              </div>
+              <span class="sr-only">X-Tudo — Das 18:00 às 23:00</span>
+            </div>
+            <!-- período no futuro -->
+            <div class="flex min-h-[44px] flex-col justify-center border-b border-cinza-medio px-4 py-3">
+              <div aria-hidden class="flex flex-wrap items-baseline gap-2 opacity-60">
+                <span class="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold">Combo de Natal</span>
+                <span class="mb-1 min-w-4 flex-1 border-b-2 border-dotted border-borda-nav"></span>
+                <span class="flex-shrink-0 text-sm font-bold text-destaque">R$ 79,90</span>
+                <span class="flex-shrink-0 whitespace-nowrap rounded-full bg-indisponivel-fundo px-2.5 py-0.5 text-[0.625rem] font-extrabold uppercase tracking-wide text-indisponivel-texto">A partir de 01/12</span>
+              </div>
+              <span class="sr-only">Combo de Natal — A partir de 01/12</span>
+            </div>
+            <!-- dias_semana = [] (RN-8) -->
+            <div class="flex min-h-[44px] flex-col justify-center px-4 py-3">
+              <div aria-hidden class="flex flex-wrap items-baseline gap-2 opacity-60">
+                <span class="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold">Suco do dia</span>
+                <span class="mb-1 min-w-4 flex-1 border-b-2 border-dotted border-borda-nav"></span>
+                <span class="flex-shrink-0 text-sm font-bold text-destaque">R$ 9,00</span>
+                <span class="flex-shrink-0 whitespace-nowrap rounded-full bg-indisponivel-fundo px-2.5 py-0.5 text-[0.625rem] font-extrabold uppercase tracking-wide text-indisponivel-texto">Indisponível no momento</span>
+              </div>
+              <span class="sr-only">Suco do dia — Indisponível no momento</span>
+            </div>
+          </div>
+
+          <div class="ausente mt-6">
+            <b>Não renderizado (anotação do mockup):</b> "Sobremesas" (categoria oculta, RN-2), "Especiais de Natal"
+            (categoria com período encerrado em 24/12, RN-7) e "Panetone trufado" (produto encerrado). Somem com os produtos,
+            sem título de seção, sem cair em "Outros".
+          </div>
+        </main>
+
+        <!-- barra do carrinho (tema da loja: destaque + texto branco fixo) -->
+        <div class="absolute inset-x-0 bottom-0 bg-destaque px-4 py-3 text-white">
+          <button class="flex min-h-[44px] w-full items-center justify-between rounded-lg text-sm font-bold">
+            <span>Ver carrinho · 1 item</span><span>R$ 26,00</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= FRAME 2: pílula hoje × proposta ================= -->
+    <div class="w-[360px]">
+      <p class="mb-1.5 text-[.68rem] text-[#5b5b5b]">Achado 6.1 (MÉDIO) · a pílula do card, lado a lado</p>
+      <div class="rounded-[18px] border border-[#8a8a8a] bg-fundo p-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <p class="mb-1 text-[.6rem] font-bold uppercase tracking-wide text-red-800">Hoje: truncate</p>
+            <div class="relative aspect-[4/3] w-full overflow-hidden rounded-xl foto-b">
+              <span class="absolute inset-0 bg-black/35"></span>
+              <span class="absolute bottom-[10px] left-1/2 z-[2] max-w-[calc(100%-16px)] -translate-x-1/2 truncate whitespace-nowrap rounded-full bg-[#111111] px-[18px] py-2 text-sm font-extrabold uppercase tracking-wide text-white">Das 18:00 às 23:00</span>
+            </div>
+            <div class="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-xl foto-a">
+              <span class="absolute inset-0 bg-black/35"></span>
+              <span class="absolute bottom-[10px] left-1/2 z-[2] max-w-[calc(100%-16px)] -translate-x-1/2 truncate whitespace-nowrap rounded-full bg-[#111111] px-[18px] py-2 text-sm font-extrabold uppercase tracking-wide text-white">Só seg a sex</span>
+            </div>
+          </div>
+          <div>
+            <p class="mb-1 text-[.6rem] font-bold uppercase tracking-wide text-green-800">Proposta: até 2 linhas</p>
+            <div class="relative aspect-[4/3] w-full overflow-hidden rounded-xl foto-b">
+              <span class="absolute inset-0 bg-black/35"></span>
+              <span class="absolute bottom-[8px] left-1/2 z-[2] line-clamp-2 w-max max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl bg-[#111111] px-3 py-1.5 text-center text-xs font-extrabold uppercase leading-tight tracking-wide text-white">Das 18:00 às 23:00</span>
+            </div>
+            <div class="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-xl foto-a">
+              <span class="absolute inset-0 bg-black/35"></span>
+              <span class="absolute bottom-[8px] left-1/2 z-[2] line-clamp-2 w-max max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl bg-[#111111] px-3 py-1.5 text-center text-xs font-extrabold uppercase leading-tight tracking-wide text-white">Só seg a sex</span>
+            </div>
+          </div>
+        </div>
+        <p class="nota mt-3">A frase de frequência é a resposta que o cliente procura ("quando posso pedir?"), e o corte come
+          justamente o horário final. A proposta muda só as classes da pílula (<code>CardProduto.tsx:128</code>). "Esgotado",
+          que é curto, fica idêntico. Contraste 18,9:1 mantido. O fallback aceitável é não mexer: a frase inteira continua no
+          modal e no <code>aria-label</code>.</p>
+      </div>
+    </div>
+
+    <!-- ================= FRAME 3: modal do produto indisponível ================= -->
+    <div>
+      <p class="mb-1.5 text-[.68rem] text-[#5b5b5b]">360px · o card indisponível ainda abre o modal (262)</p>
+      <div class="tela" style="height:640px">
+        <div class="absolute inset-0 bg-black/45"></div>
+        <div role="dialog" aria-modal="true" aria-labelledby="m-t" class="absolute inset-x-0 bottom-0 flex max-h-[92%] flex-col overflow-hidden rounded-t-2xl bg-white">
+          <div class="relative aspect-[16/10] w-full foto-a">
+            <span class="absolute inset-0 bg-black/35 [backdrop-filter:grayscale(1)]"></span>
+            <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indisponivel-fundo px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-indisponivel-texto">Só seg a sex</span>
+            <button aria-label="Fechar" class="absolute right-2 top-2 grid min-h-[44px] min-w-[44px] place-items-center rounded-full bg-white/90 text-lg font-bold text-[#111]">✕</button>
+          </div>
+          <div class="flex-1 overflow-y-auto px-4 py-3">
+            <h3 id="m-t" class="text-base font-bold text-[#111]">Feijoada completa</h3>
+            <p class="mt-1 text-xs leading-relaxed text-texto-muted">Feijão preto, carnes nobres, arroz, couve, farofa e laranja. Serve 1 pessoa.</p>
+            <p class="mt-2 text-base font-extrabold text-destaque">R$ 42,90</p>
+          </div>
+          <div class="border-t border-cinza-medio p-3">
+            <button disabled class="flex min-h-[44px] w-full cursor-not-allowed items-center justify-center rounded-lg bg-[#9a9a9a] text-sm font-bold text-white">Produto indisponível</button>
+          </div>
+        </div>
+      </div>
+      <p class="nota mt-2 w-[360px]">Sem mudança: CTA desabilitado de <code>rotuloCtaNaoCompravel</code>, frase inteira no selo central.
+        Se o cliente montar o carrinho às 14:58 e confirmar às 15:01, o servidor recusa com
+        <code>ERRO_FORA_DA_JANELA</code>, e a revisão do carrinho marca a linha como indisponível (D12, fluxo existente).</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

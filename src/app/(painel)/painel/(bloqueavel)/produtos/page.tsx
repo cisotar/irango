@@ -26,6 +26,10 @@ import {
   alternarExibirImagens,
   reordenarCategorias,
   reordenarProdutos,
+  aplicarFrequenciaEmProdutos,
+  salvarGradeDeDias,
+  alternarOcultaCategoria,
+  definirFrequenciaCategoria,
 } from "@/lib/actions/produto";
 import {
   criarCategoriaOpcional,
@@ -45,25 +49,8 @@ import {
   type PromocaoDoPainel,
 } from "@/lib/utils/promocaoPainel";
 import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
-import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
-import {
-  descreverVigencia,
-  rotuloDiasDoItem,
-} from "@/lib/utils/descreverVigencia";
-import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
-import {
-  diagnosticarSumico,
-  type SumicoDoProduto,
-} from "@/lib/utils/contarProdutosEscondidos";
-import {
-  aplicarCardapioEmProdutos,
-  aplicarCardapioEmCategoria,
-  tirarDeCardapio,
-  preverLoteAction,
-  definirDiasDoVinculo,
-} from "@/lib/actions/cardapio";
-import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
-import type { VinculosPorProduto } from "@/components/painel/contrato-lote";
+import { projetarFrequenciasDoPainel } from "@/lib/utils/frequenciaPainel";
+import { ROTA_CARDAPIOS_LOJISTA } from "@/lib/utils/rotasCardapios";
 import { ProdutosClient } from "./ProdutosClient";
 
 /**
@@ -99,10 +86,9 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     categoriasOpcional,
     opcionais,
     associacoes,
-    // [260][261] Os cardápios da loja + o índice `produto → cardápios`, no
-    // MESMO round trip que a vitrine usa (`buscarCardapiosComProdutos`). Nada
-    // de query nova por produto: um `count` por linha seria N+1.
-    cardapiosDaLoja,
+    // [323] A leitura de cardápios SAIU (S5: o cardápio sazonal virou função
+    // morta). A frequência mora nas colunas de `produtos` e `categorias` que
+    // as duas primeiras leituras já trazem.
   ] = await Promise.all([
     buscarProdutosDoLojista(supabase, loja.id),
     (async () => {
@@ -116,7 +102,6 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     buscarCategoriasOpcional(supabase, loja.id),
     buscarOpcionaisDoLojista(supabase, loja.id),
     buscarAssociacoesOpcional(supabase, loja.id),
-    buscarCardapiosComProdutos(supabase, loja.id),
   ]);
 
   // [235] Vigência da promoção e rótulo do chip PROJETADOS AQUI, no servidor.
@@ -131,46 +116,15 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     ]),
   );
 
-  // [260][261] As duas projeções de cardápio do painel, derivadas AQUI com o
-  // relógio do SERVIDOR e o fuso da LOJA — o mesmo `agora` do bloco acima, para
-  // que nenhuma linha da tela discorde sobre que instante é este. Decidir
-  // "aberto agora" no browser usaria o relógio do dispositivo, que a loja não
-  // controla, e duplicaria RN-02..RN-05.
-  const cardapiosParaLote = cardapiosDaLoja.cardapios.map((c) => ({
-    id: c.id,
-    nome: c.nome,
-    descricao: descreverVigencia(c, loja.timezone, agora),
-  }));
-  const vinculosPorProduto: VinculosPorProduto =
-    Object.fromEntries(
-      [...cardapiosDaLoja.vinculosPorProduto].map(([produtoId, lista]) => [
-        produtoId,
-        lista.map((v) => ({
-          id: v.cardapio.id,
-          nome: v.cardapio.nome,
-          abertoAgora: cardapioAberto(v.cardapio, agora, loja.timezone),
-          // [278] Os dias do ITEM, redigidos AQUI, no servidor. O cliente
-          // recebe texto, não regra.
-          rotuloDias: rotuloDiasDoItem(v.dias_semana),
-        })),
-      ]),
-    );
-
-  // [264/RN-12] O aviso reduzido da linha do produto (design §13.4 item 5). O
-  // MESMO predicado da tela de cardápios — um produto não pode estar sumido
-  // numa e presente na outra —, derivado no servidor com o fuso da loja.
-  // Só entra no mapa o produto que de fato sumiu: o objeto é esparso de
-  // propósito, e uma linha sem entrada não pinta aviso nenhum.
-  const sumicos: Record<string, SumicoDoProduto> = {};
-  for (const p of produtos) {
-    const sumico = diagnosticarSumico(
-      p,
-      cardapiosDaLoja.vinculosPorProduto.get(p.id) ?? [],
-      agora,
-      loja.timezone,
-    );
-    if (sumico !== null) sumicos[p.id] = sumico;
-  }
+  // [323/C8] Chip e aviso de frequência por produto e o estado de cada
+  // categoria, PROJETADOS AQUI com o MESMO `agora` do bloco acima e o fuso da
+  // LOJA — o browser nunca decide "encerrado" nem "nunca abre".
+  const frequencias = projetarFrequenciasDoPainel(
+    produtos,
+    categorias,
+    agora,
+    loja.timezone,
+  );
 
   return (
     <ProdutosClient
@@ -185,29 +139,13 @@ export default async function ProdutosPage(): Promise<ReactElement> {
       opcionaisPorCategoria={opcionaisPorCategoria}
       promocoes={promocoes}
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
-      // [261] LEITURA, não ação: vive fora do `lote` porque o hub admin também
-      // a recebe (o `FormProduto` depende dela para não mentir sobre cardápio).
-      vinculosPorProduto={vinculosPorProduto}
-      // A rota de cardápios é conhecida AQUI, não no componente: no painel do
-      // lojista ela existe; no hub admin, não (o wrapper admin passa `null`).
-      hrefCardapios="/painel/cardapios"
-      // [264] LEITURA, preview de UX: o produto que sumiu da vitrine e o
-      // cardápio a quem o sumiço é atribuído. Nenhuma decisão depende disto.
-      sumicos={sumicos}
-      // [260][261] O modo de seleção só existe no painel do LOJISTA: estas
-      // Server Actions derivam a loja de `auth.uid()` e não têm variante
-      // admin (ver a prop `lote` do `ProdutosClient`).
-      lote={{
-        cardapios: cardapiosParaLote,
-        acoes: {
-          aplicarEmProdutos: aplicarCardapioEmProdutos,
-          aplicarEmCategoria: aplicarCardapioEmCategoria,
-          tirarDeCardapio,
-          preverLote: preverLoteAction,
-          definirVisibilidade: definirVisibilidadeEmProdutos,
-          definirDias: definirDiasDoVinculo,
-        },
-      }}
+      // [323/D11] O cardápio saiu da tela: sem índice de vínculos, sem
+      // `sumicos` e sem `lote` (a barra de seleção passa a ser a de
+      // frequência). A rota continua existindo, fora do menu (S5), e o
+      // `FormProduto` só a usa no aviso do produto legado `'cardapio'`.
+      vinculosPorProduto={{}}
+      hrefCardapios={ROTA_CARDAPIOS_LOJISTA}
+      frequencias={frequencias}
       // [217] Linhas INTEIRAS, não mais `{id, nome}`: o cartão de associação
       // consome `CategoriaOpcional` completa.
       categoriasOpcional={categoriasOpcional}
@@ -235,6 +173,10 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         alternarExibirImagens,
         reordenarCategorias,
         reordenarProdutos,
+        aplicarFrequenciaEmProdutos,
+        salvarGradeDeDias,
+        alternarOcultaCategoria,
+        definirFrequenciaCategoria,
         criarCategoriaOpcional,
         atualizarCategoriaOpcional,
         removerCategoriaOpcional,

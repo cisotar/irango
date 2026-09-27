@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
-import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
 import { listarModaisSazonaisDoDono } from "@/lib/supabase/queries/modaisSazonais";
 import {
   criarModalSazonal,
@@ -14,7 +13,6 @@ import {
   removerModalSazonal,
 } from "@/lib/actions/modalSazonal";
 import { estadoDoModalSazonal } from "@/lib/utils/estadoModalSazonal";
-import { descreverVigencia } from "@/lib/utils/descreverVigencia";
 import { lerMensagemModal } from "@/lib/validacoes/mensagemModal";
 import { PromocoesClient, type ModalSazonalLinha } from "./PromocoesClient";
 
@@ -46,11 +44,12 @@ export default async function PromocoesPage(): Promise<ReactElement> {
   }
 
   // Uma leitura por eixo, em paralelo: os modais do dono (com a seleção
-  // embutida), as categorias e os cardápios da loja para os checkboxes.
-  const [modais, categorias, { cardapios }] = await Promise.all([
+  // embutida) e as categorias da loja para os checkboxes. [323/S6] O eixo
+  // `cardapios` saiu do editor (o cardápio sazonal virou função morta); a
+  // seleção salva continua em `modal.cardapios` e é repassada intacta.
+  const [modais, categorias] = await Promise.all([
     listarModaisSazonaisDoDono(supabase, loja.id),
     buscarCategorias(supabase, loja.id),
-    buscarCardapiosComProdutos(supabase, loja.id),
   ]);
 
   const agora = new Date();
@@ -75,15 +74,8 @@ export default async function PromocoesPage(): Promise<ReactElement> {
   return (
     <PromocoesClient
       modais={linhas}
-      // As categorias e os cardápios da loja para os checkboxes de seleção. A
-      // vigência do cardápio é descrita AQUI (função pura, fuso da loja) — não é
-      // reescrita no cliente.
+      // As categorias da loja para os checkboxes de seleção.
       categorias={categorias.map((c) => ({ id: c.id, nome: c.nome }))}
-      cardapios={cardapios.map((c) => ({
-        id: c.id,
-        nome: c.nome,
-        vigencia: descreverVigencia(c, loja.timezone, agora),
-      }))}
       // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
       // obrigatória, sem default — a via admin injetaria variantes por `lojaId`.
       acoes={{

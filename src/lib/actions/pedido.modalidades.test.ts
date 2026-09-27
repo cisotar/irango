@@ -48,6 +48,29 @@ vi.mock("@/lib/supabase/queries/cardapios", () => ({
   }),
 }));
 
+// (321) A comprabilidade passa a vir da frequência de exibição produto ∩
+// categoria, lida por `buscarCategorias`. A categoria das fixtures é visível e
+// permanente (os 5 eixos null), então nada muda no que estes testes afirmam.
+// O mock de `cardapios` acima fica inerte (cardápio é função morta).
+vi.mock("@/lib/supabase/queries/categorias", () => ({
+  buscarCategorias: async () => [
+    {
+      id: "dddddddd-0000-0000-0000-000000000001",
+      loja_id: "11111111-1111-1111-1111-111111111111",
+      nome: "Categoria das fixtures",
+      ordem: 0,
+      criado_em: "2026-01-01T00:00:00.000Z",
+      exibir_imagens: true,
+      oculta: false,
+      dias_semana: null,
+      hora_inicio: null,
+      hora_fim: null,
+      periodo_inicio: null,
+      periodo_fim: null,
+    },
+  ],
+}));
+
 const buscarProdutosPorIds = vi.fn();
 const buscarOpcionaisPorIds = vi.fn();
 const buscarOpcionaisPorCategoria = vi.fn();
@@ -144,6 +167,12 @@ function produtoRow(): Tables<"produtos"> {
     desconto_inicio: null,
     desconto_fim: null,
     visibilidade: "menu",
+    // 320: frequência de exibição — permanente (5 eixos null).
+    dias_semana: null,
+    hora_inicio: null,
+    hora_fim: null,
+    periodo_inicio: null,
+    periodo_fim: null,
     criado_em: "2026-01-01T00:00:00.000Z",
     atualizado_em: "2026-01-01T00:00:00.000Z",
   };

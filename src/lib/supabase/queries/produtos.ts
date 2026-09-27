@@ -70,17 +70,26 @@ export type ProdutoPublico = Pick<
   // menu ou de cardápio. INTERNA ao servidor — `projetarProdutoVitrine` copia
   // campos NOMEADOS, então ela não entra no `ProdutoVitrine` que vai ao browser.
   | "visibilidade"
+  // [320/321] 16..20: frequência de exibição, NO FIM (ordem da view). Lidas pelo
+  // SSR para decidir comprabilidade no fuso da loja (`src/lib/utils/frequencia.ts`);
+  // `projetarProdutoVitrine` copia campos NOMEADOS e não as leva ao browser.
+  | "dias_semana"
+  | "hora_inicio"
+  | "hora_fim"
+  | "periodo_inicio"
+  | "periodo_fim"
 >;
 
 /**
- * Lista EXATA (15 colunas, ordem fixa) da projeção pública — §Contratos de Dados
- * da 265. Select NOMEADO por decisão (D4): `select("*")` numa view definer volta
- * a vazar qualquer coluna que uma migration futura (244/245) acrescente sem
- * revisão do contrato TS.
+ * Lista EXATA (20 colunas, ordem fixa — as 5 de frequência da 320 no fim) da
+ * projeção pública — §Contratos de Dados da 265. Select NOMEADO por decisão
+ * (D4): `select("*")` numa view definer volta a vazar qualquer coluna que uma
+ * migration futura (244/245) acrescente sem revisão do contrato TS.
  */
 export const COLUNAS_PRODUTO_PUBLICO =
   "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +
-  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim, visibilidade";
+  "desconto_ativo, desconto_tipo, desconto_valor, desconto_inicio, desconto_fim, visibilidade, " +
+  "dias_semana, hora_inicio, hora_fim, periodo_inicio, periodo_fim";
 
 /** Grupo do catálogo público: uma categoria (ou "Outros") + seus produtos. */
 export type GrupoCatalogo<T = ProdutoPublico> = {

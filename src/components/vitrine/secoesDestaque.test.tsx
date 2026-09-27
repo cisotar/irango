@@ -21,11 +21,15 @@ import {
 } from "@/lib/utils/ancoraCategoria";
 import {
   agruparPorCardapio,
-  projetarCatalogoVitrine,
+  projetarProdutoVitrine,
   type ProdutoVitrine,
   type SecaoVitrine,
 } from "@/lib/utils/catalogoVitrine";
-import type { CardapioVigencia, VinculoVigencia } from "@/lib/utils/vigenciaCardapio";
+import {
+  cardapioAberto,
+  type CardapioVigencia,
+  type VinculoVigencia,
+} from "@/lib/utils/vigenciaCardapio";
 import { instanteNoFuso } from "@/lib/utils/fusoLoja";
 
 function produto(id: string, nome: string): ProdutoVitrine {
@@ -233,19 +237,18 @@ describe("279 — dia sem item do cardápio: a seção não chega a existir", ()
     desconto_valor: null,
     desconto_inicio: null,
     desconto_fim: null,
-    visibilidade: "cardapio",
   };
   const vinculos = new Map<string, VinculoVigencia<CardapioDaLoja>[]>([
     ["sopa", [{ cardapio: ESPECIAIS, dias_semana: [3] }]],
   ]);
 
   function renderizarDomingo() {
-    const { produtos, cardapiosAbertos } = projetarCatalogoVitrine<CardapioDaLoja>({
-      produtos: [SOPA_CRUA],
-      vinculosPorProduto: vinculos,
-      agora: DOMINGO,
-      timezone: SP,
-    });
+    // [323/S5] `agruparPorCardapio` é função morta: a entrada é montada aqui
+    // como a página montava — produto projetado e cardápios abertos agora.
+    const produtos = [
+      projetarProdutoVitrine(SOPA_CRUA, { disponivel: true, motivo: null }, DOMINGO),
+    ];
+    const cardapiosAbertos = [ESPECIAIS].filter((c) => cardapioAberto(c, DOMINGO, SP));
     const secoesDestaque = agruparPorCardapio(
       produtos,
       cardapiosAbertos,
@@ -284,11 +287,12 @@ describe("279 — dia sem item do cardápio: a seção não chega a existir", ()
     expect(html).not.toContain('<nav aria-label="Categorias do cardápio"');
   });
 
-  it("o produto continua na CATEGORIA dele, marcado, com o selo do item", () => {
+  // [323/S5] A marcação "fora do dia do cardápio" saiu da projeção junto com a
+  // regra de compra do cardápio; o que resta provar aqui é só a estrutura.
+  it("o produto continua na CATEGORIA dele, uma vez só", () => {
     const html = renderizarDomingo();
 
     expect(html).toContain("Sopa de cebola");
     expect(html.match(/<article /g)).toHaveLength(1);
-    expect(html).toContain("Só às quartas");
   });
 });

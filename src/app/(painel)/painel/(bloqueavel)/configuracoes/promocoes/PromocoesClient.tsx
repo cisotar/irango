@@ -73,11 +73,8 @@ const EditorMensagem = dynamic(
 /** A régua de `design-system.md` §5: valor LITERAL, nunca a classe semântica. */
 const ALVO = "min-h-[44px] min-w-[44px]";
 
-/** Uma opção de checkbox (categoria ou cardápio) da loja. */
+/** Uma opção de checkbox (categoria) da loja. */
 export type OpcaoSelecao = { id: string; nome: string };
-
-/** Um cardápio como opção: nome + vigência descrita no servidor (fuso da loja). */
-export type OpcaoCardapio = OpcaoSelecao & { vigencia: string };
 
 /** Um modal do lojista, com a seleção e o estado ao vivo já resolvidos no SSR. */
 export type ModalSazonalLinha = {
@@ -120,12 +117,10 @@ export type AcoesModalSazonal = {
 export function PromocoesClient({
   modais,
   categorias,
-  cardapios,
   acoes,
 }: {
   modais: ModalSazonalLinha[];
   categorias: OpcaoSelecao[];
-  cardapios: OpcaoCardapio[];
   acoes: AcoesModalSazonal;
 }): ReactElement {
   const router = useRouter();
@@ -291,7 +286,6 @@ export function PromocoesClient({
               key={editando === "novo" ? "novo" : editando.id}
               inicial={editando === "novo" ? null : editando}
               categorias={categorias}
-              cardapios={cardapios}
               onSubmit={async (payload) =>
                 editando === "novo"
                   ? acoes.criar(payload)
@@ -359,14 +353,12 @@ export function PromocoesClient({
 function FormModalSazonal({
   inicial,
   categorias,
-  cardapios,
   onSubmit,
   onSucesso,
 }: {
   /** `null` = criação; um modal = edição pré-preenchida. */
   inicial: ModalSazonalLinha | null;
   categorias: OpcaoSelecao[];
-  cardapios: OpcaoCardapio[];
   onSubmit: (
     payload: DadosModalSazonal,
   ) => Promise<{ ok: true } | { ok: false; erro: string }>;
@@ -382,9 +374,10 @@ function FormModalSazonal({
   const [categoriasSel, setCategoriasSel] = useState<string[]>(
     inicial?.categorias ?? [],
   );
-  const [cardapiosSel, setCardapiosSel] = useState<string[]>(
-    inicial?.cardapios ?? [],
-  );
+  // [323/S6] O eixo `cardapios` saiu do editor. A seleção SALVA é repassada
+  // intacta no salvar: o `salvar_modal_sazonal` regrava as junções a partir do
+  // payload, e mandar `[]` apagaria dado que S6 manda preservar.
+  const cardapiosSel = inicial?.cardapios ?? [];
   const [mostrarPromocoesJunto, setMostrarPromocoesJunto] = useState(
     inicial?.mostrar_promocoes_junto ?? false,
   );
@@ -405,10 +398,12 @@ function FormModalSazonal({
     mensagem !== null && !mensagemParseada.success
       ? (mensagemParseada.error.issues[0]?.message ?? "Confira a mensagem.")
       : null;
+  // [323/S6] Cardápio não contribui produto na vitrine: "só com título" olha
+  // só a mensagem e as categorias.
   const soComTitulo = modalSoComTitulo({
     mensagem,
     categorias: categoriasSel,
-    cardapios: cardapiosSel,
+    cardapios: [],
   });
 
   function alternar(
@@ -572,47 +567,6 @@ function FormModalSazonal({
                       }
                     />
                     <span className="text-foreground">{categoria.nome}</span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </fieldset>
-
-      <fieldset className="space-y-2">
-        <legend className="font-medium text-foreground">
-          Cardápios a divulgar (opcional)
-        </legend>
-        {cardapios.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Nenhum cardápio cadastrado ainda.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {cardapios.map((cardapio) => {
-              const marcado = cardapiosSel.includes(cardapio.id);
-              return (
-                <li key={cardapio.id}>
-                  <label className="flex items-start gap-2 text-sm">
-                    <Checkbox
-                      className="mt-0.5"
-                      checked={marcado}
-                      onCheckedChange={(v) =>
-                        alternar(
-                          cardapiosSel,
-                          setCardapiosSel,
-                          cardapio.id,
-                          v === true,
-                        )
-                      }
-                    />
-                    <span className="flex flex-col">
-                      <span className="text-foreground">{cardapio.nome}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {cardapio.vigencia}
-                      </span>
-                    </span>
                   </label>
                 </li>
               );

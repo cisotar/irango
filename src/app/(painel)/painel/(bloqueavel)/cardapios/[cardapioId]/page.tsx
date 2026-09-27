@@ -17,7 +17,6 @@ import {
   preverLoteAction,
   definirDiasDoVinculo,
 } from "@/lib/actions/cardapio";
-import { definirVisibilidadeEmProdutos } from "@/lib/actions/produto";
 import { horaLocalNoFuso, rotuloFusoLoja } from "@/lib/utils/fusoLoja";
 import {
   rotuloAgora,
@@ -189,7 +188,6 @@ export default async function CardapioDetalhePage({
           aplicarEmCategoria: aplicarCardapioEmCategoria,
           tirarDeCardapio,
           preverLote: preverLoteAction,
-          definirVisibilidade: definirVisibilidadeEmProdutos,
           definirDias: definirDiasDoVinculo,
         }}
       />

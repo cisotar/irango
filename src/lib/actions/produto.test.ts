@@ -912,14 +912,17 @@ describe("definirVisibilidadeEmProdutos (D14 em lote — issue 261)", () => {
   const P2 = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 
   it("escreve só `visibilidade`, escopado pela loja do DONO", async () => {
+    // P6 (frequência de exibição): só 'menu' é gravável — 'cardapio' é
+    // recusado no zod (visibilidade-somente-menu.test.ts). A intenção deste
+    // teste segue a mesma, com o único valor que ainda existe.
     const r = await definirVisibilidadeEmProdutos({
       produto_ids: [P1, P2],
-      visibilidade: "cardapio",
+      visibilidade: "menu",
     });
 
     expect(r).toEqual({ ok: true });
     const op = opEscrita("produtos");
-    expect(op?.update).toEqual({ visibilidade: "cardapio" });
+    expect(op?.update).toEqual({ visibilidade: "menu" });
     expect(op?.filtros).toContainEqual(["loja_id", LOJA_DONO]);
     expect(op?.filtros).toContainEqual(["id", [P1, P2]]);
     // Uma instrução só: o lote é tudo ou nada.
@@ -966,9 +969,12 @@ describe("definirVisibilidadeEmProdutos (D14 em lote — issue 261)", () => {
       },
     };
 
+    // P6: 'cardapio' não passa mais do zod, então o trigger RN-14 não é
+    // alcançável por este caminho; o mapeamento da recusa continua provado
+    // (defesa em profundidade, caso um 23000 do trigger chegue por outra via).
     const r = await definirVisibilidadeEmProdutos({
       produto_ids: [P1],
-      visibilidade: "cardapio",
+      visibilidade: "menu",
     });
 
     expect(r).toEqual({
@@ -1030,14 +1036,17 @@ describe("atualizarProduto — `visibilidade` ausente não é decidida pelo sist
   });
 
   it("com o campo explícito, a declaração do lojista é gravada como veio", async () => {
+    // P6 (frequência de exibição): só 'menu' é gravável — 'cardapio' é
+    // recusado no zod (visibilidade-somente-menu.test.ts). A intenção deste
+    // teste segue a mesma, com o único valor que ainda existe.
     const r = await atualizarProduto(
       PRODUTO_ID,
-      payloadProduto({ visibilidade: "cardapio" }),
+      payloadProduto({ visibilidade: "menu" }),
     );
 
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update).toMatchObject({
-      visibilidade: "cardapio",
+      visibilidade: "menu",
     });
   });
 

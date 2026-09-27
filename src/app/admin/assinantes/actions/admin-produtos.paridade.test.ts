@@ -413,14 +413,17 @@ describe("auditoria 260/261 — UPDATE admin sem `visibilidade` não toca a colu
   });
 
   it("com o campo explícito, o admin grava exatamente o que veio", async () => {
+    // P6 (frequência de exibição): só 'menu' é gravável — 'cardapio' é
+    // recusado no zod (visibilidade-somente-menu.test.ts). A intenção deste
+    // teste segue a mesma, com o único valor que ainda existe.
     const r = await atualizarProdutoAdmin(LOJA_ALVO, PRODUTO_ID, {
       ...payloadProduto(),
-      visibilidade: "cardapio",
+      visibilidade: "menu",
     });
 
     expect(r).toEqual({ ok: true });
     expect(opEscrita("produtos")?.update).toMatchObject({
-      visibilidade: "cardapio",
+      visibilidade: "menu",
     });
   });
 

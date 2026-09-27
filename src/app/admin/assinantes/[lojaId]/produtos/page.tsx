@@ -2,21 +2,12 @@ import type { ReactElement } from "react";
 
 import { carregarLojaAdmin } from "../carga";
 import { carregarOpcionaisAdmin } from "../carga-opcionais";
-import { carregarCardapiosAdmin } from "../carga-cardapios";
 import {
   projetarPromocaoDoPainel,
   type PromocaoDoPainel,
 } from "@/lib/utils/promocaoPainel";
 import { rotuloFusoLoja } from "@/lib/utils/fusoLoja";
-import { cardapioAberto } from "@/lib/utils/vigenciaCardapio";
-import {
-  descreverVigencia,
-  rotuloDiasDoItem,
-} from "@/lib/utils/descreverVigencia";
-import type {
-  CardapioParaLote,
-  VinculosPorProduto,
-} from "@/components/painel/contrato-lote";
+import { projetarFrequenciasDoPainel } from "@/lib/utils/frequenciaPainel";
 import { CardapioAdminClient } from "./CardapioAdminClient";
 
 /**
@@ -43,14 +34,11 @@ export default async function CardapioAdminPage({
     // [217] `opcionais` e `associacoes` NÃO são query nova: o agregado já as
     // carregava (carga-opcionais.ts) — a page só não as desestruturava.
     { opcionaisPorCategoria, categoriasOpcional, opcionais, associacoes },
-    // [Auditoria 260/261] Leitura dos cardápios da loja-alvo. Sem ela o
-    // `FormProduto` afirmaria "não está em nenhum cardápio" para um produto que
-    // está em dois — e o admin escreve sob `service_role`.
-    cardapiosDaLoja,
+    // [323] A leitura de cardápios da loja-alvo SAIU (S5): a frequência mora
+    // nas colunas de `produtos`/`categorias` que o agregado já traz.
   ] = await Promise.all([
     carregarLojaAdmin(lojaId),
     carregarOpcionaisAdmin(lojaId),
-    carregarCardapiosAdmin(lojaId),
   ]);
 
   // [235] Mesma projeção do painel do lojista, com o fuso da LOJA-ALVO: o admin
@@ -63,31 +51,14 @@ export default async function CardapioAdminPage({
     ]),
   );
 
-  // [269] Os destinos da barra de seleção em lote, com a frase de vigência
-  // redigida AQUI (servidor, fuso da loja-alvo) — o browser nunca redige janela
-  // de vigência. Mesma projeção de `/painel/produtos`.
-  const cardapiosDoLote: CardapioParaLote[] = cardapiosDaLoja.cardapios.map(
-    (c) => ({
-      id: c.id,
-      nome: c.nome,
-      descricao: descreverVigencia(c, loja.timezone, agora),
-    }),
-  );
-
-  // O MESMO `agora` do bloco acima e o fuso da LOJA-ALVO: o admin edita em nome
-  // do lojista e não pode ver "aberto agora" por outro relógio.
-  const vinculosPorProduto: VinculosPorProduto = Object.fromEntries(
-    [...cardapiosDaLoja.vinculosPorProduto].map(([produtoId, lista]) => [
-      produtoId,
-      lista.map((v) => ({
-        id: v.cardapio.id,
-        nome: v.cardapio.nome,
-        abertoAgora: cardapioAberto(v.cardapio, agora, loja.timezone),
-        // [278] Os dias do ITEM, redigidos AQUI, no servidor (fuso da
-        // LOJA-ALVO). O cliente recebe texto, não regra.
-        rotuloDias: rotuloDiasDoItem(v.dias_semana),
-      })),
-    ]),
+  // [323/C8] O MESMO helper do painel do lojista, com o MESMO `agora` e o
+  // fuso da LOJA-ALVO: o admin edita em nome do lojista e não pode ver
+  // "encerrado" por outro relógio.
+  const frequencias = projetarFrequenciasDoPainel(
+    produtos,
+    categorias,
+    agora,
+    loja.timezone,
   );
 
   return (
@@ -101,8 +72,9 @@ export default async function CardapioAdminPage({
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
-      cardapiosDoLote={cardapiosDoLote}
-      vinculosPorProduto={vinculosPorProduto}
+      // [323/D11] Sem índice de vínculos: o cardápio saiu da tela (S5).
+      vinculosPorProduto={{}}
+      frequencias={frequencias}
       promocoes={promocoes}
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
       // Linhas INTEIRAS desde a 217 — o cartão de associação exige

@@ -44,3 +44,10 @@ ausente nos arquivos do lojista e poluiria o gate com ruído que some sozinho.
 - [ ] `createServerClient<Database>` em `src/lib/supabase/server.ts`;
 - [ ] `npx tsc --noEmit` com 0 erros;
 - [ ] nenhuma supressão (`as any`, `@ts-ignore`, `@ts-expect-error`) introduzida para chegar lá.
+
+## Nova evidência (2026-09-27)
+
+`auditar` @ `c827180` (branch `feat/frequencia-exibicao`): as RPCs
+`aplicar_frequencia_em_produtos`/`salvar_grade_de_dias` foram tipadas por engano em
+`graphql_public.Functions` e a chamada `.rpc` do lojista compilou assim mesmo; só o
+caminho admin (tipado) acusou. Corrigido em `78d9dc9`. Mesmo sintoma, mesmo remédio.

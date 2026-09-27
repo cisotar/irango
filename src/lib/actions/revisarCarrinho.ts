@@ -36,11 +36,8 @@ import {
 } from "@/lib/supabase/queries/produtos";
 import { buscarCupomPorCodigo } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
-import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
-import {
-  avaliarVigenciaDoProduto,
-  visibilidadeDe,
-} from "@/lib/utils/vigenciaCardapio";
+import { buscarCategorias } from "@/lib/supabase/queries/categorias";
+import { avaliarFrequenciaNaLoja } from "@/lib/utils/frequencia";
 import {
   assinaturaPermiteAcesso,
   type StatusAssinatura,
@@ -104,7 +101,7 @@ export async function revisarCarrinhoAction(
 
     // Onda única de leituras independentes. O cupom só é buscado quando o
     // cliente enviou um código — sem código não existe consulta de cupom.
-    const [loja, produtos, opcionaisBanco, cupom, cardapios] = await Promise.all([
+    const [loja, produtos, opcionaisBanco, cupom, categorias] = await Promise.all([
       // Gates de LOJA (paridade com `pedido.ts:92-107`): sem eles, quem guardou
       // um `produto_id` de loja suspensa obtinha preço e status de promoção
       // dela pelo preview. `lojaAberta` de propósito NÃO entra: horário não é
@@ -117,11 +114,13 @@ export async function revisarCarrinhoAction(
       dados.codigo
         ? buscarCupomPorCodigo(svc, dados.loja_id, dados.codigo)
         : Promise.resolve(null),
-      // (252) EXATAMENTE a mesma query da 249 — nunca uma segunda leitura com
-      // outro filtro. É essa identidade estrutural, e não o cuidado de quem
-      // escreveu, que garante a paridade preview ↔ autoritativo (§10-A).
-      buscarCardapiosComProdutos(svc, dados.loja_id),
+      // (321) EXATAMENTE a mesma query de `criarPedido` — nunca uma segunda
+      // leitura com outro filtro. É essa identidade estrutural, e não o
+      // cuidado de quem escreveu, que garante a paridade preview ↔
+      // autoritativo (§10-A).
+      buscarCategorias(svc, dados.loja_id),
     ]);
+    const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
 
     if (
       loja == null ||
@@ -188,6 +187,18 @@ export async function revisarCarrinhoAction(
         return { ok: false, mensagem: ERRO_GENERICO };
       }
 
+      // (321) A MESMA função pura do SSR da vitrine e de `criarPedido`, com o
+      // MESMO `agora` e o `timezone` da LOJA — o cliente não manda horário,
+      // frequência, categoria nem `oculta`.
+      const frequencia = avaliarFrequenciaNaLoja(produto, categoriasPorId, agora, loja.timezone);
+      // (P6) Categoria OCULTA (ou ausente do mapa, fail-closed) é o gate de
+      // `oculto`: recusa genérica ANTES de montar a linha, como `criarPedido`
+      // (ERRO_GENERICO). Como linha bloqueada ela devolvia o preço de um item
+      // que o lojista escondeu.
+      if (!frequencia.disponivel && frequencia.motivo === "categoria_oculta") {
+        return { ok: false, mensagem: ERRO_GENERICO };
+      }
+
       const permitidas = new Set(
         (produto.categoria_id
           ? allowlistPorCategoria[produto.categoria_id] ?? []
@@ -224,18 +235,11 @@ export async function revisarCarrinhoAction(
       // O desconto de produto vira PREÇO aqui (D8) — fonte única `precoEfetivo`.
       const preco = precoEfetivo(produto, agora);
 
-      // (252/RN-06) A MESMA função pura do SSR da vitrine e de `criarPedido`,
-      // com o MESMO `agora` e o `timezone` da LOJA — o cliente não manda
-      // horário, janela, cardápio nem `visibilidade`.
-      const vigencia = avaliarVigenciaDoProduto(
-        { visibilidade: visibilidadeDe(produto) },
-        cardapios.vinculosPorProduto.get(produto.id) ?? [],
-        agora,
-        loja.timezone,
-      );
+      // (321) Período encerrado e fora da frequência viram `fora_da_janela`: a
+      // linha fica bloqueada e o cliente a remove.
       // `disponivel` aqui é sempre true (o gate acima já derrubou o contrário):
       // a composição fica explícita para espelhar `projetarProdutoVitrine`.
-      const compravel = produto.disponivel && vigencia.dentroDaJanela;
+      const compravel = produto.disponivel && frequencia.disponivel;
 
       linhas.push({
         produto_id: produto.id,

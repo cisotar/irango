@@ -18,11 +18,13 @@ const LOJA_ALVO = "11111111-1111-4111-8111-111111111111";
 
 const capturado = vi.hoisted(() => ({
   acoes: undefined as Record<string, unknown> | undefined,
+  lote: undefined as unknown,
 }));
 
 vi.mock("@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient", () => ({
-  ProdutosClient: (props: { acoes?: Record<string, unknown> }) => {
+  ProdutosClient: (props: { acoes?: Record<string, unknown>; lote?: unknown }) => {
     capturado.acoes = props.acoes;
+    capturado.lote = props.lote;
     return null;
   },
 }));
@@ -31,6 +33,9 @@ vi.mock("@/app/admin/assinantes/actions/admin-categorias", () => ({
   criarCategoriaAdmin: vi.fn(async () => ({ ok: true })),
   atualizarCategoriaAdmin: vi.fn(async () => ({ ok: true })),
   removerCategoriaAdmin: vi.fn(async () => ({ ok: true })),
+  // [323] Frequência de categoria.
+  alternarOcultaCategoriaAdmin: vi.fn(async () => ({ ok: true })),
+  definirFrequenciaCategoriaAdmin: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock("@/app/admin/assinantes/actions/admin-produtos", () => ({
@@ -42,6 +47,9 @@ vi.mock("@/app/admin/assinantes/actions/admin-produtos", () => ({
   // [293] Sem este mock, a chave nova cairia no módulo real e o teste de
   // fiação não provaria nada sobre ela.
   reordenarProdutosAdmin: vi.fn(async () => ({ ok: true })),
+  // [323] Frequência de produto (seleção/unitário e grade).
+  aplicarFrequenciaEmProdutosAdmin: vi.fn(async () => ({ ok: true })),
+  salvarGradeDeDiasAdmin: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock("@/app/admin/assinantes/actions/admin-upload", () => ({
@@ -67,7 +75,13 @@ import { CardapioAdminClient } from "./CardapioAdminClient";
 import {
   alternarDisponibilidadeAdmin,
   alternarOcultoAdmin,
+  aplicarFrequenciaEmProdutosAdmin,
+  salvarGradeDeDiasAdmin,
 } from "@/app/admin/assinantes/actions/admin-produtos";
+import {
+  alternarOcultaCategoriaAdmin,
+  definirFrequenciaCategoriaAdmin,
+} from "@/app/admin/assinantes/actions/admin-categorias";
 
 const CHAVES_ESPERADAS = [
   "criarCategoria",
@@ -96,6 +110,11 @@ const CHAVES_ESPERADAS = [
   "removerOpcional",
   "reordenarOpcionaisDaCategoria",
   "reordenarItensDoGrupoOpcional",
+  // [323] As 4 da frequência de exibição.
+  "aplicarFrequenciaEmProdutos",
+  "salvarGradeDeDias",
+  "alternarOcultaCategoria",
+  "definirFrequenciaCategoria",
 ] as const;
 
 function renderizar(lojaId = LOJA_ALVO) {
@@ -106,8 +125,8 @@ function renderizar(lojaId = LOJA_ALVO) {
       produtos={[]}
       categorias={[]}
       opcionaisPorCategoria={{}}
-      cardapiosDoLote={[]}
       vinculosPorProduto={{}}
+      frequencias={{ produtos: {}, categorias: {}, agora: "2026-09-27T12:00:00.000Z", timezone: "America/Sao_Paulo" }}
       promocoes={{}}
       fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
       categoriasOpcional={[]}
@@ -123,7 +142,7 @@ describe("CardapioAdminClient — paridade de injeção de acoes (achado 143)", 
     capturado.acoes = undefined;
   });
 
-  it("injeta as 21 actions do ProdutosClient — nenhuma cai no fallback do lojista", () => {
+  it("injeta as 25 actions do ProdutosClient — nenhuma cai no fallback do lojista", () => {
     renderizar();
     for (const chave of CHAVES_ESPERADAS) {
       expect(
@@ -159,5 +178,25 @@ describe("CardapioAdminClient — paridade de injeção de acoes (achado 143)", 
       "produto-2",
       false,
     );
+  });
+
+  it("[323] as 4 de frequência fixam o `lojaId` da URL como 1º argumento", async () => {
+    renderizar();
+    const a = capturado.acoes as Record<string, (...args: unknown[]) => unknown>;
+    const payload = { qualquer: "coisa" };
+    await a.aplicarFrequenciaEmProdutos(payload);
+    await a.salvarGradeDeDias(payload);
+    await a.alternarOcultaCategoria("cat-1", true);
+    await a.definirFrequenciaCategoria(payload);
+
+    expect(aplicarFrequenciaEmProdutosAdmin).toHaveBeenCalledWith(LOJA_ALVO, payload);
+    expect(salvarGradeDeDiasAdmin).toHaveBeenCalledWith(LOJA_ALVO, payload);
+    expect(alternarOcultaCategoriaAdmin).toHaveBeenCalledWith(LOJA_ALVO, "cat-1", true);
+    expect(definirFrequenciaCategoriaAdmin).toHaveBeenCalledWith(LOJA_ALVO, payload);
+  });
+
+  it("[323] a prop `lote` (cardápio) não é mais passada", () => {
+    renderizar();
+    expect(capturado.lote).toBeUndefined();
   });
 });

@@ -4,7 +4,6 @@ import { useCallback } from "react";
 
 import { ProdutosClient } from "@/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient";
 import type { Categoria } from "@/components/painel/FormProduto";
-import type { CardapioParaLote } from "@/components/painel/contrato-lote";
 import type {
   Produto,
   OpcionaisPorCategoria,
@@ -20,6 +19,8 @@ import {
   removerCategoriaAdmin,
   alternarExibirImagensAdmin,
   reordenarCategoriasAdmin,
+  alternarOcultaCategoriaAdmin,
+  definirFrequenciaCategoriaAdmin,
 } from "@/app/admin/assinantes/actions/admin-categorias";
 import {
   criarProdutoAdmin,
@@ -28,16 +29,10 @@ import {
   removerProdutoAdmin,
   alternarDisponibilidadeAdmin,
   alternarOcultoAdmin,
-  definirVisibilidadeEmProdutosAdmin,
   reordenarProdutosAdmin,
+  aplicarFrequenciaEmProdutosAdmin,
+  salvarGradeDeDiasAdmin,
 } from "@/app/admin/assinantes/actions/admin-produtos";
-import {
-  aplicarCardapioEmProdutosAdmin,
-  aplicarCardapioEmCategoriaAdmin,
-  tirarDeCardapioAdmin,
-  preverLoteAdmin,
-  definirDiasDoVinculoAdmin,
-} from "@/app/admin/assinantes/actions/admin-cardapios";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import { enviarFotoProdutoAdmin } from "@/app/admin/assinantes/actions/admin-upload";
 import {
@@ -71,8 +66,8 @@ export function CardapioAdminClient({
   produtos,
   categorias,
   opcionaisPorCategoria,
-  cardapiosDoLote,
   vinculosPorProduto,
+  frequencias,
   categoriasOpcional,
   opcionais,
   associacoes,
@@ -84,19 +79,16 @@ export function CardapioAdminClient({
   produtos: Produto[];
   categorias: Categoria[];
   opcionaisPorCategoria: OpcionaisPorCategoria;
-  /**
-   * [269] Os cardápios da LOJA-ALVO para a barra de seleção em lote, com a
-   * frase de vigência já redigida no Server Component admin (fuso da loja-alvo).
-   */
-  cardapiosDoLote: CardapioParaLote[];
 } & Pick<
   ProdutosClientProps,
   // [Auditoria 260/261] `vinculosPorProduto` é OBRIGATÓRIA e vem do Server
   // Component admin (`carga-cardapios.ts`): é a leitura que impede o
   // `FormProduto` de afirmar "não está em nenhum cardápio" sobre quem está.
-  // [269] A prop `lote` deixou de ser ausente aqui — as cinco actions admin
-  // agora existem, e omiti-la recriaria a assimetria que a issue mata.
+  // [323] `lote` (cardápio) SAIU junto com a barra de cardápio: a seleção
+  // múltipla agora é a de frequência, com as actions admin abaixo.
   | "vinculosPorProduto"
+  // [323/C8] Projeção do Server Component admin (mesmo helper do lojista).
+  | "frequencias"
   // [235] `promocoes`/`fusoLojaRotulo` são projeção do SERVER COMPONENT admin
   // (com o fuso da loja-alvo) — o wrapper só repassa, sem derivar nada.
   | "categoriasOpcional"
@@ -129,28 +121,12 @@ export function CardapioAdminClient({
       // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
       vinculosPorProduto={vinculosPorProduto}
+      frequencias={frequencias}
       // [269] A rota admin de cardápios EXISTE desde a fase 6, então o link
       // volta — apontando para a LOJA-ALVO. Era `null` enquanto ela não
       // existia (256/261): um href fixo de `/painel/...` mandaria o admin para
       // o painel da PRÓPRIA loja dele e criaria o cardápio na loja errada.
       hrefCardapios={rotaCardapiosAdmin(lojaId)}
-      // [269][276] As SEIS actions de `AcoesLote`, todas admin e todas com o
-      // `lojaId` da URL fixado por closure. Omitir qualquer uma cairia na
-      // action do LOJISTA, que resolve a loja por `auth.uid()`.
-      lote={{
-        cardapios: cardapiosDoLote,
-        acoes: {
-          aplicarEmProdutos: (payload) =>
-            aplicarCardapioEmProdutosAdmin(lojaId, payload),
-          aplicarEmCategoria: (payload) =>
-            aplicarCardapioEmCategoriaAdmin(lojaId, payload),
-          tirarDeCardapio: (payload) => tirarDeCardapioAdmin(lojaId, payload),
-          preverLote: (entrada) => preverLoteAdmin(lojaId, entrada),
-          definirVisibilidade: (payload) =>
-            definirVisibilidadeEmProdutosAdmin(lojaId, payload),
-          definirDias: (payload) => definirDiasDoVinculoAdmin(lojaId, payload),
-        },
-      }}
       categoriasOpcional={categoriasOpcional}
       // [217] A biblioteca de itens e as linhas de associação alimentam o
       // cartão dentro do modal. Nenhuma query nova no admin: o agregado
@@ -165,6 +141,15 @@ export function CardapioAdminClient({
         removerCategoria: (id) => removerCategoriaAdmin(lojaId, id),
         alternarExibirImagens: (id, exibirImagens) =>
           alternarExibirImagensAdmin(lojaId, id, exibirImagens),
+        // [323] Frequência de exibição com o `lojaId` da URL fixado por
+        // closure — a action do LOJISTA gravaria na loja do admin logado.
+        alternarOcultaCategoria: (id, oculta) =>
+          alternarOcultaCategoriaAdmin(lojaId, id, oculta),
+        definirFrequenciaCategoria: (payload) =>
+          definirFrequenciaCategoriaAdmin(lojaId, payload),
+        aplicarFrequenciaEmProdutos: (payload) =>
+          aplicarFrequenciaEmProdutosAdmin(lojaId, payload),
+        salvarGradeDeDias: (payload) => salvarGradeDeDiasAdmin(lojaId, payload),
         // A action do lojista recebe `payload: unknown` (a sequência de ids) e
         // deriva `ordem` numa RPC; a admin recebe os pares `{ id, ordem }` já
         // formados. Só ADAPTAÇÃO DE FORMA: o `safeParse` reusa o mesmo schema do
