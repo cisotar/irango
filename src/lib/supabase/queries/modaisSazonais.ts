@@ -15,13 +15,18 @@
 //     de `cardapios.ts`, o que torna a leitura segura sob `service_role`.
 //
 // As tabelas `modais_sazonais` / `modal_sazonal_categorias` /
-// `modal_sazonal_cardapios` (migration 300) ainda NÃO estão em
-// `database.types.ts` (o cloud não aplicou a migration; `gen types` não as vê).
-// Até a regeneração, o acesso é por um client sem o genérico de `Database` — as
-// linhas voltam com o SHAPE MANUAL declarado aqui, fonte única deste módulo.
+// `modal_sazonal_cardapios` (migration 300) JÁ estão aplicadas no cloud, mas
+// `database.types.ts` ainda não foi regenerado e não as conhece. Até a
+// regeneração, o acesso é por um client sem o genérico de `Database` — as linhas
+// voltam com o SHAPE MANUAL declarado aqui, fonte única deste módulo.
+//
+// `mensagem` volta CRUA (`unknown`): quem exibe obtém o valor por
+// `lerMensagemModal` (parse na leitura, fail-closed — RN-M04). A RLS deixa o
+// dono gravar direto no PostgREST, então o que vem do banco é tão hostil quanto
+// um payload.
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** Client sem o genérico de `Database` — as tabelas novas ainda não estão nele. */
+/** Client sem o genérico de `Database` — os tipos gerados ainda não têm as tabelas. */
 type ClientAny = SupabaseClient;
 
 /** A linha `modais_sazonais` que o painel e a vitrine consomem. */
@@ -29,6 +34,8 @@ export type ModalSazonal = {
   id: string;
   loja_id: string;
   titulo: string;
+  /** JSONB cru do banco. Exibir SÓ via `lerMensagemModal` (RN-M04). */
+  mensagem: unknown;
   ativo: boolean;
   exibicao_inicio: string;
   exibicao_fim: string;
@@ -44,7 +51,7 @@ export type ModalSazonalComSelecao = ModalSazonal & {
 };
 
 const COLUNAS_MODAL =
-  "id, loja_id, titulo, ativo, exibicao_inicio, exibicao_fim, mostrar_promocoes_junto, criado_em, atualizado_em";
+  "id, loja_id, titulo, mensagem, ativo, exibicao_inicio, exibicao_fim, mostrar_promocoes_junto, criado_em, atualizado_em";
 
 const SELECT_COM_SELECAO = `${COLUNAS_MODAL}, modal_sazonal_categorias(categoria_id), modal_sazonal_cardapios(cardapio_id)`;
 
@@ -60,6 +67,7 @@ function hidratar(linha: LinhaModal): ModalSazonalComSelecao {
     id: linha.id,
     loja_id: linha.loja_id,
     titulo: linha.titulo,
+    mensagem: linha.mensagem ?? null,
     ativo: linha.ativo,
     exibicao_inicio: linha.exibicao_inicio,
     exibicao_fim: linha.exibicao_fim,

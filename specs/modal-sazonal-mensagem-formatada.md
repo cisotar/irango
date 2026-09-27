@@ -468,7 +468,7 @@ alter table public.modais_sazonais
 
 alter table public.modais_sazonais
   add constraint modais_sazonais_titulo_sem_invisiveis
-  check (titulo !~ '[\u0001-\u001F\u007F-\u009F؜​-‏  ‪-‮⁠-⁯﻿]');
+  check (titulo !~ '[\u0001-\u001F\u007F-\u009F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\uFEFF]');  -- escapes ARE; nunca caractere invisível literal (corrigido 2026-09-27)
 ```
 
 - **RLS:** nenhuma política nova. A coluna pertence à linha, e as três políticas de `modais_sazonais`

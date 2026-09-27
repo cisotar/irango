@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * Fase RED (TDD) da issue 301 — Server Actions do modal sazonal.
+ * Server Actions do modal sazonal (issue 301; caminho RPC da issue 314).
  *
- * As actions ainda NÃO existem: a importação ao final resolve para um módulo
- * que não foi criado → FAIL por "Cannot find module './modalSazonal'" ou
- * "is not a function". Esse é o RED intencional.
+ * criar/editar gravam por UMA chamada `rpc("salvar_modal_sazonal", args)`
+ * (RN-M15); ativar segue pelo query-builder `.from(...)`.
  *
  * Segurança coberta:
  *  - loja_id sempre de buscarLojaDoDono, NUNCA do payload (RN-11 / seguranca.md §10)
+ *  - seleção vazia e mensagem null são aceitas (RN-M02)
  *  - schema .strict(): chave extra no payload é recusada antes de qualquer I/O
  *  - teto de cardinalidade nas listas: .max(50) (CWE-770)
  *  - ativar um modal desativa o anterior na mesma transação (RN-05)
@@ -27,6 +27,7 @@ const MODAL_ALHEIO = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 // ─────────────────────────────────── captura de I/O
 type Captura = {
   tabela?: string;
+  rpc?: { nome: string; args: Record<string, unknown> };
   insert?: Record<string, unknown>;
   update?: Record<string, unknown>;
   filtros: Array<[string, unknown]>;
@@ -66,6 +67,10 @@ function makeChain() {
       captura.tabela = t;
       return queryChain;
     },
+    rpc: (nome: string, args: Record<string, unknown>) => {
+      captura.rpc = { nome, args };
+      return { then: queryChain.then };
+    },
   };
   return client;
 }
@@ -90,7 +95,7 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 
-// Importa DEPOIS dos mocks — o módulo ainda não existe, o que garante o FAIL.
+// Importa DEPOIS dos mocks.
 import {
   criarModalSazonal,
   ativarModalSazonal,
@@ -108,6 +113,7 @@ function payloadCriar(over: Record<string, unknown> = {}) {
     titulo: "Cardápio de Inverno",
     exibicao_inicio: "2026-06-01T00:00:00-03:00",
     exibicao_fim: "2026-06-16T00:00:00-03:00",
+    mensagem: null,
     categorias: ["00000000-0000-0000-0000-000000000001"],
     cardapios: [],
     mostrar_promocoes_junto: false,
@@ -118,7 +124,7 @@ function payloadCriar(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   captura = { filtros: [], deleteCalled: false };
-  respostaBanco = { data: { id: MODAL_ID }, error: null };
+  respostaBanco = { data: MODAL_ID, error: null };
   buscarLojaDoDono.mockResolvedValue(lojaDoDono());
 });
 
@@ -131,13 +137,24 @@ describe("criarModalSazonal (Server Action)", () => {
     // A action rejeita por .strict() (chave extra) OU ignora e deriva do dono.
     // Em ambos os casos, o loja_id persistido NUNCA pode ser o injetado.
     if (r.ok) {
-      // Se passou o strict, o insert deve usar o do dono, não o forjado.
-      expect(captura.insert?.loja_id).not.toBe(LOJA_OUTRA);
-      expect(captura.insert?.loja_id).toBe(LOJA_DONO);
+      // Se passou o strict, a RPC deve receber o do dono, não o forjado.
+      expect(captura.rpc?.args.p_loja_id).not.toBe(LOJA_OUTRA);
+      expect(captura.rpc?.args.p_loja_id).toBe(LOJA_DONO);
     } else {
       // Recusado pelo .strict() antes do banco — também correto.
       expect(r.ok).toBe(false);
+      expect(captura.rpc).toBeUndefined();
     }
+  });
+
+  it("[RN-11] payload válido: uma rpc com p_loja_id de buscarLojaDoDono e p_modal_id null", async () => {
+    const r = await criarModalSazonal(payloadCriar());
+    expect(r).toEqual({ ok: true });
+    expect(captura.rpc?.nome).toBe("salvar_modal_sazonal");
+    expect(captura.rpc?.args.p_loja_id).toBe(LOJA_DONO);
+    expect(captura.rpc?.args.p_modal_id).toBeNull();
+    expect(captura.rpc?.args.p_mostrar_promocoes_junto).toBe(false);
+    expect(captura.tabela).toBeUndefined();
   });
 
   it("[.strict()] chave extra no payload é rejeitada antes de qualquer I/O", async () => {
@@ -145,7 +162,7 @@ describe("criarModalSazonal (Server Action)", () => {
     const r = await criarModalSazonal({ ...payloadCriar(), campo_desconhecido: "xss" });
     expect(r.ok).toBe(false);
     // Nenhuma escrita deve ter ocorrido.
-    expect(captura.insert).toBeUndefined();
+    expect(captura.rpc).toBeUndefined();
     spy.mockRestore();
   });
 
@@ -157,7 +174,7 @@ describe("criarModalSazonal (Server Action)", () => {
     );
     const r = await criarModalSazonal(payloadCriar({ categorias: ids }));
     expect(r.ok).toBe(false);
-    expect(captura.insert).toBeUndefined();
+    expect(captura.rpc).toBeUndefined();
     spy.mockRestore();
   });
 
@@ -171,25 +188,33 @@ describe("criarModalSazonal (Server Action)", () => {
       payloadCriar({ categorias: [], cardapios: ids }),
     );
     expect(r.ok).toBe(false);
-    expect(captura.insert).toBeUndefined();
+    expect(captura.rpc).toBeUndefined();
     spy.mockRestore();
   });
 
-  it("[RN-06] seleção vazia (zero categorias e zero cardápios) é rejeitada", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("[RN-M02] seleção vazia (zero categorias e zero cardápios) é aceita", async () => {
     const r = await criarModalSazonal(
       payloadCriar({ categorias: [], cardapios: [] }),
     );
+    expect(r).toEqual({ ok: true });
+    expect(captura.rpc?.nome).toBe("salvar_modal_sazonal");
+    expect(captura.rpc?.args.p_categorias).toEqual([]);
+    expect(captura.rpc?.args.p_cardapios).toEqual([]);
+  });
+
+  it("[RN-M03] payload sem a chave `mensagem` é rejeitado antes do banco", async () => {
+    const semMensagem: Record<string, unknown> = payloadCriar();
+    delete semMensagem.mensagem;
+    const r = await criarModalSazonal(semMensagem);
     expect(r.ok).toBe(false);
-    expect(captura.insert).toBeUndefined();
-    spy.mockRestore();
+    expect(captura.rpc).toBeUndefined();
   });
 
   it("[RN-01] título vazio é rejeitado", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await criarModalSazonal(payloadCriar({ titulo: "" }));
     expect(r.ok).toBe(false);
-    expect(captura.insert).toBeUndefined();
+    expect(captura.rpc).toBeUndefined();
     spy.mockRestore();
   });
 });
@@ -229,14 +254,34 @@ describe("ativarModalSazonal (Server Action)", () => {
 
 describe("editarModalSazonal (Server Action)", () => {
   it("[RN-11] editar modal de loja alheia é recusado — posse derivada de buscarLojaDoDono", async () => {
-    // Testa o cenário em que o banco (via RLS) recusaria o UPDATE com 0 rows
-    // afetadas — a action deve reconhecer e retornar erro.
-    respostaBanco = { data: null, error: null }; // 0 rows: modal não pertence à loja
+    // A RPC recusa modal de outra loja (S4, mesma mensagem de id inexistente).
+    respostaBanco = {
+      data: null,
+      error: { code: "P0001", message: "modal_sazonal: modal inexistente" },
+    };
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await editarModalSazonal(MODAL_ALHEIO, payloadCriar({ titulo: "Sequestro" }));
-    // Com 0 linhas afetadas, a action deve retornar falha — nunca { ok: true } silencioso.
+    // Recusa — nunca { ok: true } silencioso, e o detalhe do banco não vaza.
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toContain("modal inexistente");
+    expect(captura.rpc?.args.p_loja_id).toBe(LOJA_DONO);
+    expect(captura.rpc?.args.p_modal_id).toBe(MODAL_ALHEIO);
+    spy.mockRestore();
+  });
+
+  it("[RN-11] RPC sem id de retorno (0 linhas) é recusa, nunca sucesso silencioso", async () => {
+    respostaBanco = { data: null, error: null };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await editarModalSazonal(MODAL_ALHEIO, payloadCriar());
     expect(r.ok).toBe(false);
     spy.mockRestore();
+  });
+
+  it("[RN-M10] id de rota lixo é rejeitado antes de qualquer I/O", async () => {
+    const r = await editarModalSazonal("1 or 1=1", payloadCriar());
+    expect(r.ok).toBe(false);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(captura.rpc).toBeUndefined();
   });
 
   it("[.strict()] chave extra na edição é rejeitada antes de qualquer I/O", async () => {
@@ -246,7 +291,7 @@ describe("editarModalSazonal (Server Action)", () => {
       loja_id: LOJA_OUTRA, // tentativa de reescrever a posse
     });
     expect(r.ok).toBe(false);
-    expect(captura.update).toBeUndefined();
+    expect(captura.rpc).toBeUndefined();
     spy.mockRestore();
   });
 });

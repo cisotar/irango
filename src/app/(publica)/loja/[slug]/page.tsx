@@ -10,6 +10,7 @@ import {
 } from "@/components/vitrine/layoutVitrine";
 
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
+import { montarModalSazonal } from "./montarModalSazonal";
 import { createClient } from "@/lib/supabase/server";
 import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
@@ -27,9 +28,9 @@ import {
   projetarCatalogoVitrine,
   type SecaoVitrine,
 } from "@/lib/utils/catalogoVitrine";
-import { dentroDaJanelaExibicao } from "@/lib/utils/janelaModalSazonal";
 import { rotuloJanelaDestaque } from "@/lib/utils/descreverVigencia";
 import { schemaTema } from "@/lib/validacoes/loja";
+import { lerMensagemModal } from "@/lib/validacoes/mensagemModal";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
 import { diaNoFuso } from "@/lib/utils/fusoLoja";
 import type { Horarios } from "@/lib/utils/lojaAberta";
@@ -303,48 +304,39 @@ export default async function VitrinePage({ params }: PageProps) {
   // no próprio fuso não reabre o modal de uma loja onde ainda é o mesmo dia.
   const diaDeHojeNaLoja = diaNoFuso(agora, timezoneLoja);
 
-  // [303] MODAL SAZONAL — existência, janela e produtos resolvidos no SSR, no
-  // fuso da loja. O cliente nunca avalia janela nem existência (RN-02/RN-04).
+  // [303/314] MODAL SAZONAL — existência, janela, mensagem e produtos resolvidos
+  // no SSR, no fuso da loja. O cliente nunca avalia janela nem existência.
   //
-  // O modal só desce se estiver ATIVO (a query já filtrou), DENTRO DA JANELA de
-  // exibição (RN-02, instante × instante) E tiver ao menos um produto curado
-  // depois da derivação (categoria vazia + cardápio fora de vigência ⇒ nada a
-  // mostrar). A derivação é ZERO query nova (RN-10): filtra sobre as seções que
-  // a página já projetou.
-  const modalSazonalNaJanela =
-    modalSazonalAtivo !== null &&
-    dentroDaJanelaExibicao(modalSazonalAtivo, agora)
-      ? modalSazonalAtivo
-      : null;
-
-  const produtosDoModalSazonal = modalSazonalNaJanela
-    ? derivarProdutosDoModalSazonal(
-        categoriasComProdutos,
-        secoesDestaque,
-        opcionaisPorCategoria,
-        rotulosVigencia,
-        {
-          categorias: modalSazonalNaJanela.categorias,
-          cardapios: modalSazonalNaJanela.cardapios,
-        },
-      )
-    : [];
-
-  // O modal sazonal só EXISTE para o cliente se, resolvida a janela E a
-  // curadoria, sobrou algo a mostrar. Título vem do lojista, renderizado como
-  // texto (RN-01) no componente.
-  const modalSazonal =
-    modalSazonalNaJanela !== null && produtosDoModalSazonal.length > 0
-      ? { titulo: modalSazonalNaJanela.titulo, produtos: produtosDoModalSazonal }
-      : null;
-
-  // [303/RN-09] PRECEDÊNCIA decidida no SERVIDOR: com um sazonal no ar cujo
-  // lojista NÃO ligou "mostrar promoções junto", o `ModalPromocoes` é suprimido.
-  // Desce PRONTA — o cliente nunca resolve qual modal abre. Sem sazonal no ar,
-  // `false`: o `ModalPromocoes` segue como hoje.
-  const suprimirPromocoes =
-    modalSazonalNaJanela !== null &&
-    !modalSazonalNaJanela.mostrar_promocoes_junto;
+  // RN-M01: abre com modal ATIVO (a query já filtrou) + DENTRO DA JANELA, e só
+  // isso — `mensagem` e `produtos` decidem o que aparece dentro. A derivação dos
+  // pratos é ZERO query nova (RN-10): filtra sobre as seções já projetadas.
+  // RN-M04: a mensagem é parseada na LEITURA, fail-closed (inválida ⇒ `null`,
+  // log só com ids). RN-M07: a supressão do `ModalPromocoes` deriva do objeto
+  // que de fato desce ao cliente — decisão pronta, o cliente não a refaz.
+  const { modalSazonal, suprimirPromocoes } = montarModalSazonal({
+    modalAtivo: modalSazonalAtivo,
+    agora,
+    produtos:
+      modalSazonalAtivo !== null
+        ? derivarProdutosDoModalSazonal(
+            categoriasComProdutos,
+            secoesDestaque,
+            opcionaisPorCategoria,
+            rotulosVigencia,
+            {
+              categorias: modalSazonalAtivo.categorias,
+              cardapios: modalSazonalAtivo.cardapios,
+            },
+          )
+        : [],
+    mensagem:
+      modalSazonalAtivo !== null
+        ? lerMensagemModal(modalSazonalAtivo.mensagem, {
+            lojaId,
+            modalId: modalSazonalAtivo.id,
+          })
+        : null,
+  });
 
   // Grupo sem produto visível já não vem de `agruparCatalogo` (issue 177),
   // então lista vazia = loja sem nada a mostrar.
