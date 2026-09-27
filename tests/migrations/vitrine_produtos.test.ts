@@ -86,6 +86,11 @@ const MUITO_ANTES = emRelacaoAAgora(-3);
  * ficam na MESMA ordem — o `create or replace view` da 132000 só aceita coluna
  * nova no fim e recusa (42P16) qualquer mudança de nome/tipo nas existentes, o
  * que faz desta lista um gate mecânico de não-regressão do contrato.
+ *
+ * 320 (RED): passa de 15 para 20. As 5 colunas de frequência de exibição
+ * (`dias_semana`, `hora_inicio`, `hora_fim`, `periodo_inicio`, `periodo_fim`)
+ * entram NO FIM, na ordem do C1 de `plan/tecnico-frequencia-exibicao.md`; as 15
+ * anteriores ficam na MESMA ordem.
  */
 const COLUNAS_VITRINE_PRODUTOS = [
   "id",
@@ -103,6 +108,11 @@ const COLUNAS_VITRINE_PRODUTOS = [
   "desconto_inicio",
   "desconto_fim",
   "visibilidade",
+  "dias_semana",
+  "hora_inicio",
+  "hora_fim",
+  "periodo_inicio",
+  "periodo_fim",
 ] as const;
 
 /** Ausentes por decisão (D6 + projeção mínima): nomeá-las tem de dar 42703. */
@@ -503,7 +513,7 @@ describe("265 · vitrine_produtos (projeção pública mascarada) + drop da poli
 
   // ───────────────────────────────── [5] contrato de colunas da projeção
 
-  it("[5a] vitrine_produtos expõe EXATAMENTE as 15 colunas do contrato, na ordem fixa (245)", async () => {
+  it("[5a] vitrine_produtos expõe EXATAMENTE as 20 colunas do contrato, na ordem fixa (245 + 320)", async () => {
     const r = await t.db.query<{ column_name: string }>(
       `select column_name from information_schema.columns
         where table_schema = 'public' and table_name = 'vitrine_produtos'
@@ -512,7 +522,7 @@ describe("265 · vitrine_produtos (projeção pública mascarada) + drop da poli
     expect(r.rows.map((x) => x.column_name)).toEqual([...COLUNAS_VITRINE_PRODUTOS]);
   });
 
-  it("[5b] anon lê nomeando as 15 colunas uma a uma (coluna faltando ⇒ 42703, não silêncio)", async () => {
+  it("[5b] anon lê nomeando as 20 colunas uma a uma (coluna faltando ⇒ 42703, não silêncio)", async () => {
     const r = await t.asAnon((db) =>
       db.query<Record<string, unknown>>(
         `select ${COLUNAS_VITRINE_PRODUTOS.join(", ")}
