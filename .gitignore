@@ -62,3 +62,6 @@ plan/seguranca-auditoria-*.md
 
 # Scripts de dados — contêm emails/telefones reais de clientes, não compartilhar
 scripts/criar-lojas-*.mjs
+
+# Arquivos locais de plano (ex.: rollback com ids de tenant real): nunca versionar.
+plan/*.local.md
