@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.5.0 | **Atualizado:** 2026-09-27
+**Versão:** 0.6.0 | **Atualizado:** 2026-09-27
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -249,9 +249,12 @@ CREATE POLICY "produtos_escrita_propria"
 #### `categorias` — mesmo padrão de `produtos`
 
 ```sql
+-- `oculta = false` desde a issue 320 (migration 20260928130000): categoria
+-- oculta some da vitrine para anon (RN-2, spec frequencia-exibicao.md); o
+-- dono segue vendo tudo pela policy de escrita própria, abaixo.
 CREATE POLICY "categorias_leitura_publica"
   ON categorias FOR SELECT
-  USING (public.loja_esta_ativa(categorias.loja_id));
+  USING (oculta = false AND public.loja_esta_ativa(categorias.loja_id));
 
 CREATE POLICY "categorias_escrita_propria"
   ON categorias FOR ALL
@@ -426,6 +429,34 @@ Se a permutação for de um escopo mais fino que a loja inteira (ex.: um par loj
 `public.salvar_modal_sazonal(...)` (migration `20260927121000_rpc_salvar_modal_sazonal.sql`) é a segunda função `SECURITY INVOKER` da família, mas com forma diferente de `reordenar_categorias`: não reordena, grava **linha + `mensagem` + as duas junções de seleção** (`modal_sazonal_categorias`, `modal_sazonal_cardapios`) numa única transação — criar/editar o modal deixou de ser dois ou três requests PostgREST separados (a Server Action antiga, `regravarSelecao`, foi apagada). As policies `*_escrita_propria` de `modais_sazonais` e das duas junções continuam a autoridade única sob invoker; o corpo reconfere posse da loja (`lojas.dono_id = auth.uid()`) como segunda camada explícita, fail-closed mesmo se a policy afrouxar (trava S1/S2). `REVOKE ALL FROM public, anon` + `GRANT EXECUTE TO authenticated` — sem grant ao papel de serviço: sem JWT de usuário ele cai em S1. Ver `schema.md` §2/§6 para a coluna e os CHECKs que a RPC grava.
 
 **Por que RPC e não a "Alternativa sem RPC" da seção seguinte:** a sequência de requests sob `constraint trigger DEFERRED` só é segura quando existe uma invariante de linha que o trigger possa verificar no COMMIT. Aqui não existe — seleção vazia (zero categorias/cardápios) é válida (RN-M02), então não há estado "inválido" que um trigger detectasse se a escrita da linha e das junções ficassem em requests separados; o risco seria só rascunho/seleção pela metade em falha no meio do caminho, sem sinal nenhum. RPC transacional fecha isso: qualquer erro (FK composta 23503, CHECK 23514) desfaz tudo.
+
+### Quarta instância do padrão INVOKER — escopo explícito no corpo em vez de DEFINER, mesma RPC para lojista E admin (issue 322, desvio D6)
+
+`public.aplicar_frequencia_em_produtos(p_loja_id, p_ids, p_frequencia)` e
+`public.salvar_grade_de_dias(p_loja_id, p_itens)` (migration
+`20260928131000_rpc_frequencia_produtos.sql`) são chamadas **pelos dois mundos** — lojista
+autenticado e hub admin (`service_role`) — mas continuam `SECURITY INVOKER`, ao contrário da regra
+geral desta seção ("`DEFINER` quando a via admin precisa do mesmo caminho"). A regra geral nasceu
+de RPCs cujo corpo **não filtrava tenant** (`reordenar_opcionais_da_categoria`, issue 215): sob
+`invoker`, a via `service_role` (BYPASSRLS) rodaria sem nenhuma checagem. Aqui o `UPDATE` já filtra
+`p.loja_id = p_loja_id` explicitamente, além de `p.id = any(p_ids)` — o mesmo escopo que a T3
+(coerência) proveria sob `definer`:
+
+- **Lojista:** a RLS `produtos_escrita_propria` continua valendo dentro da função (é o que
+  `invoker` preserva). Um `p_loja_id` alheio zera as linhas do `UPDATE` pela RLS, a contagem
+  (`row_count`) diverge de `cardinality(p_ids)`/`jsonb_array_length(p_itens)`, e a função
+  `raise exception` — desfazendo tudo.
+- **Admin (`service_role`, BYPASSRLS):** a RLS não vale, mas o filtro explícito
+  `p.loja_id = p_loja_id` no corpo — com o `p_loja_id` vindo do `lojaId` já resolvido por
+  `prepararContextoAdmin`, nunca do payload livre — dá a mesma garantia que `EscopoLoja` dá em
+  Server Actions comuns (`.eq("loja_id")` + contagem). `DEFINER` **tiraria** a RLS do lojista sem
+  necessidade, já que o corpo por si só já segura o admin.
+
+**Regra revisada:** o divisor não é "a RPC serve os dois mundos" (isso sozinho já pedia `DEFINER`
+até aqui) — é **se o corpo já filtra tenant explicitamente no `WHERE`**. Corpo sem filtro de tenant
+→ `DEFINER` + T1..T7 (seção anterior). Corpo com filtro de tenant explícito, aplicável aos dois
+chamadores sem diferença de caminho → `INVOKER` continua seguro e preserva a RLS do lojista como
+camada extra, sem custo. Mesma classe de defesa em profundidade do wrapper `EscopoLoja` (§7).
 
 ### Alternativa sem RPC: sequência de requests sob constraint trigger DEFERRED (issues 284/285)
 

@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.3.1 | **Atualizado:** 2026-09-27
+**Versão:** 0.4.0 | **Atualizado:** 2026-09-27
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -153,33 +153,78 @@ CREATE TABLE lojas (
 ### `categorias`
 
 ```sql
+-- Frequência de exibição (issue 320, spec `frequencia-exibicao.md`, migration
+-- 20260928130000): 5 eixos combináveis com os da MESMA linha de `produtos`
+-- (RN-1, interseção AND). NULL em um eixo = sem restrição nesse eixo; os 5 NULL
+-- = permanente. `dias_semana = '{}'` é valor válido e significa "nunca" (RN-8),
+-- não "todo dia" — não confundir com NULL. A janela NUNCA é avaliada em SQL:
+-- função pura em TS, no fuso da loja (`src/lib/utils/frequencia.ts`).
 CREATE TABLE categorias (
-  id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  loja_id   uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
-  nome      text NOT NULL,
-  ordem     int NOT NULL DEFAULT 0,
-  criado_em timestamptz NOT NULL DEFAULT now()
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id        uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  nome           text NOT NULL,
+  ordem          int NOT NULL DEFAULT 0,
+  oculta         boolean NOT NULL DEFAULT false,  -- oculta = some da vitrine com seus produtos (RN-2); dono segue vendo
+  dias_semana    smallint[],   -- 0=dom..6=sab; NULL=sem restrição; '{}'=nunca (RN-8)
+  hora_inicio    time,         -- INCLUSIVO, fuso da loja; par com hora_fim
+  hora_fim       time,         -- EXCLUSIVO, fuso da loja; par com hora_inicio
+  periodo_inicio date,         -- INCLUSIVO
+  periodo_fim    date,         -- INCLUSIVO; depois dele a categoria some da vitrine com seus produtos (RN-7)
+  criado_em      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT categorias_dias_semana_dominio
+    CHECK (dias_semana IS NULL OR dias_semana <@ ARRAY[0,1,2,3,4,5,6]::smallint[]),
+  CONSTRAINT categorias_hora_par CHECK ((hora_inicio IS NULL) = (hora_fim IS NULL)),
+  CONSTRAINT categorias_hora_ordem CHECK (hora_inicio IS NULL OR hora_fim > hora_inicio),
+  CONSTRAINT categorias_periodo_ordem
+    CHECK (periodo_inicio IS NULL OR periodo_fim IS NULL OR periodo_fim >= periodo_inicio)
 );
 ```
 
 ### `produtos`
 
 ```sql
+-- Frequência de exibição (issue 320): mesmos 5 eixos e mesma semântica de
+-- `categorias`, acima (NULL = sem restrição; `dias_semana = '{}'` = nunca,
+-- RN-8; avaliação em TS, nunca em SQL).
 CREATE TABLE produtos (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  loja_id      uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
-  categoria_id uuid REFERENCES categorias(id) ON DELETE SET NULL,
-  nome         text NOT NULL,
-  descricao    text,
-  preco        numeric(10,2) NOT NULL CHECK (preco >= 0),
-  disponivel   boolean NOT NULL DEFAULT true,   -- comprável vs. esgotado (esgotado ainda aparece na vitrine, marcado)
-  oculto       boolean NOT NULL DEFAULT false,  -- oculto = nunca aparece na vitrine, independente de `disponivel`
-  ordem        int NOT NULL DEFAULT 0,
-  foto_url     text,
-  criado_em    timestamptz NOT NULL DEFAULT now(),
-  atualizado_em timestamptz NOT NULL DEFAULT now()
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id        uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  categoria_id   uuid REFERENCES categorias(id) ON DELETE SET NULL,
+  nome           text NOT NULL,
+  descricao      text,
+  preco          numeric(10,2) NOT NULL CHECK (preco >= 0),
+  disponivel     boolean NOT NULL DEFAULT true,   -- comprável vs. esgotado (esgotado ainda aparece na vitrine, marcado)
+  oculto         boolean NOT NULL DEFAULT false,  -- oculto = nunca aparece na vitrine, independente de `disponivel`
+  ordem          int NOT NULL DEFAULT 0,
+  foto_url       text,
+  dias_semana    smallint[],   -- 0=dom..6=sab; NULL=sem restrição; '{}'=nunca (RN-8)
+  hora_inicio    time,         -- INCLUSIVO, fuso da loja; par com hora_fim
+  hora_fim       time,         -- EXCLUSIVO, fuso da loja; par com hora_inicio
+  periodo_inicio date,         -- INCLUSIVO
+  periodo_fim    date,         -- INCLUSIVO; depois dele o produto some da vitrine (RN-7)
+  criado_em      timestamptz NOT NULL DEFAULT now(),
+  atualizado_em  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT produtos_dias_semana_dominio
+    CHECK (dias_semana IS NULL OR dias_semana <@ ARRAY[0,1,2,3,4,5,6]::smallint[]),
+  CONSTRAINT produtos_hora_par CHECK ((hora_inicio IS NULL) = (hora_fim IS NULL)),
+  CONSTRAINT produtos_hora_ordem CHECK (hora_inicio IS NULL OR hora_fim > hora_inicio),
+  CONSTRAINT produtos_periodo_ordem
+    CHECK (periodo_inicio IS NULL OR periodo_fim IS NULL OR periodo_fim >= periodo_inicio)
 );
 ```
+
+Escrita em lote da frequência: RPCs `public.aplicar_frequencia_em_produtos(p_loja_id, p_ids,
+p_frequencia)` (mesma frequência em N produtos) e `public.salvar_grade_de_dias(p_loja_id, p_itens)`
+(grade produto × dia, só `dias_semana`) — migration `20260928131000_rpc_frequencia_produtos.sql`.
+`SECURITY INVOKER` com `p_loja_id` explícito no `WHERE`, usada por lojista **e** admin — desvio D6
+do padrão de §6/`seguranca.md`, ver lá o racional.
+
+`vitrine_produtos` (view pública, `security_invoker = false`, `security_barrier = true`) ganhou as
+5 colunas de frequência no fim da projeção (20..20, ordem fixa, 20 colunas ao todo — eram 15) e
+passou a excluir produto de categoria `oculta = true` (`not exists` explícito, a view não passa
+pela RLS de `categorias`). A janela de frequência (dias/hora/período) **não** é filtrada na view —
+só o TS decide (`src/lib/utils/frequencia.ts`). Ver `seguranca.md` §19 para o padrão geral de view
+definer.
 
 ### `cupons`
 
@@ -466,6 +511,15 @@ CREATE TABLE taxas_entrega_duplicadas_182 (
 ```
 
 ### `cardapios`
+
+> **Função morta desde a issue 320/323** (spec `frequencia-exibicao.md`): substituída pela
+> frequência de exibição de `produtos`/`categorias`, acima. `cardapios`, `cardapio_produtos` e a
+> coluna `produtos.visibilidade` **permanecem no schema** (não apagar — fora do escopo da spec),
+> mas sem leitor no caminho de compra/vitrine: `criarPedido`, `revisarCarrinho` e
+> `vitrine_produtos` já não consultam `cardapios`. A migration `20260928132000` converteu todo
+> produto `visibilidade='cardapio'` para `'menu'` (permanente); depois dela `visibilidade` só é
+> gravável como `'menu'` pelo app (as rotas `/painel/cardapios/*` e o equivalente admin continuam
+> existindo e gravando `cardapio_produtos`, só saíram da navegação — não são inatingíveis).
 
 ```sql
 -- Cardápio sazonal do lojista. Vigência por modo: 'recorrente' (dias_semana/
