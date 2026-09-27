@@ -518,6 +518,9 @@ export function ProdutosClient({
   const [alvoFrequencia, setAlvoFrequencia] = useState<AlvoFrequencia | null>(null);
   const [modoGrade, setModoGrade] = useState(false);
   const botaoGradeRef = useRef<HTMLButtonElement>(null);
+  // Chave curta de cada abertura da variante SELEÇÃO (zera o rascunho e
+  // prefixa ids de DOM — juntar até 200 uuids ali seria um id gigante).
+  const aberturasDaSelecaoRef = useRef(0);
 
   /**
    * A seleção que vai ao servidor, DERIVADA da lista renderizada — nunca o
@@ -841,7 +844,7 @@ export function ProdutosClient({
     const n = ids.length;
     const rotulo = `${n} ${n === 1 ? "produto" : "produtos"}`;
     setAlvoFrequencia({
-      chave: `selecao-${ids.join(",")}`,
+      chave: `selecao-${++aberturasDaSelecaoRef.current}`,
       tipo: "selecao",
       descricao: `${rotulo} ${n === 1 ? "selecionado" : "selecionados"}`,
       nome: "os produtos selecionados",
