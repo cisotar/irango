@@ -141,7 +141,7 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
       },
       {
         href: `${base}/configuracoes/promocoes`,
-        rotulo: "Promoções",
+        rotulo: "Avisos",
         icone: Megaphone,
       },
       { href: `${base}/configuracoes/tema`, rotulo: "Tema", icone: Palette },
