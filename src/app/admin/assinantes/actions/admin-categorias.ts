@@ -216,7 +216,10 @@ export async function alternarOcultaCategoriaAdmin(
 
   try {
     const { error, count } = await escopo.atualizar("categorias", id, { oculta });
-    if (error) return { ok: false, erro: ERRO_GENERICO };
+    if (error) {
+      console.error("[alternarOcultaCategoriaAdmin]", error);
+      return { ok: false, erro: ERRO_GENERICO };
+    }
     if (!count) return { ok: false, erro: MSG_CATEGORIA_NAO_ENCONTRADA };
 
     registrarAcessoAdmin(svc, {
