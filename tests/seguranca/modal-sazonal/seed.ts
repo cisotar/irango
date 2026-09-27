@@ -258,6 +258,35 @@ export function argsEdicaoValidos(loja: LojaSemeada): ArgsSalvarModal {
   };
 }
 
+/**
+ * Chama a RPC `public.ativar_modal_sazonal(p_modal_id uuid)` (issue 319) em
+ * NOTAÇÃO NOMEADA, como o PostgREST chama: fixa o nome do parâmetro.
+ */
+export async function chamarAtivarModal(db: PGlite, modalId: string): Promise<void> {
+  await db.query(`select public.ativar_modal_sazonal(p_modal_id => $1::uuid)`, [modalId]);
+}
+
+/**
+ * Cria um modal EXTRA na loja via service_role (BYPASSRLS), sem junções.
+ * Usado para montar "anterior ativo + alvo rascunho" (319), "ativo + rascunho na
+ * mesma loja" (317) e o enchimento até o teto (318).
+ */
+export async function criarModalExtra(
+  t: TestDb,
+  lojaId: string,
+  titulo: string,
+  ativo = false,
+): Promise<string> {
+  return t.asService(async (db) => {
+    const r = await db.query<{ id: string }>(
+      `insert into public.modais_sazonais (loja_id, titulo, ativo, exibicao_inicio, exibicao_fim)
+       values ($1, $2, $3, $4, $5) returning id`,
+      [lojaId, titulo, ativo, INICIO, FIM],
+    );
+    return r.rows[0].id;
+  });
+}
+
 /** Mensagem mínima válida no formato `versao: 1` (topo aceito pelo CHECK de forma). */
 export function mensagemMinima(texto = "Aviso da loja"): {
   versao: 1;

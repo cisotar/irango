@@ -490,3 +490,368 @@ describe("V5 · A6 · CHECK do título (pglite)", () => {
     expect(up.affectedRows).toBe(1);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// Issue 316 · invisíveis NÃO-bidi (Hangul filler, tags, SHY, seletores) e Zalgo
+// ══════════════════════════════════════════════════════════════════════════
+//
+// CONTRATO FIXADO PARA A FASE GREEN (executar):
+//
+// 1. `removerInvisiveisEControles` (as DUAS opções) passa a REMOVER, além do que
+//    já removia:
+//      U+00AD SOFT HYPHEN · U+034F CGJ · U+115F · U+1160 · U+180E · U+2800
+//      U+3164 · U+FFA0 · U+FFF9–U+FFFB · U+FE00–U+FE0E · U+E0000–U+E007F (tags)
+//    Só encurta (invariante do módulo preservada).
+//
+// 2. EXCEÇÕES (o caractere sobrevive):
+//    a) U+FE0E logo depois de `\p{Extended_Pictographic}` (apresentação texto de
+//       emoji: "\u2764\uFE0E"), nas DUAS opções — mesmo tratamento que U+FE0F já
+//       tem. U+FE0F NÃO entra na lista (segue preservado como hoje).
+//    b) Sequência de tags de BANDEIRA DE SUBDIVISÃO, SÓ com
+//       `preservarJuncaoDeEmoji: true` (trecho da mensagem):
+//         U+1F3F4 + 2 a 7 tags em [U+E0030–U+E0039 U+E0061–U+E007A] + U+E007F
+//       Fora desse molde (maiúscula, espaço, >7, sem U+E007F, base que não é
+//       U+1F3F4) TODAS as tags saem e a base fica. Na opção padrão (título e
+//       observação) as tags saem SEMPRE — mesma política do ZWJ da família.
+//
+// 3. ZALGO: `removerInvisiveisEControles` (as DUAS opções) limita marcas
+//    combinantes seguidas a 3: `/(\p{Mn}{3})\p{Mn}+/gu → "$1"`, aplicado DEPOIS
+//    da remoção de invisíveis. Vale para trecho e título (o teto de 120/800 é
+//    medido depois). Vietnamita (2 marcas) passa intacto.
+//
+// 4. OBSERVAÇÃO DE PEDIDO (`normalizarObservacao`, que compartilha os passos 2/3):
+//    ganha APENAS a remoção da lista do item 1 (com a exceção 2a). Tags de
+//    bandeira saem (a observação já não preserva ZWJ). O Zalgo NÃO é limitado na
+//    observação — o cap mora só em `removerInvisiveisEControles`.
+//
+// 5. CHECK `modais_sazonais_titulo_sem_invisiveis`: recriado em migration NOVA
+//    com o MESMO nome, conjunto atual + U+00AD U+034F U+115F U+1160 U+180E
+//    U+2800 U+3164 U+FE00–U+FE0D U+FFA0 U+FFF9–U+FFFB U+E0000–U+E007F.
+//    U+FE0E e U+FE0F ficam FORA do CHECK (contexto de pictograma não é avaliável
+//    em regex do Postgres); o zod é quem remove o U+FE0E solto. Zalgo não tem
+//    CHECK (sem `\p{Mn}` no Postgres). Violação: 23514 + nome do CHECK.
+
+/** Codifica ASCII como caracteres de TAG (U+E0000 + código). Sem literal invisível. */
+const tags = (s: string) =>
+  Array.from(s)
+    .map((ch) => String.fromCodePoint(0xe0000 + ch.charCodeAt(0)))
+    .join("");
+
+const CANCEL_TAG = "\u{E007F}";
+const BANDEIRA_PRETA = "\u{1F3F4}";
+const BANDEIRA_INGLATERRA = BANDEIRA_PRETA + tags("gbeng") + CANCEL_TAG;
+const CORACAO_TEXTO = "\u2764\uFE0E"; // coração com apresentação TEXTO (VS15)
+const ACENTO = "\u0301"; // COMBINING ACUTE ACCENT (Mn)
+
+/** Caracteres NOVOS da 316 que SOMEM em qualquer contexto de `A{ch}B`. */
+const REMOVIDOS_316: [string, string][] = [
+  ["U+3164 HANGUL FILLER", "\u3164"],
+  ["U+115F HANGUL CHOSEONG FILLER", "\u115F"],
+  ["U+1160 HANGUL JUNGSEONG FILLER", "\u1160"],
+  ["U+FFA0 HALFWIDTH HANGUL FILLER", "\uFFA0"],
+  ["U+2800 BRAILLE PATTERN BLANK", "\u2800"],
+  ["U+00AD SOFT HYPHEN", "\u00AD"],
+  ["U+034F COMBINING GRAPHEME JOINER", "\u034F"],
+  ["U+180E MONGOLIAN VOWEL SEPARATOR", "\u180E"],
+  ["U+FFF9 INTERLINEAR ANNOTATION ANCHOR", "\uFFF9"],
+  ["U+FFFA INTERLINEAR ANNOTATION SEPARATOR", "\uFFFA"],
+  ["U+FFFB INTERLINEAR ANNOTATION TERMINATOR", "\uFFFB"],
+  ["U+E0000 (início do bloco de tags)", "\u{E0000}"],
+  ["U+E0001 LANGUAGE TAG", "\u{E0001}"],
+  ["U+E0020 TAG SPACE", "\u{E0020}"],
+  ["U+E0041 TAG LATIN CAPITAL A", "\u{E0041}"],
+  ["U+E0067 TAG g solta (sem bandeira)", "\u{E0067}"],
+  ["U+E007F CANCEL TAG solta", CANCEL_TAG],
+  ["U+FE00 VARIATION SELECTOR-1", "\uFE00"],
+  ["U+FE01 VARIATION SELECTOR-2", "\uFE01"],
+  ["U+FE0D VARIATION SELECTOR-14", "\uFE0D"],
+  ["U+FE0E VS15 depois de LETRA", "\uFE0E"],
+];
+
+/** Mesmos, sem U+FE0E: é o que o CHECK do banco recusa (item 5 do contrato). */
+const RECUSADOS_PELO_CHECK_316 = REMOVIDOS_316.filter(([, ch]) => ch !== "\uFE0E");
+
+/** Espelho JS do CHECK recriado (item 5). O título canônico nunca casa com ele. */
+const CONJUNTO_CHECK_TITULO_316 =
+  /[\u0001-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u180E\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\u2800\u3164\uFE00-\uFE0D\uFEFF\uFFA0\uFFF9-\uFFFB\u{E0000}-\u{E007F}]/u;
+
+describe("V5 · 316 · removerInvisiveisEControles remove invisíveis não-bidi", () => {
+  for (const [nome, ch] of REMOVIDOS_316) {
+    it(`remove ${nome} (opção padrão)`, () => {
+      expect(remover(`A${ch}B`)).toBe("AB");
+    });
+    it(`remove ${nome} (preservarJuncaoDeEmoji)`, () => {
+      expect(remover(`A${ch}B`, { preservarJuncaoDeEmoji: true })).toBe("AB");
+    });
+  }
+
+  it("payload ASCII escondido em tags some inteiro (opção padrão e preservar)", () => {
+    const escondido = `Oi${tags("pague na chave x")}!`;
+    expect(remover(escondido)).toBe("Oi!");
+    expect(remover(escondido, { preservarJuncaoDeEmoji: true })).toBe("Oi!");
+  });
+
+  it("não expande com a lista nova: saída nunca mais longa que a entrada", () => {
+    const hostil = REMOVIDOS_316.map(([, ch]) => `x${ch}`).join("") + BANDEIRA_INGLATERRA;
+    expect(remover(hostil).length).toBeLessThanOrEqual(hostil.length);
+    expect(remover(hostil, { preservarJuncaoDeEmoji: true }).length).toBeLessThanOrEqual(hostil.length);
+  });
+});
+
+describe("V5 · 316 · exceções de emoji (U+FE0E e bandeira de subdivisão)", () => {
+  it("U+FE0E depois de pictograma é preservado nas DUAS opções", () => {
+    expect(remover(`Amo ${CORACAO_TEXTO}`)).toBe(`Amo ${CORACAO_TEXTO}`);
+    expect(remover(`Amo ${CORACAO_TEXTO}`, { preservarJuncaoDeEmoji: true })).toBe(`Amo ${CORACAO_TEXTO}`);
+  });
+
+  it("U+FE0E solto entre letras é removido (controle da exceção)", () => {
+    expect(remover("a\uFE0Eb")).toBe("ab");
+  });
+
+  it("preservarJuncaoDeEmoji: bandeira da Inglaterra preservada byte a byte", () => {
+    const saida = remover(`Vai ${BANDEIRA_INGLATERRA}!`, { preservarJuncaoDeEmoji: true });
+    expect(bytes(saida)).toEqual(bytes(`Vai ${BANDEIRA_INGLATERRA}!`));
+  });
+
+  it("opção padrão: as tags da bandeira saem e fica só U+1F3F4 (mesma política do ZWJ)", () => {
+    expect(remover(`Vai ${BANDEIRA_INGLATERRA}!`)).toBe(`Vai ${BANDEIRA_PRETA}!`);
+  });
+
+  const foraDoMolde: [string, string][] = [
+    ["20 tags minúsculas (payload longo)", BANDEIRA_PRETA + tags("abcdefghijklmnopqrst") + CANCEL_TAG],
+    ["tag MAIÚSCULA", BANDEIRA_PRETA + tags("GBENG") + CANCEL_TAG],
+    ["tag de espaço no meio", BANDEIRA_PRETA + tags("gb eng") + CANCEL_TAG],
+    ["sem CANCEL TAG no fim", BANDEIRA_PRETA + tags("gbeng")],
+  ];
+  for (const [nome, seq] of foraDoMolde) {
+    it(`preservarJuncaoDeEmoji: bandeira com ${nome} perde TODAS as tags e mantém a base`, () => {
+      expect(remover(`x${seq}y`, { preservarJuncaoDeEmoji: true })).toBe(`x${BANDEIRA_PRETA}y`);
+    });
+  }
+
+  it("preservarJuncaoDeEmoji: tags válidas depois de pictograma que NÃO é U+1F3F4 saem", () => {
+    const seq = "\u{1F354}" + tags("gbeng") + CANCEL_TAG;
+    expect(remover(seq, { preservarJuncaoDeEmoji: true })).toBe("\u{1F354}");
+  });
+});
+
+describe("V5 · 316 · Zalgo: no máximo 3 marcas combinantes seguidas", () => {
+  it("'a' + 6 acentos vira 'a' + 3 acentos (opção padrão)", () => {
+    expect(remover("a" + ACENTO.repeat(6) + "b")).toBe("a" + ACENTO.repeat(3) + "b");
+  });
+
+  it("'a' + 6 acentos vira 'a' + 3 acentos (preservarJuncaoDeEmoji)", () => {
+    expect(remover("a" + ACENTO.repeat(6), { preservarJuncaoDeEmoji: true })).toBe("a" + ACENTO.repeat(3));
+  });
+
+  it("exatamente 3 marcas passam intactas (fronteira 3/4)", () => {
+    const tres = "a" + ACENTO.repeat(3);
+    expect(remover(tres)).toBe(tres);
+  });
+
+  it("vietnamita decomposto (2 marcas: e + U+0323 + U+0302) passa intacto", () => {
+    const ee = "Vi" + "e\u0323\u0302" + "t";
+    expect(remover(ee)).toBe(ee);
+  });
+
+  it("marcas separadas por U+034F (CGJ) não burlam o teto: o CGJ sai ANTES do cap", () => {
+    const burla = "a" + ACENTO.repeat(3) + "\u034F" + ACENTO.repeat(3);
+    expect(remover(burla)).toBe("a" + ACENTO.repeat(3));
+  });
+});
+
+describe("V5 · 316 · zod do trecho aplica a lista nova", () => {
+  for (const [nome, ch] of REMOVIDOS_316) {
+    it(`trecho: ${nome} é removido`, async () => {
+      const r = await canonizarTrecho(`A${ch}B`);
+      expect(r.success).toBe(true);
+      expect(textoDoPrimeiroTrecho(r.data!)).toBe("AB");
+    });
+  }
+
+  it("trecho só de U+3164 some; documento sem nada visível vira null", async () => {
+    const r = await canonizarTrecho("\u3164\u3164\u2800\u00AD");
+    expect(r.success).toBe(true);
+    expect(r.data).toBeNull();
+  });
+
+  it("trecho com LINK e texto U+3164 some (link sem texto visível não sobrevive)", async () => {
+    const { schemaMensagemModal } = await carregarMensagem();
+    const r = schemaMensagemModal.safeParse({
+      versao: 1,
+      paragrafos: [{ trechos: [{ texto: "\u3164", link: "https://exemplo.com/" }] }],
+    });
+    expect(r.success).toBe(true);
+    expect(r.success ? r.data : "falhou").toBeNull();
+  });
+
+  it("trecho preserva a bandeira da Inglaterra byte a byte", async () => {
+    const r = await canonizarTrecho(`Vai ${BANDEIRA_INGLATERRA}`);
+    expect(r.success).toBe(true);
+    expect(bytes(textoDoPrimeiroTrecho(r.data!))).toEqual(bytes(`Vai ${BANDEIRA_INGLATERRA}`));
+  });
+
+  it("trecho preserva U+FE0E depois de pictograma", async () => {
+    const r = await canonizarTrecho(`Amo ${CORACAO_TEXTO}`);
+    expect(r.success).toBe(true);
+    expect(textoDoPrimeiroTrecho(r.data!)).toBe(`Amo ${CORACAO_TEXTO}`);
+  });
+
+  it("trecho limita Zalgo a 3 marcas", async () => {
+    const r = await canonizarTrecho("Oi" + ACENTO.repeat(40));
+    expect(r.success).toBe(true);
+    expect(textoDoPrimeiroTrecho(r.data!)).toBe("Oi" + ACENTO.repeat(3));
+  });
+
+  it("lerMensagemModal remove U+3164 de documento gravado direto no banco", async () => {
+    const { lerMensagemModal } = await carregarMensagem();
+    const lido = lerMensagemModal(
+      { versao: 1, paragrafos: [{ trechos: [{ texto: "pa\u3164gue" }] }] },
+      { lojaId: "l", modalId: "m" },
+    ) as unknown as Canonico;
+    expect(lido).not.toBeNull();
+    expect(textoDoPrimeiroTrecho(lido)).toBe("pague");
+  });
+});
+
+describe("V5 · 316 · zod do título aplica a lista nova", () => {
+  for (const [nome, ch] of REMOVIDOS_316) {
+    it(`título: ${nome} é removido`, async () => {
+      const r = await tituloCanonico(`Promo${ch}Natal`);
+      expect(r.success).toBe(true);
+      expect(r.titulo).toBe("PromoNatal");
+    });
+  }
+
+  it('título "\\u3164" sozinho reprova (min 1 medido depois da remoção)', async () => {
+    await reprovaSoPeloTitulo("\u3164");
+  });
+
+  it("título só de invisíveis não-bidi reprova", async () => {
+    await reprovaSoPeloTitulo("\u3164\u115F\u1160\uFFA0\u2800\u00AD\u034F\u180E" + tags("oi"));
+  });
+
+  it("título: bandeira de subdivisão perde as tags (opção padrão), fica U+1F3F4", async () => {
+    const r = await tituloCanonico(`Copa ${BANDEIRA_INGLATERRA}`);
+    expect(r).toEqual({ success: true, titulo: `Copa ${BANDEIRA_PRETA}` });
+  });
+
+  it("título: U+FE0E depois de pictograma é preservado", async () => {
+    expect(await tituloCanonico(`Amo ${CORACAO_TEXTO}`)).toEqual({ success: true, titulo: `Amo ${CORACAO_TEXTO}` });
+  });
+
+  it("título: Zalgo de 200 marcas vira 3 e cabe no teto de 120 (cap antes de medir)", async () => {
+    const r = await tituloCanonico("a" + ACENTO.repeat(200));
+    expect(r).toEqual({ success: true, titulo: "a" + ACENTO.repeat(3) });
+  });
+
+  it("ORDEM: título canônico hostil não casa com NENHUM caractere do CHECK recriado", async () => {
+    const hostil = `\tPromo${REMOVIDOS_316.map(([, ch]) => ch).join("x")}${BANDEIRA_INGLATERRA}fim\t`;
+    const r = await tituloCanonico(hostil);
+    expect(r.success).toBe(true);
+    expect(r.titulo).not.toMatch(CONJUNTO_CHECK_TITULO_316);
+    expect(r.titulo!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("V5 · 316 · observação de pedido (normalizarObservacao) — efeito colateral contratado", () => {
+  for (const [nome, ch] of REMOVIDOS_316) {
+    it(`observação: ${nome} é removido`, () => {
+      expect(moduloNormalizacao.normalizarObservacao(`sem${ch}cebola`)).toBe("semcebola");
+    });
+  }
+
+  it("observação: U+FE0E depois de pictograma é preservado", () => {
+    expect(moduloNormalizacao.normalizarObservacao(`capricha ${CORACAO_TEXTO}`)).toBe(`capricha ${CORACAO_TEXTO}`);
+  });
+
+  it("observação: tags de bandeira saem (observação não preserva junção de emoji)", () => {
+    expect(moduloNormalizacao.normalizarObservacao(`torcedor ${BANDEIRA_INGLATERRA}`)).toBe(
+      `torcedor ${BANDEIRA_PRETA}`,
+    );
+  });
+
+  it("GUARDA: observação NÃO limita Zalgo (o cap é só de removerInvisiveisEControles)", () => {
+    const zalgo = "a" + ACENTO.repeat(6);
+    expect(moduloNormalizacao.normalizarObservacao(zalgo)).toBe(zalgo);
+  });
+});
+
+describe("V5 · 316 · CHECK do título recriado (pglite)", () => {
+  let t: TestDb;
+  let c: CenarioModalSazonal;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    c = await semearCenario(t);
+  });
+
+  afterAll(async () => {
+    await t?.close();
+  });
+
+  async function estadoA() {
+    return { modal: await fotografarModal(t, c.a.modalId), contagem: await contarDaLoja(t, c.a.id) };
+  }
+
+  const updateTitulo = (titulo: string) =>
+    t.asUser(c.a.donoId, (db) =>
+      db.query(`update public.modais_sazonais set titulo = $1 where id = $2`, [titulo, c.a.modalId]),
+    );
+
+  for (const [nome, ch] of RECUSADOS_PELO_CHECK_316) {
+    it(`UPDATE direto com ${nome} no título: 23514 modais_sazonais_titulo_sem_invisiveis e nada muda`, async () => {
+      const antes = await estadoA();
+      const e = await capturarErro(() => updateTitulo(`Promo${ch}Natal`));
+      expect(e.code).toBe("23514");
+      expect(e.message).toContain("modais_sazonais_titulo_sem_invisiveis");
+      expect(await estadoA()).toEqual(antes);
+    });
+  }
+
+  it("INSERT direto com U+3164 no título: 23514 modais_sazonais_titulo_sem_invisiveis e zero linha nova", async () => {
+    const antes = await estadoA();
+    const e = await capturarErro(() =>
+      t.asUser(c.a.donoId, (db) =>
+        db.query(
+          `insert into public.modais_sazonais (loja_id, titulo, exibicao_inicio, exibicao_fim)
+           values ($1, $2, $3, $4)`,
+          [c.a.id, "\u3164", INICIO, FIM],
+        ),
+      ),
+    );
+    expect(e.code).toBe("23514");
+    expect(e.message).toContain("modais_sazonais_titulo_sem_invisiveis");
+    expect(await estadoA()).toEqual(antes);
+  });
+
+  it("RPC salvar_modal_sazonal (criação) com tags no título: 23514 e ZERO modal novo", async () => {
+    const antes = await estadoA();
+    const e = await capturarErro(() =>
+      t.asUser(c.a.donoId, (db) =>
+        chamarSalvarModal(db, {
+          ...argsEdicaoValidos(c.a),
+          p_modal_id: null,
+          p_titulo: `Promo${tags("oculto")}`,
+        }),
+      ),
+    );
+    expect(e.code).toBe("23514");
+    expect(e.message).toContain("modais_sazonais_titulo_sem_invisiveis");
+    expect(await estadoA()).toEqual(antes);
+  });
+
+  it("controle: título com U+FE0E/U+FE0F depois de pictograma e U+1F3F4 puro é ACEITO", async () => {
+    const titulo = `Amo ${CORACAO_TEXTO} \u2764\uFE0F ${BANDEIRA_PRETA}`;
+    const up = await updateTitulo(titulo);
+    expect(up.affectedRows).toBe(1);
+    expect((await fotografarModal(t, c.a.modalId)).linha?.titulo).toBe(titulo);
+  });
+
+  it("título canônico do zod (entrada hostil 316) é aceito pelo CHECK recriado sem 23514", async () => {
+    const r = await tituloCanonico(`Promo${REMOVIDOS_316.map(([, ch]) => ch).join("")} de Natal`);
+    expect(r).toEqual({ success: true, titulo: "Promo de Natal" });
+    const up = await updateTitulo(r.titulo!);
+    expect(up.affectedRows).toBe(1);
+  });
+});

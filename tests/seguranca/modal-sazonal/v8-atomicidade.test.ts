@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { inspect } from "node:util";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createTestDb, type TestDb } from "../../helpers/pglite";
 import {
   argsEdicaoValidos,
   capturarErro,
+  chamarAtivarModal,
   chamarSalvarModal,
+  criarModalExtra,
   fotografarCenario,
   fotografarModal,
   mensagemMinima,
@@ -445,4 +449,209 @@ describe("V8 · A31 Server Action faz UMA chamada à RPC (client mockado)", () =
       }
     });
   }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Issue 319 · ativar numa transação única (RPC `ativar_modal_sazonal`)
+// ══════════════════════════════════════════════════════════════════════════
+//
+// CONTRATO FIXADO PARA A FASE GREEN (executar):
+//   - SQL: `public.ativar_modal_sazonal(p_modal_id uuid) returns void`, security
+//     invoker, molde de `salvar_modal_sazonal` (S1 `modal_sazonal: sem sessao`;
+//     posse por `lojas.dono_id = auth.uid()` ANTES de tocar em linha, senão
+//     `modal_sazonal: modal inexistente`; revoke `public, anon`; grant
+//     `authenticated`). Desativa o ativo anterior da loja e ativa o alvo na MESMA
+//     função (uma transação). Ativar o que já está ativo é idempotente. Não mexe
+//     em nenhuma coluna além de `ativo` (e `atualizado_em`, se quiser).
+//   - Action: `ativarModalSazonal(id)` faz EXATAMENTE uma chamada
+//     `rpc("ativar_modal_sazonal", { p_modal_id: id })` e nenhuma `.from(...)`;
+//     erro da RPC → ERRO_GENERICO, detalhe só no `console.error`.
+//   - Trava estática: o corpo de `ativarModalSazonal` não contém
+//     `.update({ ativo: true })` nem `.update({ ativo: false })`.
+//
+// FALHA FORÇADA: não há FK a violar numa ativação, então o teste instala (como
+// superusuário do pglite) um trigger `before update` que lança quando uma linha
+// passa de `ativo = false` para `ativo = true`. É a falha "depois do desativar":
+// o anterior já foi desligado dentro da função quando o alvo explode. A
+// transação única tem de devolver o anterior ativo. Mesmo princípio dos casos
+// 1–6 acima: a RPC PROPAGA o erro e a foto das duas lojas não muda.
+
+describe("V8 · 319 · ativar_modal_sazonal atômica (pglite)", () => {
+  let t: TestDb;
+  let c: CenarioModalSazonal;
+  let anteriorDeA: string;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    c = await semearCenario(t);
+    anteriorDeA = await criarModalExtra(t, c.a.id, "Anterior ativo de A", true);
+  });
+
+  afterAll(async () => {
+    await t?.close();
+  });
+
+  async function estado() {
+    return { cenario: await fotografarCenario(t, c), anterior: await fotografarModal(t, anteriorDeA) };
+  }
+
+  async function ativosDaLoja(lojaId: string): Promise<string[]> {
+    return t.asService(async (db) => {
+      const r = await db.query<{ id: string }>(
+        `select id from public.modais_sazonais where loja_id = $1 and ativo order by id`,
+        [lojaId],
+      );
+      return r.rows.map((x) => x.id);
+    });
+  }
+
+  async function instalarFalhaAoAtivar() {
+    await t.db.exec(`
+      create or replace function public.tdd_falha_forcada_ao_ativar() returns trigger
+      language plpgsql as $$
+      begin
+        if new.ativo and not old.ativo then
+          raise exception 'tdd: falha forcada ao ativar';
+        end if;
+        return new;
+      end $$;
+      create trigger tdd_falha_forcada_ao_ativar
+        before update on public.modais_sazonais
+        for each row execute function public.tdd_falha_forcada_ao_ativar();
+    `);
+  }
+
+  async function removerFalhaAoAtivar() {
+    await t.db.exec(`
+      drop trigger if exists tdd_falha_forcada_ao_ativar on public.modais_sazonais;
+      drop function if exists public.tdd_falha_forcada_ao_ativar();
+    `);
+  }
+
+  it("pré-condição: A tem o anterior ATIVO e o alvo (rascunho do seed) inativo", async () => {
+    expect(await ativosDaLoja(c.a.id)).toEqual([anteriorDeA]);
+    expect((await fotografarModal(t, c.a.modalId)).linha?.ativo).toBe(false);
+  });
+
+  it("falha forçada ao ligar o alvo (depois do desativar): erro propaga e TUDO reverte — o anterior continua ativo", async () => {
+    const antes = await estado();
+    await instalarFalhaAoAtivar();
+    try {
+      const e = await capturarErro(() => t.asUser(c.a.donoId, (db) => chamarAtivarModal(db, c.a.modalId)));
+      expect(e.code).toBe("P0001");
+      expect(e.message).toContain("tdd: falha forcada ao ativar");
+    } finally {
+      await removerFalhaAoAtivar();
+    }
+    expect(await estado()).toEqual(antes);
+    expect(await ativosDaLoja(c.a.id)).toEqual([anteriorDeA]);
+  });
+
+  it("dono A ativa modal de B: raise `modal_sazonal: modal inexistente` e nada muda nas duas lojas", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() => t.asUser(c.a.donoId, (db) => chamarAtivarModal(db, c.b.modalId)));
+    expect(e.code).toBe("P0001");
+    expect(e.message).toContain("modal_sazonal: modal inexistente");
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("modal inexistente: raise `modal_sazonal: modal inexistente` e nada muda", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() =>
+      t.asUser(c.a.donoId, (db) => chamarAtivarModal(db, "e9999999-9999-4999-8999-999999999999")),
+    );
+    expect(e.code).toBe("P0001");
+    expect(e.message).toContain("modal_sazonal: modal inexistente");
+    expect(await estado()).toEqual(antes);
+  });
+
+  // ── Controles positivos (por ÚLTIMO: mudam o estado) ─────────────────────
+
+  it("UMA chamada ativa o alvo e desativa o anterior; B intocada; só `ativo` muda no alvo", async () => {
+    const antesB = { modal: await fotografarModal(t, c.b.modalId), ativos: await ativosDaLoja(c.b.id) };
+    const alvoAntes = await fotografarModal(t, c.a.modalId);
+
+    await t.asUser(c.a.donoId, (db) => chamarAtivarModal(db, c.a.modalId));
+
+    expect(await ativosDaLoja(c.a.id)).toEqual([c.a.modalId]);
+    expect((await fotografarModal(t, anteriorDeA)).linha?.ativo).toBe(false);
+
+    const alvoDepois = await fotografarModal(t, c.a.modalId);
+    const semEstado = (f: typeof alvoAntes) => {
+      const { ativo: _a, atualizado_em: _u, ...resto } = f.linha ?? {};
+      void _a;
+      void _u;
+      return { linha: resto, categorias: f.categorias, cardapios: f.cardapios };
+    };
+    expect(alvoDepois.linha?.ativo).toBe(true);
+    expect(semEstado(alvoDepois)).toEqual(semEstado(alvoAntes));
+
+    expect({ modal: await fotografarModal(t, c.b.modalId), ativos: await ativosDaLoja(c.b.id) }).toEqual(antesB);
+  });
+
+  it("ativar o modal que JÁ está ativo é idempotente: sem erro, continua um só ativo", async () => {
+    await t.asUser(c.a.donoId, (db) => chamarAtivarModal(db, c.a.modalId));
+    expect(await ativosDaLoja(c.a.id)).toEqual([c.a.modalId]);
+  });
+
+  it("loja SEM ativo anterior (B): ativa o alvo sem erro", async () => {
+    expect(await ativosDaLoja(c.b.id)).toEqual([]);
+    await t.asUser(c.b.donoId, (db) => chamarAtivarModal(db, c.b.modalId));
+    expect(await ativosDaLoja(c.b.id)).toEqual([c.b.modalId]);
+  });
+});
+
+describe("V8 · 319 · Server Action ativarModalSazonal faz UMA chamada à RPC (client mockado)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respostaRpc = { data: null, error: null };
+    m.createClient.mockResolvedValue(clientFalso);
+    m.buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, dono_id: "dono-mock", slug: "loja-mock", ativo: true });
+    m.verificarRateLimit.mockResolvedValue({ permitido: true });
+  });
+
+  it("sucesso: exatamente uma rpc('ativar_modal_sazonal', { p_modal_id }) e nenhum .from", async () => {
+    const { ativarModalSazonal } = await actions();
+    const r = await ativarModalSazonal(MODAL_ID);
+    expect(r).toEqual({ ok: true });
+    expect(m.rpc).toHaveBeenCalledTimes(1);
+    expect(m.rpc).toHaveBeenCalledWith("ativar_modal_sazonal", { p_modal_id: MODAL_ID });
+    expect(m.from).not.toHaveBeenCalled();
+  });
+
+  it("erro da RPC vira ERRO_GENERICO, detalhe só no log; uma chamada só e nenhum .from", async () => {
+    respostaRpc = { data: null, error: { code: "P0001", message: "modal_sazonal: modal inexistente" } };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { ativarModalSazonal } = await actions();
+      const r = await ativarModalSazonal(MODAL_ID);
+      expect(r).toEqual({ ok: false, erro: ERRO_GENERICO });
+      expect(JSON.stringify(r)).not.toContain("modal_sazonal");
+      expect(inspect(log.mock.calls, { depth: 6 })).toContain("modal_sazonal: modal inexistente");
+      expect(m.rpc).toHaveBeenCalledTimes(1);
+      expect(m.from).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+describe("V8 · 319 · trava estática: ativarModalSazonal não faz UPDATE de `ativo` por request", () => {
+  const fonte = readFileSync(resolve(process.cwd(), "src/lib/actions/modalSazonal.ts"), "utf8");
+
+  /** Corpo de `ativarModalSazonal`: da assinatura até a próxima função exportada. */
+  function corpoAtivar(): string {
+    const inicio = fonte.indexOf("export async function ativarModalSazonal");
+    expect(inicio).toBeGreaterThanOrEqual(0);
+    const fim = fonte.indexOf("export async function", inicio + 1);
+    return fonte.slice(inicio, fim === -1 ? undefined : fim);
+  }
+
+  it("não contém `.update({ ativo: true })` nem `.update({ ativo: false })`", () => {
+    expect(corpoAtivar()).not.toMatch(/\.update\(\s*\{\s*ativo\s*:\s*(true|false)\s*\}\s*\)/);
+  });
+
+  it('chama `.rpc("ativar_modal_sazonal"`', () => {
+    expect(corpoAtivar()).toMatch(/\.rpc\(\s*["']ativar_modal_sazonal["']/);
+  });
 });

@@ -565,3 +565,157 @@ describe("V4 · banco (pglite)", () => {
     });
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// Issue 318 · teto de modais sazonais por loja (CWE-770) e `.limit()` na listagem
+// ══════════════════════════════════════════════════════════════════════════
+//
+// CONTRATO FIXADO PARA A FASE GREEN (executar):
+//   - Constante `TETO_MODAIS_POR_LOJA = 50` exportada de
+//     `src/lib/validacoes/modalSazonal.ts` (ao lado de `TETO_SELECAO`).
+//   - Trigger `before insert` em `public.modais_sazonais` (cobre INSERT direto
+//     pelo PostgREST e a criação via RPC `salvar_modal_sazonal`): com 50 ou mais
+//     modais na MESMA `loja_id`, `raise exception 'modal_sazonal: teto de modais'`
+//     (SQLSTATE P0001; mensagem sem id nem número da loja). A contagem é por
+//     `new.loja_id`, não global, e não depende do RLS do invocador (função do
+//     trigger `security definer` com `search_path` fixo, ou equivalente).
+//     Corrida entre dois INSERTs simultâneos: serializar por loja (ex.:
+//     `pg_advisory_xact_lock` ou `select ... for update` na linha de `lojas`) —
+//     não é observável no pglite (conexão única), fica para revisão.
+//   - UPDATE não é afetado (editar com 50 modais funciona).
+//   - `listarModaisSazonaisDoDono` aplica `.limit(TETO_MODAIS_POR_LOJA)`.
+// Erro afirmado SEMPRE como SQLSTATE + fragmento juntos.
+
+describe("V4 · 318 · teto de modais por loja (pglite)", () => {
+  let t: TestDb;
+  let c: CenarioModalSazonal;
+  const TETO = 50;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    c = await semearCenario(t);
+    // O seed já tem 1 modal por loja: completa A até TETO - 1 (49).
+    await t.asService((db) =>
+      db.query(
+        `insert into public.modais_sazonais (loja_id, titulo, exibicao_inicio, exibicao_fim)
+         select $1, 'Enchimento ' || g, now(), now() + interval '1 day'
+           from generate_series(1, $2::int) g`,
+        [c.a.id, TETO - 2],
+      ),
+    );
+  });
+
+  afterAll(async () => {
+    await t?.close();
+  });
+
+  async function estado() {
+    return { contagemA: await contarDaLoja(t, c.a.id), contagemB: await contarDaLoja(t, c.b.id) };
+  }
+
+  function esperarTeto(e: { code: string | undefined; message: string }) {
+    expect(e.code).toBe("P0001");
+    expect(e.message).toContain("modal_sazonal: teto de modais");
+  }
+
+  const insertDireto = (donoId: string, lojaId: string, titulo: string) =>
+    t.asUser(donoId, (db) =>
+      db.query(
+        `insert into public.modais_sazonais (loja_id, titulo, exibicao_inicio, exibicao_fim)
+         values ($1, $2, now(), now() + interval '1 day')`,
+        [lojaId, titulo],
+      ),
+    );
+
+  it("constante TETO_MODAIS_POR_LOJA = 50 exportada de validacoes/modalSazonal", async () => {
+    const mod = (await import("@/lib/validacoes/modalSazonal")) as Record<string, unknown>;
+    expect(mod.TETO_MODAIS_POR_LOJA).toBe(TETO);
+  });
+
+  it("pré-condição: A tem 49 modais e B tem 1", async () => {
+    expect((await contarDaLoja(t, c.a.id)).modais).toBe(TETO - 1);
+    expect((await contarDaLoja(t, c.b.id)).modais).toBe(1);
+  });
+
+  it("o 50º modal de A (INSERT direto do dono) PASSA — fronteira 50/51", async () => {
+    const r = await insertDireto(c.a.donoId, c.a.id, "Quinquagesimo");
+    expect(r.affectedRows).toBe(1);
+    expect((await contarDaLoja(t, c.a.id)).modais).toBe(TETO);
+  });
+
+  it("o 51º por INSERT direto do dono: P0001 `modal_sazonal: teto de modais` e zero linha nova", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() => insertDireto(c.a.donoId, c.a.id, "Quinquagesimo primeiro"));
+    esperarTeto(e);
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("o 51º pela RPC salvar_modal_sazonal (criação): P0001 `modal_sazonal: teto de modais`, zero modal e zero junção novos", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() =>
+      t.asUser(c.a.donoId, (db) =>
+        chamarSalvarModal(db, { ...argsEdicaoValidos(c.a), p_modal_id: null, p_titulo: "Via RPC acima do teto" }),
+      ),
+    );
+    esperarTeto(e);
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("outra loja NÃO é afetada: B cria por INSERT direto e pela RPC com A no teto (contagem é por loja, não global)", async () => {
+    const r = await insertDireto(c.b.donoId, c.b.id, "B livre direto");
+    expect(r.affectedRows).toBe(1);
+    const id = await t.asUser(c.b.donoId, (db) =>
+      chamarSalvarModal(db, {
+        ...argsEdicaoValidos(c.b),
+        p_modal_id: null,
+        p_titulo: "B livre RPC",
+        p_categorias: [],
+        p_cardapios: [],
+      }),
+    );
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect((await contarDaLoja(t, c.b.id)).modais).toBe(3);
+  });
+
+  it("com A no teto, EDITAR pela RPC continua funcionando (o teto é só de INSERT)", async () => {
+    const id = await t.asUser(c.a.donoId, (db) =>
+      chamarSalvarModal(db, { ...argsEdicaoValidos(c.a), p_titulo: "Editado no teto" }),
+    );
+    expect(id).toBe(c.a.modalId);
+    expect((await fotografarModal(t, c.a.modalId)).linha?.titulo).toBe("Editado no teto");
+  });
+
+  it("apagar um modal libera a vaga: o teto conta linhas existentes, não criações acumuladas", async () => {
+    await t.asUser(c.a.donoId, (db) =>
+      db.query(`delete from public.modais_sazonais where loja_id = $1 and titulo = 'Enchimento 1'`, [c.a.id]),
+    );
+    expect((await contarDaLoja(t, c.a.id)).modais).toBe(TETO - 1);
+    const id = await t.asUser(c.a.donoId, (db) =>
+      chamarSalvarModal(db, { ...argsEdicaoValidos(c.a), p_modal_id: null, p_titulo: "Vaga liberada" }),
+    );
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    const e = await capturarErro(() => insertDireto(c.a.donoId, c.a.id, "De novo acima"));
+    esperarTeto(e);
+  });
+});
+
+describe("V4 · 318 · listarModaisSazonaisDoDono aplica .limit(TETO_MODAIS_POR_LOJA)", () => {
+  it("a query encadeia `.limit(50)` além do escopo por loja", async () => {
+    const chamadas: [string, unknown[]][] = [];
+    const cadeia: Record<string, unknown> = {};
+    for (const k of ["select", "eq", "order", "limit", "range"]) {
+      cadeia[k] = (...a: unknown[]) => {
+        chamadas.push([k, a]);
+        return cadeia;
+      };
+    }
+    cadeia.then = (onF: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(onF);
+    const client = { from: (tabela: string) => (chamadas.push(["from", [tabela]]), cadeia) };
+
+    const { listarModaisSazonaisDoDono } = await import("@/lib/supabase/queries/modaisSazonais");
+    const r = await listarModaisSazonaisDoDono(client as never, "loja-x");
+    expect(r).toEqual([]);
+    expect(chamadas).toContainEqual(["eq", ["loja_id", "loja-x"]]);
+    expect(chamadas).toContainEqual(["limit", [50]]);
+  });
+});

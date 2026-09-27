@@ -5,7 +5,9 @@ import { createTestDb, type TestDb } from "../../helpers/pglite";
 import {
   argsEdicaoValidos,
   capturarErro,
+  chamarAtivarModal,
   chamarSalvarModal,
+  criarModalExtra,
   fotografarCenario,
   fotografarModal,
   mensagemMinima,
@@ -488,5 +490,285 @@ describe("V6 · Server Action (client mockado)", () => {
         });
       }
     }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Issue 317 · anon lê junções (categorias/cardápios) de modal em RASCUNHO
+// ══════════════════════════════════════════════════════════════════════════
+//
+// CONTRATO FIXADO PARA A FASE GREEN (executar): migration NOVA recria
+// `modal_sazonal_categorias_leitura_publica` e `modal_sazonal_cardapios_leitura_publica`
+// (mesmos nomes) com
+//   exists (select 1 from public.modais_sazonais m
+//            where m.id = <tabela>.modal_sazonal_id
+//              and m.loja_id = <tabela>.loja_id
+//              and m.ativo
+//              and public.loja_esta_ativa(m.loja_id))
+// O filtro é POR MODAL (m.id = modal_sazonal_id), não por loja: uma loja com um
+// modal ativo e um rascunho só expõe as junções do ativo. As policies
+// `*_leitura_propria` (dono lê as próprias, inclusive rascunho) não mudam.
+
+describe("V6 · 317 · RLS das junções: rascunho não vaza para anon (pglite)", () => {
+  let t: TestDb;
+  let c: CenarioModalSazonal;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    c = await semearCenario(t);
+  });
+
+  afterAll(async () => {
+    await t?.close();
+  });
+
+  type Juncoes = { categorias: string[]; cardapios: string[] };
+
+  /** O que o papel lê das DUAS junções filtrando por loja (o ataque da issue). */
+  async function juncoesDaLoja(
+    como: (fn: (db: PGlite) => Promise<Juncoes>) => Promise<Juncoes>,
+    lojaId: string,
+  ): Promise<Juncoes> {
+    return como(async (db) => {
+      const cats = await db.query<{ id: string }>(
+        `select categoria_id as id from public.modal_sazonal_categorias where loja_id = $1 order by categoria_id`,
+        [lojaId],
+      );
+      const cards = await db.query<{ id: string }>(
+        `select cardapio_id as id from public.modal_sazonal_cardapios where loja_id = $1 order by cardapio_id`,
+        [lojaId],
+      );
+      return { categorias: cats.rows.map((r) => r.id), cardapios: cards.rows.map((r) => r.id) };
+    });
+  }
+
+  const anon = (fn: (db: PGlite) => Promise<Juncoes>) => t.asAnon(fn);
+  const ordenado = (ids: string[]) => [...ids].sort();
+
+  async function definirAtivo(modalId: string, ativo: boolean) {
+    await t.asService((db) =>
+      db.query(`update public.modais_sazonais set ativo = $1 where id = $2`, [ativo, modalId]),
+    );
+  }
+
+  async function definirLojaAtiva(lojaId: string, ativo: boolean) {
+    await t.asService((db) => db.query(`update public.lojas set ativo = $1 where id = $2`, [ativo, lojaId]));
+  }
+
+  it("pré-condição: o modal de A é rascunho e TEM junções (senão o 0 seria vácuo)", async () => {
+    const foto = await fotografarModal(t, c.a.modalId);
+    expect(foto.linha?.ativo).toBe(false);
+    expect(foto.categorias.length).toBeGreaterThan(0);
+    expect(foto.cardapios.length).toBeGreaterThan(0);
+  });
+
+  it("anon filtrando por loja A (modal rascunho): 0 linhas em modal_sazonal_categorias e modal_sazonal_cardapios", async () => {
+    expect(await juncoesDaLoja(anon, c.a.id)).toEqual({ categorias: [], cardapios: [] });
+  });
+
+  it("anon filtrando pelo id do rascunho de A: 0 linhas nas duas junções (não vaza o id do rascunho)", async () => {
+    const r = await t.asAnon(async (db) => {
+      const cats = await db.query(
+        `select modal_sazonal_id from public.modal_sazonal_categorias where modal_sazonal_id = $1`,
+        [c.a.modalId],
+      );
+      const cards = await db.query(
+        `select modal_sazonal_id from public.modal_sazonal_cardapios where modal_sazonal_id = $1`,
+        [c.a.modalId],
+      );
+      return { cats: cats.rows.length, cards: cards.rows.length };
+    });
+    expect(r).toEqual({ cats: 0, cards: 0 });
+  });
+
+  it("dono B (authenticated de outra loja) também lê 0 junções do rascunho de A", async () => {
+    const deB = (fn: (db: PGlite) => Promise<Juncoes>) => t.asUser(c.b.donoId, fn);
+    expect(await juncoesDaLoja(deB, c.a.id)).toEqual({ categorias: [], cardapios: [] });
+  });
+
+  it("controle: o DONO A continua lendo as junções do próprio rascunho (leitura_propria intacta)", async () => {
+    const deA = (fn: (db: PGlite) => Promise<Juncoes>) => t.asUser(c.a.donoId, fn);
+    expect(await juncoesDaLoja(deA, c.a.id)).toEqual({
+      categorias: ordenado(c.a.modalCategorias),
+      cardapios: ordenado(c.a.modalCardapios),
+    });
+  });
+
+  it("controle: modal ATIVO de loja ativa — anon lê as junções (a vitrine continua funcionando)", async () => {
+    await definirAtivo(c.b.modalId, true);
+    try {
+      expect(await juncoesDaLoja(anon, c.b.id)).toEqual({
+        categorias: ordenado(c.b.modalCategorias),
+        cardapios: ordenado(c.b.modalCardapios),
+      });
+    } finally {
+      await definirAtivo(c.b.modalId, false);
+    }
+  });
+
+  it("modal ATIVO de loja INATIVA: anon lê 0 junções", async () => {
+    await definirAtivo(c.b.modalId, true);
+    await definirLojaAtiva(c.b.id, false);
+    try {
+      expect(await juncoesDaLoja(anon, c.b.id)).toEqual({ categorias: [], cardapios: [] });
+    } finally {
+      await definirLojaAtiva(c.b.id, true);
+      await definirAtivo(c.b.modalId, false);
+    }
+  });
+
+  it("MESMA loja com um modal ativo e um rascunho: anon lê SÓ as junções do ativo (filtro é por modal, não por loja)", async () => {
+    const ativoId = await criarModalExtra(t, c.a.id, "Modal ativo de A", true);
+    await t.asService(async (db) => {
+      await db.query(
+        `insert into public.modal_sazonal_categorias (loja_id, modal_sazonal_id, categoria_id) values ($1, $2, $3)`,
+        [c.a.id, ativoId, c.a.categorias[2]],
+      );
+      await db.query(
+        `insert into public.modal_sazonal_cardapios (loja_id, modal_sazonal_id, cardapio_id) values ($1, $2, $3)`,
+        [c.a.id, ativoId, c.a.cardapios[1]],
+      );
+    });
+    try {
+      const lido = await t.asAnon(async (db) => {
+        const cats = await db.query<{ m: string; id: string }>(
+          `select modal_sazonal_id as m, categoria_id as id from public.modal_sazonal_categorias where loja_id = $1`,
+          [c.a.id],
+        );
+        const cards = await db.query<{ m: string; id: string }>(
+          `select modal_sazonal_id as m, cardapio_id as id from public.modal_sazonal_cardapios where loja_id = $1`,
+          [c.a.id],
+        );
+        return { cats: cats.rows, cards: cards.rows };
+      });
+      expect(lido.cats).toEqual([{ m: ativoId, id: c.a.categorias[2] }]);
+      expect(lido.cards).toEqual([{ m: ativoId, id: c.a.cardapios[1] }]);
+    } finally {
+      await t.asService((db) => db.query(`delete from public.modais_sazonais where id = $1`, [ativoId]));
+    }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Issue 319 · RPC ativar_modal_sazonal chamada fora da própria loja (posse)
+// ══════════════════════════════════════════════════════════════════════════
+//
+// CONTRATO FIXADO PARA A FASE GREEN (executar), molde `salvar_modal_sazonal`:
+//   `public.ativar_modal_sazonal(p_modal_id uuid)`, security invoker,
+//   `set search_path = public, pg_temp`; revoke de `public, anon`; grant a
+//   `authenticated`. Mensagens estáveis P0001:
+//     - `modal_sazonal: sem sessao`      → auth.uid() nulo (S1);
+//     - `modal_sazonal: modal inexistente` → modal de outra loja OU inexistente,
+//       MESMA mensagem e sem id (nenhum oráculo), ANTES de tocar em qualquer linha.
+//   anon → 42501 com o nome da função na mensagem.
+
+describe("V6 · 319 · RPC ativar_modal_sazonal: posse e sessão (pglite)", () => {
+  let t: TestDb;
+  let c: CenarioModalSazonal;
+  let ativoDeA: string;
+  let ativoDeB: string;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    c = await semearCenario(t);
+    // Cada loja com um modal ATIVO além do rascunho do seed: "nada muda" deixa de
+    // ser vácuo (um desativar indevido apareceria na foto).
+    ativoDeA = await criarModalExtra(t, c.a.id, "Ativo de A", true);
+    ativoDeB = await criarModalExtra(t, c.b.id, "Ativo de B", true);
+  });
+
+  afterAll(async () => {
+    await t?.close();
+  });
+
+  async function estado() {
+    return {
+      cenario: await fotografarCenario(t, c),
+      ativoDeA: await fotografarModal(t, ativoDeA),
+      ativoDeB: await fotografarModal(t, ativoDeB),
+    };
+  }
+
+  async function comoAutenticadoSemSub<T>(fn: (db: PGlite) => Promise<T>): Promise<T> {
+    await t.db.exec("begin");
+    try {
+      await t.db.query("set local role authenticated");
+      await t.db.query(`select set_config('request.jwt.claims', $1, true)`, [
+        JSON.stringify({ role: "authenticated" }),
+      ]);
+      const r = await fn(t.db);
+      await t.db.exec("commit");
+      return r;
+    } catch (err) {
+      await t.db.exec("rollback");
+      throw err;
+    }
+  }
+
+  function esperarRaise(e: ErroBanco, fragmento: string) {
+    expect(e.code).toBe("P0001");
+    expect(e.message).toContain(fragmento);
+  }
+
+  it("pré-condição: A e B têm um modal ativo e um rascunho cada", async () => {
+    const r = await t.asService((db) =>
+      db.query<{ loja_id: string; ativos: number; total: number }>(
+        `select loja_id, count(*) filter (where ativo)::int as ativos, count(*)::int as total
+           from public.modais_sazonais where loja_id = any($1::uuid[]) group by loja_id`,
+        [[c.a.id, c.b.id]],
+      ),
+    );
+    expect(r.rows).toHaveLength(2);
+    for (const linha of r.rows) expect(linha).toMatchObject({ ativos: 1, total: 2 });
+  });
+
+  it("B ativa o RASCUNHO de A: raise `modal_sazonal: modal inexistente` e nenhuma linha muda nas duas lojas", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() => t.asUser(c.b.donoId, (db) => chamarAtivarModal(db, c.a.modalId)));
+    esperarRaise(e, "modal_sazonal: modal inexistente");
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("B ativa modal de A e modal INEXISTENTE: MESMO erro (sem oráculo de existência)", async () => {
+    const antes = await estado();
+    const eAlheio = await capturarErro(() => t.asUser(c.b.donoId, (db) => chamarAtivarModal(db, c.a.modalId)));
+    const eInexistente = await capturarErro(() =>
+      t.asUser(c.b.donoId, (db) => chamarAtivarModal(db, "e9999999-9999-4999-8999-999999999999")),
+    );
+    esperarRaise(eInexistente, "modal_sazonal: modal inexistente");
+    expect(eAlheio).toEqual(eInexistente);
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("asAnon chamando ativar_modal_sazonal: 42501 permission denied e nada muda", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() => t.asAnon((db) => chamarAtivarModal(db, c.a.modalId)));
+    expect(e.code).toBe("42501");
+    expect(e.message).toContain("ativar_modal_sazonal");
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("asService sem JWT de usuário: raise `modal_sazonal: sem sessao` e nada muda", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() => t.asService((db) => chamarAtivarModal(db, c.a.modalId)));
+    esperarRaise(e, "modal_sazonal: sem sessao");
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("authenticated com JWT sem `sub`: raise `modal_sazonal: sem sessao` e nada muda", async () => {
+    const antes = await estado();
+    const e = await capturarErro(() => comoAutenticadoSemSub((db) => chamarAtivarModal(db, c.a.modalId)));
+    esperarRaise(e, "modal_sazonal: sem sessao");
+    expect(await estado()).toEqual(antes);
+  });
+
+  it("ACL: anon e public SEM execute; authenticated COM execute", async () => {
+    const r = await t.asService((db) =>
+      db.query<{ anon: boolean; auth: boolean }>(
+        `select has_function_privilege('anon', 'public.ativar_modal_sazonal(uuid)', 'execute') as anon,
+                has_function_privilege('authenticated', 'public.ativar_modal_sazonal(uuid)', 'execute') as auth`,
+      ),
+    );
+    expect(r.rows[0]).toEqual({ anon: false, auth: true });
   });
 });
