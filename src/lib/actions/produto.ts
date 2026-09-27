@@ -30,6 +30,20 @@ import {
   comPrazosNoFuso,
   erroDeEscritaDeProduto,
 } from "@/lib/actions/produto-contrato";
+// [322] Frequência de exibição: zod e contrato compartilhados com o admin.
+import {
+  schemaAplicarFrequencia,
+  schemaGradeDeDias,
+  schemaFrequenciaCategoria,
+} from "@/lib/validacoes/frequencia";
+import {
+  MSG_SALVAR_FREQUENCIA,
+  MSG_CATEGORIA_NAO_ENCONTRADA,
+  mensagemDeFrequencia,
+  argsAplicarFrequencia,
+  argsGradeDeDias,
+  patchFrequenciaCategoria,
+} from "@/lib/actions/frequencia-contrato";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
@@ -50,6 +64,9 @@ const MSG_SALVAR_PRODUTO = "Não foi possível salvar o produto.";
  * aqui — distinguir as causas viraria oráculo de existência de dado alheio.
  */
 const MSG_SALVAR_ORDEM = "Não foi possível salvar a ordem.";
+
+/** A genérica de toggle de categoria — mesma frase de `alternarExibirImagens`. */
+const MSG_ATUALIZAR_CATEGORIA = "Não foi possível atualizar a categoria.";
 
 /**
  * Confere que a `categoria_id` informada pertence à PRÓPRIA loja do dono.
@@ -674,5 +691,158 @@ export async function definirVisibilidadeEmProdutos(
   } catch (e) {
     console.error("[definirVisibilidadeEmProdutos]", e);
     return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR_PRODUTO) };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [322] Frequência de exibição — escrita do LOJISTA.
+//
+// Contrato compartilhado com o admin em `frequencia-contrato.ts` (C4): mesmas
+// mensagens, mesmos args de RPC. Zod `.strict()` ANTES de qualquer I/O; client
+// AUTENTICADO (a RLS `produtos_escrita_propria`/`categorias_escrita_propria`
+// vale dentro das RPCs SECURITY INVOKER), nunca service_role; `p_loja_id`/
+// `loja_id` = `buscarLojaDoDono`, nunca o payload. Erro de banco ⇒ genérica e
+// detalhe no log: "N ids, M linhas afetadas" seria oráculo de existência (§14).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Seleção múltipla e unitária: a MESMA frequência (5 eixos) em N produtos,
+ * tudo ou nada (`aplicar_frequencia_em_produtos`).
+ */
+export async function aplicarFrequenciaEmProdutos(
+  payload: unknown,
+): Promise<ResultadoGestaoProduto> {
+  const parsed = schemaAplicarFrequencia.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: mensagemDeFrequencia(parsed.error.issues) };
+  }
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) return { ok: false, erro: "Loja não encontrada." };
+
+    const { error } = await supabase.rpc(
+      "aplicar_frequencia_em_produtos",
+      argsAplicarFrequencia(loja.id, parsed.data),
+    );
+    if (error) {
+      console.error("[aplicarFrequenciaEmProdutos]", error);
+      return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+    }
+
+    revalidatePath("/painel/produtos");
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[aplicarFrequenciaEmProdutos]", e);
+    return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+  }
+}
+
+/**
+ * Grade produto × dia: só `dias_semana`, por linha, tudo ou nada (RN-6,
+ * `salvar_grade_de_dias`). Hora e período editados em outra aba sobrevivem.
+ */
+export async function salvarGradeDeDias(
+  payload: unknown,
+): Promise<ResultadoGestaoProduto> {
+  const parsed = schemaGradeDeDias.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: mensagemDeFrequencia(parsed.error.issues) };
+  }
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) return { ok: false, erro: "Loja não encontrada." };
+
+    const { error } = await supabase.rpc(
+      "salvar_grade_de_dias",
+      argsGradeDeDias(loja.id, parsed.data),
+    );
+    if (error) {
+      console.error("[salvarGradeDeDias]", error);
+      return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+    }
+
+    revalidatePath("/painel/produtos");
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarGradeDeDias]", e);
+    return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+  }
+}
+
+/**
+ * Ocultar/mostrar categoria (RN-2). Molde posicional de `alternarExibirImagens`,
+ * com o escopo `loja_id` explícito e `count` exato: id alheio ou inexistente
+ * casa zero linhas e cai na MESMA mensagem.
+ */
+export async function alternarOcultaCategoria(
+  id: string,
+  oculta: boolean,
+): Promise<ResultadoGestaoCategoria> {
+  if (typeof oculta !== "boolean" || !schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: MSG_ATUALIZAR_CATEGORIA };
+  }
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) return { ok: false, erro: "Loja não encontrada." };
+
+    const { error, count } = await supabase
+      .from("categorias")
+      .update({ oculta }, { count: "exact" })
+      .eq("id", id)
+      .eq("loja_id", loja.id);
+    if (error) {
+      console.error("[alternarOcultaCategoria]", error);
+      return { ok: false, erro: MSG_ATUALIZAR_CATEGORIA };
+    }
+    if (count !== 1) return { ok: false, erro: MSG_CATEGORIA_NAO_ENCONTRADA };
+
+    revalidatePath("/painel/produtos");
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[alternarOcultaCategoria]", e);
+    return { ok: false, erro: MSG_ATUALIZAR_CATEGORIA };
+  }
+}
+
+/** Frequência de UMA categoria (os 5 eixos, RN-1/RN-2). */
+export async function definirFrequenciaCategoria(
+  payload: unknown,
+): Promise<ResultadoGestaoCategoria> {
+  const parsed = schemaFrequenciaCategoria.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: mensagemDeFrequencia(parsed.error.issues) };
+  }
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) return { ok: false, erro: "Loja não encontrada." };
+
+    const { error, count } = await supabase
+      .from("categorias")
+      .update(patchFrequenciaCategoria(parsed.data.frequencia), { count: "exact" })
+      .eq("id", parsed.data.categoria_id)
+      .eq("loja_id", loja.id);
+    if (error) {
+      console.error("[definirFrequenciaCategoria]", error);
+      return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+    }
+    if (count !== 1) return { ok: false, erro: MSG_CATEGORIA_NAO_ENCONTRADA };
+
+    revalidatePath("/painel/produtos");
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[definirFrequenciaCategoria]", e);
+    return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
   }
 }
