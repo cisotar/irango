@@ -81,10 +81,10 @@ export type ProdutoPublico = Pick<
 >;
 
 /**
- * Lista EXATA (20 colunas, ordem fixa — as 5 de frequência da 320 no fim) da projeção pública — §Contratos de Dados
- * da 265. Select NOMEADO por decisão (D4): `select("*")` numa view definer volta
- * a vazar qualquer coluna que uma migration futura (244/245) acrescente sem
- * revisão do contrato TS.
+ * Lista EXATA (20 colunas, ordem fixa — as 5 de frequência da 320 no fim) da
+ * projeção pública — §Contratos de Dados da 265. Select NOMEADO por decisão
+ * (D4): `select("*")` numa view definer volta a vazar qualquer coluna que uma
+ * migration futura (244/245) acrescente sem revisão do contrato TS.
  */
 export const COLUNAS_PRODUTO_PUBLICO =
   "id, loja_id, categoria_id, nome, descricao, preco, disponivel, ordem, foto_url, " +

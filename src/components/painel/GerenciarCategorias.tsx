@@ -3,8 +3,6 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertTriangle,
-  Ban,
   Check,
   Clock,
   EyeOff,
@@ -17,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { AvisoFrequencia, ChipFrequencia } from "@/components/painel/RotuloFrequencia";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -344,24 +343,10 @@ export function GerenciarCategorias({
                           Oculta da vitrine
                         </Badge>
                       )}
-                      {frequencias[cat.id]?.rotulo != null && (
-                        <Badge variant="outline" className="font-normal whitespace-normal">
-                          {frequencias[cat.id]?.rotulo === "Nunca disponível" ? (
-                            <Ban aria-hidden className="size-3" />
-                          ) : (
-                            <Clock aria-hidden className="size-3" />
-                          )}
-                          {frequencias[cat.id]?.rotulo}
-                        </Badge>
-                      )}
+                      <ChipFrequencia rotulo={frequencias[cat.id]?.rotulo} />
                     </div>
                   )}
-                  {frequencias[cat.id]?.aviso != null && (
-                    <p className="flex items-start gap-1.5 text-xs text-amber-700">
-                      <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-                      {frequencias[cat.id]?.aviso}
-                    </p>
-                  )}
+                  <AvisoFrequencia aviso={frequencias[cat.id]?.aviso} />
 
                   <Button
                     type="button"

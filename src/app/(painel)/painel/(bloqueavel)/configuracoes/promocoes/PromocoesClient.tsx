@@ -575,7 +575,6 @@ function FormModalSazonal({
         )}
       </fieldset>
 
-
       <Separator />
 
       {/* Toggle "mostrar promoções junto" (RN-09): quando este modal está no ar,

@@ -647,6 +647,9 @@ function trechoPeriodo(f: Frequencia): string | null {
   return null;
 }
 
+/** O rótulo do chip quando nenhum dia abre (RN-8). A UI troca o ícone por ele. */
+export const ROTULO_NUNCA_DISPONIVEL = "Nunca disponível";
+
 /**
  * [323/C7] O chip de frequência do PAINEL (produto e categoria):
  * `"seg a sex · 11:00–15:00 · 01/12 a 31/12"`, `"desde 01/12"`, `"sáb"`.
@@ -656,7 +659,7 @@ function trechoPeriodo(f: Frequencia): string | null {
  * eixos não mudam nada quando nenhum dia abre (RN-8).
  */
 export function rotuloFrequencia(f: Frequencia): string | null {
-  if (nuncaDisponivel(f)) return "Nunca disponível";
+  if (nuncaDisponivel(f)) return ROTULO_NUNCA_DISPONIVEL;
   const partes: string[] = [];
   if (f.dias_semana !== null) {
     const semana = ordenarSemana(f.dias_semana);

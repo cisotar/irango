@@ -68,7 +68,8 @@ const ERRO_GENERICO = "Não foi possível criar o pedido. Tente novamente.";
 const ERRO_REVISAO = "Os preços do seu carrinho mudaram. Revise o pedido antes de confirmar.";
 // (249/RN-08 → 321) Item que saiu da frequência de exibição (do produto ou da
 // categoria) ou cujo período encerrou (RN-7) entre montar o carrinho e
-// confirmar. O literal fica inalterado (o checkout já o conhece). Específica como "Loja fechada no momento." e deliberadamente SEM
+// confirmar. O literal fica inalterado (o checkout já o conhece).
+// Específica como "Loja fechada no momento." e deliberadamente SEM
 // nomear o item: quem nomeia é `revisarCarrinhoAction` (252), para quem o
 // cliente já provou conhecer os ids. Não é oráculo — a mesma informação está
 // pública no selo da vitrine.

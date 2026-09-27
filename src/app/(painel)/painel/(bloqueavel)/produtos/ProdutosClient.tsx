@@ -13,7 +13,6 @@ import { AlertDialog } from "@base-ui/react/alert-dialog";
 import {
   AlertTriangle,
   ArrowUpDown,
-  Ban,
   CalendarDays,
   Clock,
   Pencil,
@@ -31,6 +30,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AvisoFrequencia, ChipFrequencia } from "@/components/painel/RotuloFrequencia";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Accordion,
@@ -1243,16 +1243,7 @@ export function ProdutosClient({
                                 Oculta da vitrine
                               </Badge>
                             )}
-                            {estado.rotulo !== null && (
-                              <Badge variant="outline" className="font-normal whitespace-normal">
-                                {estado.rotulo === "Nunca disponível" ? (
-                                  <Ban aria-hidden className="size-3" />
-                                ) : (
-                                  <Clock aria-hidden className="size-3" />
-                                )}
-                                {estado.rotulo}
-                              </Badge>
-                            )}
+                            <ChipFrequencia rotulo={estado.rotulo} />
                           </div>
                           {estado.oculta && (
                             <p className="text-xs text-muted-foreground">
@@ -1264,12 +1255,7 @@ export function ProdutosClient({
                               Mostre a categoria em &ldquo;Categorias&rdquo; para voltar a vender.
                             </p>
                           )}
-                          {estado.aviso !== null && (
-                            <p className="flex items-start gap-1.5 text-xs text-amber-700">
-                              <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-                              {estado.aviso}
-                            </p>
-                          )}
+                          <AvisoFrequencia aviso={estado.aviso} />
                         </div>
                       );
                     })()}
@@ -1521,24 +1507,14 @@ export function ProdutosClient({
                                 ao carregar (mockup §1.1). */}
                             {!modoSelecao && frequencias.produtos[p.id]?.rotulo != null && (
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <Badge variant="outline" className="font-normal whitespace-normal">
-                                  {frequencias.produtos[p.id]?.rotulo === "Nunca disponível" ? (
-                                    <Ban aria-hidden className="size-3" />
-                                  ) : (
-                                    <Clock aria-hidden className="size-3" />
-                                  )}
-                                  {frequencias.produtos[p.id]?.rotulo}
-                                </Badge>
+                                <ChipFrequencia rotulo={frequencias.produtos[p.id]?.rotulo} />
                               </div>
                             )}
-                            {!modoSelecao && frequencias.produtos[p.id]?.aviso != null && (
-                              <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-700">
-                                <AlertTriangle
-                                  aria-hidden
-                                  className="mt-0.5 size-3.5 shrink-0"
-                                />
-                                {frequencias.produtos[p.id]?.aviso}
-                              </p>
+                            {!modoSelecao && (
+                              <AvisoFrequencia
+                                aviso={frequencias.produtos[p.id]?.aviso}
+                                className="mt-1"
+                              />
                             )}
                             {/* [264/RN-12] O aviso REDUZIDO: com D14 este
                                 produto sumiu da vitrine e o painel é o único
