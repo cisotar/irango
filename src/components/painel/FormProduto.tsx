@@ -39,7 +39,7 @@ import {
 const ID_ERRO_PAR = "produto-erro-preco-desconto";
 /** Descrição de fuso compartilhada pelos quatro campos de prazo. */
 const ID_FUSO = "produto-desconto-fuso";
-/** Rótulo acessível do RadioGroup de D14 (§13.5). */
+/** Rótulo acessível do bloco LEGADO de cardápio (D14/§13.5 → 323/D11). */
 const ID_VISIBILIDADE = "produto-visibilidade-rotulo";
 
 export type Categoria = {
@@ -173,11 +173,11 @@ export function FormProduto({
   const [categoriaId, setCategoriaId] = useState(inicial?.categoria_id ?? "");
   const [disponivel, setDisponivel] = useState(inicial?.disponivel ?? true);
   const [oculto, setOculto] = useState(inicial?.oculto ?? false);
-  // [261] D14. O default é "menu" — o MESMO do zod e da coluna: form antigo e
-  // produto criado antes da migration continuam com o comportamento de hoje.
-  const [visibilidade, setVisibilidade] = useState<Visibilidade>(
-    inicial?.visibilidade ?? "menu",
-  );
+  // [261] D14 → [323/D11] Não é mais editável: o `RadioGroup` Menu/Cardápio
+  // saiu (a frequência de exibição substituiu o cardápio sazonal). O valor
+  // salvo é reenviado como está — o UPDATE exige a chave — e produto novo
+  // nasce "menu", o default do zod e da coluna.
+  const visibilidade: Visibilidade = inicial?.visibilidade ?? "menu";
   const [fotoUrl, setFotoUrl] = useState<string | null>(
     inicial?.foto_url ?? null,
   );
@@ -648,112 +648,67 @@ export function FormProduto({
         </div>
       </div>
 
-      {/* ── [261] D14: onde este produto aparece (design §13.5) ────────────
-          `RadioGroup`, não `Switch`: são DUAS opções nomeadas, ambas legítimas
-          e permanentes — não é ligar/desligar. A copy é a que o lojista
-          consegue verificar sozinho; `'menu'`/`'cardapio'` nunca aparecem na
-          tela. A segunda linha de cada opção diz a CONSEQUÊNCIA, que é o que a
-          escolha realmente decide. */}
-      <fieldset className="space-y-3 rounded-lg border border-input p-3">
-        <legend
-          id={ID_VISIBILIDADE}
-          className="px-1 text-sm font-medium text-foreground"
-        >
-          Onde este produto aparece
-        </legend>
-
-        <RadioGroup
-          aria-labelledby={ID_VISIBILIDADE}
-          value={visibilidade}
-          onValueChange={(v) =>
-            setVisibilidade(v === "cardapio" ? "cardapio" : "menu")
-          }
-          className="gap-2"
-          disabled={enviando}
-        >
-          <Label
-            htmlFor="produto-visibilidade-menu"
-            className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-lg border border-input p-3"
+      {/* ── [323/D11] Bloco LEGADO de cardápio ───────────────────────────────
+          O `RadioGroup` Menu/Cardápio saiu: a frequência de exibição é editada
+          pelo `DialogoFrequencia` (kebab do produto). Este bloco só aparece
+          para o produto que ainda está `'cardapio'` (gravado direto por REST
+          depois da migração que devolveu todos ao menu): explica por que ele
+          depende de um cardápio. */}
+      {visibilidade === "cardapio" && (
+        <fieldset className="space-y-3 rounded-lg border border-input p-3">
+          <legend
+            id={ID_VISIBILIDADE}
+            className="px-1 text-sm font-medium text-foreground"
           >
-            <RadioGroupItem
-              id="produto-visibilidade-menu"
-              value="menu"
-              disabled={enviando}
-            />
-            <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">
-                Aparece sempre no meu menu
-              </span>
-              <span className="text-xs font-normal text-muted-foreground">
-                Continua vendendo mesmo quando um cardápio dele fecha ou expira.
-              </span>
-            </span>
-          </Label>
-
-          <Label
-            htmlFor="produto-visibilidade-cardapio"
-            className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-lg border border-input p-3"
-          >
-            <RadioGroupItem
-              id="produto-visibilidade-cardapio"
-              value="cardapio"
-              disabled={enviando}
-            />
-            <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">
-                Só aparece quando um cardápio dele estiver aberto
-              </span>
-              <span className="text-xs font-normal text-muted-foreground">
-                Fora da temporada, ele some da vitrine.
-              </span>
-            </span>
-          </Label>
-        </RadioGroup>
-
-        {/* 🔴 A opção NÃO some quando o produto não está em cardápio nenhum:
-            esconder o controle produziria a pior versão do erro — o lojista
-            procura um botão que sumiu. O form explica a recusa e oferece a
-            saída. A autoridade continua sendo o trigger de RN-14 e a mensagem
-            legível da Server Action. */}
-        {visibilidade === "cardapio" && cardapiosDoProduto.length === 0 && (
-          <div
-            role="alert"
-            className="flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-100 p-3 text-sm text-amber-900"
-          >
-            <p>
-              Este produto não está em nenhum cardápio. Escolha um cardápio
-              antes, ou deixe-o no menu.
-            </p>
-            {/* Sem rota de cardápios neste mundo (hub admin) NÃO há botão:
-                um link para o painel do lojista levaria o admin à loja DELE.
-                O aviso permanece — o que muda é a saída, que vira instrução. */}
-            {hrefCardapios === null ? (
-              <p className="text-xs">
-                Cardápios são gerenciados pelo painel do lojista.
-              </p>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="min-h-[44px]"
-                render={<Link href={hrefCardapios} />}
-              >
-                Escolher um cardápio
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* [278] A linha inteira vem redigida do módulo puro: sem jsdom, uma
-            frase montada com `join` dentro do JSX não é afirmável. Os dias do
-            item chegam já escritos pelo servidor (`rotuloDiasDoItem`). */}
-        {cardapiosDoProduto.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            {fraseEstaEm(cardapiosDoProduto)}
+            Onde este produto aparece
+          </legend>
+          <p className="text-sm text-foreground">
+            Só aparece quando um cardápio dele estiver aberto.
           </p>
-        )}
-      </fieldset>
+
+          {/* Sem cardápio nenhum, o trigger de RN-14 recusa salvar: o form
+              explica e oferece a saída. A autoridade continua sendo o trigger e
+              a mensagem legível da Server Action. */}
+          {cardapiosDoProduto.length === 0 && (
+            <div
+              role="alert"
+              className="flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-100 p-3 text-sm text-amber-900"
+            >
+              <p>
+                Este produto não está em nenhum cardápio. Escolha um cardápio
+                antes, ou deixe-o no menu.
+              </p>
+              {/* Sem rota de cardápios neste mundo (hub admin) NÃO há botão:
+                  um link para o painel do lojista levaria o admin à loja DELE.
+                  O aviso permanece — o que muda é a saída, que vira instrução. */}
+              {hrefCardapios === null ? (
+                <p className="text-xs">
+                  Cardápios são gerenciados pelo painel do lojista.
+                </p>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-[44px]"
+                  render={<Link href={hrefCardapios} />}
+                >
+                  Escolher um cardápio
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* [278] A linha inteira vem redigida do módulo puro: sem jsdom, uma
+              frase montada com `join` dentro do JSX não é afirmável. Os dias do
+              item chegam já escritos pelo servidor (`rotuloDiasDoItem`). */}
+          {cardapiosDoProduto.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {fraseEstaEm(cardapiosDoProduto)}
+            </p>
+          )}
+        </fieldset>
+      )}
 
       <Button type="submit" className="w-full" disabled={enviando}>
         {enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

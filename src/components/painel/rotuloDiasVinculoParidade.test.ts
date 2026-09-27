@@ -1,5 +1,5 @@
 /**
- * [278] TRAVA DE PARIDADE — `VinculoDoProduto.rotuloDias` é OBRIGATÓRIO
+ * [278 → 323] TRAVA DE PARIDADE — `VinculoDoProduto.rotuloDias` é OBRIGATÓRIO
  * (`contrato-lote.ts`) exatamente porque o risco documentado ali é um dos DOIS
  * MUNDOS (painel do lojista e hub admin) esquecer de derivá-lo. `rotuloDias`
  * não tem teste de comportamento próprio — é uma string pronta, redigida por
@@ -33,42 +33,43 @@ function ler(caminho: string): string {
   return readFileSync(caminho, "utf8");
 }
 
-/** A composição EXATA que os dois mundos precisam compartilhar. */
-const CHAMADA = "rotuloDias: rotuloDiasDoItem(v.dias_semana)";
+/**
+ * [323/D11] O chip de VÍNCULO saiu da tela: o cardápio virou função morta e
+ * os dois `page.tsx` deixaram de compor `rotuloDias`. A trava de paridade
+ * continua — agora sobre o que substituiu o chip: a projeção de FREQUÊNCIA,
+ * que os dois mundos têm de montar pela MESMA chamada, com o fuso da loja.
+ */
+const CHAMADA = "projetarFrequenciasDoPainel(";
+const ARGUMENTOS = /projetarFrequenciasDoPainel\(\s*produtos,\s*categorias,\s*agora,\s*loja\.timezone,?\s*\)/;
 
-describe("rotuloDias de VinculoDoProduto — os dois mundos não divergem", () => {
+describe("frequência do painel — os dois mundos não divergem (323)", () => {
   it("os dois arquivos existem (senão o teste passa por vacuidade)", () => {
     expect(() => ler(PAGE_LOJISTA)).not.toThrow();
     expect(() => ler(PAGE_ADMIN)).not.toThrow();
   });
 
-  it("os DOIS `page.tsx` importam `rotuloDiasDoItem` de `descreverVigencia`", () => {
+  it("os DOIS `page.tsx` importam `projetarFrequenciasDoPainel` de `frequenciaPainel`", () => {
     for (const caminho of [PAGE_LOJISTA, PAGE_ADMIN]) {
-      const codigo = ler(caminho);
-      expect(codigo).toMatch(
-        /import\s*\{[^}]*\brotuloDiasDoItem\b[^}]*\}\s*from\s*["']@\/lib\/utils\/descreverVigencia["']/,
+      expect(ler(caminho)).toMatch(
+        /import\s*\{[^}]*\bprojetarFrequenciasDoPainel\b[^}]*\}\s*from\s*["']@\/lib\/utils\/frequenciaPainel["']/,
       );
     }
   });
 
-  it("os DOIS compõem `rotuloDias` com a MESMA chamada, byte a byte", () => {
-    const noLojista = ler(PAGE_LOJISTA);
-    const noAdmin = ler(PAGE_ADMIN);
-    expect(noLojista).toContain(CHAMADA);
-    expect(noAdmin).toContain(CHAMADA);
+  it("os DOIS chamam a projeção UMA vez, com os MESMOS argumentos", () => {
+    for (const caminho of [PAGE_LOJISTA, PAGE_ADMIN]) {
+      const codigo = ler(caminho);
+      expect(codigo.split(CHAMADA)).toHaveLength(2);
+      expect(codigo).toMatch(ARGUMENTOS);
+      expect(codigo).toMatch(/frequencias=\{frequencias\}/);
+    }
   });
 
-  it("nenhum dos dois compõe `rotuloDias` por uma segunda via (ternário, template, etc.)", () => {
-    // A linha que atribui `rotuloDias:` dentro da montagem de `VinculoDoProduto`
-    // (não a declaração do TIPO em `contrato-lote.ts`, que não entra aqui) tem
-    // de ser, em AMBOS, exatamente a chamada — nunca uma expressão maior que
-    // embrulhe um fallback ou uma segunda formatação.
+  it("nenhum dos dois compõe mais `rotuloDias` de vínculo de cardápio", () => {
     for (const caminho of [PAGE_LOJISTA, PAGE_ADMIN]) {
-      const linhas = ler(caminho)
-        .split("\n")
-        .filter((linha) => linha.includes("rotuloDias:"));
-      expect(linhas).toHaveLength(1);
-      expect(linhas[0].trim().replace(/,$/, "")).toBe(CHAMADA);
+      const codigo = ler(caminho);
+      expect(codigo).not.toContain("rotuloDias:");
+      expect(codigo).not.toContain("rotuloDiasDoItem");
     }
   });
 });

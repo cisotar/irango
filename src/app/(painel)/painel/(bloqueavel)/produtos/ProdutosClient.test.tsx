@@ -68,8 +68,21 @@ function acoesBase(): AcoesProdutosClient {
     removerOpcional: vi.fn(async () => ({ ok: true }) as const),
     reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
     reordenarItensDoGrupoOpcional: vi.fn(async () => ({ ok: true }) as const),
+    // [323] As 4 da frequência de exibição.
+    aplicarFrequenciaEmProdutos: vi.fn(async () => ({ ok: true }) as const),
+    salvarGradeDeDias: vi.fn(async () => ({ ok: true }) as const),
+    alternarOcultaCategoria: vi.fn(async () => ({ ok: true }) as const),
+    definirFrequenciaCategoria: vi.fn(async () => ({ ok: true }) as const),
   } as unknown as AcoesProdutosClient;
 }
+
+/** [323] Projeção de frequência vazia: nenhum chip, nenhum aviso. */
+const FREQUENCIAS_VAZIAS: ProdutosClientProps["frequencias"] = {
+  produtos: {},
+  categorias: {},
+  agora: "2026-09-27T12:00:00.000Z",
+  timezone: "America/Sao_Paulo",
+};
 
 function produtoBase(overrides: Partial<Produto> = {}): Produto {
   return {
@@ -104,6 +117,7 @@ function renderLista(
       vinculosPorProduto={vinculosPorProduto}
       promocoes={{}}
       fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+      frequencias={FREQUENCIAS_VAZIAS}
       categoriasOpcional={[]}
       opcionais={[]}
       associacoes={[]}
@@ -244,6 +258,7 @@ describe("injeção de acoes (issues 129 e 160)", () => {
           vinculosPorProduto={{}}
           promocoes={{}}
           fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+          frequencias={FREQUENCIAS_VAZIAS}
           categoriasOpcional={[]}
           opcionais={[]}
           associacoes={[]}
@@ -283,6 +298,7 @@ describe("botão '+ Novo produto' por card de categoria (spec botao-novo-produto
         vinculosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -347,6 +363,7 @@ describe("gate do botão 'Reordenar categorias' (issue 175, cenário 11)", () =>
         vinculosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -429,6 +446,7 @@ describe("categoria vazia APARECE na listagem normal do painel (issue 261)", () 
         vinculosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -477,6 +495,7 @@ describe("ProdutosClient — chip de promoção vigente (issue 235, design §8.4
         vinculosPorProduto={{}}
         promocoes={promocoes}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -549,11 +568,19 @@ describe("ProdutosClient — badge de D14 (issue 261)", () => {
     expect(html).not.toContain("Exclusivo de cardápio");
   });
 
-  it("sem a prop `lote`, a tela não oferece modo de seleção", () => {
-    // O hub admin cai aqui: as actions de lote derivam a loja de `auth.uid()`
-    // e injetá-las lá gravaria na loja do ADMIN logado.
+  // [323] Invertido: o "Selecionar" dependia de `lote` (cardápio, sem variante
+  // admin). A seleção agora aplica FREQUÊNCIA, que tem variante admin com o
+  // `lojaId` da URL — então existe nos dois mundos, sempre que há produto.
+  it("[323] sem a prop `lote`, com produto, a tela oferece 'Selecionar' e 'Dias da semana'", () => {
     const html = renderLista([produtoBase()]);
-    expect(html).not.toContain(">Selecionar<");
+    expect(html).toContain("Selecionar");
+    expect(html).toContain("Dias da semana");
+  });
+
+  it("[323] sem produto nenhum, nem 'Selecionar' nem 'Dias da semana'", () => {
+    const html = renderLista([]);
+    expect(html).not.toContain("Selecionar");
+    expect(html).not.toContain("Dias da semana");
   });
 });
 
@@ -577,6 +604,7 @@ describe("264 — aviso de sumiço na linha do produto", () => {
         vinculosPorProduto={{}}
         promocoes={{}}
         fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
         categoriasOpcional={[]}
         opcionais={[]}
         associacoes={[]}
@@ -675,5 +703,106 @@ describe("ProdutosClient — dias do vínculo no chip (278)", () => {
     );
     // Em 360px o chip quebra em duas linhas em vez de esticar a linha.
     expect(html).toContain("whitespace-normal");
+  });
+});
+
+/**
+ * [323/C8] Frequência de exibição na lista: o texto vem PRONTO do servidor
+ * (`projetarFrequenciasDoPainel`); aqui se afirma só que a tela o imprime, e
+ * onde.
+ */
+describe("323 — chip, aviso e estado da categoria na lista", () => {
+  const CATEGORIAS = [{ id: "c1", nome: "Sobremesas", exibir_imagens: true }];
+
+  function render(frequencias: ProdutosClientProps["frequencias"], produtos: Produto[]): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={CATEGORIAS}
+        opcionaisPorCategoria={{}}
+        hrefCardapios="/painel/cardapios"
+        vinculosPorProduto={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={frequencias}
+        categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
+        acoes={acoesBase()}
+      />,
+    );
+  }
+
+  const PERMANENTE = {
+    dias_semana: null,
+    hora_inicio: null,
+    hora_fim: null,
+    periodo_inicio: null,
+    periodo_fim: null,
+  };
+
+  it("chip do produto e aviso RN-1 em âmbar, SEM role=alert", () => {
+    const aviso =
+      "Este item nunca vai ficar disponível: os dias e horários dele não batem com os da categoria. Ajuste a frequência do item ou da categoria.";
+    const html = render(
+      {
+        ...FREQUENCIAS_VAZIAS,
+        produtos: { "prod-1": { rotulo: "sáb", aviso } },
+      },
+      [produtoBase({ categoria_id: "c1" })],
+    );
+    expect(html).toContain("sáb");
+    expect(html).toContain(aviso);
+    expect(html).toContain("text-amber-700");
+    const trecho = html.slice(html.lastIndexOf("<p", html.indexOf(aviso)), html.indexOf(aviso));
+    expect(trecho).not.toContain('role="alert"');
+  });
+
+  it("produto permanente não ganha chip", () => {
+    const html = render(
+      { ...FREQUENCIAS_VAZIAS, produtos: { "prod-1": { rotulo: null, aviso: null } } },
+      [produtoBase()],
+    );
+    expect(html).not.toContain("lucide-clock");
+  });
+
+  it("'Nunca disponível' usa o ícone de bloqueio, não o relógio", () => {
+    const html = render(
+      { ...FREQUENCIAS_VAZIAS, produtos: { "prod-1": { rotulo: "Nunca disponível", aviso: null } } },
+      [produtoBase()],
+    );
+    expect(html).toContain("Nunca disponível");
+    expect(html).toContain("lucide-ban");
+  });
+
+  it("categoria oculta: faixa 'Oculta da vitrine' com a instrução imperativa", () => {
+    const html = render(
+      {
+        ...FREQUENCIAS_VAZIAS,
+        categorias: {
+          c1: { oculta: true, frequencia: PERMANENTE, rotulo: null, aviso: null },
+        },
+      },
+      [produtoBase({ id: "a", categoria_id: "c1" }), produtoBase({ id: "b", categoria_id: "c1" })],
+    );
+    expect(html).toContain("Oculta da vitrine");
+    expect(html).toContain("Os 2 produtos desta categoria não aparecem para o cliente.");
+    expect(html).toContain("Mostre a categoria em");
+  });
+
+  it("categoria visível e permanente: nenhuma faixa de estado", () => {
+    const html = render(
+      {
+        ...FREQUENCIAS_VAZIAS,
+        categorias: {
+          c1: { oculta: false, frequencia: PERMANENTE, rotulo: null, aviso: null },
+        },
+      },
+      [produtoBase({ categoria_id: "c1" })],
+    );
+    expect(html).not.toContain("Oculta da vitrine");
+    expect(html).not.toContain("não aparecem para o cliente");
   });
 });

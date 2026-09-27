@@ -143,16 +143,28 @@ describe("o form nunca afirma cardápio a partir de um default", () => {
     expect(fonte).not.toMatch(/cardapiosDoProduto\s*=\s*\[\]/);
   });
 
-  it("o hub admin alimenta `vinculosPorProduto` com dado real da loja-alvo", () => {
+  // [323/D11] Invertido de propósito: o cardápio saiu da tela (S5) e os DOIS
+  // mundos passam o índice VAZIO — o que antes era "dado real da loja-alvo"
+  // virou "o mesmo vazio nos dois". O bloco do `FormProduto` que lê o índice
+  // só renderiza para produto legado `'cardapio'`. O wrapper admin continua
+  // REPASSANDO a prop (não inventa default).
+  it("[323] os dois mundos passam `vinculosPorProduto` vazio; o wrapper admin só repassa", () => {
     const wrapper = readFileSync(
       join(RAIZ, "app/admin/assinantes/[lojaId]/produtos/CardapioAdminClient.tsx"),
       "utf8",
     );
-    const page = readFileSync(
+    const paginaAdmin = readFileSync(
       join(RAIZ, "app/admin/assinantes/[lojaId]/produtos/page.tsx"),
       "utf8",
     );
+    const paginaLojista = readFileSync(
+      join(RAIZ, "app/(painel)/painel/(bloqueavel)/produtos/page.tsx"),
+      "utf8",
+    );
     expect(wrapper).toMatch(/vinculosPorProduto=\{vinculosPorProduto\}/);
-    expect(page).toMatch(/carregarCardapiosAdmin/);
+    for (const pagina of [paginaAdmin, paginaLojista]) {
+      expect(pagina).toMatch(/vinculosPorProduto=\{\{\}\}/);
+      expect(pagina).not.toMatch(/carregarCardapiosAdmin|buscarCardapiosComProdutos/);
+    }
   });
 });
