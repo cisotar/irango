@@ -7,8 +7,8 @@
  *
  * A saída é entrada de `schemaModalSazonal.safeParse` (o MESMO schema do
  * servidor, issue 301) — o `.strict()` de lá reprova qualquer chave extra e o
- * `.refine` reprova janela invertida e seleção vazia. Aqui é só UX: a autoridade
- * é a Server Action.
+ * `.refine` reprova janela invertida. Seleção e mensagem são opcionais (RN-M02).
+ * Aqui é só UX: a autoridade é a Server Action.
  *
  * As datas vêm de um `<input type="datetime-local">` (sem fuso). Como no
  * `FormCupom`, `new Date(local).toISOString()` resolve para o offset local do
@@ -22,6 +22,12 @@ export type CamposModalSazonal = {
   /** Valor cru de um `<input type="datetime-local">` (`"YYYY-MM-DDTHH:MM"` ou ""). */
   exibicaoInicio: string;
   exibicaoFim: string;
+  /**
+   * Mensagem BRUTA do editor (`documentoEditorParaMensagem`) ou `null`. Não é
+   * validada aqui: o `schemaMensagemModal` dentro de `schemaModalSazonal` a
+   * canoniza (documento sem texto visível vira `null`, RN-M03).
+   */
+  mensagem: unknown;
   categorias: string[];
   cardapios: string[];
   mostrarPromocoesJunto: boolean;
@@ -32,6 +38,7 @@ export type PayloadModalSazonal = {
   titulo: string;
   exibicao_inicio: string;
   exibicao_fim: string;
+  mensagem: unknown;
   categorias: string[];
   cardapios: string[];
   mostrar_promocoes_junto: boolean;
@@ -52,6 +59,9 @@ function localParaIso(local: string): string {
  * `...(x ? … : {})` o `false` seria omitido e o lojista jamais conseguiria
  * DESLIGAR a exibição das promoções junto — a chave ausente faz o patch
  * preservar o valor gravado.
+ *
+ * `mensagem` também é SEMPRE presente (`null` quando vazia), pelo mesmo motivo:
+ * chave condicional impediria APAGAR a mensagem numa edição.
  */
 export function montarPayloadModalSazonal(
   campos: CamposModalSazonal,
@@ -60,6 +70,7 @@ export function montarPayloadModalSazonal(
     titulo: campos.titulo.trim(),
     exibicao_inicio: localParaIso(campos.exibicaoInicio),
     exibicao_fim: localParaIso(campos.exibicaoFim),
+    mensagem: campos.mensagem ?? null,
     categorias: campos.categorias,
     cardapios: campos.cardapios,
     mostrar_promocoes_junto: campos.mostrarPromocoesJunto,

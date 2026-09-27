@@ -15,6 +15,7 @@ import {
 } from "@/lib/actions/modalSazonal";
 import { estadoDoModalSazonal } from "@/lib/utils/estadoModalSazonal";
 import { descreverVigencia } from "@/lib/utils/descreverVigencia";
+import { lerMensagemModal } from "@/lib/validacoes/mensagemModal";
 import { PromocoesClient, type ModalSazonalLinha } from "./PromocoesClient";
 
 /**
@@ -61,6 +62,9 @@ export default async function PromocoesPage(): Promise<ReactElement> {
     exibicao_inicio: modal.exibicao_inicio,
     exibicao_fim: modal.exibicao_fim,
     mostrar_promocoes_junto: modal.mostrar_promocoes_junto,
+    // RN-M04: o banco é tão hostil quanto um payload (o dono grava direto no
+    // PostgREST). Inválida vira `null` (editor vazio) com log só dos ids.
+    mensagem: lerMensagemModal(modal.mensagem, { lojaId: loja.id, modalId: modal.id }),
     categorias: modal.categorias,
     cardapios: modal.cardapios,
     // Preview de UX recalculado no servidor a cada request (spec §Behaviors):
