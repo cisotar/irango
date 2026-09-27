@@ -152,6 +152,27 @@ export async function contarDaLoja(
   });
 }
 
+/** Estado das DUAS lojas (modal + junções + contagens). "Nada muda" = igual antes/depois. */
+export type FotoCenario = {
+  modalA: FotoModal;
+  modalB: FotoModal;
+  contagemA: { modais: number; categorias: number; cardapios: number };
+  contagemB: { modais: number; categorias: number; cardapios: number };
+};
+
+/** Fotografa as duas lojas do cenário (V6/V8): isolamento é provado nas duas pontas. */
+export async function fotografarCenario(
+  t: TestDb,
+  c: CenarioModalSazonal,
+): Promise<FotoCenario> {
+  return {
+    modalA: await fotografarModal(t, c.a.modalId),
+    modalB: await fotografarModal(t, c.b.modalId),
+    contagemA: await contarDaLoja(t, c.a.id),
+    contagemB: await contarDaLoja(t, c.b.id),
+  };
+}
+
 /** Erro de banco normalizado: SQLSTATE + mensagem (afirmar SEMPRE os dois). */
 export type ErroBanco = { code: string | undefined; message: string };
 
