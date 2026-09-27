@@ -857,3 +857,65 @@ describe("323 — botão 'Dias' no cabeçalho de cada categoria", () => {
     expect(html).toContain('id="abrir-grade-c1"');
   });
 });
+
+describe("323 — pílulas de dia editáveis na linha do produto", () => {
+  function render(produtos: Produto[]): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={[{ id: "c1", nome: "Sobremesas", exibir_imagens: true }]}
+        opcionaisPorCategoria={{}}
+        hrefCardapios="/painel/cardapios"
+        vinculosPorProduto={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
+        categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
+        acoes={acoesBase()}
+      />,
+    );
+  }
+
+  /** Quantos botões de dia estão marcados dentro do grupo do produto. */
+  function marcados(html: string, nomeDoProduto: string): number {
+    const inicio = html.indexOf(`aria-label="Dias de ${nomeDoProduto}"`);
+    expect(inicio).toBeGreaterThan(-1);
+    const grupo = html.slice(inicio, html.indexOf("</div>", inicio));
+    return grupo.split('aria-pressed="true"').length - 1;
+  }
+
+  it("a linha traz o grupo das 7 pílulas, nomeado pelo produto", () => {
+    const html = render([
+      produtoBase({ categoria_id: "c1", dias_semana: [1] } as Partial<Produto>),
+    ]);
+    expect(html).toContain('aria-label="Dias de Pizza Margherita"');
+    const inicio = html.indexOf('aria-label="Dias de Pizza Margherita"');
+    const grupo = html.slice(inicio, html.indexOf("</div>", inicio));
+    expect(grupo.split("aria-pressed=").length - 1).toBe(7);
+  });
+
+  it("produto de um dia só mostra UMA pílula marcada", () => {
+    const html = render([
+      produtoBase({ categoria_id: "c1", dias_semana: [1] } as Partial<Produto>),
+    ]);
+    expect(marcados(html, "Pizza Margherita")).toBe(1);
+  });
+
+  it("produto permanente (dias_semana null) mostra as 7 marcadas", () => {
+    const html = render([
+      produtoBase({ categoria_id: "c1", dias_semana: null } as Partial<Produto>),
+    ]);
+    expect(marcados(html, "Pizza Margherita")).toBe(7);
+  });
+
+  it("produto 'nunca' (dias_semana []) mostra NENHUMA marcada — [] nao vira todo dia", () => {
+    const html = render([
+      produtoBase({ categoria_id: "c1", dias_semana: [] } as Partial<Produto>),
+    ]);
+    expect(marcados(html, "Pizza Margherita")).toBe(0);
+  });
+});

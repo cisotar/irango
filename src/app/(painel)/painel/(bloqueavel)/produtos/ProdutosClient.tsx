@@ -31,6 +31,12 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AvisoFrequencia, ChipFrequencia } from "@/components/painel/RotuloFrequencia";
+import { PilulasDeDias } from "@/components/painel/PilulasDeDias";
+import {
+  diasDasPilulas,
+  mesmosDias,
+  pilulasDosDias,
+} from "@/components/painel/gradeFrequencia";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Accordion,
@@ -935,6 +941,63 @@ export function ProdutosClient({
     });
   }
 
+  /*
+    [323] Dias do produto direto na LINHA, com escrita otimista — a mesma
+    mecânica de `ItensDoCardapio` (276). Guardamos junto a `base`: o valor
+    salvo de onde o rascunho saiu. Quando o servidor devolve um `dias_semana`
+    diferente da `base` — porque a escrita voltou, ou porque o diálogo de
+    frequência gravou outra coisa — o rascunho é DESCARTADO. Sem isso, o
+    otimista ficaria por cima do valor fresco do SSR e a linha mostraria um
+    dia que não está mais no banco.
+  */
+  const [diasOtimistas, setDiasOtimistas] = useState<
+    Record<string, { base: number[] | null; pilulas: number[] }>
+  >({});
+  const [diasEmVoo, setDiasEmVoo] = useState<ReadonlySet<string>>(() => new Set());
+
+  function pilulasDoProduto(p: Produto): number[] {
+    const rascunho = diasOtimistas[p.id];
+    return rascunho != null && mesmosDias(rascunho.base, p.dias_semana)
+      ? rascunho.pilulas
+      : pilulasDosDias(p.dias_semana);
+  }
+
+  /**
+   * Grava SÓ `dias_semana` (`salvarGradeDeDias`): hora e período do produto
+   * sobrevivem a um clique de pílula. O grupo fica desabilitado em voo porque
+   * duas escritas concorrentes do array inteiro teriam como vencedor o último
+   * a CHEGAR, não o último CLICADO.
+   */
+  async function salvarDiasDoProduto(p: Produto, pilulas: number[]): Promise<void> {
+    setDiasOtimistas((atual) => ({
+      ...atual,
+      [p.id]: { base: p.dias_semana, pilulas },
+    }));
+    setDiasEmVoo((atual) => new Set(atual).add(p.id));
+    try {
+      const resultado = await acoes.salvarGradeDeDias({
+        itens: [{ produto_id: p.id, dias_semana: diasDasPilulas(pilulas) }],
+      });
+      if (!resultado.ok) {
+        setDiasOtimistas((atual) => {
+          const proximo = { ...atual };
+          delete proximo[p.id];
+          return proximo;
+        });
+        // A frase é a da action; nenhum detalhe de banco é redigido aqui.
+        toast.error(resultado.erro);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setDiasEmVoo((atual) => {
+        const proximo = new Set(atual);
+        proximo.delete(p.id);
+        return proximo;
+      });
+    }
+  }
+
   const formProduto = (
     <FormProduto
       // Recria o form ao alternar entre produtos / criar (global ou por
@@ -1574,6 +1637,25 @@ export function ProdutosClient({
                             {!modoSelecao && frequencias.produtos[p.id]?.rotulo != null && (
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                 <ChipFrequencia rotulo={frequencias.produtos[p.id]?.rotulo} />
+                              </div>
+                            )}
+                            {/* [323] As 7 pílulas na própria linha: marcar dia
+                                é a edição mais frequente da frequência, e
+                                abrir o diálogo (ou o modo grade) para um
+                                clique era o caminho longo. Compactas porque
+                                sete alvos de 44px não cabem em 360px ao lado
+                                do resto da linha (design §5, exceção §8-A).
+                                Produto permanente nasce com as 7 marcadas —
+                                `null` e `[]` continuam distintos no banco. */}
+                            {!modoSelecao && (
+                              <div className="mt-1.5">
+                                <PilulasDeDias
+                                  compacto
+                                  valor={pilulasDoProduto(p)}
+                                  onChange={(novas) => void salvarDiasDoProduto(p, novas)}
+                                  rotulo={`Dias de ${p.nome}`}
+                                  desabilitado={diasEmVoo.has(p.id)}
+                                />
                               </div>
                             )}
                             {!modoSelecao && (
