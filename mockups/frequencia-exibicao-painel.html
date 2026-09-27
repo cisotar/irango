@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frequência de exibição — painel</title>
+<style>
+  /* ------------------------------------------------------------------
+     Mockup do PAINEL (/painel/produtos + hub admin). Issue 323.
+     Painel, não vitrine: o tema da loja NÃO se aplica (design-system §10).
+     Superfície fixa: creme #f5f0e6, card branco, limite #8a8a8a.
+     Primitivos shadcn recriados em CSS puro (.card, .btn, .badge, .switch,
+     .pilula, .dialog), sem CDN, para abrir offline.
+     Base 120% (globals.css): todo alvo usa 44px LITERAL.
+     ------------------------------------------------------------------ */
+  :root {
+    --fundo-painel: #f5f0e6;
+    --card: #ffffff;
+    --limite-card: #8a8a8a;
+    --foreground: #252525;
+    --muted-foreground: #737373;
+    --muted: #f5f5f5;
+    --primary: #171717;
+    --primary-foreground: #fafafa;
+    --secondary: #f5f5f5;
+    --ambar: #b45309;          /* text-amber-700, 5,0:1 sobre branco */
+    --ambar-borda: #f59e0b;    /* border-amber-500 */
+    --destrutivo: #dc2626;
+    --radius: 0.625rem;
+  }
+  html { font-size: 120%; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 96px; background: #e8e2d6; color: var(--foreground);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: .875rem;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 1.15rem; margin: 0 0 4px; }
+  h2.secao { font-size: 1rem; margin: 40px 0 4px; display: flex; gap: 8px; align-items: center; }
+  .legenda { color: #5b5b5b; font-size: .72rem; margin: 0 0 16px; line-height: 1.5; max-width: 72ch; }
+  .tag { font-size: .6rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+         padding: 3px 8px; border-radius: 999px; background: #dbeafe; color: #1e3a8a; }
+  .lado { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .tela { width: 360px; background: var(--fundo-painel); border: 1px solid var(--limite-card);
+          border-radius: 18px; padding: 19.2px 0; overflow: hidden; flex: none; position: relative; }
+  .tela-desktop { width: 100%; max-width: 980px; border-radius: 12px; }
+  .tela-rotulo { font-size: .68rem; color: #5b5b5b; margin: 0 0 6px; }
+  .main { padding: 0 19.2px; }   /* px-4 do <main> a 19,2px */
+  .nota { font-size: .66rem; color: #7c2d12; background: #fff7ed; border: 1px dashed #fdba74;
+          border-radius: 8px; padding: 6px 8px; margin: 8px 19.2px 0; line-height: 1.45; }
+
+  /* ---- primitivos shadcn ---- */
+  .card { background: var(--card); border-radius: var(--radius);
+          box-shadow: 0 0 0 1px var(--limite-card); overflow: hidden; margin-bottom: 16px; }
+  .cab-cat { display: flex; align-items: center; gap: 6px; padding: 0 12px 0 16px;
+             border-bottom: 1px solid rgba(0,0,0,.1); min-height: 44px; }
+  .cab-cat h3 { font-size: 1.05rem; margin: 0; font-weight: 700; flex: 1; min-width: 0; }
+  .estado-cat { padding: 8px 16px 10px; border-bottom: 1px solid rgba(0,0,0,.1);
+                display: flex; flex-direction: column; gap: 6px; }
+  .linha { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px;
+           padding: 12px 16px; border-top: 1px solid rgba(0,0,0,.1); }
+  .linha:first-child { border-top: 0; }
+  .thumb { width: 44px; height: 44px; border-radius: 8px; flex: none;
+           background: linear-gradient(135deg,#d7b98c,#9b6b3b); }
+  .texto { flex: 1; min-width: 0; }
+  .nome { font-size: .95rem; font-weight: 600; line-height: 1.3; }
+  .meta { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .preco { font-size: .85rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; padding: 2px 8px;
+           border-radius: 999px; background: var(--secondary); white-space: nowrap; line-height: 1.5; }
+  .badge-outline { background: transparent; box-shadow: inset 0 0 0 1px var(--limite-card);
+                   white-space: normal; font-weight: 400; }
+  .badge-muted { color: var(--muted-foreground); }
+  .badge svg { width: .8em; height: .8em; flex: none; }
+
+  .aviso { display: flex; gap: 6px; align-items: flex-start; font-size: .7rem; color: var(--ambar);
+           line-height: 1.45; margin-top: 6px; }
+  .aviso svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+  .info { font-size: .7rem; color: var(--muted-foreground); line-height: 1.45; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+         min-height: 44px; min-width: 44px; padding: 0 12px; border-radius: 8px; font-size: .78rem;
+         font-weight: 500; cursor: pointer; background: transparent; border: 0; color: inherit;
+         font-family: inherit; white-space: nowrap; }
+  .btn:focus-visible, .pilula:focus-visible, .switch:focus-visible, input:focus-visible {
+    outline: 3px solid rgba(113,113,122,.5); outline-offset: 2px; }
+  .btn-outline { box-shadow: inset 0 0 0 1px var(--limite-card); background: #fff; }
+  .btn-default { background: var(--primary); color: var(--primary-foreground); }
+  .btn-destrutivo { background: var(--destrutivo); color: #fff; }
+  .btn[disabled] { opacity: .5; cursor: not-allowed; }
+  .btn svg { width: 16px; height: 16px; }
+  .acoes { display: flex; gap: 8px; flex-basis: 100%; }
+  .acoes .btn-outline:not(.kebab) { flex: 1; }
+
+  /* ---- Switch + Label (44px de altura no LABEL) ---- */
+  .campo-switch { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer;
+                  font-size: .8rem; }
+  .campo-switch .off { color: var(--muted-foreground); font-size: .72rem; margin-left: auto; }
+  .switch { position: relative; width: 36px; height: 20px; border-radius: 999px; background: #d4d4d4;
+            flex: none; border: 0; padding: 0; cursor: pointer; transition: background .15s; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+                   border-radius: 50%; background: #fff; transition: transform .15s;
+                   box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .switch[aria-checked="true"] { background: var(--primary); }
+  .switch[aria-checked="true"]::after { transform: translateX(16px); }
+
+  /* ---- PilulasDeDias NÃO compacto: grid-cols-4 sm:grid-cols-7, 44×44 ---- */
+  .pilulas { display: grid; grid-template-columns: repeat(4, 44px); gap: 9.6px; }
+  .pilulas.sete { grid-template-columns: repeat(7, 44px); }
+  .pilula { min-height: 44px; min-width: 44px; border-radius: 8px; border: 1px solid var(--limite-card);
+            background: #fff; font-size: .72rem; font-weight: 500; cursor: pointer; font-family: inherit; color: inherit; }
+  .pilula[aria-pressed="true"] { background: var(--primary); border-color: var(--primary);
+                                 color: var(--primary-foreground); font-weight: 700; }
+  .pilula[disabled] { opacity: .6; pointer-events: none; }
+
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  legend { font-size: .8rem; font-weight: 700; padding: 0; margin-bottom: 2px; }
+  .eixo { padding: 12px 0; border-top: 1px solid rgba(0,0,0,.08); }
+  .eixo:first-of-type { border-top: 0; }
+  .sub { display: none; margin-top: 6px; }
+  .sub.aberto { display: block; }
+  .par { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .par label { font-size: .78rem; }
+  input.campo { min-height: 44px; border: 1px solid var(--limite-card); border-radius: 8px; padding: 0 8px;
+                font-size: 16px; font-family: inherit; background: #fff; color: inherit; }
+  .legenda-nunca { margin-top: 8px; font-size: .72rem; line-height: 1.45; padding: 8px 10px;
+                   border-radius: 8px; background: var(--muted); }
+
+  /* ---- Dialog (shadcn Base UI recriado) ---- */
+  .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.45); display: flex;
+             align-items: center; justify-content: center; padding: 16px; }
+  .dialog { background: #fff; width: calc(100% - 0px); max-height: 640px; border-radius: 16px;
+            display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,.25); }
+  .dialog-cab { padding: 16px 16px 8px; position: relative; }
+  .dialog-cab h4 { margin: 0; font-size: 1rem; }
+  .dialog-cab p { margin: 2px 0 0; font-size: .75rem; color: var(--muted-foreground); }
+  .dialog-cab .fechar { position: absolute; top: 6px; right: 6px; }
+  .dialog-corpo { padding: 0 16px 8px; overflow-y: auto; flex: 1; min-height: 0; }
+  .dialog-rodape { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid rgba(0,0,0,.1); }
+  .dialog-rodape .btn { flex: 1; }
+  .resumo { margin: 4px 0 8px; padding: 8px 10px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--limite-card);
+            font-size: .78rem; }
+  .resumo b { display: block; font-size: .62rem; text-transform: uppercase; letter-spacing: .05em;
+              color: var(--muted-foreground); margin-bottom: 2px; }
+  .caixa-aviso { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #fffbeb;
+                 box-shadow: inset 0 0 0 1px #fcd34d; }
+  .caixa-aviso .aviso { margin: 0; }
+  .caixa-info { margin: 4px 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--muted);
+                font-size: .72rem; line-height: 1.45; }
+
+  /* ---- Barra de modo (fixed bottom no mobile, sticky top no desktop) ---- */
+  .barra { position: absolute; left: 0; right: 0; bottom: 0; min-height: 64px; background: #fff;
+           border-top: 1px solid var(--limite-card); box-shadow: 0 -4px 12px rgba(0,0,0,.08);
+           padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+           justify-content: space-between; }
+  .barra p { margin: 0; font-size: .8rem; font-weight: 600; }
+  .barra .grupo { display: flex; gap: 6px; flex-wrap: wrap; }
+  .barra-desktop { position: sticky; top: 0; border: 1px solid var(--limite-card); border-radius: 12px;
+                   box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+  .espaco-barra { height: 132px; }
+
+  /* ---- Grade ---- */
+  .linha-grade { padding: 12px 16px; border-top: 1px solid rgba(0,0,0,.1); border-left: 3px solid transparent; }
+  .linha-grade:first-child { border-top: 0; }
+  .linha-grade.alterada { border-left-color: var(--ambar-borda); background: #fffdf7; }
+  .linha-grade .topo { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .linha-grade .topo .nome { flex: 1; min-width: 0; }
+  .estado-linha { font-size: .7rem; color: var(--muted-foreground); white-space: nowrap; }
+  .badge-alterado { display: none; }
+  .alterada .badge-alterado { display: inline-flex; }
+  .grade-desktop .linha-grade { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .grade-desktop .linha-grade .topo { flex: 1; margin: 0; min-width: 240px; }
+  .grade-desktop .linha-grade .aviso { flex-basis: 100%; }
+
+  /* ---- Sheet de categorias ---- */
+  .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: 75%; background: #fff;
+           border-left: 1px solid var(--limite-card); overflow-y: auto; padding: 16px 14px;
+           box-shadow: -8px 0 24px rgba(0,0,0,.15); }
+  .sheet h4 { margin: 0 0 2px; font-size: .95rem; }
+  .sheet .desc { font-size: .68rem; color: var(--muted-foreground); margin: 0 0 12px; line-height: 1.4; }
+  .cat-item { padding: 10px 0; border-top: 1px solid rgba(0,0,0,.1); display: flex; flex-direction: column; gap: 4px; }
+  .cat-item .l1 { display: flex; align-items: center; gap: 4px; }
+  .cat-item .l1 span { flex: 1; font-weight: 600; font-size: .85rem; min-width: 0; }
+  .btn-bloco { width: 100%; justify-content: flex-start; }
+
+  .fundo-escuro { position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+  .menu-pop { position: absolute; right: 18px; background: #fff; border-radius: 10px; padding: 4px;
+              box-shadow: 0 0 0 1px var(--limite-card), 0 10px 24px rgba(0,0,0,.18); min-width: 230px; z-index: 5; }
+  .menu-pop div { min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
+                  font-size: .78rem; border-radius: 6px; }
+  .menu-pop .novo { background: #f0f9ff; font-weight: 600; }
+  .menu-pop svg { width: 16px; height: 16px; }
+  .chk { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .chk span { width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--limite-card); display: block; }
+  .chk span.on { background: var(--primary); border-color: var(--primary); position: relative; }
+  .chk span.on::after { content: "✓"; color: #fff; font-size: 12px; position: absolute; inset: 0;
+                        display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-relogio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.5"/></symbol>
+  <symbol id="i-olho-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18"/><path d="M10.6 6.1A10 10 0 0 1 22 12a17 17 0 0 1-3 3.7M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.4-1"/></symbol>
+  <symbol id="i-kebab" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-lapis" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-lixo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+</svg>
+
+<div class="wrap">
+  <h1>Frequência de exibição · painel <span class="tag">issue 323</span></h1>
+  <p class="legenda">Superfícies de <code>/painel/produtos</code>, que o hub admin reusa pelo mesmo <code>ProdutosClient</code>.
+    Os textos de chip e aviso vêm prontos do servidor (<code>FrequenciasDoPainel</code>, C8). Os controles são clicáveis
+    para mostrar a interação: pílulas, switches, contador da grade. Notas em laranja = decisão de desenho.</p>
+
+  <!-- ============================================================ -->
+  <h2 class="secao">1 · Lista em repouso: chips, avisos e categoria oculta</h2>
+  <p class="legenda">Produto permanente não ganha chip. "Nunca disponível" é chip, sem aviso (escolha explícita, RN-8).
+    O aviso âmbar é o mesmo <code>&lt;p&gt;</code> do RN-12, sem <code>role="alert"</code> (conteúdo estático).</p>
+  <div class="lado">
+    <div>
+      <p class="tela-rotulo">360px · categoria com frequência</p>
+      <div class="tela"><div class="main">
+        <div class="card">
+          <div class="cab-cat">
+            <h3>Almoço executivo</h3>
+            <button class="btn" aria-label="Opcionais">⚙</button>
+            <button class="btn" aria-label="Novo produto em Almoço executivo">＋</button>
+          </div>
+          <div class="estado-cat">
+            <div><span class="badge badge-outline"><svg><use href="#i-relogio"/></svg>seg a sex · 11:00–15:00</span></div>
+          </div>
+          <div>
+            <div class="linha">
+              <div class="thumb"></div>
+              <div class="texto">
+                <div class="nome">Feijoada completa</div>
+                <div class="meta"><span class="preco">R$ 42,90</span><span class="badge">Disponível</span></div>
+                <div class="meta"><span class="badge badge-outline"><svg><use href="#i-relogio"/></svg>só sáb</span></div>
+                <p class="aviso"><svg><use href="#i-alerta"/></svg>Este item nunca vai ficar disponível: os dias e horários dele não batem com os da categoria. Ajuste a frequência do item ou da categoria.</p>
+              </div>
+              <div class="acoes">
+                <button class="btn btn-outline">Ocultar</button>
+                <button class="btn btn-outline">Marcar esgotado</button>
+                <button class="btn btn-outline kebab" aria-label="Mais ações de Feijoada completa"><svg><use href="#i-kebab"/></svg></button>
+              </div>
+            </div>
+            <div class="linha">
+              <div class="thumb" style="background:linear-gradient(135deg,#a3c47c,#4d7a2c)"></div>
+              <div class="texto">
+                <div class="nome">Prato feito de frango</div>
+                <div class="meta"><span class="preco">R$ 28,00</span><span class="badge">Disponível</span></div>
+              </div>
+              <div class="acoes">
+                <button class="btn btn-outline">Ocultar</button>
+                <button class="btn btn-outline">Marcar esgotado</button>
+                <button class="btn btn-outline kebab" aria-label="Mais ações de Prato feito de frango"><svg><use href="#i-kebab"/></svg></button>
+              </div>
+            </div>
+            <div class="linha">
+              <div class="thumb" style="background:linear-gradient(135deg,#f6c177,#e0752d)"></div>
+              <div class="texto">
+                <div class="nome">Suco do dia</div>
+                <div class="meta"><span class="preco">R$ 9,00</span><span class="badge">Disponível</span>
+                  <span class="badge badge-outline"><svg><use href="#i-ban"/></svg>Nunca disponível</span></div>
+              </div>
+              <div class="acoes">
+                <button class="btn btn-outline">Ocultar</button>
+                <button class="btn btn-outline">Marcar esgotado</button>
+                <button class="btn btn-outline kebab" aria-label="Mais ações de Suco do dia"><svg><use href="#i-kebab"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <div>
+      <p class="tela-rotulo">360px · categoria oculta + período encerrado</p>
+      <div class="tela"><div class="main">
+        <div class="card">
+          <div class="cab-cat">
+            <h3>Sobremesas</h3>
+            <button class="btn" aria-label="Opcionais">⚙</button>
+            <button class="btn" aria-label="Novo produto em Sobremesas">＋</button>
+          </div>
+          <div class="estado-cat">
+            <div><span class="badge badge-outline badge-muted"><svg><use href="#i-olho-off"/></svg>Oculta da vitrine</span></div>
+            <p class="info" style="margin:0">Os 6 produtos desta categoria não aparecem para o cliente. Mostre a categoria em "Categorias" para voltar a vender.</p>
+          </div>
+          <div class="linha">
+            <div class="thumb" style="background:linear-gradient(135deg,#e8c7a0,#8a5a2b)"></div>
+            <div class="texto">
+              <div class="nome">Pudim de leite</div>
+              <div class="meta"><span class="preco">R$ 12,00</span><span class="badge">Disponível</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cab-cat"><h3>Especiais de Natal</h3></div>
+          <div class="linha">
+            <div class="thumb" style="background:linear-gradient(135deg,#f3d9a4,#b07a2a)"></div>
+            <div class="texto">
+              <div class="nome">Panetone trufado</div>
+              <div class="meta"><span class="preco">R$ 59,00</span><span class="badge">Disponível</span></div>
+              <div class="meta"><span class="badge badge-outline"><svg><use href="#i-relogio"/></svg>01/12 a 24/12</span></div>
+              <p class="aviso"><svg><use href="#i-alerta"/></svg>Período encerrado em 24/12: não aparece mais na vitrine. Mude o período para voltar a vender.</p>
+            </div>
+            <div class="acoes">
+              <button class="btn btn-outline">Ocultar</button>
+              <button class="btn btn-outline">Marcar esgotado</button>
+              <button class="btn btn-outline kebab" aria-label="Mais ações de Panetone trufado"><svg><use href="#i-kebab"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <p class="nota" style="margin:0">"Disponível" e "Período encerrado" convivem: o badge fala de estoque, o aviso fala de janela.
+          O aviso de período encerrado vence o de RN-1 (C8).</p>
+      </div></div>
+    </div>
+
+    <div>
+      <p class="tela-rotulo">360px · kebab do produto (+1 item)</p>
+      <div class="tela" style="height:420px"><div class="main">
+        <div class="card">
+          <div class="linha">
+            <div class="thumb"></div>
+            <div class="texto"><div class="nome">Feijoada completa</div>
+              <div class="meta"><span class="preco">R$ 42,90</span></div></div>
+            <div class="acoes">
+              <button class="btn btn-outline">Ocultar</button>
+              <button class="btn btn-outline">Marcar esgotado</button>
+              <button class="btn btn-outline kebab" aria-expanded="true" aria-label="Mais ações de Feijoada completa"><svg><use href="#i-kebab"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+        <div class="menu-pop" style="top:160px">
+          <div><svg><use href="#i-lapis"/></svg>Editar</div>
+          <div><svg><use href="#i-lapis"/></svg>Editar nome e preço</div>
+          <div class="novo"><svg><use href="#i-relogio"/></svg>Frequência de exibição</div>
+          <div style="color:var(--destrutivo)"><svg><use href="#i-lixo"/></svg>Remover</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="secao">2 · Editor de frequência (DialogoFrequencia)</h2>
+  <p class="legenda">Um padrão para os três eixos: <b>Switch "Só em…"</b>, desligado = sem restrição (NULL). Ligue
+    "Só em alguns dias" e desmarque tudo para ver o estado <b>Nunca disponível</b> (<code>[]</code>, RN-8). O resumo e o
+    aviso RN-1 se recalculam sobre o rascunho (a categoria desta Feijoada é seg a sex).</p>
+  <div class="lado">
+    <div>
+      <p class="tela-rotulo">360px · produto (1 id), interativo</p>
+      <div class="tela" style="height:720px">
+        <div class="overlay">
+          <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t" style="max-height:688px">
+            <div class="dialog-cab">
+              <h4 id="dlg-t">Frequência de exibição</h4>
+              <p>Feijoada completa</p>
+              <button class="btn fechar" aria-label="Fechar"><svg><use href="#i-x"/></svg></button>
+            </div>
+            <div class="dialog-corpo" id="editor">
+              <div class="resumo" aria-live="polite"><b>Resumo</b><span data-resumo>só sáb · 11:00–15:00</span></div>
+
+              <fieldset class="eixo">
+                <legend>Dias da semana</legend>
+                <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="true" data-eixo="dias"></button>
+                  Só em alguns dias <span class="off" data-off="dias" hidden>Todos os dias</span></label>
+                <div class="sub aberto" data-sub="dias">
+                  <div class="pilulas" role="group" aria-label="Dias em que Feijoada completa aparece" aria-describedby="nunca-1" data-pilulas>
+                    <button type="button" class="pilula" aria-pressed="false" aria-label="Domingo" data-d="0">Dom</button>
+                    <button type="button" class="pilula" aria-pressed="false" aria-label="Segunda-feira" data-d="1">Seg</button>
+                    <button type="button" class="pilula" aria-pressed="false" aria-label="Terça-feira" data-d="2">Ter</button>
+                    <button type="button" class="pilula" aria-pressed="false" aria-label="Quarta-feira" data-d="3">Qua</button>
+                    <button type="button" class="pilula" aria-pressed="false" aria-label="Quinta-feira" data-d="4">Qui</button>
+                    <button type="button" class="pilula" aria-pressed="false" aria-label="Sexta-feira" data-d="5">Sex</button>
+                    <button type="button" class="pilula" aria-pressed="true" aria-label="Sábado" data-d="6">Sáb</button>
+                  </div>
+                  <p class="legenda-nunca" id="nunca-1" data-nunca hidden><b>Nunca disponível.</b> O item fica visível na vitrine, sem vender. Marque os dias em que ele aparece.</p>
+                </div>
+              </fieldset>
+
+              <fieldset class="eixo">
+                <legend>Horário</legend>
+                <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="true" data-eixo="hora"></button>
+                  Só em um horário do dia <span class="off" data-off="hora" hidden>O dia todo</span></label>
+                <div class="sub aberto" data-sub="hora">
+                  <div class="par">
+                    <label for="h-ini">Das</label><input class="campo" id="h-ini" type="time" value="11:00">
+                    <label for="h-fim">às</label><input class="campo" id="h-fim" type="time" value="15:00">
+                  </div>
+                  <p class="info" style="margin:6px 0 0">O horário de fim não entra: das 11:00 às 15:00 vende até 14:59.</p>
+                </div>
+              </fieldset>
+
+              <fieldset class="eixo">
+                <legend>Período</legend>
+                <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="false" data-eixo="periodo"></button>
+                  Só em um período de datas <span class="off" data-off="periodo">Sempre</span></label>
+                <div class="sub" data-sub="periodo">
+                  <div class="par">
+                    <label for="p-ini">De</label><input class="campo" id="p-ini" type="date" value="2026-12-01">
+                    <label for="p-fim">Até</label><input class="campo" id="p-fim" type="date" value="2026-12-24">
+                  </div>
+                  <p class="info" style="margin:6px 0 0">Preencha só uma das datas para valer a partir de um dia, ou até um dia. As duas datas entram.</p>
+                </div>
+              </fieldset>
+
+              <p class="info" style="margin:4px 0 0">Horários e datas no fuso da loja (Horário de Brasília).</p>
+
+              <div class="caixa-aviso" data-aviso-rn1>
+                <p class="aviso"><svg><use href="#i-alerta"/></svg>Este item nunca vai ficar disponível: os dias e horários dele não batem com os da categoria. Ajuste a frequência do item ou da categoria.</p>
+              </div>
+            </div>
+            <div class="dialog-rodape">
+              <button class="btn btn-outline">Cancelar</button>
+              <button class="btn btn-default">Salvar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="tela-rotulo">360px · seleção de 5 produtos (frequências divergentes)</p>
+      <div class="tela" style="height:520px">
+        <div class="overlay">
+          <div class="dialog" role="dialog" aria-modal="true">
+            <div class="dialog-cab">
+              <h4>Frequência de exibição</h4>
+              <p>5 produtos selecionados</p>
+              <button class="btn fechar" aria-label="Fechar"><svg><use href="#i-x"/></svg></button>
+            </div>
+            <div class="dialog-corpo">
+              <div class="caixa-info">Os produtos selecionados têm frequências diferentes. A que você salvar aqui substitui a de todos.</div>
+              <div class="resumo"><b>Resumo</b>Sempre disponível</div>
+              <fieldset class="eixo"><legend>Dias da semana</legend>
+                <label class="campo-switch"><span class="switch" aria-checked="false" role="switch"></span>Só em alguns dias <span class="off">Todos os dias</span></label></fieldset>
+              <fieldset class="eixo"><legend>Horário</legend>
+                <label class="campo-switch"><span class="switch" aria-checked="false" role="switch"></span>Só em um horário do dia <span class="off">O dia todo</span></label></fieldset>
+              <fieldset class="eixo"><legend>Período</legend>
+                <label class="campo-switch"><span class="switch" aria-checked="false" role="switch"></span>Só em um período de datas <span class="off">Sempre</span></label></fieldset>
+            </div>
+            <div class="dialog-rodape">
+              <button class="btn btn-outline">Cancelar</button>
+              <button class="btn btn-default">Aplicar a 5 produtos</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="nota" style="margin:8px 0 0;max-width:360px">Sem aviso RN-1 ao vivo na seleção (N categorias). Depois de aplicar, os avisos aparecem nas linhas.</p>
+    </div>
+
+    <div>
+      <p class="tela-rotulo">360px · categoria</p>
+      <div class="tela" style="height:520px">
+        <div class="overlay">
+          <div class="dialog" role="dialog" aria-modal="true">
+            <div class="dialog-cab">
+              <h4>Frequência de exibição</h4>
+              <p>Categoria Almoço executivo</p>
+              <button class="btn fechar" aria-label="Fechar"><svg><use href="#i-x"/></svg></button>
+            </div>
+            <div class="dialog-corpo">
+              <div class="caixa-info">Vale para todos os produtos desta categoria, junto com a frequência de cada um.</div>
+              <div class="resumo"><b>Resumo</b>seg a sex · 11:00–15:00</div>
+              <fieldset class="eixo"><legend>Dias da semana</legend>
+                <label class="campo-switch"><span class="switch" aria-checked="true" role="switch"></span>Só em alguns dias</label>
+                <div class="pilulas" role="group" aria-label="Dias em que Almoço executivo aparece">
+                  <span class="pilula" style="display:grid;place-items:center">Dom</span>
+                  <span class="pilula" aria-pressed="true" style="display:grid;place-items:center">Seg</span>
+                  <span class="pilula" aria-pressed="true" style="display:grid;place-items:center">Ter</span>
+                  <span class="pilula" aria-pressed="true" style="display:grid;place-items:center">Qua</span>
+                  <span class="pilula" aria-pressed="true" style="display:grid;place-items:center">Qui</span>
+                  <span class="pilula" aria-pressed="true" style="display:grid;place-items:center">Sex</span>
+                  <span class="pilula" style="display:grid;place-items:center">Sáb</span>
+                </div></fieldset>
+              <fieldset class="eixo"><legend>Horário</legend>
+                <label class="campo-switch"><span class="switch" aria-checked="true" role="switch"></span>Só em um horário do dia</label></fieldset>
+            </div>
+            <div class="dialog-rodape">
+              <button class="btn btn-outline">Cancelar</button>
+              <button class="btn btn-default">Salvar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="secao">3 · Seleção múltipla + "Definir frequência…"</h2>
+  <p class="legenda">Mesmo modo seleção de hoje (260): checkbox de 44px, linha comprimida, "Selecionar os N" no cabeçalho.
+    Só a barra muda: uma ação, "Definir frequência…", que abre o dialog da seção 2 no modo N.</p>
+  <div class="lado">
+    <div>
+      <p class="tela-rotulo">360px · modo seleção</p>
+      <div class="tela" style="height:560px"><div class="main">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px">
+          <b style="font-size:1.05rem">Produtos</b>
+          <span class="info">Marque os produtos que a ação deve atingir.</span>
+        </div>
+        <div class="card">
+          <div class="cab-cat"><h3>Lanches</h3>
+            <button class="btn btn-outline" style="font-size:.7rem">Selecionar os 4</button>
+            <button class="btn" style="font-size:.7rem">Limpar</button></div>
+          <div class="linha"><div class="chk"><span class="on"></span></div><div class="thumb"></div>
+            <div class="texto"><div class="nome">X-Tudo</div><div class="meta"><span class="preco">R$ 32,00</span></div></div></div>
+          <div class="linha"><div class="chk"><span class="on"></span></div><div class="thumb"></div>
+            <div class="texto"><div class="nome">X-Salada</div><div class="meta"><span class="preco">R$ 26,00</span></div></div></div>
+          <div class="linha"><div class="chk"><span></span></div><div class="thumb"></div>
+            <div class="texto"><div class="nome">Misto quente</div><div class="meta"><span class="preco">R$ 14,00</span></div></div></div>
+        </div>
+      </div>
+        <div class="barra" role="region" aria-label="Ações da seleção">
+          <p aria-live="polite">5 produtos selecionados</p>
+          <div class="grupo">
+            <button class="btn btn-default">Definir frequência…</button>
+            <button class="btn">Limpar</button>
+            <button class="btn">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="secao">4 · Grade produto × dia, com "Salvar tudo"</h2>
+  <p class="legenda">Modo de tela (troca de barra, como "Reordenar"). Só escreve <b>dias</b> (D6): hora e período aparecem
+    como leitura. Toque nas pílulas: a linha ganha "Alterado" + borda âmbar, o contador sobe, e o aviso RN-1 é recalculado
+    sobre o rascunho. Desmarcar todas = "Nunca disponível" (<code>[]</code>), sem erro.</p>
+  <div class="lado">
+    <div>
+      <p class="tela-rotulo">360px · PilulasDeDias não compacto (4+3)</p>
+      <div class="tela" style="height:900px" data-grade="m"><div class="main">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <b style="font-size:1.05rem">Dias da semana</b>
+        </div>
+        <div class="card">
+          <div class="cab-cat"><h3>Almoço executivo</h3></div>
+          <div class="estado-cat"><div><span class="badge badge-outline"><svg><use href="#i-relogio"/></svg>seg a sex · 11:00–15:00</span></div></div>
+          <div data-linhas></div>
+        </div>
+      </div>
+        <div class="barra">
+          <p aria-live="polite" data-contador>Nenhuma alteração</p>
+          <div class="grupo">
+            <button class="btn btn-outline">Cancelar</button>
+            <button class="btn btn-default" data-salvar disabled>Salvar tudo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:640px">
+      <p class="tela-rotulo">desktop (sm+) · a mesma árvore, 7 pílulas em linha: as colunas se alinham e a grade lê como matriz</p>
+      <div class="tela tela-desktop grade-desktop" data-grade="d" style="padding:19.2px">
+        <div class="barra barra-desktop" style="position:relative">
+          <p aria-live="polite" data-contador>Nenhuma alteração</p>
+          <div class="grupo">
+            <button class="btn btn-outline">Cancelar</button>
+            <button class="btn btn-default" data-salvar disabled>Salvar tudo</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cab-cat"><h3>Almoço executivo</h3>
+            <span class="badge badge-outline"><svg><use href="#i-relogio"/></svg>seg a sex · 11:00–15:00</span></div>
+          <div data-linhas></div>
+        </div>
+      </div>
+      <p class="nota" style="margin:10px 0 0">Sair com alterações abre um <b>AlertDialog</b>: "Descartar 3 alterações?" ·
+        "Os dias marcados nesta grade ainda não foram salvos." · [Continuar editando] [Descartar].
+        Erro ao salvar: toast "Não foi possível salvar a frequência." com a descrição "Nenhum produto foi alterado. Tente de novo."
+        A grade continua aberta com o rascunho.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="secao">5 · Categorias: mostrar/ocultar + frequência (GerenciarCategorias)</h2>
+  <p class="legenda">A linha do Sheet (270px em 360px) vira bloco: kebab (Renomear/Remover) no lugar dos dois ícones de
+    33,6px (<b>fecha a issue 291</b>), botão "Frequência…" de largura total e dois Switch com Label visível.
+    "Mostrar na vitrine" ligado = visível (<code>checked = !oculta</code>). Clique no switch.</p>
+  <div class="lado">
+    <div>
+      <p class="tela-rotulo">360px · Sheet lateral</p>
+      <div class="tela" style="height:760px">
+        <div class="fundo-escuro"></div>
+        <div class="sheet" role="dialog" aria-label="Categorias de produto">
+          <h4>Categorias de produto</h4>
+          <p class="desc">Agrupam o catálogo na vitrine e definem quais opcionais cada produto aceita.</p>
+
+          <div class="cat-item">
+            <div class="l1"><span>Almoço executivo</span>
+              <button class="btn btn-outline" aria-label="Mais ações de Almoço executivo"><svg><use href="#i-kebab"/></svg></button></div>
+            <div><span class="badge badge-outline"><svg><use href="#i-relogio"/></svg>seg a sex · 11:00–15:00</span></div>
+            <button class="btn btn-outline btn-bloco"><svg><use href="#i-relogio"/></svg>Frequência…</button>
+            <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="true" data-toast="Almoço executivo"></button>Mostrar na vitrine</label>
+            <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="true"></button>Mostrar imagens</label>
+          </div>
+
+          <div class="cat-item">
+            <div class="l1"><span>Sobremesas</span>
+              <button class="btn btn-outline" aria-label="Mais ações de Sobremesas"><svg><use href="#i-kebab"/></svg></button></div>
+            <div><span class="badge badge-outline badge-muted"><svg><use href="#i-olho-off"/></svg>Oculta da vitrine</span></div>
+            <button class="btn btn-outline btn-bloco"><svg><use href="#i-relogio"/></svg>Frequência…</button>
+            <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="false" data-toast="Sobremesas"></button>Mostrar na vitrine</label>
+            <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="true"></button>Mostrar imagens</label>
+          </div>
+
+          <div class="cat-item">
+            <div class="l1"><span>Especiais de Natal</span>
+              <button class="btn btn-outline" aria-label="Mais ações de Especiais de Natal"><svg><use href="#i-kebab"/></svg></button></div>
+            <div><span class="badge badge-outline"><svg><use href="#i-relogio"/></svg>01/12 a 24/12</span></div>
+            <p class="aviso" style="margin:0"><svg><use href="#i-alerta"/></svg>Período encerrado em 24/12: não aparece mais na vitrine. Mude o período para voltar a vender.</p>
+            <button class="btn btn-outline btn-bloco"><svg><use href="#i-relogio"/></svg>Frequência…</button>
+            <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="true" data-toast="Especiais de Natal"></button>Mostrar na vitrine</label>
+            <label class="campo-switch"><button type="button" role="switch" class="switch" aria-checked="false"></button>Mostrar imagens</label>
+          </div>
+        </div>
+        <div id="toast" style="position:absolute;left:12px;right:12px;bottom:12px;background:#111;color:#fff;border-radius:10px;padding:10px 12px;font-size:.72rem;display:none;align-items:center;gap:8px;justify-content:space-between">
+          <span data-msg></span><button class="btn" style="color:#fff;min-height:44px;text-decoration:underline">Desfazer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ---------- Editor (seção 2): D13 ao vivo ---------- */
+  (function () {
+    const ed = document.getElementById("editor");
+    const CAT = [1, 2, 3, 4, 5];                       // categoria seg a sex
+    const CURTO = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+    function diasRotulo(d) {
+      if (d.length === 5 && [1,2,3,4,5].every(x => d.includes(x))) return "seg a sex";
+      if (d.length === 1) return "só " + CURTO[d[0]];
+      return d.map(x => CURTO[x]).join(", ");
+    }
+    function estado() {
+      const on = e => ed.querySelector(`[data-eixo="${e}"]`).getAttribute("aria-checked") === "true";
+      const dias = on("dias") ? [...ed.querySelectorAll("[data-pilulas] .pilula")]
+        .filter(b => b.getAttribute("aria-pressed") === "true").map(b => +b.dataset.d) : null;
+      return { dias, hora: on("hora"), periodo: on("periodo") };
+    }
+    function render() {
+      const s = estado();
+      const partes = [];
+      let resumo;
+      if (s.dias && s.dias.length === 0) resumo = "Nunca disponível";
+      else {
+        if (s.dias) partes.push(diasRotulo(s.dias));
+        if (s.hora) partes.push(ed.querySelector("#h-ini").value + "–" + ed.querySelector("#h-fim").value);
+        if (s.periodo) partes.push("01/12 a 24/12");
+        resumo = partes.length ? partes.join(" · ") : "Sempre disponível";
+      }
+      ed.querySelector("[data-resumo]").textContent = resumo;
+      ed.querySelector("[data-nunca]").hidden = !(s.dias && s.dias.length === 0);
+      // RN-1: aviso só quando há dias, nenhum bate com a categoria, e NÃO é [] (caso 1 ⇒ null)
+      const rn1 = s.dias && s.dias.length > 0 && !s.dias.some(d => CAT.includes(d));
+      ed.querySelector("[data-aviso-rn1]").hidden = !rn1;
+      ["dias", "hora", "periodo"].forEach(e => {
+        const ligado = e === "dias" ? s.dias !== null : s[e];
+        ed.querySelector(`[data-sub="${e}"]`).classList.toggle("aberto", ligado);
+        ed.querySelector(`[data-off="${e}"]`).hidden = ligado;
+      });
+    }
+    ed.addEventListener("click", ev => {
+      const sw = ev.target.closest(".switch");
+      if (sw) {
+        ev.preventDefault();
+        const novo = sw.getAttribute("aria-checked") !== "true";
+        sw.setAttribute("aria-checked", String(novo));
+        // Ao LIGAR "Só em alguns dias", as pílulas começam VAZIAS (decisão 2.2-2).
+        if (sw.dataset.eixo === "dias" && novo)
+          ed.querySelectorAll("[data-pilulas] .pilula").forEach(b => b.setAttribute("aria-pressed", "false"));
+        render(); return;
+      }
+      const p = ev.target.closest(".pilula");
+      if (p) { p.setAttribute("aria-pressed", String(p.getAttribute("aria-pressed") !== "true")); render(); }
+    });
+    ed.addEventListener("input", render);
+    render();
+  })();
+
+  /* ---------- Grade (seção 4): contador, "Alterado", RN-1 ao vivo ---------- */
+  (function () {
+    const CAT = [1, 2, 3, 4, 5];
+    const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const LONGO = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+    // salvo: null = todo dia · [] = nunca · subconjunto
+    const produtos = [
+      { id: "a", nome: "Feijoada completa", salvo: [6], leitura: "11:00–15:00" },
+      { id: "b", nome: "Prato feito de frango", salvo: null },
+      { id: "c", nome: "Virado à paulista", salvo: [1] },
+      { id: "d", nome: "Suco do dia", salvo: [] },
+      { id: "e", nome: "Salada da casa", salvo: [1, 3, 5] },
+    ];
+    const rascunho = {};
+    produtos.forEach(p => rascunho[p.id] = p.salvo === null ? [0,1,2,3,4,5,6] : [...p.salvo]);
+    const norm = d => d.length === 7 ? null : [...d].sort();
+    const igual = (a, b) => (a === null || b === null) ? a === b : a.length === b.length && a.every((x, i) => x === b[i]);
+
+    function linhaHTML(p, sete) {
+      return `<div class="linha-grade" data-id="${p.id}">
+        <div class="topo"><span class="nome">${p.nome}</span>
+          <span class="badge badge-alterado">Alterado</span>
+          <span class="estado-linha" data-estado></span></div>
+        ${p.leitura ? `<div style="margin:-4px 0 8px"><span class="badge badge-outline badge-muted"><svg><use href="#i-relogio"/></svg>${p.leitura} (horário não muda aqui)</span></div>` : ""}
+        <div class="pilulas${sete ? " sete" : ""}" role="group" aria-label="Dias de ${p.nome}">
+          ${DIAS.map((d, i) => `<button type="button" class="pilula" data-d="${i}" aria-label="${LONGO[i]}" aria-pressed="false">${d}</button>`).join("")}
+        </div>
+        <p class="aviso" data-rn1 hidden><svg><use href="#i-alerta"/></svg>Este item nunca vai ficar disponível: os dias e horários dele não batem com os da categoria. Ajuste a frequência do item ou da categoria.</p>
+      </div>`;
+    }
+    const grades = [...document.querySelectorAll("[data-grade]")];
+    grades.forEach(g => g.querySelector("[data-linhas]").innerHTML = produtos.map(p => linhaHTML(p, g.dataset.grade === "d")).join(""));
+
+    function render() {
+      let n = 0;
+      produtos.forEach(p => {
+        const r = rascunho[p.id];
+        const alterada = !igual(norm(r), p.salvo === null ? null : [...p.salvo].sort());
+        if (alterada) n++;
+        grades.forEach(g => {
+          const el = g.querySelector(`[data-id="${p.id}"]`);
+          el.classList.toggle("alterada", alterada);
+          el.querySelectorAll(".pilula").forEach(b => b.setAttribute("aria-pressed", String(r.includes(+b.dataset.d))));
+          el.querySelector("[data-estado]").textContent = r.length === 7 ? "Todo dia" : r.length === 0 ? "Nunca disponível" : "";
+          el.querySelector("[data-rn1]").hidden = !(r.length > 0 && !r.some(d => CAT.includes(d)));
+        });
+      });
+      grades.forEach(g => {
+        g.querySelector("[data-contador]").textContent =
+          n === 0 ? "Nenhuma alteração" : `${n} ${n === 1 ? "alteração não salva" : "alterações não salvas"}`;
+        const s = g.querySelector("[data-salvar]");
+        s.disabled = n === 0; s.textContent = n === 0 ? "Salvar tudo" : `Salvar tudo (${n})`;
+      });
+    }
+    grades.forEach(g => g.addEventListener("click", ev => {
+      const b = ev.target.closest(".pilula"); if (!b) return;
+      const id = b.closest("[data-id]").dataset.id, d = +b.dataset.d;
+      const r = rascunho[id];
+      rascunho[id] = r.includes(d) ? r.filter(x => x !== d) : [...r, d].sort();
+      render();
+    }));
+    render();
+  })();
+
+  /* ---------- Sheet (seção 5): switch "Mostrar na vitrine" + toast com Desfazer ---------- */
+  (function () {
+    const toast = document.getElementById("toast");
+    document.querySelectorAll(".sheet .switch").forEach(sw => sw.addEventListener("click", ev => {
+      ev.preventDefault();
+      const novo = sw.getAttribute("aria-checked") !== "true";
+      sw.setAttribute("aria-checked", String(novo));
+      if (!sw.dataset.toast) return;
+      toast.querySelector("[data-msg]").textContent = novo
+        ? `${sw.dataset.toast} visível na vitrine.` : `${sw.dataset.toast} oculta da vitrine.`;
+      toast.querySelector("button").style.display = novo ? "none" : "";
+      toast.style.display = "flex";
+      clearTimeout(toast._t); toast._t = setTimeout(() => toast.style.display = "none", 3500);
+    }));
+  })();
+</script>
+</body>
+</html>
