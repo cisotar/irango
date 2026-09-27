@@ -297,8 +297,10 @@ export function SecaoCatalogo({
         }}
         onAdicionar={confirmarAdicao}
         // Vindo do card/linha o gatilho continua no DOM: o Base UI devolve o
-        // foco a ele sozinho, e nada muda.
-        focoDeSaida={origem === "promocoes" ? focoNoMain : undefined}
+        // foco a ele sozinho, e nada muda. Vindo de um modal de abertura
+        // (promoções OU sazonal) o botão que abriu já não existe — o destino é
+        // o `<main>`.
+        focoDeSaida={origem === "catalogo" ? undefined : focoNoMain}
       />
     </div>
   );

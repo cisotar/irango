@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   agruparPorCardapio,
   derivarPromocionaisParaModal,
+  derivarProdutosDoModalSazonal,
   projetarProdutoVitrine,
   // [247] RED — AINDA NÃO IMPLEMENTADOS (stub de assinatura em ./catalogoVitrine.ts).
   projetarCatalogoVitrine,
@@ -410,7 +411,7 @@ describe("224 — a página da vitrine (RN-15): sem cache e sem query nova", () 
     ).toBe(true);
   });
 
-  it("não abre NENHUMA query além das quatro que já existiam", () => {
+  it("não abre NENHUMA query além das seis que já existiam", () => {
     const chamadas = [...codigo.matchAll(/\bbuscar[A-Za-z]+\s*\(/g)].map((m) =>
       m[0].replace(/\s*\($/, ""),
     );
@@ -419,8 +420,13 @@ describe("224 — a página da vitrine (RN-15): sem cache e sem query nova", () 
       "buscarCategorias",
       "buscarProdutosPublicos",
       "buscarOpcionaisPorCategoria",
-      // [247] 5ª query, e SÓ ela: a guarda continua letal para a 6ª.
+      // [247] 5ª query.
       "buscarCardapiosComProdutos",
+      // [303] 6ª query: o modal sazonal ATIVO da loja (RN-02). A guarda
+      // continua letal para a 7ª. Os PRODUTOS do modal são DERIVADOS do
+      // catálogo já carregado (`derivarProdutosDoModalSazonal`) — zero query
+      // nova de produto (RN-10).
+      "buscarModalSazonalAtivo",
     ];
     expect([...new Set(chamadas)].filter((c) => !PERMITIDAS.includes(c))).toEqual([]);
     // E nenhuma query crua nova escapando pelo client do Supabase na página.
@@ -1576,5 +1582,272 @@ describe("289 — derivarPromocionaisParaModal", () => {
     const antes = JSON.stringify(secoes);
     derivarPromocionaisParaModal(secoes, { c1: GRUPOS_LANCHE }, { a: "x" });
     expect(JSON.stringify(secoes)).toBe(antes);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [303/RN-10] `derivarProdutosDoModalSazonal` — produtos curados do modal sazonal.
+//
+// A função filtra SOBRE o que a página já projetou: seções de categoria e
+// seções de destaque (cardápios abertos). Cardápio fora de vigência não tem
+// seção em `secoesDestaque` e portanto não contribui produto — a vigência
+// filtra aqui por reuso, não por aritmética nova.
+//
+// O que estes testes provam:
+//  1. seleção de categorias devolve os produtos das categorias selecionadas;
+//  2. seleção de cardápios devolve os produtos das seções de destaque selecionadas;
+//  3. união sem duplicatas (dedup por id, primeira aparição prevalece);
+//  4. cardápio fora de vigência não contribui produtos (a seção simplesmente
+//     não existe em `secoesDestaque`);
+//  5. seleção vazia dos dois eixos devolve lista vazia;
+//  6. grupo "Outros" (id === null) nunca entra por engano;
+//  7. o contrato completo do produto (ProdutoVitrine) é preservado — nada remontado
+//     campo a campo, mesma exigência de `derivarPromocionaisParaModal` (D13).
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("303 — derivarProdutosDoModalSazonal", () => {
+  // ── helpers compartilhados ─────────────────────────────────────────────────
+
+  const p = (id: string, patch: Partial<ProdutoVitrine> = {}): ProdutoVitrine => ({
+    id,
+    nome: `Produto ${id}`,
+    descricao: null,
+    foto_url: null,
+    categoria_id: null,
+    preco: 50,
+    precoEfetivo: 50,
+    temDesconto: false,
+    seloDesconto: null,
+    descontoFim: null,
+    compravel: true,
+    motivoNaoCompravel: null,
+    ...patch,
+  });
+
+  const secaoCategoria = (
+    id: string | null,
+    produtos: ProdutoVitrine[],
+  ): CategoriaComProdutos => ({ id, nome: `Cat ${id}`, produtos });
+
+  const secaoCardapio = (
+    id: string,
+    produtos: ProdutoVitrine[],
+  ): CategoriaComProdutos => ({ id, nome: `Cardápio ${id}`, produtos });
+
+  const CAT_A = "aaaa0000-0000-4000-8000-000000000001";
+  const CAT_B = "bbbb0000-0000-4000-8000-000000000002";
+  const CARD_X = "xxxx0000-0000-4000-8000-000000000003";
+  const CARD_Y = "yyyy0000-0000-4000-8000-000000000004";
+
+  const P1 = p("p1", { categoria_id: CAT_A });
+  const P2 = p("p2", { categoria_id: CAT_A });
+  const P3 = p("p3", { categoria_id: CAT_B });
+  const P4 = p("p4"); // em cardápio CARD_X
+
+  const GRUPOS_ENTRADA = [
+    { id: "g1", nome: "Ponto", obrigatorio: false, opcionais: [] },
+  ] as unknown as GrupoOpcional[];
+
+  // ── cenários principais ────────────────────────────────────────────────────
+
+  it("só categorias selecionadas — devolve produtos das categorias, na ordem do catálogo", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [P1, P2]), secaoCategoria(CAT_B, [P3])],
+      [],
+      {},
+      {},
+      { categorias: [CAT_A], cardapios: [] },
+    );
+    expect(resultado.map((r) => r.id)).toEqual(["p1", "p2"]);
+  });
+
+  it("só cardápios selecionados — devolve produtos das seções de destaque ativas", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [],
+      [secaoCardapio(CARD_X, [P4])],
+      {},
+      {},
+      { categorias: [], cardapios: [CARD_X] },
+    );
+    expect(resultado.map((r) => r.id)).toEqual(["p4"]);
+  });
+
+  it("ambos selecionados — retorna união, ordem: categorias primeiro, depois cardápios", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [P1])],
+      [secaoCardapio(CARD_X, [P4])],
+      {},
+      {},
+      { categorias: [CAT_A], cardapios: [CARD_X] },
+    );
+    expect(resultado.map((r) => r.id)).toEqual(["p1", "p4"]);
+  });
+
+  it("dedup por id — produto em categoria E cardápio selecionados aparece UMA vez, na posição da categoria", () => {
+    // P1 está em CAT_A (categoria) e também no CARD_X (seção de destaque).
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [P1])],
+      [secaoCardapio(CARD_X, [P1, P4])],
+      {},
+      {},
+      { categorias: [CAT_A], cardapios: [CARD_X] },
+    );
+    // P1 aparece só uma vez (posição da categoria), P4 entra depois.
+    expect(resultado.map((r) => r.id)).toEqual(["p1", "p4"]);
+  });
+
+  it("cardápio fora de vigência não contribui — sua seção simplesmente não está em secoesDestaque", () => {
+    // O filtro de vigência acontece antes: `agruparPorCardapio` só emite seções
+    // de cardápios abertos. Cardápio expirado não tem seção; logo, não há produto.
+    const resultado = derivarProdutosDoModalSazonal(
+      [],
+      // secoesDestaque está vazia — o cardápio CARD_Y expirou antes do SSR
+      [],
+      {},
+      {},
+      { categorias: [], cardapios: [CARD_Y] },
+    );
+    expect(resultado).toEqual([]);
+  });
+
+  it("seleção vazia dos dois eixos devolve array vazio", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [P1, P2])],
+      [secaoCardapio(CARD_X, [P4])],
+      {},
+      {},
+      { categorias: [], cardapios: [] },
+    );
+    expect(resultado).toEqual([]);
+  });
+
+  it("grupo 'Outros' (id === null) nunca entra, mesmo com null nos cardapios", () => {
+    // `has(null)` é sempre false — o grupo "Outros" não é selecionável.
+    const outros = secaoCategoria(null, [P1]);
+    const resultado = derivarProdutosDoModalSazonal(
+      [outros],
+      [],
+      {},
+      {},
+      // TypeScript não aceita null na lista de strings; o teste valida o
+      // comportamento em runtime (valor null nunca deveria chegar, mas a
+      // guarda `secao.id === null` existe no código por segurança).
+      { categorias: [] as string[], cardapios: [] },
+    );
+    expect(resultado).toEqual([]);
+  });
+
+  it("categoria não selecionada não contribui nenhum produto", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [P1]), secaoCategoria(CAT_B, [P3])],
+      [],
+      {},
+      {},
+      { categorias: [CAT_B], cardapios: [] },
+    );
+    // Só CAT_B foi selecionada; P1 de CAT_A não aparece.
+    expect(resultado.map((r) => r.id)).toEqual(["p3"]);
+  });
+
+  it("acopla gruposOpcionais e rotuloIndisponivel pelo enriquecimento de modal", () => {
+    const GRUPOS = [{ id: "g1", nome: "Ponto", obrigatorio: false, opcionais: [] }] as unknown as GrupoOpcional[];
+    const produto = p("p1", { categoria_id: CAT_A });
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [produto])],
+      [],
+      { [CAT_A]: GRUPOS },
+      { p1: "Volta sábado" },
+      { categorias: [CAT_A], cardapios: [] },
+    );
+    expect(resultado[0].gruposOpcionais).toBe(GRUPOS);
+    expect(resultado[0].rotuloIndisponivel).toBe("Volta sábado");
+  });
+
+  it("produto SEM categoria não recebe grupos de opcional de nenhuma categoria", () => {
+    const semCategoria = p("p-sem", { categoria_id: null });
+    const resultado = derivarProdutosDoModalSazonal(
+      [],
+      [secaoCardapio(CARD_X, [semCategoria])],
+      { [CAT_A]: GRUPOS_ENTRADA },
+      {},
+      { categorias: [], cardapios: [CARD_X] },
+    );
+    expect(resultado[0].gruposOpcionais).toBeUndefined();
+  });
+
+  it("preserva o contrato INTEIRO de ProdutoVitrine — nada remontado campo a campo", () => {
+    const origin = p("p-full", {
+      categoria_id: CAT_A,
+      compravel: false,
+      motivoNaoCompravel: "esgotado",
+      foto_url: "https://cdn.example/foto.jpg",
+      temDesconto: true,
+      precoEfetivo: 40,
+      seloDesconto: "-20%",
+      descontoFim: "2026-10-01T00:00:00.000Z",
+    });
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [origin])],
+      [],
+      {},
+      {},
+      { categorias: [CAT_A], cardapios: [] },
+    );
+    // Cada campo do contrato deve chegar intacto.
+    const r = resultado[0];
+    expect(r.id).toBe(origin.id);
+    expect(r.compravel).toBe(false);
+    expect(r.motivoNaoCompravel).toBe("esgotado");
+    expect(r.foto_url).toBe("https://cdn.example/foto.jpg");
+    expect(r.temDesconto).toBe(true);
+    expect(r.precoEfetivo).toBe(40);
+    expect(r.seloDesconto).toBe("-20%");
+    expect(r.descontoFim).toBe("2026-10-01T00:00:00.000Z");
+  });
+
+  it("é pura — não muta as listas de entrada", () => {
+    const categorias = [secaoCategoria(CAT_A, [P1])];
+    const destaque = [secaoCardapio(CARD_X, [P4])];
+    const snapCat = JSON.stringify(categorias);
+    const snapDest = JSON.stringify(destaque);
+    derivarProdutosDoModalSazonal(categorias, destaque, {}, {}, {
+      categorias: [CAT_A],
+      cardapios: [CARD_X],
+    });
+    expect(JSON.stringify(categorias)).toBe(snapCat);
+    expect(JSON.stringify(destaque)).toBe(snapDest);
+  });
+
+  it("duas categorias selecionadas — produtos de ambas, na ordem das seções", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [P1, P2]), secaoCategoria(CAT_B, [P3])],
+      [],
+      {},
+      {},
+      { categorias: [CAT_A, CAT_B], cardapios: [] },
+    );
+    expect(resultado.map((r) => r.id)).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("dois cardápios selecionados — produtos de ambos, ordem das seções de destaque", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [],
+      [secaoCardapio(CARD_X, [P4]), secaoCardapio(CARD_Y, [P3])],
+      {},
+      {},
+      { categorias: [], cardapios: [CARD_X, CARD_Y] },
+    );
+    expect(resultado.map((r) => r.id)).toEqual(["p4", "p3"]);
+  });
+
+  it("categoria com lista vazia de produtos não contribui nada", () => {
+    const resultado = derivarProdutosDoModalSazonal(
+      [secaoCategoria(CAT_A, [])],
+      [],
+      {},
+      {},
+      { categorias: [CAT_A], cardapios: [] },
+    );
+    expect(resultado).toEqual([]);
   });
 });

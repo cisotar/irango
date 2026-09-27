@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buscarCardapiosComProdutos } from "@/lib/supabase/queries/cardapios";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
+import { buscarModalSazonalAtivo } from "@/lib/supabase/queries/modaisSazonais";
 import {
   agruparCatalogo,
   buscarOpcionaisPorCategoria,
@@ -21,10 +22,12 @@ import {
 } from "@/lib/supabase/queries/produtos";
 import {
   agruparPorCardapio,
+  derivarProdutosDoModalSazonal,
   derivarPromocionaisParaModal,
   projetarCatalogoVitrine,
   type SecaoVitrine,
 } from "@/lib/utils/catalogoVitrine";
+import { dentroDaJanelaExibicao } from "@/lib/utils/janelaModalSazonal";
 import { rotuloJanelaDestaque } from "@/lib/utils/descreverVigencia";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
@@ -175,11 +178,17 @@ export default async function VitrinePage({ params }: PageProps) {
   // a tabela base não é mais legível por anon/authenticated.
   // 247: a 5ª query entra na MESMA onda — `cardapios` ⋈ `cardapio_produtos` num
   // round trip só, sem custo de latência de parede.
-  const [categorias, produtos, { vinculosPorProduto }] = await Promise.all([
-    buscarCategorias(db, lojaId),
-    buscarProdutosPublicos(db, lojaId),
-    buscarCardapiosComProdutos(db, lojaId),
-  ]);
+  // [303] O modal sazonal ATIVO entra na MESMA onda: a query filtra `ativo` e
+  // escopa por `loja_id`, mas a JANELA de exibição NÃO é avaliada em SQL (RN-02)
+  // — é decidida abaixo pela função pura, no instante do request. Sob role anon
+  // a RLS `modais_sazonais_leitura_publica` só revela o ativo de loja ativa.
+  const [categorias, produtos, { vinculosPorProduto }, modalSazonalAtivo] =
+    await Promise.all([
+      buscarCategorias(db, lojaId),
+      buscarProdutosPublicos(db, lojaId),
+      buscarCardapiosComProdutos(db, lojaId),
+      buscarModalSazonalAtivo(db, lojaId),
+    ]);
   // Contrato de catálogo (224): UM objeto por produto, produzido no servidor e
   // fonte única de preço/selo/comprabilidade. `agora` injetado — a vigência da
   // promoção é avaliada por request, e é por isso que esta página NÃO pode ser
@@ -290,9 +299,52 @@ export default async function VitrinePage({ params }: PageProps) {
     rotulosVigencia,
   );
 
-  // "Hoje" da LOJA (RN-16), no servidor: o cliente que vira a meia-noite no
-  // próprio fuso não reabre o modal de uma loja onde ainda é o mesmo dia.
+  // "Hoje" da LOJA (RN-16/RN-07), no servidor: o cliente que vira a meia-noite
+  // no próprio fuso não reabre o modal de uma loja onde ainda é o mesmo dia.
   const diaDeHojeNaLoja = diaNoFuso(agora, timezoneLoja);
+
+  // [303] MODAL SAZONAL — existência, janela e produtos resolvidos no SSR, no
+  // fuso da loja. O cliente nunca avalia janela nem existência (RN-02/RN-04).
+  //
+  // O modal só desce se estiver ATIVO (a query já filtrou), DENTRO DA JANELA de
+  // exibição (RN-02, instante × instante) E tiver ao menos um produto curado
+  // depois da derivação (categoria vazia + cardápio fora de vigência ⇒ nada a
+  // mostrar). A derivação é ZERO query nova (RN-10): filtra sobre as seções que
+  // a página já projetou.
+  const modalSazonalNaJanela =
+    modalSazonalAtivo !== null &&
+    dentroDaJanelaExibicao(modalSazonalAtivo, agora)
+      ? modalSazonalAtivo
+      : null;
+
+  const produtosDoModalSazonal = modalSazonalNaJanela
+    ? derivarProdutosDoModalSazonal(
+        categoriasComProdutos,
+        secoesDestaque,
+        opcionaisPorCategoria,
+        rotulosVigencia,
+        {
+          categorias: modalSazonalNaJanela.categorias,
+          cardapios: modalSazonalNaJanela.cardapios,
+        },
+      )
+    : [];
+
+  // O modal sazonal só EXISTE para o cliente se, resolvida a janela E a
+  // curadoria, sobrou algo a mostrar. Título vem do lojista, renderizado como
+  // texto (RN-01) no componente.
+  const modalSazonal =
+    modalSazonalNaJanela !== null && produtosDoModalSazonal.length > 0
+      ? { titulo: modalSazonalNaJanela.titulo, produtos: produtosDoModalSazonal }
+      : null;
+
+  // [303/RN-09] PRECEDÊNCIA decidida no SERVIDOR: com um sazonal no ar cujo
+  // lojista NÃO ligou "mostrar promoções junto", o `ModalPromocoes` é suprimido.
+  // Desce PRONTA — o cliente nunca resolve qual modal abre. Sem sazonal no ar,
+  // `false`: o `ModalPromocoes` segue como hoje.
+  const suprimirPromocoes =
+    modalSazonalNaJanela !== null &&
+    !modalSazonalNaJanela.mostrar_promocoes_junto;
 
   // Grupo sem produto visível já não vem de `agruparCatalogo` (issue 177),
   // então lista vazia = loja sem nada a mostrar.
@@ -354,6 +406,10 @@ export default async function VitrinePage({ params }: PageProps) {
           promocoes={promocionais}
           modalPromocoes={loja.modal_promocoes ?? true}
           diaDeHojeNaLoja={diaDeHojeNaLoja}
+          // [303] Repasse puro: título + produtos curados (ou `null`) e a
+          // decisão de supressão, ambos já resolvidos no SSR (RN-09).
+          modalSazonal={modalSazonal}
+          suprimirPromocoes={suprimirPromocoes}
         />
       </div>
     </>

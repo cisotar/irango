@@ -73,6 +73,7 @@ const SUBITENS_CONFIGURACOES = [
   "/painel/configuracoes/horarios",
   "/painel/configuracoes/entregas",
   "/painel/configuracoes/pagamentos",
+  "/painel/configuracoes/promocoes",
   "/painel/configuracoes/tema",
   "/painel/configuracoes/assinatura",
 ];
@@ -200,7 +201,10 @@ describe("NavPainel — rotasAusentes", () => {
 });
 
 describe("NavPainel — contexto admin", () => {
-  const ctxAdmin: ContextoNav = { basePath: "/admin/assinantes/L1" };
+  const ctxAdmin: ContextoNav = {
+    basePath: "/admin/assinantes/L1",
+    rotasAusentes: ["configuracoes/promocoes"],
+  };
 
   it("reescreve todos os hrefs para a base admin", () => {
     const hrefs = links(render("/admin/assinantes/L1", ctxAdmin)).map(
@@ -230,7 +234,7 @@ describe("NavPainel — contexto admin", () => {
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/pagamentos");
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/tema");
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/assinatura");
-    // Exatamente 6 sub-itens sob configuracoes/ — paridade com o lojista.
+    // Exatamente 6 sub-itens sob configuracoes/ — promocoes ainda sem rota admin.
     expect(
       hrefs.filter((h) => h.startsWith("/admin/assinantes/L1/configuracoes/"))
         .length,
@@ -347,7 +351,7 @@ describe("NavPainel — F8: aria-label='Menu do painel' nos dois <nav>", () => {
   });
 });
 
-describe("NavPainel — F3/F4: ícone em cada um dos 6 subitens de Configurações", () => {
+describe("NavPainel — F3/F4: ícone em cada subitem de Configurações", () => {
   it.each(SUBITENS_CONFIGURACOES)(
     "subitem %s tem <svg> logo após o link — não é só texto",
     (href) => {
@@ -358,22 +362,28 @@ describe("NavPainel — F3/F4: ícone em cada um dos 6 subitens de Configuraçõ
   );
 });
 
-describe("NavPainel — 6 subitens de Configurações em ambos os contextos", () => {
-  it("exatamente 6 sub-itens sob configuracoes/ no contexto default (lojista)", () => {
+describe("NavPainel — subitens de Configurações em ambos os contextos", () => {
+  it("exatamente 7 sub-itens sob configuracoes/ no contexto default (lojista)", () => {
     const hrefs = links(render("/painel")).map((l) => l.href);
     expect(
       hrefs.filter((h) => h.startsWith("/painel/configuracoes/")).length,
-    ).toBe(6);
+    ).toBe(7);
   });
 
-  it("exatamente 6 sub-itens sob configuracoes/ no contexto admin (basePath diferente)", () => {
-    const ctx: ContextoNav = { basePath: "/admin/assinantes/L1" };
+  it("rotasAusentes omite subitem: admin sem promocoes fica com 6", () => {
+    const ctx: ContextoNav = {
+      basePath: "/admin/assinantes/L1",
+      rotasAusentes: ["configuracoes/promocoes"],
+    };
     const hrefs = links(render("/admin/assinantes/L1", ctx)).map(
       (l) => l.href,
     );
-    expect(
-      hrefs.filter((h) => h.startsWith("/admin/assinantes/L1/configuracoes/"))
-        .length,
-    ).toBe(6);
+    const configuracoes = hrefs.filter((h) =>
+      h.startsWith("/admin/assinantes/L1/configuracoes/"),
+    );
+    expect(configuracoes).toHaveLength(6);
+    expect(configuracoes).not.toContain(
+      "/admin/assinantes/L1/configuracoes/promocoes",
+    );
   });
 });

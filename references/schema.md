@@ -465,6 +465,125 @@ CREATE TABLE taxas_entrega_duplicadas_182 (
 );
 ```
 
+### `cardapios`
+
+```sql
+-- Cardápio sazonal do lojista. Vigência por modo: 'recorrente' (dias_semana/
+-- dias_mes/hora_*) ou 'prazo_fixo' (prazo_*). CHECKs impedem configuração
+-- incoerente; a AVALIAÇÃO da janela (relógio + fuso da loja) é função pura TS.
+-- Migration: 20260920128000_cardapios_checks_vigencia_rls.sql
+-- Spec: specs/arquivo/cardapio-sazonal.md
+CREATE TABLE cardapios (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id       uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  nome          text NOT NULL,
+  ativo         boolean NOT NULL DEFAULT true,
+  ordem         int NOT NULL DEFAULT 0,       -- ordem das seções na vitrine
+  modo          text NOT NULL CHECK (modo IN ('recorrente','prazo_fixo')),
+  -- RECORRENTE
+  dias_semana   smallint[],   -- 0=dom..6=sab
+  dias_mes      smallint[],   -- 1..31
+  hora_inicio   time,         -- INCLUSIVO
+  hora_fim      time,         -- EXCLUSIVO
+  -- PRAZO FIXO
+  prazo_inicio  timestamptz,  -- INCLUSIVO
+  prazo_fim     timestamptz,  -- EXCLUSIVO
+  prazo_preset  text CHECK (prazo_preset IN ('diario','semanal','mensal','customizado')),
+  criado_em     timestamptz NOT NULL DEFAULT now(),
+  atualizado_em timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT cardapios_id_loja_unico UNIQUE (id, loja_id)  -- alvo das FKs compostas
+);
+-- RLS: leitura_publica (ativo+loja_esta_ativa), leitura_propria, escrita_propria
+-- GRANTs: anon=SELECT / authenticated=CRUD / service_role=ALL
+```
+
+### `cardapio_produtos`
+
+```sql
+-- Vínculo produto↔cardápio. FKs compostas impedem cross-tenant.
+-- Migration: issues 243/244 (spec cardapio-sazonal)
+CREATE TABLE cardapio_produtos (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id       uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  cardapio_id   uuid NOT NULL,
+  produto_id    uuid NOT NULL,
+  criado_em     timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (cardapio_id, loja_id) REFERENCES cardapios (id, loja_id) ON DELETE CASCADE,
+  FOREIGN KEY (produto_id,  loja_id) REFERENCES produtos  (id, loja_id) ON DELETE CASCADE,
+  UNIQUE (cardapio_id, produto_id)
+);
+-- RLS: mesmas policies da tabela pai (cardapios)
+-- GRANTs: anon=SELECT / authenticated=CRUD / service_role=ALL
+```
+
+### `modais_sazonais`
+
+```sql
+-- Modal de divulgação sazonal curado pelo lojista. A janela exibicao_inicio/
+-- exibicao_fim é do OVERLAY (separada da vigência do cardápio — RN-08);
+-- a avaliação é do SSR, nunca da policy (RN-02).
+-- Invariante: só UM modal ativo por loja (índice único parcial WHERE ativo=true).
+-- Toggle mostrar_promocoes_junto: com este modal ativo, o ModalPromocoes também
+-- abre? Mora aqui (por modal), não em lojas.
+-- Migration: 20260925140000_modais_sazonais_rls.sql
+-- Spec: specs/modal-divulgacao-sazonal.md
+CREATE TABLE modais_sazonais (
+  id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id                 uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  titulo                  text NOT NULL,
+  ativo                   boolean NOT NULL DEFAULT false,
+  exibicao_inicio         timestamptz NOT NULL,   -- INCLUSIVO
+  exibicao_fim            timestamptz NOT NULL,   -- EXCLUSIVO
+  mostrar_promocoes_junto boolean NOT NULL DEFAULT false,
+  criado_em               timestamptz NOT NULL DEFAULT now(),
+  atualizado_em           timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT modais_sazonais_id_loja_unico UNIQUE (id, loja_id),
+  CONSTRAINT modais_sazonais_janela_ordem CHECK (exibicao_fim > exibicao_inicio)
+);
+-- Índice único parcial (invariante um ativo por loja):
+--   CREATE UNIQUE INDEX modais_sazonais_um_ativo_por_loja ON modais_sazonais(loja_id) WHERE ativo=true
+-- RLS: leitura_publica (ativo+loja_esta_ativa), leitura_propria, escrita_propria
+-- GRANTs: anon=SELECT / authenticated=CRUD / service_role=ALL
+```
+
+### `modal_sazonal_categorias`
+
+```sql
+-- Junção modal sazonal ↔ categoria. FKs compostas impedem cross-tenant.
+-- Migration: 20260925140000_modais_sazonais_rls.sql
+CREATE TABLE modal_sazonal_categorias (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id          uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  modal_sazonal_id uuid NOT NULL,
+  categoria_id     uuid NOT NULL,
+  criado_em        timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (modal_sazonal_id, loja_id) REFERENCES modais_sazonais (id, loja_id) ON DELETE CASCADE,
+  FOREIGN KEY (categoria_id,     loja_id) REFERENCES categorias       (id, loja_id) ON DELETE CASCADE,
+  UNIQUE (modal_sazonal_id, categoria_id)
+);
+-- RLS: mesmas policies de modais_sazonais
+-- GRANTs: anon=SELECT / authenticated=CRUD / service_role=ALL
+```
+
+### `modal_sazonal_cardapios`
+
+```sql
+-- Junção modal sazonal ↔ cardápio. FKs compostas impedem cross-tenant.
+-- Migration: 20260925140000_modais_sazonais_rls.sql
+CREATE TABLE modal_sazonal_cardapios (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id          uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  modal_sazonal_id uuid NOT NULL,
+  cardapio_id      uuid NOT NULL,
+  criado_em        timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (modal_sazonal_id, loja_id) REFERENCES modais_sazonais (id, loja_id) ON DELETE CASCADE,
+  FOREIGN KEY (cardapio_id,      loja_id) REFERENCES cardapios        (id, loja_id) ON DELETE CASCADE,
+  UNIQUE (modal_sazonal_id, cardapio_id)
+);
+-- RLS: mesmas policies de modais_sazonais
+-- GRANTs: anon=SELECT / authenticated=CRUD / service_role=ALL
+```
+
 ---
 
 ## 3. Indexes

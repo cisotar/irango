@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   ListPlus,
   LogOut,
+  Megaphone,
   Menu,
   Package,
   Palette,
@@ -138,6 +139,11 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
         rotulo: "Pagamentos",
         icone: CreditCard,
       },
+      {
+        href: `${base}/configuracoes/promocoes`,
+        rotulo: "Promoções",
+        icone: Megaphone,
+      },
       { href: `${base}/configuracoes/tema`, rotulo: "Tema", icone: Palette },
       {
         href: `${base}/configuracoes/assinatura`,
@@ -175,7 +181,11 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
     itemConfiguracoes,
   ];
 
-  return itens.filter((item) => !ausentes.has(item.href.slice(base.length + 1)));
+  const presente = (item: ItemNav) => !ausentes.has(item.href.slice(base.length + 1));
+
+  return itens.filter(presente).map((item) =>
+    item.subitens ? { ...item, subitens: item.subitens.filter(presente) } : item,
+  );
 }
 
 /**
