@@ -806,3 +806,54 @@ describe("323 — chip, aviso e estado da categoria na lista", () => {
     expect(html).not.toContain("não aparecem para o cliente");
   });
 });
+
+describe("323 — botão 'Dias' no cabeçalho de cada categoria", () => {
+  const CATEGORIAS = [
+    { id: "c1", nome: "Sobremesas", exibir_imagens: true },
+    { id: "c2", nome: "Bebidas", exibir_imagens: true },
+  ];
+
+  function render(produtos: Produto[]): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={CATEGORIAS}
+        opcionaisPorCategoria={{}}
+        hrefCardapios="/painel/cardapios"
+        vinculosPorProduto={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
+        categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
+        acoes={acoesBase()}
+      />,
+    );
+  }
+
+  it("categoria com produto ganha o botão, nomeado por ela", () => {
+    const html = render([produtoBase({ categoria_id: "c1" })]);
+    expect(html).toContain('id="abrir-grade-c1"');
+    expect(html).toContain("Dias da semana dos produtos de Sobremesas");
+  });
+
+  it("categoria VAZIA não ganha o botão (grade de zero produto)", () => {
+    const html = render([produtoBase({ categoria_id: "c1" })]);
+    expect(html).not.toContain('id="abrir-grade-c2"');
+    expect(html).not.toContain("Dias da semana dos produtos de Bebidas");
+  });
+
+  it("'Sem categoria' com um único produto ganha o botão", () => {
+    const html = render([produtoBase({ categoria_id: null })]);
+    expect(html).toContain('id="abrir-grade-sem-categoria"');
+  });
+
+  it("o botão global do topo continua existindo (os dois convivem)", () => {
+    const html = render([produtoBase({ categoria_id: "c1" })]);
+    expect(html).toContain(">Dias da semana</button>");
+    expect(html).toContain('id="abrir-grade-c1"');
+  });
+});

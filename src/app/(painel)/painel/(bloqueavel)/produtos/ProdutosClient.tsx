@@ -282,6 +282,21 @@ type GrupoProdutos = {
   produtos: Produto[];
 };
 
+/*
+  [323] Alcance do modo grade. Discriminado, e não `{ id, nome } | null`, pelo
+  mesmo motivo que `grupoReordenando` é um objeto: `id: null` é o grupo "Sem
+  categoria", não "nenhum grupo" — com duas ausências no mesmo valor, a grade de
+  "Sem categoria" viraria a grade de todo mundo.
+*/
+type EscopoGrade =
+  | { tipo: "todas" }
+  | { tipo: "grupo"; id: string | null; nome: string };
+
+/** Id do botão que abre a grade de um grupo, para devolver o foco na saída. */
+function idBotaoGrade(id: string | null): string {
+  return `abrir-grade-${id ?? "sem-categoria"}`;
+}
+
 /**
  * Agrupa produtos por categoria, na ordem das categorias; "Sem categoria" por
  * último.
@@ -513,10 +528,10 @@ export function ProdutosClient({
   /*
     [323] O diálogo de frequência (produto, seleção ou categoria) — `null` =
     fechado — e o MODO GRADE produto × dia, irmão de "Reordenar": troca de
-    BARRA, a listagem dá lugar à grade.
+    BARRA, a listagem dá lugar à grade. `escopoGrade` null = fora do modo.
   */
   const [alvoFrequencia, setAlvoFrequencia] = useState<AlvoFrequencia | null>(null);
-  const [modoGrade, setModoGrade] = useState(false);
+  const [escopoGrade, setEscopoGrade] = useState<EscopoGrade | null>(null);
   const botaoGradeRef = useRef<HTMLButtonElement>(null);
   // Chave curta de cada abertura da variante SELEÇÃO (zera o rascunho e
   // prefixa ids de DOM — juntar até 200 uuids ali seria um id gigante).
@@ -665,6 +680,20 @@ export function ProdutosClient({
         ? []
         : (grupos.find((g) => g.id === grupoReordenando.id)?.produtos ?? []),
     [grupos, grupoReordenando],
+  );
+
+  /**
+   * [323] Grupos que a grade mostra. Escopar é só filtrar a MESMA lista da
+   * tela: `salvar_grade_de_dias` recebe `{ produto_id, dias_semana }[]` e não
+   * conhece categoria, então a categoria aqui não é autoridade de nada — só
+   * encurta a grade para o que o lojista quer mexer.
+   */
+  const gruposDaGrade = useMemo(
+    () =>
+      escopoGrade == null || escopoGrade.tipo === "todas"
+        ? grupos
+        : grupos.filter((g) => g.id === escopoGrade.id),
+    [grupos, escopoGrade],
   );
 
   /** Mesma ordem do modo de categorias: flush → desmonta → refresh. */
@@ -888,11 +917,22 @@ export function ProdutosClient({
     router.refresh();
   }
 
-  /** [323] Sai do modo grade e devolve o foco ao botão "Dias da semana". */
+  /**
+   * [323] Sai do modo grade e devolve o foco ao botão que o abriu — o do topo
+   * ou o do cabeçalho da categoria. O `getElementById` roda dentro do rAF
+   * porque o botão da categoria só existe depois que a listagem volta.
+   */
   function sairDoModoGrade(salvou: boolean) {
-    setModoGrade(false);
+    const escopo = escopoGrade;
+    setEscopoGrade(null);
     if (salvou) router.refresh();
-    requestAnimationFrame(() => botaoGradeRef.current?.focus());
+    requestAnimationFrame(() => {
+      const botao =
+        escopo?.tipo === "grupo"
+          ? document.getElementById(idBotaoGrade(escopo.id))
+          : botaoGradeRef.current;
+      botao?.focus();
+    });
   }
 
   const formProduto = (
@@ -977,11 +1017,13 @@ export function ProdutosClient({
           <p className="text-sm text-muted-foreground">
             Marque os produtos que a ação deve atingir.
           </p>
-        ) : modoGrade ? (
+        ) : escopoGrade != null ? (
           // [323] Mesma troca de BARRA: a barra do modo grade (Cancelar /
           // Salvar tudo) mora na própria `GradeFrequencia`.
           <p className="text-sm text-muted-foreground">
-            Dias da semana de cada produto.
+            {escopoGrade.tipo === "grupo"
+              ? `Dias da semana em ${escopoGrade.nome}.`
+              : "Dias da semana de cada produto."}
           </p>
         ) : (
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1018,7 +1060,7 @@ export function ProdutosClient({
               <Button
                 ref={botaoGradeRef}
                 variant="outline"
-                onClick={() => setModoGrade(true)}
+                onClick={() => setEscopoGrade({ tipo: "todas" })}
               >
                 <CalendarDays className="size-4" />
                 Dias da semana
@@ -1061,9 +1103,9 @@ export function ProdutosClient({
       {/* No modo reordenar a listagem normal dá lugar à lista de reordenação:
           é o que colapsa tudo e faz a tela ler de `categorias` (todas, sem o
           grupo sintético "Sem categoria", que não é ordenável). */}
-      {modoGrade ? (
+      {escopoGrade != null ? (
         <GradeFrequencia
-          grupos={grupos}
+          grupos={gruposDaGrade}
           frequencias={frequencias}
           salvar={acoes.salvarGradeDeDias}
           onSair={sairDoModoGrade}
@@ -1162,7 +1204,7 @@ export function ProdutosClient({
                           </Button>
                         </div>
                       )
-                    ) : grupo.id != null || grupo.produtos.length >= 2 ? (
+                    ) : grupo.id != null || grupo.produtos.length > 0 ? (
                       <div className="flex shrink-0 items-center">
                         {/* [293] Ponto de entrada do modo reordenar PRODUTOS —
                             no cabeçalho do grupo, porque a permutação é
@@ -1186,6 +1228,30 @@ export function ProdutosClient({
                           >
                             <ArrowUpDown className="size-4" />
                             <span className="hidden sm:inline">Reordenar</span>
+                          </Button>
+                        )}
+                        {/* [323] A grade produto × dia ESCOPADA a este grupo.
+                            Fica fora do `grupo.id != null` abaixo porque "Sem
+                            categoria" também tem dias por produto. Grupo vazio
+                            não ganha o botão: grade de zero produto é controle
+                            para operação impossível (mesma régua de
+                            "Selecionar os {n}"). */}
+                        {grupo.produtos.length > 0 && (
+                          <Button
+                            id={idBotaoGrade(grupo.id)}
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Dias da semana dos produtos de ${grupo.nome}`}
+                            onClick={() =>
+                              setEscopoGrade({
+                                tipo: "grupo",
+                                id: grupo.id,
+                                nome: grupo.nome,
+                              })
+                            }
+                          >
+                            <CalendarDays className="size-4" />
+                            <span className="hidden sm:inline">Dias</span>
                           </Button>
                         )}
                         {grupo.id != null && (
