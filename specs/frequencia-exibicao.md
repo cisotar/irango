@@ -31,11 +31,19 @@ coluna `produtos.visibilidade` e código de cardápio **permanecem** (não apaga
   do produto **E** dentro da frequência da sua categoria. Ex.: categoria seg–sex +
   produto só sábado ⇒ nunca disponível. O painel **avisa** quando a interseção é vazia.
 - **RN-2 · categoria.** Categoria **oculta** some da vitrine (com seus produtos).
-  Categoria **fora da frequência** aparece, com **todos** os produtos indisponíveis.
+  Categoria **fora da frequência** aparece, com **todos** os produtos indisponíveis —
+  exceto quando o período dela já terminou (RN-7).
 - **RN-3 · produto fora da frequência** aparece **indisponível** na própria categoria
   (motivo `fora_da_janela`, o mesmo de hoje) e o servidor **recusa** na compra
   (`criarPedido` → `ERRO_FORA_DA_JANELA`, antes da RPC). Produto de categoria
   oculta é recusado com `ERRO_GENERICO`.
+- **RN-7 · período encerrado some.** Depois de `periodo_fim` (no fuso da loja), o
+  produto some da vitrine; a categoria também some, com seus produtos. Antes de
+  `periodo_inicio`, aparece indisponível (RN-2/RN-3). Ex.: período 01/12–31/12, visto
+  em 15/01 ⇒ ausente da vitrine; o servidor recusa na compra.
+- **RN-8 · nenhum dia marcado = nunca.** `dias_semana` vazio é gravável e significa
+  "nunca disponível": o item continua visível e sempre indisponível (a categoria,
+  com todos os itens indisponíveis). Decidido pelo usuário em 2026-09-27.
 - **RN-4 · migração.** Todo produto `visibilidade='cardapio'` volta a `'menu'`
   (permanente). Nada é convertido para frequência. `cardapio_produtos` fica intacto.
 - **RN-5 · escrita escopada.** Toda escrita (unitária, grade, seleção múltipla,

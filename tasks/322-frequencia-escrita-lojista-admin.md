@@ -6,9 +6,10 @@ Crítica: SIM (escopo `loja_id` / autorização; escrita em lote)
 
 ## O que fazer
 
-- `src/lib/validacoes/frequencia.ts`: schema zod importando `MSG_HORA_PAR`,
-  `MSG_HORA_ORDEM`, `MSG_PRAZO_ORDEM`, `normalizarDiasDoVinculo` de
-  `validacoes/cardapio.ts` (importar, não copiar).
+- `src/lib/validacoes/frequencia.ts`: schema zod conforme C3 de
+  `plan/tecnico-frequencia-exibicao.md`. **Não** usar `normalizarDiasDoVinculo` nem
+  `MSG_PRAZO_ORDEM` (D2/D3/D13): `normalizarDiasDoVinculo` converte `[]` em NULL e
+  quebra a RN-8 (`[]` = nunca). Normalização própria `normalizarDiasDaFrequencia`.
 - `src/lib/actions/produto.ts` + `produto-contrato.ts`: definir frequência de produto,
   aplicar frequência a vários ids, salvar grade produto × dia (atômico), `alternarOcultaCategoria`,
   definir frequência de categoria. Moldes: `alternarExibirImagens` :381,
