@@ -55,33 +55,35 @@ coluna `produtos.visibilidade` e código de cardápio **permanecem** (não apaga
 ## Behaviors
 
 ### Banco (I1 · issue 320)
-- [ ] Colunas de frequência em `produtos` e `categorias`, com CHECKs de coerência
+- [x] Colunas de frequência em `produtos` e `categorias`, com CHECKs de coerência
       (dia 0..6, hora em par e `inicio < fim`, `periodo_fim >= periodo_inicio`).
-- [ ] `categorias.oculta boolean not null default false`.
-- [ ] `vitrine_produtos` não expõe produto de categoria oculta; colunas de frequência
+- [x] `categorias.oculta boolean not null default false`.
+- [x] `vitrine_produtos` não expõe produto de categoria oculta; colunas de frequência
       no fim da view; `security_barrier` mantido.
-- [ ] Migração de dados: 0 produtos `visibilidade='cardapio'`; `cardapio_produtos` intacto.
+- [x] Migração de dados: 0 produtos `visibilidade='cardapio'`; `cardapio_produtos` intacto.
 
 ### Regra de compra (I2 · issue 321)
-- [ ] Avaliador puro produto ∩ categoria, no fuso da loja.
-- [ ] `criarPedido` recusa produto fora da frequência (produto ou categoria) e de
+- [x] Avaliador puro produto ∩ categoria, no fuso da loja.
+- [x] `criarPedido` recusa produto fora da frequência (produto ou categoria) e de
       categoria oculta, sem chamar a RPC.
-- [ ] `revisarCarrinho` e `itensBloqueados` marcam `fora_da_janela` nos mesmos casos.
-- [ ] Servidor deixa de ler `cardapios` em pedido/revisão.
+- [x] `revisarCarrinho` e `itensBloqueados` marcam `fora_da_janela` para produto fora
+      da frequência ou de período encerrado; categoria oculta recusa a revisão com a
+      mensagem genérica, sem devolver preço (igual a `criarPedido`).
+- [x] Servidor deixa de ler `cardapios` em pedido/revisão.
 
 ### Escrita (I3 · issue 322)
-- [ ] Lojista e admin: definir frequência de um produto, aplicar a mesma frequência
+- [x] Lojista e admin: definir frequência de um produto, aplicar a mesma frequência
       a vários produtos (seleção), salvar grade produto × dia (atômico), ocultar/mostrar
       categoria e definir frequência de categoria.
-- [ ] Payload inválido recusado pelo zod antes do banco.
+- [x] Payload inválido recusado pelo zod antes do banco.
 
 ### Vitrine + painel (I4 · issue 323)
-- [ ] Vitrine sem seção de cardápio; categoria oculta omitida; categoria fora da
+- [x] Vitrine sem seção de cardápio; categoria oculta omitida; categoria fora da
       frequência com todos os itens indisponíveis; produto fora da frequência
       indisponível com rótulo.
-- [ ] Painel/admin: editor de frequência (produto e categoria), grade, seleção
+- [x] Painel/admin: editor de frequência (produto e categoria), grade, seleção
       múltipla, ocultar categoria, aviso RN-1.
-- [ ] "Cardápios" sai da navegação do painel e do admin; eixo `cardapios` sai do
+- [x] "Cardápios" sai da navegação do painel e do admin; eixo `cardapios` sai do
       editor do modal sazonal (dados das junções ficam).
 
 ## Fora do escopo
