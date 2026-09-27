@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BadgeCheck,
-  CalendarRange,
   ChevronDown,
   ClipboardList,
   Clock,
@@ -99,7 +98,8 @@ export type ContextoNav = {
   /**
    * Sufixos de rota (relativos ao `basePath`) que NÃO existem sob esta base —
    * o item é OMITIDO em vez de nascer quebrado. O hub admin usou `["cardapios"]`
-   * entre as issues 256 e 269, enquanto a rota admin não existia.
+   * entre as issues 256 e 269, enquanto a rota admin não existia (e o item
+   * "Cardápios" saiu do menu de vez na 323).
    *
    * É DADO passado pelo layout, nunca inferido do `basePath`: quem sabe quais
    * `page.tsx` existem é a rota, não o componente de apresentação — a mesma
@@ -172,11 +172,9 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
         },
       ],
     },
-    {
-      href: `${base}/cardapios`,
-      rotulo: "Cardápios",
-      icone: CalendarRange,
-    },
+    // [323] "Cardápios" SAIU do menu (nos dois mundos): o cardápio sazonal
+    // virou função morta, substituído pela frequência de exibição de produto
+    // e categoria em "Produtos". As rotas continuam existindo, fora do menu.
     { href: `${base}/cupons`, rotulo: "Cupons", icone: Ticket },
     itemConfiguracoes,
   ];
