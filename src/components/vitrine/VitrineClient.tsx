@@ -10,10 +10,16 @@ import { ModalSazonal } from "@/components/vitrine/ModalSazonal";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import type { ProdutoModalDados } from "@/components/vitrine/ProdutoModal";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import type { MensagemModalValidada } from "@/lib/validacoes/mensagemModal";
 
-/** [303] O modal sazonal já resolvido no SSR: título + produtos curados. */
+/**
+ * [303/314] O modal sazonal já resolvido no SSR: título, mensagem JÁ parseada
+ * (`lerMensagemModal`, RN-M04 — o tipo branded impede `unknown` cru aqui) e
+ * produtos curados (podem ser vazios, RN-M01).
+ */
 export type ModalSazonalDados = {
   titulo: string;
+  mensagem: MensagemModalValidada | null;
   produtos: ProdutoModalDados[];
 };
 
@@ -31,13 +37,14 @@ type VitrineClientProps = {
   /** "YYYY-MM-DD" no fuso da LOJA, derivado no servidor (RN-16). */
   diaDeHojeNaLoja: string;
   /**
-   * [303] O modal sazonal ativo dentro da janela, já derivado no SSR (título +
-   * produtos curados), ou `null` quando não há um a mostrar (RN-02/RN-10).
+   * [303/314] O modal sazonal ativo dentro da janela, já derivado no SSR
+   * (título + mensagem + produtos curados), ou `null` quando não há um ativo na
+   * janela (RN-M01).
    */
   modalSazonal: ModalSazonalDados | null;
   /**
-   * [303/RN-09] Decisão de PRECEDÊNCIA já tomada no SERVIDOR: `true` suprime o
-   * `ModalPromocoes` enquanto há sazonal no ar. Repasse puro — o cliente não
+   * [303/RN-M07] Decisão de PRECEDÊNCIA já tomada no SERVIDOR: `true` suprime o
+   * `ModalPromocoes` só quando o sazonal de fato desce. Repasse puro — o cliente não
    * resolve qual modal abre.
    */
   suprimirPromocoes: boolean;
@@ -125,14 +132,15 @@ export function VitrineClient({
         destinoFoco={destinoFoco}
       />
 
-      {/* [303] O modal SAZONAL, quando há um ativo dentro da janela com
-          produtos curados (resolvido no SSR — RN-02/RN-10). Ausente ⇒ não
+      {/* [303/314] O modal SAZONAL, quando há um ativo dentro da janela
+          (resolvido no SSR — RN-M01). Ausente ⇒ não
           renderiza; presente ⇒ as 7 travas anti-gesto vivem dentro dele. Chave
           de `localStorage` SEPARADA (`irango:promo-sazonal:{slug}` — RN-07). Os
           dois modais nunca abrem juntos: a supressão é a garantia (RN-09). */}
       {modalSazonal !== null ? (
         <ModalSazonal
           titulo={modalSazonal.titulo}
+          mensagem={modalSazonal.mensagem}
           produtos={modalSazonal.produtos}
           lojaSlug={lojaSlug}
           diaDeHojeNaLoja={diaDeHojeNaLoja}

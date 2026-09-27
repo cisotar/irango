@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition, type ReactElement } from "react";
+import { useMemo, useState, useTransition, type ReactElement } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, Plus, X } from "lucide-react";
+import { Info, Loader2, Pencil, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { BadgeEstadoSistema } from "@/components/vitrine/BadgeStatus";
+import { MensagemFormatada } from "@/components/shared/MensagemFormatada";
+import type { MensagemDoEditor } from "@/components/painel/editor-mensagem/conversorEditorMensagem";
+import {
+  TETO_CARACTERES_MENSAGEM,
+  contarCaracteresMensagem,
+  schemaMensagemModal,
+  type MensagemModalValidada,
+} from "@/lib/validacoes/mensagemModal";
 import {
   schemaModalSazonal,
   type DadosModalSazonal,
@@ -39,6 +48,27 @@ import {
   montarPayloadModalSazonal,
   type CamposModalSazonal,
 } from "./montarPayloadModalSazonal";
+import { AVISO_MODAL_SO_COM_TITULO, modalSoComTitulo } from "./modalSoComTitulo";
+
+/**
+ * O editor (Tiptap) é carregado SÓ aqui, no cliente, num chunk à parte
+ * (spec modal-sazonal-mensagem-formatada, §Painel): nenhuma outra rota o baixa.
+ */
+const EditorMensagem = dynamic(
+  () =>
+    import("@/components/painel/editor-mensagem/EditorMensagem").then(
+      (m) => m.EditorMensagem,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        aria-busy="true"
+        className="min-h-44 w-full rounded-md border border-input bg-muted/40"
+      />
+    ),
+  },
+);
 
 /** A régua de `design-system.md` §5: valor LITERAL, nunca a classe semântica. */
 const ALVO = "min-h-[44px] min-w-[44px]";
@@ -57,6 +87,8 @@ export type ModalSazonalLinha = {
   exibicao_inicio: string;
   exibicao_fim: string;
   mostrar_promocoes_junto: boolean;
+  /** Já parseada no SSR por `lerMensagemModal` (inválida chega `null`). */
+  mensagem: MensagemModalValidada | null;
   categorias: string[];
   cardapios: string[];
   /** Derivado no SERVIDOR, a cada request — preview de UX, nada depende dele. */
@@ -162,7 +194,7 @@ export function PromocoesClient({
 
       <p className="mb-4 text-sm text-muted-foreground">
         Um modal de divulgação aparece na primeira visita do dia à sua loja, com
-        um título e os pratos que você escolher. Só um modal fica no ar por vez —
+        um título, uma mensagem e os pratos que você escolher. Só um modal fica no ar por vez —
         ativar um desativa o anterior.
       </p>
 
@@ -356,7 +388,28 @@ function FormModalSazonal({
   const [mostrarPromocoesJunto, setMostrarPromocoesJunto] = useState(
     inicial?.mostrar_promocoes_junto ?? false,
   );
+  // Mensagem BRUTA (saída do editor) ou a salva, já validada no SSR.
+  const [mensagem, setMensagem] = useState<
+    MensagemDoEditor | MensagemModalValidada | null
+  >(inicial?.mensagem ?? null);
   const [enviando, startEnvio] = useTransition();
+
+  // Mesmo zod da Server Action: prévia, contador e erro são só UX.
+  const mensagemParseada = useMemo(
+    () => schemaMensagemModal.safeParse(mensagem),
+    [mensagem],
+  );
+  const mensagemValida = mensagemParseada.success ? mensagemParseada.data : null;
+  const caracteres = contarCaracteresMensagem(mensagemValida ?? mensagem);
+  const erroMensagem =
+    mensagem !== null && !mensagemParseada.success
+      ? (mensagemParseada.error.issues[0]?.message ?? "Confira a mensagem.")
+      : null;
+  const soComTitulo = modalSoComTitulo({
+    mensagem,
+    categorias: categoriasSel,
+    cardapios: cardapiosSel,
+  });
 
   function alternar(
     lista: string[],
@@ -372,6 +425,7 @@ function FormModalSazonal({
       titulo,
       exibicaoInicio,
       exibicaoFim,
+      mensagem,
       categorias: categoriasSel,
       cardapios: cardapiosSel,
       mostrarPromocoesJunto,
@@ -443,11 +497,57 @@ function FormModalSazonal({
         dos cardápios que você divulgar.
       </p>
 
+      <div className="space-y-2">
+        <span
+          id="modal-mensagem-rotulo"
+          className="text-sm font-medium text-foreground"
+        >
+          Mensagem aos clientes (opcional)
+        </span>
+        <EditorMensagem
+          inicial={inicial?.mensagem ?? null}
+          aoMudar={setMensagem}
+          idRotulo="modal-mensagem-rotulo"
+          idAjuda="modal-mensagem-contador"
+        />
+        <div className="flex flex-wrap items-start justify-between gap-2 text-xs">
+          <p
+            className={
+              erroMensagem !== null ? "text-destructive" : "text-muted-foreground"
+            }
+            aria-live="polite"
+          >
+            {erroMensagem ?? "Aparece no modal, abaixo do título."}
+          </p>
+          <p
+            id="modal-mensagem-contador"
+            className={
+              caracteres > TETO_CARACTERES_MENSAGEM
+                ? "font-medium text-destructive"
+                : "text-muted-foreground"
+            }
+          >
+            {caracteres}/{TETO_CARACTERES_MENSAGEM}
+          </p>
+        </div>
+        {mensagemValida !== null ? (
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">
+              Prévia (como o cliente vê)
+            </p>
+            <div className="rounded-md border border-input bg-white p-3 text-sm text-texto">
+              {/* Sem `aoEscolherLink`: na prévia o link não navega. */}
+              <MensagemFormatada mensagem={mensagemValida} />
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       <Separator />
 
       <fieldset className="space-y-2">
         <legend className="font-medium text-foreground">
-          Categorias a divulgar
+          Categorias a divulgar (opcional)
         </legend>
         {categorias.length === 0 ? (
           <p className="text-xs text-muted-foreground">
@@ -482,7 +582,7 @@ function FormModalSazonal({
 
       <fieldset className="space-y-2">
         <legend className="font-medium text-foreground">
-          Cardápios a divulgar
+          Cardápios a divulgar (opcional)
         </legend>
         {cardapios.length === 0 ? (
           <p className="text-xs text-muted-foreground">
@@ -521,11 +621,6 @@ function FormModalSazonal({
         )}
       </fieldset>
 
-      <p className="text-xs text-muted-foreground">
-        Escolha ao menos uma categoria ou um cardápio para o modal ter o que
-        mostrar.
-      </p>
-
       <Separator />
 
       {/* Toggle "mostrar promoções junto" (RN-09): quando este modal está no ar,
@@ -557,6 +652,17 @@ function FormModalSazonal({
       </div>
 
       <Separator />
+
+      {/* RN-M02: aviso leve, NUNCA bloqueia o salvar. */}
+      {soComTitulo ? (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
+        >
+          <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+          {AVISO_MODAL_SO_COM_TITULO}
+        </p>
+      ) : null}
 
       <Button type="submit" className="w-full" disabled={enviando}>
         {enviando && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}

@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.3.0 | **Atualizado:** 2026-09-22
+**Versão:** 0.3.1 | **Atualizado:** 2026-09-27
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -195,8 +195,9 @@ Tabela autoritativa em architecture.md (§"Componentes Compartilhados") e spec. 
 | `FormProduto` | `components/painel/FormProduto.tsx` | painel | criar/editar produto |
 | `FormCupom` | `components/painel/FormCupom.tsx` | painel | criar/editar cupom |
 | `TabelaPedidos` | `components/painel/TabelaPedidos.tsx` | painel | lista de pedidos (dashboard e gestão) |
+| `MensagemFormatada` | `components/shared/MensagemFormatada.tsx` | vitrine **e** painel | renderiza a mensagem estruturada do modal sazonal (`ModalSazonal.tsx` na vitrine, preview em `PromocoesClient.tsx` no painel) — mesmo renderer fail-closed dos dois lados, `seguranca.md` §15-C |
 
-**`BadgeStatus` é o único componente que cruza os dois mundos.** Ele cobre tanto o status de funcionamento da loja na vitrine ("Aberto agora" / "Fechado") quanto o status de pedido no painel (badge colorido na `TabelaPedidos`). Suas cores **não** vêm do tema da loja — são cores de sistema (ver §8).
+**`BadgeStatus` e `MensagemFormatada` são os componentes que cruzam os dois mundos.** `BadgeStatus` cobre tanto o status de funcionamento da loja na vitrine ("Aberto agora" / "Fechado") quanto o status de pedido no painel (badge colorido na `TabelaPedidos`). Suas cores **não** vêm do tema da loja — são cores de sistema (ver §8). `MensagemFormatada` usa a **paleta fixa** de `src/lib/constants/paletaMensagem.ts` (`PALETA_MENSAGEM`, uma chave por cor — nunca hex livre do lojista) com contraste WCAG ≥ 4,5:1 sobre o fundo do modal travado por teste (`contrasteWcag.test.ts`); igual a `BadgeStatus`, é independente de `lojas.tema`.
 
 ---
 

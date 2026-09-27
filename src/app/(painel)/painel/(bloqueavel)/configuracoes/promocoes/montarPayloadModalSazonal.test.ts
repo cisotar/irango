@@ -13,12 +13,22 @@ import { montarPayloadModalSazonal } from "./montarPayloadModalSazonal";
 
 const CAT = "11111111-1111-4111-8111-111111111111";
 
+const BASE = {
+  titulo: "Inverno",
+  exibicaoInicio: "2026-06-01T00:00",
+  exibicaoFim: "2026-06-15T00:00",
+  categorias: [] as string[],
+  cardapios: [] as string[],
+  mostrarPromocoesJunto: false,
+};
+
 describe("montarPayloadModalSazonal", () => {
   it("faz trim do título e converte as datas para ISO", () => {
     const p = montarPayloadModalSazonal({
       titulo: "  Inverno  ",
       exibicaoInicio: "2026-06-01T00:00",
       exibicaoFim: "2026-06-15T00:00",
+      mensagem: null,
       categorias: [CAT],
       cardapios: [],
       mostrarPromocoesJunto: true,
@@ -33,6 +43,7 @@ describe("montarPayloadModalSazonal", () => {
       titulo: "X",
       exibicaoInicio: "2026-06-01T00:00",
       exibicaoFim: "2026-06-15T00:00",
+      mensagem: null,
       categorias: [CAT],
       cardapios: [],
       mostrarPromocoesJunto: false,
@@ -46,6 +57,7 @@ describe("montarPayloadModalSazonal", () => {
       titulo: "Inverno",
       exibicaoInicio: "2026-06-01T00:00",
       exibicaoFim: "2026-06-15T00:00",
+      mensagem: null,
       categorias: [CAT],
       cardapios: [],
       mostrarPromocoesJunto: true,
@@ -58,6 +70,7 @@ describe("montarPayloadModalSazonal", () => {
       titulo: "Inverno",
       exibicaoInicio: "2026-06-15T00:00",
       exibicaoFim: "2026-06-01T00:00",
+      mensagem: null,
       categorias: [CAT],
       cardapios: [],
       mostrarPromocoesJunto: false,
@@ -65,14 +78,53 @@ describe("montarPayloadModalSazonal", () => {
     expect(schemaModalSazonal.safeParse(p).success).toBe(false);
   });
 
-  it("seleção vazia é reprovada pelo schema (RN-06)", () => {
+  it("seleção vazia é ACEITA pelo schema (RN-M02 remove a RN-06)", () => {
     const p = montarPayloadModalSazonal({
       titulo: "Inverno",
       exibicaoInicio: "2026-06-01T00:00",
       exibicaoFim: "2026-06-15T00:00",
+      mensagem: null,
       categorias: [],
       cardapios: [],
       mostrarPromocoesJunto: false,
+    });
+    expect(schemaModalSazonal.safeParse(p).success).toBe(true);
+  });
+
+  it("`mensagem` é SEMPRE presente: `null` fica `null` (apagar a mensagem)", () => {
+    const p = montarPayloadModalSazonal({ ...BASE, mensagem: null });
+    expect("mensagem" in p).toBe(true);
+    expect(p.mensagem).toBeNull();
+    // `undefined` (estado não inicializado) também vira `null`, nunca chave ausente.
+    const q = montarPayloadModalSazonal({ ...BASE, mensagem: undefined });
+    expect("mensagem" in q).toBe(true);
+    expect(q.mensagem).toBeNull();
+  });
+
+  it("documento do editor sem texto visível sai do schema como `null`", () => {
+    const p = montarPayloadModalSazonal({
+      ...BASE,
+      mensagem: { versao: 1, paragrafos: [{ trechos: [] }, { trechos: [{ texto: "   " }] }] },
+    });
+    const r = schemaModalSazonal.safeParse(p);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.mensagem).toBeNull();
+  });
+
+  it("mensagem com texto passa canonizada; sem seleção também vale (RN-M02)", () => {
+    const p = montarPayloadModalSazonal({
+      ...BASE,
+      mensagem: { versao: 1, paragrafos: [{ trechos: [{ texto: "Sopas " }, { texto: "quentes" }] }] },
+    });
+    const r = schemaModalSazonal.safeParse(p);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.mensagem).toEqual({ versao: 1, paragrafos: [{ trechos: [{ texto: "Sopas quentes" }] }] });
+  });
+
+  it("mensagem fora do contrato é reprovada pelo schema (gate de UX)", () => {
+    const p = montarPayloadModalSazonal({
+      ...BASE,
+      mensagem: { versao: 1, paragrafos: [{ trechos: [{ texto: "x", style: "color:red" }] }] },
     });
     expect(schemaModalSazonal.safeParse(p).success).toBe(false);
   });

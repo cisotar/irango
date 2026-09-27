@@ -2,19 +2,23 @@
 
 // Server Actions do MODAL DE DIVULGAÇÃO SAZONAL (issue 301, spec
 // modal-divulgacao-sazonal). Molde: `salvarModalidadesEntrega`/`criarCupom`
-// (rate-limit → zod → buscarLojaDoDono → allowlist-patch → escrita →
-// revalidatePath).
+// (rate-limit → zod → buscarLojaDoDono → allowlist → RPC → revalidatePath).
 //
 // Contrato inegociável (seguranca.md §2/§10/§14):
+//   - `id` de rota passa por `z.guid()` ANTES de rate-limit e client (RN-M10).
 //   - `schemaModalSazonal` (`.strict()` + `.max()`) valida ANTES de qualquer I/O —
-//     chave extra (ex.: `loja_id` forjado) reprova, lista acima do teto reprova,
-//     seleção vazia reprova (RN-06). O cliente NUNCA injeta coluna autoritativa.
+//     chave extra (ex.: `loja_id` forjado) reprova, lista acima do teto reprova.
+//     Seleção e mensagem são opcionais (RN-M02). O cliente NUNCA injeta coluna
+//     autoritativa.
 //   - `loja_id` é SEMPRE derivado de `buscarLojaDoDono`, NUNCA do payload (RN-11).
 //   - client AUTENTICADO (RLS `modais_sazonais_escrita_propria` isola por dono);
 //     nada de service_role — a escrita do lojista passa pela RLS.
-//   - patch por allowlist COLUNA A COLUNA (`montarPatchModalSazonal`), nunca spread.
-//   - ativar desativa o anterior na mesma transição de estado (RN-05); o índice
-//     único parcial `WHERE ativo = true` é o backstop — `23505` vira erro genérico.
+//   - args por allowlist COLUNA A COLUNA (`montarPatchModalSazonal`), nunca spread;
+//     criar/editar fazem UMA chamada à RPC transacional `salvar_modal_sazonal`
+//     (RN-M15): linha, mensagem e junções gravadas juntas ou nada.
+//   - ativar faz UMA chamada à RPC transacional `ativar_modal_sazonal` (RN-M16):
+//     desativa o anterior e liga o alvo na mesma transação; o índice único
+//     parcial `WHERE ativo = true` é o backstop contra corrida.
 //   - erro do banco (23505/23503/23514) → mensagem genérica na UI, detalhe no
 //     `console.error` do servidor (seguranca.md §14).
 
@@ -22,7 +26,11 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
-import { schemaModalSazonal } from "@/lib/validacoes/modalSazonal";
+import { z } from "zod";
+import {
+  schemaModalSazonal,
+  type DadosModalSazonal,
+} from "@/lib/validacoes/modalSazonal";
 import {
   montarPatchModalSazonal,
   type ResultadoModalSazonal,
@@ -47,81 +55,77 @@ function revalidar(slug: string): void {
   }
 }
 
-// Fronteira de escrita nas tabelas do modal sazonal (migration 300), que ainda
-// NÃO estão em `database.types.ts` (o cloud não aplicou a migration; `gen types`
-// não as vê). Até a regeneração, o acesso a `modais_sazonais`/junções é por este
-// mínimo query-builder — só os métodos que as actions usam. `loja_id` e `ativo`
-// continuam derivados/controlados pelo servidor: a fronteira não afrouxa trava.
+// Fronteira de acesso às tabelas do modal sazonal (migration 300). A migration JÁ
+// está aplicada no cloud, mas `database.types.ts` ainda não foi regenerado, então
+// o acesso a `modais_sazonais` e às RPCs `salvar_modal_sazonal`/`ativar_modal_sazonal` é por este mínimo
+// client — só os métodos que as actions usam. `loja_id` e `ativo` continuam
+// derivados/controlados pelo servidor: a fronteira não afrouxa trava.
 type RespostaModal = {
   data: unknown;
   error: { code?: string; message?: string } | null;
 };
 interface CadeiaModal extends PromiseLike<RespostaModal> {
   select(cols: string): CadeiaModal;
-  insert(row: unknown): CadeiaModal;
   update(row: Record<string, unknown>): CadeiaModal;
   delete(): CadeiaModal;
   eq(coluna: string, valor: unknown): CadeiaModal;
-  neq(coluna: string, valor: unknown): CadeiaModal;
   maybeSingle(): PromiseLike<RespostaModal>;
-  single(): PromiseLike<RespostaModal>;
 }
-type ClientModal = { from(tabela: string): CadeiaModal };
+type ClientModal = {
+  from(tabela: string): CadeiaModal;
+  rpc(nome: string, args: Record<string, unknown>): PromiseLike<RespostaModal>;
+};
+
+/** RN-M10: `id` de rota é uuid ANTES de rate-limit, client e query. */
+function idValido(id: unknown): id is string {
+  return z.guid().safeParse(id).success;
+}
 
 /**
- * Regrava as junções de categoria/cardápio de um modal, atomicamente com a
- * linha (RN-06): apaga as antigas e insere a seleção nova. Escopa por `loja_id`
- * e `modal_sazonal_id`; a FK COMPOSTA (banco) recusa (`23503`) vínculo de outra
- * loja (RN-11) e derruba a operação. Lança em erro — o caller trata no catch.
+ * Grava linha + mensagem + seleção numa ÚNICA chamada à RPC transacional
+ * `salvar_modal_sazonal` (RN-M15): ou tudo, ou nada. Criar = `modalId` `null`.
+ * `p_loja_id` vem SEMPRE de `buscarLojaDoDono`; a RPC confere a posse (S2/S4) e
+ * as FKs compostas recusam seleção de outra loja. Erro da RPC → log com o
+ * detalhe e `ERRO_GENERICO` ao cliente (seguranca.md §14), sem retry.
  */
-async function regravarSelecao(
-  db: ClientModal,
-  lojaId: string,
-  modalId: string,
-  categorias: string[],
-  cardapios: string[],
-): Promise<void> {
-  const { error: erroDelCat } = await db
-    .from("modal_sazonal_categorias")
-    .delete()
-    .eq("loja_id", lojaId)
-    .eq("modal_sazonal_id", modalId);
-  if (erroDelCat) throw erroDelCat;
+async function salvarViaRpc(
+  contexto: string,
+  modalId: string | null,
+  dados: DadosModalSazonal,
+): Promise<ResultadoModalSazonal> {
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) return { ok: false, erro: ERRO_SEM_LOJA };
+    const db = supabase as unknown as ClientModal;
 
-  const { error: erroDelCard } = await db
-    .from("modal_sazonal_cardapios")
-    .delete()
-    .eq("loja_id", lojaId)
-    .eq("modal_sazonal_id", modalId);
-  if (erroDelCard) throw erroDelCard;
+    const { data, error } = await db.rpc("salvar_modal_sazonal", {
+      ...montarPatchModalSazonal(dados),
+      p_loja_id: loja.id,
+      p_modal_id: modalId,
+    });
+    if (error) {
+      console.error(`[${contexto}] rpc salvar_modal_sazonal:`, error);
+      return { ok: false, erro: ERRO_GENERICO };
+    }
+    // A RPC devolve o id do modal gravado; sem ele, nada foi confirmado.
+    if (data == null) {
+      console.error(`[${contexto}] rpc salvar_modal_sazonal sem id de retorno`);
+      return { ok: false, erro: ERRO_GENERICO };
+    }
 
-  if (categorias.length > 0) {
-    const { error } = await db.from("modal_sazonal_categorias").insert(
-      categorias.map((categoria_id) => ({
-        loja_id: lojaId,
-        modal_sazonal_id: modalId,
-        categoria_id,
-      })),
-    );
-    if (error) throw error;
-  }
-
-  if (cardapios.length > 0) {
-    const { error } = await db.from("modal_sazonal_cardapios").insert(
-      cardapios.map((cardapio_id) => ({
-        loja_id: lojaId,
-        modal_sazonal_id: modalId,
-        cardapio_id,
-      })),
-    );
-    if (error) throw error;
+    revalidar(loja.slug);
+    return { ok: true };
+  } catch (e) {
+    console.error(`[${contexto}]`, e);
+    return { ok: false, erro: ERRO_GENERICO };
   }
 }
 
 /**
- * Cria um modal sazonal (rascunho — `ativo` fica no default `false` do banco;
- * ligar é `ativarModalSazonal`). zod ANTES de qualquer I/O; `loja_id` do dono;
- * a linha e as junções são gravadas juntas (RN-06).
+ * Cria um modal sazonal (rascunho — a RPC nunca liga `ativo`; ligar é
+ * `ativarModalSazonal`). zod ANTES de qualquer I/O; `loja_id` do dono; linha,
+ * mensagem e junções gravadas juntas (RN-M15).
  */
 export async function criarModalSazonal(
   payload: unknown,
@@ -131,132 +135,63 @@ export async function criarModalSazonal(
 
   const parsed = schemaModalSazonal.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: ERRO_VALIDACAO };
-  const dados = parsed.data;
 
-  try {
-    const supabase = await createClient();
-    const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) return { ok: false, erro: ERRO_SEM_LOJA };
-    const db = supabase as unknown as ClientModal;
-
-    // Allowlist coluna a coluna (RN-11) + `loja_id` do DONO. `ativo` fica no
-    // default do banco: um modal nasce rascunho.
-    const { data, error } = await db
-      .from("modais_sazonais")
-      .insert({ ...montarPatchModalSazonal(dados), loja_id: loja.id })
-      .select("id")
-      .single();
-    if (error) throw error;
-    const modalId = (data as { id: string } | null)?.id;
-    if (modalId == null) return { ok: false, erro: ERRO_GENERICO };
-
-    await regravarSelecao(db, loja.id, modalId, dados.categorias, dados.cardapios);
-
-    revalidar(loja.slug);
-    return { ok: true };
-  } catch (e) {
-    console.error("[criarModalSazonal]", e);
-    return { ok: false, erro: ERRO_GENERICO };
-  }
+  return salvarViaRpc("criarModalSazonal", null, parsed.data);
 }
 
 /**
- * Edita título/janela/seleção de um modal. UPDATE escopado por `id` + `loja_id`
- * do dono; `.select().maybeSingle()` detecta 0 linhas afetadas (modal de outra
- * loja, barrado pela RLS) e recusa — nunca `{ ok: true }` silencioso. As junções
- * são regravadas atomicamente com a linha (RN-06).
+ * Edita título/janela/mensagem/seleção de um modal. A RPC escopa por `id` +
+ * `loja_id` do dono e recusa modal de outra loja (S4, mesma mensagem de id
+ * inexistente) — nunca `{ ok: true }` silencioso.
  */
 export async function editarModalSazonal(
   id: string,
   payload: unknown,
 ): Promise<ResultadoModalSazonal> {
+  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
 
   const parsed = schemaModalSazonal.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: ERRO_VALIDACAO };
-  const dados = parsed.data;
 
-  try {
-    const supabase = await createClient();
-    const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) return { ok: false, erro: ERRO_SEM_LOJA };
-    const db = supabase as unknown as ClientModal;
-
-    // Escopo por id + loja_id do dono; `.select().maybeSingle()` confirma que a
-    // linha existe e é da loja — 0 linhas (RLS) ⇒ recusa, não sucesso silencioso.
-    const { data, error } = await db
-      .from("modais_sazonais")
-      .update(montarPatchModalSazonal(dados))
-      .eq("id", id)
-      .eq("loja_id", loja.id)
-      .select("id")
-      .maybeSingle();
-    if (error) throw error;
-    if (data == null) return { ok: false, erro: ERRO_SEM_LOJA };
-
-    await regravarSelecao(db, loja.id, id, dados.categorias, dados.cardapios);
-
-    revalidar(loja.slug);
-    return { ok: true };
-  } catch (e) {
-    console.error("[editarModalSazonal]", e);
-    return { ok: false, erro: ERRO_GENERICO };
-  }
+  return salvarViaRpc("editarModalSazonal", id, parsed.data);
 }
 
 /**
- * Ativa um modal (RN-05). Verifica a POSSE ANTES de ativar (o modal é da loja do
- * dono?), desativa o ativo anterior na mesma transição de estado e liga o alvo.
- * O índice único parcial `WHERE ativo = true` é o backstop estrutural contra
- * corrida — `23505` vira erro genérico (seguranca.md §14), sem vazar o código.
+ * Ativa um modal (RN-05, RN-M16) por UMA chamada à RPC transacional
+ * `ativar_modal_sazonal`: desativa o ativo anterior e liga o alvo na mesma
+ * transação — nunca fica zero ativos por falha entre dois requests. A RPC deriva
+ * a loja do próprio modal e confere a posse contra `auth.uid()` antes de tocar
+ * em linha; modal de outra loja ou inexistente recusa com a mesma mensagem.
+ * Erro da RPC → log com o detalhe e `ERRO_GENERICO` ao cliente (seguranca.md §14).
  */
 export async function ativarModalSazonal(
   id: string,
 ): Promise<ResultadoModalSazonal> {
+  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
 
   try {
     const supabase = await createClient();
+    // Só para o slug do revalidate e o fail-closed de "sem loja": a posse do
+    // modal é conferida DENTRO da RPC.
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: ERRO_SEM_LOJA };
     const db = supabase as unknown as ClientModal;
 
-    // POSSE (RN-11): o modal existe E é da loja do dono? `.eq("loja_id")`
-    // explícito além da RLS; comparação também no servidor — modal de outra loja
-    // (ou inexistente) recusa, sem virar oráculo de existência de id.
-    const { data: modal, error: erroPosse } = await db
-      .from("modais_sazonais")
-      .select("loja_id")
-      .eq("id", id)
-      .maybeSingle();
-    if (erroPosse) throw erroPosse;
-    if (modal == null || (modal as { loja_id: string }).loja_id !== loja.id) {
-      return { ok: false, erro: ERRO_SEM_LOJA };
+    const { error } = await db.rpc("ativar_modal_sazonal", { p_modal_id: id });
+    if (error) {
+      console.error("[ativarModalSazonal] rpc ativar_modal_sazonal:", error);
+      return { ok: false, erro: ERRO_GENERICO };
     }
-
-    // Transição de estado (RN-05): desativa o ativo anterior ANTES de ligar o
-    // novo. O índice único parcial é o backstop se uma corrida escapar.
-    const { error: erroDesativar } = await db
-      .from("modais_sazonais")
-      .update({ ativo: false })
-      .eq("loja_id", loja.id)
-      .eq("ativo", true)
-      .neq("id", id);
-    if (erroDesativar) throw erroDesativar;
-
-    const { error: erroAtivar } = await db
-      .from("modais_sazonais")
-      .update({ ativo: true })
-      .eq("id", id)
-      .eq("loja_id", loja.id);
-    if (erroAtivar) throw erroAtivar;
 
     revalidar(loja.slug);
     return { ok: true };
   } catch (e) {
-    // 23505 (índice único parcial) e qualquer outro erro do banco → genérico.
     console.error("[ativarModalSazonal]", e);
     return { ok: false, erro: ERRO_GENERICO };
   }
@@ -266,6 +201,8 @@ export async function ativarModalSazonal(
 export async function desativarModalSazonal(
   id: string,
 ): Promise<ResultadoModalSazonal> {
+  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
 
@@ -304,6 +241,8 @@ export async function desativarModalSazonal(
 export async function removerModalSazonal(
   id: string,
 ): Promise<ResultadoModalSazonal> {
+  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
 

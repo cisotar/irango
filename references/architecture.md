@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.3.5 | **Atualizado:** 2026-09-22
+**Versão:** 0.3.6 | **Atualizado:** 2026-09-27
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -316,6 +316,7 @@ O `lojinhaonline` é **JavaScript vanilla** (sem framework, sem tipos). O iRango
 | Testes de DB/RLS | @electric-sql/pglite | https://pglite.dev — Postgres in-process, sem Docker; emula `auth.uid()` e roles do Supabase; migrations aplicadas via `tests/helpers/pglite.ts`; testes rodam no vitest |
 | Service Worker | serwist + @serwist/turbopack | https://serwist.pages.dev — SW compilado via esbuild, servido em `/serwist/sw.js` same-origin pelo Route Handler; runtimeCaching ordenada: [0] NetworkOnly `/painel*` (invariante de segurança — testável no vitest porque `lib/pwa/runtimeCaching.ts` é módulo puro sem globals de SW) |
 | Arrasto (drag-and-drop) | @dnd-kit/core + @dnd-kit/sortable | https://docs.dndkit.com — issue 175 (reordenar categorias). 100% client-side, zero chamada de rede/quota; bundle cai só em `/painel/produtos`, atrás do guard de auth — a vitrine pública não carrega nada disso |
+| Editor rich text (painel) | Tiptap 3 (+ ProseMirror) | https://tiptap.dev — issue 312/315, editor da mensagem do modal sazonal. Import confinado a `src/components/painel/editor-mensagem/` (ESLint `no-restricted-imports`/`no-restricted-syntax`, ver `seguranca.md` §16), consumido via `next/dynamic` — a vitrine pública não carrega o bundle |
 
 ---
 
