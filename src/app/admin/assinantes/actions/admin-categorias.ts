@@ -21,7 +21,15 @@ import {
   prepararContextoAdmin,
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
-import { schemaCategoria } from "@/lib/validacoes/produto";
+import { schemaCategoria, schemaIdProduto } from "@/lib/validacoes/produto";
+// [322] Frequência de exibição: MESMO zod e MESMO contrato do lojista.
+import { schemaFrequenciaCategoria } from "@/lib/validacoes/frequencia";
+import {
+  MSG_SALVAR_FREQUENCIA,
+  MSG_CATEGORIA_NAO_ENCONTRADA,
+  mensagemDeFrequencia,
+  patchFrequenciaCategoria,
+} from "@/lib/actions/frequencia-contrato";
 
 type ResultadoCategoriaAdmin = { ok: true } | { ok: false; erro: string };
 
@@ -182,5 +190,85 @@ export async function reordenarCategoriasAdmin(
   } catch (e) {
     console.error("[reordenarCategoriasAdmin]", e);
     return { ok: false, erro: ERRO_GENERICO };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [322] Frequência de exibição — gêmeas ADMIN de `alternarOcultaCategoria` e
+// `definirFrequenciaCategoria` (produto.ts). Molde `alternarExibirImagensAdmin`:
+// `escopo.atualizar` escopa por `loja_id` (da URL) + `id` com `count: "exact"`;
+// patch idêntico ao do lojista (`frequencia-contrato.ts`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function alternarOcultaCategoriaAdmin(
+  lojaId: string,
+  id: string,
+  oculta: boolean,
+): Promise<ResultadoCategoriaAdmin> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  if (typeof oculta !== "boolean" || !schemaIdProduto.safeParse(id).success) {
+    return { ok: false, erro: "Dados inválidos." };
+  }
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    const { error, count } = await escopo.atualizar("categorias", id, { oculta });
+    if (error) return { ok: false, erro: ERRO_GENERICO };
+    if (!count) return { ok: false, erro: MSG_CATEGORIA_NAO_ENCONTRADA };
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "categoria.oculta",
+      entidadeId: id,
+      metadados: { oculta },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[alternarOcultaCategoriaAdmin]", e);
+    return { ok: false, erro: ERRO_GENERICO };
+  }
+}
+
+export async function definirFrequenciaCategoriaAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<ResultadoCategoriaAdmin> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaFrequenciaCategoria.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: mensagemDeFrequencia(parsed.error.issues) };
+  }
+  const { categoria_id, frequencia } = parsed.data;
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    const { error, count } = await escopo.atualizar(
+      "categorias",
+      categoria_id,
+      patchFrequenciaCategoria(frequencia),
+    );
+    if (error) {
+      console.error("[definirFrequenciaCategoriaAdmin]", error);
+      return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+    }
+    if (!count) return { ok: false, erro: MSG_CATEGORIA_NAO_ENCONTRADA };
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "categoria.frequencia",
+      entidadeId: categoria_id,
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[definirFrequenciaCategoriaAdmin]", e);
+    return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
   }
 }

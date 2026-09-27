@@ -47,6 +47,17 @@ import {
   type EscopoLoja,
 } from "@/lib/actions/admin-loja";
 import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
+// [322] Frequência de exibição: MESMO zod e MESMO contrato do lojista.
+import {
+  schemaAplicarFrequencia,
+  schemaGradeDeDias,
+} from "@/lib/validacoes/frequencia";
+import {
+  MSG_SALVAR_FREQUENCIA,
+  mensagemDeFrequencia,
+  argsAplicarFrequencia,
+  argsGradeDeDias,
+} from "@/lib/actions/frequencia-contrato";
 
 type Resultado = { ok: true } | { ok: false; erro: string };
 
@@ -444,5 +455,93 @@ export async function definirVisibilidadeEmProdutosAdmin(
   } catch (e) {
     console.error("[definirVisibilidadeEmProdutosAdmin]", e);
     return { ok: false, erro: erroDeEscritaDeProduto(e, MSG_SALVAR) };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [322] Frequência de exibição — gêmeas ADMIN de `aplicarFrequenciaEmProdutos`
+// e `salvarGradeDeDias` (produto.ts). Mesmo contrato (`frequencia-contrato.ts`):
+// mesmos args de RPC exceto `p_loja_id`, que é o `lojaId` da URL validado —
+// nunca do payload. Sob service_role não há RLS: o escopo é o filtro
+// `p.loja_id = p_loja_id` + `row_count` dentro da RPC (D6). Ordem D-4:
+// validarLojaIdAdmin → zod → prepararContextoAdmin (fora do try, propaga).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function aplicarFrequenciaEmProdutosAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaAplicarFrequencia.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: mensagemDeFrequencia(parsed.error.issues) };
+  }
+
+  const { svc } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // Args do contrato compartilhado; `p_loja_id` repetido LITERAL do
+    // `loja.lojaId` validado para a camada 4 de `enforcement-escopo-admin`
+    // (issue 215) enxergar o escopo de tenant desta RPC.
+    const args = argsAplicarFrequencia(loja.lojaId, parsed.data);
+    const { error } = await svc.rpc("aplicar_frequencia_em_produtos", {
+      p_loja_id: loja.lojaId,
+      p_ids: args.p_ids,
+      p_frequencia: args.p_frequencia,
+    });
+    if (error) {
+      console.error("[aplicarFrequenciaEmProdutosAdmin]", error);
+      return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+    }
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "produto.frequencia_lote",
+      metadados: { produtos: parsed.data.produto_ids.length },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[aplicarFrequenciaEmProdutosAdmin]", e);
+    return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+  }
+}
+
+export async function salvarGradeDeDiasAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaGradeDeDias.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: mensagemDeFrequencia(parsed.error.issues) };
+  }
+
+  const { svc } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // Mesmo motivo acima (camada 4 da issue 215): `p_loja_id` literal.
+    const args = argsGradeDeDias(loja.lojaId, parsed.data);
+    const { error } = await svc.rpc("salvar_grade_de_dias", {
+      p_loja_id: loja.lojaId,
+      p_itens: args.p_itens,
+    });
+    if (error) {
+      console.error("[salvarGradeDeDiasAdmin]", error);
+      return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
+    }
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "produto.grade_dias",
+      metadados: { produtos: parsed.data.itens.length },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarGradeDeDiasAdmin]", e);
+    return { ok: false, erro: MSG_SALVAR_FREQUENCIA };
   }
 }
