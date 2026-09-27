@@ -120,6 +120,12 @@ function produtoRow(over: Partial<Tables<"produtos">> = {}): Tables<"produtos"> 
     desconto_fim: null,
     // [244] coluna NOT NULL com default 'menu': é assim que toda linha nasce.
     visibilidade: "menu",
+    // 320: frequência de exibição — permanente (5 eixos null).
+    dias_semana: null,
+    hora_inicio: null,
+    hora_fim: null,
+    periodo_inicio: null,
+    periodo_fim: null,
     criado_em: "2026-01-01T00:00:00.000Z",
     atualizado_em: "2026-01-01T00:00:00.000Z",
     ...over,

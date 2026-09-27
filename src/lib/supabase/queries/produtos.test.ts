@@ -146,8 +146,8 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
     ];
     // Categorias do lojista, na ordem definida.
     const categorias = [
-      { id: "cat-lanches", loja_id: "loja-1", nome: "Lanches", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
-      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 1, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+      { id: "cat-lanches", loja_id: "loja-1", nome: "Lanches", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null },
+      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 1, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null },
     ];
     const { client } = makeClient({ data: produtos, error: null });
 
@@ -166,7 +166,7 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
       { id: "p1", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Coca", preco: 5, disponivel: true, ordem: 0 },
       { id: "p9", loja_id: "loja-1", categoria_id: null, nome: "Brinde", preco: 0, disponivel: true, ordem: 0 },
     ];
-    const categorias = [{ id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true }];
+    const categorias = [{ id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null }];
     const { client } = makeClient({ data: produtos, error: null });
 
     const grupos = await buscarCatalogoPublico(client, "loja-1", categorias);
@@ -181,8 +181,8 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
       { id: "p1", loja_id: "loja-1", categoria_id: "cat-lanches", nome: "X-Burguer", preco: 20, disponivel: true, ordem: 0 },
     ];
     const categorias = [
-      { id: "cat-vazia", loja_id: "loja-1", nome: "Vazia", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
-      { id: "cat-lanches", loja_id: "loja-1", nome: "Lanches", ordem: 1, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+      { id: "cat-vazia", loja_id: "loja-1", nome: "Vazia", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null },
+      { id: "cat-lanches", loja_id: "loja-1", nome: "Lanches", ordem: 1, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null },
     ];
     const { client } = makeClient({ data: produtos, error: null });
 
@@ -194,7 +194,7 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
   it("177 — categoria só com produto OCULTO some (o oculto nem chega do PostgREST)", async () => {
     // `.eq("oculto", false)` já filtra na query: a categoria fica sem produto.
     const categorias = [
-      { id: "cat-so-oculto", loja_id: "loja-1", nome: "Só oculto", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+      { id: "cat-so-oculto", loja_id: "loja-1", nome: "Só oculto", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null },
     ];
     const { client } = makeClient({ data: [], error: null });
 
@@ -208,7 +208,7 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
       { id: "p2", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Suco", preco: 7, disponivel: false, ordem: 0 },
     ];
     const categorias = [
-      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null },
     ];
     const { client } = makeClient({ data: produtos, error: null });
 
@@ -234,7 +234,7 @@ describe("024 buscarCatalogoPublico — contrato TS (camada 2, mock)", () => {
       { id: "p3", loja_id: "loja-1", categoria_id: "cat-bebidas", nome: "Água", preco: 3, disponivel: true, ordem: 2 },
     ];
     const categorias = [
-      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true },
+      { id: "cat-bebidas", loja_id: "loja-1", nome: "Bebidas", ordem: 0, criado_em: "2026-01-01T00:00:00Z", exibir_imagens: true, oculta: false, dias_semana: null, hora_inicio: null, hora_fim: null, periodo_inicio: null, periodo_fim: null },
     ];
     const { client } = makeClient({ data: produtos, error: null });
 
@@ -647,6 +647,12 @@ describe("207 agruparCatalogo — função pura (fetch/agrupamento separados)", 
     ordem: 0,
     criado_em: "2026-01-01T00:00:00Z",
     exibir_imagens: true,
+    oculta: false,
+    dias_semana: null,
+    hora_inicio: null,
+    hora_fim: null,
+    periodo_inicio: null,
+    periodo_fim: null,
   };
   const catLanches = {
     id: "cat-lanches",
@@ -655,6 +661,12 @@ describe("207 agruparCatalogo — função pura (fetch/agrupamento separados)", 
     ordem: 1,
     criado_em: "2026-01-01T00:00:00Z",
     exibir_imagens: true,
+    oculta: false,
+    dias_semana: null,
+    hora_inicio: null,
+    hora_fim: null,
+    periodo_inicio: null,
+    periodo_fim: null,
   };
 
   it('produto SEM categoria_id vai para "Outros", e "Outros" fica por ÚLTIMO mesmo com categorias antes dele', () => {

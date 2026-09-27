@@ -144,6 +144,12 @@ function produtoRow(): Tables<"produtos"> {
     desconto_inicio: null,
     desconto_fim: null,
     visibilidade: "menu",
+    // 320: frequência de exibição — permanente (5 eixos null).
+    dias_semana: null,
+    hora_inicio: null,
+    hora_fim: null,
+    periodo_inicio: null,
+    periodo_fim: null,
     criado_em: "2026-01-01T00:00:00.000Z",
     atualizado_em: "2026-01-01T00:00:00.000Z",
   };

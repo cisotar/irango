@@ -20,6 +20,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      aplicar_frequencia_em_produtos: {
+        Args: { p_frequencia: Json; p_ids: string[]; p_loja_id: string }
+        Returns: number
+      }
       graphql: {
         Args: {
           extensions?: Json
@@ -28,6 +32,10 @@ export type Database = {
           variables?: Json
         }
         Returns: Json
+      }
+      salvar_grade_de_dias: {
+        Args: { p_itens: Json; p_loja_id: string }
+        Returns: number
       }
     }
     Enums: {
@@ -283,27 +291,45 @@ export type Database = {
       categorias: {
         Row: {
           criado_em: string
+          dias_semana: number[] | null
           exibir_imagens: boolean
+          hora_fim: string | null
+          hora_inicio: string | null
           id: string
           loja_id: string
           nome: string
+          oculta: boolean
           ordem: number
+          periodo_fim: string | null
+          periodo_inicio: string | null
         }
         Insert: {
           criado_em?: string
+          dias_semana?: number[] | null
           exibir_imagens?: boolean
+          hora_fim?: string | null
+          hora_inicio?: string | null
           id?: string
           loja_id: string
           nome: string
+          oculta?: boolean
           ordem?: number
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
         }
         Update: {
           criado_em?: string
+          dias_semana?: number[] | null
           exibir_imagens?: boolean
+          hora_fim?: string | null
+          hora_inicio?: string | null
           id?: string
           loja_id?: string
           nome?: string
+          oculta?: boolean
           ordem?: number
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
         }
         Relationships: [
           {
@@ -922,13 +948,18 @@ export type Database = {
           desconto_tipo: string | null
           desconto_valor: number | null
           descricao: string | null
+          dias_semana: number[] | null
           disponivel: boolean
           foto_url: string | null
+          hora_fim: string | null
+          hora_inicio: string | null
           id: string
           loja_id: string
           nome: string
           oculto: boolean
           ordem: number
+          periodo_fim: string | null
+          periodo_inicio: string | null
           preco: number
           visibilidade: string
         }
@@ -942,13 +973,18 @@ export type Database = {
           desconto_tipo?: string | null
           desconto_valor?: number | null
           descricao?: string | null
+          dias_semana?: number[] | null
           disponivel?: boolean
           foto_url?: string | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
           id?: string
           loja_id: string
           nome: string
           oculto?: boolean
           ordem?: number
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
           preco: number
           visibilidade?: string
         }
@@ -962,13 +998,18 @@ export type Database = {
           desconto_tipo?: string | null
           desconto_valor?: number | null
           descricao?: string | null
+          dias_semana?: number[] | null
           disponivel?: boolean
           foto_url?: string | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
           id?: string
           loja_id?: string
           nome?: string
           oculto?: boolean
           ordem?: number
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
           preco?: number
           visibilidade?: string
         }
@@ -1276,12 +1317,17 @@ export type Database = {
           desconto_tipo: string | null
           desconto_valor: number | null
           descricao: string | null
+          dias_semana: number[] | null
           disponivel: boolean | null
           foto_url: string | null
+          hora_fim: string | null
+          hora_inicio: string | null
           id: string | null
           loja_id: string | null
           nome: string | null
           ordem: number | null
+          periodo_fim: string | null
+          periodo_inicio: string | null
           preco: number | null
           visibilidade: string | null
         }
@@ -1293,12 +1339,17 @@ export type Database = {
           desconto_tipo?: never
           desconto_valor?: never
           descricao?: string | null
+          dias_semana?: number[] | null
           disponivel?: boolean | null
           foto_url?: string | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
           id?: string | null
           loja_id?: string | null
           nome?: string | null
           ordem?: number | null
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
           preco?: number | null
           visibilidade?: string | null
         }
@@ -1310,12 +1361,17 @@ export type Database = {
           desconto_tipo?: never
           desconto_valor?: never
           descricao?: string | null
+          dias_semana?: number[] | null
           disponivel?: boolean | null
           foto_url?: string | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
           id?: string | null
           loja_id?: string | null
           nome?: string | null
           ordem?: number | null
+          periodo_fim?: string | null
+          periodo_inicio?: string | null
           preco?: number | null
           visibilidade?: string | null
         }

@@ -658,6 +658,12 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
       ordem: 1,
       exibir_imagens: true,
       criado_em: "2026-01-01T00:00:00.000Z",
+      oculta: false,
+      dias_semana: null,
+      hora_inicio: null,
+      hora_fim: null,
+      periodo_inicio: null,
+      periodo_fim: null,
     },
     {
       id: CAT_BEBIDAS,
@@ -666,6 +672,12 @@ describe("247 — projetarCatalogoVitrine: as três saídas correlacionadas", ()
       ordem: 2,
       exibir_imagens: true,
       criado_em: "2026-01-01T00:00:00.000Z",
+      oculta: false,
+      dias_semana: null,
+      hora_inicio: null,
+      hora_fim: null,
+      periodo_inicio: null,
+      periodo_fim: null,
     },
   ];
 
@@ -1026,6 +1038,12 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
       ordem: 1,
       exibir_imagens: true,
       criado_em: "2026-01-01T00:00:00.000Z",
+      oculta: false,
+      dias_semana: null,
+      hora_inicio: null,
+      hora_fim: null,
+      periodo_inicio: null,
+      periodo_fim: null,
     },
     {
       id: CAT_SOPAS,
@@ -1034,6 +1052,12 @@ describe("248 — agruparPorCardapio (D16/RN-15), cenário 8", () => {
       ordem: 2,
       exibir_imagens: true,
       criado_em: "2026-01-01T00:00:00.000Z",
+      oculta: false,
+      dias_semana: null,
+      hora_inicio: null,
+      hora_fim: null,
+      periodo_inicio: null,
+      periodo_fim: null,
     },
   ];
 
