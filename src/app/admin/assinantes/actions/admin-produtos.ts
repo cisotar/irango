@@ -409,9 +409,9 @@ export async function reordenarProdutosAdmin(
  * visibilidade de uma SELEÇÃO de produtos da LOJA-ALVO.
  *
  * Nasce aqui, e não em `admin-cardapios.ts`, porque a linha escrita é de
- * `produtos` — e é a MESMA action que serve as duas superfícies do mundo admin:
- * o `devolverAoMenu` de `AcoesCardapios` e o `definirVisibilidade` de
- * `AcoesLote`. Sem ela nenhuma das duas compila no hub admin.
+ * `produtos`. Hoje serve só o `devolverAoMenu` de `AcoesCardapios`: desde o P6
+ * da frequência de exibição, a barra de lote do detalhe do cardápio não recebe
+ * mais `definirVisibilidade`, e só 'menu' é gravável (`visibilidadeGravavel`).
  *
  * R5 (registrado): `visibilidade` é declaração do LOJISTA e o sistema nunca a
  * muda sozinho — aqui quem clica é outra pessoa. Fica rastreável em

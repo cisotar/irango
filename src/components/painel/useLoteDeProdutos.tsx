@@ -9,6 +9,7 @@ import {
 } from "@/components/painel/DialogoLoteCardapio";
 import type {
   AcoesLote,
+  AcoesVisibilidadeLote,
   CardapioParaLote,
   PreviaDoLote,
 } from "@/components/painel/contrato-lote";
@@ -27,6 +28,15 @@ import { TETO_LOTE } from "@/lib/validacoes/produto";
  * só deixa de esconder o número que já decide a recusa.
  */
 const MSG_TETO = `Dá para aplicar uma ação a no máximo ${TETO_LOTE} produtos por vez. Desmarque alguns e tente de novo.`;
+
+/**
+ * [P6 da frequência de exibição] Superfície sem `definirVisibilidade` (páginas
+ * de cardápio, lojista e admin): a ação de visibilidade recusa aqui, sem I/O e
+ * sem cair na action de outro mundo.
+ */
+async function visibilidadeIndisponivel(): Promise<{ ok: false; erro: string }> {
+  return { ok: false, erro: "Esta ação não está disponível nesta tela." };
+}
 
 /**
  * O escopo do lote, na FORMA que a Server Action recebe — nunca uma lista que
@@ -80,7 +90,7 @@ export function useLoteDeProdutos(
    * `lote` de `ProdutosClient`). Regra dos hooks: o hook roda sempre; sem
    * actions ele simplesmente não abre nada.
    */
-  acoes: AcoesLote | undefined,
+  acoes: (AcoesLote & Partial<AcoesVisibilidadeLote>) | undefined,
   onConcluido: () => void,
 ): {
   /** Vincular/desvincular produtos a um cardápio. */
@@ -254,7 +264,7 @@ export function useLoteDeProdutos(
 
       const resultado =
         alvo.tipo === "visibilidade"
-          ? await acoes.definirVisibilidade({
+          ? await (acoes.definirVisibilidade ?? visibilidadeIndisponivel)({
               produto_ids: escopo.tipo === "produtos" ? escopo.produto_ids : [],
               // O jargão de schema fica AQUI, na fronteira: a tela inteira fala
               // "exclusivo de cardápio" e "do menu".

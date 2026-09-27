@@ -25,13 +25,16 @@ export type PreviaDoLote = Extract<
   { ok: true }
 >;
 
-/** As seis actions do modo de seleção. Todas OBRIGATÓRIAS. */
+/**
+ * As actions do modo de seleção das páginas de CARDÁPIO. Todas OBRIGATÓRIAS.
+ * `definirVisibilidade` não está aqui desde o P6 da frequência de exibição:
+ * ver `AcoesVisibilidadeLote`.
+ */
 export type AcoesLote = {
   aplicarEmProdutos: typeof aplicarCardapioEmProdutos;
   aplicarEmCategoria: typeof aplicarCardapioEmCategoria;
   tirarDeCardapio: typeof tirarDeCardapio;
   preverLote: typeof preverLoteAction;
-  definirVisibilidade: typeof definirVisibilidadeEmProdutos;
   /**
    * [276] A agenda de UM vínculo (RN-06). Obrigatória e sem default, como as
    * outras cinco: omiti-la no wrapper admin faria a action do LOJISTA rodar,
@@ -73,10 +76,24 @@ export type VinculoDoProduto = {
   rotuloDias: string | null;
 };
 
+/**
+ * [P6 da frequência de exibição] A ação de visibilidade em lote, SEPARADA de
+ * `AcoesLote`. Só 'menu' é gravável (`visibilidadeGravavel`); nas páginas de
+ * cardápio (lojista e admin) ela deixou de ser injetada — lá, "marcar como
+ * exclusivo de cardápio" gravaria 'cardapio', um item escondido da vitrine mas
+ * vendido pelo pedido. Fica só no lote de `/painel/produtos` ("devolver ao
+ * menu"). Fora do `AcoesLote`, o `DetalheDoCardapio` nem declara a chave, e a
+ * guarda `enforcement-props-action-admin` continua exigindo TODAS as chaves que
+ * ele declara.
+ */
+export type AcoesVisibilidadeLote = {
+  definirVisibilidade: typeof definirVisibilidadeEmProdutos;
+};
+
 /** Tudo que `/painel/produtos` precisa para oferecer o modo de seleção. */
 export type LoteDeProdutos = {
   cardapios: CardapioParaLote[];
-  acoes: AcoesLote;
+  acoes: AcoesLote & AcoesVisibilidadeLote;
 };
 
 /**

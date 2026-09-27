@@ -174,10 +174,14 @@ export function FormProduto({
   const [disponivel, setDisponivel] = useState(inicial?.disponivel ?? true);
   const [oculto, setOculto] = useState(inicial?.oculto ?? false);
   // [261] D14 → [323/D11] Não é mais editável: o `RadioGroup` Menu/Cardápio
-  // saiu (a frequência de exibição substituiu o cardápio sazonal). O valor
-  // salvo é reenviado como está — o UPDATE exige a chave — e produto novo
-  // nasce "menu", o default do zod e da coluna.
-  const visibilidade: Visibilidade = inicial?.visibilidade ?? "menu";
+  // saiu (a frequência de exibição substituiu o cardápio sazonal).
+  // [P6] `visibilidadeSalva` só decide se o bloco LEGADO aparece. O payload
+  // envia SEMPRE "menu": é o único valor gravável (`visibilidadeGravavel`), a
+  // migration 20260928132000 já devolveu todo produto ao menu, e reenviar um
+  // 'cardapio' legado faria o zod recusar a edição inteira. Salvar um produto
+  // legado, portanto, o devolve ao menu — coerente com o pedido, que já o
+  // vende ignorando `visibilidade` (S5).
+  const visibilidadeSalva: Visibilidade = inicial?.visibilidade ?? "menu";
   const [fotoUrl, setFotoUrl] = useState<string | null>(
     inicial?.foto_url ?? null,
   );
@@ -246,7 +250,7 @@ export function FormProduto({
       categoria_id: categoriaId ? categoriaId : null,
       disponivel,
       oculto,
-      visibilidade,
+      visibilidade: "menu" as const,
       foto_url: fotoUrl,
       ordem: inicial?.ordem ?? 0,
       // Os cinco vão SEMPRE juntos e nunca condicionalmente (RN-07): omitir
@@ -654,7 +658,7 @@ export function FormProduto({
           para o produto que ainda está `'cardapio'` (gravado direto por REST
           depois da migração que devolveu todos ao menu): explica por que ele
           depende de um cardápio. */}
-      {visibilidade === "cardapio" && (
+      {visibilidadeSalva === "cardapio" && (
         <fieldset className="space-y-3 rounded-lg border border-input p-3">
           <legend
             id={ID_VISIBILIDADE}
@@ -663,7 +667,8 @@ export function FormProduto({
             Onde este produto aparece
           </legend>
           <p className="text-sm text-foreground">
-            Só aparece quando um cardápio dele estiver aberto.
+            Só aparece quando um cardápio dele estiver aberto. Salve para
+            devolvê-lo ao menu.
           </p>
 
           {/* Sem cardápio nenhum, o trigger de RN-14 recusa salvar: o form

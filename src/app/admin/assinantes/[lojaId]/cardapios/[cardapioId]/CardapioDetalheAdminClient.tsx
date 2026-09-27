@@ -16,7 +16,6 @@ import {
   preverLoteAdmin,
   definirDiasDoVinculoAdmin,
 } from "@/app/admin/assinantes/actions/admin-cardapios";
-import { definirVisibilidadeEmProdutosAdmin } from "@/app/admin/assinantes/actions/admin-produtos";
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 
 /**
@@ -83,8 +82,6 @@ export function CardapioDetalheAdminClient({
             aplicarCardapioEmCategoriaAdmin(lojaId, payload),
           tirarDeCardapio: (payload) => tirarDeCardapioAdmin(lojaId, payload),
           preverLote: (entrada) => preverLoteAdmin(lojaId, entrada),
-          definirVisibilidade: (payload) =>
-            definirVisibilidadeEmProdutosAdmin(lojaId, payload),
           definirDias: (payload) => definirDiasDoVinculoAdmin(lojaId, payload),
         }}
       />

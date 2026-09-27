@@ -625,7 +625,9 @@ describe("schemaProdutoUpdate — `visibilidade` obrigatória no UPDATE", () => 
   });
 
   it("UPDATE com o campo explícito preserva o valor declarado", () => {
-    for (const valor of ["menu", "cardapio"] as const) {
+    // P6 (frequência de exibição): só 'menu' é gravável; a recusa de
+    // 'cardapio' é travada em visibilidade-somente-menu.test.ts.
+    for (const valor of ["menu"] as const) {
       const r = schemaProdutoUpdate.safeParse({
         ...produtoValido,
         visibilidade: valor,

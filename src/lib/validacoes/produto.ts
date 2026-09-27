@@ -37,6 +37,23 @@ const prazoLocal = z
 export const visibilidadeProduto = z.enum(["menu", "cardapio"]);
 
 /**
+ * [P6 da frequência de exibição] O domínio GRAVÁVEL de `visibilidade`: só
+ * `'menu'`. `visibilidadeProduto` continua descrevendo o que o BANCO pode
+ * conter (leitura de linha legada), mas nenhuma escrita — INSERT, UPDATE da
+ * linha ou lote, lojista ou admin — aceita mais `'cardapio'`.
+ *
+ * Por quê: com o cardápio sazonal morto (specs/frequencia-exibicao.md, S5),
+ * `criarPedido`/`revisarCarrinho` ignoram `visibilidade` e decidem pela
+ * frequência de exibição, enquanto a view `vitrine_produtos` ainda esconde o
+ * produto 'cardapio' sem vínculo ativo. Gravar 'cardapio' deixaria um item fora
+ * da vitrine e comprável por quem tem o id. A migration 20260928132000 zerou os
+ * 'cardapio' existentes; este literal impede que voltem. Decisão do usuário:
+ * tornar a escrita impossível, sem CHECK no banco (os testes [h]..[m] da 245
+ * semeiam 'cardapio' de propósito para provar o predicado da view).
+ */
+export const visibilidadeGravavel = z.literal("menu");
+
+/**
  * Teto de cardinalidade de QUALQUER lista de ids que o cliente manda (CWE-770,
  * o mesmo motivo do `.max()` de `pedido.ts`). Declarado UMA vez porque a UI
  * precisa do MESMO número para explicar a recusa antes de disparar a prévia —
@@ -70,7 +87,7 @@ const camposProduto = z.object({
   // defende RECUSANDO em vez de converter. Por isso o UPDATE usa
   // `schemaProdutoUpdate` (abaixo), onde o campo é OBRIGATÓRIO.
   // Eixo INDEPENDENTE de `oculto` e de `disponivel` — ver RN-05/D14.
-  visibilidade: visibilidadeProduto.default("menu"),
+  visibilidade: visibilidadeGravavel.default("menu"),
   ordem: z.number().int().min(0),
   // foto_url (issue 072): camada autoritativa anti-injeção de URL — renderizada
   // como <Image src> na vitrine pública. `preprocess` normaliza "" (form sem
@@ -214,7 +231,7 @@ export const schemaProduto = camposProduto.superRefine(refinarDesconto);
  * muda `visibilidade` por conta própria; quem declara é sempre o lojista.
  */
 export const schemaProdutoUpdate = camposProduto
-  .extend({ visibilidade: visibilidadeProduto })
+  .extend({ visibilidade: visibilidadeGravavel })
   .superRefine(refinarDesconto);
 
 /**
@@ -291,8 +308,8 @@ export const schemaReordenacaoProdutos = z
  * (CWE-770), `.min(1)` porque escrever em zero produto é chamada sem efeito, e
  * sem duplicata (a seleção é um CONJUNTO).
  *
- * `visibilidade` reusa `visibilidadeProduto`: o lote não tem uma segunda
- * definição do domínio de D14.
+ * `visibilidade` reusa `visibilidadeGravavel`: o lote não tem uma segunda
+ * definição do domínio gravável (só 'menu' desde o P6 da frequência).
  */
 export const schemaVisibilidadeEmLote = z
   .object({
@@ -303,7 +320,7 @@ export const schemaVisibilidadeEmLote = z
       .refine((ids) => new Set(ids).size === ids.length, {
         message: "Ids repetidos na seleção",
       }),
-    visibilidade: visibilidadeProduto,
+    visibilidade: visibilidadeGravavel,
   })
   .strict();
 
