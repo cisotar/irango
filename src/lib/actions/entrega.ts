@@ -13,6 +13,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  schemaFaixasEntrega,
   schemaModalidadesEntrega,
   schemaZona,
   schemaZonaCompleta,
@@ -62,6 +63,45 @@ export async function salvarModalidadesEntrega(
   } catch (e) {
     console.error("[salvarModalidadesEntrega]", e);
     return { ok: false, erro: "Não foi possível salvar as modalidades de entrega." };
+  }
+}
+
+/**
+ * Salva a tabela de faixas de entrega em lote (issue 326, D1/D2). zod ANTES de
+ * qualquer I/O (`.strict()`: só incremento e taxa/grátis por faixa); client
+ * AUTENTICADO; loja = a do dono logado, nunca do payload. UMA chamada à RPC
+ * atômica `salvar_faixas_entrega`, que apaga as zonas da loja e grava as
+ * faixas derivando teto/nome/tipo no servidor. Erro do banco → log + genérica.
+ */
+export async function salvarFaixasEntrega(
+  payload: unknown,
+): Promise<ResultadoEntrega> {
+  const parsed = schemaFaixasEntrega.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: "Confira as faixas de entrega." };
+  }
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    const { error } = await supabase.rpc("salvar_faixas_entrega", {
+      p_loja_id: loja.id,
+      p_incremento: parsed.data.incremento,
+      p_faixas: parsed.data.faixas,
+    });
+    if (error) {
+      console.error("[salvarFaixasEntrega]", error);
+      return { ok: false, erro: "Não foi possível salvar as faixas de entrega." };
+    }
+    revalidatePath(ROTA);
+    revalidatePath("/loja/[slug]", "page");
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarFaixasEntrega]", e);
+    return { ok: false, erro: "Não foi possível salvar as faixas de entrega." };
   }
 }
 

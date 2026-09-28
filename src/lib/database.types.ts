@@ -1757,6 +1757,10 @@ export type Database = {
         Args: { p_categoria_id: string; p_ids: string[]; p_loja_id: string }
         Returns: number
       }
+      salvar_faixas_entrega: {
+        Args: { p_faixas: Json; p_incremento: number; p_loja_id: string }
+        Returns: number
+      }
       salvar_grade_de_dias: {
         Args: { p_itens: Json; p_loja_id: string }
         Returns: number

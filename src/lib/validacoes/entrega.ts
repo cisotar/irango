@@ -112,6 +112,30 @@ export const schemaRegistroFreteCombinado = z
   })
   .strict();
 
+// ─── Tabela de faixas de entrega (issue 326, D2/C2) ─────────────────────────
+// ISOMÓRFICO: gate de UX na tela e autoridade nas Server Actions (lojista e
+// admin), antes de qualquer I/O. O cliente manda SÓ `incremento` e, por faixa,
+// `taxa` e `pedido_minimo_gratis`; teto, nome, tipo, `ativo`, loja e zona são
+// derivados na RPC `salvar_faixas_entrega`. `.strict()` nos dois níveis: chave
+// extra é RECUSADA, não descartada. Teto de 30 espelha a RPC.
+export const TETO_FAIXAS_ENTREGA = 30;
+
+export const schemaFaixaEntrega = z
+  .object({
+    taxa: valorFrete,
+    pedido_minimo_gratis: valorFrete.nullable(),
+  })
+  .strict();
+
+export const schemaFaixasEntrega = z
+  .object({
+    incremento: z.union([z.literal(1), z.literal(2)]),
+    faixas: z.array(schemaFaixaEntrega).max(TETO_FAIXAS_ENTREGA),
+  })
+  .strict();
+
+export type DadosFaixasEntrega = z.infer<typeof schemaFaixasEntrega>;
+
 // Payload completo do form de zona (issue 046): zona + taxa (1:1) + bairros
 // (1:N) num só envio. ISOMÓRFICO — usado no client (gate de UX) e revalidado
 // na Server Action (autoridade). FORA daqui: loja_id/zona_id (derivados no
