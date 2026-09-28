@@ -1,0 +1,367 @@
+<title>Proporção foto e pílulas</title>
+<style>
+  /* Mockup do PAINEL: superfície fixa do design-system §10, sem tema de loja.
+     Tokens de src/app/globals.css. Base de fonte 120% do projeto (1rem = 19,2px),
+     por isso as medidas abaixo são os px reais renderizados.
+
+     ESCOPO:
+       1. Foto do produto (ThumbProduto, só a linha de produto):
+          48px -> 60px no mobile, 72px no PC.
+       2. Pílulas de dia, MODO NORMAL (todas as telas que o usam):
+          fonte 16,8px -> 14,4px, gap 9,6px -> 7,2px e, no PC, a fileira de 7
+          para de esticar na largura toda (teto de 537px).
+          Altura continua 44px: é o alvo mínimo de toque (design-system §5).
+       Modo compacto não muda. Nenhuma lógica muda. */
+  :root {
+    --pagina: #ece6da;
+    --tinta: #252525;
+    --tinta-suave: #5b5b5b;
+    --fundo-painel: #f5f0e6;
+    --card: #ffffff;
+    --limite-card: #8a8a8a;
+    --linha: rgba(0, 0, 0, .1);
+    --primaria: #171717;
+    --primaria-texto: #fafafa;
+    --muted: #f5f5f5;
+    --muted-texto: #737373;
+    --promo-texto: #166534;
+    --promo-fundo: #dcfce7;
+    --antes-fundo: #fde2e2;
+    --antes-texto: #9b1c1c;
+    --depois-fundo: #dcfce7;
+    --depois-texto: #14532d;
+    --medida: #be123c;
+  }
+  html { font-size: 120%; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding-inline: 16px;
+    padding-block: 24px 64px;
+    background: var(--pagina);
+    color: var(--tinta);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 28px; }
+  header h1 { font-size: 1.25rem; margin: 0 0 6px; text-wrap: balance; }
+  header p { margin: 0; color: var(--tinta-suave); max-width: 62ch; }
+
+  .resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .resumo div { background: var(--card); border-radius: 10px; padding: 12px 14px;
+                box-shadow: 0 0 0 1px var(--linha); }
+  .resumo b { display: block; font-size: .8rem; margin-bottom: 2px; }
+  .resumo span { color: var(--tinta-suave); }
+  .resumo .num { font-variant-numeric: tabular-nums; color: var(--tinta); font-weight: 600; }
+
+  .dispositivo { display: grid; gap: 14px; }
+  .dispositivo > h2 { font-size: 1rem; margin: 0; padding-bottom: 6px;
+                      border-bottom: 2px solid var(--tinta); }
+  .caso h3 { font-size: .8rem; margin: 6px 0 8px; display: flex; gap: 8px; align-items: center; }
+  .tag { font-size: .55rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+         padding: 3px 8px; border-radius: 999px; }
+  .tag-antes { background: var(--antes-fundo); color: var(--antes-texto); }
+  .tag-depois { background: var(--depois-fundo); color: var(--depois-texto); }
+  .comparacao { display: grid; gap: 14px; }
+  .dispositivo.mobile .comparacao { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+
+  .rolagem { overflow-x: auto; padding-bottom: 4px; }
+  .viewport { background: var(--fundo-painel); border: 1px solid var(--limite-card);
+              border-radius: 12px; padding: 16px; }
+  .viewport.pc { width: 900px; }
+  .viewport.cel { width: 360px; padding: 12px; }
+  .rotulo-vp { font-size: .6rem; color: var(--tinta-suave); margin: 0 0 6px; }
+
+  /* ---- card de categoria e linha de produto ---- */
+  .card { background: var(--card); border-radius: 12px; box-shadow: 0 0 0 1px var(--limite-card);
+          overflow: hidden; }
+  .cab-cat { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+             border-bottom: 1px solid var(--linha); }
+  .cab-cat h4 { margin: 0; font-size: 1.05rem; flex: 1; }
+  .cab-cat small { color: var(--tinta-suave); font-size: .7rem; }
+  .linha { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 14px 16px; }
+  .linha + .linha { border-top: 1px solid var(--linha); }
+  .alca { width: 20px; flex: none; color: #9a9a9a; font-size: 1rem; line-height: 44px; text-align: center; }
+
+  .thumb { flex: none; border-radius: 8px; border: 1px solid #e5e5e5; background-size: cover;
+           background-position: center; position: relative; }
+  .thumb.t48 { width: 48px; height: 48px; }
+  .thumb.t60 { width: 60px; height: 60px; }
+  .thumb.t72 { width: 72px; height: 72px; }
+  .comida-1 { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'><rect width='72' height='72' fill='%23f3efe6'/><circle cx='36' cy='38' r='28' fill='%23ffffff' stroke='%23e2dccf' stroke-width='2'/><ellipse cx='28' cy='36' rx='12' ry='9' fill='%23f7f3ea'/><ellipse cx='45' cy='34' rx='11' ry='8' fill='%238a4b2a'/><ellipse cx='40' cy='48' rx='10' ry='6' fill='%23c0392b'/><circle cx='30' cy='48' r='4' fill='%234c9a2a'/></svg>"); }
+  .comida-2 { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'><rect width='72' height='72' fill='%23efe9dc'/><circle cx='36' cy='37' r='28' fill='%23ffffff' stroke='%23e2dccf' stroke-width='2'/><path d='M20 40 q16 -18 32 0 q-16 10 -32 0z' fill='%23c98a4b'/><path d='M24 38 l24 -4' stroke='%23a0632e' stroke-width='2'/><circle cx='26' cy='28' r='5' fill='%236bab3a'/><circle cx='44' cy='50' r='5' fill='%236bab3a'/><circle cx='34' cy='52' r='3' fill='%23e74c3c'/></svg>"); }
+  .medida { position: absolute; left: 50%; bottom: -15px; transform: translateX(-50%);
+            font-size: .5rem; font-weight: 700; color: var(--medida); white-space: nowrap;
+            font-variant-numeric: tabular-nums; }
+
+  .texto { flex: 1; min-width: 0; display: grid; gap: 4px; }
+  .dispositivo.pc .texto { min-width: 14rem; }
+  .nome { font-size: 1rem; font-weight: 600; line-height: 1.3; }
+  .preco-linha { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .preco { font-size: .875rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .badge { font-size: .65rem; font-weight: 600; padding: 2px 8px; border-radius: 6px;
+           background: var(--muted); color: #333; }
+  .badge.promo { background: var(--promo-fundo); color: var(--promo-texto); }
+  .chip { justify-self: start; display: inline-flex; gap: 4px; align-items: center; font-size: .65rem;
+          border: 1px solid #b5b5b5; border-radius: 999px; padding: 1px 8px; }
+
+  .acoes { display: flex; gap: 8px; flex: none; }
+  .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+         padding: 0 12px; border-radius: 10px; border: 1px solid #d4d4d4; background: #fff;
+         font: inherit; font-size: .72rem; font-weight: 600; color: var(--tinta); }
+  .btn.kebab { width: 44px; padding: 0; font-size: 1rem; }
+  .dispositivo.mobile .acoes { order: 3; width: 100%; }
+  .dispositivo.mobile .acoes .btn:not(.kebab) { flex: 1; }
+
+  /* ---- pílulas: o componente PilulasDeDias, modo normal ---- */
+  .pilulas-caixa { flex-basis: 100%; width: 100%; }
+  .dispositivo.pc .pilulas-caixa { order: 4; }
+  .pilulas { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .dispositivo.pc .pilulas { grid-template-columns: repeat(7, 1fr); }
+  .pilulas button { min-height: 44px; min-width: 44px; border-radius: 12px; border: 1px solid #d4d4d4;
+                    background: #fff; color: var(--tinta); font: inherit; font-weight: 500; }
+  .pilulas button.on { background: var(--primaria); border-color: var(--primaria);
+                       color: var(--primaria-texto); font-weight: 600; }
+  .pilulas.antes { gap: 9.6px; }
+  .pilulas.antes button { font-size: 16.8px; }
+  .pilulas.depois { gap: 7.2px; }
+  .pilulas.depois button { font-size: 14.4px; }
+  .dispositivo.pc .pilulas.depois { max-width: 537.6px; }
+
+  /* ---- formulário de vigência (cardápio) ---- */
+  .form { background: var(--card); border-radius: 12px; box-shadow: 0 0 0 1px var(--limite-card);
+          padding: 16px; display: grid; gap: 10px; }
+  .form label { font-size: .75rem; font-weight: 600; }
+  .form .cab-form { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .form .cab-form small { font-size: .62rem; color: var(--muted-texto); }
+  .form .atalhos { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn.fantasma { border-color: transparent; background: transparent; }
+  .form .nota { font-size: .62rem; color: var(--muted-texto); margin: 0; }
+
+  .codigo { background: var(--card); border-radius: 10px; box-shadow: 0 0 0 1px var(--linha);
+            padding: 14px 16px; display: grid; gap: 10px; }
+  .codigo h2 { font-size: 1rem; margin: 0; }
+  .codigo p { margin: 0; color: var(--tinta-suave); }
+  .codigo pre { margin: 0; overflow-x: auto; font-size: .62rem; line-height: 1.6;
+                background: #f7f5f0; border-radius: 8px; padding: 10px 12px;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .del { color: #9b1c1c; } .add { color: #14532d; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Foto do produto maior, pílulas de dia menores</h1>
+    <p>Hoje a foto do produto some ao lado da fileira de dias da semana: é um quadrado de 48px contra sete botões que esticam na largura toda do card. A proposta aumenta a foto e deixa as pílulas mais enxutas. Nada muda no comportamento.</p>
+  </header>
+
+  <section class="resumo" aria-label="Resumo das medidas">
+    <div><b>Foto do produto</b><span>Mobile <span class="num">48 → 60px</span> · PC <span class="num">48 → 72px</span>. Só na linha de produto.</span></div>
+    <div><b>Pílulas no PC</b><span>Largura de cada uma <span class="num">~113 → ~71px</span>, fonte <span class="num">16,8 → 14,4px</span>.</span></div>
+    <div><b>Pílulas no mobile</b><span>Fonte <span class="num">16,8 → 14,4px</span>, espaço entre elas <span class="num">9,6 → 7,2px</span>. Continua 4 + 3.</span></div>
+    <div><b>Altura das pílulas</b><span>Fica em <span class="num">44px</span>, o mínimo de toque do design system.</span></div>
+  </section>
+
+  <!-- =========================== PC =========================== -->
+  <section class="dispositivo pc">
+    <h2>PC</h2>
+
+    <div class="caso">
+      <h3>Linha de produto · Produtos</h3>
+      <div class="comparacao">
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-antes">Antes</span> tela de 900px</p>
+          <div class="rolagem"><div class="viewport pc">
+            <div class="card">
+              <div class="cab-cat"><h4>Pratos Executivos</h4><small>Reordenar · Dias · Opcionais · Novo produto</small></div>
+              <div class="linha">
+                <span class="alca" aria-hidden="true">⠿</span>
+                <span class="thumb t48 comida-1"><span class="medida">48px</span></span>
+                <div class="texto">
+                  <span class="nome">Prato com Alma Bragantina</span>
+                  <span class="preco-linha"><span class="preco">R$ 45,00</span><span class="badge">Disponível</span></span>
+                  <span class="chip">◷ seg a sex</span>
+                </div>
+                <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
+                <div class="pilulas-caixa"><div class="pilulas antes">
+                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                </div></div>
+              </div>
+              <div class="linha">
+                <span class="alca" aria-hidden="true">⠿</span>
+                <span class="thumb t48 comida-2"></span>
+                <div class="texto">
+                  <span class="nome">Filé de Frango Grelhado (fitness)</span>
+                  <span class="preco-linha"><span class="preco">R$ 39,90</span><span class="badge">Disponível</span><span class="badge promo">-R$ 10,00</span></span>
+                  <span class="chip">◷ seg a sex</span>
+                </div>
+                <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
+                <div class="pilulas-caixa"><div class="pilulas antes">
+                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                </div></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-depois">Depois</span> tela de 900px</p>
+          <div class="rolagem"><div class="viewport pc">
+            <div class="card">
+              <div class="cab-cat"><h4>Pratos Executivos</h4><small>Reordenar · Dias · Opcionais · Novo produto</small></div>
+              <div class="linha">
+                <span class="alca" aria-hidden="true">⠿</span>
+                <span class="thumb t72 comida-1"><span class="medida">72px</span></span>
+                <div class="texto">
+                  <span class="nome">Prato com Alma Bragantina</span>
+                  <span class="preco-linha"><span class="preco">R$ 45,00</span><span class="badge">Disponível</span></span>
+                  <span class="chip">◷ seg a sex</span>
+                </div>
+                <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
+                <div class="pilulas-caixa"><div class="pilulas depois">
+                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                </div></div>
+              </div>
+              <div class="linha">
+                <span class="alca" aria-hidden="true">⠿</span>
+                <span class="thumb t72 comida-2"></span>
+                <div class="texto">
+                  <span class="nome">Filé de Frango Grelhado (fitness)</span>
+                  <span class="preco-linha"><span class="preco">R$ 39,90</span><span class="badge">Disponível</span><span class="badge promo">-R$ 10,00</span></span>
+                  <span class="chip">◷ seg a sex</span>
+                </div>
+                <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
+                <div class="pilulas-caixa"><div class="pilulas depois">
+                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                </div></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="caso">
+      <h3>Vigência do cardápio · Cardápios (as pílulas mudam igual; a grade de dias e o diálogo de frequência de Produtos também)</h3>
+      <div class="comparacao">
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-antes">Antes</span></p>
+          <div class="rolagem"><div class="viewport pc"><div class="form">
+            <div class="cab-form"><label>Dias da semana</label><small>opcional</small></div>
+            <div class="pilulas antes">
+              <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+            </div>
+            <div class="atalhos"><span class="btn">Todos os dias</span><span class="btn fantasma">Limpar</span></div>
+            <p class="nota">Nenhum dia marcado = todos os dias.</p>
+          </div></div></div>
+        </div>
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-depois">Depois</span></p>
+          <div class="rolagem"><div class="viewport pc"><div class="form">
+            <div class="cab-form"><label>Dias da semana</label><small>opcional</small></div>
+            <div class="pilulas depois">
+              <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+            </div>
+            <div class="atalhos"><span class="btn">Todos os dias</span><span class="btn fantasma">Limpar</span></div>
+            <p class="nota">Nenhum dia marcado = todos os dias.</p>
+          </div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= MOBILE ========================= -->
+  <section class="dispositivo mobile">
+    <h2>Mobile</h2>
+
+    <div class="caso">
+      <h3>Linha de produto · Produtos</h3>
+      <div class="comparacao">
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-antes">Antes</span> tela de 360px</p>
+          <div class="rolagem"><div class="viewport cel">
+            <div class="card">
+              <div class="linha">
+                <span class="alca" aria-hidden="true">⠿</span>
+                <span class="thumb t48 comida-1"><span class="medida">48px</span></span>
+                <div class="texto">
+                  <span class="nome">Prato com Alma Bragantina</span>
+                  <span class="preco-linha"><span class="preco">R$ 45,00</span><span class="badge">Disponível</span></span>
+                  <span class="chip">◷ seg a sex</span>
+                </div>
+                <div class="pilulas-caixa"><div class="pilulas antes">
+                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                </div></div>
+                <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-depois">Depois</span> tela de 360px</p>
+          <div class="rolagem"><div class="viewport cel">
+            <div class="card">
+              <div class="linha">
+                <span class="alca" aria-hidden="true">⠿</span>
+                <span class="thumb t60 comida-1"><span class="medida">60px</span></span>
+                <div class="texto">
+                  <span class="nome">Prato com Alma Bragantina</span>
+                  <span class="preco-linha"><span class="preco">R$ 45,00</span><span class="badge">Disponível</span></span>
+                  <span class="chip">◷ seg a sex</span>
+                </div>
+                <div class="pilulas-caixa"><div class="pilulas depois">
+                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                </div></div>
+                <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="caso">
+      <h3>Vigência do cardápio · Cardápios</h3>
+      <div class="comparacao">
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-antes">Antes</span></p>
+          <div class="rolagem"><div class="viewport cel"><div class="form">
+            <div class="cab-form"><label>Dias da semana</label><small>opcional</small></div>
+            <div class="pilulas antes">
+              <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+            </div>
+            <div class="atalhos"><span class="btn">Todos os dias</span><span class="btn fantasma">Limpar</span></div>
+            <p class="nota">Nenhum dia marcado = todos os dias.</p>
+          </div></div></div>
+        </div>
+        <div>
+          <p class="rotulo-vp"><span class="tag tag-depois">Depois</span></p>
+          <div class="rolagem"><div class="viewport cel"><div class="form">
+            <div class="cab-form"><label>Dias da semana</label><small>opcional</small></div>
+            <div class="pilulas depois">
+              <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+            </div>
+            <div class="atalhos"><span class="btn">Todos os dias</span><span class="btn fantasma">Limpar</span></div>
+            <p class="nota">Nenhum dia marcado = todos os dias.</p>
+          </div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="codigo">
+    <h2>O que muda no código</h2>
+    <p>Dois arquivos de produção. O modo compacto das pílulas e toda a lógica ficam iguais.</p>
+<pre><b>src/components/painel/ThumbProduto.tsx</b>  (usado só na linha de produto)
+<span class="del">- relative size-10 shrink-0 …           sizes="40px"</span>
+<span class="add">+ relative size-[60px] sm:size-[72px] shrink-0 …   sizes="72px"</span>
+<span class="del">- flex size-10 shrink-0 … text-sm …     (avatar com a inicial)</span>
+<span class="add">+ flex size-[60px] sm:size-[72px] shrink-0 … text-base …</span>
+
+<b>src/components/painel/PilulasDeDias.tsx</b>  (modo normal)
+<span class="del">- "grid grid-cols-4 gap-2 sm:grid-cols-7"</span>
+<span class="add">+ "grid grid-cols-4 gap-1.5 sm:max-w-md sm:grid-cols-7"</span>
+<span class="del">- … rounded-lg border text-sm …</span>
+<span class="add">+ … rounded-lg border ${compacto ? "text-sm" : "text-xs"} …</span></pre>
+  </section>
+</div>
