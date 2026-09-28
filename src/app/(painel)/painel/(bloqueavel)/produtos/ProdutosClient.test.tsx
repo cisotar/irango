@@ -945,3 +945,94 @@ describe("323 — pílulas de dia editáveis na linha do produto", () => {
     expect(marcados(html, "Pizza Margherita")).toBe(0);
   });
 });
+
+/*
+  Arrasto direto na listagem — o botão "Reordenar" do cabeçalho continua, mas a
+  linha ganha uma alça que move o produto sem entrar em modo nenhum.
+
+  O que este arquivo consegue provar sem jsdom: QUEM ganha alça e quem não
+  ganha, e que o markup do arrasto é determinístico entre renders. O gesto em
+  si (soltar sobre outra linha → `reordenarProdutos` com a sequência nova) não
+  é simulável aqui e fica para o `verificar`.
+*/
+describe("alça de arrasto na listagem de produtos", () => {
+  const CATEGORIAS = [
+    { id: "c1", nome: "Lanches", exibir_imagens: true },
+    { id: "c2", nome: "Bebidas", exibir_imagens: true },
+  ];
+
+  function render(produtos: Produto[], categorias = CATEGORIAS): string {
+    return renderToStaticMarkup(
+      <ProdutosClient
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        produtos={produtos}
+        categorias={categorias}
+        opcionaisPorCategoria={{}}
+        hrefCardapios="/painel/cardapios"
+        vinculosPorProduto={{}}
+        promocoes={{}}
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        frequencias={FREQUENCIAS_VAZIAS}
+        categoriasOpcional={[]}
+        opcionais={[]}
+        associacoes={[]}
+        acoes={acoesBase()}
+      />,
+    );
+  }
+
+  it("categoria com dois produtos dá alça a cada linha, nomeada pelo produto", () => {
+    const html = render([
+      produtoBase({ id: "p1", categoria_id: "c1", nome: "X-Burguer" }),
+      produtoBase({ id: "p2", categoria_id: "c1", nome: "X-Salada" }),
+    ]);
+    expect(html).toContain('aria-label="Reordenar X-Burguer"');
+    expect(html).toContain('aria-label="Reordenar X-Salada"');
+  });
+
+  it("categoria de UM produto não ganha alça — mesmo gate do botão do cabeçalho", () => {
+    const html = render([
+      produtoBase({ id: "p1", categoria_id: "c1", nome: "X-Burguer" }),
+    ]);
+    expect(html).not.toContain('aria-label="Reordenar X-Burguer"');
+  });
+
+  it("o gate é POR categoria: a de dois ganha alça, a de um não", () => {
+    const html = render([
+      produtoBase({ id: "p1", categoria_id: "c1", nome: "X-Burguer" }),
+      produtoBase({ id: "p2", categoria_id: "c1", nome: "X-Salada" }),
+      produtoBase({ id: "p3", categoria_id: "c2", nome: "Guaraná" }),
+    ]);
+    expect(html).toContain('aria-label="Reordenar X-Burguer"');
+    expect(html).toContain('aria-label="Reordenar X-Salada"');
+    expect(html).not.toContain('aria-label="Reordenar Guaraná"');
+  });
+
+  it("'Sem categoria' com dois produtos também arrasta (categoria_id NULL é grupo)", () => {
+    const html = render(
+      [
+        produtoBase({ id: "p1", categoria_id: null, nome: "Avulso 1" }),
+        produtoBase({ id: "p2", categoria_id: null, nome: "Avulso 2" }),
+      ],
+      [],
+    );
+    expect(html).toContain('aria-label="Reordenar Avulso 1"');
+    expect(html).toContain('aria-label="Reordenar Avulso 2"');
+  });
+
+  /*
+    O `aria-describedby` que o dnd-kit põe em cada alça sai de um CONTADOR DE
+    MÓDULO quando o `DndContext` não recebe `id`. Esse contador sobrevive entre
+    requisições no servidor Node, então o segundo render divergiria do primeiro
+    — e do que o browser gera na hidratação. O `id` fixo no contexto é o que
+    trava isso.
+  */
+  it("dois renders com arrasto produzem HTML idêntico (id fixo no DndContext)", () => {
+    const produtos = [
+      produtoBase({ id: "p1", categoria_id: "c1", nome: "X-Burguer" }),
+      produtoBase({ id: "p2", categoria_id: "c1", nome: "X-Salada" }),
+    ];
+    expect(render(produtos)).toBe(render(produtos));
+  });
+});
