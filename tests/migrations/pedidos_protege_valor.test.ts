@@ -429,7 +429,9 @@ describe("pedidos_protege_valor — caminhos legítimos continuam passando", () 
   it("[8c] UPDATE que reescreve colunas protegidas com o MESMO valor (no-op) não é bloqueado", async () => {
     // Trava contra um GREEN que compare "coluna presente no SET" em vez de
     // `is distinct from`: um PATCH com a linha inteira inalterada é inofensivo.
-    const id = await novoPedido({ aCombinar: false, taxa: 10 }); // total 60
+    // Nasce `confirmado`: `confirmado → em_preparo` é aresta do grafo RN-08
+    // (issue 299 — `pendente → em_preparo` é salto que o banco passa a recusar).
+    const id = await novoPedido({ status: "confirmado", aCombinar: false, taxa: 10 }); // total 60
     await esperarPermitido(
       `update public.pedidos
           set status = 'em_preparo', subtotal = 50, desconto = 0, taxa_entrega = 10,
