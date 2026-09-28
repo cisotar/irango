@@ -161,7 +161,7 @@ export function montarPayload(incremento: IncrementoFaixa, faixas: FaixaEditavel
     const oQue = campo === "pedido_minimo_gratis" ? "o frete grátis" : "o preço";
     return {
       ok: false,
-      erro: `Confira ${oQue} da faixa de ${rotuloFaixa(indice, incremento)}: use valor positivo com até 2 casas decimais.`,
+      erro: `Confira ${oQue} da faixa de ${rotuloFaixa(indice, incremento)}: use valor de R$ 0,00 para cima, com até 2 casas decimais.`,
     };
   }
   return { ok: false, erro: "Confira as faixas de entrega." };

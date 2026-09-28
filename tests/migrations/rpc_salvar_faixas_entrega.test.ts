@@ -296,6 +296,37 @@ describe("[326/F1] escopo por loja e autoridade (T2 antes de qualquer linha)", (
     expect(await zonasDa(lojaA)).toEqual(aAntes);
   });
 
+  it("sessão 'authenticated' com claim role FORJADO 'service_role' ⇒ 'sem posse' pela via do dono; B intacta", async () => {
+    // Os dois sinais de v_e_servico divergem só por forja ou bug de pool
+    // (padrão 20260918130000): o claim diz service_role, o role SQL efetivo
+    // continua 'authenticated'. A via de serviço tem de NEGAR.
+    await semear(lojaB, BASE_B);
+    const bAntes = await zonasDa(lojaB);
+
+    const erro = await erroDe(
+      (async () => {
+        await t.db.exec("begin");
+        try {
+          await t.db.query("set local role authenticated");
+          await t.db.query(`select set_config('request.jwt.claims', $1, true)`, [
+            JSON.stringify({ sub: DONO_A, role: "service_role" }),
+          ]);
+          await t.db.query(`select public.salvar_faixas_entrega($1::uuid, 1, $2::jsonb)`, [
+            lojaB,
+            JSON.stringify(TRES_FAIXAS),
+          ]);
+          await t.db.exec("commit");
+        } catch (e) {
+          await t.db.exec("rollback");
+          throw e;
+        }
+      })(),
+    );
+    esperarErro(erro, "P0001", "salvar_faixas_entrega: sem posse");
+
+    expect(await zonasDa(lojaB)).toEqual(bAntes);
+  });
+
   it("(d) anon ⇒ 42501 nomeando a função; A intacta", async () => {
     await semear(lojaA, BASE_A);
     const aAntes = await zonasDa(lojaA);
