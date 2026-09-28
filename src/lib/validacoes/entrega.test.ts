@@ -20,6 +20,9 @@ import {
   schemaBairro,
   schemaZonaCompleta,
 } from "./entrega";
+// [326] `schemaFaixasEntrega` ainda não existe: resolvido pelo NAMESPACE para o
+// RED ser "export ausente" nos testes novos, sem derrubar os antigos.
+import * as validacoesEntrega from "./entrega";
 
 function zonaValida(over: Record<string, unknown> = {}) {
   return {
@@ -348,5 +351,131 @@ describe("schemaZonaCompleta — faixa condicional ao tipo da zona", () => {
       zonaCompletaValida({ bairros: ["Centro"] }),
     );
     expect(r.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [326/F2] schemaFaixasEntrega — payload da tabela de faixas (RED)
+// ---------------------------------------------------------------------------
+// Autoridade: tasks/326-tabela-de-faixas-de-entrega.md D2 (o cliente manda SÓ
+// `incremento` e, por faixa, `taxa` e `pedido_minimo_gratis`; teto, nome, tipo,
+// loja e zona são derivados no servidor), C2 (sem `ativo` no payload), tabela
+// "Risco por fatia" F2 (`.strict()`, `valorFrete` em taxa e grátis, inc ∈ {1,2},
+// 0..30 faixas).
+//
+// CONTRATO: export const schemaFaixasEntrega (zod) em src/lib/validacoes/entrega.ts
+//   { incremento: 1 | 2, faixas: Array<{ taxa, pedido_minimo_gratis }> } — .strict()
+//   no objeto raiz E em cada faixa; chave extra é RECUSADA (não descartada).
+type SchemaParse = { safeParse(v: unknown): { success: boolean; data?: unknown } };
+
+function schemaFaixas(): SchemaParse {
+  const s = (validacoesEntrega as unknown as { schemaFaixasEntrega?: SchemaParse })
+    .schemaFaixasEntrega;
+  if (s == null || typeof s.safeParse !== "function") {
+    throw new Error(
+      "[RED 326] `src/lib/validacoes/entrega.ts` ainda não exporta `schemaFaixasEntrega` (D2, P3 do plano).",
+    );
+  }
+  return s;
+}
+
+const faixa = (over: Record<string, unknown> = {}) => ({
+  taxa: 4.5,
+  pedido_minimo_gratis: null,
+  ...over,
+});
+const payloadFaixas = (over: Record<string, unknown> = {}) => ({
+  incremento: 1,
+  faixas: [faixa(), faixa({ taxa: 6, pedido_minimo_gratis: 60 })],
+  ...over,
+});
+
+describe("[326] schemaFaixasEntrega — caminho feliz", () => {
+  it("aceita incremento 1 com duas faixas e devolve exatamente o payload", () => {
+    const r = schemaFaixas().safeParse(payloadFaixas());
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual(payloadFaixas());
+  });
+
+  it("aceita incremento 2", () => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ incremento: 2 })).success).toBe(true);
+  });
+
+  it("aceita 0 faixas (lojista remove todas: entrega sem zona)", () => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas: [] })).success).toBe(true);
+  });
+
+  it("aceita 30 faixas (teto)", () => {
+    const faixas = Array.from({ length: 30 }, () => faixa());
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas })).success).toBe(true);
+  });
+
+  it("aceita taxa 0 e grátis 0 (limite inferior)", () => {
+    const r = schemaFaixas().safeParse(
+      payloadFaixas({ faixas: [faixa({ taxa: 0, pedido_minimo_gratis: 0 })] }),
+    );
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("[326] schemaFaixasEntrega — .strict(): servidor deriva, cliente não manda (D2/C2)", () => {
+  it.each([
+    ["raio_max_km", { raio_max_km: 99 }],
+    ["nome", { nome: "Frete grátis" }],
+    ["zona_id", { zona_id: "33333333-3333-3333-3333-333333333333" }],
+    ["loja_id", { loja_id: "22222222-2222-2222-2222-222222222222" }],
+    ["ativo", { ativo: false }],
+    ["tipo", { tipo: "bairro" }],
+  ])("faixa com `%s` extra ⇒ recusado", (_chave, extra) => {
+    const r = schemaFaixas().safeParse(payloadFaixas({ faixas: [faixa(extra)] }));
+    expect(r.success).toBe(false);
+  });
+
+  it.each([
+    ["loja_id", { loja_id: "22222222-2222-2222-2222-222222222222" }],
+    ["zona_id", { zona_id: "33333333-3333-3333-3333-333333333333" }],
+    ["raio_max_km", { raio_max_km: 10 }],
+    ["nome", { nome: "x" }],
+  ])("raiz com `%s` extra ⇒ recusado", (_chave, extra) => {
+    const r = schemaFaixas().safeParse(payloadFaixas(extra));
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("[326] schemaFaixasEntrega — valorFrete em taxa e em pedido_minimo_gratis", () => {
+  it.each([
+    ["taxa negativa", { taxa: -1 }],
+    ["taxa 4.555 (não é centavo)", { taxa: 4.555 }],
+    ["taxa string", { taxa: "4.50" }],
+    ["taxa null", { taxa: null }],
+    ["taxa ausente", { taxa: undefined }],
+    ["grátis negativo", { pedido_minimo_gratis: -10 }],
+    ["grátis 50.005 (não é centavo)", { pedido_minimo_gratis: 50.005 }],
+    ["grátis string", { pedido_minimo_gratis: "60" }],
+  ])("%s ⇒ recusado", (_nome, over) => {
+    const r = schemaFaixas().safeParse(payloadFaixas({ faixas: [faixa(), faixa(over)] }));
+    expect(r.success).toBe(false);
+  });
+
+  it("grátis null é aceito (faixa sem frete grátis)", () => {
+    const r = schemaFaixas().safeParse(
+      payloadFaixas({ faixas: [faixa({ pedido_minimo_gratis: null })] }),
+    );
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("[326] schemaFaixasEntrega — incremento ∈ {1, 2} e 0..30 faixas", () => {
+  it.each([[0], [3], [1.5], ["1"], [null], [-1]])("incremento %j ⇒ recusado", (inc) => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ incremento: inc })).success).toBe(false);
+  });
+
+  it("31 faixas ⇒ recusado", () => {
+    const faixas = Array.from({ length: 31 }, () => faixa());
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas })).success).toBe(false);
+  });
+
+  it("faixas não-array ⇒ recusado", () => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas: faixa() })).success).toBe(false);
   });
 });
