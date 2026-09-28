@@ -282,12 +282,14 @@ CREATE TABLE taxas_entrega (
 ```
 
 Escrita em lote da tela de faixas de km: RPC `public.salvar_faixas_entrega(p_loja_id, p_incremento,
-p_faixas)` (migration `20260929120000_rpc_salvar_faixas_entrega.sql`, issue 326) — **zonas por
+p_faixas)` (migrations `20260929120000_rpc_salvar_faixas_entrega.sql` e
+`20260930120000_rpc_salvar_faixas_entrega_ativo.sql`, issue 326) — **zonas por
 faixa**: apaga TODAS as zonas da loja (qualquer `tipo`, cascata em `taxas_entrega`/`bairros_zona`) e
 grava uma zona `raio_km` + taxa por faixa, numa só transação. O cliente manda só `incremento` (1 ou 2
-km) e, por faixa, `taxa`/`pedido_minimo_gratis`; o servidor deriva o resto — teto `raio_max_km` =
-posição da faixa × `incremento`, `nome` = `"<de>–<até> km"` (en dash), `ativo` sempre `true` (não há
-mais faixa desativada, lojista reduz a área removendo a última). `SECURITY INVOKER`,
+km) e, por faixa, `taxa`/`pedido_minimo_gratis`/`ativo`; o servidor deriva o resto — teto
+`raio_max_km` = posição da faixa × `incremento`, `nome` = `"<de>–<até> km"` (en dash). As faixas
+ativas formam um prefixo: faixa ativa depois de uma desligada é recusada (zod e RPC), então a área de
+entrega nunca tem buraco; o limite é o teto da última ativa. `SECURITY INVOKER`,
 `SET search_path = public, pg_temp`, `GRANT EXECUTE TO authenticated, service_role` — chamada pelos
 dois mundos (lojista e admin), filtro `loja_id = p_loja_id` explícito no corpo — ver `seguranca.md`
 §2, quinta instância do padrão.

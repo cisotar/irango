@@ -461,7 +461,8 @@ camada extra, sem custo. Mesma classe de defesa em profundidade do wrapper `Esco
 ### Quinta instância do padrão INVOKER — T2 de posse explícita antes do DELETE, porque 0 linhas visíveis por RLS não é sinal de erro (issue 326)
 
 `public.salvar_faixas_entrega(p_loja_id, p_incremento, p_faixas)` (migration
-`20260929120000_rpc_salvar_faixas_entrega.sql`) é a terceira função `SECURITY INVOKER` chamada
+`20260929120000_rpc_salvar_faixas_entrega.sql`, recriada em
+`20260930120000_rpc_salvar_faixas_entrega_ativo.sql`) é a terceira função `SECURITY INVOKER` chamada
 **pelos dois mundos** (lojista autenticado e hub admin `service_role`), mesma família da Quarta
 instância acima — mas a razão de existir de T2 aqui é diferente da de `aplicar_frequencia_em_produtos`.
 Lá, um `p_loja_id` alheio faz o `UPDATE` zerar linhas sob RLS e o `row_count` divergente denuncia o
@@ -478,7 +479,8 @@ seção (`coalesce(auth.role(), '') = 'service_role'` **E** `current_setting('ro
 continua `authenticated` (`tests/migrations/rpc_salvar_faixas_entrega.test.ts`, teste "sessão
 'authenticated' com claim role FORJADO 'service_role' ⇒ 'sem posse' pela via do dono") — a via de
 serviço nega pelo sinal de role efetivo mesmo com o claim do JWT mentindo. T3 (valor por item: `taxa`
-e `pedido_minimo_gratis` numéricos, ≥ 0, com no máximo 2 casas) roda depois de T2 e antes da escrita,
+e `pedido_minimo_gratis` numéricos, ≥ 0, com no máximo 2 casas; `ativo` boolean JSON sem coerção;
+nenhuma faixa ativa depois de uma desligada) roda depois de T2 e antes da escrita,
 sobre TODOS os itens do array antes do primeiro `INSERT` — qualquer item inválido derruba a transação
 inteira, estado anterior intacto. Ver `schema.md` §2 para a regra "zonas por faixa" que a RPC deriva.
 
