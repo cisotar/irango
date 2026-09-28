@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/database.types";
+import { buscarStatusPedidoPorToken } from "@/lib/supabase/queries/pedidos";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
@@ -231,3 +234,140 @@ describe("026 queries de pedidos — contrato SQL/RLS (camada 1)", () => {
     expect(await existeId(t, "itens_pedido", c.itemA)).toBe(true);
   });
 });
+
+// ═══════════════════════ issue 329 — buscarStatusPedidoPorToken (leitura enxuta)
+//
+// Fase RED (RN-SC9, spec status-pedido-clicavel-e-latencia.md Frente 2 item 2).
+// Diferente da camada 1 acima, aqui a FUNÇÃO REAL é exercitada: um adaptador
+// mínimo traduz o builder `from().select(cols).eq().eq().maybeSingle()` para SQL
+// e o executa SOB `asService` no Postgres do pglite (as migrations reais). O
+// adaptador só aceita projeção de colunas simples — `*` ou embed
+// (`itens_pedido(...)`) lançam, então uma regressão para a leitura completa
+// cai aqui. `consultas` conta as idas ao banco (prova do "sem query").
+
+type Contador = { consultas: number };
+type Filtro = [coluna: string, valor: unknown];
+const IDENT = /^[a-z_]+$/;
+
+function clientePgliteService(t: TestDb, contador: Contador) {
+  const from = (tabela: string) => {
+    if (!IDENT.test(tabela)) throw new Error(`adaptador pglite: tabela inválida: ${tabela}`);
+    let colunas = "*";
+    const filtros: Filtro[] = [];
+    const executar = async (modo: "single" | "maybeSingle") => {
+      const cols = colunas.split(",").map((c) => c.trim());
+      if (cols.some((c) => !IDENT.test(c))) {
+        throw new Error(`adaptador pglite: projeção não suportada: "${colunas}"`);
+      }
+      if (filtros.some(([c]) => !IDENT.test(c))) throw new Error("adaptador pglite: filtro inválido");
+      contador.consultas++;
+      const where = filtros.map(([c], i) => `${c} = $${i + 1}`).join(" and ");
+      const r = await t.asService((db) =>
+        db.query<Record<string, unknown>>(
+          `select ${cols.join(", ")} from public.${tabela}${where ? ` where ${where}` : ""}`,
+          filtros.map(([, v]) => v),
+        ),
+      );
+      if (r.rows.length > 1) return { data: null, error: { code: "PGRST116", message: "multiple rows" } };
+      if (r.rows.length === 0) {
+        return modo === "single"
+          ? { data: null, error: { code: "PGRST116", message: "0 rows" } }
+          : { data: null, error: null };
+      }
+      return { data: r.rows[0], error: null };
+    };
+    const b = {
+      select(c: string) {
+        colunas = c;
+        return b;
+      },
+      eq(c: string, v: unknown) {
+        filtros.push([c, v]);
+        return b;
+      },
+      maybeSingle: () => executar("maybeSingle"),
+      single: () => executar("single"),
+    };
+    return b;
+  };
+  return { from } as unknown as SupabaseClient<Database>;
+}
+
+describe("329 buscarStatusPedidoPorToken — leitura enxuta sob service_role (pglite)", () => {
+  let t: TestDb;
+  let c: Cenario;
+  let tokenB: string;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    c = await criarCenario(t);
+    const r = await t.asService((db) =>
+      db.query<{ token_acesso: string }>(`select token_acesso from public.pedidos where id = $1`, [
+        c.pedidoB,
+      ]),
+    );
+    tokenB = r.rows[0].token_acesso;
+    // Pedido A em retirada/confirmado: valores distintos dos defaults, para a
+    // leitura não passar por coincidência.
+    await t.asService((db) =>
+      db.query(`update public.pedidos set status = 'confirmado', tipo_entrega = 'retirada' where id = $1`, [
+        c.pedidoA,
+      ]),
+    );
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  it("[13] par (id, token) correto → objeto com chaves EXATAS [status, tipo_entrega] e os valores do banco", async () => {
+    const contador = { consultas: 0 };
+    const r = await buscarStatusPedidoPorToken(clientePgliteService(t, contador), c.pedidoA, c.tokenA);
+
+    expect(r).not.toBeNull();
+    expect(Object.keys(r as object).sort()).toEqual(["status", "tipo_entrega"]);
+    // leitura de conferência via asService (BYPASSRLS): mesmos valores
+    const conf = await t.asService((db) =>
+      db.query<{ status: string; tipo_entrega: string }>(
+        `select status, tipo_entrega from public.pedidos where id = $1`,
+        [c.pedidoA],
+      ),
+    );
+    expect(r).toEqual({ status: conf.rows[0].status, tipo_entrega: conf.rows[0].tipo_entrega });
+    expect(r).toEqual({ status: "confirmado", tipo_entrega: "retirada" });
+    expect(contador.consultas).toBe(1);
+  });
+
+  it("[14] token ERRADO → null (e o pedido existe: a negação é pelo token)", async () => {
+    const contador = { consultas: 0 };
+    const r = await buscarStatusPedidoPorToken(
+      clientePgliteService(t, contador),
+      c.pedidoA,
+      "99999999-9999-9999-9999-999999999999",
+    );
+    expect(r).toBeNull();
+    expect(contador.consultas).toBe(1);
+    expect(await existeId(t, "pedidos", c.pedidoA)).toBe(true);
+  });
+
+  it("[15] token de OUTRO pedido (token de B com id de A) → null (anti-enumeração)", async () => {
+    const contador = { consultas: 0 };
+    const r = await buscarStatusPedidoPorToken(clientePgliteService(t, contador), c.pedidoA, tokenB);
+    expect(r).toBeNull();
+    expect(await existeId(t, "pedidos", c.pedidoA)).toBe(true);
+    expect(await existeId(t, "pedidos", c.pedidoB)).toBe(true);
+  });
+
+  it.each([
+    ["pedidoId não-uuid", "nao-uuid", "TOKEN_OK"],
+    ["token não-uuid", "PEDIDO_A", "token-invalido"],
+    ["pedidoId vazio", "", "TOKEN_OK"],
+  ])("[16] %s → null SEM query", async (_rotulo, id, token) => {
+    const contador = { consultas: 0 };
+    const pedidoId = id === "PEDIDO_A" ? c.pedidoA : id;
+    const tk = token === "TOKEN_OK" ? c.tokenA : token;
+    const r = await buscarStatusPedidoPorToken(clientePgliteService(t, contador), pedidoId, tk);
+    expect(r).toBeNull();
+    expect(contador.consultas).toBe(0);
+  });
+});
+

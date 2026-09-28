@@ -68,5 +68,6 @@ O spec:418 pede revisão da copy pelo `desenhar`; o usuário escolheu a versão 
 
 - **S1** O tipo `AcaoStatus` vai para `src/lib/actions/status.ts`, ao lado de `ResultadoAtualizarStatus`; `AcoesStatus.tsx` e `DetalhePedido.tsx` importam de lá.
 - **S2** A orquestração pura "confirmar → action → refresh" mora em `src/lib/utils/acoesStatusPedido.ts` (nome final escolhido pelo `tdd` e registrado aqui).
+  - Nome final (tdd, 2026-09-28): `executarAcaoStatus(acao, deps): Promise<boolean>` em `src/lib/utils/acoesStatusPedido.ts`, com `deps = { confirmar, aplicarOtimista, executar, avisarSucesso, avisarErro, refresh, registrarErro? }`. O refresh coalescido é `criarRefreshCoalescido({ refresh, atrasoMs? })` → `{ iniciar(), concluir() }` em `src/lib/utils/refresh-coalescido.ts`.
 - **S3** A leitura enxuta (F3) é tratada como crítica (token de pedido, mandato 3 do CLAUDE.md), embora o spec:534 não a liste; custo marginal zero.
 - **S4** O spec **não** vai para `specs/arquivo/` ao ficar 100% `[x]`: a Fase B continua descrita nele, sem issue (spec:530).

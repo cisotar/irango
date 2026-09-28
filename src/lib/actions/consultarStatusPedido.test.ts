@@ -7,8 +7,11 @@
 // seguranca.md §14). A autorização é POSSE DO TOKEN, validada na query escopada
 // `WHERE id AND token_acesso` sob service_role — nenhuma regra vive no cliente.
 //
-// A implementação ./consultarStatusPedido AINDA NÃO EXISTE → estes testes são
-// vermelhos agora (fase RED). A fase GREEN (executar) escreve o mínimo p/ passar.
+// Issue 329 (fase RED, RN-SC9 — spec status-pedido-clicavel-e-latencia.md,
+// Frente 2 item 2): a action passa a usar a LEITURA ENXUTA
+// `buscarStatusPedidoPorToken` (só `status, tipo_entrega`) e NUNCA mais
+// `buscarPedidoPorToken` (pedido inteiro + itens + opcionais + PII). O contrato de
+// retorno `ResultadoStatusPedido` e o rate limit antes da leitura não mudam.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
@@ -29,8 +32,12 @@ vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => createServiceClient(),
 }));
 
+// Leitura ENXUTA (329) — a única via permitida no polling.
+const buscarStatusPedidoPorToken = vi.fn();
+// Leitura COMPLETA — espiã para provar que o polling NUNCA mais a usa.
 const buscarPedidoPorToken = vi.fn();
 vi.mock("@/lib/supabase/queries/pedidos", () => ({
+  buscarStatusPedidoPorToken: (...args: unknown[]) => buscarStatusPedidoPorToken(...args),
   buscarPedidoPorToken: (...args: unknown[]) => buscarPedidoPorToken(...args),
 }));
 
@@ -41,7 +48,8 @@ const PEDIDO_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const TOKEN_OK = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const TOKEN_ERRADO = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 
-// Linha completa COM PII/valores — para provar que a action descarta tudo
+// Linha completa COM PII/valores — defesa em profundidade: mesmo que a
+// projeção da query regrida e devolva a linha inteira, a action descarta tudo
 // exceto status e tipo_entrega.
 function pedidoRow(over: Partial<PedidoComItens> = {}): PedidoComItens {
   return {
@@ -73,7 +81,7 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   // ── Caminho feliz ──────────────────────────────────────────────────────────
 
   it("par (id, token) válido → { encontrado:true, status, tipo_entrega }", async () => {
-    buscarPedidoPorToken.mockResolvedValue(pedidoRow({ status: "em_preparo" }));
+    buscarStatusPedidoPorToken.mockResolvedValue(pedidoRow({ status: "em_preparo" }));
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
     expect(r).toEqual({
       encontrado: true,
@@ -83,10 +91,10 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   });
 
   it("escopa a leitura por (id, token) via service_role", async () => {
-    buscarPedidoPorToken.mockResolvedValue(pedidoRow());
+    buscarStatusPedidoPorToken.mockResolvedValue(pedidoRow());
     await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
     expect(createServiceClient).toHaveBeenCalledTimes(1);
-    expect(buscarPedidoPorToken).toHaveBeenCalledWith(
+    expect(buscarStatusPedidoPorToken).toHaveBeenCalledWith(
       fakeClient,
       PEDIDO_ID,
       TOKEN_OK,
@@ -94,7 +102,7 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   });
 
   it("propaga o status autoritativo do banco (ex.: cancelado)", async () => {
-    buscarPedidoPorToken.mockResolvedValue(pedidoRow({ status: "cancelado" }));
+    buscarStatusPedidoPorToken.mockResolvedValue(pedidoRow({ status: "cancelado" }));
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
     expect(r).toMatchObject({ encontrado: true, status: "cancelado" });
   });
@@ -102,7 +110,7 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   // ── Superfície mínima: NENHUMA PII trafega no polling ──────────────────────
 
   it("retorno encontrado tem exatamente { encontrado, status, tipo_entrega } — sem PII", async () => {
-    buscarPedidoPorToken.mockResolvedValue(pedidoRow());
+    buscarStatusPedidoPorToken.mockResolvedValue(pedidoRow());
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
     expect(Object.keys(r).sort()).toEqual(
       ["encontrado", "status", "tipo_entrega"].sort(),
@@ -110,7 +118,7 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   });
 
   it("retorno NÃO contém nome/telefone/endereço/itens/valores", async () => {
-    buscarPedidoPorToken.mockResolvedValue(pedidoRow());
+    buscarStatusPedidoPorToken.mockResolvedValue(pedidoRow());
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
     const serializado = JSON.stringify(r);
     for (const vazamento of [
@@ -131,14 +139,14 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   // ── Anti-enumeração: par errado indistinguível de inexistente ──────────────
 
   it("token errado (id válido) → { encontrado:false }", async () => {
-    // buscarPedidoPorToken escopado (id, token errado) não casa → null
-    buscarPedidoPorToken.mockResolvedValue(null);
+    // buscarStatusPedidoPorToken escopado (id, token errado) não casa → null
+    buscarStatusPedidoPorToken.mockResolvedValue(null);
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_ERRADO);
     expect(r).toEqual({ encontrado: false });
   });
 
   it("id inexistente → { encontrado:false } (mesmo shape que token errado)", async () => {
-    buscarPedidoPorToken.mockResolvedValue(null);
+    buscarStatusPedidoPorToken.mockResolvedValue(null);
     const r = await consultarStatusPedido(
       "dddddddd-dddd-dddd-dddd-dddddddddddd",
       TOKEN_OK,
@@ -151,21 +159,21 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   it("pedidoId não-UUID → { encontrado:false } SEM I/O", async () => {
     const r = await consultarStatusPedido("nao-uuid", TOKEN_OK);
     expect(r).toEqual({ encontrado: false });
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
+    expect(buscarStatusPedidoPorToken).not.toHaveBeenCalled();
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
   it("token não-UUID → { encontrado:false } SEM I/O", async () => {
     const r = await consultarStatusPedido(PEDIDO_ID, "token-invalido");
     expect(r).toEqual({ encontrado: false });
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
+    expect(buscarStatusPedidoPorToken).not.toHaveBeenCalled();
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
   it("campos vazios → { encontrado:false } SEM I/O", async () => {
     const r = await consultarStatusPedido("", "");
     expect(r).toEqual({ encontrado: false });
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
+    expect(buscarStatusPedidoPorToken).not.toHaveBeenCalled();
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
@@ -173,7 +181,7 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
 
   it("erro de banco → { encontrado:false } + log no servidor, sem vazar e.message", async () => {
     const erro = new Error("connection refused: credencial secreta XYZ");
-    buscarPedidoPorToken.mockRejectedValue(erro);
+    buscarStatusPedidoPorToken.mockRejectedValue(erro);
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
@@ -190,7 +198,7 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
     // A action não valida o enum do status: é dado autoritativo do banco e o
     // cliente decide o que fazer. Se um refactor futuro passar a filtrar/whitelist
     // silenciosamente, este teste quebra.
-    buscarPedidoPorToken.mockResolvedValue(
+    buscarStatusPedidoPorToken.mockResolvedValue(
       pedidoRow({ status: "status_desconhecido_legado" as never }),
     );
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
@@ -202,7 +210,7 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   });
 
   it("tipo_entrega 'retirada' é propagado literalmente (coluna NOT NULL no schema)", async () => {
-    buscarPedidoPorToken.mockResolvedValue(pedidoRow({ tipo_entrega: "retirada" }));
+    buscarStatusPedidoPorToken.mockResolvedValue(pedidoRow({ tipo_entrega: "retirada" }));
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
     expect(r).toEqual({
       encontrado: true,
@@ -214,14 +222,14 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
   it("pedidoId com espaço à volta (uuid válido + whitespace) → { encontrado:false } SEM I/O", async () => {
     const r = await consultarStatusPedido(` ${PEDIDO_ID} `, TOKEN_OK);
     expect(r).toEqual({ encontrado: false });
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
+    expect(buscarStatusPedidoPorToken).not.toHaveBeenCalled();
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
   it("token com espaço à volta (uuid válido + whitespace) → { encontrado:false } SEM I/O", async () => {
     const r = await consultarStatusPedido(PEDIDO_ID, ` ${TOKEN_OK} `);
     expect(r).toEqual({ encontrado: false });
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
+    expect(buscarStatusPedidoPorToken).not.toHaveBeenCalled();
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
@@ -232,6 +240,41 @@ describe("consultarStatusPedido (128 — polling status por token)", () => {
     const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
     expect(r).toEqual({ encontrado: false });
     expect(verificarRateLimit).toHaveBeenCalledWith("statusPedido", "203.0.113.7");
+    expect(buscarStatusPedidoPorToken).not.toHaveBeenCalled();
+  });
+
+  // ── Issue 329: leitura enxuta (RN-SC9) ─────────────────────────────────────
+
+  it("[329] usa buscarStatusPedidoPorToken e NUNCA buscarPedidoPorToken (sem ler itens/PII)", async () => {
+    buscarStatusPedidoPorToken.mockResolvedValue({ status: "confirmado", tipo_entrega: "retirada" });
+
+    const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
+
+    expect(r).toEqual({ encontrado: true, status: "confirmado", tipo_entrega: "retirada" });
+    expect(buscarStatusPedidoPorToken).toHaveBeenCalledTimes(1);
+    expect(buscarStatusPedidoPorToken).toHaveBeenCalledWith(fakeClient, PEDIDO_ID, TOKEN_OK);
     expect(buscarPedidoPorToken).not.toHaveBeenCalled();
+  });
+
+  it("[329] par errado pela leitura enxuta (null) → { encontrado:false }, sem cair na leitura completa", async () => {
+    buscarStatusPedidoPorToken.mockResolvedValue(null);
+
+    const r = await consultarStatusPedido(PEDIDO_ID, TOKEN_ERRADO);
+
+    expect(r).toEqual({ encontrado: false });
+    expect(buscarStatusPedidoPorToken).toHaveBeenCalledTimes(1);
+    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
+  });
+
+  it("[329] rate limit roda ANTES da leitura enxuta", async () => {
+    buscarStatusPedidoPorToken.mockResolvedValue({ status: "pendente", tipo_entrega: "entrega" });
+
+    await consultarStatusPedido(PEDIDO_ID, TOKEN_OK);
+
+    expect(verificarRateLimit).toHaveBeenCalledTimes(1);
+    expect(buscarStatusPedidoPorToken).toHaveBeenCalledTimes(1);
+    expect(verificarRateLimit.mock.invocationCallOrder[0]).toBeLessThan(
+      buscarStatusPedidoPorToken.mock.invocationCallOrder[0],
+    );
   });
 });

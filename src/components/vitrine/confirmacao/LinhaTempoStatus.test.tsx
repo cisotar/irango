@@ -184,3 +184,53 @@ describe("status desconhecido — fallback seguro", () => {
     expect(aSeguir).toBe(PASSOS.length);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. Issue 329 — RN-SC11 (rótulo "Pronto para retirada") e RN-SC3 (atalho)
+// ---------------------------------------------------------------------------
+//
+// `LinhaTempoStatus` NÃO muda de código: o rótulo do passo é `copy.titulo`, então
+// herda o novo título de `copyStatusConfirmacao`. Os casos de retirada ficam
+// vermelhos até a fase GREEN trocar o título; os de "passos anteriores
+// concluídos" são TRAVA (já verdes hoje — spec página 7).
+
+describe("issue 329 — retirada nunca diz 'Saiu para entrega' (RN-SC11)", () => {
+  it("em_preparo + retirada: o passo seguinte ('a seguir') já se chama 'Pronto para retirada'", () => {
+    const html = render("em_preparo", "retirada");
+    expect(html).not.toContain("Saiu para entrega");
+    expect(html).toContain("Pronto para retirada<span class=\"sr-only\"> — a seguir</span>");
+  });
+
+  it("saiu_entrega + retirada: passo atual e selo dizem 'Pronto para retirada'", () => {
+    const html = render("saiu_entrega", "retirada");
+    expect(html).not.toContain("Saiu para entrega");
+    expect(html).toContain("Pronto para retirada<span class=\"sr-only\"> — atual</span>");
+  });
+
+  it("entregue + retirada: o passo concluído também se chama 'Pronto para retirada'", () => {
+    const html = render("entregue", "retirada");
+    expect(html).not.toContain("Saiu para entrega");
+    expect(html).toContain("Pronto para retirada<span class=\"sr-only\"> — concluído</span>");
+  });
+
+  it("[trava] entrega mantém 'Saiu para entrega' no passo", () => {
+    const html = render("em_preparo", "entrega");
+    expect(html).toContain("Saiu para entrega<span class=\"sr-only\"> — a seguir</span>");
+    expect(html).not.toContain("Pronto para retirada");
+  });
+});
+
+describe("issue 329 — [trava] atalho: em saiu_entrega os 3 passos anteriores aparecem concluídos (RN-SC3)", () => {
+  it.each(["entrega", "retirada"])(
+    "saiu_entrega (%s): pendente, confirmado e em_preparo concluídos; saiu_entrega atual; entregue a seguir",
+    (tipo) => {
+      const html = render("saiu_entrega", tipo);
+      for (const titulo of ["Pedido recebido", "Pedido confirmado", "Em preparo"]) {
+        expect(html).toContain(`${titulo}<span class="sr-only"> — concluído</span>`);
+      }
+      expect(html.split("— concluído").length - 1).toBe(3);
+      expect(html.split("— atual").length - 1).toBe(1);
+      expect(html).toContain('Pedido entregue<span class="sr-only"> — a seguir</span>');
+    },
+  );
+});
