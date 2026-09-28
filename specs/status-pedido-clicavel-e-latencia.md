@@ -140,17 +140,17 @@ da linha continua abrindo o detalhe.
 - `DashboardLoja`: **modificado**, recebe `acaoStatus?: AcaoStatus` e repassa para `TabelaPedidos`.
 
 **Behaviors:**
-- [ ] Ver o selo de status com chevron (indicação de clique) nos pedidos `pendente`, `confirmado`, `em_preparo` e `saiu_entrega`. Pedidos `entregue` e `cancelado` mostram o selo estático, sem chevron e sem foco de teclado. Garantido em: cliente (UX). A terminalidade vem de `ehStatusTerminal`, a mesma função usada pelo servidor.
-- [ ] Clicar ou tocar no selo abre o menu **sem** navegar para o detalhe. Clicar no resto da linha continua abrindo o detalhe. Garantido em: cliente (UX).
-- [ ] Ver no menu só as ações válidas para o status atual (`acoesDisponiveis`), nesta ordem: **1º a próxima etapa** (ex.: "Confirmar" em `pendente`), **2º o atalho** "Pronto para retirada" (pedido de retirada) ou "Saiu pra entrega" (pedido de entrega), **3º "Cancelar"**. O atalho só aparece em `pendente` e `confirmado`; em `em_preparo` a próxima etapa já é `saiu_entrega` e aparece uma vez só. Em `saiu_entrega`, a única ação é "Marcar entregue". Garantido em: cliente (UX). **A lista na UI não é barreira**: a autoridade é a Server Action (próximo item).
-- [ ] Avançar para a próxima etapa pelo menu. **Garantido em: Server Action + RLS** (`atualizarStatusPedido` grava só se o status atual for origem permitida, sob a RLS `pedidos_acesso_lojista`), além do trigger da 299 quando existir.
-- [ ] Clicar no atalho "Pronto para retirada"/"Saiu pra entrega": em `em_preparo` grava na hora (é o passo normal); em `pendente` ou `confirmado`, abre a confirmação (`AlertDialog`) e grava ao confirmar (P4). O pedido vai direto para `saiu_entrega`. **Garantido em: Server Action + RLS** (a aresta de atalho é validada no servidor), além do trigger da 299. Pedido de outra loja não casa nenhuma linha (RLS), e a action responde com a mensagem genérica.
-- [ ] Clicar em "Cancelar" abre a confirmação (`AlertDialog`, variante destrutiva) e cancela ao confirmar. **Garantido em: Server Action + RLS.**
-- [ ] Ver o selo trocar na hora para o novo status (preview otimista, com spinner no selo e menu desabilitado enquanto espera). Se o servidor recusar, o selo volta ao status anterior e aparece `toast.error` com a mensagem genérica. Garantido em: **cliente (preview de UX)**. O valor autoritativo é o que o refresh traz do banco depois do sucesso.
-- [ ] Em pedido de retirada em `saiu_entrega`, ver o selo "Pronto para retirada" com ícone `ShoppingBag` (em vez de "Saiu pra entrega" com `Bike`), na mesma cor ciano. Pedido de entrega continua como hoje. Garantido em: cliente (apresentação derivada de `status` + `tipo_entrega` lidos do banco). Não muda o status gravado.
-- [ ] Ver os cartões de métrica ("Pendentes", "Pedidos hoje") atualizados depois da mudança (refresh coalescido). Garantido em: Server Component (métricas derivadas do banco por `calcularMetricasDoDia`).
-- [ ] Operar tudo por teclado e leitor de tela: o gatilho é `<button>` com `aria-label` "Alterar status do pedido #XXXX, atual: Pendente". O menu segue o padrão ARIA do Base UI (setas, Enter, Esc). O foco volta ao gatilho quando o menu ou a confirmação fecham. Garantido em: cliente (UX/WCAG, design-system §5).
-- [ ] No mobile, o alvo de toque do selo tem no mínimo 44×44 px (área de toque estendida, sem aumentar o selo visível). Garantido em: cliente (UX).
+- [x] Ver o selo de status com chevron (indicação de clique) nos pedidos `pendente`, `confirmado`, `em_preparo` e `saiu_entrega`. Pedidos `entregue` e `cancelado` mostram o selo estático, sem chevron e sem foco de teclado. Garantido em: cliente (UX). A terminalidade vem de `ehStatusTerminal`, a mesma função usada pelo servidor.
+- [x] Clicar ou tocar no selo abre o menu **sem** navegar para o detalhe. Clicar no resto da linha continua abrindo o detalhe. Garantido em: cliente (UX).
+- [x] Ver no menu só as ações válidas para o status atual (`acoesDisponiveis`), nesta ordem: **1º a próxima etapa** (ex.: "Confirmar" em `pendente`), **2º o atalho** "Pronto para retirada" (pedido de retirada) ou "Saiu pra entrega" (pedido de entrega), **3º "Cancelar"**. O atalho só aparece em `pendente` e `confirmado`; em `em_preparo` a próxima etapa já é `saiu_entrega` e aparece uma vez só. Em `saiu_entrega`, a única ação é "Marcar entregue". Garantido em: cliente (UX). **A lista na UI não é barreira**: a autoridade é a Server Action (próximo item).
+- [x] Avançar para a próxima etapa pelo menu. **Garantido em: Server Action + RLS** (`atualizarStatusPedido` grava só se o status atual for origem permitida, sob a RLS `pedidos_acesso_lojista`), além do trigger da 299 quando existir.
+- [x] Clicar no atalho "Pronto para retirada"/"Saiu pra entrega": em `em_preparo` grava na hora (é o passo normal); em `pendente` ou `confirmado`, abre a confirmação (`AlertDialog`) e grava ao confirmar (P4). O pedido vai direto para `saiu_entrega`. **Garantido em: Server Action + RLS** (a aresta de atalho é validada no servidor), além do trigger da 299. Pedido de outra loja não casa nenhuma linha (RLS), e a action responde com a mensagem genérica.
+- [x] Clicar em "Cancelar" abre a confirmação (`AlertDialog`, variante destrutiva) e cancela ao confirmar. **Garantido em: Server Action + RLS.**
+- [x] Ver o selo trocar na hora para o novo status (preview otimista, com spinner no selo e menu desabilitado enquanto espera). Se o servidor recusar, o selo volta ao status anterior e aparece `toast.error` com a mensagem genérica. Garantido em: **cliente (preview de UX)**. O valor autoritativo é o que o refresh traz do banco depois do sucesso.
+- [x] Em pedido de retirada em `saiu_entrega`, ver o selo "Pronto para retirada" com ícone `ShoppingBag` (em vez de "Saiu pra entrega" com `Bike`), na mesma cor ciano. Pedido de entrega continua como hoje. Garantido em: cliente (apresentação derivada de `status` + `tipo_entrega` lidos do banco). Não muda o status gravado.
+- [x] Ver os cartões de métrica ("Pendentes", "Pedidos hoje") atualizados depois da mudança (refresh coalescido). Garantido em: Server Component (métricas derivadas do banco por `calcularMetricasDoDia`).
+- [x] Operar tudo por teclado e leitor de tela: o gatilho é `<button>` com `aria-label` "Alterar status do pedido #XXXX, atual: Pendente". O menu segue o padrão ARIA do Base UI (setas, Enter, Esc). O foco volta ao gatilho quando o menu ou a confirmação fecham. Garantido em: cliente (UX/WCAG, design-system §5).
+- [x] No mobile, o alvo de toque do selo tem no mínimo 44×44 px (área de toque estendida, sem aumentar o selo visível). Garantido em: cliente (UX).
 
 ---
 
@@ -164,10 +164,10 @@ clicável se comporta igual ao dashboard.
 - `TabelaPedidos`, `MenuStatusPedido`, `BadgeStatusPedido`: reuso (página 1).
 
 **Behaviors:**
-- [ ] Todos os behaviors da página 1 (selo clicável, atalho, próxima etapa, cancelar, otimista, teclado, toque). Mesmas garantias: **Server Action + RLS**.
-- [ ] Ver o botão de filtro `saiu_entrega` com o nome **"A caminho / pronto"**, porque ele lista juntos os pedidos de entrega a caminho e os de retirada prontos no balcão (P12). Garantido em: cliente (UX).
-- [ ] Com uma aba de filtro ativa (ex.: "Pendentes"), um pedido que muda de status sai da aba depois do refresh. A aba selecionada continua a mesma, porque é estado de UI do `PedidosClient`. Garantido em: cliente (UX de apresentação). A lista já chega filtrada pela RLS.
-- [ ] Mudar o status de 10 pedidos seguidos em menos de 10 s sem travar a tela: cada selo tem seu próprio estado otimista e troca na hora; as Server Actions entram na fila serial do Next (docs 07-mutating-data.md:207), e **um só** refresh roda quando a rajada termina. Nenhum clique se perde. A mudança de cada pedido é gravada assim que a action dele termina, sem esperar o refresh do painel. Garantido em: cliente (UX). Cada escrita é revalidada no servidor de forma independente.
+- [x] Todos os behaviors da página 1 (selo clicável, atalho, próxima etapa, cancelar, otimista, teclado, toque). Mesmas garantias: **Server Action + RLS**.
+- [x] Ver o botão de filtro `saiu_entrega` com o nome **"A caminho / pronto"**, porque ele lista juntos os pedidos de entrega a caminho e os de retirada prontos no balcão (P12). Garantido em: cliente (UX).
+- [x] Com uma aba de filtro ativa (ex.: "Pendentes"), um pedido que muda de status sai da aba depois do refresh. A aba selecionada continua a mesma, porque é estado de UI do `PedidosClient`. Garantido em: cliente (UX de apresentação). A lista já chega filtrada pela RLS.
+- [x] Mudar o status de 10 pedidos seguidos em menos de 10 s sem travar a tela: cada selo tem seu próprio estado otimista e troca na hora; as Server Actions entram na fila serial do Next (docs 07-mutating-data.md:207), e **um só** refresh roda quando a rajada termina. Nenhum clique se perde. A mudança de cada pedido é gravada assim que a action dele termina, sem esperar o refresh do painel. Garantido em: cliente (UX). Cada escrita é revalidada no servidor de forma independente.
 
 ---
 
@@ -181,10 +181,10 @@ da próxima etapa.
 - `DetalhePedido` (`components/painel/DetalhePedido.tsx`): passa `tipo_entrega` a `AcoesStatus` e usa `BadgeStatusPedido` no cabeçalho. Sem mudança de contrato externo.
 
 **Behaviors:**
-- [ ] Ver, nesta ordem: a próxima etapa como botão primário, o atalho **"Pronto para retirada"** (retirada) ou **"Saiu pra entrega"** (entrega) como botão secundário, e "Cancelar". O atalho aparece em `pendente` e `confirmado`. Em `em_preparo`, o botão primário já é "Pronto para retirada"/"Saiu pra entrega" e não há atalho separado. Em `saiu_entrega`, aparece um único botão, "Marcar entregue", sem confirmação, como hoje. Garantido em: cliente (UX).
-- [ ] Usar o atalho a partir de `pendente` ou `confirmado` pela confirmação (P4); a partir de `em_preparo`, direto. **Garantido em: Server Action + RLS** (mesma action e aresta da página 1), além do trigger da 299.
-- [ ] Cancelar pela confirmação (hoje o cancelamento no detalhe não pede confirmação). **Garantido em: Server Action + RLS.**
-- [ ] Depois do sucesso, ver o selo do cabeçalho no novo status ("Pronto para retirada" em pedido de retirada) e os botões da etapa seguinte, via refresh. Garantido em: Server Component (status lido do banco).
+- [x] Ver, nesta ordem: a próxima etapa como botão primário, o atalho **"Pronto para retirada"** (retirada) ou **"Saiu pra entrega"** (entrega) como botão secundário, e "Cancelar". O atalho aparece em `pendente` e `confirmado`. Em `em_preparo`, o botão primário já é "Pronto para retirada"/"Saiu pra entrega" e não há atalho separado. Em `saiu_entrega`, aparece um único botão, "Marcar entregue", sem confirmação, como hoje. Garantido em: cliente (UX).
+- [x] Usar o atalho a partir de `pendente` ou `confirmado` pela confirmação (P4); a partir de `em_preparo`, direto. **Garantido em: Server Action + RLS** (mesma action e aresta da página 1), além do trigger da 299.
+- [x] Cancelar pela confirmação (hoje o cancelamento no detalhe não pede confirmação). **Garantido em: Server Action + RLS.**
+- [x] Depois do sucesso, ver o selo do cabeçalho no novo status ("Pronto para retirada" em pedido de retirada) e os botões da etapa seguinte, via refresh. Garantido em: Server Component (status lido do banco).
 
 ---
 
@@ -196,8 +196,8 @@ da próxima etapa.
 - `admin/assinantes/[lojaId]/page.tsx`: **modificado**, passa `acaoStatus={atualizarStatusPedidoAdmin.bind(null, lojaId)}` a `DashboardLoja` (mesmo padrão de `.../pedidos/[id]/page.tsx:47`, `bind` e não arrow inline).
 
 **Behaviors:**
-- [ ] Todos os behaviors da página 1 na loja-alvo. **Garantido em: Server Action admin + escopo** (`verificarAdminSaaS` antes de elevar a `service_role`, `EscopoLoja` com `.eq("loja_id").eq("id")`, `transicaoPermitida` revalidada). Mudança de status em pedido de outra loja não casa nenhuma linha (`count !== 1`), e a action responde com a mensagem genérica.
-- [ ] Cada mudança fica registrada em `admin_acessos` (`registrarAcessoAdmin`, `acao: "pedido.status"`, `metadados: { de, para }`). O par `{de: "pendente", para: "saiu_entrega"}` já registra o salto. Garantido em: Server Action admin (best-effort, como hoje).
+- [x] Todos os behaviors da página 1 na loja-alvo. **Garantido em: Server Action admin + escopo** (`verificarAdminSaaS` antes de elevar a `service_role`, `EscopoLoja` com `.eq("loja_id").eq("id")`, `transicaoPermitida` revalidada). Mudança de status em pedido de outra loja não casa nenhuma linha (`count !== 1`), e a action responde com a mensagem genérica.
+- [x] Cada mudança fica registrada em `admin_acessos` (`registrarAcessoAdmin`, `acao: "pedido.status"`, `metadados: { de, para }`). O par `{de: "pendente", para: "saiu_entrega"}` já registra o salto. Garantido em: Server Action admin (best-effort, como hoje).
 
 ---
 
@@ -206,7 +206,7 @@ da próxima etapa.
 **Componentes:** `.../pedidos/page.tsx`: **modificado**, passa `acaoStatus` com o `bind` para `PedidosClient`.
 
 **Behaviors:**
-- [ ] Todos os behaviors da página 2 na loja-alvo. **Garantido em: Server Action admin + escopo**, como na página 4.
+- [x] Todos os behaviors da página 2 na loja-alvo. **Garantido em: Server Action admin + escopo**, como na página 4.
 
 ---
 
@@ -215,7 +215,7 @@ da próxima etapa.
 **Componentes:** nenhuma mudança própria. Herda o `AcoesStatus` modificado (página 3) por `DetalhePedido`.
 
 **Behaviors:**
-- [ ] Todos os behaviors da página 3 na loja-alvo. **Garantido em: Server Action admin + escopo**, como na página 4.
+- [x] Todos os behaviors da página 3 na loja-alvo. **Garantido em: Server Action admin + escopo**, como na página 4.
 
 ---
 
@@ -234,10 +234,10 @@ concluídas. O sinal em tempo real está em "Fase B (adiada)".
 - `LinhaTempoStatus`: **sem mudança de código** (já usa `copy.titulo` como rótulo do passo, então herda o novo título). Ganha testes que travam o comportamento.
 
 **Behaviors:**
-- [ ] Em pedido de retirada, ver **"Pronto para retirada"** no título do status e no passo da linha do tempo (hoje só a mensagem diz isso). O passo aparece com esse rótulo também antes de ser alcançado ("a seguir") e depois ("concluído"). Pedido de entrega continua "Saiu para entrega". Garantido em: cliente (apresentação derivada de `status` + `tipo_entrega` devolvidos por `consultarStatusPedido`). Teste: `copyStatusConfirmacao("saiu_entrega", "retirada").titulo` e `renderToStaticMarkup(<LinhaTempoStatus status="em_preparo" tipoEntrega="retirada"/>)` sem "Saiu para entrega".
-- [ ] Ver `pendente`, `confirmado` e `em_preparo` marcados como concluídos quando o pedido chega em `saiu_entrega` direto de `pendente` ou `confirmado`. Garantido em: cliente (apresentação derivada do status autoritativo). **Já funciona hoje.** Falta o teste que trava isso: `renderToStaticMarkup(<LinhaTempoStatus status="saiu_entrega" …/>)` com os 3 passos anteriores em estado "concluído".
-- [ ] O polling para ao chegar em `entregue` ou `cancelado` (existente, `ehStatusTerminal`). O atalho não muda isso, porque `saiu_entrega` não é terminal. Garantido em: cliente sobre o status autoritativo. Teste existente continua verde.
-- [ ] Nenhum dado pessoal nem valor é lido para responder o polling: a consulta lê só `status` e `tipo_entrega`. **Garantido em: Server Action** (projeção na query, `service_role` escopado por `(id, token_acesso)`). Par errado ou inexistente continua indistinguível (anti-enumeração).
+- [x] Em pedido de retirada, ver **"Pronto para retirada"** no título do status e no passo da linha do tempo (hoje só a mensagem diz isso). O passo aparece com esse rótulo também antes de ser alcançado ("a seguir") e depois ("concluído"). Pedido de entrega continua "Saiu para entrega". Garantido em: cliente (apresentação derivada de `status` + `tipo_entrega` devolvidos por `consultarStatusPedido`). Teste: `copyStatusConfirmacao("saiu_entrega", "retirada").titulo` e `renderToStaticMarkup(<LinhaTempoStatus status="em_preparo" tipoEntrega="retirada"/>)` sem "Saiu para entrega".
+- [x] Ver `pendente`, `confirmado` e `em_preparo` marcados como concluídos quando o pedido chega em `saiu_entrega` direto de `pendente` ou `confirmado`. Garantido em: cliente (apresentação derivada do status autoritativo). **Já funciona hoje.** Falta o teste que trava isso: `renderToStaticMarkup(<LinhaTempoStatus status="saiu_entrega" …/>)` com os 3 passos anteriores em estado "concluído".
+- [x] O polling para ao chegar em `entregue` ou `cancelado` (existente, `ehStatusTerminal`). O atalho não muda isso, porque `saiu_entrega` não é terminal. Garantido em: cliente sobre o status autoritativo. Teste existente continua verde.
+- [x] Nenhum dado pessoal nem valor é lido para responder o polling: a consulta lê só `status` e `tipo_entrega`. **Garantido em: Server Action** (projeção na query, `service_role` escopado por `(id, token_acesso)`). Par errado ou inexistente continua indistinguível (anti-enumeração).
 
 ---
 
