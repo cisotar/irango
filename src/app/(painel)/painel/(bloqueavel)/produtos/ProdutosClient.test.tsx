@@ -902,7 +902,9 @@ describe("323 — pílulas de dia editáveis na linha do produto", () => {
     As duas metades do fix de encavalamento no mobile, que nenhum outro teste
     pega (não há jsdom, e largura não se mede em `renderToStaticMarkup`):
 
-      1. linha PRÓPRIA (`basis-full`) — na coluna de texto sobram ~240px;
+      1. linha PRÓPRIA (`basis-full`; `sm:order-last` só decide QUAL linha, já
+         que as ações sobem para a primeira no desktop) — na coluna de texto
+         sobram ~240px;
       2. modo NORMAL, não `compacto` — as 7 numa linha só pedem ~304px e a
          linha tem ~262px; `min-w-[40px]` não encolhe junto com a coluna e uma
          pílula subia por cima da outra. 4+3 no mobile cabe.
@@ -914,7 +916,7 @@ describe("323 — pílulas de dia editáveis na linha do produto", () => {
       produtoBase({ categoria_id: "c1", dias_semana: [1] } as Partial<Produto>),
     ]);
     expect(html).toContain(
-      '<div class="w-full basis-full"><div role="group" aria-label="Dias de Pizza Margherita"',
+      '<div class="w-full basis-full sm:order-last"><div role="group" aria-label="Dias de Pizza Margherita"',
     );
     const inicio = html.indexOf('aria-label="Dias de Pizza Margherita"');
     const grupo = html.slice(inicio, html.indexOf(">", inicio));

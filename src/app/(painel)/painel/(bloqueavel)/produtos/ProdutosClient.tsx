@@ -1402,9 +1402,10 @@ export function ProdutosClient({
                         // mobile: em 360px os 7 filhos somavam ~433px de largura
                         // mínima e o bloco de texto (único flex-1) era esmagado.
                         // As classes `order-*` mantêm UMA árvore só: no mobile as
-                        // ações quebram para a última linha; a partir de `sm` a
-                        // ordem visual volta a ser thumb → texto → opcionais →
-                        // ações → kebab numa linha só.
+                        // ações quebram para a última linha; a partir de `sm` elas
+                        // sobem para a PRIMEIRA linha, ancoradas à direita na
+                        // altura do nome (thumb → texto → ações → kebab), e as
+                        // pílulas de dias descem para a última.
                         <div
                           key={p.id}
                           className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
@@ -1706,7 +1707,7 @@ export function ProdutosClient({
                               Produto permanente nasce com as 7 marcadas —
                               `null` e `[]` continuam distintos no banco. */}
                           {!modoSelecao && (
-                            <div className="w-full basis-full">
+                            <div className="w-full basis-full sm:order-last">
                               <PilulasDeDias
                                 valor={pilulasDoProduto(p)}
                                 onChange={(novas) => void salvarDiasDoProduto(p, novas)}
@@ -1719,7 +1720,7 @@ export function ProdutosClient({
                           {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
                               52.8px na base de 120% do projeto (globals.css). */}
                           {!modoSelecao && (
-                            <div className="order-last flex w-full basis-full gap-2 sm:order-4 sm:w-auto sm:basis-auto">
+                            <div className="order-last flex w-full basis-full gap-2 sm:order-none sm:w-auto sm:shrink-0 sm:basis-auto">
                               <Button
                                 variant="outline"
                                 size="sm"
