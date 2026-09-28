@@ -50,3 +50,11 @@ mensagem próprio, verificado via `asService` que o `status` não mudou.
 
 Crítico (TDD red-first): trava de integridade sobre dado que aparece no comprovante
 do comprador; envolve RLS e migration.
+
+## Nota do grafo (spec status-pedido-clicavel, issue 329)
+
+O grafo inclui `pendente → saiu_entrega` e `confirmado → saiu_entrega` (spec
+status-pedido-clicavel). O teste de paridade em pglite percorre os 36 pares `(de, para)` e
+deriva o esperado de `transicaoPermitida` (não de uma lista própria), afirmando também o
+fragmento da mensagem de recusa: assim o trigger nasce com o atalho e fica vermelho se alguém
+codificar o grafo antigo.

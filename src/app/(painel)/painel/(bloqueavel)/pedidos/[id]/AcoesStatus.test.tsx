@@ -49,9 +49,11 @@ describe("transições exibidas por status (fonte única transicaoPermitida)", (
     const html = render("pendente");
     expect(html).toContain("Confirmar");
     expect(html).toContain("Cancelar");
-    // Inválidas a partir de pendente (não deve haver salto):
+    // Inválidas a partir de pendente (nenhum salto além do atalho da RN-SC2):
     expect(html).not.toContain("Iniciar preparo");
-    expect(html).not.toContain("Saiu pra entrega");
+    // Issue 329 (RN-SC2): o atalho para saiu_entrega aparece em pendente,
+    // com confirmação (RN-SC6) — spec status-pedido-clicavel-e-latencia.md.
+    expect(html).toContain("Saiu pra entrega");
     expect(html).not.toContain("Marcar entregue");
   });
 
@@ -101,5 +103,95 @@ describe("prop acao injetada", () => {
     expect(comAcao).toBe(semAcao);
     // Render estático não dispara onClick; a action injetada não é chamada aqui.
     expect(acao).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (d) ordem RN-SC13 e variante visual (issue 329): próxima etapa (primária,
+// variant="default") → atalho (variant="outline") → Cancelar (variant="destructive")
+// ---------------------------------------------------------------------------
+
+function render2(statusAtual: StatusPedido, tipoEntrega: string | null): string {
+  return renderToStaticMarkup(
+    <AcoesStatus pedidoId={PEDIDO_ID} statusAtual={statusAtual} tipoEntrega={tipoEntrega} />,
+  );
+}
+
+describe("ordem RN-SC13 e variante visual dos botões", () => {
+  it("pendente+entrega: ordem é Confirmar, depois o atalho, depois Cancelar", () => {
+    const html = render2("pendente", "entrega");
+    const posConfirmar = html.indexOf(">Confirmar<");
+    const posAtalho = html.indexOf(">Saiu pra entrega<");
+    const posCancelar = html.indexOf(">Cancelar<");
+    expect(posConfirmar).toBeGreaterThan(-1);
+    expect(posAtalho).toBeGreaterThan(posConfirmar);
+    expect(posCancelar).toBeGreaterThan(posAtalho);
+  });
+
+  it("Confirmar (próxima etapa/principal) usa variant default — fundo bg-primary", () => {
+    const html = render2("pendente", "entrega");
+    const botaoConfirmar = html.slice(0, html.indexOf(">Confirmar<"));
+    const abreBotao = botaoConfirmar.lastIndexOf("<button");
+    const tagConfirmar = html.slice(abreBotao, html.indexOf(">Confirmar<"));
+    expect(tagConfirmar).toContain("bg-primary");
+    expect(tagConfirmar).not.toContain("bg-destructive");
+  });
+
+  it("o atalho (pula etapa) usa variant outline — nunca default nem destructive", () => {
+    const html = render2("pendente", "entrega");
+    const abreBotao = html.lastIndexOf("<button", html.indexOf(">Saiu pra entrega<"));
+    const tagAtalho = html.slice(abreBotao, html.indexOf(">Saiu pra entrega<"));
+    expect(tagAtalho).toContain("border-border bg-background");
+    expect(tagAtalho).not.toContain("bg-primary");
+    expect(tagAtalho).not.toContain("bg-destructive");
+  });
+
+  it("Cancelar usa variant destructive — fundo bg-destructive", () => {
+    const html = render2("pendente", "entrega");
+    const abreBotao = html.lastIndexOf("<button", html.indexOf(">Cancelar<"));
+    const tagCancelar = html.slice(abreBotao, html.indexOf(">Cancelar<"));
+    expect(tagCancelar).toContain("bg-destructive");
+    expect(tagCancelar).not.toContain("bg-primary");
+  });
+
+  it("em_preparo: só UMA ação de saiu_entrega (a etapa normal), sem atalho duplicado", () => {
+    const html = render2("em_preparo", "entrega");
+    expect(html.match(/>Saiu pra entrega</g)).toHaveLength(1);
+    // É a etapa PRINCIPAL (variant default), não o outline do atalho.
+    const abreBotao = html.lastIndexOf("<button", html.indexOf(">Saiu pra entrega<"));
+    const tag = html.slice(abreBotao, html.indexOf(">Saiu pra entrega<"));
+    expect(tag).toContain("bg-primary");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (e) rótulo por modalidade (RN-SC11) refletido nos botões do detalhe
+// ---------------------------------------------------------------------------
+
+describe("rótulo do atalho/etapa por modalidade (RN-SC11)", () => {
+  it("pendente+retirada: atalho mostra 'Pronto para retirada', nunca 'Saiu pra entrega'", () => {
+    const html = render2("pendente", "retirada");
+    expect(html).toContain("Pronto para retirada");
+    expect(html).not.toContain("Saiu pra entrega");
+  });
+
+  it("confirmado+retirada: atalho mostra 'Pronto para retirada'", () => {
+    const html = render2("confirmado", "retirada");
+    expect(html).toContain("Pronto para retirada");
+    expect(html).not.toContain("Saiu pra entrega");
+  });
+
+  it("em_preparo+retirada: a etapa principal é 'Pronto para retirada' (não duplicada) + Cancelar", () => {
+    const html = render2("em_preparo", "retirada");
+    expect(html.match(/>Pronto para retirada</g)).toHaveLength(1);
+    expect(html).toContain("Cancelar");
+    expect(html).not.toContain("Saiu pra entrega");
+  });
+
+  it("saiu_entrega (qualquer modalidade): só 'Marcar entregue', nenhum rótulo de saiu_entrega", () => {
+    const html = render2("saiu_entrega", "retirada");
+    expect(html).toContain("Marcar entregue");
+    expect(html).not.toContain("Pronto para retirada");
+    expect(html).not.toContain("Saiu pra entrega");
   });
 });

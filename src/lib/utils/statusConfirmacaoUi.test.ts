@@ -39,10 +39,25 @@ describe("copyStatusConfirmacao", () => {
   describe("saiu_entrega adapta por tipo_entrega", () => {
     it("retirada menciona retirada", () => {
       const copy = copyStatusConfirmacao("saiu_entrega", "retirada");
-      expect(copy.titulo).toBe("Saiu para entrega");
       expect(copy.mensagem).toBe("Seu pedido está pronto para retirada.");
       expect(copy.mensagem.toLowerCase()).toContain("retirada");
     });
+
+    // RN-SC11 (issue 329): em retirada o TÍTULO também muda — nenhum texto diz
+    // que um pedido de retirada "saiu para entrega". O status gravado não muda.
+    it("retirada troca o TÍTULO para 'Pronto para retirada' (RN-SC11)", () => {
+      expect(copyStatusConfirmacao("saiu_entrega", "retirada")).toEqual({
+        titulo: "Pronto para retirada",
+        mensagem: "Seu pedido está pronto para retirada.",
+      });
+    });
+
+    it.each(["entrega", null, "", "drone"])(
+      "tipo_entrega %j mantém o título 'Saiu para entrega' (default seguro)",
+      (tipo) => {
+        expect(copyStatusConfirmacao("saiu_entrega", tipo).titulo).toBe("Saiu para entrega");
+      },
+    );
 
     it("entrega menciona 'a caminho'", () => {
       const copy = copyStatusConfirmacao("saiu_entrega", "entrega");

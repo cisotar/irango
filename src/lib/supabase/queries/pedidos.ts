@@ -65,6 +65,34 @@ export async function buscarPedidoPorToken(
   return data;
 }
 
+/** Projeção MÍNIMA do polling da confirmação (RN-SC9, issue 329). */
+export type StatusPedidoPorToken = Pick<Pedido, "status" | "tipo_entrega">;
+
+/**
+ * Leitura ENXUTA do cliente sem login (polling de `consultarStatusPedido`, RN-SC9):
+ * mesmo escopo e mesmo guard de `buscarPedidoPorToken` — client **service_role**,
+ * `WHERE id = $1 AND token_acesso = $2` —, mas lê SÓ `status` e `tipo_entrega`.
+ * Nada de itens, valores ou PII (LGPD, `seguranca.md` §20). Par errado,
+ * inexistente ou uuid inválido → `null` (indistinguíveis, anti-enumeração).
+ */
+export async function buscarStatusPedidoPorToken(
+  client: Client,
+  pedidoId: string,
+  token: string,
+): Promise<StatusPedidoPorToken | null> {
+  if (!schemaUuid.safeParse(pedidoId).success || !schemaUuid.safeParse(token).success) {
+    return null;
+  }
+  const { data, error } = await client
+    .from("pedidos")
+    .select("status, tipo_entrega")
+    .eq("id", pedidoId)
+    .eq("token_acesso", token)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 /** Lojista lista pedidos da própria loja (RLS pedidos_acesso_lojista), com itens. Filtro por status opcional. */
 export async function listarPedidosDoDono(
   client: Client,

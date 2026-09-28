@@ -40,8 +40,11 @@ const PEDIDO_ID = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 type Op = {
   tabela: string;
   update?: Record<string, unknown>;
+  insert?: Record<string, unknown>;
   selected?: boolean;
   filtros: Array<[string, unknown]>;
+  /** [329] `.in(col, valores)` encadeados — só estreitam o escopo. */
+  ins: Array<[string, unknown]>;
 };
 let ops: Op[];
 
@@ -58,7 +61,7 @@ function resolverResposta(op: Op): { data: unknown; error: unknown; count?: numb
 function makeChain() {
   const client: Record<string, unknown> = {
     from: (tabela: string) => {
-      const op: Op = { tabela, filtros: [] };
+      const op: Op = { tabela, filtros: [], ins: [] };
       ops.push(op);
       const queryChain: Record<string, unknown> = {};
       const passthrough = (k: string) => {
@@ -73,6 +76,15 @@ function makeChain() {
       );
       queryChain.update = (row: Record<string, unknown>) => {
         op.update = row;
+        return queryChain;
+      };
+      queryChain.in = (col: string, valores: unknown) => {
+        op.ins.push([col, valores]);
+        return queryChain;
+      };
+      // [329] `registrarAcessoAdmin` grava em `admin_acessos` (fire-and-forget).
+      queryChain.insert = (row: Record<string, unknown>) => {
+        op.insert = row;
         return queryChain;
       };
       // Só a cadeia da query é thenável → resolve a resposta da SUA operação.
@@ -93,8 +105,10 @@ vi.mock("@/lib/supabase/service", () => ({
 
 // Prova de admin. Default passa; teste de negação faz mockRejectedValueOnce.
 const verificarAdminSaaS = vi.fn(async () => undefined);
+const ADMIN_ID = "99999999-9999-9999-9999-999999999999";
 vi.mock("@/lib/auth/admin", () => ({
   verificarAdminSaaS: () => verificarAdminSaaS(),
+  obterAdminUserId: () => ADMIN_ID,
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -254,5 +268,112 @@ describe("atualizarStatusPedidoAdmin — corrida/escopo zerado no UPDATE", () =>
     escritaPedido = { data: null, error: { message: "boom" }, count: null };
     const r = await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "confirmado");
     expect(r.ok).toBe(false);
+  });
+});
+
+// ═════════════════ issue 329 (crítica: SIM) — atalho + trava de status (TOCTOU)
+//
+// Fase RED. Spec `specs/status-pedido-clicavel-e-latencia.md` RN-SC2 (atalho
+// pendente|confirmado → saiu_entrega), RN-SC4 (escrita condicionada ao status
+// atual: no admin, `.eq("status", atual)` + `count === 1`) e RN-SC8 (log
+// `{ de, para }` em `admin_acessos`). Fecha o débito TOCTOU da issue 133.
+
+/** `registrarAcessoAdmin` é fire-and-forget: deixa a microtarefa do INSERT rodar. */
+const drenar = () => new Promise((r) => setTimeout(r, 0));
+
+function logsAdmin(): Array<Record<string, unknown>> {
+  return ops
+    .filter((o) => o.tabela === "admin_acessos" && o.insert !== undefined)
+    .map((o) => o.insert as Record<string, unknown>);
+}
+
+describe("atualizarStatusPedidoAdmin — UPDATE travado no status lido (RN-SC4, issue 329)", () => {
+  it("o UPDATE encadeia .eq('status', atual) DEPOIS do escopo loja_id + id", async () => {
+    leituraPedido = { data: { status: "pendente" }, error: null };
+    await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "confirmado");
+    const upd = opUpdatePedidos();
+    expect(upd?.filtros).toEqual([
+      ["loja_id", LOJA_A],
+      ["id", PEDIDO_ID],
+      ["status", "pendente"],
+    ]);
+  });
+
+  it("a trava usa o status LIDO do banco (confirmado), não o destino", async () => {
+    leituraPedido = { data: { status: "confirmado" }, error: null };
+    await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "em_preparo");
+    const upd = opUpdatePedidos();
+    expect(upd?.filtros).toContainEqual(["status", "confirmado"]);
+    expect(upd?.filtros).not.toContainEqual(["status", "em_preparo"]);
+  });
+
+  it("[trava] corrida: status mudou entre a leitura e o UPDATE (count 0) → { ok:false } genérico e NENHUM log em admin_acessos", async () => {
+    leituraPedido = { data: { status: "pendente" }, error: null };
+    escritaPedido = { data: [], error: null, count: 0 };
+
+    const r = await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "saiu_entrega");
+    await drenar();
+
+    expect(r).toEqual({ ok: false, erro: "Não foi possível atualizar o status do pedido." });
+    expect(logsAdmin()).toHaveLength(0);
+  });
+});
+
+describe("atualizarStatusPedidoAdmin — atalho para saiu_entrega (RN-SC2, issue 329)", () => {
+  it("pendente → saiu_entrega → { ok:true } e log { de:'pendente', para:'saiu_entrega' }", async () => {
+    leituraPedido = { data: { status: "pendente" }, error: null };
+
+    const r = await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "saiu_entrega");
+    await drenar();
+
+    expect(r).toEqual({ ok: true, status: "saiu_entrega" });
+    expect(opUpdatePedidos()?.update).toEqual({ status: "saiu_entrega" });
+    const logs = logsAdmin();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      admin_user_id: ADMIN_ID,
+      loja_id: LOJA_A,
+      acao: "pedido.status",
+      entidade_id: PEDIDO_ID,
+      metadados: { de: "pendente", para: "saiu_entrega" },
+    });
+  });
+
+  it("confirmado → saiu_entrega → { ok:true }", async () => {
+    leituraPedido = { data: { status: "confirmado" }, error: null };
+    const r = await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "saiu_entrega");
+    expect(r).toEqual({ ok: true, status: "saiu_entrega" });
+    expect(opUpdatePedidos()?.filtros).toContainEqual(["status", "confirmado"]);
+  });
+
+  it("[trava] entregue → saiu_entrega (atalho não reabre terminal) → { ok:false } SEM UPDATE e sem log", async () => {
+    leituraPedido = { data: { status: "entregue" }, error: null };
+    const r = await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "saiu_entrega");
+    await drenar();
+    expect(r).toEqual({ ok: false, erro: "Não foi possível atualizar o status do pedido." });
+    expect(opUpdatePedidos()).toBeUndefined();
+    expect(logsAdmin()).toHaveLength(0);
+  });
+
+  it("[trava] cancelado → saiu_entrega → { ok:false } SEM UPDATE", async () => {
+    leituraPedido = { data: { status: "cancelado" }, error: null };
+    const r = await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "saiu_entrega");
+    expect(r.ok).toBe(false);
+    expect(opUpdatePedidos()).toBeUndefined();
+  });
+
+  it("[trava] saiu_entrega → cancelado continua proibido → { ok:false } SEM UPDATE", async () => {
+    leituraPedido = { data: { status: "saiu_entrega" }, error: null };
+    const r = await atualizarStatusPedidoAdmin(LOJA_A, PEDIDO_ID, "cancelado");
+    expect(r.ok).toBe(false);
+    expect(opUpdatePedidos()).toBeUndefined();
+  });
+
+  it("[trava] lojaId inválido → { ok:false } ANTES de prepararContextoAdmin (sem prova de admin, sem service_role)", async () => {
+    const r = await atualizarStatusPedidoAdmin("nao-e-uuid", PEDIDO_ID, "saiu_entrega");
+    expect(r.ok).toBe(false);
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(ops).toHaveLength(0);
   });
 });

@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { transicaoPermitida, ehStatusTerminal, type StatusPedido } from "./transicaoStatus";
 
-// Máquina de estados do status do pedido (RN-08, issue 033):
+// Máquina de estados do status do pedido (RN-08, issue 033; afrouxada pela
+// RN-SC2, issue 329 — specs/status-pedido-clicavel-e-latencia.md):
 //   pendente → confirmado → em_preparo → saiu_entrega → entregue
+//   atalho para saiu_entrega a partir de pendente | confirmado (RN-SC2, P3 opção A)
 //   cancelar permitido de: pendente | confirmado | em_preparo
 //   entregue e cancelado são TERMINAIS
-//   sem reversão, sem salto, não permanece no mesmo estado
+//   sem reversão, nenhum outro salto, não permanece no mesmo estado
 
 const TODOS: StatusPedido[] = [
   "pendente",
@@ -47,18 +49,24 @@ describe("transicaoPermitida (máquina de estados — função pura)", () => {
     });
   });
 
-  describe("saltos recusados (não pode pular etapa)", () => {
+  describe("atalho para saiu_entrega (RN-SC2, issue 329 — altera a RN-08)", () => {
+    it("pendente → saiu_entrega é PERMITIDO (atalho)", () => {
+      expect(transicaoPermitida("pendente", "saiu_entrega")).toBe(true);
+    });
+    it("confirmado → saiu_entrega é PERMITIDO (atalho)", () => {
+      expect(transicaoPermitida("confirmado", "saiu_entrega")).toBe(true);
+    });
+  });
+
+  describe("saltos recusados (fora o atalho da RN-SC2, não pode pular etapa)", () => {
     it("pendente → entregue (salto — critério de aceite)", () => {
       expect(transicaoPermitida("pendente", "entregue")).toBe(false);
     });
     it("pendente → em_preparo", () => {
       expect(transicaoPermitida("pendente", "em_preparo")).toBe(false);
     });
-    it("pendente → saiu_entrega", () => {
-      expect(transicaoPermitida("pendente", "saiu_entrega")).toBe(false);
-    });
-    it("confirmado → saiu_entrega", () => {
-      expect(transicaoPermitida("confirmado", "saiu_entrega")).toBe(false);
+    it("em_preparo → entregue (pular saiu_entrega continua proibido)", () => {
+      expect(transicaoPermitida("em_preparo", "entregue")).toBe(false);
     });
     it("confirmado → entregue", () => {
       expect(transicaoPermitida("confirmado", "entregue")).toBe(false);
@@ -93,6 +101,35 @@ describe("transicaoPermitida (máquina de estados — função pura)", () => {
       for (const para of TODOS) {
         expect(transicaoPermitida("cancelado", para)).toBe(false);
       }
+    });
+  });
+
+  describe("tabela EXATA dos 36 pares (RN-SC2, issue 329)", () => {
+    // Conjunto aceito EXATO. Qualquer par fora dele é `false` — inclui
+    // entregue→*, cancelado→*, saiu_entrega→cancelado, *→entregue sem passar
+    // por saiu_entrega, pendente→em_preparo e todas as reversões/no-ops.
+    const ACEITOS = new Set([
+      "pendente>confirmado",
+      "pendente>cancelado",
+      "pendente>saiu_entrega",
+      "confirmado>em_preparo",
+      "confirmado>cancelado",
+      "confirmado>saiu_entrega",
+      "em_preparo>saiu_entrega",
+      "em_preparo>cancelado",
+      "saiu_entrega>entregue",
+    ]);
+    const PARES = TODOS.flatMap((de) =>
+      TODOS.map((para) => [de, para, ACEITOS.has(`${de}>${para}`)] as const),
+    );
+
+    it("a tabela cobre os 36 pares (6×6) e aceita exatamente 9", () => {
+      expect(PARES).toHaveLength(36);
+      expect(PARES.filter(([, , aceito]) => aceito)).toHaveLength(9);
+    });
+
+    it.each(PARES)("%s → %s = %s", (de, para, aceito) => {
+      expect(transicaoPermitida(de, para)).toBe(aceito);
     });
   });
 

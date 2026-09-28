@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowLeft, Store } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { totalDaLinha } from "@/lib/utils/calcularTotal";
@@ -20,6 +19,7 @@ import {
 } from "@/lib/utils/rotulosPedido";
 import { ListaOpcionaisItem } from "@/components/vitrine/ListaOpcionaisItem";
 import { SeletorImprimirPedido } from "@/components/painel/SeletorImprimirPedido";
+import { BadgeStatusPedido } from "@/components/painel/BadgeStatusPedido";
 import { ComandaCozinha } from "@/components/painel/ComandaCozinha";
 import { ReciboCliente } from "@/components/painel/ReciboCliente";
 import {
@@ -29,44 +29,8 @@ import {
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 import type { VarianteImpressao } from "@/lib/utils/variantesHabilitadas";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
-import {
-  AcoesStatus,
-  type AcaoStatus,
-} from "@/app/(painel)/painel/(bloqueavel)/pedidos/[id]/AcoesStatus";
-
-/**
- * Detalhe do pedido — componente compartilhado (issue 125). Server Component
- * puro de apresentação: SEM `'use client'` e SEM I/O. Consumido pelo painel do
- * lojista e (depois) pela page admin (140), sem cópia de markup.
- *
- * Exibe o SNAPSHOT gravado (nome/preço dos itens, subtotal/desconto/taxa/total)
- * — nunca recalcula nem busca o produto atual. O escopo por tenant e o I/O ficam
- * 100% no caller (page/loader), que já lê o pedido de forma escopada (RLS no
- * painel; loader `service_role` no admin). `basePedidos` só dirige a navegação
- * do link "Voltar" — não é barreira de segurança. `acaoStatus` é repassado a
- * `AcoesStatus` como `acao`; ambas as variantes revalidam `transicaoPermitida`
- * no servidor (RN-08). `acaoFrete` (spec modalidades-entrega-loja) é a Server
- * Action de registro do frete combinado — lojista ou admin `.bind(null, lojaId)`;
- * sem ela o campo não é montado (fail-closed). A autoridade (D1/D2/D3, total
- * recalculado do banco) é da action.
- */
-const APARENCIA_STATUS: Record<
-  StatusPedido,
-  { rotulo: string; classes: string }
-> = {
-  pendente: { rotulo: "Pendente", classes: "bg-amber-100 text-amber-800" },
-  confirmado: { rotulo: "Confirmado", classes: "bg-blue-100 text-blue-800" },
-  em_preparo: {
-    rotulo: "Em preparo",
-    classes: "bg-orange-100 text-orange-800",
-  },
-  saiu_entrega: {
-    rotulo: "Saiu pra entrega",
-    classes: "bg-cyan-100 text-cyan-800",
-  },
-  entregue: { rotulo: "Entregue", classes: "bg-green-100 text-green-800" },
-  cancelado: { rotulo: "Cancelado", classes: "bg-red-100 text-red-800" },
-};
+import { AcoesStatus } from "@/app/(painel)/painel/(bloqueavel)/pedidos/[id]/AcoesStatus";
+import type { AcaoStatus } from "@/lib/actions/status";
 
 type EnderecoEntrega = {
   cep?: string;
@@ -85,6 +49,22 @@ function lerEndereco(valor: unknown): EnderecoEntrega | null {
   return valor as EnderecoEntrega;
 }
 
+/**
+ * Detalhe do pedido — componente compartilhado (issue 125). Server Component
+ * puro de apresentação: SEM `'use client'` e SEM I/O. Consumido pelo painel do
+ * lojista e (depois) pela page admin (140), sem cópia de markup.
+ *
+ * Exibe o SNAPSHOT gravado (nome/preço dos itens, subtotal/desconto/taxa/total)
+ * — nunca recalcula nem busca o produto atual. O escopo por tenant e o I/O ficam
+ * 100% no caller (page/loader), que já lê o pedido de forma escopada (RLS no
+ * painel; loader `service_role` no admin). `basePedidos` só dirige a navegação
+ * do link "Voltar" — não é barreira de segurança. `acaoStatus` é repassado a
+ * `AcoesStatus` como `acao`; ambas as variantes revalidam `transicaoPermitida`
+ * no servidor (RN-08). `acaoFrete` (spec modalidades-entrega-loja) é a Server
+ * Action de registro do frete combinado — lojista ou admin `.bind(null, lojaId)`;
+ * sem ela o campo não é montado (fail-closed). A autoridade (D1/D2/D3, total
+ * recalculado do banco) é da action.
+ */
 export function DetalhePedido({
   pedido,
   basePedidos = "/painel/pedidos",
@@ -108,7 +88,6 @@ export function DetalhePedido({
   nomeLoja?: string;
 }): ReactElement {
   const status = pedido.status as StatusPedido;
-  const aparencia = APARENCIA_STATUS[status];
   const endereco = lerEndereco(pedido.endereco_entrega);
   const retirada = pedido.tipo_entrega === "retirada";
   // Espelho de UX das travas da action (D1/D2): o campo só existe enquanto o
@@ -139,11 +118,7 @@ export function DetalhePedido({
               Pedido #{formatarNumeroPedido(pedido.id)}
             </h1>
             <div className="flex items-center gap-2">
-              {aparencia && (
-                <Badge className={`border-transparent ${aparencia.classes}`}>
-                  {aparencia.rotulo}
-                </Badge>
-              )}
+              <BadgeStatusPedido status={status} tipoEntrega={pedido.tipo_entrega} />
               {/* RN-M1: seletor SÓ com variantes habilitadas; lista vazia ⇒
                   fora do DOM (não escondido por CSS). Recebe exatamente a lista
                   autorizada. Wrapper `no-print` além do `no-print` interno do
@@ -165,6 +140,7 @@ export function DetalhePedido({
             <AcoesStatus
               pedidoId={pedido.id}
               statusAtual={status}
+              tipoEntrega={pedido.tipo_entrega}
               acao={acaoStatus}
             />
           </CardContent>

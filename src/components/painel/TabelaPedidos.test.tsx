@@ -62,3 +62,61 @@ describe("TabelaPedidos href", () => {
     expect(html).not.toContain("/admin/assinantes/L1/pedidos/");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Selo de status clicável (issue 329) — StatusDaLinha: terminal vs. aberto,
+// e a invariante de markup "nenhum <button> dentro de <a>" nos dois breakpoints.
+// ---------------------------------------------------------------------------
+
+describe("TabelaPedidos — selo de status por linha (StatusDaLinha)", () => {
+  it("status terminal (entregue/cancelado): selo estático, SEM <button> em nenhuma linha", () => {
+    const html = render({
+      pedidos: [
+        { ...PEDIDO, id: "11111111-1111-1111-1111-111111111111", status: "entregue" },
+        { ...PEDIDO, id: "22222222-2222-2222-2222-222222222222", status: "cancelado" },
+      ],
+    });
+    expect(html).not.toContain("<button");
+    expect(html).toContain("Entregue");
+    expect(html).toContain("Cancelado");
+  });
+
+  it("status aberto (ex.: pendente): a célula de status vira <button> (gatilho do menu), desktop + mobile", () => {
+    const html = render({ pedidos: [{ ...PEDIDO, status: "pendente" }] });
+    const gatilhos = html.match(/<button[^>]*aria-haspopup="menu"/g);
+    expect(gatilhos).toHaveLength(2); // desktop + mobile
+  });
+
+  it("nenhum <button> aparece DENTRO de um <a> — nem no card mobile, nem na linha desktop", () => {
+    const html = render({ pedidos: [{ ...PEDIDO, status: "pendente" }] });
+    // Cada <a>...</a> (o link do pedido) não deve conter nenhum <button dentro.
+    const linksComBotaoDentro = html.match(/<a\b[^>]*>(?:(?!<\/a>)[\s\S])*<button/g);
+    expect(linksComBotaoDentro).toBeNull();
+  });
+
+  it("aria-label do gatilho carrega o número do pedido e o rótulo do status atual", () => {
+    const html = render({
+      pedidos: [{ ...PEDIDO, id: "abcdef12-3456-7890-abcd-ef1234567890", status: "confirmado" }],
+    });
+    expect(html).toContain(
+      'aria-label="Alterar status do pedido #ABCDEF12, atual: Confirmado"',
+    );
+  });
+
+  it("pedido de retirada em saiu_entrega mostra 'Pronto para retirada' (aria-label + texto do selo, em cada breakpoint) e NUNCA 'Saiu pra entrega'", () => {
+    const html = render({
+      pedidos: [{ ...PEDIDO, status: "saiu_entrega", tipo_entrega: "retirada" }],
+    });
+    // 1 aria-label + 1 texto visível do selo, × 2 breakpoints (desktop+mobile).
+    expect(html.match(/Pronto para retirada/g)).toHaveLength(4);
+    expect(html).not.toContain("Saiu pra entrega");
+  });
+
+  it("pedido de entrega em saiu_entrega mostra 'Saiu pra entrega', nunca 'Pronto para retirada'", () => {
+    const html = render({
+      pedidos: [{ ...PEDIDO, status: "saiu_entrega", tipo_entrega: "entrega" }],
+    });
+    expect(html.match(/Saiu pra entrega/g)).toHaveLength(4);
+    expect(html).not.toContain("Pronto para retirada");
+  });
+});

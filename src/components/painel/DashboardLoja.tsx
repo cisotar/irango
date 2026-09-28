@@ -8,6 +8,7 @@ import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { calcularMetricasDoDia } from "@/lib/utils/metricasPedidos";
 import { paraLinhaPedido } from "@/lib/utils/paraLinhaPedido";
 import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
+import type { AcaoStatus } from "@/lib/actions/status";
 
 /**
  * Dashboard do lojista compartilhado (issue 122). Server Component de
@@ -21,14 +22,18 @@ import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
  *
  * `basePedidos` dirige tanto o link "Ver todos" quanto o `href` de cada linha
  * da tabela (via `TabelaPedidos`). É navegação, não barreira de segurança — o
- * isolamento por loja permanece 100% no caller.
+ * isolamento por loja permanece 100% no caller. `acaoStatus` (issue 329) é a
+ * Server Action do selo clicável, repassada à tabela (default: a do lojista; o
+ * hub admin injeta a variante `.bind(null, lojaId)`).
  */
 export function DashboardLoja({
   pedidos,
   basePedidos = "/painel/pedidos",
+  acaoStatus,
 }: {
   pedidos: PedidoComItens[];
   basePedidos?: string;
+  acaoStatus?: AcaoStatus;
 }): ReactElement {
   const metricas = calcularMetricasDoDia(pedidos);
   const recentes = pedidos.slice(0, 20).map(paraLinhaPedido);
@@ -64,7 +69,11 @@ export function DashboardLoja({
           </Link>
         </CardHeader>
         <CardContent>
-          <TabelaPedidos pedidos={recentes} basePedidos={basePedidos} />
+          <TabelaPedidos
+            pedidos={recentes}
+            basePedidos={basePedidos}
+            acaoStatus={acaoStatus}
+          />
         </CardContent>
       </Card>
     </>
