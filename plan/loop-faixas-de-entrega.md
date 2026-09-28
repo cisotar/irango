@@ -31,7 +31,7 @@ contexto:
 - C2 lojista NÃO pode pular faixas. Sem switch de "ativa" por faixa: a coluna "Ativa" do mockup e o switch mobile saem. Toda faixa gravada é `ativo = true`; o payload não tem `ativo`. Para reduzir a área, o lojista remove a última faixa. `calcularFrete` não muda.
 - C3 lixeira só na última faixa.
 - C4 zona antiga "até 7 km R$8": abre como 7 faixas de 1 km a R$8 (preço igual ao de hoje), gravadas só se o lojista salvar. Teto decimal ou bairro/CEP: tabela vazia + aviso com as zonas atuais.
-- C5 `tasks/325` é resolvida por este loop: `rm` na higiene.
+- C5 `tasks/325` é resolvida por este loop: `rm` na higiene. **Revogado na iteração 2:** C2, C3 e C5 substituídos por C2'–C8 da issue 326 (§ Iteração 2); a 325 fica.
 
 ## Arquivos
 criar:

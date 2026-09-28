@@ -46,3 +46,29 @@ Contexto de negócio: nenhuma loja em produção usa `bairro` nem `faixa_cep`. Z
 ## Caminho do mockup
 
 `mockups/entregas-faixas-km.html` (referência de estrutura e copy; preservado intacto).
+
+## Iteração 2 — retorno do checklist do usuário (2026-09-27)
+
+Checklist: itens 1, 7 e 9 ok; 8 fica para produção. As decisões abaixo **substituem** C2, C3 e C5.
+
+- **C2' faixa desligável, sem buraco.** Cada linha tem switch "Ativa", colado à direita. Desligar a faixa `i`
+  desliga `i` e todas as abaixo, com modal "ATENÇÃO, esta faixa e todas as faixas abaixo serão desligadas."
+  Ligar uma faixa desligada `i` liga da primeira desligada até `i`, com modal de confirmação
+  (ex.: 2–3, 3–4, 4–5 desligadas; ligar 4–5 liga as três). Invariante: as faixas ativas formam um
+  prefixo — nenhuma ativa depois de uma desligada. O payload volta a ter `ativo` por faixa; zod e RPC
+  recusam faixa ativa depois de desligada. Limite de entrega = teto da última faixa ATIVA.
+- **C3' lixeira em todas as linhas**, colada à direita. Lixeira na faixa `i` apaga `i` e todas as abaixo,
+  com modal "ATENÇÃO, esta faixa e todas as faixas abaixo serão deletadas."
+- **C5' issue 325 NÃO é resolvida.** CEP e bairro voltam depois (débito registrado na 325); faixas de km
+  é a forma sugerida. A 325 fica em `tasks/`.
+- **C6 salvamento automático, sem botão Salvar.** Grava ao sair do campo de preço ou de frete grátis, ao
+  ligar/desligar um switch, ao adicionar e ao remover faixa. Nunca grava valor pela metade: faixa com
+  preço vazio ou inválido não dispara gravação e mostra o erro na linha. Estado visível
+  "Salvando…"/"Salvo". A confirmação de substituir zonas antigas (D4) aparece na primeira gravação.
+- **C7 máscara de moeda** nos campos de preço e frete grátis: duas casas decimais automáticas, vírgula
+  decimal (reusar o `IMaskInput` com `mask={Number}` de `src/components/painel/RegistrarFreteCombinado.tsx`).
+- **C8 visual:** colunas ocupam a largura do card com espaçamento generoso; o switch de frete grátis tem
+  rótulo visível "Frete grátis" junto dele; o switch "Ativa" e a lixeira ficam à direita.
+- **C1 (ajuste):** o alerta de preço compara só faixas ativas.
+- **D4 (ajuste):** zonas já gravadas no formato da RPC (nome derivado, tetos contíguos do incremento)
+  abrem com o `ativo` de cada zona, inclusive o final desligado. O caminho de legado não muda.
