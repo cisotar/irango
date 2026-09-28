@@ -188,7 +188,9 @@ Tabela autoritativa em architecture.md (§"Componentes Compartilhados") e spec. 
 |------------|-------------|-------|-------|
 | `ui/*` | `components/ui/` | ambos | primitivos shadcn (gerado pelo CLI — não editar) |
 | `HeaderLoja` | `components/vitrine/HeaderLoja.tsx` | vitrine | nome, logo, BadgeStatus; consome tema da loja |
-| `BadgeStatus` | `components/vitrine/BadgeStatus.tsx` | vitrine **e** painel | status (loja aberta/fechada; status de pedido) |
+| `BadgeStatus` | `components/vitrine/BadgeStatus.tsx` | vitrine **e** painel | status de funcionamento da loja (aberta/fechada) |
+| `BadgeStatusPedido` | `components/painel/BadgeStatusPedido.tsx` | painel | selo do status de pedido (cor + texto + ícone; rótulo por modalidade via `rotuloStatusPedido`) |
+| `MenuStatusPedido` | `components/painel/MenuStatusPedido.tsx` | painel | gatilho no selo de pedido não terminal: menu com as ações de `acoesDisponiveis` (próxima etapa, atalho, Cancelar), `AlertDialog` quando `exigeConfirmacao`, otimista + refresh coalescido |
 | `CardProduto` | `components/vitrine/CardProduto.tsx` | vitrine | foto, nome, descrição, preço, "Adicionar"; consome tema |
 | `Carrinho` | `components/vitrine/Carrinho.tsx` | vitrine | itens, subtotal, cupom, frete, total, "Finalizar pedido" |
 | `TabelaProdutos` | `components/painel/TabelaProdutos.tsx` | painel | catálogo com ações |
@@ -197,7 +199,7 @@ Tabela autoritativa em architecture.md (§"Componentes Compartilhados") e spec. 
 | `TabelaPedidos` | `components/painel/TabelaPedidos.tsx` | painel | lista de pedidos (dashboard e gestão) |
 | `MensagemFormatada` | `components/shared/MensagemFormatada.tsx` | vitrine **e** painel | renderiza a mensagem estruturada do modal sazonal (`ModalSazonal.tsx` na vitrine, preview em `PromocoesClient.tsx` no painel) — mesmo renderer fail-closed dos dois lados, `seguranca.md` §15-C |
 
-**`BadgeStatus` e `MensagemFormatada` são os componentes que cruzam os dois mundos.** `BadgeStatus` cobre tanto o status de funcionamento da loja na vitrine ("Aberto agora" / "Fechado") quanto o status de pedido no painel (badge colorido na `TabelaPedidos`). Suas cores **não** vêm do tema da loja — são cores de sistema (ver §8). `MensagemFormatada` usa a **paleta fixa** de `src/lib/constants/paletaMensagem.ts` (`PALETA_MENSAGEM`, uma chave por cor — nunca hex livre do lojista) com contraste WCAG ≥ 4,5:1 sobre o fundo do modal travado por teste (`contrasteWcag.test.ts`); igual a `BadgeStatus`, é independente de `lojas.tema`.
+**`BadgeStatus` e `MensagemFormatada` são os componentes que cruzam os dois mundos.** `BadgeStatus` cobre o status de funcionamento da loja ("Aberto agora" / "Fechado") na vitrine e no painel (`NavPainel`). O status de **pedido** no painel e no hub admin é `BadgeStatusPedido` (estático em `entregue`/`cancelado`) e `MenuStatusPedido` (gatilho nos demais), issue 329. Suas cores **não** vêm do tema da loja — são cores de sistema (ver §8). `MensagemFormatada` usa a **paleta fixa** de `src/lib/constants/paletaMensagem.ts` (`PALETA_MENSAGEM`, uma chave por cor — nunca hex livre do lojista) com contraste WCAG ≥ 4,5:1 sobre o fundo do modal travado por teste (`contrasteWcag.test.ts`); igual a `BadgeStatus`, é independente de `lojas.tema`.
 
 ---
 
@@ -216,7 +218,7 @@ Calculado por `lib/utils/lojaAberta.ts` + `hooks/useLojaAberta.ts` (spec).
 
 ### 8.2 Status de pedido (painel)
 
-Máquina de estados da spec RN-08: `pendente → confirmado → em_preparo → saiu_entrega → entregue`; cancelamento a partir de `pendente`, `confirmado` ou `em_preparo`.
+Máquina de estados da spec RN-08: `pendente → confirmado → em_preparo → saiu_entrega → entregue`; cancelamento a partir de `pendente`, `confirmado` ou `em_preparo`. Atalho (RN-SC2, issue 329): `pendente → saiu_entrega` e `confirmado → saiu_entrega`, com confirmação em `AlertDialog` (RN-SC6); "Cancelar" também pede confirmação. Grafo único em `TRANSICOES` (`lib/utils/transicaoStatus.ts`); as ações da UI derivam dele em `acoesDisponiveis` (`lib/utils/acoesStatusPedido.ts`), na ordem próxima etapa → atalho → Cancelar (RN-SC13).
 
 Mapa semântico de cor (**proposta** — revisar antes de fixar como token):
 
@@ -225,7 +227,7 @@ Mapa semântico de cor (**proposta** — revisar antes de fixar como token):
 | `pendente` | Pendente | âmbar / amarelo | requer ação do lojista |
 | `confirmado` | Confirmado | azul | aceito, em fila |
 | `em_preparo` | Em preparo | índigo / roxo | trabalho em andamento |
-| `saiu_entrega` | Saiu pra entrega | ciano / azul-claro | em trânsito |
+| `saiu_entrega` | Saiu pra entrega · **Pronto para retirada** quando `tipo_entrega = 'retirada'` (RN-SC11; só o rótulo muda, o status gravado não) | ciano / azul-claro | em trânsito / aguardando no balcão |
 | `entregue` | Entregue | verde | sucesso, terminal |
 | `cancelado` | Cancelado | vermelho/neutro | encerrado sem sucesso |
 
