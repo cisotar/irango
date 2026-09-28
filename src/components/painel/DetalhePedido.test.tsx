@@ -107,6 +107,43 @@ describe("DetalhePedido cabeçalho", () => {
       "Entregue",
     );
   });
+
+  it("saiu_entrega + retirada: badge do cabeçalho mostra 'Pronto para retirada', nunca 'Saiu pra entrega' (RN-SC11)", () => {
+    const html = render({
+      pedido: pedido({ status: "saiu_entrega", tipo_entrega: "retirada" }),
+    });
+    expect(html).toContain("Pronto para retirada");
+    expect(html).not.toContain("Saiu pra entrega");
+  });
+
+  it("saiu_entrega + entrega: badge do cabeçalho mostra 'Saiu pra entrega'", () => {
+    const html = render({
+      pedido: pedido({ status: "saiu_entrega", tipo_entrega: "entrega" }),
+    });
+    expect(html).toContain("Saiu pra entrega");
+    expect(html).not.toContain("Pronto para retirada");
+  });
+});
+
+describe("DetalhePedido — bloco de Ações (AcoesStatus, issue 329)", () => {
+  it("status terminal (entregue): mensagem de finalizado, sem nenhum <button> de ação", () => {
+    const html = render({ pedido: pedido({ status: "entregue" }) });
+    expect(html).toContain("Este pedido está finalizado");
+    // 8 chars do id (id hex) não colidem com "<button" — checagem direta.
+    expect(html).not.toContain("<button");
+  });
+
+  it("status terminal (cancelado): mensagem de finalizado, sem nenhum <button> de ação", () => {
+    const html = render({ pedido: pedido({ status: "cancelado" }) });
+    expect(html).toContain("Este pedido está finalizado");
+    expect(html).not.toContain("<button");
+  });
+
+  it("status aberto (pendente): pelo menos um <button> de ação (Confirmar) no bloco de Ações", () => {
+    const html = render({ pedido: pedido({ status: "pendente" }) });
+    expect(html).toContain("<button");
+    expect(html).toContain(">Confirmar<");
+  });
 });
 
 describe("DetalhePedido link Voltar", () => {

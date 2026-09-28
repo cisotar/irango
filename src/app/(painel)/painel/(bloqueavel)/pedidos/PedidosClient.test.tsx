@@ -65,3 +65,36 @@ describe("PedidosClient repasse de basePedidos", () => {
     expect(html).not.toContain("/admin/assinantes/L1/pedidos/");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Filtro "A caminho / pronto" (P12, issue 329) — junta saiu_entrega de entrega
+// e retirada numa aba só, em vez de duas abas separadas por modalidade.
+// ---------------------------------------------------------------------------
+
+describe("PedidosClient — aba de filtro por status", () => {
+  it("existe uma aba 'A caminho / pronto' (junta saiu_entrega de entrega e retirada)", () => {
+    const html = renderToStaticMarkup(<PedidosClient pedidos={[PEDIDO]} />);
+    expect(html).toContain("A caminho / pronto");
+  });
+
+  it("NÃO existem abas separadas 'Saiu pra entrega' ou 'Pronto para retirada' (uma aba só para saiu_entrega)", () => {
+    const html = renderToStaticMarkup(<PedidosClient pedidos={[PEDIDO]} />);
+    expect(html).not.toContain("Saiu pra entrega");
+    expect(html).not.toContain("Pronto para retirada");
+  });
+
+  it("no estado inicial (filtro 'todos'), só a aba 'Todos' está com aria-selected=true", () => {
+    const html = renderToStaticMarkup(<PedidosClient pedidos={[PEDIDO]} />);
+    const abasSelecionadas = html.match(/aria-selected="true"[^>]*>([^<]*)</g) ?? [];
+    expect(abasSelecionadas).toHaveLength(1);
+    expect(abasSelecionadas[0]).toContain("Todos");
+  });
+
+  it("a aba 'A caminho / pronto' começa NÃO selecionada", () => {
+    const html = renderToStaticMarkup(<PedidosClient pedidos={[PEDIDO]} />);
+    const inicioBotao = html.indexOf(">A caminho / pronto<");
+    const abreBotao = html.lastIndexOf("<button", inicioBotao);
+    const tag = html.slice(abreBotao, inicioBotao);
+    expect(tag).toContain('aria-selected="false"');
+  });
+});

@@ -433,3 +433,87 @@ describe("executarAcaoStatus — orquestração pura (confirmar → otimista →
     expect(deps.executar).toHaveBeenCalledWith("entregue");
   });
 });
+
+// ───────────────────────────────────────── copy literal da confirmação (issue 329)
+// Texto EXATO da issue (spec:413-417) — nenhum teste acima cobria o CONTEÚDO da
+// copy (só a orquestração). Se alguém reescrever a mensagem "de cabeça" e
+// mudar uma palavra, esses testes pegam.
+
+describe("copyConfirmacaoAcao — texto literal (spec:413-417, issue 329)", () => {
+  const ATALHO_RETIRADA: Acao = {
+    status: "saiu_entrega",
+    rotulo: "Pronto para retirada",
+    destrutiva: false,
+    exigeConfirmacao: true,
+    principal: false,
+  };
+  const ATALHO_ENTREGA: Acao = {
+    status: "saiu_entrega",
+    rotulo: "Saiu pra entrega",
+    destrutiva: false,
+    exigeConfirmacao: true,
+    principal: false,
+  };
+  const CANCELAR: Acao = {
+    status: "cancelado",
+    rotulo: "Cancelar",
+    destrutiva: true,
+    exigeConfirmacao: true,
+    principal: false,
+  };
+
+  it("atalho retirada: título, corpo e botões exatos da issue", async () => {
+    const { copyConfirmacaoAcao } = await mod();
+    const copy = copyConfirmacaoAcao(ATALHO_RETIRADA, "ABCD1234", "retirada");
+    expect(copy).toEqual({
+      titulo: "Marcar o pedido #ABCD1234 como pronto para retirada?",
+      corpo:
+        "Confirme só se o pedido já está pronto no balcão. O cliente é avisado na hora, e o pedido não pode mais ser cancelado.",
+      confirmar: "Pronto para retirada",
+      voltar: "Voltar",
+    });
+  });
+
+  it("atalho entrega: título, corpo e botões exatos da issue", async () => {
+    const { copyConfirmacaoAcao } = await mod();
+    const copy = copyConfirmacaoAcao(ATALHO_ENTREGA, "ABCD1234", "entrega");
+    expect(copy).toEqual({
+      titulo: "Marcar o pedido #ABCD1234 como saiu para entrega?",
+      corpo:
+        "Confirme só se o pedido já saiu com o entregador. O cliente é avisado na hora, e o pedido não pode mais ser cancelado.",
+      confirmar: "Saiu pra entrega",
+      voltar: "Voltar",
+    });
+  });
+
+  it("cancelar: título, corpo e botões exatos da issue, independente da modalidade", async () => {
+    const { copyConfirmacaoAcao } = await mod();
+    const copy = copyConfirmacaoAcao(CANCELAR, "ABCD1234", "entrega");
+    expect(copy).toEqual({
+      titulo: "Cancelar o pedido #ABCD1234?",
+      corpo:
+        "Confirme só se o pedido não vai ser preparado. O cliente vê o pedido como cancelado. Não dá para desfazer.",
+      confirmar: "Cancelar pedido",
+      voltar: "Voltar",
+    });
+  });
+
+  it("cancelar usa a copy de cancelar mesmo com tipoEntrega='retirada' (destino decide, não a modalidade)", async () => {
+    const { copyConfirmacaoAcao } = await mod();
+    const copy = copyConfirmacaoAcao(CANCELAR, "ABCD1234", "retirada");
+    expect(copy.titulo).toBe("Cancelar o pedido #ABCD1234?");
+    expect(copy.confirmar).toBe("Cancelar pedido");
+  });
+
+  it("modalidade desconhecida (null) no atalho cai no texto de entrega (default seguro), nunca no de retirada", async () => {
+    const { copyConfirmacaoAcao } = await mod();
+    const copy = copyConfirmacaoAcao(ATALHO_ENTREGA, "ABCD1234", null);
+    expect(copy.titulo).toBe("Marcar o pedido #ABCD1234 como saiu para entrega?");
+  });
+
+  it("o número do pedido do parâmetro aparece literalmente no título — não é recalculado aqui", async () => {
+    const { copyConfirmacaoAcao } = await mod();
+    const copy = copyConfirmacaoAcao(CANCELAR, "FFFF0000", "entrega");
+    expect(copy.titulo).toBe("Cancelar o pedido #FFFF0000?");
+  });
+});
