@@ -121,13 +121,23 @@
   .dispositivo.pc .pilulas { grid-template-columns: repeat(7, 1fr); }
   .pilulas button { min-height: 44px; min-width: 44px; border-radius: 12px; border: 1px solid #d4d4d4;
                     background: #fff; color: var(--tinta); font: inherit; font-weight: 500; }
-  .pilulas button.on { background: var(--primaria); border-color: var(--primaria);
+  .pilulas.antes button.on { background: var(--primaria); border-color: var(--primaria);
                        color: var(--primaria-texto); font-weight: 600; }
   .pilulas.antes { gap: 9.6px; }
   .pilulas.antes button { font-size: 16.8px; }
-  .pilulas.depois { gap: 7.2px; }
-  .pilulas.depois button { font-size: 14.4px; }
+  /* depois: o <button> é a célula de toque (44px, transparente); o <span> é a
+     pílula desenhada (32px, arredondada, largura do texto). */
+  .pilulas.depois { gap: 0 6px; }
+  .pilulas.depois button { border: 0; background: transparent; padding: 0; display: grid;
+                           place-items: center; font-size: 14.4px; }
+  .pilulas.depois button span { height: 32px; padding: 0 14px; display: inline-flex;
+                                align-items: center; border-radius: 999px;
+                                border: 1px solid #d4d4d4; background: #fff; }
+  .pilulas.depois button.on span { background: var(--primaria); border-color: var(--primaria);
+                                   color: var(--primaria-texto); }
   .dispositivo.pc .pilulas.depois { max-width: 537.6px; }
+  .pilulas.toque button { outline: 1.5px dashed var(--medida); outline-offset: -1.5px; }
+  .legenda-toque { margin: 6px 0 0; font-size: .58rem; color: var(--medida); }
 
   /* ---- formulário de vigência (cardápio) ---- */
   .form { background: var(--card); border-radius: 12px; box-shadow: 0 0 0 1px var(--limite-card);
@@ -151,15 +161,15 @@
 
 <div class="wrap">
   <header>
-    <h1>Foto do produto maior, pílulas de dia menores</h1>
-    <p>Hoje a foto do produto some ao lado da fileira de dias da semana: é um quadrado de 48px contra sete botões que esticam na largura toda do card. A proposta aumenta a foto e deixa as pílulas mais enxutas. Nada muda no comportamento.</p>
+    <h1>Foto do produto maior, pílulas de dia mais leves</h1>
+    <p>Hoje a foto do produto some ao lado da fileira de dias da semana: é um quadrado de 48px contra sete botões que esticam na largura toda do card. A proposta aumenta a foto e troca os botões de dia por pílulas de 32px. A área de toque continua com 44px, só deixa de ser pintada. Nada muda no comportamento.</p>
   </header>
 
   <section class="resumo" aria-label="Resumo das medidas">
     <div><b>Foto do produto</b><span>Mobile <span class="num">48 → 60px</span> · PC <span class="num">48 → 72px</span>. Só na linha de produto.</span></div>
-    <div><b>Pílulas no PC</b><span>Largura de cada uma <span class="num">~113 → ~71px</span>, fonte <span class="num">16,8 → 14,4px</span>.</span></div>
-    <div><b>Pílulas no mobile</b><span>Fonte <span class="num">16,8 → 14,4px</span>, espaço entre elas <span class="num">9,6 → 7,2px</span>. Continua 4 + 3.</span></div>
-    <div><b>Altura das pílulas</b><span>Fica em <span class="num">44px</span>, o mínimo de toque do design system.</span></div>
+    <div><b>Pílula desenhada</b><span>Altura <span class="num">44 → 32px</span>, cantos arredondados, largura do texto. Fonte <span class="num">16,8 → 14,4px</span>.</span></div>
+    <div><b>Pílulas no PC</b><span>A fileira para de esticar na largura do card: célula de <span class="num">~113 → ~71px</span>.</span></div>
+    <div><b>Área de toque</b><span>Continua <span class="num">44px</span> de altura (design system §5), agora transparente.</span></div>
   </section>
 
   <!-- =========================== PC =========================== -->
@@ -219,7 +229,7 @@
                 </div>
                 <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
                 <div class="pilulas-caixa"><div class="pilulas depois">
-                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                  <button><span>Dom</span></button><button class="on"><span>Seg</span></button><button class="on"><span>Ter</span></button><button class="on"><span>Qua</span></button><button class="on"><span>Qui</span></button><button class="on"><span>Sex</span></button><button><span>Sáb</span></button>
                 </div></div>
               </div>
               <div class="linha">
@@ -232,7 +242,7 @@
                 </div>
                 <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
                 <div class="pilulas-caixa"><div class="pilulas depois">
-                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+                  <button><span>Dom</span></button><button class="on"><span>Seg</span></button><button class="on"><span>Ter</span></button><button class="on"><span>Qua</span></button><button class="on"><span>Qui</span></button><button class="on"><span>Sex</span></button><button><span>Sáb</span></button>
                 </div></div>
               </div>
             </div>
@@ -260,7 +270,7 @@
           <div class="rolagem"><div class="viewport pc"><div class="form">
             <div class="cab-form"><label>Dias da semana</label><small>opcional</small></div>
             <div class="pilulas depois">
-              <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+              <button><span>Dom</span></button><button class="on"><span>Seg</span></button><button class="on"><span>Ter</span></button><button class="on"><span>Qua</span></button><button class="on"><span>Qui</span></button><button class="on"><span>Sex</span></button><button><span>Sáb</span></button>
             </div>
             <div class="atalhos"><span class="btn">Todos os dias</span><span class="btn fantasma">Limpar</span></div>
             <p class="nota">Nenhum dia marcado = todos os dias.</p>
@@ -309,9 +319,9 @@
                   <span class="preco-linha"><span class="preco">R$ 45,00</span><span class="badge">Disponível</span></span>
                   <span class="chip">◷ seg a sex</span>
                 </div>
-                <div class="pilulas-caixa"><div class="pilulas depois">
-                  <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
-                </div></div>
+                <div class="pilulas-caixa"><div class="pilulas depois toque">
+                  <button><span>Dom</span></button><button class="on"><span>Seg</span></button><button class="on"><span>Ter</span></button><button class="on"><span>Qua</span></button><button class="on"><span>Qui</span></button><button class="on"><span>Sex</span></button><button><span>Sáb</span></button>
+                </div><p class="legenda-toque">Tracejado: área de toque de 44px (invisível na tela real).</p></div>
                 <div class="acoes"><span class="btn">Ocultar</span><span class="btn">Marcar esgotado</span><span class="btn kebab">⋮</span></div>
               </div>
             </div>
@@ -339,7 +349,7 @@
           <div class="rolagem"><div class="viewport cel"><div class="form">
             <div class="cab-form"><label>Dias da semana</label><small>opcional</small></div>
             <div class="pilulas depois">
-              <button>Dom</button><button class="on">Seg</button><button class="on">Ter</button><button class="on">Qua</button><button class="on">Qui</button><button class="on">Sex</button><button>Sáb</button>
+              <button><span>Dom</span></button><button class="on"><span>Seg</span></button><button class="on"><span>Ter</span></button><button class="on"><span>Qua</span></button><button class="on"><span>Qui</span></button><button class="on"><span>Sex</span></button><button><span>Sáb</span></button>
             </div>
             <div class="atalhos"><span class="btn">Todos os dias</span><span class="btn fantasma">Limpar</span></div>
             <p class="nota">Nenhum dia marcado = todos os dias.</p>
@@ -351,17 +361,21 @@
 
   <section class="codigo">
     <h2>O que muda no código</h2>
-    <p>Dois arquivos de produção. O modo compacto das pílulas e toda a lógica ficam iguais.</p>
+    <p>Dois arquivos de produção e a regra no design system. O modo compacto e toda a lógica ficam iguais.</p>
 <pre><b>src/components/painel/ThumbProduto.tsx</b>  (usado só na linha de produto)
 <span class="del">- relative size-10 shrink-0 …           sizes="40px"</span>
 <span class="add">+ relative size-[60px] sm:size-[72px] shrink-0 …   sizes="72px"</span>
 <span class="del">- flex size-10 shrink-0 … text-sm …     (avatar com a inicial)</span>
 <span class="add">+ flex size-[60px] sm:size-[72px] shrink-0 … text-base …</span>
 
-<b>src/components/painel/PilulasDeDias.tsx</b>  (modo normal)
+<b>src/components/painel/PilulasDeDias.tsx</b>  (modo normal; compacto não muda)
 <span class="del">- "grid grid-cols-4 gap-2 sm:grid-cols-7"</span>
-<span class="add">+ "grid grid-cols-4 gap-1.5 sm:max-w-md sm:grid-cols-7"</span>
-<span class="del">- … rounded-lg border text-sm …</span>
-<span class="add">+ … rounded-lg border ${compacto ? "text-sm" : "text-xs"} …</span></pre>
+<span class="add">+ "grid grid-cols-4 gap-x-1.5 sm:max-w-md sm:grid-cols-7"</span>
+<span class="del">- &lt;button className="… rounded-lg border text-sm bg-primary …"&gt;{dia.rotulo}&lt;/button&gt;</span>
+<span class="add">+ &lt;button className="min-h-[44px] min-w-[44px] grid place-items-center text-xs …"&gt;</span>
+<span class="add">+   &lt;span className="h-[32px] rounded-full border px-3 … bg-primary"&gt;{dia.rotulo}&lt;/span&gt;</span>
+<span class="add">+ &lt;/button&gt;</span>
+
+<b>references/design-system.md</b>  §5: registra a pílula de 32px dentro do alvo de 44px</pre>
   </section>
 </div>
