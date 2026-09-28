@@ -931,6 +931,8 @@ Quando a loja está em `modo_frete = 'a_combinar'` (ou o geocoding falhou), o pe
 
 A RLS filtra **linha**, não **coluna** — o dono autenticado tem UPDATE na linha inteira do próprio pedido, então um PATCH direto ao PostgREST poderia reescrever `subtotal`/`desconto`/`taxa_entrega`/`total`/`frete_a_combinar` fora dessa Server Action. Defesa em profundidade: trigger `pedidos_protege_valor_trg` (BEFORE UPDATE, `SECURITY INVOKER` — nunca DEFINER, senão `current_user` vira o dono da função) rejeita qualquer mudança nessas colunas exceto a vinda de `service_role`/`postgres`/`supabase_admin` ou a transição legítima `frete_a_combinar` true→false, revalidando no próprio trigger que `total = greatest(0, subtotal - desconto) + taxa_entrega`. Migration: `20260925130000_pedidos_protege_valor.sql`.
 
+O contorno em 3 PATCHes ("descancela → registra frete → recancela") é fechado pelo trigger `pedidos_transicao_status_trg` (issue 299, migration `20260930130000_pedidos_transicao_status.sql`): para autor não-sistema, `status` só muda pelas arestas de `TRANSICOES` (`cancelado`/`entregue` sem saída) e `tipo_entrega` é imutável. Ver schema.md `pedidos`.
+
 ---
 
 ## 11. Headers HTTP de Segurança
