@@ -82,6 +82,12 @@ import {
   ReordenarProdutos,
   type ManipuladorReordenarProdutos,
 } from "@/components/painel/ReordenarProdutos";
+import {
+  ArrastoDeProdutos,
+  GrupoArrastavel,
+  LinhaProdutoArrastavel,
+  type PosicaoArrastavel,
+} from "@/components/painel/ArrastoDeProdutos";
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
 import { BarraSelecaoLote } from "@/components/painel/BarraSelecaoLote";
 import { BarraSelecaoFrequencia } from "@/components/painel/BarraSelecaoFrequencia";
@@ -98,6 +104,7 @@ import type {
   LoteDeProdutos,
   VinculosPorProduto,
 } from "@/components/painel/contrato-lote";
+import { moverPorDeslocamento } from "@/lib/utils/reordenar";
 import { visibilidadeDe } from "@/lib/utils/vigenciaCardapio";
 import type { SumicoDoProduto } from "@/lib/utils/contarProdutosEscondidos";
 import {
@@ -297,9 +304,18 @@ type EscopoGrade =
   | { tipo: "todas" }
   | { tipo: "grupo"; id: string | null; nome: string };
 
+/**
+ * Chave do grupo na listagem. `null` é o grupo "Sem categoria"
+ * (`categoria_id IS NULL`), que é um grupo ordenável de verdade — não "nenhum
+ * grupo". Existe para que os mapas por grupo não usem `""` como chave dele.
+ */
+function chaveDoGrupo(id: string | null): string {
+  return id ?? "sem-categoria";
+}
+
 /** Id do botão que abre a grade de um grupo, para devolver o foco na saída. */
 function idBotaoGrade(id: string | null): string {
-  return `abrir-grade-${id ?? "sem-categoria"}`;
+  return `abrir-grade-${chaveDoGrupo(id)}`;
 }
 
 /**
@@ -615,6 +631,131 @@ export function ProdutosClient({
     () => agruparPorCategoria(produtos, categorias),
     [produtos, categorias],
   );
+
+  /*
+    Ordem ARRASTADA de um grupo, otimista — a mesma mecânica de `diasOtimistas`
+    logo abaixo. Guardamos junto a `base`: a sequência de ids de onde o arrasto
+    saiu. Quando o servidor devolve uma sequência diferente da `base` — porque a
+    escrita voltou, porque o modo "Reordenar" gravou outra coisa, ou porque um
+    produto nasceu/sumiu — o rascunho é DESCARTADO. Sem isso o otimista ficaria
+    por cima do valor fresco do SSR e a listagem mostraria uma ordem que não
+    está mais no banco.
+
+    🔴 Preview de UX, não autoridade: `ordem` NUNCA sai do cliente. A action
+    recebe só a sequência de ids e deriva `ordem` e `loja_id` no servidor.
+  */
+  const [ordemArrastada, setOrdemArrastada] = useState<
+    Record<string, { base: string; ids: string[] }>
+  >({});
+  const [ordemEmVoo, setOrdemEmVoo] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  /** Os grupos como a TELA os mostra: ordem do servidor, ou a arrastada. */
+  const gruposExibidos = useMemo(
+    () =>
+      grupos.map((grupo) => {
+        const rascunho = ordemArrastada[chaveDoGrupo(grupo.id)];
+        if (
+          rascunho == null ||
+          rascunho.base !== grupo.produtos.map((p) => p.id).join(",")
+        ) {
+          return grupo;
+        }
+        const porId = new Map(grupo.produtos.map((p) => [p.id, p]));
+        return {
+          ...grupo,
+          produtos: rascunho.ids.flatMap((id) => porId.get(id) ?? []),
+        };
+      }),
+    [grupos, ordemArrastada],
+  );
+
+  /*
+    Arrastar direto na listagem, sem entrar no modo "Reordenar" (o botão do
+    cabeçalho continua). Mesmo gate do botão: abaixo de dois produtos não há
+    ordem a escolher. No modo de SELEÇÃO a única ação da linha é a da barra
+    (design-system §5), então a alça não existe lá.
+  */
+  const podeArrastarProdutos =
+    !modoSelecao && gruposExibidos.some((g) => g.produtos.length >= 2);
+
+  /** `produto.id → posição dentro da categoria`, para os anúncios em pt-BR. */
+  const posicoesArrastaveis = useMemo(() => {
+    const mapa: Record<string, PosicaoArrastavel> = {};
+    for (const grupo of gruposExibidos) {
+      if (grupo.produtos.length < 2) continue;
+      grupo.produtos.forEach((p, indice) => {
+        mapa[p.id] = {
+          nome: p.nome,
+          posicao: indice + 1,
+          total: grupo.produtos.length,
+        };
+      });
+    }
+    return mapa;
+  }, [gruposExibidos]);
+
+  /**
+   * Persiste a sequência inteira do grupo. Uma ida ao banco por arrasto: não há
+   * debounce aqui (diferente do `ModoReordenar`, onde o lojista dispara muitos
+   * movimentos seguidos) — enquanto a escrita está em voo a alça do grupo fica
+   * inerte, porque duas sequências concorrentes teriam como vencedora a última
+   * a CHEGAR, não a última ARRASTADA.
+   */
+  async function salvarOrdemArrastada(
+    grupo: GrupoProdutos,
+    base: string[],
+    ids: string[],
+  ): Promise<void> {
+    const chave = chaveDoGrupo(grupo.id);
+    setOrdemArrastada((atual) => ({
+      ...atual,
+      [chave]: { base: base.join(","), ids },
+    }));
+    setOrdemEmVoo((atual) => new Set(atual).add(chave));
+    try {
+      const resultado = await acoes.reordenarProdutos({
+        categoria_id: grupo.id,
+        produto_ids: ids,
+      });
+      if (!resultado.ok) {
+        setOrdemArrastada((atual) => {
+          const proximo = { ...atual };
+          delete proximo[chave];
+          return proximo;
+        });
+        // A frase é a da action; nenhum detalhe de banco é redigido aqui.
+        toast.error(resultado.erro);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setOrdemEmVoo((atual) => {
+        const proximo = new Set(atual);
+        proximo.delete(chave);
+        return proximo;
+      });
+    }
+  }
+
+  function aoSoltarProduto(idArrastado: string, idDestino: string) {
+    const grupo = gruposExibidos.find((g) =>
+      g.produtos.some((p) => p.id === idArrastado),
+    );
+    // Soltar sobre outra categoria não move nada: a ordem só existe DENTRO do
+    // grupo, e mudar de categoria é outra escrita (`categoria_id` do produto).
+    if (grupo == null || !grupo.produtos.some((p) => p.id === idDestino)) return;
+    const atuais = grupo.produtos.map((p) => p.id);
+    const proxima = moverPorDeslocamento(
+      atuais,
+      atuais.indexOf(idArrastado),
+      atuais.indexOf(idDestino),
+    );
+    // Mesma referência = no-op: nenhuma escrita (regra de `moverPorDeslocamento`).
+    if (proxima === atuais) return;
+    void salvarOrdemArrastada(grupo, atuais, [...proxima]);
+  }
 
   /**
    * `categoria_id → nº de produtos`. Contado sobre TODOS os produtos, não sobre
@@ -1213,643 +1354,659 @@ export function ProdutosClient({
             </Card>
           )}
 
-          {/* Sanfona na listagem NORMAL, todas ABERTAS por padrão: a tela não
-              pode mudar de comportamento para quem nunca vai reordenar nada. */}
-          <Accordion
-            multiple
-            defaultValue={grupos.map((g) => g.id ?? "sem-categoria")}
-            className="gap-6"
+          {/* Arrastar direto na listagem, sem entrar em modo nenhum: o botão
+              "Reordenar" do cabeçalho continua, para as setas, "mover para o
+              topo" e o teclado sem alça. */}
+          <ArrastoDeProdutos
+            ativo={podeArrastarProdutos}
+            posicoes={posicoesArrastaveis}
+            aoSoltar={aoSoltarProduto}
           >
-            {grupos.map((grupo) => (
-              <AccordionItem
-                key={grupo.id ?? "sem-categoria"}
-                value={grupo.id ?? "sem-categoria"}
-                className="not-last:border-b-0"
-              >
-                <Card>
-                  {/* O gatilho da sanfona é um <button>; as ações da categoria
-                      ficam FORA dele (button aninhado é HTML inválido). O <h3>
-                      do AccordionHeader é quem cresce. */}
-                  <div className="flex items-center justify-between gap-2 border-b px-4 [&>h3]:min-w-0 [&>h3]:flex-1">
-                    <AccordionTrigger className="min-h-[44px] font-heading text-lg font-semibold text-foreground">
-                      {grupo.nome}
-                    </AccordionTrigger>
-                    {modoSelecao ? (
-                      // Par de botões com o NÚMERO escrito, nunca checkbox
-                      // tri-estado: o `Checkbox` gerado renderiza `CheckIcon`
-                      // fixo e um estado "mixed" mostraria um ✓ — corrigir isso
-                      // exigiria editar arquivo do shadcn CLI. Grupo vazio não
-                      // ganha o par: "Selecionar os 0" é controle para operação
-                      // impossível.
-                      grupo.produtos.length === 0 ? null : (
-                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="min-h-[44px]"
-                            onClick={() =>
-                              selecionarGrupo(grupo.produtos.map((p) => p.id))
-                            }
-                          >
-                            Selecionar os {grupo.produtos.length}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="min-h-[44px]"
-                            aria-label={`Limpar a seleção de ${grupo.nome}`}
-                            onClick={() =>
-                              limparGrupo(grupo.produtos.map((p) => p.id))
-                            }
-                          >
-                            Limpar
-                          </Button>
-                        </div>
-                      )
-                    ) : grupo.id != null || grupo.produtos.length > 0 ? (
-                      <div className="flex shrink-0 items-center">
-                        {/* [293] Ponto de entrada do modo reordenar PRODUTOS —
-                            no cabeçalho do grupo, porque a permutação é
-                            escopada a UMA categoria. Espelha o gate do modo de
-                            categorias (`podeReordenar`): abaixo de 2 itens não
-                            há ordem a escolher, e um botão desabilitado ali só
-                            produziria "por que não funciona?" sem resposta.
-                            Aparece também no grupo "Sem categoria" — lá o
-                            `categoria_id` é NULL e a RPC o trata como grupo. */}
-                        {grupo.produtos.length >= 2 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Reordenar produtos de ${grupo.nome}`}
-                            onClick={() =>
-                              setGrupoReordenando({
-                                id: grupo.id,
-                                nome: grupo.nome,
-                              })
-                            }
-                          >
-                            <ArrowUpDown className="size-4" />
-                            <span className="hidden sm:inline">Reordenar</span>
-                          </Button>
-                        )}
-                        {/* [323] A grade produto × dia ESCOPADA a este grupo.
-                            Fica fora do `grupo.id != null` abaixo porque "Sem
-                            categoria" também tem dias por produto. Grupo vazio
-                            não ganha o botão: grade de zero produto é controle
-                            para operação impossível (mesma régua de
-                            "Selecionar os {n}"). */}
-                        {grupo.produtos.length > 0 && (
-                          <Button
-                            id={idBotaoGrade(grupo.id)}
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Dias da semana dos produtos de ${grupo.nome}`}
-                            onClick={() =>
-                              setEscopoGrade({
-                                tipo: "grupo",
-                                id: grupo.id,
-                                nome: grupo.nome,
-                              })
-                            }
-                          >
-                            <CalendarDays className="size-4" />
-                            <span className="hidden sm:inline">Dias</span>
-                          </Button>
-                        )}
-                        {grupo.id != null && (
-                          <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            if (grupo.id == null) return;
-                            setCategoriaOpcionaisAberta({
-                              id: grupo.id,
-                              nome: grupo.nome,
-                            });
-                          }}
-                        >
-                          <SlidersHorizontal className="size-4" />
-                          Opcionais
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label={`Novo produto em ${grupo.nome}`}
-                          onClick={() => abrirCriarNaCategoria(grupo.id)}
-                        >
-                          <Plus className="size-4" />
-                          {/* Ícone-only no mobile para o header não estourar
-                              (RN-5); o aria-label mantém o nome acessível. */}
-                          <span className="hidden sm:inline">Novo produto</span>
-                        </Button>
-                          </>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                  {/* [323] Faixa de ESTADO da categoria (mockup §1.2), só
-                      leitura: sem ela o lojista vê "Disponível" em todos os
-                      produtos de uma categoria oculta e não entende a vitrine
-                      vazia. A ação continua no Sheet "Categorias". */}
-                  {grupo.id != null &&
-                    (() => {
-                      const estado = frequencias.categorias[grupo.id];
-                      if (
-                        estado === undefined ||
-                        (!estado.oculta && estado.rotulo === null && estado.aviso === null)
-                      ) {
-                        return null;
-                      }
-                      const n = grupo.produtos.length;
-                      return (
-                        <div className="flex flex-col gap-1.5 border-b px-4 py-2">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {estado.oculta && (
-                              <Badge variant="outline" className="text-muted-foreground">
-                                <EyeOff aria-hidden className="size-3" />
-                                Oculta da vitrine
-                              </Badge>
-                            )}
-                            <ChipFrequencia rotulo={estado.rotulo} />
+            {/* Sanfona na listagem NORMAL, todas ABERTAS por padrão: a tela não
+                pode mudar de comportamento para quem nunca vai reordenar nada. */}
+            <Accordion
+              multiple
+              defaultValue={grupos.map((g) => g.id ?? "sem-categoria")}
+              className="gap-6"
+            >
+              {gruposExibidos.map((grupo) => (
+                <AccordionItem
+                  key={grupo.id ?? "sem-categoria"}
+                  value={grupo.id ?? "sem-categoria"}
+                  className="not-last:border-b-0"
+                >
+                  <Card>
+                    {/* O gatilho da sanfona é um <button>; as ações da categoria
+                        ficam FORA dele (button aninhado é HTML inválido). O <h3>
+                        do AccordionHeader é quem cresce. */}
+                    <div className="flex items-center justify-between gap-2 border-b px-4 [&>h3]:min-w-0 [&>h3]:flex-1">
+                      <AccordionTrigger className="min-h-[44px] font-heading text-lg font-semibold text-foreground">
+                        {grupo.nome}
+                      </AccordionTrigger>
+                      {modoSelecao ? (
+                        // Par de botões com o NÚMERO escrito, nunca checkbox
+                        // tri-estado: o `Checkbox` gerado renderiza `CheckIcon`
+                        // fixo e um estado "mixed" mostraria um ✓ — corrigir isso
+                        // exigiria editar arquivo do shadcn CLI. Grupo vazio não
+                        // ganha o par: "Selecionar os 0" é controle para operação
+                        // impossível.
+                        grupo.produtos.length === 0 ? null : (
+                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="min-h-[44px]"
+                              onClick={() =>
+                                selecionarGrupo(grupo.produtos.map((p) => p.id))
+                              }
+                            >
+                              Selecionar os {grupo.produtos.length}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="min-h-[44px]"
+                              aria-label={`Limpar a seleção de ${grupo.nome}`}
+                              onClick={() =>
+                                limparGrupo(grupo.produtos.map((p) => p.id))
+                              }
+                            >
+                              Limpar
+                            </Button>
                           </div>
-                          {estado.oculta && (
-                            <p className="text-xs text-muted-foreground">
-                              {n === 0
-                                ? "Esta categoria não aparece para o cliente."
-                                : n === 1
-                                  ? "O produto desta categoria não aparece para o cliente."
-                                  : `Os ${n} produtos desta categoria não aparecem para o cliente.`}{" "}
-                              Mostre a categoria em &ldquo;Categorias&rdquo; para voltar a vender.
-                            </p>
+                        )
+                      ) : grupo.id != null || grupo.produtos.length > 0 ? (
+                        <div className="flex shrink-0 items-center">
+                          {/* [293] Ponto de entrada do modo reordenar PRODUTOS —
+                              no cabeçalho do grupo, porque a permutação é
+                              escopada a UMA categoria. Espelha o gate do modo de
+                              categorias (`podeReordenar`): abaixo de 2 itens não
+                              há ordem a escolher, e um botão desabilitado ali só
+                              produziria "por que não funciona?" sem resposta.
+                              Aparece também no grupo "Sem categoria" — lá o
+                              `categoria_id` é NULL e a RPC o trata como grupo. */}
+                          {grupo.produtos.length >= 2 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Reordenar produtos de ${grupo.nome}`}
+                              onClick={() =>
+                                setGrupoReordenando({
+                                  id: grupo.id,
+                                  nome: grupo.nome,
+                                })
+                              }
+                            >
+                              <ArrowUpDown className="size-4" />
+                              <span className="hidden sm:inline">Reordenar</span>
+                            </Button>
                           )}
-                          <AvisoFrequencia aviso={estado.aviso} />
+                          {/* [323] A grade produto × dia ESCOPADA a este grupo.
+                              Fica fora do `grupo.id != null` abaixo porque "Sem
+                              categoria" também tem dias por produto. Grupo vazio
+                              não ganha o botão: grade de zero produto é controle
+                              para operação impossível (mesma régua de
+                              "Selecionar os {n}"). */}
+                          {grupo.produtos.length > 0 && (
+                            <Button
+                              id={idBotaoGrade(grupo.id)}
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Dias da semana dos produtos de ${grupo.nome}`}
+                              onClick={() =>
+                                setEscopoGrade({
+                                  tipo: "grupo",
+                                  id: grupo.id,
+                                  nome: grupo.nome,
+                                })
+                              }
+                            >
+                              <CalendarDays className="size-4" />
+                              <span className="hidden sm:inline">Dias</span>
+                            </Button>
+                          )}
+                          {grupo.id != null && (
+                            <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (grupo.id == null) return;
+                              setCategoriaOpcionaisAberta({
+                                id: grupo.id,
+                                nome: grupo.nome,
+                              });
+                            }}
+                          >
+                            <SlidersHorizontal className="size-4" />
+                            Opcionais
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Novo produto em ${grupo.nome}`}
+                            onClick={() => abrirCriarNaCategoria(grupo.id)}
+                          >
+                            <Plus className="size-4" />
+                            {/* Ícone-only no mobile para o header não estourar
+                                (RN-5); o aria-label mantém o nome acessível. */}
+                            <span className="hidden sm:inline">Novo produto</span>
+                          </Button>
+                            </>
+                          )}
                         </div>
-                      );
-                    })()}
-                  <AccordionContent className="pt-0 pb-0">
-                    <CardContent className="divide-y divide-foreground/10 p-0">
-                      {/* Categoria vazia diz que está vazia, em vez de sumir
-                          (issue 261): o cabeçalho acima já oferece o
-                          "Novo produto em {nome}" que a preenche. */}
-                      {grupo.produtos.length === 0 && (
-                        <p className="px-4 py-3 text-sm text-muted-foreground">
-                          Nenhum produto nesta categoria ainda.
-                        </p>
-                      )}
-                      {grupo.produtos.map((p) => (
-                        // `flex-wrap` + `items-start` é o coração do fix de layout
-                        // mobile: em 360px os 7 filhos somavam ~433px de largura
-                        // mínima e o bloco de texto (único flex-1) era esmagado.
-                        // As classes `order-*` mantêm UMA árvore só: no mobile as
-                        // ações quebram para a última linha; a partir de `sm` elas
-                        // sobem para a PRIMEIRA linha, ancoradas à direita na
-                        // altura do nome (thumb → texto → ações → kebab), e as
-                        // pílulas de dias descem para a última.
-                        <div
-                          key={p.id}
-                          className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
-                        >
-                          {/* Prefixo do modo. Alvo de 44px LITERAL; o `label`
-                              é o alvo, não o quadradinho do checkbox. */}
-                          {modoSelecao && (
-                            <label className="flex min-h-[44px] min-w-[44px] shrink-0 cursor-pointer items-center justify-center">
-                              <Checkbox
-                                checked={selecionados.has(p.id)}
-                                onCheckedChange={() => alternarSelecao(p.id)}
-                                aria-label={`Selecionar ${p.nome}`}
-                              />
-                            </label>
-                          )}
-                          <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
-                          {/* `sm:min-w-[14rem]` é o piso do nome no desktop. Sem
-                              ele, a lista de opcionais (que não encolhe) comia a
-                              linha inteira e o nome virava "X - b..". No mobile a
-                              lista é `w-full` e quebra sozinha, por isso lá o
-                              nome já tinha a largura toda. */}
-                          <div className="min-w-0 flex-1 sm:min-w-[14rem]">
-                            {/* [290] Em edição inline, a faixa de texto (nome +
-                                preço/status) dá lugar a dois campos EMPILHADOS
-                                — em 360px eles não cabem lado a lado. Em
-                                repouso a faixa É o gatilho: clique no nome ou
-                                no preço abre a edição, sem passar pelo kebab. */}
-                            {editandoInlineId === p.id ? (
-                              <div className="space-y-2">
-                                <div className="space-y-1">
-                                  <Label
-                                    htmlFor={`inline-nome-${p.id}`}
-                                    className="text-xs text-muted-foreground"
-                                  >
-                                    Nome
-                                  </Label>
-                                  <Input
-                                    id={`inline-nome-${p.id}`}
-                                    value={nomeInline}
-                                    autoFocus
-                                    disabled={salvandoInline}
-                                    onChange={(e) =>
-                                      setNomeInline(e.target.value)
-                                    }
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        salvarEdicaoInline(p);
-                                      }
-                                      if (e.key === "Escape")
-                                        fecharEdicaoInline();
-                                    }}
-                                    // D10 é erro de PAR (preço × desconto): os
-                                    // dois campos apontam para a MESMA
-                                    // descrição, como no `FormProduto`.
-                                    aria-invalid={
-                                      erroInline != null ? true : undefined
-                                    }
-                                    aria-describedby={
-                                      erroInline != null
-                                        ? `inline-erro-${p.id}`
-                                        : undefined
-                                    }
+                      ) : null}
+                    </div>
+                    {/* [323] Faixa de ESTADO da categoria (mockup §1.2), só
+                        leitura: sem ela o lojista vê "Disponível" em todos os
+                        produtos de uma categoria oculta e não entende a vitrine
+                        vazia. A ação continua no Sheet "Categorias". */}
+                    {grupo.id != null &&
+                      (() => {
+                        const estado = frequencias.categorias[grupo.id];
+                        if (
+                          estado === undefined ||
+                          (!estado.oculta && estado.rotulo === null && estado.aviso === null)
+                        ) {
+                          return null;
+                        }
+                        const n = grupo.produtos.length;
+                        return (
+                          <div className="flex flex-col gap-1.5 border-b px-4 py-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {estado.oculta && (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  <EyeOff aria-hidden className="size-3" />
+                                  Oculta da vitrine
+                                </Badge>
+                              )}
+                              <ChipFrequencia rotulo={estado.rotulo} />
+                            </div>
+                            {estado.oculta && (
+                              <p className="text-xs text-muted-foreground">
+                                {n === 0
+                                  ? "Esta categoria não aparece para o cliente."
+                                  : n === 1
+                                    ? "O produto desta categoria não aparece para o cliente."
+                                    : `Os ${n} produtos desta categoria não aparecem para o cliente.`}{" "}
+                                Mostre a categoria em &ldquo;Categorias&rdquo; para voltar a vender.
+                              </p>
+                            )}
+                            <AvisoFrequencia aviso={estado.aviso} />
+                          </div>
+                        );
+                      })()}
+                    <AccordionContent className="pt-0 pb-0">
+                      <CardContent className="divide-y divide-foreground/10 p-0">
+                        {/* Categoria vazia diz que está vazia, em vez de sumir
+                            (issue 261): o cabeçalho acima já oferece o
+                            "Novo produto em {nome}" que a preenche. */}
+                        {grupo.produtos.length === 0 && (
+                          <p className="px-4 py-3 text-sm text-muted-foreground">
+                            Nenhum produto nesta categoria ainda.
+                          </p>
+                        )}
+                          <GrupoArrastavel
+                            ativo={podeArrastarProdutos && grupo.produtos.length >= 2}
+                            ids={grupo.produtos.map((p) => p.id)}
+                          >
+                          {grupo.produtos.map((p) => (
+                            // As classes `order-*` mantêm UMA árvore só: no mobile
+                            // as ações quebram para a última linha; a partir de `sm`
+                            // elas sobem para a PRIMEIRA linha, ancoradas à direita na
+                            // altura do nome (alça → thumb → texto → ações → kebab), e
+                            // as pílulas de dias descem para a última. O `flex-wrap` +
+                            // `items-start` que sustentam isso moram na linha
+                            // arrastável, junto com a alça.
+                            <LinhaProdutoArrastavel
+                              key={p.id}
+                              id={p.id}
+                              nome={p.nome}
+                              arrastavel={podeArrastarProdutos && grupo.produtos.length >= 2}
+                              bloqueado={ordemEmVoo.has(chaveDoGrupo(grupo.id))}
+                            >
+                              {/* Prefixo do modo. Alvo de 44px LITERAL; o `label`
+                                  é o alvo, não o quadradinho do checkbox. */}
+                              {modoSelecao && (
+                                <label className="flex min-h-[44px] min-w-[44px] shrink-0 cursor-pointer items-center justify-center">
+                                  <Checkbox
+                                    checked={selecionados.has(p.id)}
+                                    onCheckedChange={() => alternarSelecao(p.id)}
+                                    aria-label={`Selecionar ${p.nome}`}
                                   />
-                                </div>
-                                <div className="space-y-1">
-                                  <Label
-                                    htmlFor={`inline-preco-${p.id}`}
-                                    className="text-xs text-muted-foreground"
-                                  >
-                                    Preço (R$)
-                                  </Label>
-                                  <Input
-                                    id={`inline-preco-${p.id}`}
-                                    value={precoInline}
-                                    inputMode="decimal"
-                                    placeholder="0,00"
-                                    disabled={salvandoInline}
-                                    onChange={(e) =>
-                                      setPrecoInline(e.target.value)
-                                    }
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        salvarEdicaoInline(p);
-                                      }
-                                      if (e.key === "Escape")
-                                        fecharEdicaoInline();
-                                    }}
-                                    aria-invalid={
-                                      erroInline != null ? true : undefined
-                                    }
-                                    aria-describedby={
-                                      erroInline != null
-                                        ? `inline-erro-${p.id}`
-                                        : undefined
-                                    }
+                                </label>
+                              )}
+                              <ThumbProduto fotoUrl={p.foto_url} nome={p.nome} />
+                              {/* `sm:min-w-[14rem]` é o piso do nome no desktop. Sem
+                                  ele, a lista de opcionais (que não encolhe) comia a
+                                  linha inteira e o nome virava "X - b..". No mobile a
+                                  lista é `w-full` e quebra sozinha, por isso lá o
+                                  nome já tinha a largura toda. */}
+                              <div className="min-w-0 flex-1 sm:min-w-[14rem]">
+                                {/* [290] Em edição inline, a faixa de texto (nome +
+                                    preço/status) dá lugar a dois campos EMPILHADOS
+                                    — em 360px eles não cabem lado a lado. Em
+                                    repouso a faixa É o gatilho: clique no nome ou
+                                    no preço abre a edição, sem passar pelo kebab. */}
+                                {editandoInlineId === p.id ? (
+                                  <div className="space-y-2">
+                                    <div className="space-y-1">
+                                      <Label
+                                        htmlFor={`inline-nome-${p.id}`}
+                                        className="text-xs text-muted-foreground"
+                                      >
+                                        Nome
+                                      </Label>
+                                      <Input
+                                        id={`inline-nome-${p.id}`}
+                                        value={nomeInline}
+                                        autoFocus
+                                        disabled={salvandoInline}
+                                        onChange={(e) =>
+                                          setNomeInline(e.target.value)
+                                        }
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            salvarEdicaoInline(p);
+                                          }
+                                          if (e.key === "Escape")
+                                            fecharEdicaoInline();
+                                        }}
+                                        // D10 é erro de PAR (preço × desconto): os
+                                        // dois campos apontam para a MESMA
+                                        // descrição, como no `FormProduto`.
+                                        aria-invalid={
+                                          erroInline != null ? true : undefined
+                                        }
+                                        aria-describedby={
+                                          erroInline != null
+                                            ? `inline-erro-${p.id}`
+                                            : undefined
+                                        }
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label
+                                        htmlFor={`inline-preco-${p.id}`}
+                                        className="text-xs text-muted-foreground"
+                                      >
+                                        Preço (R$)
+                                      </Label>
+                                      <Input
+                                        id={`inline-preco-${p.id}`}
+                                        value={precoInline}
+                                        inputMode="decimal"
+                                        placeholder="0,00"
+                                        disabled={salvandoInline}
+                                        onChange={(e) =>
+                                          setPrecoInline(e.target.value)
+                                        }
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            salvarEdicaoInline(p);
+                                          }
+                                          if (e.key === "Escape")
+                                            fecharEdicaoInline();
+                                        }}
+                                        aria-invalid={
+                                          erroInline != null ? true : undefined
+                                        }
+                                        aria-describedby={
+                                          erroInline != null
+                                            ? `inline-erro-${p.id}`
+                                            : undefined
+                                        }
+                                      />
+                                    </div>
+                                    {erroInline != null && (
+                                      <p
+                                        id={`inline-erro-${p.id}`}
+                                        role="alert"
+                                        className="text-xs text-destructive"
+                                      >
+                                        {erroInline}
+                                      </p>
+                                    )}
+                                    {/* Alvo de toque: 44px LITERAL. `min-h-11`
+                                        seria 52,8px na base de 120% do projeto, e
+                                        `size="icon-sm"` seria 33,6px — abaixo do
+                                        mínimo de `design-system.md` §5. */}
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        className="min-h-[44px] min-w-[44px] flex-1 sm:flex-none"
+                                        disabled={salvandoInline}
+                                        onClick={() => salvarEdicaoInline(p)}
+                                      >
+                                        {salvandoInline && (
+                                          <Loader2 className="mr-2 size-4 animate-spin" />
+                                        )}
+                                        Salvar
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="min-h-[44px] min-w-[44px] flex-1 sm:flex-none"
+                                        disabled={salvandoInline}
+                                        onClick={fecharEdicaoInline}
+                                      >
+                                        Cancelar
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  (() => {
+                                    const faixa = (
+                                      <>
+                                        {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
+                                            cabe em duas linhas em vez de sumir. */}
+                                        <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
+                                          {p.nome}
+                                        </span>
+                                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                                          <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+                                            {formatarMoeda(p.preco)}
+                                          </span>
+                                          {badgeStatus(p)}
+                                          {/* [261] D14 — nada para o produto do menu. */}
+                                          {badgeExclusivo(p)}
+                                          {/* Chip de promoção VIGENTE. O rótulo inteiro
+                                              (`-20% até 30/09`) vem projetado do servidor;
+                                              aqui não há derivação de vigência nenhuma. */}
+                                          {promocoes[p.id]?.rotulo != null && (
+                                            <Badge
+                                              variant="secondary"
+                                              className="text-promo-texto"
+                                            >
+                                              {promocoes[p.id].rotulo}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </>
+                                    );
+                                    // No modo de seleção a única ação da linha é a
+                                    // da barra (design-system §5): a faixa volta a
+                                    // ser texto, sem gatilho de edição concorrendo
+                                    // com o checkbox.
+                                    if (modoSelecao) return faixa;
+                                    return (
+                                      <button
+                                        type="button"
+                                        aria-label={`Editar nome e preço de ${p.nome}`}
+                                        onClick={() => abrirEdicaoInline(p)}
+                                        className="-mx-1.5 block w-full min-h-[44px] rounded-lg px-1.5 py-1 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+                                      >
+                                        {faixa}
+                                      </button>
+                                    );
+                                  })()
+                                )}
+                                {!modoSelecao &&
+                                  (() => {
+                                    const gruposOpcionais =
+                                      opcionaisPorCategoria[
+                                        p.categoria_id ?? ""
+                                      ] ?? [];
+                                    if (gruposOpcionais.length === 0) return null;
+                                    return (
+                                      <ul
+                                        className="mt-1.5 flex flex-wrap gap-1.5"
+                                        aria-label={`Opcionais da categoria ${grupo.nome}`}
+                                      >
+                                        {gruposOpcionais
+                                          .slice()
+                                          .sort((a, b) => a.ordem - b.ordem)
+                                          .map((g) => (
+                                            <li key={g.categoriaOpcionalId}>
+                                              <Badge
+                                                variant="secondary"
+                                                className="font-normal"
+                                              >
+                                                {g.categoriaOpcionalNome}
+                                              </Badge>
+                                            </li>
+                                          ))}
+                                      </ul>
+                                    );
+                                  })()}
+                                {/* [261] De quais cardápios o produto participa e
+                                    se algum está DENTRO da janela agora. Os dois
+                                    vêm projetados do Server Component, com o
+                                    relógio do servidor e o fuso da loja — o painel
+                                    nunca decide vigência no browser. */}
+                                {(vinculosPorProduto[p.id]?.length ?? 0) > 0 && (
+                                  <ul className="mt-1 flex flex-wrap items-center gap-1.5">
+                                    {vinculosPorProduto[p.id]?.map((c) => (
+                                      <li key={c.id}>
+                                        <Badge
+                                          variant="outline"
+                                          // [278] Em 360px o chip com os três
+                                          // trechos quebra em duas linhas em vez de
+                                          // esticar a linha do produto.
+                                          className="font-normal whitespace-normal"
+                                        >
+                                          {c.nome}
+                                          {/* [278] Ordem fixada: nome · dias ·
+                                              estado. O estado é consequência, vem
+                                              por último. Redigido no SERVIDOR. */}
+                                          {c.rotuloDias === null
+                                            ? ""
+                                            : ` · ${c.rotuloDias}`}
+                                          {c.abertoAgora
+                                            ? ""
+                                            : " · fora da janela agora"}
+                                        </Badge>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {/* [323] Chip de frequência (texto do servidor,
+                                    `rotuloFrequencia`) e aviso RN-1/RN-7. O
+                                    permanente não ganha chip. Aviso âmbar SEM
+                                    `role="alert"`: é estático desde o primeiro
+                                    paint, e o leitor anunciaria a lista inteira
+                                    ao carregar (mockup §1.1). */}
+                                {!modoSelecao && frequencias.produtos[p.id]?.rotulo != null && (
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                    <ChipFrequencia rotulo={frequencias.produtos[p.id]?.rotulo} />
+                                  </div>
+                                )}
+                                {!modoSelecao && (
+                                  <AvisoFrequencia
+                                    aviso={frequencias.produtos[p.id]?.aviso}
+                                    className="mt-1"
                                   />
-                                </div>
-                                {erroInline != null && (
+                                )}
+                                {/* [264/RN-12] O aviso REDUZIDO: com D14 este
+                                    produto sumiu da vitrine e o painel é o único
+                                    lugar onde isso é observável. Âmbar, nunca
+                                    vermelho: requer ação, não é falha. A frase vem
+                                    do módulo puro de copy — nenhum texto de estado
+                                    escrito aqui. */}
+                                {sumicos[p.id] && (
                                   <p
-                                    id={`inline-erro-${p.id}`}
                                     role="alert"
-                                    className="text-xs text-destructive"
+                                    className="mt-1 flex items-center gap-1.5 text-xs text-amber-700"
                                   >
-                                    {erroInline}
+                                    <AlertTriangle
+                                      aria-hidden
+                                      className="size-3.5 shrink-0"
+                                    />
+                                    {avisoNaLinhaDoProduto(
+                                      sumicos[p.id].cardapio,
+                                      sumicos[p.id].ativo,
+                                    )}
                                   </p>
                                 )}
-                                {/* Alvo de toque: 44px LITERAL. `min-h-11`
-                                    seria 52,8px na base de 120% do projeto, e
-                                    `size="icon-sm"` seria 33,6px — abaixo do
-                                    mínimo de `design-system.md` §5. */}
-                                <div className="flex gap-2">
+                              </div>
+
+                              {/* [323] As 7 pílulas: marcar dia é a edição mais
+                                  frequente da frequência, e abrir o diálogo (ou o
+                                  modo grade) para um clique era o caminho longo.
+
+                                  Filha DIRETA da linha, com `basis-full`, e não da
+                                  coluna de texto, que em 360px deixa só ~240px.
+
+                                  E NÃO `compacto`: as 7 numa linha só pedem ~304px
+                                  (7×40 + 6 gaps) e a linha do produto no admin tem
+                                  ~262px. `grid-cols-7` deixa a COLUNA encolher, mas
+                                  `min-w-[40px]` não deixa o BOTÃO encolher junto —
+                                  o resultado era pílula por cima de pílula. O modo
+                                  normal resolve com 4+3 no mobile e 7 em linha a
+                                  partir de `sm`, sem furar o alvo de 44px e com
+                                  "Dom/Seg/Ter" em vez de "D S T Q Q S S", onde os
+                                  dois S e os dois Q não se distinguem.
+
+                                  Produto permanente nasce com as 7 marcadas —
+                                  `null` e `[]` continuam distintos no banco. */}
+                              {!modoSelecao && (
+                                <div className="w-full basis-full sm:order-last">
+                                  <PilulasDeDias
+                                    valor={pilulasDoProduto(p)}
+                                    onChange={(novas) => void salvarDiasDoProduto(p, novas)}
+                                    rotulo={`Dias de ${p.nome}`}
+                                    desabilitado={diasEmVoo.has(p.id)}
+                                  />
+                                </div>
+                              )}
+
+                              {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
+                                  52.8px na base de 120% do projeto (globals.css). */}
+                              {!modoSelecao && (
+                                <div className="order-last flex w-full basis-full gap-2 sm:order-none sm:w-auto sm:shrink-0 sm:basis-auto">
                                   <Button
+                                    variant="outline"
                                     size="sm"
-                                    className="min-h-[44px] min-w-[44px] flex-1 sm:flex-none"
-                                    disabled={salvandoInline}
-                                    onClick={() => salvarEdicaoInline(p)}
+                                    className="min-h-[44px] flex-1 sm:flex-none"
+                                    disabled={
+                                      alternandoOculto &&
+                                      idAlternandoOculto === p.id
+                                    }
+                                    aria-label={
+                                      p.oculto
+                                        ? `Exibir ${p.nome} na vitrine`
+                                        : `Ocultar ${p.nome} da vitrine`
+                                    }
+                                    onClick={() => alternarVisibilidade(p)}
                                   >
-                                    {salvandoInline && (
-                                      <Loader2 className="mr-2 size-4 animate-spin" />
-                                    )}
-                                    Salvar
+                                    {p.oculto ? "Exibir" : "Ocultar"}
                                   </Button>
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="min-h-[44px] min-w-[44px] flex-1 sm:flex-none"
-                                    disabled={salvandoInline}
-                                    onClick={fecharEdicaoInline}
+                                    className="min-h-[44px] flex-1 sm:flex-none"
+                                    disabled={
+                                      alternandoDisp && idAlternandoDisp === p.id
+                                    }
+                                    aria-label={
+                                      p.disponivel
+                                        ? `Marcar ${p.nome} como esgotado`
+                                        : `Disponibilizar ${p.nome}`
+                                    }
+                                    onClick={() => alternarDispon(p)}
                                   >
-                                    Cancelar
+                                    {p.disponivel
+                                      ? "Marcar esgotado"
+                                      : "Disponibilizar"}
                                   </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              (() => {
-                                const faixa = (
-                                  <>
-                                    {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
-                                        cabe em duas linhas em vez de sumir. */}
-                                    <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
-                                      {p.nome}
-                                    </span>
-                                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                                      <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
-                                        {formatarMoeda(p.preco)}
-                                      </span>
-                                      {badgeStatus(p)}
-                                      {/* [261] D14 — nada para o produto do menu. */}
-                                      {badgeExclusivo(p)}
-                                      {/* Chip de promoção VIGENTE. O rótulo inteiro
-                                          (`-20% até 30/09`) vem projetado do servidor;
-                                          aqui não há derivação de vigência nenhuma. */}
-                                      {promocoes[p.id]?.rotulo != null && (
-                                        <Badge
-                                          variant="secondary"
-                                          className="text-promo-texto"
-                                        >
-                                          {promocoes[p.id].rotulo}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </>
-                                );
-                                // No modo de seleção a única ação da linha é a
-                                // da barra (design-system §5): a faixa volta a
-                                // ser texto, sem gatilho de edição concorrendo
-                                // com o checkbox.
-                                if (modoSelecao) return faixa;
-                                return (
-                                  <button
-                                    type="button"
-                                    aria-label={`Editar nome e preço de ${p.nome}`}
-                                    onClick={() => abrirEdicaoInline(p)}
-                                    className="-mx-1.5 block w-full min-h-[44px] rounded-lg px-1.5 py-1 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
-                                  >
-                                    {faixa}
-                                  </button>
-                                );
-                              })()
-                            )}
-                            {!modoSelecao &&
-                              (() => {
-                                const gruposOpcionais =
-                                  opcionaisPorCategoria[
-                                    p.categoria_id ?? ""
-                                  ] ?? [];
-                                if (gruposOpcionais.length === 0) return null;
-                                return (
-                                  <ul
-                                    className="mt-1.5 flex flex-wrap gap-1.5"
-                                    aria-label={`Opcionais da categoria ${grupo.nome}`}
-                                  >
-                                    {gruposOpcionais
-                                      .slice()
-                                      .sort((a, b) => a.ordem - b.ordem)
-                                      .map((g) => (
-                                        <li key={g.categoriaOpcionalId}>
-                                          <Badge
-                                            variant="secondary"
-                                            className="font-normal"
-                                          >
-                                            {g.categoriaOpcionalNome}
-                                          </Badge>
-                                        </li>
-                                      ))}
-                                  </ul>
-                                );
-                              })()}
-                            {/* [261] De quais cardápios o produto participa e
-                                se algum está DENTRO da janela agora. Os dois
-                                vêm projetados do Server Component, com o
-                                relógio do servidor e o fuso da loja — o painel
-                                nunca decide vigência no browser. */}
-                            {(vinculosPorProduto[p.id]?.length ?? 0) > 0 && (
-                              <ul className="mt-1 flex flex-wrap items-center gap-1.5">
-                                {vinculosPorProduto[p.id]?.map((c) => (
-                                  <li key={c.id}>
-                                    <Badge
-                                      variant="outline"
-                                      // [278] Em 360px o chip com os três
-                                      // trechos quebra em duas linhas em vez de
-                                      // esticar a linha do produto.
-                                      className="font-normal whitespace-normal"
-                                    >
-                                      {c.nome}
-                                      {/* [278] Ordem fixada: nome · dias ·
-                                          estado. O estado é consequência, vem
-                                          por último. Redigido no SERVIDOR. */}
-                                      {c.rotuloDias === null
-                                        ? ""
-                                        : ` · ${c.rotuloDias}`}
-                                      {c.abertoAgora
-                                        ? ""
-                                        : " · fora da janela agora"}
-                                    </Badge>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                            {/* [323] Chip de frequência (texto do servidor,
-                                `rotuloFrequencia`) e aviso RN-1/RN-7. O
-                                permanente não ganha chip. Aviso âmbar SEM
-                                `role="alert"`: é estático desde o primeiro
-                                paint, e o leitor anunciaria a lista inteira
-                                ao carregar (mockup §1.1). */}
-                            {!modoSelecao && frequencias.produtos[p.id]?.rotulo != null && (
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <ChipFrequencia rotulo={frequencias.produtos[p.id]?.rotulo} />
-                              </div>
-                            )}
-                            {!modoSelecao && (
-                              <AvisoFrequencia
-                                aviso={frequencias.produtos[p.id]?.aviso}
-                                className="mt-1"
-                              />
-                            )}
-                            {/* [264/RN-12] O aviso REDUZIDO: com D14 este
-                                produto sumiu da vitrine e o painel é o único
-                                lugar onde isso é observável. Âmbar, nunca
-                                vermelho: requer ação, não é falha. A frase vem
-                                do módulo puro de copy — nenhum texto de estado
-                                escrito aqui. */}
-                            {sumicos[p.id] && (
-                              <p
-                                role="alert"
-                                className="mt-1 flex items-center gap-1.5 text-xs text-amber-700"
-                              >
-                                <AlertTriangle
-                                  aria-hidden
-                                  className="size-3.5 shrink-0"
-                                />
-                                {avisoNaLinhaDoProduto(
-                                  sumicos[p.id].cardapio,
-                                  sumicos[p.id].ativo,
-                                )}
-                              </p>
-                            )}
-                          </div>
-
-                          {/* [323] As 7 pílulas: marcar dia é a edição mais
-                              frequente da frequência, e abrir o diálogo (ou o
-                              modo grade) para um clique era o caminho longo.
-
-                              Filha DIRETA da linha, com `basis-full`, e não da
-                              coluna de texto, que em 360px deixa só ~240px.
-
-                              E NÃO `compacto`: as 7 numa linha só pedem ~304px
-                              (7×40 + 6 gaps) e a linha do produto no admin tem
-                              ~262px. `grid-cols-7` deixa a COLUNA encolher, mas
-                              `min-w-[40px]` não deixa o BOTÃO encolher junto —
-                              o resultado era pílula por cima de pílula. O modo
-                              normal resolve com 4+3 no mobile e 7 em linha a
-                              partir de `sm`, sem furar o alvo de 44px e com
-                              "Dom/Seg/Ter" em vez de "D S T Q Q S S", onde os
-                              dois S e os dois Q não se distinguem.
-
-                              Produto permanente nasce com as 7 marcadas —
-                              `null` e `[]` continuam distintos no banco. */}
-                          {!modoSelecao && (
-                            <div className="w-full basis-full sm:order-last">
-                              <PilulasDeDias
-                                valor={pilulasDoProduto(p)}
-                                onChange={(novas) => void salvarDiasDoProduto(p, novas)}
-                                rotulo={`Dias de ${p.nome}`}
-                                desabilitado={diasEmVoo.has(p.id)}
-                              />
-                            </div>
-                          )}
-
-                          {/* Alvo de toque: 44px LITERAL. `min-h-11` seria 2.75rem =
-                              52.8px na base de 120% do projeto (globals.css). */}
-                          {!modoSelecao && (
-                            <div className="order-last flex w-full basis-full gap-2 sm:order-none sm:w-auto sm:shrink-0 sm:basis-auto">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="min-h-[44px] flex-1 sm:flex-none"
-                                disabled={
-                                  alternandoOculto &&
-                                  idAlternandoOculto === p.id
-                                }
-                                aria-label={
-                                  p.oculto
-                                    ? `Exibir ${p.nome} na vitrine`
-                                    : `Ocultar ${p.nome} da vitrine`
-                                }
-                                onClick={() => alternarVisibilidade(p)}
-                              >
-                                {p.oculto ? "Exibir" : "Ocultar"}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="min-h-[44px] flex-1 sm:flex-none"
-                                disabled={
-                                  alternandoDisp && idAlternandoDisp === p.id
-                                }
-                                aria-label={
-                                  p.disponivel
-                                    ? `Marcar ${p.nome} como esgotado`
-                                    : `Disponibilizar ${p.nome}`
-                                }
-                                onClick={() => alternarDispon(p)}
-                              >
-                                {p.disponivel
-                                  ? "Marcar esgotado"
-                                  : "Disponibilizar"}
-                              </Button>
-                              {/* Editar/Remover consolidados no kebab: elimina os dois
-                                  ícones cortados na borda e afasta a ação destrutiva do
-                                  alvo de toque de "Marcar esgotado". Último filho deste
-                                  grupo: fica à direita de Ocultar/Disponibilizar nos
-                                  dois breakpoints, sem classe `order-*` própria — se
-                                  algum dia quebrar, quebra junto com os botões do
-                                  produto dele, nunca sozinho. */}
-                              <Menu>
-                                <MenuTrigger
-                                  render={
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="min-h-[44px] min-w-[44px] shrink-0"
-                                      aria-label={`Mais ações de ${p.nome}`}
-                                    />
-                                  }
-                                >
-                                  <MoreVertical aria-hidden className="size-4" />
-                                </MenuTrigger>
-                                <MenuPortal>
-                                  <MenuPositioner align="end">
-                                    <MenuPopup>
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        aria-label={`Editar ${p.nome}`}
-                                        onClick={() => abrirEditar(p)}
-                                      >
-                                        <Pencil aria-hidden className="size-4" />
-                                        Editar
-                                      </MenuItem>
-                                      {/* [323] Abre o `DialogoFrequencia` com
-                                          1 id. O chip da linha NÃO vira botão:
-                                          nome e preço já são o gatilho da
-                                          edição inline. */}
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        aria-label={`Frequência de exibição de ${p.nome}`}
-                                        onClick={() => abrirFrequenciaDoProduto(p)}
-                                      >
-                                        <Clock aria-hidden className="size-4" />
-                                        Frequência de exibição
-                                      </MenuItem>
-                                      {/* [264/§13.4 item 5] O MESMO par de saídas
-                                          do aviso de `/painel/cardapios`, aqui no
-                                          kebab. Nenhuma das duas roda sozinha, e
-                                          devolver ao menu mexe só NESTE produto —
-                                          o sistema nunca converte `visibilidade`
-                                          por conta própria. */}
-                                      {sumicos[p.id] && hrefCardapios !== null && (
-                                        <MenuItem
-                                          className="min-h-[44px]"
-                                          onClick={() =>
-                                            router.push(hrefCardapios)
-                                          }
-                                        >
-                                          {rotuloReligarOuEstender(
-                                            sumicos[p.id].ativo,
-                                          )}
-                                        </MenuItem>
-                                      )}
-                                      {sumicos[p.id] && lote != null && (
-                                        <MenuItem
-                                          className="min-h-[44px]"
-                                          onClick={() => void devolverAoMenu(p)}
-                                        >
-                                          Devolver ao menu
-                                        </MenuItem>
-                                      )}
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        aria-label={`Remover ${p.nome}`}
-                                        onClick={() => setARemover(p)}
-                                      >
-                                        <Trash2
-                                          aria-hidden
-                                          className="size-4 text-destructive"
+                                  {/* Editar/Remover consolidados no kebab: elimina os dois
+                                      ícones cortados na borda e afasta a ação destrutiva do
+                                      alvo de toque de "Marcar esgotado". Último filho deste
+                                      grupo: fica à direita de Ocultar/Disponibilizar nos
+                                      dois breakpoints, sem classe `order-*` própria — se
+                                      algum dia quebrar, quebra junto com os botões do
+                                      produto dele, nunca sozinho. */}
+                                  <Menu>
+                                    <MenuTrigger
+                                      render={
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="min-h-[44px] min-w-[44px] shrink-0"
+                                          aria-label={`Mais ações de ${p.nome}`}
                                         />
-                                        Remover
-                                      </MenuItem>
-                                    </MenuPopup>
-                                  </MenuPositioner>
-                                </MenuPortal>
-                              </Menu>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </CardContent>
-                  </AccordionContent>
-                </Card>
-              </AccordionItem>
-            ))}
-          </Accordion>
+                                      }
+                                    >
+                                      <MoreVertical aria-hidden className="size-4" />
+                                    </MenuTrigger>
+                                    <MenuPortal>
+                                      <MenuPositioner align="end">
+                                        <MenuPopup>
+                                          <MenuItem
+                                            className="min-h-[44px]"
+                                            aria-label={`Editar ${p.nome}`}
+                                            onClick={() => abrirEditar(p)}
+                                          >
+                                            <Pencil aria-hidden className="size-4" />
+                                            Editar
+                                          </MenuItem>
+                                          {/* [323] Abre o `DialogoFrequencia` com
+                                              1 id. O chip da linha NÃO vira botão:
+                                              nome e preço já são o gatilho da
+                                              edição inline. */}
+                                          <MenuItem
+                                            className="min-h-[44px]"
+                                            aria-label={`Frequência de exibição de ${p.nome}`}
+                                            onClick={() => abrirFrequenciaDoProduto(p)}
+                                          >
+                                            <Clock aria-hidden className="size-4" />
+                                            Frequência de exibição
+                                          </MenuItem>
+                                          {/* [264/§13.4 item 5] O MESMO par de saídas
+                                              do aviso de `/painel/cardapios`, aqui no
+                                              kebab. Nenhuma das duas roda sozinha, e
+                                              devolver ao menu mexe só NESTE produto —
+                                              o sistema nunca converte `visibilidade`
+                                              por conta própria. */}
+                                          {sumicos[p.id] && hrefCardapios !== null && (
+                                            <MenuItem
+                                              className="min-h-[44px]"
+                                              onClick={() =>
+                                                router.push(hrefCardapios)
+                                              }
+                                            >
+                                              {rotuloReligarOuEstender(
+                                                sumicos[p.id].ativo,
+                                              )}
+                                            </MenuItem>
+                                          )}
+                                          {sumicos[p.id] && lote != null && (
+                                            <MenuItem
+                                              className="min-h-[44px]"
+                                              onClick={() => void devolverAoMenu(p)}
+                                            >
+                                              Devolver ao menu
+                                            </MenuItem>
+                                          )}
+                                          <MenuItem
+                                            className="min-h-[44px]"
+                                            aria-label={`Remover ${p.nome}`}
+                                            onClick={() => setARemover(p)}
+                                          >
+                                            <Trash2
+                                              aria-hidden
+                                              className="size-4 text-destructive"
+                                            />
+                                            Remover
+                                          </MenuItem>
+                                        </MenuPopup>
+                                      </MenuPositioner>
+                                    </MenuPortal>
+                                  </Menu>
+                                </div>
+                              )}
+                            </LinhaProdutoArrastavel>
+                          ))}
+                          </GrupoArrastavel>
+                      </CardContent>
+                    </AccordionContent>
+                  </Card>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </ArrastoDeProdutos>
         </>
       )}
 
