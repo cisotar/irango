@@ -20,6 +20,9 @@ import {
   schemaBairro,
   schemaZonaCompleta,
 } from "./entrega";
+// [326] `schemaFaixasEntrega` ainda não existe: resolvido pelo NAMESPACE para o
+// RED ser "export ausente" nos testes novos, sem derrubar os antigos.
+import * as validacoesEntrega from "./entrega";
 
 function zonaValida(over: Record<string, unknown> = {}) {
   return {
@@ -348,5 +351,214 @@ describe("schemaZonaCompleta — faixa condicional ao tipo da zona", () => {
       zonaCompletaValida({ bairros: ["Centro"] }),
     );
     expect(r.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [326/F2] schemaFaixasEntrega — payload da tabela de faixas
+// ---------------------------------------------------------------------------
+// Autoridade: tasks/326-tabela-de-faixas-de-entrega.md D2 (o cliente manda SÓ
+// `incremento` e, por faixa, `taxa`, `pedido_minimo_gratis` e — iteração 2 —
+// `ativo`; teto, nome, tipo, loja e zona são derivados no servidor), tabela
+// "Risco por fatia" F2 (`.strict()`, `valorFrete` em taxa e grátis, inc ∈ {1,2},
+// 0..30 faixas).
+//
+// ITERAÇÃO 2 (C2' substitui C2): `ativo` VOLTA ao payload, boolean OBRIGATÓRIO.
+// Invariante de PREFIXO: nenhuma faixa ativa depois de uma desligada (todas
+// desligadas é válido). Os testes que diziam "`.strict()` recusa `ativo`"
+// viraram o contrário.
+//
+// CONTRATO: src/lib/validacoes/entrega.ts
+//   export const schemaFaixasEntrega (zod)
+//     { incremento: 1 | 2, faixas: Array<{ taxa, pedido_minimo_gratis, ativo: boolean }> }
+//     .strict() no objeto raiz E em cada faixa; chave extra é RECUSADA.
+//     Refinamento: para a PRIMEIRA faixa ativa com alguma anterior desligada,
+//     issue com path ["faixas", <índice dela>, "ativo"] e message
+//     MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA.
+//   export const MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA: string (não vazia)
+type IssueZod = { path: PropertyKey[]; message: string };
+type SchemaParse = {
+  safeParse(v: unknown): { success: boolean; data?: unknown; error?: { issues: IssueZod[] } };
+};
+
+function schemaFaixas(): SchemaParse {
+  const s = (validacoesEntrega as unknown as { schemaFaixasEntrega?: SchemaParse })
+    .schemaFaixasEntrega;
+  if (s == null || typeof s.safeParse !== "function") {
+    throw new Error(
+      "[RED 326] `src/lib/validacoes/entrega.ts` ainda não exporta `schemaFaixasEntrega` (D2, P3 do plano).",
+    );
+  }
+  return s;
+}
+
+function mensagemBuraco(): string {
+  const m = (validacoesEntrega as unknown as { MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA?: unknown })
+    .MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA;
+  if (typeof m !== "string" || m.trim() === "") {
+    throw new Error(
+      "[RED 326 it.2] `src/lib/validacoes/entrega.ts` ainda não exporta `MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA` (C2').",
+    );
+  }
+  return m;
+}
+
+const faixa = (over: Record<string, unknown> = {}) => ({
+  taxa: 4.5,
+  pedido_minimo_gratis: null,
+  ativo: true,
+  ...over,
+});
+const payloadFaixas = (over: Record<string, unknown> = {}) => ({
+  incremento: 1,
+  faixas: [faixa(), faixa({ taxa: 6, pedido_minimo_gratis: 60 })],
+  ...over,
+});
+const comAtivos = (...ativos: boolean[]) =>
+  payloadFaixas({ faixas: ativos.map((ativo, i) => faixa({ taxa: 4 + i, ativo })) });
+
+describe("[326] schemaFaixasEntrega — caminho feliz", () => {
+  it("aceita incremento 1 com duas faixas (com `ativo`) e devolve exatamente o payload", () => {
+    const r = schemaFaixas().safeParse(payloadFaixas());
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual(payloadFaixas());
+  });
+
+  it("aceita incremento 2", () => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ incremento: 2 })).success).toBe(true);
+  });
+
+  it("aceita 0 faixas (lojista remove todas: entrega sem zona)", () => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas: [] })).success).toBe(true);
+  });
+
+  it("aceita 30 faixas (teto)", () => {
+    const faixas = Array.from({ length: 30 }, () => faixa());
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas })).success).toBe(true);
+  });
+
+  it("aceita taxa 0 e grátis 0 (limite inferior)", () => {
+    const r = schemaFaixas().safeParse(
+      payloadFaixas({ faixas: [faixa({ taxa: 0, pedido_minimo_gratis: 0 })] }),
+    );
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("[326] schemaFaixasEntrega — .strict(): servidor deriva, cliente não manda (D2)", () => {
+  it.each([
+    ["raio_max_km", { raio_max_km: 99 }],
+    ["nome", { nome: "Frete grátis" }],
+    ["zona_id", { zona_id: "33333333-3333-3333-3333-333333333333" }],
+    ["loja_id", { loja_id: "22222222-2222-2222-2222-222222222222" }],
+    ["tipo", { tipo: "bairro" }],
+  ])("faixa com `%s` extra ⇒ recusado", (_chave, extra) => {
+    const r = schemaFaixas().safeParse(payloadFaixas({ faixas: [faixa(extra)] }));
+    expect(r.success).toBe(false);
+  });
+
+  it.each([
+    ["loja_id", { loja_id: "22222222-2222-2222-2222-222222222222" }],
+    ["zona_id", { zona_id: "33333333-3333-3333-3333-333333333333" }],
+    ["raio_max_km", { raio_max_km: 10 }],
+    ["nome", { nome: "x" }],
+  ])("raiz com `%s` extra ⇒ recusado", (_chave, extra) => {
+    const r = schemaFaixas().safeParse(payloadFaixas(extra));
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("[326 it.2] schemaFaixasEntrega — `ativo` por faixa (C2'): obrigatório e boolean", () => {
+  it("`ativo` false é ACEITO e preservado no parse (antes, .strict() recusava a chave)", () => {
+    const entrada = payloadFaixas({ faixas: [faixa(), faixa({ taxa: 6, ativo: false })] });
+    const r = schemaFaixas().safeParse(entrada);
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual(entrada);
+  });
+
+  it("faixa SEM `ativo` ⇒ recusado (obrigatório; não vira true por default)", () => {
+    const semAtivo = { taxa: 4.5, pedido_minimo_gratis: null };
+    const r = schemaFaixas().safeParse(payloadFaixas({ faixas: [faixa(), semAtivo] }));
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.some((i) => JSON.stringify(i.path) === JSON.stringify(["faixas", 1, "ativo"]))).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ["string 'true'", "true"],
+    ["string 'false'", "false"],
+    ["número 1", 1],
+    ["número 0", 0],
+    ["null", null],
+  ])("`ativo` %s ⇒ recusado (sem coerção)", (_n, ativo) => {
+    const r = schemaFaixas().safeParse(payloadFaixas({ faixas: [faixa(), faixa({ ativo })] }));
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("[326 it.2] schemaFaixasEntrega — invariante de PREFIXO: nenhuma ativa depois de desligada (C2')", () => {
+  it.each([
+    ["[t,t,f,f]", [true, true, false, false]],
+    ["[f,f] (todas desligadas)", [false, false]],
+    ["[t]", [true]],
+    ["[f]", [false]],
+    ["[t,t,t]", [true, true, true]],
+  ])("%s ⇒ aceito", (_n, ativos) => {
+    const r = schemaFaixas().safeParse(comAtivos(...ativos));
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual(comAtivos(...ativos));
+  });
+
+  it.each([
+    ["[t,f,t]", [true, false, true], 2],
+    ["[f,t]", [false, true], 1],
+    ["[t,t,f,f,t]", [true, true, false, false, true], 4],
+    ["[t,f,t,t] (aponta a PRIMEIRA ativa depois do buraco)", [true, false, true, true], 2],
+  ])("%s ⇒ recusado; issue em faixas[<1ª ativa depois do buraco>].ativo com a mensagem do contrato", (_n, ativos, indice) => {
+    const msg = mensagemBuraco();
+    const r = schemaFaixas().safeParse(comAtivos(...ativos));
+    expect(r.success).toBe(false);
+    const issues = r.error?.issues ?? [];
+    expect(issues).toContainEqual(expect.objectContaining({ path: ["faixas", indice, "ativo"], message: msg }));
+  });
+});
+
+describe("[326] schemaFaixasEntrega — valorFrete em taxa e em pedido_minimo_gratis", () => {
+  it.each([
+    ["taxa negativa", { taxa: -1 }],
+    ["taxa 4.555 (não é centavo)", { taxa: 4.555 }],
+    ["taxa string", { taxa: "4.50" }],
+    ["taxa null", { taxa: null }],
+    ["taxa ausente", { taxa: undefined }],
+    ["grátis negativo", { pedido_minimo_gratis: -10 }],
+    ["grátis 50.005 (não é centavo)", { pedido_minimo_gratis: 50.005 }],
+    ["grátis string", { pedido_minimo_gratis: "60" }],
+    ["taxa negativa em faixa DESLIGADA", { taxa: -1, ativo: false }],
+  ])("%s ⇒ recusado", (_nome, over) => {
+    const r = schemaFaixas().safeParse(payloadFaixas({ faixas: [faixa(), faixa(over)] }));
+    expect(r.success).toBe(false);
+  });
+
+  it("grátis null é aceito (faixa sem frete grátis)", () => {
+    const r = schemaFaixas().safeParse(
+      payloadFaixas({ faixas: [faixa({ pedido_minimo_gratis: null })] }),
+    );
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("[326] schemaFaixasEntrega — incremento ∈ {1, 2} e 0..30 faixas", () => {
+  it.each([[0], [3], [1.5], ["1"], [null], [-1]])("incremento %j ⇒ recusado", (inc) => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ incremento: inc })).success).toBe(false);
+  });
+
+  it("31 faixas ⇒ recusado", () => {
+    const faixas = Array.from({ length: 31 }, () => faixa());
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas })).success).toBe(false);
+  });
+
+  it("faixas não-array ⇒ recusado", () => {
+    expect(schemaFaixas().safeParse(payloadFaixas({ faixas: faixa() })).success).toBe(false);
   });
 });

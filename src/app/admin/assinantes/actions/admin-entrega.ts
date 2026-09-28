@@ -30,6 +30,7 @@ import {
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
 import {
+  schemaFaixasEntrega,
   schemaModalidadesEntrega,
   schemaZonaCompleta,
 } from "@/lib/validacoes/entrega";
@@ -78,6 +79,52 @@ export async function salvarModalidadesEntregaAdmin(
     return { ok: true };
   } catch (e) {
     console.error("[salvarModalidadesEntregaAdmin]", e);
+    return { ok: false, erro: ERRO_GENERICO };
+  }
+}
+
+/**
+ * Par admin de `salvarFaixasEntrega` (issue 326, D6). Ordem fail-closed D-4:
+ * lojaId validado → zod (`.strict()`, recusado SEM elevar) → prova de admin
+ * FORA do try (propaga) → UMA RPC atômica com `p_loja_id` LITERAL do lojaId
+ * validado. Sob service_role não há RLS: o escopo é o filtro
+ * `loja_id = p_loja_id` dentro da RPC.
+ */
+export async function salvarFaixasEntregaAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<ResultadoEntregaAdmin> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaFaixasEntrega.safeParse(payload);
+  if (!parsed.success) return { ok: false, erro: "Dados inválidos." };
+
+  const { svc } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    const { error } = await svc.rpc("salvar_faixas_entrega", {
+      p_loja_id: loja.lojaId,
+      p_incremento: parsed.data.incremento,
+      p_faixas: parsed.data.faixas,
+    });
+    if (error) {
+      console.error("[salvarFaixasEntregaAdmin]", error);
+      return { ok: false, erro: ERRO_GENERICO };
+    }
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "salvar_faixas_entrega",
+      metadados: {
+        incremento: parsed.data.incremento,
+        faixas: parsed.data.faixas.length,
+      },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarFaixasEntregaAdmin]", e);
     return { ok: false, erro: ERRO_GENERICO };
   }
 }

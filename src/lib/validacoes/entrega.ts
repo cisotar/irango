@@ -112,6 +112,47 @@ export const schemaRegistroFreteCombinado = z
   })
   .strict();
 
+// ─── Tabela de faixas de entrega (issue 326, D2/C2') ────────────────────────
+// ISOMÓRFICO: gate de UX na tela e autoridade nas Server Actions (lojista e
+// admin), antes de qualquer I/O. O cliente manda SÓ `incremento` e, por faixa,
+// `taxa`, `pedido_minimo_gratis` e `ativo`; teto, nome, tipo, loja e zona são
+// derivados na RPC `salvar_faixas_entrega`. `.strict()` nos dois níveis: chave
+// extra é RECUSADA, não descartada. Teto de 30 e invariante de prefixo das
+// ativas espelham a RPC (20260930120000).
+export const TETO_FAIXAS_ENTREGA = 30;
+
+export const MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA =
+  "Ligue as faixas de cima antes desta: a entrega não pode pular distância.";
+
+export const schemaFaixaEntrega = z
+  .object({
+    taxa: valorFrete,
+    pedido_minimo_gratis: valorFrete.nullable(),
+    ativo: z.boolean(),
+  })
+  .strict();
+
+export const schemaFaixasEntrega = z
+  .object({
+    incremento: z.union([z.literal(1), z.literal(2)]),
+    faixas: z.array(schemaFaixaEntrega).max(TETO_FAIXAS_ENTREGA),
+  })
+  .strict()
+  .superRefine(({ faixas }, ctx) => {
+    // C2': ativas formam um prefixo — nenhuma ativa depois de uma desligada.
+    const primeiraDesligada = faixas.findIndex((f) => !f.ativo);
+    if (primeiraDesligada === -1) return;
+    const buraco = faixas.findIndex((f, i) => i > primeiraDesligada && f.ativo);
+    if (buraco === -1) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["faixas", buraco, "ativo"],
+      message: MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA,
+    });
+  });
+
+export type DadosFaixasEntrega = z.infer<typeof schemaFaixasEntrega>;
+
 // Payload completo do form de zona (issue 046): zona + taxa (1:1) + bairros
 // (1:N) num só envio. ISOMÓRFICO — usado no client (gate de UX) e revalidado
 // na Server Action (autoridade). FORA daqui: loja_id/zona_id (derivados no

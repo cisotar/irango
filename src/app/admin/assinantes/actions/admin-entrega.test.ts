@@ -128,14 +128,39 @@ function makeChain() {
   };
 }
 
+// [326] RPC capturada (salvarFaixasEntregaAdmin). Não interfere nos testes de
+// zona acima, que só usam `.from`.
+type ChamadaRpc = { nome: string; args: Record<string, unknown> };
+let chamadasRpc: ChamadaRpc[] = [];
+let respostaRpc: { data: unknown; error: unknown } = { data: 1, error: null };
+
 const clientServico = {
   from: (t: string) => fromImpl(t),
+  rpc: (nome: string, args: Record<string, unknown>) => {
+    chamadasRpc.push({ nome, args });
+    return Promise.resolve(respostaRpc);
+  },
 };
 let fromImpl: (t: string) => unknown;
 const createServiceClient = vi.fn(() => clientServico);
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => createServiceClient(),
 }));
+
+// [326] Espião TRANSPARENTE em `prepararContextoAdmin` (delega ao original):
+// prova de ordem "lojaId e zod ANTES da elevação" sem mudar o comportamento
+// que os testes de zona acima já exercitam.
+const prepararContextoAdminSpy = vi.fn();
+vi.mock("@/lib/actions/admin-loja", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("@/lib/actions/admin-loja")>();
+  return {
+    ...orig,
+    prepararContextoAdmin: (lojaId: string) => {
+      prepararContextoAdminSpy(lojaId);
+      return orig.prepararContextoAdmin(lojaId);
+    },
+  };
+});
 
 // STUBs lançam "TODO: GREEN" → import resolve, mas cada chamada falha → RED.
 import {
@@ -144,10 +169,15 @@ import {
   removerZonaAdmin,
   alternarZonaAtivaAdmin,
 } from "./admin-entrega";
+// [326] `salvarFaixasEntregaAdmin` ainda não existe: resolvida pelo NAMESPACE
+// para o RED ser "export ausente" só nos testes novos.
+import * as adminEntrega from "./admin-entrega";
 
 beforeEach(() => {
   vi.clearAllMocks();
   ops = [];
+  chamadasRpc = [];
+  respostaRpc = { data: 1, error: null };
   respostaPosseZona = { data: { id: ZONA_ID, loja_id: LOJA_ALVO }, error: null };
   respostaEscrita = { data: { id: ZONA_ID }, error: null };
   verificarAdminSaaS.mockResolvedValue(undefined);
@@ -359,5 +389,155 @@ describe("criarZonaAdmin — sucesso grava zona+taxa+bairros na loja-alvo", () =
     const grava = insZona!.payload as Record<string, unknown>;
     expect(grava.loja_id).toBe(LOJA_ALVO);
     expect(grava.loja_id).not.toBe(LOJA_OUTRA);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// [326/F2] salvarFaixasEntregaAdmin — RED (tasks/326-tabela-de-faixas-de-entrega.md)
+//
+// CONTRATO (src/app/admin/assinantes/actions/admin-entrega.ts, 'use server'):
+//   salvarFaixasEntregaAdmin(lojaId: string, payload: unknown): Promise<{ok:true}|{ok:false;erro:string}>
+// Ordem fail-closed D-4 (precedente `aplicarFrequenciaEmProdutosAdmin`,
+// admin-produtos.ts): validarLojaIdAdmin → schemaFaixasEntrega.safeParse →
+// prepararContextoAdmin (FORA do try, propaga) → svc.rpc("salvar_faixas_entrega",
+// { p_loja_id: loja.lojaId, p_incremento, p_faixas }) com `p_loja_id` LITERAL do
+// lojaId validado — sob service_role não há RLS; o escopo é o filtro da RPC.
+// ITERAÇÃO 2 (C2'): `p_faixas` carrega `ativo` de cada faixa; faixa sem `ativo`
+// ou ativa depois de desligada é recusada pelo zod ANTES da elevação.
+// ═════════════════════════════════════════════════════════════════════════════
+type ResultadoAdmin = { ok: true } | { ok: false; erro: string };
+
+function salvarFaixasEntregaAdmin(lojaId: unknown, payload: unknown): Promise<ResultadoAdmin> {
+  const fn = (
+    adminEntrega as unknown as {
+      salvarFaixasEntregaAdmin?: (l: unknown, p: unknown) => Promise<ResultadoAdmin>;
+    }
+  ).salvarFaixasEntregaAdmin;
+  if (typeof fn !== "function") {
+    throw new Error(
+      "[RED 326] `admin-entrega.ts` ainda não exporta `salvarFaixasEntregaAdmin` (F2, P3 do plano).",
+    );
+  }
+  return fn(lojaId, payload);
+}
+
+const FAIXAS_VALIDAS = {
+  incremento: 2,
+  faixas: [
+    { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+    { taxa: 6.5, pedido_minimo_gratis: 80, ativo: false },
+  ],
+};
+
+describe("[326] salvarFaixasEntregaAdmin — lojaId validado ANTES de elevar", () => {
+  it.each([["nao-e-uuid"], [""], [null], [123]])(
+    "lojaId %j ⇒ { ok:false } sem prepararContextoAdmin / admin / service / rpc",
+    async (lojaId) => {
+      const r = await salvarFaixasEntregaAdmin(lojaId, FAIXAS_VALIDAS);
+
+      expect(r).toEqual({ ok: false, erro: expect.any(String) });
+      expect(prepararContextoAdminSpy).not.toHaveBeenCalled();
+      expect(verificarAdminSaaS).not.toHaveBeenCalled();
+      expect(createServiceClient).not.toHaveBeenCalled();
+      expect(chamadasRpc).toEqual([]);
+    },
+  );
+});
+
+describe("[326] salvarFaixasEntregaAdmin — zod roda ANTES da elevação de privilégio", () => {
+  it.each([
+    ["incremento 3", { ...FAIXAS_VALIDAS, incremento: 3 }],
+    ["taxa negativa", { ...FAIXAS_VALIDAS, faixas: [{ taxa: -5, pedido_minimo_gratis: null, ativo: true }] }],
+    ["taxa 4.555", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4.555, pedido_minimo_gratis: null, ativo: true }] }],
+    ["grátis negativo", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: -1, ativo: true }] }],
+    [
+      "31 faixas",
+      {
+        incremento: 1,
+        faixas: Array.from({ length: 31 }, () => ({ taxa: 4, pedido_minimo_gratis: null, ativo: true })),
+      },
+    ],
+    ["loja_id forjado na raiz", { ...FAIXAS_VALIDAS, loja_id: LOJA_OUTRA }],
+    [
+      "raio_max_km na faixa",
+      { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: null, ativo: true, raio_max_km: 50 }] },
+    ],
+    ["[it.2] faixa SEM ativo", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: null }] }],
+    [
+      "[it.2] faixa ativa depois de desligada [f,t]",
+      {
+        incremento: 1,
+        faixas: [
+          { taxa: 4, pedido_minimo_gratis: null, ativo: false },
+          { taxa: 6, pedido_minimo_gratis: null, ativo: true },
+        ],
+      },
+    ],
+  ])("%s ⇒ { ok:false } sem prepararContextoAdmin / admin / service / rpc", async (_nome, payload) => {
+    const r = await salvarFaixasEntregaAdmin(LOJA_ALVO, payload);
+
+    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    expect(prepararContextoAdminSpy).not.toHaveBeenCalled();
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(chamadasRpc).toEqual([]);
+  });
+});
+
+describe("[326] salvarFaixasEntregaAdmin — RPC escopada pelo lojaId validado", () => {
+  it("payload válido ⇒ prepararContextoAdmin(lojaId) e UMA rpc com p_loja_id = lojaId e args literais", async () => {
+    const r = await salvarFaixasEntregaAdmin(LOJA_ALVO, FAIXAS_VALIDAS);
+
+    expect(r).toEqual({ ok: true });
+    expect(prepararContextoAdminSpy).toHaveBeenCalledTimes(1);
+    expect(prepararContextoAdminSpy).toHaveBeenCalledWith(LOJA_ALVO);
+    expect(verificarAdminSaaS).toHaveBeenCalledTimes(1);
+    expect(chamadasRpc).toEqual([
+      {
+        nome: "salvar_faixas_entrega",
+        args: {
+          p_loja_id: LOJA_ALVO,
+          p_incremento: 2,
+          p_faixas: [
+            { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+            { taxa: 6.5, pedido_minimo_gratis: 80, ativo: false },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("escrita é SÓ pela RPC atômica — nenhuma escrita solta em zonas/taxas/bairros", async () => {
+    await salvarFaixasEntregaAdmin(LOJA_ALVO, FAIXAS_VALIDAS);
+
+    const escritasDeZona = ops.filter(
+      (o) =>
+        ["zonas_entrega", "taxas_entrega", "bairros_zona"].includes(o.tabela) && o.acao !== "select",
+    );
+    expect(escritasDeZona).toEqual([]);
+  });
+
+  it("admin NÃO provado ⇒ exceção PROPAGA, service nunca criado, rpc nunca chamada", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(salvarFaixasEntregaAdmin(LOJA_ALVO, FAIXAS_VALIDAS)).rejects.toThrow("acesso negado");
+
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(chamadasRpc).toEqual([]);
+  });
+
+  it("erro do banco na RPC ⇒ { ok:false } genérico, sem vazar a mensagem interna", async () => {
+    const spyErro = vi.spyOn(console, "error").mockImplementation(() => {});
+    respostaRpc = {
+      data: null,
+      error: { code: "P0001", message: "salvar_faixas_entrega: taxa invalida" },
+    };
+
+    const r = await salvarFaixasEntregaAdmin(LOJA_ALVO, FAIXAS_VALIDAS);
+
+    expect(r.ok).toBe(false);
+    expect((r as { erro: string }).erro).not.toMatch(/salvar_faixas_entrega|P0001|invalida/);
+    expect(spyErro).toHaveBeenCalled();
+    spyErro.mockRestore();
   });
 });

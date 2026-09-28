@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.6.0 | **Atualizado:** 2026-09-27
+**Versão:** 0.6.1 | **Atualizado:** 2026-09-27
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -457,6 +457,32 @@ até aqui) — é **se o corpo já filtra tenant explicitamente no `WHERE`**. Co
 → `DEFINER` + T1..T7 (seção anterior). Corpo com filtro de tenant explícito, aplicável aos dois
 chamadores sem diferença de caminho → `INVOKER` continua seguro e preserva a RLS do lojista como
 camada extra, sem custo. Mesma classe de defesa em profundidade do wrapper `EscopoLoja` (§7).
+
+### Quinta instância do padrão INVOKER — T2 de posse explícita antes do DELETE, porque 0 linhas visíveis por RLS não é sinal de erro (issue 326)
+
+`public.salvar_faixas_entrega(p_loja_id, p_incremento, p_faixas)` (migration
+`20260929120000_rpc_salvar_faixas_entrega.sql`, recriada em
+`20260930120000_rpc_salvar_faixas_entrega_ativo.sql`) é a terceira função `SECURITY INVOKER` chamada
+**pelos dois mundos** (lojista autenticado e hub admin `service_role`), mesma família da Quarta
+instância acima — mas a razão de existir de T2 aqui é diferente da de `aplicar_frequencia_em_produtos`.
+Lá, um `p_loja_id` alheio faz o `UPDATE` zerar linhas sob RLS e o `row_count` divergente denuncia o
+ataque. Aqui a escrita começa por um `DELETE FROM zonas_entrega WHERE loja_id = p_loja_id` — e com
+`p_faixas = []` (lista vazia é válida, D1) **não existe contagem esperada diferente de zero para
+comparar**: um dono chamando com `p_loja_id` de outra loja e lista vazia produziria um `DELETE` de 0
+linhas visíveis sob a RLS `zonas_escrita_propria` — sucesso silencioso, sem sinal de erro nenhum, e a
+função retornaria `0` faixas gravadas como se tivesse limpado a própria loja. Por isso T2 (`lojas.dono_id
+= auth.uid()` OU via de serviço) é a PRIMEIRA trava depois da validação de forma (T1: incremento ∈
+{1,2}, `p_faixas` é array, teto de 30 itens) e roda **antes de qualquer `DELETE`/`INSERT`** — recusa
+por posse, não por contagem pós-escrita. Via de serviço com os mesmos dois sinais em conjunção desta
+seção (`coalesce(auth.role(), '') = 'service_role'` **E** `current_setting('role', true)` fora de
+`authenticated`/`anon`, fail-closed): provado com claim `service_role` forjado numa sessão SQL que
+continua `authenticated` (`tests/migrations/rpc_salvar_faixas_entrega.test.ts`, teste "sessão
+'authenticated' com claim role FORJADO 'service_role' ⇒ 'sem posse' pela via do dono") — a via de
+serviço nega pelo sinal de role efetivo mesmo com o claim do JWT mentindo. T3 (valor por item: `taxa`
+e `pedido_minimo_gratis` numéricos, ≥ 0, com no máximo 2 casas; `ativo` boolean JSON sem coerção;
+nenhuma faixa ativa depois de uma desligada) roda depois de T2 e antes da escrita,
+sobre TODOS os itens do array antes do primeiro `INSERT` — qualquer item inválido derruba a transação
+inteira, estado anterior intacto. Ver `schema.md` §2 para a regra "zonas por faixa" que a RPC deriva.
 
 ### Alternativa sem RPC: sequência de requests sob constraint trigger DEFERRED (issues 284/285)
 
