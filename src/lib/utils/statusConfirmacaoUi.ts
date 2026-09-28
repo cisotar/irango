@@ -6,8 +6,8 @@ import type { StatusPedido } from "@/lib/utils/transicaoStatus";
  * `LinhaTempoStatus` (130) — para que o texto não divirja entre a badge e a
  * linha do tempo.
  *
- * NÃO confundir com a copy do LOJISTA (`APARENCIA_STATUS` em `DetalhePedido.tsx`
- * / `TabelaPedidos.tsx`): audiências diferentes, copy diferente. Duplicação
+ * NÃO confundir com a copy do LOJISTA (`rotuloStatusPedido` em `rotulosPedido.ts`
+ * / `BadgeStatusPedido.tsx`): audiências diferentes, copy diferente. Duplicação
  * intencional — não acoplar as duas telas.
  *
  * Só APRESENTAÇÃO: função pura, sem I/O, sem valor monetário, sem PII. A ordem
@@ -53,8 +53,15 @@ const COPY_STATUS: Record<StatusPedido, CopyStatus> = {
   },
 };
 
-/** Mensagem de `saiu_entrega` quando o pedido é para retirada no balcão. */
-const MENSAGEM_SAIU_RETIRADA = "Seu pedido está pronto para retirada.";
+/**
+ * Copy de `saiu_entrega` quando o pedido é para retirada no balcão (RN-SC11,
+ * issue 329): título E mensagem — nenhum texto diz que um pedido de retirada
+ * "saiu para entrega". `LinhaTempoStatus` herda o título no rótulo do passo.
+ */
+const COPY_SAIU_RETIRADA: CopyStatus = {
+  titulo: "Pronto para retirada",
+  mensagem: "Seu pedido está pronto para retirada.",
+};
 
 /** Fallback seguro para `status` fora do enum (drift de dado/schema legado). */
 const COPY_FALLBACK: CopyStatus = {
@@ -69,7 +76,7 @@ function ehStatusPedido(s: string): s is StatusPedido {
 
 /**
  * Copy do cliente para um `status`. `tipoEntrega` só é consultado em
- * `saiu_entrega`: `"retirada"` → "pronto para retirada"; qualquer outro valor
+ * `saiu_entrega`: `"retirada"` → "Pronto para retirada" (título e mensagem); qualquer outro valor
  * (incluindo `"entrega"`, `null`, `""` ou desconhecido) usa o texto de
  * `entrega` ("a caminho") como default seguro. Nunca lança — status fora do
  * enum cai no fallback genérico.
@@ -83,7 +90,7 @@ export function copyStatusConfirmacao(
   }
 
   if (status === "saiu_entrega" && tipoEntrega === "retirada") {
-    return { ...COPY_STATUS.saiu_entrega, mensagem: MENSAGEM_SAIU_RETIRADA };
+    return COPY_SAIU_RETIRADA;
   }
 
   return COPY_STATUS[status];

@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 
 import { DashboardLoja } from "@/components/painel/DashboardLoja";
+import { atualizarStatusPedidoAdmin } from "@/app/admin/assinantes/actions/admin-status";
 import { carregarDashboardLojaAdmin } from "./carga-pedidos";
 
 /**
@@ -15,6 +16,11 @@ import { carregarDashboardLojaAdmin } from "./carga-pedidos";
  * `lojaId`, prova admin e só então eleva a service_role). `basePedidos` aponta
  * para a sub-rota admin de pedidos desta loja — navegação, não barreira; o
  * isolamento por loja está no loader.
+ *
+ * `acaoStatus` (issue 329): o selo clicável da tabela usa a action ADMIN com
+ * `.bind(null, lojaId)` (não arrow inline — só Server Actions e seus `.bind`
+ * cruzam a fronteira server→client), padrão de `pedidos/[id]/page.tsx`. Sem a
+ * prop o selo cairia na action do lojista, que a RLS zera para o admin.
  */
 export default async function DashboardLojaAdminPage({
   params,
@@ -34,6 +40,7 @@ export default async function DashboardLojaAdminPage({
       <DashboardLoja
         pedidos={pedidos}
         basePedidos={`/admin/assinantes/${lojaId}/pedidos`}
+        acaoStatus={atualizarStatusPedidoAdmin.bind(null, lojaId)}
       />
     </div>
   );

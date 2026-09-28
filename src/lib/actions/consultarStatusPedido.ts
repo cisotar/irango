@@ -3,8 +3,9 @@
 // Server Action de POLLING de status do pedido (issue 128 — crítica).
 //
 // O cliente (issue 131) chama esta action a cada 8s para acompanhar o status do
-// pedido. Leitura MÍNIMA por posse do token: retorna SÓ { status, tipo_entrega }.
-// Nenhuma PII (nome/telefone/endereço/itens/valores) trafega no polling.
+// pedido. Leitura MÍNIMA por posse do token: lê e retorna SÓ { status,
+// tipo_entrega } (`buscarStatusPedidoPorToken`, RN-SC9 da issue 329). Nenhuma PII
+// (nome/telefone/endereço/itens/valores) é lida do banco nem trafega no polling.
 //
 // Segurança:
 //   - Autorização por POSSE DO TOKEN (senha do pedido): validada na query
@@ -18,7 +19,7 @@
 import { z } from "zod";
 import { headers } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/service";
-import { buscarPedidoPorToken } from "@/lib/supabase/queries/pedidos";
+import { buscarStatusPedidoPorToken } from "@/lib/supabase/queries/pedidos";
 import { verificarRateLimit, extrairIp } from "@/lib/utils/rateLimit";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
@@ -54,7 +55,7 @@ export async function consultarStatusPedido(
   token: string,
 ): Promise<ResultadoStatusPedido> {
   // 1) Valida input (uuid) antes de qualquer I/O — formato inválido não toca o
-  //    banco (defesa em profundidade; buscarPedidoPorToken também guarda).
+  //    banco (defesa em profundidade; buscarStatusPedidoPorToken também guarda).
   if (
     !schemaUuid.safeParse(pedidoId).success ||
     !schemaUuid.safeParse(token).success
@@ -71,16 +72,17 @@ export async function consultarStatusPedido(
       return naoEncontrado();
     }
 
-    // 3) Leitura escopada por (id, token) via service_role.
+    // 3) Leitura ENXUTA escopada por (id, token) via service_role: só as duas
+    //    colunas que o polling devolve.
     const svc = createServiceClient();
-    const pedido = await buscarPedidoPorToken(svc, pedidoId, token);
+    const pedido = await buscarStatusPedidoPorToken(svc, pedidoId, token);
 
     // 4) Par errado / inexistente → mesma resposta genérica (anti-enumeração).
     if (pedido == null) {
       return naoEncontrado();
     }
 
-    // 5) Projeção mínima — descarta PII/itens/valores.
+    // 5) Projeção explícita — defesa em profundidade se a query regredir.
     return {
       encontrado: true,
       status: pedido.status as StatusPedido,

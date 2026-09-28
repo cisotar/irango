@@ -8,6 +8,7 @@
 
 import type { ItemPedidoOpcional } from "@/lib/supabase/queries/pedidos";
 import type { OpcionalExibicao } from "@/components/vitrine/ListaOpcionaisItem";
+import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 /** Rótulo humano da forma de pagamento gravada no pedido. Fallback: o valor cru. */
 export const ROTULO_FORMA_PAGAMENTO: Record<string, string> = {
@@ -22,6 +23,40 @@ export const ROTULO_TIPO_ENTREGA: Record<string, string> = {
   retirada: "Retirada",
   entrega: "Entrega",
 };
+
+/**
+ * Rótulo do status no PAINEL (lojista e hub admin). O `Record<StatusPedido, …>`
+ * força cobertura exaustiva: um status novo no grafo quebra o build até ter
+ * rótulo aqui. NÃO é a copy do cliente (`copyStatusConfirmacao`, vitrine).
+ */
+const ROTULO_STATUS_PEDIDO: Record<StatusPedido, string> = {
+  pendente: "Pendente",
+  confirmado: "Confirmado",
+  em_preparo: "Em preparo",
+  saiu_entrega: "Saiu pra entrega",
+  entregue: "Entregue",
+  cancelado: "Cancelado",
+};
+
+/** `saiu_entrega` em pedido de retirada (RN-SC11): o pedido não "sai", fica no balcão. */
+const ROTULO_SAIU_RETIRADA = "Pronto para retirada";
+
+/**
+ * Fonte ÚNICA do rótulo de status no painel: selo, `aria-label` do gatilho,
+ * menu do selo e `AcoesStatus` (RN-SC11). `tipoEntrega` só pesa em
+ * `saiu_entrega`: `"retirada"` → "Pronto para retirada"; qualquer outro valor
+ * (`"entrega"`, `null`, `""`, desconhecido) usa o rótulo de entrega — o mesmo
+ * default seguro de `copyStatusConfirmacao`. O status gravado não muda.
+ */
+export function rotuloStatusPedido(
+  status: StatusPedido,
+  tipoEntrega: string | null,
+): string {
+  if (status === "saiu_entrega" && tipoEntrega === "retirada") {
+    return ROTULO_SAIU_RETIRADA;
+  }
+  return ROTULO_STATUS_PEDIDO[status];
+}
 
 /** Só o bairro interessa às vias impressas. */
 type EnderecoResumo = { bairro?: string };

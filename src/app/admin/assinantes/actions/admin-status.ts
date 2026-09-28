@@ -17,8 +17,10 @@
  *     atual; pedido de outra loja/inexistente → data:null → { ok:false } SEM escrita.
  *  4. transicaoPermitida(atual, novo) — máquina de estados revalidada no servidor
  *     (RN-08); salto/reversão/saída de terminal → { ok:false } SEM UPDATE.
- *  5. escopo.atualizar("pedidos", id, { status }) escopado por loja_id+id, guard
- *     count === 1 (corrida/escopo zerado → { ok:false }, não mente ok:true).
+ *  5. escopo.atualizar("pedidos", id, { status }) escopado por loja_id+id e
+ *     TRAVADO no status lido (`.eq("status", atual)`, RN-SC4 da issue 329 —
+ *     fecha o TOCTOU entre a leitura e a escrita), guard count === 1 (corrida/
+ *     escopo zerado → { ok:false }, não mente ok:true).
  *  6. revalidarLojaAdmin + revalidatePath das rotas de pedidos admin;
  *     registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico (detalhe só no log).
  *
@@ -91,17 +93,17 @@ export async function atualizarStatusPedidoAdmin(
     }
 
     // Escrita escopada por loja_id + id (cross-loja) pelo wrapper; o patch não
-    // re-parenteia (loja_id) nem re-chaveia (id).
-    const { error: erroEscrita, count } = await escopo.atualizar(
-      "pedidos",
-      pedidoId,
-      { status },
-    );
+    // re-parenteia (loja_id) nem re-chaveia (id). A condição `.eq("status",
+    // atual)` só estreita o escopo: se o status mudou entre a leitura e o
+    // UPDATE, casa 0 linhas e o log `{ de }` nunca mente (RN-SC4).
+    const { error: erroEscrita, count } = await escopo
+      .atualizar("pedidos", pedidoId, { status })
+      .eq("status", atual);
     if (erroEscrita) {
       console.error("[atualizarStatusPedidoAdmin]", erroEscrita);
       return { ok: false, erro: ERRO_GENERICO };
     }
-    // count !== 1: corrida/escopo zerou o match. Não é sucesso.
+    // count !== 1: corrida (status mudou) ou escopo zerou o match. Não é sucesso.
     if (count !== 1) return { ok: false, erro: ERRO_GENERICO };
 
     registrarAcessoAdmin(svc, {

@@ -1,59 +1,65 @@
 "use client";
 
-import { useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { atualizarStatusPedido } from "@/lib/actions/status";
 import {
-  transicaoPermitida,
-  type StatusPedido,
-} from "@/lib/utils/transicaoStatus";
+  DialogoConfirmacaoAcao,
+  useConfirmacaoAcao,
+} from "@/components/painel/ConfirmacaoAcaoStatus";
+import { ProvedorRefreshCoalescido } from "@/components/painel/ProvedorRefreshCoalescido";
+import { useAcaoStatusOtimista } from "@/hooks/useAcaoStatusOtimista";
+import { atualizarStatusPedido, type AcaoStatus } from "@/lib/actions/status";
+import { acoesDisponiveis } from "@/lib/utils/acoesStatusPedido";
+import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
+import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
-/**
- * Botões de transição de status do pedido (issue 049). Exibe APENAS ações
- * permitidas a partir do status atual, usando a mesma função pura `transicaoPermitida`
- * que o servidor (033). A UI é só conveniência — a AUTORIDADE da máquina de
- * estados (RN-08) é a Server Action que executa a transição, que revalida tudo.
- *
- * O prop `acao` (issue 124) permite injetar a Server Action de transição —
- * default `atualizarStatusPedido` (lojista); o wrapper admin injeta sua variante
- * escopada por loja. O prop NÃO afrouxa a autoridade: ambas as actions revalidam
- * `transicaoPermitida` no servidor. É injeção de dependência de UI, nada mais.
- */
-// Derivado da action real (não escrito à mão): se `ResultadoAtualizarStatus`
-// mudar, este tipo acompanha em compile-time. Exportado para o wrapper admin
-// (issues 133/140) tipar sua variante sem redigitar a assinatura.
-export type AcaoStatus = typeof atualizarStatusPedido;
-
-const ACOES: { status: StatusPedido; rotulo: string }[] = [
-  { status: "confirmado", rotulo: "Confirmar" },
-  { status: "em_preparo", rotulo: "Iniciar preparo" },
-  { status: "saiu_entrega", rotulo: "Saiu pra entrega" },
-  { status: "entregue", rotulo: "Marcar entregue" },
-  { status: "cancelado", rotulo: "Cancelar" },
-];
-
-export function AcoesStatus({
-  pedidoId,
-  statusAtual,
-  acao,
-}: {
+type PropsAcoesStatus = {
   pedidoId: string;
   statusAtual: StatusPedido;
+  /** `tipo_entrega` do pedido: decide o rótulo de `saiu_entrega` (RN-SC11). */
+  tipoEntrega?: string | null;
   acao?: AcaoStatus;
-}) {
-  const router = useRouter();
-  const [pendente, startTransition] = useTransition();
-  const executar = acao ?? atualizarStatusPedido;
+};
 
-  const disponiveis = ACOES.filter((a) =>
-    transicaoPermitida(statusAtual, a.status),
+/**
+ * Botões de transição de status no detalhe do pedido (issues 049 e 329). A
+ * lista vem de `acoesDisponiveis` — a mesma derivação do grafo que o servidor
+ * usa — na ordem RN-SC13: a próxima etapa como botão primário, o atalho para
+ * `saiu_entrega` como secundário (`outline`) e "Cancelar". O atalho que pula
+ * etapa e "Cancelar" pedem confirmação (RN-SC6). A UI é só conveniência: a
+ * AUTORIDADE da máquina de estados é a Server Action, que revalida tudo.
+ *
+ * O prop `acao` (issue 124) injeta a Server Action — default
+ * `atualizarStatusPedido` (lojista); o hub admin injeta a variante escopada por
+ * loja. Não afrouxa a autoridade: é injeção de dependência de UI.
+ */
+export function AcoesStatus(props: PropsAcoesStatus) {
+  return (
+    <ProvedorRefreshCoalescido>
+      <BotoesAcoesStatus {...props} />
+    </ProvedorRefreshCoalescido>
   );
+}
 
-  if (disponiveis.length === 0) {
+function BotoesAcoesStatus({
+  pedidoId,
+  statusAtual,
+  tipoEntrega = null,
+  acao = atualizarStatusPedido,
+}: PropsAcoesStatus) {
+  const confirmacao = useConfirmacaoAcao();
+  const { status, emAndamento, escolher } = useAcaoStatusOtimista({
+    pedidoId,
+    status: statusAtual,
+    acao,
+    confirmar: confirmacao.pedir,
+    contexto: "AcoesStatus",
+  });
+
+  const acoes = acoesDisponiveis(status, tipoEntrega);
+
+  if (acoes.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
         Este pedido está finalizado — nenhuma ação disponível.
@@ -61,31 +67,28 @@ export function AcoesStatus({
     );
   }
 
-  function aplicar(novoStatus: StatusPedido) {
-    startTransition(async () => {
-      const resultado = await executar(pedidoId, novoStatus);
-      if (!resultado.ok) {
-        toast.error(resultado.erro);
-        return;
-      }
-      toast.success("Status atualizado.");
-      router.refresh();
-    });
-  }
-
   return (
-    <div className="flex flex-wrap gap-2">
-      {disponiveis.map((a) => (
-        <Button
-          key={a.status}
-          variant={a.status === "cancelado" ? "destructive" : "default"}
-          disabled={pendente}
-          onClick={() => aplicar(a.status)}
-        >
-          {pendente && <Loader2 className="mr-2 size-4 animate-spin" />}
-          {a.rotulo}
-        </Button>
-      ))}
-    </div>
+    <>
+      <div className="flex flex-wrap gap-2">
+        {acoes.map((a) => (
+          <Button
+            key={a.status}
+            variant={a.destrutiva ? "destructive" : a.principal ? "default" : "outline"}
+            disabled={emAndamento}
+            onClick={() => escolher(a)}
+          >
+            {emAndamento && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {a.rotulo}
+          </Button>
+        ))}
+      </div>
+      <DialogoConfirmacaoAcao
+        aberto={confirmacao.aberto}
+        acao={confirmacao.acao}
+        responder={confirmacao.responder}
+        numero={formatarNumeroPedido(pedidoId)}
+        tipoEntrega={tipoEntrega}
+      />
+    </>
   );
 }

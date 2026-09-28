@@ -19,15 +19,21 @@ export type StatusPedido = (typeof STATUS_VALIDOS)[number];
  * transição `de → para` é permitida pelo grafo. Função PURA — reusada na action
  * (033) e na UI (049) para exibir só os botões de ação válidos.
  *
- * Grafo (issue 033):
+ * Grafo (issue 033; atalho da RN-SC2, issue 329):
  *   pendente → confirmado → em_preparo → saiu_entrega → entregue
+ *   atalho para saiu_entrega a partir de pendente | confirmado (RN-SC2 —
+ *     specs/status-pedido-clicavel-e-latencia.md, P3 opção A)
  *   cancelar permitido de: pendente | confirmado | em_preparo
  *   entregue e cancelado são TERMINAIS (sem saída)
- *   sem reversão / sem salto
+ *   sem reversão; nenhum outro salto (pular para entregue continua proibido)
+ *
+ * Fonte ÚNICA das arestas. `acoesDisponiveis`/`ehAtalho`/`origensPermitidas`
+ * (`acoesStatusPedido.ts`) derivam daqui via `transicaoPermitida` — nunca
+ * listam arestas de novo.
  */
 const TRANSICOES: Record<StatusPedido, readonly StatusPedido[]> = {
-  pendente: ["confirmado", "cancelado"],
-  confirmado: ["em_preparo", "cancelado"],
+  pendente: ["confirmado", "saiu_entrega", "cancelado"],
+  confirmado: ["em_preparo", "saiu_entrega", "cancelado"],
   em_preparo: ["saiu_entrega", "cancelado"],
   saiu_entrega: ["entregue"],
   entregue: [],

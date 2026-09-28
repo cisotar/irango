@@ -49,9 +49,11 @@ describe("transições exibidas por status (fonte única transicaoPermitida)", (
     const html = render("pendente");
     expect(html).toContain("Confirmar");
     expect(html).toContain("Cancelar");
-    // Inválidas a partir de pendente (não deve haver salto):
+    // Inválidas a partir de pendente (nenhum salto além do atalho da RN-SC2):
     expect(html).not.toContain("Iniciar preparo");
-    expect(html).not.toContain("Saiu pra entrega");
+    // Issue 329 (RN-SC2): o atalho para saiu_entrega aparece em pendente,
+    // com confirmação (RN-SC6) — spec status-pedido-clicavel-e-latencia.md.
+    expect(html).toContain("Saiu pra entrega");
     expect(html).not.toContain("Marcar entregue");
   });
 

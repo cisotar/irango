@@ -1,21 +1,16 @@
 import Link from "next/link";
-import {
-  Clock,
-  Check,
-  ChefHat,
-  Bike,
-  CheckCheck,
-  X,
-  Store,
-  type LucideIcon,
-} from "lucide-react";
+import { Store } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { BadgeStatusPedido } from "@/components/painel/BadgeStatusPedido";
+import { MenuStatusPedido } from "@/components/painel/MenuStatusPedido";
+import { ProvedorRefreshCoalescido } from "@/components/painel/ProvedorRefreshCoalescido";
+import type { AcaoStatus } from "@/lib/actions/status";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import { ROTULO_TIPO_ENTREGA } from "@/lib/utils/rotulosPedido";
-import type { StatusPedido } from "@/lib/utils/transicaoStatus";
+import { ehStatusTerminal, type StatusPedido } from "@/lib/utils/transicaoStatus";
 
 /**
  * Pedido na forma mínima exigida pela tabela (apresentação). Os dados já vêm
@@ -42,46 +37,12 @@ type TabelaPedidosProps = {
    * `"/admin/assinantes/L1/pedidos"`). É navegação, não barreira de segurança.
    */
   basePedidos?: string;
-};
-
-/**
- * Aparência de cada status (RN-08). Cores são de SISTEMA — não do tema da loja
- * (design-system §8). Sempre cor + texto + ícone (nunca só cor — WCAG).
- */
-const APARENCIA_STATUS: Record<
-  StatusPedido,
-  { rotulo: string; icone: LucideIcon; classes: string }
-> = {
-  pendente: {
-    rotulo: "Pendente",
-    icone: Clock,
-    classes: "border-transparent bg-amber-100 text-amber-800",
-  },
-  confirmado: {
-    rotulo: "Confirmado",
-    icone: Check,
-    classes: "border-transparent bg-blue-100 text-blue-800",
-  },
-  em_preparo: {
-    rotulo: "Em preparo",
-    icone: ChefHat,
-    classes: "border-transparent bg-orange-100 text-orange-800",
-  },
-  saiu_entrega: {
-    rotulo: "Saiu pra entrega",
-    icone: Bike,
-    classes: "border-transparent bg-cyan-100 text-cyan-800",
-  },
-  entregue: {
-    rotulo: "Entregue",
-    icone: CheckCheck,
-    classes: "border-transparent bg-green-100 text-green-800",
-  },
-  cancelado: {
-    rotulo: "Cancelado",
-    icone: X,
-    classes: "border-transparent bg-red-100 text-red-800",
-  },
+  /**
+   * Server Action de mudança de status repassada ao selo clicável. Default = a
+   * do lojista; o hub admin injeta `atualizarStatusPedidoAdmin.bind(null, lojaId)`.
+   * Injeção de dependência de UI — a autoridade é a action.
+   */
+  acaoStatus?: AcaoStatus;
 };
 
 const formatadorHora = new Intl.DateTimeFormat("pt-BR", {
@@ -93,13 +54,28 @@ function horaLocal(criadoEm: string): string {
   return formatadorHora.format(new Date(criadoEm));
 }
 
-function BadgeStatusPedido({ status }: { status: StatusPedido }) {
-  const { rotulo, icone: Icone, classes } = APARENCIA_STATUS[status];
+/**
+ * Célula de status: selo clicável (menu de ações) nos status não terminais,
+ * selo estático em `entregue`/`cancelado` — a mesma `ehStatusTerminal` que o
+ * servidor usa.
+ */
+function StatusDaLinha({
+  pedido,
+  acaoStatus,
+}: {
+  pedido: PedidoLinha;
+  acaoStatus?: AcaoStatus;
+}) {
+  if (ehStatusTerminal(pedido.status)) {
+    return <BadgeStatusPedido status={pedido.status} tipoEntrega={pedido.tipo_entrega} />;
+  }
   return (
-    <Badge className={classes}>
-      <Icone aria-hidden className="size-3.5" />
-      {rotulo}
-    </Badge>
+    <MenuStatusPedido
+      pedidoId={pedido.id}
+      status={pedido.status}
+      tipoEntrega={pedido.tipo_entrega}
+      acao={acaoStatus}
+    />
   );
 }
 
@@ -118,10 +94,17 @@ function SeloRetirada({ tipoEntrega }: { tipoEntrega: string }) {
  * Tabela de pedidos reutilizável (dashboard + gestão). Linha inteira navega ao
  * detalhe. Desktop = tabela densa; mobile = lista de cards (sem scroll
  * horizontal — design-system §9). Mesma fonte de dados alimenta as duas.
+ *
+ * Sem `'use client'`: a interatividade do selo é uma ilha client
+ * (`MenuStatusPedido`). Nos dois breakpoints o link do pedido cobre a
+ * linha/cartão por sobreposição (`after:absolute after:inset-0`) e o selo fica
+ * acima dela (`relative z-10`) — nenhum `<button>` dentro de `<a>`. Todas as
+ * linhas compartilham um refresh coalescido (uma rajada = um refresh).
  */
 export function TabelaPedidos({
   pedidos,
   basePedidos = "/painel/pedidos",
+  acaoStatus,
 }: TabelaPedidosProps) {
   if (pedidos.length === 0) {
     return (
@@ -132,7 +115,7 @@ export function TabelaPedidos({
   }
 
   return (
-    <>
+    <ProvedorRefreshCoalescido>
       {/* Desktop: tabela densa (já dentro de um Card — sem borda própria) */}
       <div className="hidden overflow-hidden rounded-lg md:block">
         <table className="w-full text-sm">
@@ -167,7 +150,7 @@ export function TabelaPedidos({
                 </td>
                 <td className="px-4 py-3">{formatarMoeda(pedido.total)}</td>
                 <td className="px-4 py-3">
-                  <BadgeStatusPedido status={pedido.status} />
+                  <StatusDaLinha pedido={pedido} acaoStatus={acaoStatus} />
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {horaLocal(pedido.criado_em)}
@@ -182,26 +165,27 @@ export function TabelaPedidos({
       <ul className="flex flex-col gap-3 md:hidden">
         {pedidos.map((pedido) => (
           <li key={pedido.id}>
-            <Link href={`${basePedidos}/${pedido.id}`} className="block">
-              <Card size="sm" className="gap-2 transition-colors hover:bg-muted/50">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-sm text-foreground">
-                    #{formatarNumeroPedido(pedido.id)}
-                  </span>
-                  <BadgeStatusPedido status={pedido.status} />
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">{pedido.nome_cliente}</p>
-                  <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {formatarMoeda(pedido.total)} · {horaLocal(pedido.criado_em)}
-                </p>
-              </Card>
-            </Link>
+            <Card size="sm" className="relative gap-2 transition-colors hover:bg-muted/50">
+              <div className="flex items-center justify-between gap-2">
+                <Link
+                  href={`${basePedidos}/${pedido.id}`}
+                  className="font-mono text-sm text-foreground after:absolute after:inset-0"
+                >
+                  #{formatarNumeroPedido(pedido.id)}
+                </Link>
+                <StatusDaLinha pedido={pedido} acaoStatus={acaoStatus} />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium">{pedido.nome_cliente}</p>
+                <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {formatarMoeda(pedido.total)} · {horaLocal(pedido.criado_em)}
+              </p>
+            </Card>
           </li>
         ))}
       </ul>
-    </>
+    </ProvedorRefreshCoalescido>
   );
 }

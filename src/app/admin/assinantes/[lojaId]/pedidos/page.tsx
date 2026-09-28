@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 
 import { paraLinhaPedido } from "@/lib/utils/paraLinhaPedido";
 import { PedidosClient } from "@/app/(painel)/painel/(bloqueavel)/pedidos/PedidosClient";
+import { atualizarStatusPedidoAdmin } from "@/app/admin/assinantes/actions/admin-status";
 import { carregarDashboardLojaAdmin } from "../carga-pedidos";
 
 /**
@@ -16,6 +17,9 @@ import { carregarDashboardLojaAdmin } from "../carga-pedidos";
  * `basePedidos` é montado NO SERVIDOR a partir dele (o filtro por status do
  * `PedidosClient` é só UX; a lista já chega escopada). Nenhum valor autoritativo é
  * decidido aqui: só fiação e mapeamento de exibição.
+ *
+ * `acaoStatus` (issue 329): action ADMIN com `.bind(null, lojaId)` para o selo
+ * clicável (mesmo padrão de `[id]/page.tsx`; `lojaId` fixado no servidor).
  */
 export const dynamic = "force-dynamic";
 
@@ -32,6 +36,7 @@ export default async function PedidosAdminPage({
     <PedidosClient
       pedidos={pedidos.map(paraLinhaPedido)}
       basePedidos={basePedidos}
+      acaoStatus={atualizarStatusPedidoAdmin.bind(null, lojaId)}
     />
   );
 }

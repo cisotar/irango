@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabelaPedidos, type PedidoLinha } from "@/components/painel/TabelaPedidos";
+import type { AcaoStatus } from "@/lib/actions/status";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 /**
@@ -19,6 +20,8 @@ export type PedidosClientProps = {
    * SEM barra final. Default = painel do lojista.
    */
   basePedidos?: string;
+  /** Server Action do selo clicável, repassada a `TabelaPedidos` (issue 329). */
+  acaoStatus?: AcaoStatus;
 };
 
 type FiltroStatus = "todos" | StatusPedido;
@@ -28,7 +31,8 @@ const FILTROS: { valor: FiltroStatus; rotulo: string }[] = [
   { valor: "pendente", rotulo: "Pendentes" },
   { valor: "confirmado", rotulo: "Confirmados" },
   { valor: "em_preparo", rotulo: "Em preparo" },
-  { valor: "saiu_entrega", rotulo: "Saiu pra entrega" },
+  // Lista junto entrega a caminho e retirada pronta no balcão (P12, issue 329).
+  { valor: "saiu_entrega", rotulo: "A caminho / pronto" },
   { valor: "entregue", rotulo: "Entregues" },
   { valor: "cancelado", rotulo: "Cancelados" },
 ];
@@ -36,6 +40,7 @@ const FILTROS: { valor: FiltroStatus; rotulo: string }[] = [
 export function PedidosClient({
   pedidos,
   basePedidos = "/painel/pedidos",
+  acaoStatus,
 }: PedidosClientProps) {
   const [filtro, setFiltro] = useState<FiltroStatus>("todos");
 
@@ -76,7 +81,11 @@ export function PedidosClient({
           </div>
         </CardHeader>
         <CardContent>
-          <TabelaPedidos pedidos={visiveis} basePedidos={basePedidos} />
+          <TabelaPedidos
+            pedidos={visiveis}
+            basePedidos={basePedidos}
+            acaoStatus={acaoStatus}
+          />
         </CardContent>
       </Card>
     </div>
