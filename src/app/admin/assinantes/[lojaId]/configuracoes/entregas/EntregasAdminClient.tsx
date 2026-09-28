@@ -5,17 +5,14 @@ import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 
 import {
-  criarZonaAdmin,
-  atualizarZonaAdmin,
-  removerZonaAdmin,
-  alternarZonaAtivaAdmin,
+  salvarFaixasEntregaAdmin,
   salvarModalidadesEntregaAdmin,
 } from "@/app/admin/assinantes/actions/admin-entrega";
 
 /**
  * Wrapper admin fino da sub-rota de Entregas (issue 152). Reusa o
- * `EntregasClient` do painel (097) e INJETA as actions admin de zona (094) com o
- * `lojaId` da URL fixado por closure.
+ * `EntregasClient` do painel (097) e INJETA as actions admin (094; faixas em
+ * lote na issue 326) com o `lojaId` da URL fixado por closure.
  *
  * A autoridade (geocoding, taxa, escopo cross-loja) é das actions no servidor. A
  * taxa gravada aqui é definição comercial — o valor cobrado ao cliente segue
@@ -39,11 +36,7 @@ export function EntregasAdminClient({
       taxaForaZona={taxaForaZona}
       acoes={{
         salvarModalidades: (payload) => salvarModalidadesEntregaAdmin(lojaId, payload),
-        criarZona: (payload) => criarZonaAdmin(lojaId, payload),
-        atualizarZona: (id, payload) => atualizarZonaAdmin(lojaId, id, payload),
-        removerZona: (id) => removerZonaAdmin(lojaId, id),
-        alternarZonaAtiva: (id, ativo) =>
-          alternarZonaAtivaAdmin(lojaId, id, ativo),
+        salvarFaixas: (payload) => salvarFaixasEntregaAdmin(lojaId, payload),
       }}
     />
   );
