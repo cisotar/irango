@@ -91,11 +91,14 @@ export function PilulasDeDias({
       className={
         compacto
           ? "grid grid-cols-7 gap-1"
-          : "grid grid-cols-4 gap-2 sm:grid-cols-7"
+          : "grid grid-cols-4 gap-x-1.5 sm:max-w-md sm:grid-cols-7"
       }
     >
       {DIAS_DA_SEMANA.map((dia, indice) => {
         const marcado = valor.includes(dia.valor);
+        const estado = marcado
+          ? "border-primary bg-primary font-semibold text-primary-foreground"
+          : "bg-background font-medium";
         return (
           <button
             key={dia.valor}
@@ -110,13 +113,23 @@ export function PilulasDeDias({
             onFocus={() => setFocado(indice)}
             onKeyDown={(evento) => aoTeclar(evento, indice)}
             onClick={() => alternar(dia.valor)}
-            className={`${compacto ? ALVO_COMPACTO : ALVO} rounded-lg border text-sm focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-60 ${
-              marcado
-                ? "border-primary bg-primary font-semibold text-primary-foreground"
-                : "bg-background font-medium hover:bg-muted"
-            }`}
+            className={
+              compacto
+                ? `${ALVO_COMPACTO} rounded-lg border text-sm focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-60 ${estado} ${marcado ? "" : "hover:bg-muted"}`
+                : `${ALVO} group grid place-items-center text-xs outline-none disabled:pointer-events-none disabled:opacity-60`
+            }
           >
-            {compacto ? dia.rotulo.charAt(0) : dia.rotulo}
+            {compacto ? (
+              dia.rotulo.charAt(0)
+            ) : (
+              // O botão é o alvo de toque de 44px (design-system §5); a pílula de
+              // 32px dentro dele é só o desenho, para a fileira não pesar na linha.
+              <span
+                className={`inline-flex h-[32px] items-center rounded-full border px-3 group-focus-visible:ring-3 group-focus-visible:ring-ring/50 ${estado} ${marcado ? "" : "group-hover:bg-muted"}`}
+              >
+                {dia.rotulo}
+              </span>
+            )}
           </button>
         );
       })}
