@@ -90,7 +90,7 @@ describe("TabelaPedidos — selo de status por linha (StatusDaLinha)", () => {
   it("nenhum <button> aparece DENTRO de um <a> — nem no card mobile, nem na linha desktop", () => {
     const html = render({ pedidos: [{ ...PEDIDO, status: "pendente" }] });
     // Cada <a>...</a> (o link do pedido) não deve conter nenhum <button dentro.
-    const linksComBotaoDentro = html.match(/<a\b[^>]*>(?:(?!<\/a>).)*<button/gs);
+    const linksComBotaoDentro = html.match(/<a\b[^>]*>(?:(?!<\/a>)[\s\S])*<button/g);
     expect(linksComBotaoDentro).toBeNull();
   });
 
