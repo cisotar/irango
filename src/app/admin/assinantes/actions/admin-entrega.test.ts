@@ -402,6 +402,8 @@ describe("criarZonaAdmin — sucesso grava zona+taxa+bairros na loja-alvo", () =
 // prepararContextoAdmin (FORA do try, propaga) → svc.rpc("salvar_faixas_entrega",
 // { p_loja_id: loja.lojaId, p_incremento, p_faixas }) com `p_loja_id` LITERAL do
 // lojaId validado — sob service_role não há RLS; o escopo é o filtro da RPC.
+// ITERAÇÃO 2 (C2'): `p_faixas` carrega `ativo` de cada faixa; faixa sem `ativo`
+// ou ativa depois de desligada é recusada pelo zod ANTES da elevação.
 // ═════════════════════════════════════════════════════════════════════════════
 type ResultadoAdmin = { ok: true } | { ok: false; erro: string };
 
@@ -422,8 +424,8 @@ function salvarFaixasEntregaAdmin(lojaId: unknown, payload: unknown): Promise<Re
 const FAIXAS_VALIDAS = {
   incremento: 2,
   faixas: [
-    { taxa: 4, pedido_minimo_gratis: null },
-    { taxa: 6.5, pedido_minimo_gratis: 80 },
+    { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+    { taxa: 6.5, pedido_minimo_gratis: 80, ativo: false },
   ],
 };
 
@@ -445,15 +447,32 @@ describe("[326] salvarFaixasEntregaAdmin — lojaId validado ANTES de elevar", (
 describe("[326] salvarFaixasEntregaAdmin — zod roda ANTES da elevação de privilégio", () => {
   it.each([
     ["incremento 3", { ...FAIXAS_VALIDAS, incremento: 3 }],
-    ["taxa negativa", { ...FAIXAS_VALIDAS, faixas: [{ taxa: -5, pedido_minimo_gratis: null }] }],
-    ["taxa 4.555", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4.555, pedido_minimo_gratis: null }] }],
-    ["grátis negativo", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: -1 }] }],
+    ["taxa negativa", { ...FAIXAS_VALIDAS, faixas: [{ taxa: -5, pedido_minimo_gratis: null, ativo: true }] }],
+    ["taxa 4.555", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4.555, pedido_minimo_gratis: null, ativo: true }] }],
+    ["grátis negativo", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: -1, ativo: true }] }],
     [
       "31 faixas",
-      { incremento: 1, faixas: Array.from({ length: 31 }, () => ({ taxa: 4, pedido_minimo_gratis: null })) },
+      {
+        incremento: 1,
+        faixas: Array.from({ length: 31 }, () => ({ taxa: 4, pedido_minimo_gratis: null, ativo: true })),
+      },
     ],
     ["loja_id forjado na raiz", { ...FAIXAS_VALIDAS, loja_id: LOJA_OUTRA }],
-    ["raio_max_km na faixa", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: null, raio_max_km: 50 }] }],
+    [
+      "raio_max_km na faixa",
+      { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: null, ativo: true, raio_max_km: 50 }] },
+    ],
+    ["[it.2] faixa SEM ativo", { ...FAIXAS_VALIDAS, faixas: [{ taxa: 4, pedido_minimo_gratis: null }] }],
+    [
+      "[it.2] faixa ativa depois de desligada [f,t]",
+      {
+        incremento: 1,
+        faixas: [
+          { taxa: 4, pedido_minimo_gratis: null, ativo: false },
+          { taxa: 6, pedido_minimo_gratis: null, ativo: true },
+        ],
+      },
+    ],
   ])("%s ⇒ { ok:false } sem prepararContextoAdmin / admin / service / rpc", async (_nome, payload) => {
     const r = await salvarFaixasEntregaAdmin(LOJA_ALVO, payload);
 
@@ -480,8 +499,8 @@ describe("[326] salvarFaixasEntregaAdmin — RPC escopada pelo lojaId validado",
           p_loja_id: LOJA_ALVO,
           p_incremento: 2,
           p_faixas: [
-            { taxa: 4, pedido_minimo_gratis: null },
-            { taxa: 6.5, pedido_minimo_gratis: 80 },
+            { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+            { taxa: 6.5, pedido_minimo_gratis: 80, ativo: false },
           ],
         },
       },

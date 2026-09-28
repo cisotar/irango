@@ -14,9 +14,15 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  * faixa grava ativo = true) · plan/loop-faixas-de-entrega.md P3 (T1 forma, T2
  * autoridade antes de qualquer linha, T3 valor por item).
  *
- * Hoje a função não existe ⇒ RED = 42883 (função inexistente), nunca erro de
- * sintaxe do teste. A migration `20260929120000_rpc_salvar_faixas_entrega.sql`
- * é da fase GREEN.
+ * Iteração 1: a função não existia ⇒ RED = 42883. A migration
+ * `20260929120000_rpc_salvar_faixas_entrega.sql` está no remoto e NÃO muda.
+ *
+ * ITERAÇÃO 2 (issue 326, "Iteração 2 — retorno do checklist", C2' substitui C2):
+ * cada item passa a ter `ativo` (boolean, OBRIGATÓRIO) e a faixa grava com o
+ * `ativo` recebido. Invariante de PREFIXO: nenhuma faixa ativa depois de uma
+ * desligada (todas desligadas é válido). A mudança vai numa migration NOVA
+ * (`create or replace`, mesma assinatura) da fase GREEN. RED da iteração 2 =
+ * a função atual ignora `ativo` e grava sempre true.
  *
  * CONTRATO DE MENSAGENS (P0001, prefixo fixo, internas — a Server Action loga e
  * devolve genérica, seguranca.md §14):
@@ -26,6 +32,14 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  *   'salvar_faixas_entrega: sem posse'             T2: nem service_role nem dono de p_loja_id
  *   'salvar_faixas_entrega: taxa invalida'         taxa ausente, < 0 ou com mais de 2 casas
  *   'salvar_faixas_entrega: gratis invalido'       pedido_minimo_gratis < 0 ou com mais de 2 casas
+ *   'salvar_faixas_entrega: ativo invalido'        (it. 2) `ativo` ausente, null ou não-boolean
+ *   'salvar_faixas_entrega: faixa ativa depois de desligada'
+ *                                                  (it. 2) item ativo com algum anterior desligado
+ *
+ * Ordem (it. 2): as duas mensagens novas são T3 — depois de T1 e T2 (dono A
+ * com p_loja_id de B e lista com buraco continua 'sem posse'), antes de
+ * qualquer escrita. Os casos só têm UM defeito cada, para a ordem entre as
+ * checagens de T3 não importar.
  *
  * Anti-falso-verde:
  *  - toda recusa afirma SQLSTATE **e** fragmento (memória
@@ -161,17 +175,18 @@ const BASE_B: ZonaSemente[] = [
   { nome: "Vila B", tipo: "bairro", taxa: 2, bairros: ["Vila"] },
 ];
 
-/** Faixa como o CONTRATO espera ler de volta (D2 + C2). */
+/** Faixa como o CONTRATO espera ler de volta (D2 + C2'): `ativo` é o recebido. */
 function faixaGravada(
   nome: string,
   raio: number,
   taxa: number,
   gratis: number | null,
+  ativo = true,
 ): Omit<ZonaLida, "id"> {
   return {
     nome,
     tipo: "raio_km",
-    ativo: true,
+    ativo,
     taxa,
     pedido_minimo_gratis: gratis,
     raio_max_km: raio,
@@ -182,9 +197,9 @@ function faixaGravada(
 }
 
 const TRES_FAIXAS = [
-  { taxa: 4, pedido_minimo_gratis: null },
-  { taxa: 6, pedido_minimo_gratis: 60 },
-  { taxa: 5, pedido_minimo_gratis: null },
+  { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+  { taxa: 6, pedido_minimo_gratis: 60, ativo: true },
+  { taxa: 5, pedido_minimo_gratis: null, ativo: true },
 ];
 
 beforeAll(async () => {
@@ -253,7 +268,7 @@ describe("[326/F1] salvar_faixas_entrega — dono grava as faixas (D1/D2/C2)", (
   it("taxa 0 e grátis 0 são valores válidos (limite inferior)", async () => {
     await semear(lojaA, BASE_A);
 
-    await salvar("donoA", lojaA, 1, [{ taxa: 0, pedido_minimo_gratis: 0 }]);
+    await salvar("donoA", lojaA, 1, [{ taxa: 0, pedido_minimo_gratis: 0, ativo: true }]);
 
     expect(semId(await zonasDa(lojaA))).toEqual([faixaGravada("0–1 km", 1, 0, 0)]);
   });
@@ -369,29 +384,40 @@ describe("[326/F1] (f) valor inválido ⇒ exceção e estado ANTERIOR intacto (
   // e inserisse antes de validar teria linhas novas — o rollback da exceção (ou
   // a validação antecipada) é o que devolve o snapshot idêntico.
   const OK = [
-    { taxa: 4, pedido_minimo_gratis: null },
-    { taxa: 6, pedido_minimo_gratis: 60 },
+    { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+    { taxa: 6, pedido_minimo_gratis: 60, ativo: true },
   ];
 
   const casos: Array<[string, number | null, unknown, string]> = [
-    ["taxa negativa", 1, [...OK, { taxa: -1, pedido_minimo_gratis: null }], "salvar_faixas_entrega: taxa invalida"],
+    [
+      "taxa negativa",
+      1,
+      [...OK, { taxa: -1, pedido_minimo_gratis: null, ativo: true }],
+      "salvar_faixas_entrega: taxa invalida",
+    ],
     [
       "taxa 4.555 (não é múltiplo de centavo; a coluna arredondaria calada)",
       1,
-      [...OK, { taxa: 4.555, pedido_minimo_gratis: null }],
+      [...OK, { taxa: 4.555, pedido_minimo_gratis: null, ativo: true }],
       "salvar_faixas_entrega: taxa invalida",
     ],
-    ["taxa ausente", 1, [...OK, { pedido_minimo_gratis: null }], "salvar_faixas_entrega: taxa invalida"],
+    ["taxa ausente", 1, [...OK, { pedido_minimo_gratis: null, ativo: true }], "salvar_faixas_entrega: taxa invalida"],
+    [
+      "taxa negativa em faixa DESLIGADA (desligada também é validada: é gravada e pode voltar a cobrar)",
+      1,
+      [...OK, { taxa: -1, pedido_minimo_gratis: null, ativo: false }],
+      "salvar_faixas_entrega: taxa invalida",
+    ],
     [
       "grátis negativo",
       1,
-      [...OK, { taxa: 5, pedido_minimo_gratis: -10 }],
+      [...OK, { taxa: 5, pedido_minimo_gratis: -10, ativo: true }],
       "salvar_faixas_entrega: gratis invalido",
     ],
     [
       "grátis 50.005 (mais de 2 casas)",
       1,
-      [...OK, { taxa: 5, pedido_minimo_gratis: 50.005 }],
+      [...OK, { taxa: 5, pedido_minimo_gratis: 50.005, ativo: true }],
       "salvar_faixas_entrega: gratis invalido",
     ],
     ["incremento 3", 3, OK, "salvar_faixas_entrega: incremento invalido"],
@@ -400,10 +426,15 @@ describe("[326/F1] (f) valor inválido ⇒ exceção e estado ANTERIOR intacto (
     [
       "31 faixas",
       1,
-      Array.from({ length: 31 }, () => ({ taxa: 5, pedido_minimo_gratis: null })),
+      Array.from({ length: 31 }, () => ({ taxa: 5, pedido_minimo_gratis: null, ativo: true })),
       "salvar_faixas_entrega: lista acima do teto",
     ],
-    ["p_faixas objeto (não array)", 1, { taxa: 5, pedido_minimo_gratis: null }, "salvar_faixas_entrega: faixas invalidas"],
+    [
+      "p_faixas objeto (não array)",
+      1,
+      { taxa: 5, pedido_minimo_gratis: null, ativo: true },
+      "salvar_faixas_entrega: faixas invalidas",
+    ],
     ["p_faixas null", 1, undefined, "salvar_faixas_entrega: faixas invalidas"],
   ];
 
@@ -419,7 +450,7 @@ describe("[326/F1] (f) valor inválido ⇒ exceção e estado ANTERIOR intacto (
 
   it("30 faixas (teto) é aceito ⇒ último teto 30 km / 60 km no inc 2", async () => {
     await semear(lojaA, BASE_A);
-    const trinta = Array.from({ length: 30 }, () => ({ taxa: 5, pedido_minimo_gratis: null }));
+    const trinta = Array.from({ length: 30 }, () => ({ taxa: 5, pedido_minimo_gratis: null, ativo: true }));
 
     await salvar("donoA", lojaA, 2, trinta);
 
@@ -443,7 +474,7 @@ describe("[326/F1] (g) zonas bairro/faixa_cep antigas somem com filhas (cascata)
     const idsAntigos = (await zonasDa(lojaA)).map((z) => z.id);
     expect(idsAntigos).toHaveLength(3);
 
-    await salvar("donoA", lojaA, 1, [{ taxa: 4, pedido_minimo_gratis: null }]);
+    await salvar("donoA", lojaA, 1, [{ taxa: 4, pedido_minimo_gratis: null, ativo: true }]);
 
     expect(semId(await zonasDa(lojaA))).toEqual([faixaGravada("0–1 km", 1, 4, null)]);
     const orfas = await t.asService((s) =>
@@ -459,8 +490,10 @@ describe("[326/F1] (g) zonas bairro/faixa_cep antigas somem com filhas (cascata)
 });
 
 // ═══════════════════════════════════════════════ (h) chaves do cliente ignoradas
-describe("[326/F1] (h) item com raio_max_km/nome/loja_id/ativo/tipo é IGNORADO — servidor deriva (D2/C2)", () => {
-  it("teto vem da posição, nome é derivado, loja é p_loja_id, ativo = true, tipo = raio_km", async () => {
+// Iteração 2 (C2'): `ativo` DEIXOU de ser ignorado — é respeitado. As demais
+// chaves extras (raio_max_km, nome, loja_id, tipo, cep_*) continuam ignoradas.
+describe("[326/F1] (h) item com raio_max_km/nome/loja_id/tipo/cep_* é IGNORADO — servidor deriva (D2); `ativo` é RESPEITADO (C2')", () => {
+  it("teto vem da posição, nome é derivado, loja é p_loja_id, tipo = raio_km; ativo = o recebido", async () => {
     await semear(lojaA, BASE_A);
     await semear(lojaB, BASE_B);
     const bAntes = await zonasDa(lojaB);
@@ -472,18 +505,181 @@ describe("[326/F1] (h) item com raio_max_km/nome/loja_id/ativo/tipo é IGNORADO 
         raio_max_km: 99,
         nome: "Frete grátis",
         loja_id: lojaB,
-        ativo: false,
+        ativo: true,
         tipo: "bairro",
         cep_inicio: 1,
         cep_fim: 2,
       },
-      { taxa: 6, pedido_minimo_gratis: null, raio_max_km: 0.5, ativo: false },
+      { taxa: 6, pedido_minimo_gratis: null, raio_max_km: 0.5, nome: "Centro", ativo: false },
     ]);
 
     expect(semId(await zonasDa(lojaA))).toEqual([
-      faixaGravada("0–1 km", 1, 4, null),
-      faixaGravada("1–2 km", 2, 6, null),
+      faixaGravada("0–1 km", 1, 4, null, true),
+      faixaGravada("1–2 km", 2, 6, null, false),
     ]);
+    expect(await zonasDa(lojaB)).toEqual(bAntes);
+  });
+});
+
+// ═══════════════════════════════════════ (i) iteração 2 — `ativo` por faixa (C2')
+describe("[326/F1 it.2] (i) `ativo` por faixa: gravado como recebido, ativas formam PREFIXO", () => {
+  it("[t,t,f,f] inc 1 ⇒ aceito; 4 zonas com ativo t/t/f/f, tetos/nomes/taxas derivados como sempre; B intacta", async () => {
+    await semear(lojaA, BASE_A);
+    await semear(lojaB, BASE_B);
+    const bAntes = await zonasDa(lojaB);
+
+    await salvar("donoA", lojaA, 1, [
+      { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+      { taxa: 6, pedido_minimo_gratis: 60, ativo: true },
+      { taxa: 7, pedido_minimo_gratis: null, ativo: false },
+      { taxa: 9, pedido_minimo_gratis: 90, ativo: false },
+    ]);
+
+    expect(semId(await zonasDa(lojaA))).toEqual([
+      faixaGravada("0–1 km", 1, 4, null, true),
+      faixaGravada("1–2 km", 2, 6, 60, true),
+      faixaGravada("2–3 km", 3, 7, null, false),
+      faixaGravada("3–4 km", 4, 9, 90, false),
+    ]);
+    expect(await zonasDa(lojaB)).toEqual(bAntes);
+  });
+
+  it("[f,f] inc 2 ⇒ aceito (lojista pode desligar tudo): 2 zonas desligadas, tetos 2/4, preços preservados", async () => {
+    await semear(lojaA, BASE_A);
+
+    await salvar("donoA", lojaA, 2, [
+      { taxa: 4, pedido_minimo_gratis: null, ativo: false },
+      { taxa: 6, pedido_minimo_gratis: 60, ativo: false },
+    ]);
+
+    expect(semId(await zonasDa(lojaA))).toEqual([
+      faixaGravada("0–2 km", 2, 4, null, false),
+      faixaGravada("2–4 km", 4, 6, 60, false),
+    ]);
+  });
+
+  it("service_role também grava o `ativo` recebido ([t,f]) — a via admin segue o mesmo contrato", async () => {
+    await semear(lojaA, BASE_A);
+
+    await salvar("service", lojaA, 1, [
+      { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+      { taxa: 6, pedido_minimo_gratis: null, ativo: false },
+    ]);
+
+    expect(semId(await zonasDa(lojaA))).toEqual([
+      faixaGravada("0–1 km", 1, 4, null, true),
+      faixaGravada("1–2 km", 2, 6, null, false),
+    ]);
+  });
+
+  // Recusas: mesmo padrão de (f) — estado anterior CONHECIDO e não vazio, relido
+  // com ids num bloco separado depois da exceção.
+  const recusas: Array<[string, unknown, string]> = [
+    [
+      "[t,f,t] (buraco)",
+      [
+        { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+        { taxa: 6, pedido_minimo_gratis: null, ativo: false },
+        { taxa: 8, pedido_minimo_gratis: null, ativo: true },
+      ],
+      "salvar_faixas_entrega: faixa ativa depois de desligada",
+    ],
+    [
+      "[f,t] (primeira desligada, segunda ativa)",
+      [
+        { taxa: 4, pedido_minimo_gratis: null, ativo: false },
+        { taxa: 6, pedido_minimo_gratis: null, ativo: true },
+      ],
+      "salvar_faixas_entrega: faixa ativa depois de desligada",
+    ],
+    [
+      "[t,t,f,f,t] (ativa só no fim, depois de duas desligadas)",
+      [
+        { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+        { taxa: 5, pedido_minimo_gratis: null, ativo: true },
+        { taxa: 6, pedido_minimo_gratis: null, ativo: false },
+        { taxa: 7, pedido_minimo_gratis: null, ativo: false },
+        { taxa: 8, pedido_minimo_gratis: null, ativo: true },
+      ],
+      "salvar_faixas_entrega: faixa ativa depois de desligada",
+    ],
+    [
+      "`ativo` AUSENTE no último item",
+      [
+        { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+        { taxa: 6, pedido_minimo_gratis: null },
+      ],
+      "salvar_faixas_entrega: ativo invalido",
+    ],
+    [
+      "`ativo` null",
+      [{ taxa: 4, pedido_minimo_gratis: null, ativo: null }],
+      "salvar_faixas_entrega: ativo invalido",
+    ],
+    [
+      "`ativo` string 'true'",
+      [{ taxa: 4, pedido_minimo_gratis: null, ativo: "true" }],
+      "salvar_faixas_entrega: ativo invalido",
+    ],
+    [
+      "`ativo` número 1",
+      [{ taxa: 4, pedido_minimo_gratis: null, ativo: 1 }],
+      "salvar_faixas_entrega: ativo invalido",
+    ],
+    [
+      "`ativo` string 'false' depois de ativa (não pode virar desligada por coerção)",
+      [
+        { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+        { taxa: 6, pedido_minimo_gratis: null, ativo: "false" },
+      ],
+      "salvar_faixas_entrega: ativo invalido",
+    ],
+  ];
+
+  it.each(recusas)("%s ⇒ P0001 + mensagem; zonas/taxas/bairros de A idênticos (com ids)", async (_n, faixas, msg) => {
+    await semear(lojaA, BASE_A);
+    const aAntes = await zonasDa(lojaA);
+    expect(aAntes).toHaveLength(2); // estado conhecido e não vazio
+
+    esperarErro(await erroDe(salvar("donoA", lojaA, 1, faixas)), "P0001", msg);
+
+    expect(await zonasDa(lojaA)).toEqual(aAntes);
+  });
+
+  it("service_role com buraco [t,f,t] ⇒ também recusado (a regra é do dado, não do papel); A intacta", async () => {
+    await semear(lojaA, BASE_A);
+    const aAntes = await zonasDa(lojaA);
+
+    esperarErro(
+      await erroDe(
+        salvar("service", lojaA, 1, [
+          { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+          { taxa: 6, pedido_minimo_gratis: null, ativo: false },
+          { taxa: 8, pedido_minimo_gratis: null, ativo: true },
+        ]),
+      ),
+      "P0001",
+      "salvar_faixas_entrega: faixa ativa depois de desligada",
+    );
+
+    expect(await zonasDa(lojaA)).toEqual(aAntes);
+  });
+
+  it("dono A com p_loja_id de B E lista com buraco ⇒ 'sem posse' (T2 continua antes de T3); B intacta", async () => {
+    await semear(lojaB, BASE_B);
+    const bAntes = await zonasDa(lojaB);
+
+    esperarErro(
+      await erroDe(
+        salvar("donoA", lojaB, 1, [
+          { taxa: 4, pedido_minimo_gratis: null, ativo: false },
+          { taxa: 6, pedido_minimo_gratis: null, ativo: true },
+        ]),
+      ),
+      "P0001",
+      "salvar_faixas_entrega: sem posse",
+    );
+
     expect(await zonasDa(lojaB)).toEqual(bAntes);
   });
 });

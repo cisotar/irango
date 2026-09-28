@@ -31,19 +31,50 @@ import { formatarMoeda } from "./formatarMoeda";
  *
  * Decisões do usuário (2026-09-27), além de D4/C1:
  *   - expande só se o resultado tiver ≤ 30 faixas; acima ⇒ legado;
- *   - nenhuma zona ATIVA ⇒ igual a sem zonas (faixas, inc 1, [], sem aviso);
+ *   - nenhuma zona ATIVA ⇒ igual a sem zonas (faixas, inc 1, [], sem aviso) —
+ *     EXCETO quando as zonas estão no formato gravado (ver iteração 2);
  *   - C1 com empate no maior preço anterior ⇒ cita a faixa empatada MAIS PRÓXIMA.
  *   lerFaixas(zonas: ZonaVitrine[]): LeituraFaixas
  *   rotuloFaixa(indice: number, incremento: 1 | 2): string        // "1–2 km" (en dash)
- *   limiteEntregaKm(quantidade: number, incremento: 1 | 2): number | null
- *   alertaDePreco(faixas: { taxa: number }[], indice: number, incremento: 1 | 2): string | null
  *   textoLimiteEntrega(limiteKm: number | null, taxaForaZona: number | null): string
+ *
+ * ── ITERAÇÃO 2 (C2', C3', C1 ajuste, D4 ajuste — seção final da issue) ─────────
+ *   type FaixaEntrega = { taxa: number; pedido_minimo_gratis: number | null; ativo: boolean };
+ *
+ *   lerFaixas — "FORMATO GRAVADO" (o que a RPC grava): TODAS as zonas raio_km
+ *     com taxa; ordenadas por teto, o 1º teto ∈ {1,2} é o incremento e o i-ésimo
+ *     (0-based) é (i+1)×inc; nome === rotuloFaixa(i, inc); ativas formam PREFIXO.
+ *     ⇒ modo "faixas", uma faixa por zona NA ORDEM DO TETO (a ordem de entrada
+ *     não importa), `ativo` = o da zona, `zonasNoAviso` = [] — inclusive com o
+ *     final desligado e com TODAS desligadas (a RPC aceita [f,f]; reabrir tem de
+ *     mostrar as faixas com os preços, não uma tabela vazia).
+ *     Fora do formato gravado (tetos arbitrários, nome livre, buraco t/f/t,
+ *     teto decimal, bairro/CEP) o caminho de iteração 1 NÃO muda: expande só as
+ *     ativas via calcularFrete, e cada faixa expandida sai com `ativo: true`.
+ *   zonasJaSaoFaixas(zonas): true também no formato gravado com final desligado
+ *     ou todas desligadas; false com buraco.
+ *
+ *   limiteEntregaKm(faixas: ReadonlyArray<{ ativo: boolean }>, incremento: 1 | 2): number | null
+ *     ASSINATURA NOVA (antes recebia a quantidade): teto da ÚLTIMA faixa ATIVA
+ *     = (índice dela + 1) × incremento; null se nenhuma ativa. Recebe as faixas
+ *     (não a contagem de ativas) para não depender do invariante de prefixo.
+ *   alertaDePreco(faixas: ReadonlyArray<{ taxa: number; ativo: boolean }>, indice, incremento): string | null
+ *     compara só ATIVAS: faixa desligada nunca recebe alerta nem é citada.
+ *
+ *   Helpers novos da tela (puros; devolvem ARRAY NOVO, não mutam a entrada;
+ *   preservam taxa/grátis; genéricos no tipo da faixa):
+ *   desligarAPartirDe<T extends { ativo: boolean }>(faixas: readonly T[], indice: number): T[]
+ *     desliga `indice` e todas as abaixo (C2').
+ *   ligarAte<T extends { ativo: boolean }>(faixas: readonly T[], indice: number): T[]
+ *     liga da primeira desligada até `indice` (C2'); as abaixo de `indice` seguem como estão.
+ *   removerAPartirDe<T>(faixas: readonly T[], indice: number): T[]
+ *     apaga `indice` e todas as abaixo (C3').
  */
 
 const MODULO = "@/lib/utils/faixasEntrega";
 
 type Incremento = 1 | 2;
-type FaixaEntrega = { taxa: number; pedido_minimo_gratis: number | null };
+type FaixaEntrega = { taxa: number; pedido_minimo_gratis: number | null; ativo: boolean };
 type ZonaVitrine = ZonaComTaxa & { nome: string };
 type LeituraFaixas = {
   modo: "faixas" | "legado";
@@ -54,8 +85,12 @@ type LeituraFaixas = {
 type ModuloFaixas = {
   lerFaixas(zonas: ZonaVitrine[]): LeituraFaixas;
   rotuloFaixa(indice: number, incremento: Incremento): string;
-  limiteEntregaKm(quantidade: number, incremento: Incremento): number | null;
-  alertaDePreco(faixas: { taxa: number }[], indice: number, incremento: Incremento): string | null;
+  limiteEntregaKm(faixas: ReadonlyArray<{ ativo: boolean }>, incremento: Incremento): number | null;
+  alertaDePreco(
+    faixas: ReadonlyArray<{ taxa: number; ativo: boolean }>,
+    indice: number,
+    incremento: Incremento,
+  ): string | null;
   textoLimiteEntrega(limiteKm: number | null, taxaForaZona: number | null): string;
 };
 const EXPORTS = [
@@ -83,6 +118,31 @@ async function mod(): Promise<ModuloFaixas> {
   return m as unknown as ModuloFaixas;
 }
 
+// Helpers novos da iteração 2 resolvidos À PARTE: a ausência deles derruba só
+// os testes que os usam, não os de lerFaixas/rótulo/texto (que seguem valendo).
+type ModuloTela = {
+  desligarAPartirDe<T extends { ativo: boolean }>(faixas: readonly T[], indice: number): T[];
+  ligarAte<T extends { ativo: boolean }>(faixas: readonly T[], indice: number): T[];
+  removerAPartirDe<T>(faixas: readonly T[], indice: number): T[];
+};
+const EXPORTS_TELA = ["desligarAPartirDe", "ligarAte", "removerAPartirDe"] as const;
+
+async function modTela(): Promise<ModuloTela> {
+  const m = (await import(/* @vite-ignore */ MODULO)) as Partial<Record<(typeof EXPORTS_TELA)[number], unknown>>;
+  const faltando = EXPORTS_TELA.filter((n) => typeof m[n] !== "function");
+  if (faltando.length > 0) {
+    throw new Error(`[RED 326 it.2] \`src/lib/utils/faixasEntrega.ts\` ainda não exporta: ${faltando.join(", ")}.`);
+  }
+  return m as unknown as ModuloTela;
+}
+
+/** Faixa como a tela/lerFaixas devolve (iteração 2: com `ativo`). */
+const fx = (taxa: number, gratis: number | null = null, ativo = true): FaixaEntrega => ({
+  taxa,
+  pedido_minimo_gratis: gratis,
+  ativo,
+});
+
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 let seq = 0;
 function zonaRaio(
@@ -105,14 +165,17 @@ function zonaRaio(
 
 /**
  * O que a RPC grava a partir do payload (D2): teto = posição × incremento,
- * tipo raio_km, ativo = true (C2). É o contrato da gravação, não a regra de
- * preço — o preço quem decide é `calcularFrete`.
+ * tipo raio_km, ativo = o da faixa (C2', iteração 2). É o contrato da gravação,
+ * não a regra de preço — o preço quem decide é `calcularFrete`.
  */
 function comoGravado(leitura: LeituraFaixas): ZonaComTaxa[] {
   return leitura.faixas.map((f, i) => ({
     id: `ffffffff-0000-4000-8000-${String(i).padStart(12, "0")}`,
     tipo: "raio_km",
-    ativo: true,
+    // Só `false` EXPLÍCITO desliga: mantém os testes de equivalência de preço
+    // medindo PREÇO (não quebram por `ativo` ausente); a presença de `ativo`
+    // em cada faixa é cobrada pelos toEqual exatos.
+    ativo: f.ativo !== false,
     taxa: {
       taxa: f.taxa,
       pedido_minimo_gratis: f.pedido_minimo_gratis,
@@ -170,7 +233,7 @@ describe("[326/F3] lerFaixas — equivalência de preço (pré-preenchimento NÃ
 
     expect(r.modo).toBe("faixas");
     expect(r.incremento).toBe(1);
-    expect(r.faixas).toEqual(Array.from({ length: 7 }, () => ({ taxa: 8, pedido_minimo_gratis: null })));
+    expect(r.faixas).toEqual(Array.from({ length: 7 }, () => fx(8)));
     expect(r.zonasNoAviso).toEqual([]);
   });
 
@@ -187,14 +250,15 @@ describe("[326/F3] lerFaixas — equivalência de preço (pré-preenchimento NÃ
     expect(r.modo).toBe("faixas");
     expect(r.incremento).toBe(1); // 3 e 7 são ímpares
     // empate de teto 7 ⇒ calcularFrete escolhe a MAIOR taxa (RN-C8): R$9 / grátis 100
+    // iteração 2: faixa expandida do legado sai SEMPRE com ativo: true
     expect(r.faixas).toEqual([
-      { taxa: 5, pedido_minimo_gratis: 50 },
-      { taxa: 5, pedido_minimo_gratis: 50 },
-      { taxa: 5, pedido_minimo_gratis: 50 },
-      { taxa: 9, pedido_minimo_gratis: 100 },
-      { taxa: 9, pedido_minimo_gratis: 100 },
-      { taxa: 9, pedido_minimo_gratis: 100 },
-      { taxa: 9, pedido_minimo_gratis: 100 },
+      fx(5, 50),
+      fx(5, 50),
+      fx(5, 50),
+      fx(9, 100),
+      fx(9, 100),
+      fx(9, 100),
+      fx(9, 100),
     ]);
     // D4: a inativa NÃO entra na expansão (limite 7, não 10) e aparece no aviso
     expect(r.zonasNoAviso.map((z) => z.id)).toEqual([inativa.id]);
@@ -221,11 +285,7 @@ describe("[326/F3] lerFaixas — equivalência de preço (pré-preenchimento NÃ
 
     expect(r.modo).toBe("faixas");
     expect(r.incremento).toBe(2);
-    expect(r.faixas).toEqual([
-      { taxa: 5, pedido_minimo_gratis: null },
-      { taxa: 5, pedido_minimo_gratis: null },
-      { taxa: 8, pedido_minimo_gratis: 70 },
-    ]);
+    expect(r.faixas).toEqual([fx(5), fx(5), fx(8, 70)]);
     expect(divergencias(legado, comoGravado(r), 6, [0, 69.99, 70, 300])).toEqual([]);
   });
 
@@ -238,7 +298,7 @@ describe("[326/F3] lerFaixas — equivalência de preço (pré-preenchimento NÃ
     const r = lerFaixas(legado);
 
     expect(r.modo).toBe("faixas");
-    expect(r.faixas).toEqual(Array.from({ length: 3 }, () => ({ taxa: 5, pedido_minimo_gratis: null })));
+    expect(r.faixas).toEqual(Array.from({ length: 3 }, () => fx(5)));
     expect(r.zonasNoAviso.map((z) => z.id)).toEqual([inativa.id]);
     expect(divergencias(legado, comoGravado(r), 3, [0, 100])).toEqual([]);
   });
@@ -322,7 +382,7 @@ describe("[326/F3] lerFaixas — limite de 30 faixas: 30 ainda EXPANDE (borda)",
     expect(r.modo).toBe("faixas");
     expect(r.incremento).toBe(1);
     expect(r.faixas).toHaveLength(30);
-    expect(r.faixas[29]).toEqual({ taxa: 12, pedido_minimo_gratis: null });
+    expect(r.faixas[29]).toEqual(fx(12));
   });
 
   it("inc 2 com 30 faixas (zona única de 60 km) ⇒ faixas, 30 linhas", async () => {
@@ -351,6 +411,93 @@ describe("[326/F3] lerFaixas — só zonas INATIVAS ⇒ vazio, sem aviso (decis�
   });
 });
 
+// ═════════════════════════════════ F3 it.2 — lerFaixas no FORMATO GRAVADO (D4 ajuste)
+/** Zona exatamente como a RPC grava a faixa `i` (0-based). */
+const gravadaRpc = (i: number, inc: Incremento, taxa: number, gratis: number | null = null, ativo = true) =>
+  zonaRaio(`${i * inc}–${(i + 1) * inc} km`, (i + 1) * inc, taxa, gratis, ativo);
+
+describe("[326/F3 it.2] lerFaixas — zonas no formato gravado abrem UMA faixa por zona, com o `ativo` de cada", () => {
+  it("inc 1 [t,t,f] ⇒ 3 faixas (a desligada INCLUSIVE), ativo t/t/f, nada no aviso", async () => {
+    const { lerFaixas } = await mod();
+    const r = lerFaixas([gravadaRpc(0, 1, 4), gravadaRpc(1, 1, 6, 60), gravadaRpc(2, 1, 7, null, false)]);
+
+    expect(r).toEqual({
+      modo: "faixas",
+      incremento: 1,
+      faixas: [fx(4), fx(6, 60), fx(7, null, false)],
+      zonasNoAviso: [],
+    });
+  });
+
+  it("inc 2 [t,f,f] ⇒ incremento 2 e 3 faixas com ativo t/f/f (preço das desligadas preservado)", async () => {
+    const { lerFaixas } = await mod();
+    const r = lerFaixas([
+      gravadaRpc(0, 2, 4),
+      gravadaRpc(1, 2, 6, null, false),
+      gravadaRpc(2, 2, 9, 90, false),
+    ]);
+
+    expect(r).toEqual({
+      modo: "faixas",
+      incremento: 2,
+      faixas: [fx(4), fx(6, null, false), fx(9, 90, false)],
+      zonasNoAviso: [],
+    });
+  });
+
+  it("TODAS desligadas no formato gravado [f,f] ⇒ abre as 2 faixas desligadas (não a tabela vazia), nada no aviso", async () => {
+    const { lerFaixas } = await mod();
+    const r = lerFaixas([gravadaRpc(0, 1, 4, null, false), gravadaRpc(1, 1, 6, null, false)]);
+
+    expect(r).toEqual({
+      modo: "faixas",
+      incremento: 1,
+      faixas: [fx(4, null, false), fx(6, null, false)],
+      zonasNoAviso: [],
+    });
+  });
+
+  it("ordem de entrada embaralhada ⇒ faixas na ordem do TETO", async () => {
+    const { lerFaixas } = await mod();
+    const r = lerFaixas([gravadaRpc(2, 1, 7, null, false), gravadaRpc(0, 1, 4), gravadaRpc(1, 1, 6)]);
+
+    expect(r.faixas).toEqual([fx(4), fx(6), fx(7, null, false)]);
+  });
+
+  it("ida e volta: calcularFrete(zonas gravadas [t,t,f], d) === calcularFrete(regravadas de lerFaixas, d)", async () => {
+    const { lerFaixas } = await mod();
+    const zonas = [gravadaRpc(0, 1, 4), gravadaRpc(1, 1, 6, 60), gravadaRpc(2, 1, 7, null, false)];
+    const r = lerFaixas(zonas);
+
+    expect(divergencias(zonas, comoGravado(r), 3, [0, 59.99, 60, 200])).toEqual([]);
+  });
+
+  it("BURACO [t,f,t] com nomes derivados NÃO é formato gravado ⇒ caminho da iteração 1 (só ativas, via calcularFrete, ativo true), inativa no aviso", async () => {
+    // A RPC nova recusa esse estado; ele só existe se veio de outra via (ex.:
+    // Server Action de zona antiga). Abrir tem de manter o preço de HOJE.
+    const { lerFaixas } = await mod();
+    const buraco = gravadaRpc(1, 1, 6, null, false);
+    const zonas = [gravadaRpc(0, 1, 4), buraco, gravadaRpc(2, 1, 8)];
+    const r = lerFaixas(zonas);
+
+    expect(r.modo).toBe("faixas");
+    expect(r.incremento).toBe(1);
+    // d=2 cai na zona ativa de teto 3 (faixa exclusiva) ⇒ R$8
+    expect(r.faixas).toEqual([fx(4), fx(8), fx(8)]);
+    expect(r.zonasNoAviso.map((z) => z.id)).toEqual([buraco.id]);
+    expect(divergencias(zonas, comoGravado(r), 3, [0, 100])).toEqual([]);
+  });
+
+  it("inativa com NOME LIVRE no fim (tetos contíguos, mas não é o nome derivado) ⇒ caminho da iteração 1: só a ativa expande, inativa no aviso", async () => {
+    const { lerFaixas } = await mod();
+    const velha = zonaRaio("Promo", 2, 1, null, false);
+    const r = lerFaixas([gravadaRpc(0, 1, 4), velha]);
+
+    expect(r.faixas).toEqual([fx(4)]);
+    expect(r.zonasNoAviso.map((z) => z.id)).toEqual([velha.id]);
+  });
+});
+
 // ═════════════════════════════════════════════════ F4 — helpers da tela
 describe("[326/F4] rotuloFaixa — 'de–até km' (en dash)", () => {
   it.each([
@@ -365,25 +512,38 @@ describe("[326/F4] rotuloFaixa — 'de–até km' (en dash)", () => {
   });
 });
 
-describe("[326/F4] limiteEntregaKm — teto da última faixa", () => {
+describe("[326/F4 it.2] limiteEntregaKm(faixas, inc) — teto da última faixa ATIVA", () => {
+  const ativos = (...v: boolean[]) => v.map((ativo) => ({ ativo }));
+
   it.each([
-    [3, 1, 3],
-    [3, 2, 6],
-    [1, 1, 1],
-    [30, 2, 60],
-  ] as const)("%i faixas de %i km ⇒ %i km", async (n, inc, esperado) => {
+    ["[t,t,t] inc 1 ⇒ 3 km", [true, true, true], 1, 3],
+    ["[t,t,t] inc 2 ⇒ 6 km", [true, true, true], 2, 6],
+    ["[t] inc 1 ⇒ 1 km", [true], 1, 1],
+    ["[t,t,f,f,f] inc 1 ⇒ 2 km (desligadas não contam)", [true, true, false, false, false], 1, 2],
+    ["[t,f] inc 2 ⇒ 2 km", [true, false], 2, 2],
+  ] as const)("%s", async (_n, v, inc, esperado) => {
     const { limiteEntregaKm } = await mod();
-    expect(limiteEntregaKm(n, inc)).toBe(esperado);
+    expect(limiteEntregaKm(ativos(...v), inc)).toBe(esperado);
   });
 
-  it("0 faixas ⇒ null (não há limite: estado vazio)", async () => {
+  it("30 faixas ativas inc 2 ⇒ 60 km", async () => {
     const { limiteEntregaKm } = await mod();
-    expect(limiteEntregaKm(0, 1)).toBeNull();
+    expect(limiteEntregaKm(Array.from({ length: 30 }, () => ({ ativo: true })), 2)).toBe(60);
+  });
+
+  it("0 faixas ⇒ null (estado vazio)", async () => {
+    const { limiteEntregaKm } = await mod();
+    expect(limiteEntregaKm([], 1)).toBeNull();
+  });
+
+  it("todas desligadas [f,f,f] ⇒ null (não entrega em distância nenhuma)", async () => {
+    const { limiteEntregaKm } = await mod();
+    expect(limiteEntregaKm(ativos(false, false, false), 1)).toBeNull();
   });
 });
 
 describe("[326/F4] alertaDePreco — C1: preço menor que o MAIOR entre as faixas anteriores", () => {
-  const taxas = (...v: number[]) => v.map((taxa) => ({ taxa }));
+  const taxas = (...v: number[]) => v.map((taxa) => ({ taxa, ativo: true }));
 
   it("4/6/5 ⇒ alerta só na 3ª, com a copy EXATA citando 1–2 km", async () => {
     const { alertaDePreco } = await mod();
@@ -440,6 +600,40 @@ describe("[326/F4] alertaDePreco — C1: preço menor que o MAIOR entre as faixa
     const txt = alertaDePreco(taxas(4, 6, 5), 2, 1) ?? "";
     expect(txt).not.toMatch(/menor preço entre as faixas/);
     expect(txt).not.toMatch(/Mais barato que/);
+  });
+});
+
+describe("[326/F4 it.2] alertaDePreco — C1 ajuste: compara SÓ faixas ativas", () => {
+  const f = (taxa: number, ativo = true) => ({ taxa, ativo });
+
+  it("[4t, 6t, 5f] ⇒ a desligada NÃO recebe alerta (seria 'menor que 1–2 km' se contasse)", async () => {
+    const { alertaDePreco } = await mod();
+    const faixas = [f(4), f(6), f(5, false)];
+    expect([0, 1, 2].map((i) => alertaDePreco(faixas, i, 1))).toEqual([null, null, null]);
+  });
+
+  it("[4t, 6t, 5f, 3f] ⇒ nenhuma desligada recebe alerta", async () => {
+    const { alertaDePreco } = await mod();
+    const faixas = [f(4), f(6), f(5, false), f(3, false)];
+    expect([0, 1, 2, 3].map((i) => alertaDePreco(faixas, i, 1))).toEqual([null, null, null, null]);
+  });
+
+  it("[4t, 6t, 5t, 9f] ⇒ alerta só na 3ª (ativa), citando 1–2 km; a 4ª desligada fica sem alerta", async () => {
+    const { alertaDePreco } = await mod();
+    const faixas = [f(4), f(6), f(5), f(9, false)];
+    expect(alertaDePreco(faixas, 2, 1)).toBe(
+      `Confira o preço: está menor que o da faixa de 1–2 km (${formatarMoeda(6)}). ` +
+        `Quem está a 2–3 km vai pagar ${formatarMoeda(5)}.`,
+    );
+    expect(alertaDePreco(faixas, 3, 1)).toBeNull();
+  });
+
+  it("desligada NUNCA é citada: [4t, 9f, 5t] (estado fora do invariante) ⇒ 5 ≥ 4 (única ativa anterior) ⇒ sem alerta", async () => {
+    // A tela nunca produz esse estado (helpers mantêm o prefixo), mas o helper
+    // não pode depender disso para não citar a faixa de R$9 desligada.
+    const { alertaDePreco } = await mod();
+    const faixas = [f(4), f(9, false), f(5)];
+    expect(alertaDePreco(faixas, 2, 1)).toBeNull();
   });
 });
 
@@ -500,11 +694,40 @@ describe("[326/F4] zonasJaSaoFaixas — decide se o Salvar SUBSTITUI zonas de ou
     expect(zonasJaSaoFaixas([zonaRaio("Perto", 1, 4), faixaGravada(1, 1, 6)])).toBe(false);
   });
 
-  it("alguma zona inativa, legado (teto decimal) ou só inativas ⇒ false", async () => {
+  it("legado (teto decimal) ⇒ false", async () => {
     const { zonasJaSaoFaixas } = await import("./faixasEntrega");
-    expect(zonasJaSaoFaixas([faixaGravada(0, 1, 4), zonaRaio("1–2 km", 2, 6, null, false)])).toBe(false);
     expect(zonasJaSaoFaixas([zonaRaio("0–2.5 km", 2.5, 4)])).toBe(false);
-    expect(zonasJaSaoFaixas([zonaRaio("0–1 km", 1, 4, null, false)])).toBe(false);
+  });
+
+  // Iteração 2 (D4 ajuste): antes, QUALQUER inativa dava false. Agora o formato
+  // gravado com final desligado — o que a RPC nova grava — é true.
+  it("[it.2] formato gravado com FINAL DESLIGADO [t,f] (inc 1) e [t,t,f] (inc 2) ⇒ true", async () => {
+    const { zonasJaSaoFaixas } = await import("./faixasEntrega");
+    expect(zonasJaSaoFaixas([faixaGravada(0, 1, 4), zonaRaio("1–2 km", 2, 6, null, false)])).toBe(true);
+    expect(
+      zonasJaSaoFaixas([faixaGravada(0, 2, 4), faixaGravada(1, 2, 6), zonaRaio("4–6 km", 6, 8, null, false)]),
+    ).toBe(true);
+  });
+
+  it("[it.2] formato gravado com TODAS desligadas ([f] e [f,f]) ⇒ true", async () => {
+    const { zonasJaSaoFaixas } = await import("./faixasEntrega");
+    expect(zonasJaSaoFaixas([zonaRaio("0–1 km", 1, 4, null, false)])).toBe(true);
+    expect(
+      zonasJaSaoFaixas([zonaRaio("0–1 km", 1, 4, null, false), zonaRaio("1–2 km", 2, 6, null, false)]),
+    ).toBe(true);
+  });
+
+  it("[it.2] BURACO [t,f,t] com nomes derivados ⇒ false (a RPC nova não grava isso: o Salvar substitui)", async () => {
+    const { zonasJaSaoFaixas } = await import("./faixasEntrega");
+    expect(
+      zonasJaSaoFaixas([faixaGravada(0, 1, 4), zonaRaio("1–2 km", 2, 6, null, false), faixaGravada(2, 1, 8)]),
+    ).toBe(false);
+  });
+
+  it("[it.2] inativa com nome LIVRE ⇒ false (não é o formato gravado)", async () => {
+    const { zonasJaSaoFaixas } = await import("./faixasEntrega");
+    expect(zonasJaSaoFaixas([faixaGravada(0, 1, 4), zonaRaio("Promo", 2, 6, null, false)])).toBe(false);
+    expect(zonasJaSaoFaixas([zonaRaio("Velha 3", 3, 5, null, false)])).toBe(false);
   });
 
   it("teto repetido (duas zonas '0–1 km' + '2–3 km') ⇒ false", async () => {
@@ -512,5 +735,86 @@ describe("[326/F4] zonasJaSaoFaixas — decide se o Salvar SUBSTITUI zonas de ou
     expect(
       zonasJaSaoFaixas([faixaGravada(0, 1, 4), faixaGravada(0, 1, 5), faixaGravada(2, 1, 8)]),
     ).toBe(false);
+  });
+});
+
+// ═════════════════════════════════ F4 it.2 — helpers de switch e lixeira (C2'/C3')
+describe("[326/F4 it.2] desligarAPartirDe / ligarAte / removerAPartirDe — mantêm o PREFIXO de ativas", () => {
+  const cinco = (...ativos: boolean[]) => ativos.map((ativo, i) => fx(4 + i, i === 1 ? 60 : null, ativo));
+  const soAtivo = (fs: ReadonlyArray<{ ativo: boolean }>) => fs.map((f) => f.ativo);
+
+  it("5 ativas, desligar índice 2 ⇒ [t,t,f,f,f] (a faixa e todas abaixo)", async () => {
+    const { desligarAPartirDe } = await modTela();
+    expect(soAtivo(desligarAPartirDe(cinco(true, true, true, true, true), 2))).toEqual([true, true, false, false, false]);
+  });
+
+  it("desligar índice 0 ⇒ todas desligadas", async () => {
+    const { desligarAPartirDe } = await modTela();
+    expect(soAtivo(desligarAPartirDe(cinco(true, true, true, true, true), 0))).toEqual([false, false, false, false, false]);
+  });
+
+  it("de [t,t,f,f,f], ligar índice 4 ⇒ [t,t,t,t,t] (liga da 1ª desligada até ela)", async () => {
+    const { ligarAte } = await modTela();
+    expect(soAtivo(ligarAte(cinco(true, true, false, false, false), 4))).toEqual([true, true, true, true, true]);
+  });
+
+  it("de [t,t,f,f,f], ligar índice 2 ⇒ [t,t,t,f,f] (as abaixo seguem desligadas)", async () => {
+    const { ligarAte } = await modTela();
+    expect(soAtivo(ligarAte(cinco(true, true, false, false, false), 2))).toEqual([true, true, true, false, false]);
+  });
+
+  it("de [f,f,f,f,f], ligar índice 1 ⇒ [t,t,f,f,f]", async () => {
+    const { ligarAte } = await modTela();
+    expect(soAtivo(ligarAte(cinco(false, false, false, false, false), 1))).toEqual([true, true, false, false, false]);
+  });
+
+  it("remover a partir do índice 2 de 5 ⇒ restam as 2 primeiras, intactas", async () => {
+    const { removerAPartirDe } = await modTela();
+    const antes = cinco(true, true, true, false, false);
+    expect(removerAPartirDe(antes, 2)).toEqual([antes[0], antes[1]]);
+  });
+
+  it("remover a partir do índice 0 ⇒ lista vazia", async () => {
+    const { removerAPartirDe } = await modTela();
+    expect(removerAPartirDe(cinco(true, true, true, true, true), 0)).toEqual([]);
+  });
+
+  it("preservam taxa e grátis de cada faixa (só `ativo` muda)", async () => {
+    const { desligarAPartirDe, ligarAte } = await modTela();
+    const antes = cinco(true, true, true, true, true);
+    const desligadas = desligarAPartirDe(antes, 1);
+    expect(desligadas.map(({ taxa, pedido_minimo_gratis }) => ({ taxa, pedido_minimo_gratis }))).toEqual(
+      antes.map(({ taxa, pedido_minimo_gratis }) => ({ taxa, pedido_minimo_gratis })),
+    );
+    const religadas = ligarAte(desligadas, 4);
+    expect(religadas).toEqual(antes);
+  });
+
+  it("são PUROS: devolvem array novo e não mutam a entrada nem os objetos dela (estado React)", async () => {
+    const { desligarAPartirDe, ligarAte, removerAPartirDe } = await modTela();
+    const entrada = cinco(true, true, false, false, false);
+    const copia = structuredClone(entrada);
+
+    const a = desligarAPartirDe(entrada, 0);
+    const b = ligarAte(entrada, 4);
+    const c = removerAPartirDe(entrada, 1);
+
+    expect(entrada).toEqual(copia);
+    expect(a).not.toBe(entrada);
+    expect(b).not.toBe(entrada);
+    expect(c).not.toBe(entrada);
+  });
+
+  it("qualquer sequência de operações mantém o invariante de prefixo (nenhuma ativa depois de desligada)", async () => {
+    const { desligarAPartirDe, ligarAte, removerAPartirDe } = await modTela();
+    let fs = cinco(true, true, true, true, true);
+    fs = desligarAPartirDe(fs, 1);
+    fs = ligarAte(fs, 3);
+    fs = desligarAPartirDe(fs, 2);
+    fs = removerAPartirDe(fs, 4);
+    fs = ligarAte(fs, 2);
+    const v = soAtivo(fs);
+    expect(v).toEqual([true, true, true, false]);
+    expect(v.findIndex((x, i) => x && v.slice(0, i).includes(false))).toBe(-1);
   });
 });

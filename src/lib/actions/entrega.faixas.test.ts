@@ -15,6 +15,11 @@
 //   - erro do banco ⇒ `console.error` no servidor + mensagem genérica;
 //   - sucesso ⇒ revalida o painel de entregas e a vitrine.
 //
+// ITERAÇÃO 2 (C2'): cada faixa carrega `ativo` (boolean obrigatório, ativas em
+// PREFIXO); a action repassa `ativo` de cada faixa em `p_faixas`. Payload sem
+// `ativo` ou com faixa ativa depois de desligada é recusado pelo zod ANTES de
+// qualquer I/O.
+//
 // A action ainda não existe: resolvida por NAMESPACE (padrão do RED da 322)
 // para o RED ser "export ausente", não erro de import que derruba o arquivo.
 // Os args esperados da RPC são LITERAIS.
@@ -85,9 +90,9 @@ function salvarFaixasEntrega(payload: unknown): Promise<Resultado> {
 const VALIDO = {
   incremento: 1,
   faixas: [
-    { taxa: 4, pedido_minimo_gratis: null },
-    { taxa: 6, pedido_minimo_gratis: 60 },
-    { taxa: 5, pedido_minimo_gratis: null },
+    { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+    { taxa: 6, pedido_minimo_gratis: 60, ativo: true },
+    { taxa: 5, pedido_minimo_gratis: null, ativo: false },
   ],
 };
 
@@ -116,9 +121,34 @@ describe("[326/F2] salvarFaixasEntrega — caminho feliz", () => {
           p_loja_id: LOJA_DO_DONO,
           p_incremento: 1,
           p_faixas: [
-            { taxa: 4, pedido_minimo_gratis: null },
-            { taxa: 6, pedido_minimo_gratis: 60 },
-            { taxa: 5, pedido_minimo_gratis: null },
+            { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+            { taxa: 6, pedido_minimo_gratis: 60, ativo: true },
+            { taxa: 5, pedido_minimo_gratis: null, ativo: false },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("[it.2] todas desligadas ⇒ RPC recebe ativo false em cada faixa (lojista pode desligar tudo)", async () => {
+    const r = await salvarFaixasEntrega({
+      incremento: 2,
+      faixas: [
+        { taxa: 4, pedido_minimo_gratis: null, ativo: false },
+        { taxa: 6, pedido_minimo_gratis: null, ativo: false },
+      ],
+    });
+
+    expect(r).toEqual({ ok: true });
+    expect(chamadasRpc).toEqual([
+      {
+        nome: "salvar_faixas_entrega",
+        args: {
+          p_loja_id: LOJA_DO_DONO,
+          p_incremento: 2,
+          p_faixas: [
+            { taxa: 4, pedido_minimo_gratis: null, ativo: false },
+            { taxa: 6, pedido_minimo_gratis: null, ativo: false },
           ],
         },
       },
@@ -162,13 +192,35 @@ describe("[326/F2] salvarFaixasEntrega — caminho feliz", () => {
 describe("[326/F2] salvarFaixasEntrega — payload inválido é recusado ANTES de qualquer I/O", () => {
   it.each([
     ["incremento 3", { ...VALIDO, incremento: 3 }],
-    ["taxa negativa", { ...VALIDO, faixas: [{ taxa: -1, pedido_minimo_gratis: null }] }],
-    ["taxa 4.555", { ...VALIDO, faixas: [{ taxa: 4.555, pedido_minimo_gratis: null }] }],
-    ["grátis negativo", { ...VALIDO, faixas: [{ taxa: 4, pedido_minimo_gratis: -1 }] }],
-    ["31 faixas", { incremento: 1, faixas: Array.from({ length: 31 }, () => ({ taxa: 4, pedido_minimo_gratis: null })) }],
+    ["taxa negativa", { ...VALIDO, faixas: [{ taxa: -1, pedido_minimo_gratis: null, ativo: true }] }],
+    ["taxa 4.555", { ...VALIDO, faixas: [{ taxa: 4.555, pedido_minimo_gratis: null, ativo: true }] }],
+    ["grátis negativo", { ...VALIDO, faixas: [{ taxa: 4, pedido_minimo_gratis: -1, ativo: true }] }],
+    [
+      "31 faixas",
+      {
+        incremento: 1,
+        faixas: Array.from({ length: 31 }, () => ({ taxa: 4, pedido_minimo_gratis: null, ativo: true })),
+      },
+    ],
     ["loja_id na raiz", { ...VALIDO, loja_id: LOJA_OUTRA }],
-    ["raio_max_km na faixa", { ...VALIDO, faixas: [{ taxa: 4, pedido_minimo_gratis: null, raio_max_km: 99 }] }],
+    [
+      "raio_max_km na faixa",
+      { ...VALIDO, faixas: [{ taxa: 4, pedido_minimo_gratis: null, ativo: true, raio_max_km: 99 }] },
+    ],
     ["null", null],
+    ["[it.2] faixa SEM ativo", { ...VALIDO, faixas: [{ taxa: 4, pedido_minimo_gratis: null }] }],
+    ["[it.2] ativo string 'true'", { ...VALIDO, faixas: [{ taxa: 4, pedido_minimo_gratis: null, ativo: "true" }] }],
+    [
+      "[it.2] faixa ativa depois de desligada [t,f,t]",
+      {
+        incremento: 1,
+        faixas: [
+          { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+          { taxa: 6, pedido_minimo_gratis: null, ativo: false },
+          { taxa: 8, pedido_minimo_gratis: null, ativo: true },
+        ],
+      },
+    ],
   ])("%s ⇒ { ok:false }, createClient NÃO chamado, RPC NÃO chamada", async (_nome, payload) => {
     const r = await salvarFaixasEntrega(payload);
 
