@@ -68,7 +68,8 @@ export async function salvarModalidadesEntrega(
 
 /**
  * Salva a tabela de faixas de entrega em lote (issue 326, D1/D2). zod ANTES de
- * qualquer I/O (`.strict()`: só incremento e taxa/grátis por faixa); client
+ * qualquer I/O (`.strict()`: só incremento e taxa/grátis/ativo por faixa, ativas
+ * em prefixo — iteração 2, C2'); client
  * AUTENTICADO; loja = a do dono logado, nunca do payload. UMA chamada à RPC
  * atômica `salvar_faixas_entrega`, que apaga as zonas da loja e grava as
  * faixas derivando teto/nome/tipo no servidor. Erro do banco → log + genérica.
