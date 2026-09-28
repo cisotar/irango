@@ -371,6 +371,17 @@ combinado (`frete_a_combinar` true→false) com `total` recalculado no próprio 
 Qualquer outra escrita de valor é rejeitada. Ver seguranca.md §10-B.
 Migration: `20260925130000_pedidos_protege_valor.sql`.
 
+**Trigger `pedidos_transicao_status_trg`** (BEFORE UPDATE, `SECURITY INVOKER`, issue 299):
+impõe no banco a máquina de status (RN-08 com o atalho para `saiu_entrega`) e a
+imutabilidade de `tipo_entrega` para autor que não é sistema. Libera `service_role`/
+`postgres`/`supabase_admin`; recusa troca de `tipo_entrega` ("tipo de entrega do pedido é
+imutável") e troca de `status` fora do grafo ("transição de status não permitida"). Status
+reescrito com o mesmo valor e UPDATE sem `status` passam. O grafo SQL espelha `TRANSICOES`
+(`src/lib/utils/transicaoStatus.ts`); a paridade dos 30 pares é travada por
+`tests/migrations/pedidos_transicao_status.test.ts`, que deriva o esperado de
+`transicaoPermitida` — mudou o grafo no TS, precisa de migration nova. Dispara depois de
+`pedidos_protege_valor_trg` (ordem alfabética). Migration: `20260930130000_pedidos_transicao_status.sql`.
+
 ### `itens_pedido`
 
 ```sql
