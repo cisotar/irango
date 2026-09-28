@@ -192,7 +192,18 @@ describe("[287] borda — storage indisponível não pode quebrar o componente",
     );
     expect(CODIGO.match(/contagem\.iniciar\(\)/g)).toHaveLength(1);
     expect(CODIGO).toMatch(
-      /if \(persistiu\) \{\s*contagem\.iniciar\(\);\s*\} else \{\s*setPasso\(2\);\s*\}/,
+      /if \(persistiu && !ehComputadorComMouse\(\)\) \{\s*contagem\.iniciar\(\);\s*\} else \{\s*setPasso\(2\);\s*\}/,
+    );
+  });
+
+  it("REGRESSÃO: no PC (mouse), a contagem também não é armada — só o clique abre a aba nova", () => {
+    // `wa.me` troca a aba inteira por `web.whatsapp.com` no desktop; no
+    // celular o link é interceptado pelo app e a aba original sobrevive. Sem
+    // este guard, o comprador desktop seria tirado da confirmação sozinho,
+    // sem ter clicado em nada.
+    expect(CODIGO).toMatch(/function ehComputadorComMouse\(\): boolean \{/);
+    expect(CODIGO).toMatch(
+      /window\.matchMedia\("\(hover: hover\) and \(pointer: fine\)"\)\.matches/,
     );
   });
 

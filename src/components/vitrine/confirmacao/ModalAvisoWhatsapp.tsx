@@ -57,6 +57,22 @@ function lerSessionStorage(): Storage | null {
   }
 }
 
+/**
+ * PC com mouse: `wa.me` abre `web.whatsapp.com` na MESMA aba, substituindo a
+ * confirmação — no celular o link é interceptado pelo app e a aba original
+ * sobrevive. Por isso o desktop nunca arma a contagem automática (que só
+ * sabe navegar top-level, §15/plano [287]): só o clique — gesto real, que o
+ * bloqueador de popup deixa passar — pode abrir a aba nova.
+ */
+function ehComputadorComMouse(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  try {
+    return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  } catch {
+    return false;
+  }
+}
+
 export type ModalAvisoWhatsappProps = {
   /** Escopo do gate "uma vez por pedido". */
   pedidoId: string;
@@ -123,11 +139,12 @@ export function ModalAvisoWhatsapp({
     });
     contagemRef.current = contagem;
     setAberto(true);
-    if (persistiu) {
+    if (persistiu && !ehComputadorComMouse()) {
       contagem.iniciar();
     } else {
-      // Gate não confiável: nenhum tick pode navegar sozinho. O aviso vira
-      // direto o passo 2 — instrução + os dois botões, só gesto navega.
+      // Gate não confiável OU desktop (comentário de ehComputadorComMouse):
+      // nenhum tick pode navegar sozinho. O aviso vira direto o passo 2 —
+      // instrução + os dois botões, só gesto navega.
       setPasso(2);
     }
 
