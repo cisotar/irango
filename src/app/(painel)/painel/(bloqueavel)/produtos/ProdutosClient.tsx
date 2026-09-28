@@ -16,7 +16,6 @@ import {
   CalendarDays,
   Clock,
   Pencil,
-  PencilLine,
   Plus,
   Trash2,
   Loader2,
@@ -1430,9 +1429,9 @@ export function ProdutosClient({
                           <div className="min-w-0 flex-1 sm:min-w-[14rem]">
                             {/* [290] Em edição inline, a faixa de texto (nome +
                                 preço/status) dá lugar a dois campos EMPILHADOS
-                                — em 360px eles não cabem lado a lado. A linha
-                                em REPOUSO não muda: o mockup segue byte a
-                                byte, e o gatilho é o item do kebab. */}
+                                — em 360px eles não cabem lado a lado. Em
+                                repouso a faixa É o gatilho: clique no nome ou
+                                no preço abre a edição, sem passar pelo kebab. */}
                             {editandoInlineId === p.id ? (
                               <div className="space-y-2">
                                 <div className="space-y-1">
@@ -1542,32 +1541,51 @@ export function ProdutosClient({
                                 </div>
                               </div>
                             ) : (
-                              <>
-                                {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
-                                    cabe em duas linhas em vez de sumir. */}
-                                <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
-                                  {p.nome}
-                                </span>
-                                <div className="mt-1 flex flex-wrap items-center gap-2">
-                                  <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
-                                    {formatarMoeda(p.preco)}
-                                  </span>
-                                  {badgeStatus(p)}
-                                  {/* [261] D14 — nada para o produto do menu. */}
-                                  {badgeExclusivo(p)}
-                                  {/* Chip de promoção VIGENTE. O rótulo inteiro
-                                      (`-20% até 30/09`) vem projetado do servidor;
-                                      aqui não há derivação de vigência nenhuma. */}
-                                  {promocoes[p.id]?.rotulo != null && (
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-promo-texto"
-                                    >
-                                      {promocoes[p.id].rotulo}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </>
+                              (() => {
+                                const faixa = (
+                                  <>
+                                    {/* `line-clamp-2` no lugar de `truncate`: em 360px o nome
+                                        cabe em duas linhas em vez de sumir. */}
+                                    <span className="line-clamp-2 text-base leading-snug font-semibold text-foreground">
+                                      {p.nome}
+                                    </span>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                      <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+                                        {formatarMoeda(p.preco)}
+                                      </span>
+                                      {badgeStatus(p)}
+                                      {/* [261] D14 — nada para o produto do menu. */}
+                                      {badgeExclusivo(p)}
+                                      {/* Chip de promoção VIGENTE. O rótulo inteiro
+                                          (`-20% até 30/09`) vem projetado do servidor;
+                                          aqui não há derivação de vigência nenhuma. */}
+                                      {promocoes[p.id]?.rotulo != null && (
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-promo-texto"
+                                        >
+                                          {promocoes[p.id].rotulo}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </>
+                                );
+                                // No modo de seleção a única ação da linha é a
+                                // da barra (design-system §5): a faixa volta a
+                                // ser texto, sem gatilho de edição concorrendo
+                                // com o checkbox.
+                                if (modoSelecao) return faixa;
+                                return (
+                                  <button
+                                    type="button"
+                                    aria-label={`Editar nome e preço de ${p.nome}`}
+                                    onClick={() => abrirEdicaoInline(p)}
+                                    className="-mx-1.5 block w-full min-h-[44px] rounded-lg px-1.5 py-1 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+                                  >
+                                    {faixa}
+                                  </button>
+                                );
+                              })()
                             )}
                             {!modoSelecao &&
                               (() => {
@@ -1768,24 +1786,10 @@ export function ProdutosClient({
                                         <Pencil aria-hidden className="size-4" />
                                         Editar
                                       </MenuItem>
-                                      {/* [290] ADICIONAL ao "Editar" acima, não
-                                          substituto: aquele abre o formulário
-                                          inteiro (foto, desconto, vigência),
-                                          este edita a linha no lugar. */}
-                                      <MenuItem
-                                        className="min-h-[44px]"
-                                        aria-label={`Editar nome e preço de ${p.nome}`}
-                                        onClick={() => abrirEdicaoInline(p)}
-                                      >
-                                        <PencilLine
-                                          aria-hidden
-                                          className="size-4"
-                                        />
-                                        Editar nome e preço
-                                      </MenuItem>
                                       {/* [323] Abre o `DialogoFrequencia` com
                                           1 id. O chip da linha NÃO vira botão:
-                                          o kebab é o lugar das ações (290). */}
+                                          nome e preço já são o gatilho da
+                                          edição inline. */}
                                       <MenuItem
                                         className="min-h-[44px]"
                                         aria-label={`Frequência de exibição de ${p.nome}`}
