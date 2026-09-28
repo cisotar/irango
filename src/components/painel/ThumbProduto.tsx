@@ -16,12 +16,12 @@ export function ThumbProduto({ fotoUrl, nome }: ThumbProdutoProps) {
 
   if (src) {
     return (
-      <div className="relative size-10 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
+      <div className="relative size-[60px] shrink-0 sm:size-[72px] overflow-hidden rounded-md border border-border bg-muted">
         <Image
           src={src}
           alt={nome}
           fill
-          sizes="40px"
+          sizes="72px"
           unoptimized
           className="object-cover"
         />
@@ -33,7 +33,7 @@ export function ThumbProduto({ fotoUrl, nome }: ThumbProdutoProps) {
 
   return (
     <div
-      className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-sm font-semibold text-muted-foreground"
+      className="flex size-[60px] shrink-0 items-center justify-center rounded-md border border-border bg-muted text-base font-semibold sm:size-[72px] text-muted-foreground"
       aria-hidden="true"
     >
       {inicial}
