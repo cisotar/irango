@@ -65,3 +65,5 @@ scripts/criar-lojas-*.mjs
 
 # Arquivos locais de plano (ex.: rollback com ids de tenant real): nunca versionar.
 plan/*.local.md
+plan/loop-cadastro-de-clientes.md
+plan/loop-cadastro-de-clientes.resumo.md
