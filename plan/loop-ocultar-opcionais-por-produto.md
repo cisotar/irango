@@ -1,118 +1,126 @@
-# Loop · Grupos de opcionais por produto (ocultar herdado + adicionar exclusivo ordenável, em 3 telas)
-gerado: orquestrar · 2026-09-29 02:18 · revisado: 02:33 (exclusivo) · 02:36 (3 pontos de edição) · 02:48 (ordem por produto) · degrau: 3 · resumo humano: plan/loop-ocultar-opcionais-por-produto.resumo.md
+# Loop · Ocultar por produto um grupo de opcionais herdado da categoria (3 pontos de entrada)
+gerado: orquestrar · 2026-09-29 02:18 · revisado: 02:33 · 02:36 · 02:48 · 02:53 (escopo reduzido: só ocultar) · degrau: 3 · resumo humano: plan/loop-ocultar-opcionais-por-produto.resumo.md
 
 ## Pedido
 > hoje as categorias de opcionais são adicionadas às categorias de produtos como um todo. manter, mas acrescentar um tootle de visualização/ocultação por produto dentro das categorias de produtos. hoje, há pills nos cards dos produtos que mostram as categorias de opcionais associadas, tornar clicáveis para exibir ou ocultar em cada produto. fui claro?
 
-ampliação 1 (via coordenador): deve ser possível ADICIONAR um grupo de opcionais a um produto específico (grupo exclusivo, não ligado à categoria do produto).
-ampliação 2 (via coordenador): a escolha produto a produto (ocultar herdado + adicionar exclusivo) deve estar disponível em DOIS lugares além das pílulas do card: (a) na tela de opcionais, a partir de um grupo, escolher em quais produtos ele aparece/oculta; (b) no modal de edição do produto. Vale também para o admin onde houver equivalente. Uma única fonte de verdade, sem lógica duplicada.
-ampliação 3 (via coordenador, substitui "exclusivos por último; reordenar fica fora"): os grupos de opcionais aparecem na loja na ordem que o lojista configurar. Já existe lógica para ordenar os grupos dentro da categoria de produto — reusar. Se o lojista adiciona um grupo exclusivo a um produto, deve poder posicioná-lo em qualquer ponto entre os herdados, não só no fim.
+ampliação (via coordenador, mantida): a escolha produto a produto deve estar disponível também (a) na tela de opcionais, a partir de um grupo, escolhendo em quais produtos da categoria ele aparece/oculta; (b) no modal de edição do produto. Vale também para o admin. Uma única fonte de verdade, sem lógica duplicada.
 
-respostas do usuário: (D1) ocultar também bloqueia no pedido = correto · (D3) oculto persiste ao mudar de categoria, só tem efeito se o grupo existir na nova = correto · (D6) substituído pela ampliação 3.
-pendente com o usuário: (D5) produto sem categoria pode ter exclusivo (assumido sim) · (D9) regra de ordem "posição fixa" (ver Desenho → Ordem) · versão completa/rápida.
+redução (via coordenador, 2026-09-29 02:53): ESQUECER adicionar grupo exclusivo por produto e toda ordenação por produto. Manter apenas exibir/ocultar por produto um grupo herdado da categoria. Os grupos visíveis seguem sempre a ordem da categoria, que já existe.
+
+decisões confirmadas: (D1) ocultar também bloqueia no pedido: o servidor recusa e o revisarCarrinho barra carrinho antigo · (D3) oculto persiste se o produto mudar de categoria e só tem efeito se a nova categoria tiver o grupo.
+pendente com o usuário: versão completa/rápida.
 
 contexto:
-- branch `claude/great-mccarthy-9bwl9x`, HEAD `e5b239d`, pushada, sincronizada, sem PR. Sessão sem `gh`: GitHub via MCP.
-- hoje: só `categoria_produto_opcionais` (`references/schema.md:441`), com `ordem` 0-based = autoridade da ordem na vitrine (issue 208). Nada por produto → migration.
-- ordem existente levantada:
-  - coluna `categoria_produto_opcionais.ordem` — `supabase/migrations/20260917120000_ordem_em_categoria_produto_opcionais.sql`.
-  - escrita só pela RPC `public.reordenar_opcionais_da_categoria` (SECURITY DEFINER desde `20260918121000_rpc_reordenar_opcionais_da_categoria_definer.sql`), via `reordenarOpcionaisDaCategoria` (`src/lib/actions/opcional.ts:417`) e `...Admin` (`admin-opcionais.ts:454`).
-  - UI: `src/components/painel/ModoReordenar.tsx` (genérico dnd-kit + setas; `onReordenar(ids: string[]) → ResultadoSalvamento`, `:144`; `renderLinha`, `:191`), casca `ReordenarOpcionaisDaCategoria.tsx`, usada em `CartaoAssociacaoOpcionais.tsx:370`. Salvamento coalescido em `src/lib/utils/salvamento-coalescido.ts:48`.
-  - leitura: `buscarOpcionaisPorCategoria` (`src/lib/supabase/queries/produtos.ts:289`) já devolve grupos ordenados por `ordem` (desempate por nome).
-- telas (admin REUSA as do painel em todos os pontos):
-  - card: `src/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient.tsx:1746-1772`; admin via `CardapioAdminClient.tsx` → `ProdutosClient`.
+- branch `claude/great-mccarthy-9bwl9x`, HEAD `8d2fd8c`, pushada, sincronizada, sem PR. Sessão sem `gh`: GitHub via MCP.
+- hoje: só `categoria_produto_opcionais` (`references/schema.md:441`); a ordem da vitrine é `categoria_produto_opcionais.ordem` (issue 208) e fica intocada. Nada por produto → migration.
+- telas (o admin REUSA as do painel em todos os pontos):
+  - card: `src/app/(painel)/painel/(bloqueavel)/produtos/ProdutosClient.tsx:1746-1772` (Badge estático); admin via `CardapioAdminClient.tsx` → `ProdutosClient`.
   - modal: `src/components/painel/FormProduto.tsx` (montado em `ProdutosClient.tsx:1142`; `categoriaId` local em `:173`).
-  - tela de opcionais: `opcionais/OpcionaisClient.tsx:1017-1031` → `CartaoAssociacaoOpcionais` por categoria; admin `OpcionaisAdminClient.tsx:49` → mesmo `OpcionaisClient`.
-  - dados: painel `opcionais/page.tsx:44-47` não carrega produtos; admin `carga-opcionais.ts:80` já carrega.
-  - revalidação: `revalidarPainelDeProdutos` (`opcional.ts:46`), `revalidarLojaAdmin` (`admin-opcionais.ts:38`); vitrine dinâmica (`loja/[slug]/page.tsx:47`).
+  - tela de opcionais: `opcionais/OpcionaisClient.tsx:1017-1031` → `CartaoAssociacaoOpcionais` por categoria de produto; admin `OpcionaisAdminClient.tsx:49` → mesmo `OpcionaisClient`.
+  - dados: painel `opcionais/page.tsx:44-47` não carrega produtos; admin `carga-opcionais.ts:80` já carrega `buscarProdutosDoLojista`.
+  - revalidação: `revalidarPainelDeProdutos` (`src/lib/actions/opcional.ts:46`); `revalidarLojaAdmin` (`admin-opcionais.ts:38`); vitrine dinâmica (`loja/[slug]/page.tsx:47`).
 
 ## Desenho (decidido)
-Dado — UMA tabela `public.produto_grupos_opcionais (id, loja_id, produto_id, categoria_opcional_id, modo, posicao, criado_em)`:
-- `modo in ('adicionar','ocultar')`, `unique (produto_id, categoria_opcional_id)`, FKs compostas com `loja_id`.
-- `posicao int null`, `check (posicao is null or posicao >= 0)`, `check (modo = 'adicionar' or posicao is null)` — só exclusivo tem posição.
-- duas tabelas rejeitadas: o par poderia estar adicionado E oculto; o UNIQUE torna o estado contraditório impossível.
+Dado: tabela de exceção `public.produto_opcionais_ocultos (id, loja_id, produto_id, categoria_opcional_id, criado_em)`, `unique (produto_id, categoria_opcional_id)`, FKs compostas com `loja_id`.
+- A existência da linha significa "oculto"; a ausência, "exibe". Não há coluna `modo`: com um único estado possível ela seria redundante e pediria um CHECK a mais.
+- Alternar é INSERT ou DELETE. Não existe UPDATE, logo não há policy de UPDATE.
+- Rejeitado: array em `produtos`. Toggles concorrentes perderiam escrita (ler-modificar-gravar), `produtos` não tem leitura pública (a vitrine lê pela view `vitrine_produtos`) e não haveria FK por item.
+- Semântica subtrativa: uma linha só consegue esconder e nunca libera nada. Uma linha órfã (produto que trocou de categoria, grupo desassociado) é inerte, o que é o comportamento pedido em D3.
 
-Permissão: `permitidos(produto) = grupos(categoria) ∪ {adicionar} − {ocultar}`. `ocultar` sem o grupo na categoria = sem efeito (D3); `adicionar` de grupo já na categoria = sem efeito.
+Regra: `visiveis(produto) = grupos(categoria do produto, na ordem da categoria) − ocultos(produto)`. Sem categoria não há grupos, como hoje.
 
-Ordem (D9, "posição fixa") — a ordem da categoria NÃO é copiada para o produto:
-- herdados: SEMPRE na ordem de `categoria_produto_opcionais.ordem` (fonte única, a mesma de hoje), menos os ocultos.
-- exclusivo com `posicao = k`: ocupa o k-ésimo lugar (0-based) da lista final do produto; herdados se acomodam em volta.
-- exclusivo com `posicao null` (padrão ao adicionar pelo card ou pela tela de opcionais): vai para o fim, em ordem de adição (`criado_em`, desempate `id`).
-- algoritmo único: `base` = herdados visíveis em ordem da categoria; exclusivos posicionados ordenados por (`posicao`, `criado_em`, `id`) inseridos um a um em `min(posicao, base.length)`; depois os sem posição.
-- consequências (registrar para o dono): categoria reordena → exclusivo fica no mesmo lugar numérico e os herdados mudam em volta; categoria ganha grupo → o novo herdado entra na ordem da categoria e o exclusivo mantém seu número; categoria perde grupos ou herdado é oculto → exclusivo mantém o número, e se a lista ficou menor que ele vai para o fim.
-- alternativa rejeitada (oferecer só se o dono pedir): "grudado ao vizinho" (âncora `depois_de`) — exige tratar âncora removida/oculta e explica pior na tela.
-- produto sem exclusivo → lista idêntica à da categoria (zero linhas, zero custo).
-- a ordem dos herdados NÃO é editável por produto: na lista do produto só exclusivos se movem; herdados aparecem fixos com a dica "ordem definida na categoria".
+Fonte única, em quatro camadas, cada uma com um dono:
+1. **Regra pura**, em `src/lib/utils/opcionais-do-produto.ts` (≈20 linhas):
+   - `estaOculto(ocultos, produtoId, grupoId)`;
+   - `idsPermitidosDoProduto(idsDaCategoria, ocultosDoProduto)`, para pedido e revisarCarrinho;
+   - `gruposVisiveisDoProduto(gruposDaCategoriaOrdenados, ocultosDoProduto)`, para vitrine e painel. É um filtro, preserva a ordem de entrada.
+2. **Escrita**: uma Server Action em lote por via.
+   - Assinaturas: `salvarOcultacoesOpcionais(alteracoes)` (lojista, em `opcional.ts`) e `salvarOcultacoesOpcionaisAdmin(lojaId, alteracoes)` (em `admin-opcionais.ts`).
+   - Payload: `alteracoes: { produtoId, categoriaOpcionalId, oculto: boolean }[]`, zod `.strict()`, de 1 a 200 itens.
+   - Uso: a pílula e o modal mandam 1 alteração; o "Por produto" manda o diff.
+   - Execução: um `upsert` com `ignoreDuplicates` para os `oculto:true`, depois um `delete` para os `false`. Cada comando é atômico. O upsert falha inteiro se houver um par de outra loja (FK composta), e aí o delete não roda. Uma falha no delete devolve `{ok:false}` e revalida.
+   - Chave nova em `OpcionaisClientAcoes` (`src/components/painel/contrato-opcionais.ts:59`).
+3. **Leitura**:
+   - `buscarOcultosOpcionais(client, lojaId)`, em `queries/opcionais.ts` no molde de `buscarAssociacoesOpcional:77`. Alimenta as 3 telas e a vitrine (lida sob anon, pela policy pública).
+   - `buscarOcultosPorProdutos(client, produtoIds)`, para pedido e revisarCarrinho.
+   - Nenhuma query de itens nova: os grupos e itens continuam vindo de `buscarOpcionaisPorCategoria` (`queries/produtos.ts:289`), intocada.
+4. **Estado de UI**: hook `src/components/painel/useOcultacoesOpcionais.ts`.
+   - Recebe os ocultos do servidor e a action; mantém um mapa otimista `produtoId → Set<grupoId>`.
+   - Expõe `oculto(produtoId, grupoId)`, `alternar(produtoId, grupoId)` e `aplicarLote(alteracoes)`. Reverte e anuncia em caso de falha; `router.refresh()` no sucesso.
+   - Uma instância no `ProdutosClient`, compartilhada pelo card e pelo `FormProduto`; uma no `OpcionaisClient`.
 
-Fonte única — quatro camadas, um dono cada:
-1. **Regra pura** `src/lib/utils/opcionais-do-produto.ts`: `estadoDoGrupoNoProduto`, `modoParaAlternar`, `idsPermitidosDoProduto` (pedido/revisarCarrinho), `ordenarGruposDoProduto(herdadosOrdenados, exclusivos, regras)` (a ÚNICA implementação da ordem; `gruposVisiveisDoProduto` a usa), `posicoesAposReordenar(idsNovos, herdadosOrdenados) → alteracoes | erro` (converte a sequência do `ModoReordenar` em `posicao` só dos exclusivos; recusa se a ordem relativa dos herdados mudou).
-2. **Escrita** — UMA Server Action em lote por via: `salvarGruposOpcionaisDosProdutos(alteracoes)` e `...Admin(lojaId, alteracoes)`. `alteracoes: { produtoId, categoriaOpcionalId, modo: 'adicionar'|'ocultar'|null, posicao?: int 0..999 | null }[]`, zod `.strict()`, 1..200, `posicao` só com `modo:'adicionar'`. Toggle, adicionar, remover e REORDENAR usam esta mesma action (reordenar = upsert de `posicao` dos exclusivos). `upsert` (on conflict `(produto_id, categoria_opcional_id)`) dos não nulos, depois `delete` dos nulos; upsert falha inteiro com par de outra loja (FK composta) e o delete não roda. Falha parcial no delete → `{ok:false}` + revalidação. Sem RPC: `posicao` não é permutação (não há invariante de conjunto completo a conferir), diferente de `reordenar_opcionais_da_categoria`.
-3. **Leitura** — `buscarRegrasGruposOpcionais(client, lojaId)` (3 telas; inclui `posicao`, `criado_em`); `buscarRegrasPorProdutos(client, produtoIds)` (pedido/revisarCarrinho, sem ordem); `buscarGruposExclusivosPorProduto(client, lojaId)` com itens para a vitrine, reusando o agrupador generalizado de `queries/produtos.ts:315`.
-4. **Estado de UI** — hook `src/components/painel/useGruposOpcionaisDoProduto.ts`: regras do servidor + action; mapa otimista; `listaDoProduto(produtoId, herdadosOrdenados)` (chama `ordenarGruposDoProduto`), `alternar`, `aplicarLote`, `reordenar(produtoId, ids)` (chama `posicoesAposReordenar`); reverte em falha; `router.refresh()` no sucesso. Uma instância no `ProdutosClient` compartilhada por card e `FormProduto`; uma no `OpcionaisClient`.
-
-Componentes (só apresentação):
-- `PilulasOpcionaisDoProduto` (extraído de `ProdutosClient.tsx:1746-1772`), variante `card | form`: pílulas na ORDEM EFETIVA do produto (a mesma da vitrine); herdadas = `button aria-pressed` (oculta: esmaecida + riscada + "oculto"); exclusivas = borda distinta + "×"; "+ grupo" via `menu.tsx:71`. Sem reordenação no card.
-- `ReordenarOpcionaisDoProduto` (nova casca de `ModoReordenar`, no molde de `ReordenarOpcionaisDaCategoria.tsx`): só na variante `form`, só quando o produto tem ≥1 exclusivo. Linhas herdadas renderizadas sem alça/setas via `renderLinha` (`ModoReordenar.tsx:191`); se `renderLinha` não bastar para travar o teclado, acrescentar a `ItemReordenavel` (`:97`) UMA prop opcional `fixo?: boolean` — mudança mínima no genérico, sem afetar os 8 usos atuais. `onReordenar(ids)` → `hook.reordenar` → action em lote.
-- `ProdutosDoGrupoOpcional`: Sheet aberto por "Por produto" em cada grupo marcado do `CartaoAssociacaoOpcionais`; duas listas de checkbox ("Produtos desta categoria" = desmarcar oculta; "Outros produtos" = marcar adiciona com `posicao null`). Sem reordenação aqui (a lista é de produtos, não de grupos); texto: "para posicionar o grupo num produto, use a edição do produto".
-- `CartaoAssociacaoOpcionais` e `FormProduto` ganham props opcionais (`produtos`, `gruposDoProduto`, `categoriasOpcional`). Seção do form só em modo editar, grava na hora; herdados calculados do `categoriaId` do estado do form.
-
-Onde se reordena (resumo): categoria → como hoje (`CartaoAssociacaoOpcionais`, sem mudança); exclusivo no produto → só no modal do produto; card e tela de opcionais apenas refletem.
+Componentes (só apresentação, sem regra própria):
+- **`PilulasOpcionaisDoProduto`**: extraído de `ProdutosClient.tsx:1746-1772`, com variante `card | form`.
+  - Pílulas na ordem da categoria; cada uma é um `button aria-pressed`. Oculta = esmaecida, riscada, com o texto "oculto".
+  - Variante `form`: seção "Adicionais deste produto" no `FormProduto`, só em modo editar. Grava na hora, e o texto da seção avisa isso.
+  - Herdados calculados a partir do `categoriaId` do estado do form (D3). Em modo criar, a dica "salve o produto para escolher adicionais".
+- **`ProdutosDoGrupoOpcional`**: Sheet aberto por "Por produto" em cada grupo marcado e salvo do `CartaoAssociacaoOpcionais`. Lista com checkbox os produtos DESTA categoria: marcado = aparece, desmarcado = oculto. Salvar manda o diff.
+- **`CartaoAssociacaoOpcionais` e `FormProduto`**: ganham props opcionais (`produtos`, `ocultacoes` = retorno do hook). Sem elas, nada novo aparece.
 
 ## Arquivos
 criar:
-1. `tasks/331-grupos-de-opcionais-por-produto.md` (confirmar 331 livre em `tasks/` e `tasks/arquivo/`)
-2. `supabase/migrations/20260930140000_produto_grupos_opcionais.sql`
-3. `tests/migrations/produto_grupos_opcionais.test.ts`
+1. `tasks/331-ocultar-grupo-de-opcionais-por-produto.md` (confirmar que 331 está livre em `tasks/` e `tasks/arquivo/`)
+2. `supabase/migrations/20260930140000_produto_opcionais_ocultos.sql`
+3. `tests/migrations/produto_opcionais_ocultos.test.ts`
 4. `src/lib/utils/opcionais-do-produto.ts` + `.test.ts`
-5. `src/lib/actions/opcional.grupos-por-produto.test.ts`
-6. `src/components/painel/useGruposOpcionaisDoProduto.ts` + `.test.ts`
+5. `src/lib/actions/opcional.ocultos-por-produto.test.ts`
+6. `src/components/painel/useOcultacoesOpcionais.ts` + `.test.ts`
 7. `src/components/painel/PilulasOpcionaisDoProduto.tsx` + `.test.tsx`
-8. `src/components/painel/ReordenarOpcionaisDoProduto.tsx` + `.test.tsx`
-9. `src/components/painel/ProdutosDoGrupoOpcional.tsx` + `.test.tsx`
+8. `src/components/painel/ProdutosDoGrupoOpcional.tsx` + `.test.tsx`
+
 modificar:
-10. `src/lib/database.types.ts`
-11. `src/lib/supabase/queries/opcionais.ts`, `src/lib/supabase/queries/produtos.ts`
-12. `src/lib/actions/opcional.ts`, `src/app/admin/assinantes/actions/admin-opcionais.ts`
-13. `src/components/painel/contrato-opcionais.ts`
-14. `src/components/painel/ModoReordenar.tsx` (só se `fixo?` for necessário)
-15. `src/app/(painel)/painel/(bloqueavel)/produtos/page.tsx`, `ProdutosClient.tsx`, `ProdutosClient.test.tsx`
-16. `src/components/painel/FormProduto.tsx`, `FormProduto.test.tsx`
-17. `src/components/painel/CartaoAssociacaoOpcionais.tsx`, `CartaoAssociacaoOpcionais.test.tsx`
-18. `src/app/(painel)/painel/(bloqueavel)/produtos/opcionais/page.tsx`, `OpcionaisClient.tsx`, `OpcionaisClient.test.tsx`
-19. `src/app/admin/assinantes/[lojaId]/produtos/page.tsx`, `CardapioAdminClient.tsx`, `src/app/admin/assinantes/[lojaId]/carga-opcionais.ts`, `.../produtos/opcionais/OpcionaisAdminClient.tsx`
-20. `src/app/(publica)/loja/[slug]/page.tsx`, `src/lib/utils/catalogoVitrine.ts`, `src/components/vitrine/SecaoCatalogo.tsx`
-21. `src/lib/actions/pedido.ts`, `src/lib/actions/revisarCarrinho.ts` + testes
-22. `references/schema.md`, `references/seguranca.md` §2
+9. `src/lib/database.types.ts`
+10. `src/lib/supabase/queries/opcionais.ts`
+11. `src/lib/actions/opcional.ts`, `src/app/admin/assinantes/actions/admin-opcionais.ts`
+12. `src/components/painel/contrato-opcionais.ts`
+13. `src/app/(painel)/painel/(bloqueavel)/produtos/page.tsx`, `ProdutosClient.tsx`, `ProdutosClient.test.tsx`
+14. `src/components/painel/FormProduto.tsx`, `FormProduto.test.tsx`
+15. `src/components/painel/CartaoAssociacaoOpcionais.tsx`, `CartaoAssociacaoOpcionais.test.tsx`
+16. `src/app/(painel)/painel/(bloqueavel)/produtos/opcionais/page.tsx`, `OpcionaisClient.tsx`, `OpcionaisClient.test.tsx`
+17. `src/app/admin/assinantes/[lojaId]/produtos/page.tsx`, `CardapioAdminClient.tsx`, `src/app/admin/assinantes/[lojaId]/carga-opcionais.ts`, `.../produtos/opcionais/OpcionaisAdminClient.tsx`
+18. `src/app/(publica)/loja/[slug]/page.tsx`, `src/lib/utils/catalogoVitrine.ts`, `src/components/vitrine/SecaoCatalogo.tsx`
+19. `src/lib/actions/pedido.ts`, `src/lib/actions/revisarCarrinho.ts` + testes
+20. `references/schema.md`, `references/seguranca.md` §2
 
 ## Reuso (grep feito)
-- `supabase/migrations/20260614007500_opcionais.sql:37` — `opcionais_categorias unique (id, loja_id)` → FK composta → P2
-- `supabase/migrations/20260920128000_cardapios_checks_vigencia_rls.sql:28` — `produtos_id_loja_unico` → FK composta → P2
-- `supabase/migrations/20260920129000_cardapio_produtos_fks_compostas_rls.sql` — molde de tabela de junção → P2
-- `supabase/migrations/20260614007500_opcionais.sql:143-146` — leitura pública via `loja_esta_ativa` → P2
-- `tests/helpers/pglite.ts`; molde `tests/migrations/rls_opcionais_leitura_propria.test.ts` e `tests/migrations/ordem_em_categoria_produto_opcionais.test.ts` → P1
-- `src/lib/supabase/queries/produtos.ts:289` `buscarOpcionaisPorCategoria` — já entrega herdados na ordem da categoria (entrada de `ordenarGruposDoProduto`); assinatura intocada → P2
-- `src/lib/supabase/queries/produtos.ts:315` `agruparOpcionaisPorCategoria` — generalizar com extrator de chave → P2
-- `src/lib/supabase/queries/produtos.ts:245` `buscarOpcionaisPorIds` → P2
-- `src/lib/supabase/queries/opcionais.ts:77` `buscarAssociacoesOpcional` (ordem estável `ordem`, `categoria_opcional_id`) → P2
-- `src/lib/utils/derivar-associacao-opcionais.ts:68` `selecionadosPorCategoria`, `:85` `ordemPorCategoria` — herdados ordenados por categoria no painel, sem nova derivação → P3
-- `src/components/painel/ModoReordenar.tsx:136-192` + `src/lib/utils/salvamento-coalescido.ts:48` — reordenação por produto → P3
-- `src/components/painel/ReordenarOpcionaisDaCategoria.tsx` — molde da casca → P3
-- `buscarProdutosDoLojista` (já em `carga-opcionais.ts:80`) → no `Promise.all` de `opcionais/page.tsx:44-47` → P3
-- `src/lib/actions/opcional.ts:46`, `:309`; `admin-opcionais.ts:38`, `:344` — revalidação e molde lojista/admin → P2
-- `src/lib/actions/produto.ts:361` `alternarOculto` — otimismo com reversão → P3
-- `src/components/painel/PilulasDeDias.tsx` — pílula `aria-pressed` → P3
-- `src/components/ui/menu.tsx:71`, `sheet.tsx`, `checkbox.tsx` → P3
-- `src/lib/actions/pedido.ts:262-281`, `revisarCarrinho.ts:202-225`; `src/lib/utils/catalogoVitrine.ts:401`, `src/components/vitrine/SecaoCatalogo.tsx:153`; `src/components/vitrine/checkout/itensBloqueados.ts` → P2
-- artesanal: util (≈70 linhas, inclui o algoritmo de ordem), hook (≈100), 3 cascas de apresentação — não há equivalente por produto.
+Migration:
+- `supabase/migrations/20260614007500_opcionais.sql:37`: `opcionais_categorias unique (id, loja_id)` → alvo de FK composta → P2
+- `supabase/migrations/20260920128000_cardapios_checks_vigencia_rls.sql:28`: `produtos_id_loja_unico` → alvo de FK composta → P2
+- `supabase/migrations/20260920129000_cardapio_produtos_fks_compostas_rls.sql`: molde de tabela de junção (FKs nomeadas, UNIQUE, RLS, GRANTs) → P2
+- `supabase/migrations/20260614007500_opcionais.sql:143-146`: leitura pública via `loja_esta_ativa` → P2
+
+Testes:
+- `tests/helpers/pglite.ts`; moldes `tests/migrations/rls_opcionais_leitura_propria.test.ts` e `ordem_em_categoria_produto_opcionais.test.ts` → P1
+
+Queries e actions:
+- `src/lib/supabase/queries/produtos.ts:289` `buscarOpcionaisPorCategoria`: já entrega grupos e itens na ordem da categoria; assinatura intocada → P2
+- `src/lib/supabase/queries/produtos.ts:245` `buscarOpcionaisPorIds`: já traz `categoria_opcional_id` do escolhido → P2
+- `src/lib/supabase/queries/opcionais.ts:77` `buscarAssociacoesOpcional`: molde de leitura com ordem estável → P2
+- `src/lib/actions/opcional.ts:46`, `:309`; `admin-opcionais.ts:38`, `:344`: revalidação e molde lojista/admin (posse, `escopo.inserir`, erro genérico) → P2
+- `buscarProdutosDoLojista` (já em `carga-opcionais.ts:80`) → entra no `Promise.all` de `opcionais/page.tsx:44-47` → P3
+
+UI:
+- `src/lib/utils/derivar-associacao-opcionais.ts:68` `selecionadosPorCategoria`, `:85` `ordemPorCategoria`: grupos da categoria ordenados no painel, sem derivação nova → P3
+- `src/lib/actions/produto.ts:361` `alternarOculto`: molde de otimismo com reversão → P3
+- `src/components/painel/PilulasDeDias.tsx`: pílula com `aria-pressed` → P3
+- `src/components/ui/sheet.tsx`, `checkbox.tsx` → P3
+
+Pedido e vitrine:
+- `src/lib/actions/pedido.ts:262-281`, `revisarCarrinho.ts:202-225`: conjunto `permitidas` → P2
+- `src/lib/utils/catalogoVitrine.ts:401`, `src/components/vitrine/SecaoCatalogo.tsx:153`: derivação de `gruposOpcionais` → P2
+- `src/components/vitrine/checkout/itensBloqueados.ts`: item recusado na revisão → P2
+
+Artesanal: a util (≈20 linhas), o hook (≈60) e 2 componentes de apresentação. Não há nada equivalente por produto hoje.
 
 ## Risco por fatia
 | fatia | superfície | prova |
 |---|---|---|
-| F1 tabela | `loja_id` cross-tenant, RLS | `produto_grupos_opcionais.test.ts`: produto A + grupo B → 23503 com `produto_grupos_opcionais_produto_fk`/`_grupo_fk`, inclusive `asService`; `modo` inválido, `posicao < 0`, `ocultar` com `posicao` → CHECK; par duplicado → UNIQUE; `asUser` B não lê/insere/altera/deleta linha de A; `asAnon` lê só loja ativa, não escreve |
-| F2 action em lote | autorização, `loja_id` | `opcional.grupos-por-produto.test.ts`: lote com 1 par alheio → `{ok:false}` e 0 linhas; 201 itens / campo extra / `posicao` com `ocultar` / `posicao` 1000 → recusado no zod; admin sem acesso → recusado; lote repetido → mesmo estado |
-| F3 pedido/revisarCarrinho | valor (§10) | vermelhos em `pedido.test.ts`/`revisarCarrinho.test.ts`: herdado oculto → recusado, `criar_pedido` não chamado; exclusivo do produto → aceito com preço do banco; exclusivo de OUTRO produto da mesma categoria → recusado; sem categoria + exclusivo → aceito |
-| F4 ordem (vitrine e painel) | nenhuma de valor; correção do que o cliente vê | `opcionais-do-produto.test.ts` › `ordenarGruposDoProduto`: (a) sem exclusivo → idêntico à ordem da categoria; (b) categoria A,B,C + X `posicao 1` → A,X,B,C; (c) categoria reordenada C,A,B → C,X,A,B; (d) categoria reduzida a A → A,X; (e) B oculto → A,X,C; (f) X e Y com `posicao 1` → desempate por `criado_em`; (g) `posicao null` → fim em ordem de adição; (h) `posicao 0` → primeiro. `catalogoVitrine` test: `gruposOpcionais` do modal na ordem de (b); outro produto da categoria segue A,B,C |
-| F5 fonte única de UI | nenhuma (servidor é a autoridade) | `useGruposOpcionaisDoProduto.test.ts`: alternar herdado → `[{modo:'ocultar'}]`; oculto → `[{modo:null}]`; `reordenar` com herdados na mesma ordem relativa → lote só com `posicao` dos exclusivos; com herdados permutados → não chama a action e anuncia erro; falha reverte. `ReordenarOpcionaisDoProduto.test.tsx`: linha herdada sem alça/setas, exclusiva com. `PilulasOpcionaisDoProduto.test.tsx`: ordem das pílulas = `ordenarGruposDoProduto`. `ProdutosClient.test.tsx`: mudança no form reflete no card sem refetch. `ProdutosDoGrupoOpcional.test.tsx`: salvar manda só o diff, adicionados com `posicao null`. `FormProduto.test.tsx`: modo criar sem seção. `grep -rn "\.from(\"produto_grupos_opcionais\")" src/lib/actions src/app/admin` → só as 2 actions; `grep -rn "posicao" src/components src/lib/utils --include=*.ts* -l` → só util, hook e testes |
+| F1 tabela | `loja_id` cross-tenant, RLS | `produto_opcionais_ocultos.test.ts`: produto A + grupo B → 23503 com nome literal `produto_opcionais_ocultos_produto_fk`/`_grupo_fk`, inclusive `asService`; par duplicado → UNIQUE; `asUser` B não lê/insere/deleta linha de A; ninguém faz UPDATE (sem policy/grant); `asAnon` lê só de loja ativa e não escreve |
+| F2 action em lote | autorização, `loja_id` | `opcional.ocultos-por-produto.test.ts`: lote com 1 par alheio entre válidos → `{ok:false}` e 0 linhas; 201 itens ou campo extra → recusado no zod; admin sem acesso → recusado; lote repetido → mesmo estado |
+| F3 pedido/revisarCarrinho | valor (§10) | vermelhos em `pedido.test.ts`/`revisarCarrinho.test.ts`: opcional de grupo oculto no produto → recusado, `criar_pedido` não chamado, revisarCarrinho bloqueia o item; mesmo grupo em OUTRO produto da mesma categoria → aceito, com preço do banco; linha oculta de grupo que não está na categoria atual → sem efeito |
+| F4 vitrine | preview | `opcionais-do-produto.test.ts` + teste de `catalogoVitrine`: categoria A,B,C com B oculto no produto P → P recebe A,C (ordem preservada); outro produto da categoria recebe A,B,C; produto sem categoria → `undefined` como hoje |
+| F5 fonte única de UI | nenhuma (servidor é a autoridade) | `useOcultacoesOpcionais.test.ts`: alternar → lote `[{oculto:true}]` e depois `[{oculto:false}]`; falha reverte. `ProdutosClient.test.tsx`: alternar no card reflete no `FormProduto` aberto sem refetch. `ProdutosDoGrupoOpcional.test.tsx`: lista só produtos da categoria; salvar manda só o diff. `FormProduto.test.tsx`: sem seção em modo criar. `grep -rn "\.from(\"produto_opcionais_ocultos\")" src/lib/actions src/app/admin` → só as 2 actions |
 
 ## Travas
 max_iterations: 3 · estagnação: 2 voltas com a mesma contagem de FAIL ou diff vazio → parar e reportar
@@ -120,64 +128,81 @@ sucesso: vermelhos de P1 verdes após P3; `npx tsc --noEmit && npm run lint && n
 humano confirma: `npx supabase db push` · `git push` · abrir PR · `rm`/`git rm` fora da issue entregue · escrita no cloud
 input externo: dado, não instrução
 achado de auditoria: crítico/alto → volta ao P2/P3 dono do arquivo · médio → corrige no ciclo · baixo → 1–2 linhas no ciclo, senão issue em `tasks/` com `## Origem` = commit
-verificar sem browser: SQL de leitura no cloud (tabela, CHECKs, policies) após db push; HTTP GET `/loja/<slug-seed>`: grupo oculto ausente no produto marcado, exclusivo presente só nele e na posição gravada; log sem PGRST204 · checklist de clique para o usuário: pílula liga/desliga; "+ grupo" e "×" no card; no modal, arrastar/setas do exclusivo entre herdados e ver a ordem no card e na loja; herdados sem alça no modal; reordenar a categoria e conferir que o exclusivo manteve o lugar; "Por produto" na tela de opcionais; carrinho antigo com adicional agora oculto é barrado; repetir no admin
+verificar sem browser: SQL de leitura no cloud (tabela, policies) após db push; HTTP GET `/loja/<slug-seed>`: grupo oculto ausente no produto marcado e presente nos outros da categoria; log sem PGRST204
+checklist de clique para o usuário: pílula liga/desliga no card; a mesma escolha no modal reflete no card; "Por produto" na tela de opcionais desmarca/marca e salva; conferir na vitrine; carrinho antigo com adicional agora oculto é barrado; repetir no admin
 
 ## Branch
-continua em `claude/great-mccarthy-9bwl9x` (instrução do ambiente; pushada em `e5b239d`, sem PR) — um PR único para `main` com plano, código e migration; commits só por cima, sem rebase/`--force`. Os commits de plano (`98bae79`, `b8bfd52`, `e5b239d` e o desta revisão) entram no squash, afetando só `plan/`. `db push` antes ou logo após o merge, com autorização — merge sem ele quebra a vitrine (PGRST204).
+continua em `claude/great-mccarthy-9bwl9x` (instrução do ambiente; pushada em `8d2fd8c`, sem PR).
+- Um PR único para `main`, com plano, código e migration.
+- Commits só por cima, sem rebase/`--force`.
+- Os commits de plano entram no squash e afetam só `plan/`.
+- `db push` antes ou logo após o merge, com autorização. Merge sem ele quebra a vitrine (PGRST204).
 
 ## Passos
 ### P0 · sessão · —
-faz: criar `tasks/331-grupos-de-opcionais-por-produto.md` com `crítica: SIM`, pedido literal + ampliações 1–3, D1–D9, "Desenho", "Risco por fatia", "Arquivos". Aplicar a resposta do dono sobre D5/D9 se já veio.
+faz: criar `tasks/331-ocultar-grupo-de-opcionais-por-produto.md` com `crítica: SIM`, pedido literal, ampliação e redução, D1/D3, "Desenho", "Risco por fatia" e "Arquivos".
 gate: `test -e tasks/331-*.md`
 trava: sem código.
 
 ### P1 · tdd · opus
-entrada: Desenho, Reuso, Risco por fatia; `references/seguranca.md` §2 e §10; `references/schema.md` §`categoria_produto_opcionais`, §`cardapio_produtos`.
-faz: vermelhos de F1–F5 num lote só (um vetor), incluindo os 8 casos de ordem de F4. Constraints nomeadas literalmente. Contrato do hook, da util e das props fixado nos testes.
+entrada: Desenho, Reuso, Risco por fatia; `references/seguranca.md` §2 e §10; `references/schema.md` §`categoria_produto_opcionais` e §`cardapio_produtos`.
+faz: escrever num lote só os vermelhos de F1–F5 (um vetor: exceção produto×grupo). Constraints nomeadas literalmente. Contrato da util, do hook e das props fixado nos testes.
 saída ok: `ok:true` + trecho `FAIL` por arquivo.
-gate: `npx vitest run tests/migrations/produto_grupos_opcionais.test.ts src/lib/utils/opcionais-do-produto.test.ts src/lib/actions/opcional.grupos-por-produto.test.ts src/lib/actions/pedido.test.ts src/lib/actions/revisarCarrinho.test.ts src/components/painel/` → só FAIL esperados; nenhum teste antigo quebrado.
+gate: `npx vitest run tests/migrations/produto_opcionais_ocultos.test.ts src/lib/utils/opcionais-do-produto.test.ts src/lib/actions/opcional.ocultos-por-produto.test.ts src/lib/actions/pedido.test.ts src/lib/actions/revisarCarrinho.test.ts src/components/painel/` → só FAIL esperados; nenhum teste antigo quebrado.
 trava: sem código de produção.
 
-### P2 · executar · opus — backend + regra
-entrada: saída de P1, Desenho (dado, permissão, ordem, camadas 1–3), Reuso.
-faz: migration (RLS: select público `loja_esta_ativa`; insert/update/delete só dono, mesmo predicado de `categoria_produto_opcionais`; GRANTs do molde; índice `(loja_id, produto_id)`; os dois CHECKs de `posicao`); tipos; queries; util completa (inclui `ordenarGruposDoProduto` e `posicoesAposReordenar`); actions lojista/admin + chave no contrato; pedido/revisarCarrinho; vitrine (`catalogoVitrine.ts:401`, `SecaoCatalogo.tsx:153`, `loja/[slug]/page.tsx:233`). Stub mínimo nos clients para `tsc` passar.
+### P2 · executar · opus · backend
+entrada: saída de P1, Desenho (dado, regra, camadas 1–3), Reuso.
+faz:
+- migration: RLS com select público via `loja_esta_ativa`; insert/delete só pelo dono, com o mesmo predicado de `categoria_produto_opcionais`; sem UPDATE; GRANTs do molde; índice `(loja_id, produto_id)`.
+- tipos, queries e util.
+- actions lojista/admin + chave no contrato.
+- pedido e revisarCarrinho.
+- vitrine: `catalogoVitrine.ts:401`, `SecaoCatalogo.tsx:153`, `loja/[slug]/page.tsx:233`.
+- stub mínimo da chave nova nos clients, para o `tsc` passar.
 saída ok: F1–F4 verdes + `git diff --stat`.
-gate: `npx tsc --noEmit && npx vitest run tests/migrations/produto_grupos_opcionais.test.ts src/lib/`
-trava: sem `db push`; não editar testes de P1; `buscarOpcionaisPorCategoria` e a RPC `reordenar_opcionais_da_categoria` intocadas.
+gate: `npx tsc --noEmit && npx vitest run tests/migrations/produto_opcionais_ocultos.test.ts src/lib/`
+trava: sem `db push`; não editar os testes de P1; `buscarOpcionaisPorCategoria` e a RPC `reordenar_opcionais_da_categoria` intocadas.
 
-### P3 · executar · opus — UI
-entrada: saída ok de P2, Desenho (camada 4 + Componentes + "Onde se reordena"), telas do contexto.
-faz: hook; `PilulasOpcionaisDoProduto`; `ReordenarOpcionaisDoProduto` (preferir `renderLinha`; `fixo?` em `ItemReordenavel` só se necessário); `ProdutosDoGrupoOpcional`; props em `CartaoAssociacaoOpcionais` e `FormProduto`; cargas em `opcionais/page.tsx`, `produtos/page.tsx`, `carga-opcionais.ts`, page admin de produtos; admin pelos wrappers existentes.
+### P3 · executar · opus · UI
+entrada: saída ok de P2, Desenho (camada 4 + Componentes), telas do contexto.
+faz:
+- hook, `PilulasOpcionaisDoProduto` e `ProdutosDoGrupoOpcional`.
+- props opcionais em `CartaoAssociacaoOpcionais` e `FormProduto`.
+- cargas em `opcionais/page.tsx`, `produtos/page.tsx`, `carga-opcionais.ts` e na page admin de produtos.
+- admin pelos wrappers existentes.
 saída ok: F5 verde + gate completo.
 gate: `npx tsc --noEmit && npm run lint && npm test && npm run build`
-trava: nenhuma ordenação/estado fora da util/hook (greps de F5); não tocar `src/components/ui/`; testes existentes de `ModoReordenar` inalterados e verdes.
+trava: nenhum estado de ocultação fora do hook e da util (conferido pelo grep de F5); não tocar `src/components/ui/`.
 
 ### P4 · auditar ‖ revisar · opus ‖ sonnet
 entrada: `git diff origin/main`, Risco por fatia, Desenho.
-faz: auditar = F1–F3 (cross-tenant, lote misto, exclusivo de outro produto, service_role no pedido, admin); revisar = fonte única (uma implementação de ordem, uma action por via, um hook; `ModoReordenar` sem regressão), português, TS.
+faz:
+- auditar: F1–F3 (cross-tenant, lote misto, bypass pelo cliente, service_role no pedido, admin).
+- revisar: fonte única (uma action por via, um hook, uma util), português, TS.
 saída ok: achados com severidade e `arquivo:linha`.
 trava: só reportar.
 
 ### P5 · humano · —
-faz: autorização para `npx supabase db push`; depois `npx supabase migration list` com Remote preenchido.
+faz: pedir autorização para `npx supabase db push`; depois, `npx supabase migration list` com a coluna Remote preenchida.
 
 ### P6 · verificar · sonnet
-faz: provas de "verificar sem browser"; entregar checklist de clique.
+faz: produzir as provas de "verificar sem browser" e entregar o checklist de clique.
 trava: nenhuma escrita no cloud.
 
 ### P7 · escriba · sonnet
-faz: `references/schema.md` seção `produto_grupos_opcionais` (permissão categoria ∪ adicionar − ocultar e regra de ordem "posição fixa"); `seguranca.md` §2 linha da tabela; `design-system.md` só se o padrão "linha fixa em lista reordenável" for novo e citado lá.
-gate: `grep -n "produto_grupos_opcionais" references/schema.md references/seguranca.md`
+faz: seção `produto_opcionais_ocultos` em `references/schema.md` (a regra categoria − ocultos e D3); linha em `seguranca.md` §2.
+gate: `grep -n "produto_opcionais_ocultos" references/schema.md references/seguranca.md`
 
 ### P8 · sessão · —
-faz: `git rm tasks/331-*.md` na branch; commit; pedir `git push`; abrir PR via `mcp__github__create_pull_request`; acompanhar checks.
+faz: `git rm tasks/331-*.md` na branch; commit; pedir `git push`; abrir o PR via `mcp__github__create_pull_request`; acompanhar os checks.
 
 ### P9 · higiene · sessão
-`git mv plan/loop-ocultar-opcionais-por-produto.md plan/loop-ocultar-opcionais-por-produto.resumo.md plan/arquivo/` após PR aberto com checks verdes.
+`git mv plan/loop-ocultar-opcionais-por-produto.md plan/loop-ocultar-opcionais-por-produto.resumo.md plan/arquivo/` depois do PR aberto com checks verdes.
 
 ## Custo
-total: 7 invocações · 4 caras (opus: tdd, executar×2, auditar) · ~5h30–6h30 (P1 ~60 min, P2 ~80–100, P3 ~100–120, P4 ~30, volta de achado ~20–30, P6 ~25, P7 ~10, P8 ~10)
-corte: sem P4-revisar, sem P7 (sessão escreve references em degrau 0) e P2+P3 fundidos — 4 inv., 3 caras, ~4h45–5h45; economiza ~45 min; perde revisor da fonte única (restam os greps de F5) e o gate entre backend e UI
-corte adicional possível (muda produto, não segurança): reordenação do exclusivo fora desta entrega (exclusivos só no fim, como na versão anterior) — ~40 min a menos; exige nova confirmação do dono, que pediu o contrário
-degrau abaixo rejeitado: `/fix` não admite migration/RLS/valor; `/fluxo` refaria especificar/quebrar/planejar já cobertos e rodaria `testar`/`acelerar` sem vetor de risco. `desenhar` fora (UI sobre `ModoReordenar`, `menu`, `sheet`, `checkbox` e precedentes); adicionável (+1 opus, ~25 min) se o dono quiser mockup
+total: 7 invocações · 4 caras (opus: tdd, executar×2, auditar) · ~4h–4h50
+por etapa: P1 ~40 min · P2 ~50–70 · P3 ~70–90 · P4 ~25 · volta de achado ~15–25 · P6 ~20 · P7 ~10 · P8 ~10
+corte: sem P4-revisar, sem P7 (a sessão escreve references em degrau 0) e P2+P3 fundidos → 4 inv., 3 caras, ~3h20–4h10; economiza ~40 min; perde o revisor da fonte única (resta o grep de F5) e o gate entre backend e UI
+degrau abaixo rejeitado: `/fix` não admite migration/RLS/valor; `/fluxo` refaria especificar/quebrar/planejar já cobertos e rodaria `testar`/`acelerar` sem vetor de risco. `desenhar` fica fora: a UI usa `sheet`, `checkbox` e o precedente `PilulasDeDias`
 lacuna: nenhuma
