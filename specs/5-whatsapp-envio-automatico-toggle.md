@@ -1,6 +1,6 @@
 # Spec: Toggle de envio automático da mensagem de WhatsApp ao confirmar o pedido
 
-**Versão:** 0.3.0 | **Atualizado:** 2026-09-22
+**Versão:** 0.3.1 | **Atualizado:** 2026-09-29
 
 ## Status atual (2026-09-06)
 
@@ -181,9 +181,11 @@ continua **sempre visível quando a loja tem WhatsApp**, independente do toggle
 do SSR desta própria página (`buscarLojaParaPedido` já traz
 `whatsapp_envio_automatico` e `whatsapp`; nenhuma query nova). O modal abre uma vez
 por pedido, mostra spinner + contagem regressiva de 5s, e navega para o WhatsApp
-automaticamente ao fim da contagem (`window.location.href`, navegação top-level —
-não exige gesto do usuário) ou por gesto explícito ("Enviar agora"/"Enviar
-mensagem", `window.open(..., "noopener")`, mantém a confirmação aberta).
+ao fim da contagem abrindo uma aba nova (`window.open` sem feature +
+`opener = null`; se o navegador bloquear, ver RN-A7) ou por gesto explícito
+("Enviar agora"/"Enviar mensagem", link declarativo `<a target="_blank"
+rel="noopener noreferrer">`). **[rev v0.3.1]** Mecanismo revisado em
+`specs/aviso-whatsapp-contagem-nova-aba.md`.
 
 **Componentes:**
 - Bloco "Avisar a loja" do spec 3 — inalterado.
@@ -204,7 +206,8 @@ mensagem", `window.open(..., "noopener")`, mantém a confirmação aberta).
   + cliente (mecânica de contagem, `avisoWhatsapp.test.ts` cobre a lógica —
   clique real pendente, issue 176).
 - [ ] Contagem esgotada sem interação leva ao WhatsApp automaticamente
-  (`window.location.href`). Garantido em: módulo puro `avisoWhatsapp.ts`
+  (**[rev v0.3.1]** aba nova via `window.open`; mecanismo em
+  `specs/aviso-whatsapp-contagem-nova-aba.md`). Garantido em: módulo puro `avisoWhatsapp.ts`
   (33 testes) — clique real pendente, issue 176.
 - [ ] "Agora não" para a contagem e não deixa religar (WCAG 2.2.1); "Enviar
   agora"/"Enviar mensagem" abre o WhatsApp numa aba nova sem tirar o cliente da
@@ -304,10 +307,11 @@ criarPedido`, para preservar o gesto do usuário e só depois apontar
 `janela.location.href`). Existiu porque o disparo automático vivia no handler de
 clique de "Confirmar pedido", onde o `await` mataria a user activation. **Deixou
 de ser necessária** quando o disparo se mudou para a página de confirmação
-(RN-A7): lá a navegação automática usa `window.location.href` (top-level, não
-exige gesto), e a navegação por gesto real usa `window.open(destino, "_blank",
-"noopener")` diretamente — sem gap assíncrono no meio, porque `href` já chega
-pronto do SSR da confirmação. O teste que travava a ORDEM da pré-abertura
+(RN-A7): lá o destino já chega pronto do SSR, sem gap assíncrono no meio.
+**[rev v0.3.1]** A contagem abre aba nova com `window.open` e a navegação por
+gesto real é link declarativo `<a target="_blank" rel="noopener noreferrer">`
+(ver `specs/aviso-whatsapp-contagem-nova-aba.md`); antes da v0.3.1 eram
+`window.location.href` e `window.open(destino, "_blank", "noopener")`. O teste que travava a ORDEM da pré-abertura
 (`useEnviarPedido.test.ts`) foi removido **deliberadamente**: a invariante que
 ele protegia não existe mais. `aberturaWhatsapp.ts`/`.test.ts` foram removidos do
 código (código morto).
@@ -330,10 +334,15 @@ confirmação abre `ModalAvisoWhatsapp` uma vez por pedido
 (`sessionStorage`, chave `aviso-wpp:<pedidoId>`, por aba — reabrir o link de
 confirmação em outra aba reabre o aviso, aceito por design). Passo 1: spinner +
 contador de 5s, botão "Enviar agora", saída "Agora não". Contador esgotado sem
-interação → `window.location.href = destino` (navegação top-level, sem gesto).
-"Enviar agora"/"Enviar mensagem" (gesto real) → `window.open(destino, "_blank",
-"noopener")`; se o navegador bloquear o popup (retorno `null`), cai para
-`window.location.href` — mesmo destino, sem perder o aviso. "Agora não" **para a
+interação → `window.open(destino, "_blank")` sem feature, seguido de `aba.opener
+= null` na mesma tarefa; com aba aberta o modal fecha. Bloqueado no computador com
+mouse → passo 2, sem trocar a aba; bloqueado em tela de toque → fecha o modal e
+`window.location.href = destino` (mesma aba). "Enviar agora"/"Enviar mensagem"
+(gesto real) → link declarativo `<a href={destino} target="_blank" rel="noopener
+noreferrer">` com `onClick` que fecha o modal; sem `window.open` nem fallback
+`location.href` no clique. **[rev v0.3.1]** Antes: contagem por
+`window.location.href` e gesto por `window.open(destino, "_blank", "noopener")`
+com fallback; ver `specs/aviso-whatsapp-contagem-nova-aba.md`. "Agora não" **para a
 contagem e ela não volta a correr** (WCAG 2.2.1 — Timing Adjustable) e leva ao
 passo 2, com a copy:
 
@@ -390,12 +399,14 @@ módulo puro testável (`avisoWhatsapp.ts`).
   confirmação, RN-A7) para o cliente como string já pronta, sempre revalidada por
   `urlHttpsSegura` (guard `https://` — `seguranca.md` §15) antes de qualquer
   navegação; o cliente nunca usa `dangerouslySetInnerHTML`.
-- **[rev v0.3.0] Anti reverse-tabnabbing.** O hack manual `janela.opener = null`
-  (RN-A5, aposentada) foi substituído por `noopener` real em
-  `window.open(destino, "_blank", "noopener")` — mitigação equivalente, aplicada
-  no ponto de abertura em vez de depois. O caminho sem gesto
-  (`window.location.href`) navega na própria aba: não há segunda aba nem
-  `opener`, logo nenhum vetor de reverse-tabnabbing ali.
+- **[rev v0.3.1] Anti reverse-tabnabbing.** Gesto: `rel="noopener noreferrer"`
+  literal no `<a target="_blank">`. Contagem: `window.open(destino, "_blank")`
+  sem `noopener` (o handle é necessário para detectar bloqueio de popup) +
+  `aba.opener = null` na mesma tarefa síncrona, antes de o documento de terceiro
+  carregar — exceção registrada em `seguranca.md` §15-A. Em tela de toque com
+  popup bloqueado, `window.location.href` navega na própria aba: sem segunda aba
+  nem `opener`. (Na v0.3.0 era `noopener` real em `window.open` e o caminho sem
+  gesto nunca abria segunda aba.) Fonte: `specs/aviso-whatsapp-contagem-nova-aba.md`.
 
 **Criticidade de segurança:** média. Não há dinheiro/RLS nova, mas **toca a
 superfície de escrita cross-tenant de `lojas`** — a issue de painel admin deve

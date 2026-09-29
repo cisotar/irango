@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.6.1 | **Atualizado:** 2026-09-27
+**Versão:** 0.6.2 | **Atualizado:** 2026-09-29
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -1055,11 +1055,15 @@ React escapa conteúdo por padrão — nome de produto com `<script>` é renderi
 
 `rel="noopener noreferrer"` resolve o caso declarativo (`<a target="_blank">`), mas abertura **programática** via `window.open()` continua precisando do `noopener` explícito na chamada — sem ele, uma referência viva (`opener`) fica na página nova e, se ela navegar para um domínio de terceiro (`wa.me`), esse terceiro pode reescrever `opener.location` e clonar a página de origem para phishing.
 
-**Padrão atual:** o destino é conhecido no SSR (montado por `montarLinkWhatsappPedido`, revalidado por `urlHttpsSegura` — mesmo guard da §15) **antes** do clique, então `window.open(destino, "_blank", "noopener")` é chamado direto, sem mecânica de pré-abertura. Implementação: `src/components/vitrine/confirmacao/ModalAvisoWhatsapp.tsx` (gesto do botão) e `avisoWhatsapp.ts` → `criarContagemAviso` (contagem esgotada sem gesto usa `navegarTopLevel`, não `window.open`, porque popup fora de gesto do usuário cai no bloqueador).
+**Padrão atual:** o destino é conhecido no SSR (montado por `montarLinkWhatsappPedido`, revalidado por `urlHttpsSegura` — mesmo guard da §15) **antes** do clique, sem mecânica de pré-abertura. Implementação em `src/components/vitrine/confirmacao/ModalAvisoWhatsapp.tsx` e `avisoWhatsapp.ts` → `criarContagemAviso`, com dois caminhos (spec `specs/aviso-whatsapp-contagem-nova-aba.md`, seção Segurança):
+- **Gesto** ("Enviar agora"/"Enviar mensagem"): link declarativo `<a href={destino} target="_blank" rel="noopener noreferrer">` (`ModalAvisoWhatsapp.tsx:222-227` e `:258-263`), com `onClick={aoFechar}`. Sem `window.open` nem fallback `location.href` no clique. O `href` é o `destino` aprovado pelo guard, nunca a prop crua.
+- **Contagem esgotada** (sem gesto): `window.open(destino, "_blank")` **sem feature string**, seguido de `aba.opener = null` **na mesma tarefa síncrona** (`ModalAvisoWhatsapp.tsx:136-138`). A aba nasce em `about:blank` e o documento de terceiro (`wa.me`) só carrega depois que a tarefa termina, então o `opener` já é nulo quando ele poderia lê-lo. Bloqueado em tela de toque: fecha o modal e navega com `navegarTopLevel` (`window.location.href`, mesma aba, sem segunda aba nem `opener`; `avisoWhatsapp.ts:254-259`). Bloqueado no computador com mouse: passo 2, sem trocar a aba.
+
+**Exceção à regra abaixo (contagem):** dois motivos justificam o `opener = null` manual no lugar do `noopener` real. (1) Histórico (issue 126): destino dependente de resposta assíncrona, removido na issue 287. (2) Vigente: a contagem precisa do handle devolvido por `window.open` para **detectar o bloqueio de popup**, e com `noopener` o retorno é sempre `null`, o que tornaria bloqueio e sucesso indistinguíveis.
 
 **Histórico (issue 126, removido na issue 287):** quando o destino só era conhecido *depois* de uma resposta assíncrona da Server Action, o checkout pré-abria uma aba `about:blank` dentro do gesto de clique e desapossava (`janela.opener = null`) antes de navegá-la para a URL de terceiro — `noopener` real teria matado a mecânica, pois a URL final não existia ainda no momento do `window.open`. Esse primitivo (`checkout/aberturaWhatsapp.ts`) foi removido: o disparo do WhatsApp migrou para a página de confirmação, onde o destino já é conhecido no SSR, eliminando a necessidade da mecânica de pré-abertura.
 
-**Regra para devs e agentes:** toda abertura programática de aba (`window.open`) que navega para domínio externo usa `noopener` real na própria chamada sempre que o destino é conhecido antes do gesto. Só recorra à mecânica de pré-abertura + desapossamento manual se o destino depender de uma resposta assíncrona pós-gesto — e trate isso como exceção, não padrão default.
+**Regra para devs e agentes:** gesto do usuário para domínio externo é `<a target="_blank" rel="noopener noreferrer">` declarativo; abertura programática (`window.open`) que navega para domínio externo usa `noopener` real na própria chamada sempre que o destino é conhecido antes do gesto. Só recorra ao desapossamento manual (`aba.opener = null` na mesma tarefa síncrona) quando precisar do handle (detectar bloqueio de popup, como na contagem) ou quando o destino depender de uma resposta assíncrona pós-gesto — e trate isso como exceção, não padrão default.
 
 ### §15-B — Texto livre do cliente: normalização Unicode + anti-injeção de rótulo (issues 166/167/170)
 
