@@ -1,6 +1,5 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { HexColorPicker } from "react-colorful";
@@ -85,12 +84,6 @@ export function TemaClient({
     });
   }
 
-  const estiloPreview = {
-    "--cor-primaria": tema.primaria,
-    "--cor-fundo": tema.fundo,
-    "--cor-destaque": tema.destaque,
-  } as CSSProperties;
-
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
       <h1 className="mb-6 font-heading text-xl font-semibold text-foreground">
@@ -137,9 +130,11 @@ export function TemaClient({
         </Card>
 
         <div className="space-y-4">
-          <div style={estiloPreview}>
+          <div>
             <Dialog>
               <DialogTrigger
+                nativeButton={false}
+                render={<div />}
                 className="block w-full cursor-pointer"
                 aria-label="Ampliar prévia da vitrine"
               >

@@ -27,8 +27,6 @@ type PreviewVitrineProps = {
   nomeLoja: string;
   /** Escala 1x (modal) quando true; 0.4x (miniatura) quando false/omitido. */
   ampliado?: boolean;
-  /** Callback de clique — usado na miniatura fora do Dialog. */
-  onClick?: () => void;
 };
 
 /**
@@ -42,7 +40,6 @@ export function PreviewVitrine({
   tema,
   nomeLoja,
   ampliado = false,
-  onClick,
 }: PreviewVitrineProps) {
   const variaveis = {
     "--cor-primaria": tema.primaria,
@@ -171,21 +168,7 @@ export function PreviewVitrine({
         height: alturaMiniatura,
         backgroundColor: "var(--cor-fundo)",
       }}
-      className={`relative mx-auto overflow-hidden rounded-xl${onClick ? " cursor-pointer" : ""}`}
-      onClick={onClick}
-      role={onClick ? "button" : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onKeyDown={
-        onClick
-          ? (e: React.KeyboardEvent) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick();
-              }
-            }
-          : undefined
-      }
-      aria-label={onClick ? "Ampliar prévia da vitrine" : undefined}
+      className="relative mx-auto overflow-hidden rounded-xl"
     >
       <div
         className="absolute top-0 left-0"
