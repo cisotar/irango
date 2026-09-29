@@ -1771,21 +1771,6 @@ export function ProdutosClient({
                                     );
                                   })()
                                 )}
-                                {/* [331] Pílulas clicáveis: exibir/ocultar o grupo
-                                    herdado só neste produto. Somem no modo de
-                                    seleção, como os chips de antes (§5). */}
-                                {!modoSelecao && (
-                                  <PilulasOpcionaisDoProduto
-                                    produtoId={p.id}
-                                    produtoNome={p.nome}
-                                    grupos={
-                                      opcionaisPorCategoria[p.categoria_id ?? ""] ??
-                                      SEM_GRUPOS
-                                    }
-                                    ocultacoes={ocultacoes}
-                                    variante="card"
-                                  />
-                                )}
                                 {/* [261] De quais cardápios o produto participa e
                                     se algum está DENTRO da janela agora. Os dois
                                     vêm projetados do Server Component, com o
@@ -1857,6 +1842,32 @@ export function ProdutosClient({
                                 )}
                               </div>
 
+                              {/* [331] Pílulas clicáveis: exibir/ocultar o grupo
+                                  herdado só neste produto. Somem no modo de
+                                  seleção, como os chips de antes (§5).
+
+                                  Filha DIRETA da linha, com `basis-full`, e não da
+                                  coluna de texto: nela a linha reserva espaço para
+                                  a coluna de ações (Ocultar/Marcar esgotado/⋮) na
+                                  MESMA largura mesmo abaixo da altura dos botões
+                                  (flexbox não redistribui espaço vertical entre
+                                  itens de larguras fixas), o que sobrava como área
+                                  morta à direita das pílulas — mesmo raciocínio das
+                                  pílulas de dias logo abaixo. */}
+                              {!modoSelecao && (
+                                <div className="w-full basis-full sm:order-last">
+                                  <PilulasOpcionaisDoProduto
+                                    produtoId={p.id}
+                                    produtoNome={p.nome}
+                                    grupos={
+                                      opcionaisPorCategoria[p.categoria_id ?? ""] ??
+                                      SEM_GRUPOS
+                                    }
+                                    ocultacoes={ocultacoes}
+                                    variante="card"
+                                  />
+                                </div>
+                              )}
                               {/* [323] As 7 pílulas: marcar dia é a edição mais
                                   frequente da frequência, e abrir o diálogo (ou o
                                   modo grade) para um clique era o caminho longo.

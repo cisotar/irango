@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactElement } from "react";
-import { EyeOff } from "lucide-react";
 
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { OcultacoesOpcionais } from "@/components/painel/useOcultacoesOpcionais";
@@ -70,7 +69,6 @@ export function PilulasOpcionaisDoProduto({
                   noForm ? "h-[32px] text-sm" : "h-[28px] text-xs"
                 } ${desenho}`}
               >
-                {oculto && <EyeOff aria-hidden className="size-3.5 shrink-0" />}
                 <span className={oculto ? "line-through" : undefined}>
                   {g.categoriaOpcionalNome}
                 </span>
