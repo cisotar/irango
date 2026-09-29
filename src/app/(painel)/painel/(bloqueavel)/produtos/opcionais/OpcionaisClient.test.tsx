@@ -101,6 +101,8 @@ function acoesBase(): OpcionaisClientAcoes {
     reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
     // 10ª (issues 215/216) — mesma regra da 9ª.
     reordenarItensDoGrupoOpcional: vi.fn(async () => ({ ok: true }) as const),
+    // 11ª (issue 331) — mesma regra.
+    salvarOcultacoesOpcionais: vi.fn(async () => ({ ok: true }) as const),
   };
 }
 

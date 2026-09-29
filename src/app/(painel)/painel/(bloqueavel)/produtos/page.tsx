@@ -42,6 +42,7 @@ import {
   salvarAssociacaoOpcionais,
   reordenarOpcionaisDaCategoria,
   reordenarItensDoGrupoOpcional,
+  salvarOcultacoesOpcionais,
 } from "@/lib/actions/opcional";
 import { enviarFotoProduto } from "@/lib/actions/upload";
 import {
@@ -187,6 +188,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         salvarAssociacaoOpcionais,
         reordenarOpcionaisDaCategoria,
         reordenarItensDoGrupoOpcional,
+        salvarOcultacoesOpcionais,
       }}
     />
   );

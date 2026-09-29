@@ -52,6 +52,8 @@ function acoesBase(): OpcionaisClientAcoes {
     salvarAssociacaoOpcionais: vi.fn(async () => ({ ok: true }) as const),
     reordenarOpcionaisDaCategoria: vi.fn(async () => ({ ok: true }) as const),
     reordenarItensDoGrupoOpcional: vi.fn(async () => ({ ok: true }) as const),
+    // 11ª (issue 331) — mesma regra.
+    salvarOcultacoesOpcionais: vi.fn(async () => ({ ok: true }) as const),
   };
 }
 

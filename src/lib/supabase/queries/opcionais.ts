@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
+import type { OcultoOpcional } from "@/lib/utils/opcionais-do-produto";
 
 /**
  * Queries reusáveis de opcionais para o PAINEL do lojista (issues 088/089).
@@ -84,6 +85,46 @@ export async function buscarAssociacoesOpcional(
     .eq("loja_id", lojaId)
     .order("ordem", { ascending: true })
     .order("categoria_opcional_id", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Grupos de opcionais OCULTOS por produto de uma loja (issue 331,
+ * `produto_opcionais_ocultos`). Linha existe = oculto. Alimenta as telas do
+ * painel e a vitrine; sob anon a policy pública só devolve as de loja ativa.
+ * Ordem estável para o SSR e o cliente não divergirem.
+ */
+export async function buscarOcultosOpcionais(
+  client: Client,
+  lojaId: string,
+): Promise<OcultoOpcional[]> {
+  const { data, error } = await client
+    .from("produto_opcionais_ocultos")
+    .select("produto_id, categoria_opcional_id")
+    .eq("loja_id", lojaId)
+    .order("produto_id", { ascending: true })
+    .order("categoria_opcional_id", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Grupos ocultos dos produtos de um carrinho (issue 331) — leitura de
+ * `criarPedido`/`revisarCarrinho` sob service_role, na onda única de leituras
+ * (ids do carrinho já validados pelo zod; a posse do produto é checada depois,
+ * contra a row do banco). Lista vazia não vai ao banco. Erro PROPAGA: quem
+ * chama recusa o pedido (fail-closed), nunca trata como "sem ocultos".
+ */
+export async function buscarOcultosPorProdutos(
+  client: Client,
+  produtoIds: readonly string[],
+): Promise<OcultoOpcional[]> {
+  if (produtoIds.length === 0) return [];
+  const { data, error } = await client
+    .from("produto_opcionais_ocultos")
+    .select("produto_id, categoria_opcional_id")
+    .in("produto_id", [...produtoIds]);
   if (error) throw error;
   return data ?? [];
 }

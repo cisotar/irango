@@ -17,8 +17,10 @@ import {
   schemaAssociacaoCategoriaOpcional,
   schemaReordenacaoOpcionaisDaCategoria,
   schemaReordenacaoItensDoGrupo,
+  schemaOcultacoesOpcionais,
 } from "@/lib/validacoes/opcional";
 import { planejarAssociacaoOpcionais } from "@/lib/utils/associacao-opcionais";
+import { filtroDosPares, planejarOcultacoes } from "@/lib/utils/opcionais-do-produto";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
@@ -540,5 +542,73 @@ export async function reordenarItensDoGrupoOpcional(
   } catch (e) {
     console.error("[reordenarItensDoGrupoOpcional]", e);
     return { ok: false, erro: ERRO_ORDEM };
+  }
+}
+
+// ── Ocultação de grupo de opcionais POR PRODUTO (issue 331) ─────────────────
+
+/** Mensagem única (seguranca.md §14): par alheio, FK e erro de banco não se distinguem. */
+const ERRO_OCULTACAO = "Não foi possível salvar os adicionais do produto.";
+
+/**
+ * Oculta/exibe em LOTE grupos de opcionais herdados da categoria, por produto.
+ * Linha em `produto_opcionais_ocultos` = oculto; alternar é INSERT ou DELETE.
+ *
+ * Sem pre-check de posse (seria TOCTOU): as FKs COMPOSTAS com `loja_id` são a
+ * trava. Um par de outra loja derruba o upsert INTEIRO (23503) e o delete nem
+ * roda — nenhuma linha do lote é gravada, e nenhum oráculo de existência.
+ * UM upsert dos `oculto:true` (idempotente por `ignoreDuplicates`), depois UM
+ * delete dos `oculto:false` por PARES exatos. Lado vazio não vai ao banco:
+ * delete sem par apagaria as ocultações da loja inteira.
+ */
+export async function salvarOcultacoesOpcionais(
+  alteracoes: unknown,
+): Promise<ResultadoOpcional> {
+  const parsed = schemaOcultacoesOpcionais.safeParse(alteracoes);
+  if (!parsed.success) {
+    return { ok: false, erro: ERRO_OCULTACAO };
+  }
+  const { ocultar, exibir } = planejarOcultacoes(parsed.data);
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+
+    if (ocultar.length > 0) {
+      const { error } = await supabase
+        .from("produto_opcionais_ocultos")
+        .upsert(
+          ocultar.map((par) => ({ ...par, loja_id: loja.id })),
+          { onConflict: "produto_id,categoria_opcional_id", ignoreDuplicates: true },
+        );
+      if (error) {
+        console.error("[salvarOcultacoesOpcionais:upsert]", error);
+        return { ok: false, erro: ERRO_OCULTACAO };
+      }
+    }
+
+    if (exibir.length > 0) {
+      const { error } = await supabase
+        .from("produto_opcionais_ocultos")
+        .delete()
+        .eq("loja_id", loja.id)
+        .or(filtroDosPares(exibir));
+      if (error) {
+        // O upsert (se houve) já valeu: revalida para a tela refletir o estado real.
+        console.error("[salvarOcultacoesOpcionais:delete]", error);
+        revalidarPainelDeProdutos();
+        return { ok: false, erro: ERRO_OCULTACAO };
+      }
+    }
+
+    revalidarPainelDeProdutos();
+    revalidatePath(`/loja/${loja.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarOcultacoesOpcionais]", e);
+    return { ok: false, erro: ERRO_OCULTACAO };
   }
 }
