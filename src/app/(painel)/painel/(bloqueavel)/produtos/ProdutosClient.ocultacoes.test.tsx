@@ -73,6 +73,18 @@ vi.mock("@/components/ui/sheet", () => {
   };
 });
 
+// As sanfonas de categoria abrem fechadas; sem `keepMounted` as linhas de
+// produto não montam e as pílulas do card nunca seriam capturadas.
+vi.mock("@/components/ui/accordion", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/components/ui/accordion")>();
+  return {
+    ...original,
+    AccordionContent: (props: React.ComponentProps<typeof original.AccordionContent>) => (
+      <original.AccordionContent keepMounted {...props} />
+    ),
+  };
+});
+
 import { ProdutosClient } from "./ProdutosClient";
 import type { AcoesProdutosClient, ProdutosClientProps } from "./ProdutosClient";
 import type { Produto } from "@/lib/supabase/queries/produtos";

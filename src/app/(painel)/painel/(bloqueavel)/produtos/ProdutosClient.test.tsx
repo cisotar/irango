@@ -30,6 +30,18 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
+// As sanfonas de categoria abrem fechadas; sem `keepMounted` o painel fechado
+// não entra no HTML e as asserções sobre o conteúdo dos grupos não o veriam.
+vi.mock("@/components/ui/accordion", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/components/ui/accordion")>();
+  return {
+    ...original,
+    AccordionContent: (props: React.ComponentProps<typeof original.AccordionContent>) => (
+      <original.AccordionContent keepMounted {...props} />
+    ),
+  };
+});
+
 import { ProdutosClient } from "./ProdutosClient";
 import type {
   AcoesProdutosClient,
