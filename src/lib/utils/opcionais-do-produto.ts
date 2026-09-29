@@ -27,7 +27,11 @@ export function agruparOcultosPorProduto(
   return mapa;
 }
 
-/** O grupo está oculto neste produto? Ausência de linha = exibe. */
+/**
+ * O grupo está oculto neste produto? Ausência de linha = exibe. Pergunta sobre o
+ * MAPA agrupado; o hook do painel responde pela própria máquina otimista
+ * (`criarOcultacoesOtimistas().oculto`, sobre `chaveDoPar`), não por aqui.
+ */
 export function estaOculto(ocultos: OcultosPorProduto, produtoId: string, grupoId: string): boolean {
   return ocultos[produtoId]?.includes(grupoId) ?? false;
 }
@@ -56,6 +60,9 @@ export function gruposVisiveisDoProduto<G extends { categoriaOpcionalId: string 
 
 // ── Escrita em lote (as duas actions: lojista e admin) ──────────────────────
 
+/** Chave única do par produto×grupo — a do lote aqui e a do estado otimista do hook. */
+export const chaveDoPar = (produtoId: string, grupoId: string) => `${produtoId}|${grupoId}`;
+
 /** Uma alteração pedida pela UI: ocultar (`true`) ou voltar a exibir (`false`) o grupo no produto. */
 export type AlteracaoOcultacao = {
   produtoId: string;
@@ -74,7 +81,7 @@ export function planejarOcultacoes(alteracoes: readonly AlteracaoOcultacao[]): {
   exibir: ParOculto[];
 } {
   const ultima = new Map<string, AlteracaoOcultacao>();
-  for (const a of alteracoes) ultima.set(`${a.produtoId}|${a.categoriaOpcionalId}`, a);
+  for (const a of alteracoes) ultima.set(chaveDoPar(a.produtoId, a.categoriaOpcionalId), a);
   const ocultar: ParOculto[] = [];
   const exibir: ParOculto[] = [];
   for (const a of ultima.values()) {

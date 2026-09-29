@@ -40,7 +40,9 @@ export type ProdutosDoGrupoOpcionalProps = {
 export function diffOcultacoesDoGrupo({
   grupoId,
   produtoIds,
-  estaOculto,
+  // Chave `estaOculto` é o contrato do teste; o alias local evita confundir com
+  // `estaOculto` da util (lá é sobre o mapa; aqui, o par deste grupo).
+  estaOculto: ocultoNoProduto,
   marcados,
 }: {
   grupoId: string;
@@ -52,7 +54,7 @@ export function diffOcultacoesDoGrupo({
   const alteracoes: AlteracaoOcultacao[] = [];
   for (const produtoId of produtoIds) {
     const ocultar = !marcados.has(produtoId);
-    if (ocultar !== estaOculto(produtoId)) {
+    if (ocultar !== ocultoNoProduto(produtoId)) {
       alteracoes.push({ produtoId, categoriaOpcionalId: grupoId, oculto: ocultar });
     }
   }

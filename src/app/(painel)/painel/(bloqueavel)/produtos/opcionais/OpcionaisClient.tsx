@@ -62,6 +62,7 @@ import type {
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
 import type { ProdutoDoGrupo } from "@/components/painel/ProdutosDoGrupoOpcional";
 import {
+  SEM_OCULTOS,
   useOcultacoesOpcionais,
   type OcultacoesOpcionais,
 } from "@/components/painel/useOcultacoesOpcionais";
@@ -91,9 +92,6 @@ const ORDEM_ABAS: readonly IdSecao[] = ["biblioteca", "por-categoria"];
 
 /** 44px literal — `size="icon-sm"` daria 33,6px na base de 120% (design-system §5). */
 const ALVO_TOQUE = "min-h-[44px] min-w-[44px]";
-
-/** Constante de módulo: um `[]` literal por render re-semearia o hook a cada vez. */
-const SEM_OCULTOS: readonly OcultoOpcional[] = [];
 
 export type OpcionaisClientProps = {
   categoriasOpcional: CategoriaOpcional[];

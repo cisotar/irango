@@ -336,6 +336,9 @@ export function FormProduto({
     });
   }
 
+  // [331] Grupos herdados da categoria escolhida no form (vazio sem o mapa).
+  const gruposDaCategoria = opcionaisPorCategoria?.[categoriaId] ?? [];
+
   return (
     <form
       className="space-y-4"
@@ -640,10 +643,9 @@ export function FormProduto({
       {/* [331] Grupos herdados da categoria ESCOLHIDA NO FORM (D3: trocar a
           categoria aqui troca a lista). Grava na hora, pelo hook da página —
           por isso só em editar: sem `id` não há produto onde gravar. */}
-      {opcionaisPorCategoria != null &&
-        ocultacoes != null &&
-        (opcionaisPorCategoria[categoriaId]?.length ?? 0) > 0 &&
-        (ehEdicao && inicial?.id != null ? (
+      {ocultacoes != null &&
+        gruposDaCategoria.length > 0 &&
+        (inicial?.id != null ? (
           <fieldset
             aria-describedby="produto-adicionais-ajuda"
             className="space-y-2 rounded-lg border border-input p-3"
@@ -660,7 +662,7 @@ export function FormProduto({
             <PilulasOpcionaisDoProduto
               produtoId={inicial.id}
               produtoNome={inicial.nome ?? nome}
-              grupos={opcionaisPorCategoria[categoriaId] ?? []}
+              grupos={gruposDaCategoria}
               ocultacoes={ocultacoes}
               variante="form"
             />

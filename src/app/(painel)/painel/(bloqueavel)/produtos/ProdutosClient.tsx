@@ -73,7 +73,7 @@ import {
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
 import { PilulasOpcionaisDoProduto } from "@/components/painel/PilulasOpcionaisDoProduto";
-import { useOcultacoesOpcionais } from "@/components/painel/useOcultacoesOpcionais";
+import { SEM_OCULTOS, useOcultacoesOpcionais } from "@/components/painel/useOcultacoesOpcionais";
 import type { OcultoOpcional } from "@/lib/utils/opcionais-do-produto";
 import { ThumbProduto } from "@/components/painel/ThumbProduto";
 import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
@@ -298,8 +298,7 @@ export type AcoesProdutosClient = {
   definirFrequenciaCategoria: typeof definirFrequenciaCategoriaLojista;
 } & OpcionaisClientAcoes;
 
-/** Constantes de módulo: um `[]` literal por render mudaria a identidade a cada vez. */
-const SEM_OCULTOS: readonly OcultoOpcional[] = [];
+/** Constante de módulo: um `[]` literal por render mudaria a identidade a cada vez. */
 const SEM_GRUPOS: OpcionaisPorCategoria[string] = [];
 
 type GrupoProdutos = {

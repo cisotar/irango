@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import type {
-  AlteracaoOcultacao,
-  OcultoOpcional,
+import {
+  chaveDoPar,
+  type AlteracaoOcultacao,
+  type OcultoOpcional,
 } from "@/lib/utils/opcionais-do-produto";
 
 // O tipo do lote é o MESMO que as actions validam (`planejarOcultacoes`): uma
@@ -51,7 +52,8 @@ export type MaquinaOcultacoes = OcultacoesOpcionais & {
 /** Quando a action LANÇA (rede, servidor fora): nenhum detalhe interno chega à tela. */
 const ERRO_GENERICO = "Não foi possível salvar. Tente de novo.";
 
-const chaveDoPar = (produtoId: string, grupoId: string) => `${produtoId}|${grupoId}`;
+/** Constante de módulo: um `[]` literal por render re-semearia o hook a cada vez. */
+export const SEM_OCULTOS: readonly OcultoOpcional[] = [];
 
 function paresDoServidor(linhas: readonly OcultoOpcional[]): Set<string> {
   return new Set(linhas.map((l) => chaveDoPar(l.produto_id, l.categoria_opcional_id)));
