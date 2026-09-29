@@ -21,7 +21,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  *    ids de `buscarCategorias` (categorias de PRODUTO), não os de
  *    `buscarProdutosDoLojista` nem os de `buscarCategoriasOpcional` — a fonte
  *    errada quebraria silenciosamente o mapa `opcionaisPorCategoria` na page 143.
- *  Agregado: retorna os 6 campos com os dados das queries mockadas.
+ *  Agregado: retorna os 7 campos com os dados das queries mockadas (o 7º,
+ *    `ocultosOpcionais`, é da issue 331).
  */
 
 const LOJA_ID = "11111111-1111-1111-1111-111111111111";
@@ -71,10 +72,14 @@ const opcionaisFake = [{ id: "op-1", loja_id: LOJA_ID }];
 const buscarOpcionaisDoLojista = vi.fn(async (_c: unknown, _id: string) => opcionaisFake);
 const associacoesFake = [{ id: "assoc-1", loja_id: LOJA_ID }];
 const buscarAssociacoesOpcional = vi.fn(async (_c: unknown, _id: string) => associacoesFake);
+// [331] Grupo oculto por produto — mais uma leitura escopada pelo mesmo lojaId.
+const ocultosFake = [{ produto_id: "prod-1", categoria_opcional_id: "oc-1" }];
+const buscarOcultosOpcionais = vi.fn(async (_c: unknown, _id: string) => ocultosFake);
 vi.mock("@/lib/supabase/queries/opcionais", () => ({
   buscarCategoriasOpcional: (c: unknown, id: string) => buscarCategoriasOpcional(c, id),
   buscarOpcionaisDoLojista: (c: unknown, id: string) => buscarOpcionaisDoLojista(c, id),
   buscarAssociacoesOpcional: (c: unknown, id: string) => buscarAssociacoesOpcional(c, id),
+  buscarOcultosOpcionais: (c: unknown, id: string) => buscarOcultosOpcionais(c, id),
 }));
 
 // Categorias de PRODUTO — a fonte de `categoriaIds` derivada para o JOIN. ids
@@ -112,6 +117,7 @@ const queriesComDoisArgs = [
   buscarAssociacoesOpcional,
   buscarCategorias,
   buscarProdutosDoLojista,
+  buscarOcultosOpcionais,
 ];
 const todasAsQueries = [...queriesComDoisArgs, buscarOpcionaisPorCategoriaDaLoja];
 
@@ -195,7 +201,7 @@ describe("carregarOpcionaisAdmin — sucesso: escopo e agregado", () => {
     expect(categoriaIdsRecebidos).toEqual([]);
   });
 
-  it("retorna o agregado com os 6 campos preenchidos pelas queries mockadas", async () => {
+  it("retorna o agregado com os 7 campos preenchidos pelas queries mockadas", async () => {
     const resultado = await carregarOpcionaisAdmin(LOJA_ID);
 
     expect(resultado).toEqual({
@@ -205,6 +211,7 @@ describe("carregarOpcionaisAdmin — sucesso: escopo e agregado", () => {
       associacoes: associacoesFake,
       produtos: produtosFake,
       opcionaisPorCategoria: opcionaisPorCategoriaFake,
+      ocultosOpcionais: ocultosFake,
     });
   });
 });

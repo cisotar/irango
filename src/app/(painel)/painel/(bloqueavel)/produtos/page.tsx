@@ -12,6 +12,7 @@ import {
   buscarCategoriasOpcional,
   buscarOpcionaisDoLojista,
   buscarAssociacoesOpcional,
+  buscarOcultosOpcionais,
 } from "@/lib/supabase/queries/opcionais";
 import {
   removerProduto,
@@ -87,6 +88,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     categoriasOpcional,
     opcionais,
     associacoes,
+    ocultosOpcionais,
     // [323] A leitura de cardápios SAIU (S5: o cardápio sazonal virou função
     // morta). A frequência mora nas colunas de `produtos` e `categorias` que
     // as duas primeiras leituras já trazem.
@@ -103,6 +105,8 @@ export default async function ProdutosPage(): Promise<ReactElement> {
     buscarCategoriasOpcional(supabase, loja.id),
     buscarOpcionaisDoLojista(supabase, loja.id),
     buscarAssociacoesOpcional(supabase, loja.id),
+    // [331] Grupo oculto por produto: semeia as pílulas do card e do modal.
+    buscarOcultosOpcionais(supabase, loja.id),
   ]);
 
   // [235] Vigência da promoção e rótulo do chip PROJETADOS AQUI, no servidor.
@@ -138,6 +142,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
+      ocultosOpcionais={ocultosOpcionais}
       promocoes={promocoes}
       fusoLojaRotulo={rotuloFusoLoja(loja.timezone, agora)}
       // [323/D11] O cardápio saiu da tela: sem índice de vínculos, sem

@@ -60,6 +60,12 @@ import type {
   Opcional,
 } from "@/lib/supabase/queries/opcionais";
 import { CartaoAssociacaoOpcionais } from "@/components/painel/CartaoAssociacaoOpcionais";
+import type { ProdutoDoGrupo } from "@/components/painel/ProdutosDoGrupoOpcional";
+import {
+  useOcultacoesOpcionais,
+  type OcultacoesOpcionais,
+} from "@/components/painel/useOcultacoesOpcionais";
+import type { OcultoOpcional } from "@/lib/utils/opcionais-do-produto";
 import type {
   Associacao,
   CategoriaProduto,
@@ -86,12 +92,22 @@ const ORDEM_ABAS: readonly IdSecao[] = ["biblioteca", "por-categoria"];
 /** 44px literal — `size="icon-sm"` daria 33,6px na base de 120% (design-system §5). */
 const ALVO_TOQUE = "min-h-[44px] min-w-[44px]";
 
+/** Constante de módulo: um `[]` literal por render re-semearia o hook a cada vez. */
+const SEM_OCULTOS: readonly OcultoOpcional[] = [];
+
 export type OpcionaisClientProps = {
   categoriasOpcional: CategoriaOpcional[];
   opcionais: Opcional[];
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
   acoes: OpcionaisClientAcoes;
+  /**
+   * [331] Os produtos da loja (o "Por produto" de cada grupo lista os da
+   * categoria) e as linhas de `produto_opcionais_ocultos`. Sem `produtos`, o
+   * "Por produto" não aparece; sem `ocultosOpcionais`, nada está oculto.
+   */
+  produtos?: readonly ProdutoDoGrupo[];
+  ocultosOpcionais?: readonly OcultoOpcional[];
   /**
    * Aba aberta ao montar. Existe como costura de TESTE: sem jsdom não há como
    * clicar na aba, e o painel de "por categoria" nunca seria renderizado por
@@ -106,8 +122,18 @@ export function OpcionaisClient({
   categoriasProduto,
   associacoes,
   acoes,
+  produtos,
+  ocultosOpcionais = SEM_OCULTOS,
   secaoInicial = "biblioteca",
 }: OpcionaisClientProps) {
+  /**
+   * [331] A instância ÚNICA desta tela, no topo (e não na aba): trocar de aba
+   * não descarta uma escrita em voo. Todos os "Por produto" leem e gravam nela.
+   */
+  const ocultacoes = useOcultacoesOpcionais(
+    ocultosOpcionais,
+    acoes.salvarOcultacoesOpcionais,
+  );
   const navRef = useRef<HTMLElement>(null);
   /** Marcador NÃO-sticky logo antes da barra: o `getBoundingClientRect` da
    *  própria barra mente quando ela já está grudada no topo. */
@@ -274,6 +300,8 @@ export function OpcionaisClient({
             categoriasProduto={categoriasProduto}
             associacoes={associacoes}
             acoes={acoes}
+            produtos={produtos}
+            ocultacoes={ocultacoes}
           />
         )}
       </div>
@@ -932,12 +960,16 @@ function AssociacaoOpcionais({
   categoriasProduto,
   associacoes,
   acoes,
+  produtos,
+  ocultacoes,
 }: {
   categoriasOpcional: CategoriaOpcional[];
   opcionais: Opcional[];
   categoriasProduto: CategoriaProduto[];
   associacoes: Associacao[];
   acoes: OpcionaisClientAcoes;
+  produtos: readonly ProdutoDoGrupo[] | undefined;
+  ocultacoes: OcultacoesOpcionais;
 }) {
   const router = useRouter();
 
@@ -1027,6 +1059,9 @@ function AssociacaoOpcionais({
             alcancePorGrupo={alcancePorGrupo}
             onSalvo={() => router.refresh()}
             acoes={acoes}
+            // [331] "Por produto" só com a lista de produtos carregada.
+            produtos={produtos}
+            ocultacoes={produtos == null ? undefined : ocultacoes}
           />
         ))}
       </Accordion>
