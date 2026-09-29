@@ -1,29 +1,31 @@
 # Adicionais por produto: esconder os da categoria e acrescentar exclusivos
-2026-09-29 02:18 · revisado 02:33 · plano detalhado: plan/loop-ocultar-opcionais-por-produto.md
+2026-09-29 02:18 · revisado 02:36 · plano detalhado: plan/loop-ocultar-opcionais-por-produto.md
 
-**O que você pediu:** continuar ligando grupos de adicionais à categoria inteira, mas poder, em cada produto, esconder um grupo que vem da categoria e também acrescentar um grupo só dele.
+**O que você pediu:** continuar ligando grupos de adicionais à categoria inteira, mas poder, em cada produto, esconder um grupo que vem da categoria ou acrescentar um grupo só dele. A escolha deve funcionar em três lugares: nas etiquetas do cartão do produto, na janela de edição do produto e na tela de adicionais. Tudo vale também na área de administração.
 
-**O que vai ser feito:** no cartão de cada produto, as etiquetas dos grupos que vêm da categoria viram botões de ligar/desligar (desligada fica apagada e riscada). Ao lado, um botão "+ grupo" abre a lista dos grupos que a categoria não tem; o escolhido vira uma etiqueta com borda diferente e um "×" para tirar. Na loja, cada produto mostra os grupos da categoria menos os escondidos, mais os exclusivos (estes por último, na ordem em que foram adicionados). O mesmo vale na área de administração do SaaS. Precisa de uma pequena mudança no banco de dados.
+**O que vai ser feito:**
+- **Cartão do produto:** as etiquetas viram botões de ligar/desligar. Há um "+ grupo" para acrescentar um exclusivo e um "×" para tirá-lo.
+- **Janela de edição do produto:** uma seção "Adicionais deste produto" com os mesmos botões. Ela grava na hora e aparece só em produto já salvo.
+- **Tela de adicionais:** em cada grupo ligado a uma categoria, um botão "Por produto" abre a lista de produtos. Nela você desmarca onde o grupo não deve aparecer e marca produtos de outras categorias que devem recebê-lo.
+- **Loja:** cada produto mostra os grupos da categoria, menos os escondidos, mais os exclusivos.
+- **Fonte única:** as três telas usam a mesma regra, o mesmo jeito de salvar e o mesmo estado. Mudar num lugar aparece nos outros, sem três versões da lógica para manter.
 
 **Cuidados:**
-- Um cliente mal-intencionado poderia pedir um adicional escondido, ou um adicional exclusivo de outro produto. O servidor passa a recusar os dois casos, não só a tela.
-- Um lojista não consegue mexer em adicionais de outra loja: o banco impede, não só o código.
+- Um cliente mal-intencionado poderia pedir um adicional escondido, ou um adicional exclusivo de outro produto. O servidor recusa os dois casos.
+- Um lojista não mexe em adicionais de outra loja, nem mandando vários produtos de uma vez. O banco impede.
 - Um carrinho montado antes de o grupo ser escondido é barrado na revisão do pedido.
 
-**Tempo estimado:** 3h a 4h · **Versão mais rápida:** pular a revisão de estilo do código e a atualização da documentação por agente. São cerca de 25 minutos a menos, sem perder segurança.
+**Tempo estimado:** 4h45 a 6h
+**Versão mais rápida:** 4h a 5h15. Pula a revisão de estilo, a documentação feita por agente e a pausa de conferência entre banco e telas. Não perde segurança, mas a garantia de "uma lógica só" passa a depender de uma checagem automática simples, sem revisor.
 
-**Já decidido com você:** esconder também bloqueia no pedido. Se o produto mudar de categoria, o "escondido" continua valendo, mas só tem efeito se a categoria nova tiver o grupo.
+**Já decidido com você:** esconder bloqueia no pedido. O "escondido" continua valendo se o produto mudar de categoria, mas só tem efeito se a categoria nova tiver o grupo.
 
-**Assumimos (diga se não for isso):**
-- Produto sem categoria também pode receber grupo exclusivo.
-- Reordenar os grupos exclusivos fica para depois.
+**Ainda preciso que você confirme:**
+1. Produto sem categoria pode receber grupo exclusivo? (assumido: sim)
+2. Reordenar os grupos exclusivos fica para depois? (assumido: sim)
+3. Qual versão: completa ou rápida?
 
-**Precisa de você:**
-1. Escolher a versão: completa ou rápida.
-2. Autorizar a mudança no banco de produção.
-3. Autorizar o envio do código e a abertura da revisão (PR).
-4. Testar na tela:
-   - esconder uma etiqueta;
-   - adicionar um grupo exclusivo;
-   - tirar o grupo exclusivo;
-   - conferir tudo isso na loja e no admin.
+**Precisa de você depois:**
+- Autorizar a mudança no banco de produção.
+- Autorizar o envio do código e a abertura do PR.
+- Testar os três lugares, a loja e o admin na tela.
