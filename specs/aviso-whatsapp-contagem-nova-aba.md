@@ -1,6 +1,6 @@
 # Spec: Aviso do WhatsApp com contagem que abre em nova aba
 
-**Versão:** 0.1.0 | **Atualizado:** 2026-09-28
+**Versão:** 0.1.1 | **Atualizado:** 2026-09-29
 
 > Revisa **RN-A7** de `specs/5-whatsapp-envio-automatico-toggle.md` (issue 287) e a
 > correção `d8d2a00` ("no PC, aviso do WhatsApp não navega sozinho na mesma aba").
@@ -95,8 +95,8 @@ aba" que o usuário relatou.
 | D1 | O passo 1 volta para todos os dispositivos. `ehComputadorComMouse()` deixa de decidir **se** a contagem é armada. Só `persistiu` (gate de storage) decide, como antes do `d8d2a00`. | Pedido literal do usuário. O que atrapalhava no desktop era a navegação top-level, e ela sai do desktop (D2). |
 | D2 | Contagem esgotada: **primeiro tenta aba nova** (`window.open(destino, "_blank")` **sem** feature string, e na mesma tarefa síncrona `aba.opener = null`). Handle não nulo → `"aberta"`. `null` → `"bloqueada"`. | É o único jeito de saber se a aba abriu. Com `noopener` o retorno é sempre `null` (ver bug latente). Precisamos do handle para fechar o modal (requisito 3) e para escolher o fallback. |
 | D2.1 | `"bloqueada"` **no computador com mouse** → **passo 2**, sem navegar. `"bloqueada"` **em tela de toque** → `window.location.href = destino` (navegação top-level, igual a hoje no celular). | No desktop, trocar a aba é justamente o que não pode acontecer. O passo 2 já existe e tem a copy literal certa ("Envie a mensagem no WhatsApp e acelere seu pedido."), então o cliente fica a um clique de abrir. No celular a abertura automática em aba nova quase sempre vai ser bloqueada (tabela acima). Sem o fallback top-level, o celular **perderia** a abertura automática que hoje funciona. `ehComputadorComMouse()` fica, mas passa a escolher **só o fallback do bloqueio**. |
-| D3 | Os botões de gesto ("Enviar agora" no passo 1, "Enviar mensagem" no passo 2) viram **link declarativo**: `<Button asChild><a href={destinoAprovado} target="_blank" rel="noopener noreferrer">`. O clique para a contagem e fecha o modal, **sem `preventDefault`**. Nenhum `window.open` e nenhum fallback `location.href` no caminho do gesto. | Link `target="_blank"` ativado por clique real não passa pelo bloqueador de popup, então não precisa de fallback. `rel="noopener noreferrer"` é o caso declarativo que `seguranca.md` §15-A já considera resolvido. Isso elimina o bug latente pela raiz em vez de trocar um `if` por outro. |
-| D4 | Com aba aberta (D2 `"aberta"` ou clique D3), **o modal fecha** (`setAberto(false)`). A contagem já está encerrada. | Requisito 3 do usuário. |
+| D3 | Os botões de gesto ("Enviar agora" no passo 1, "Enviar mensagem" no passo 2) viram **link declarativo**: `<Button nativeButton={false} render={<a href={destinoAprovado} target="_blank" rel="noopener noreferrer" />}>`. O `Button` do repo é **Base UI** (`@base-ui/react/button`), não Radix: **não existe `asChild`**; o molde já usado é `Carrinho.tsx` (`nativeButton={false}` + `render={<Link …/>}`). Sai o `type="button"` (inválido em `<a>`). O clique para a contagem e fecha o modal, **sem `preventDefault`**. Nenhum `window.open` e nenhum fallback `location.href` no caminho do gesto. | Link `target="_blank"` ativado por clique real não passa pelo bloqueador de popup, então não precisa de fallback. `rel="noopener noreferrer"` é o caso declarativo que `seguranca.md` §15-A já considera resolvido. Isso elimina o bug latente pela raiz em vez de trocar um `if` por outro. |
+| D4 | Com aba aberta (D2 `"aberta"` ou clique D3), **o modal fecha** (`setAberto(false)`). A contagem já está encerrada. No fallback do toque (`"navegou-top-level"`) o modal **também fecha**, na mesma chamada, antes de a navegação acontecer. | Requisito 3 do usuário. No celular o app do WhatsApp intercepta o `wa.me` e o cliente volta para a confirmação (ou para ela restaurada do bfcache): hoje ele reencontra o modal parado em "Abrindo o WhatsApp em 0s…". Fechar antes elimina esse resto e é o que o smoke 4 espera ("sem o modal"). Só `"bloqueada-sem-navegar"` mantém o modal aberto (passo 2). |
 | D5 | O gate "uma vez por pedido" e a regra "storage não persistiu → passo 2 direto, sem contagem" ficam **iguais**. | No toque ainda existe fallback top-level (D2.1), e sem o gate isso vira laço de redirecionamento. No desktop, reabrir o aviso e tentar pop-up a cada revisita seria ruído. |
 | D6 | A duração (5s, `SEGUNDOS_AVISO_WHATSAPP`), a copy dos dois passos e a trava de copy de RN-A7 ficam iguais. | Não foi pedido. A trava de copy é decisão de produto. |
 
@@ -124,8 +124,11 @@ modal fecha. "Agora não" e "Sair mesmo assim" funcionam como hoje.
 **Componentes (reuso, nenhum componente novo):**
 - `Dialog`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`,
   `DialogFooter` de `components/ui/dialog` (shadcn, **não editar**).
-- `Button` de `components/ui/button` com **`asChild`** envolvendo `<a>` nos dois botões de
-  envio (D3), mantendo `className="min-h-11 w-full"` (alvo de toque ≥44px).
+- `Button` de `components/ui/button` (Base UI, **não editar**) com **`nativeButton={false}` +
+  `render={<a … />}`** nos dois botões de envio (D3), mesmo molde de `Carrinho.tsx`, mantendo
+  `className="min-h-11 w-full"` (alvo de toque ≥44px) e as variantes atuais (default no
+  "Enviar", `outline` nas saídas). Sem `asChild` (não existe nesse `Button`) e sem
+  `type="button"` no link.
 - `Loader2` (lucide), que já está no passo 1.
 - `ModalAvisoWhatsapp.tsx`: só muda a fiação (efeito de montagem, handlers, botões de envio).
 - `avisoWhatsapp.ts` → `criarContagemAviso`: a política de "o que fazer na contagem esgotada"
@@ -147,7 +150,8 @@ type DepsContagemAviso = {
   navegarTopLevel: (destino: string) => void;
   /** false no computador com mouse. Nunca navega top-level sem gesto nesse caso. */
   podeNavegarTopLevel: boolean;
-  /** Desfecho da contagem esgotada, para a UI: fechar ("aberta") ou ir ao passo 2. */
+  /** Desfecho da contagem esgotada, para a UI: "bloqueada-sem-navegar" ⇒ passo 2;
+   *  "aberta" e "navegou-top-level" ⇒ fechar o modal (D4). Chamado 1 vez. */
   aoEsgotar: (desfecho: "aberta" | "bloqueada-sem-navegar" | "navegou-top-level") => void;
   aoContar?: (restante: number) => void;
   segundos?: number;
@@ -193,12 +197,13 @@ componente, `tentarAbrirNovaAba` é:
   **nunca** chamado, desfecho `"bloqueada-sem-navegar"`) + componente (`setPasso(2)`).
   Teste: módulo, tabela `podeNavegarTopLevel × resultado`.
 - [ ] **Popup bloqueado em tela de toque → abre o WhatsApp na mesma aba (`location.href`)**,
-  como hoje. Garantido em: módulo (`"bloqueada"` + `podeNavegarTopLevel === true` ⇒
-  `navegarTopLevel(destino)` uma vez). Teste: módulo.
+  como hoje, e o modal fecha (D4). Garantido em: módulo (`"bloqueada"` +
+  `podeNavegarTopLevel === true` ⇒ `navegarTopLevel(destino)` uma vez, desfecho
+  `"navegou-top-level"`) + componente (`setAberto(false)`). Teste: módulo.
 - [ ] **Tocar/clicar em "Enviar agora" (passo 1) ou "Enviar mensagem" (passo 2) → o WhatsApp
   abre em aba nova e o modal fecha, sem trocar a aba da confirmação.** Garantido em: **cliente**,
-  com `<a href={contagem.destino} target="_blank" rel="noopener noreferrer">` via
-  `Button asChild`. O `onClick` chama `contagemRef.current?.parar()` e `setAberto(false)`,
+  com `<a href={contagem.destino} target="_blank" rel="noopener noreferrer" />` no `render`
+  do `Button` (`nativeButton={false}`). O `onClick` chama `contagemRef.current?.parar()` e `setAberto(false)`,
   **sem `preventDefault`**. O arquivo não tem mais nenhum `window.location.href` alcançável a
   partir de clique. Teste: trava de fonte (`rel="noopener noreferrer"` e `target="_blank"`
   **literais**; `window.open(` aparece exatamente 1 vez, dentro de `tentarAbrirNovaAba`;
@@ -262,7 +267,13 @@ RN-A7 (copy, trava de copy, uma vez por pedido, guard §15, gate de storage fech
 igual. **A PR que implementar esta spec atualiza o texto de RN-A7 e os behaviors
 correspondentes da spec 5** (linhas "Contagem esgotada sem interação leva ao WhatsApp
 automaticamente (`window.location.href`)" e "'Enviar agora'/'Enviar mensagem' abre o WhatsApp
-numa aba nova…"), apontando para esta spec.
+numa aba nova…"), apontando para esta spec. Na mesma passada, os outros trechos da spec 5
+que descrevem o mecanismo antigo: a **Descrição [rev v0.3.0]** da confirmação ("navega para o
+WhatsApp automaticamente ao fim da contagem (`window.location.href`…)" e "`window.open(...,
+"noopener")`, mantém a confirmação aberta"), o fim de **RN-A5** ("a navegação por gesto real
+usa `window.open(destino, "_blank", "noopener")`") e o item **"[rev v0.3.0] Anti
+reverse-tabnabbing"** da Segurança da spec 5 (hoje diz que o caminho sem gesto nunca abre
+segunda aba, o que deixa de ser verdade com D2).
 
 ## Segurança (obrigatório)
 
@@ -315,7 +326,16 @@ Unitário (Vitest, `environment: node`, sem jsdom):
   `!ehComputadorComMouse()` na condição de `iniciar`; `window.open(destino, "_blank")` sem
   terceiro argumento, seguido de `.opener = null`; nenhum `window.location.href` fora de
   `navegarTopLevel`; `<a` com `target="_blank"` e `rel="noopener noreferrer"` literais; `href`
-  do `<a>` vindo de `destino` da contagem). SSR vazio continua igual.
+  do `<a>` vindo de `destino` da contagem; `nativeButton={false}` nos dois botões de envio).
+  SSR vazio continua igual. Travas de **contagem** que mudam de número e precisam ser
+  reescritas junto (não afrouxadas para `>=`): `setPasso(2)` passa de 2 ocorrências (`aoAdiar`
+  + fallback do gate) para 3 (+ desfecho `"bloqueada-sem-navegar"`), e
+  `contagemRef.current?.parar()` passa de 2 para 3 se o clique do link tiver handler próprio.
+  Se o `onClick` do link reusar `aoFechar` (que já faz `parar()` + `setAberto(false)`), a
+  contagem fica em 2, e o comentário de `aoFechar` passa a dizer "fecha o aviso; quem navega,
+  se for o caso, é o próprio link". O `planejar` escolhe; a spec só exige que a trava reflita a
+  escolha. O describe §6 inteiro ("gesto com popup bloqueado — fallback para navegação
+  top-level") é **substituído** pelas travas do link declarativo, não mantido ao lado.
 
 Smoke manual obrigatório antes do merge (sem Playwright, issue 176), registrado no corpo da PR:
 1. Chrome desktop, padrão de fábrica: passo 1 aparece → contagem acaba → ícone de pop-up
