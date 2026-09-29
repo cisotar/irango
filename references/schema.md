@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.4.1 | **Atualizado:** 2026-09-27
+**Versão:** 0.4.2 | **Atualizado:** 2026-09-29
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -36,6 +36,7 @@ auth.users (Supabase)
             │       └── opcionais
             │               └── itens_pedido_opcionais
             ├── categoria_produto_opcionais (categorias ⋈ opcionais_categorias)
+            ├── produto_opcionais_ocultos (produtos ⋈ opcionais_categorias — exceção por produto)
             └── pedidos
                     └── itens_pedido
                             └── itens_pedido_opcionais
@@ -458,6 +459,38 @@ CREATE TABLE categoria_produto_opcionais (
 );
 ```
 
+### `produto_opcionais_ocultos`
+
+```sql
+-- Exceção por produto (issue 331): linha existe = o grupo de opcionais herdado
+-- da categoria do produto fica OCULTO neste produto; ausência = exibe.
+-- Regra (única cópia: src/lib/utils/opcionais-do-produto.ts):
+--   visiveis(produto) = grupos da categoria (na ordem de categoria_produto_opcionais.ordem) − ocultos(produto)
+-- Subtrativa: a linha só esconde, nunca libera. Não associa grupo a produto —
+-- a associação continua sendo categoria_produto_opcionais (categoria ⋈ grupo).
+-- D3: se o produto muda de categoria, a linha persiste; se a nova categoria não
+-- tem o grupo (ou o grupo é desassociado), a linha é órfã e INERTE — nada a limpar.
+-- Migration: 20260930140000_produto_opcionais_ocultos.sql
+CREATE TABLE produto_opcionais_ocultos (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id               uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  produto_id            uuid NOT NULL,
+  categoria_opcional_id uuid NOT NULL,
+  criado_em             timestamptz NOT NULL DEFAULT now(),
+  -- FKs compostas com loja_id: produto e grupo precisam ser da MESMA loja da linha
+  -- (vale também sob service_role, que é por onde o hub admin escreve).
+  CONSTRAINT produto_opcionais_ocultos_produto_fk
+    FOREIGN KEY (produto_id, loja_id) REFERENCES produtos (id, loja_id) ON DELETE CASCADE,
+  CONSTRAINT produto_opcionais_ocultos_grupo_fk
+    FOREIGN KEY (categoria_opcional_id, loja_id) REFERENCES opcionais_categorias (id, loja_id) ON DELETE CASCADE,
+  UNIQUE (produto_id, categoria_opcional_id)   -- alvo do upsert idempotente em lote
+);
+-- RLS: leitura pública só de loja ativa E produto publicado na vitrine (EXISTS em
+--      vitrine_produtos); leitura própria do dono (inclusive loja inativa);
+--      INSERT e DELETE só pelo dono; SEM UPDATE (alternar = INSERT/DELETE).
+-- GRANTs: anon=SELECT / authenticated=SELECT,INSERT,DELETE / service_role=ALL
+```
+
 ### `itens_pedido_opcionais`
 
 ```sql
@@ -720,6 +753,9 @@ CREATE INDEX ON categoria_produto_opcionais(loja_id, categoria_id);
 -- Migration: 20260917120000_ordem_em_categoria_produto_opcionais.sql
 CREATE INDEX ON categoria_produto_opcionais(loja_id, categoria_id, ordem);
 CREATE INDEX ON itens_pedido_opcionais(item_pedido_id);
+-- Ocultos da loja (vitrine/painel) e por produto (pedido) — issue 331.
+-- Migration: 20260930140000_produto_opcionais_ocultos.sql
+CREATE INDEX ON produto_opcionais_ocultos(loja_id, produto_id);
 
 -- Itens de um pedido (embed `itens_pedido(*)` de SELECT_PEDIDO_COM_ITENS).
 -- FK sem indice = Seq Scan na tabela inteira a cada leitura de pedido.
