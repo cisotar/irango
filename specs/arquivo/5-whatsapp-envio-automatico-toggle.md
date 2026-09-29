@@ -185,7 +185,7 @@ ao fim da contagem abrindo uma aba nova (`window.open` sem feature +
 `opener = null`; se o navegador bloquear, ver RN-A7) ou por gesto explícito
 ("Enviar agora"/"Enviar mensagem", link declarativo `<a target="_blank"
 rel="noopener noreferrer">`). **[rev v0.3.1]** Mecanismo revisado em
-`specs/aviso-whatsapp-contagem-nova-aba.md`.
+`specs/arquivo/aviso-whatsapp-contagem-nova-aba.md`.
 
 **Componentes:**
 - Bloco "Avisar a loja" do spec 3 — inalterado.
@@ -201,21 +201,21 @@ rel="noopener noreferrer">`). **[rev v0.3.1]** Mecanismo revisado em
   automático ligado. Garantido em: cliente (UX) sobre dado server-side
   (`lojas.whatsapp`). (Comportamento já existente do spec 3; esta feature apenas
   **não o remove**.)
-- [ ] Ver o modal de aviso quando o envio automático está ligado, com spinner e
+- [x] Ver o modal de aviso quando o envio automático está ligado, com spinner e
   contagem regressiva de 5s. Garantido em: **servidor** (decisão `avisoHabilitado`)
   + cliente (mecânica de contagem, `avisoWhatsapp.test.ts` cobre a lógica —
-  clique real pendente, issue 176).
-- [ ] Contagem esgotada sem interação leva ao WhatsApp automaticamente
+  smoke manual em desktop e toque, PR #167).
+- [x] Contagem esgotada sem interação leva ao WhatsApp automaticamente
   (**[rev v0.3.1]** aba nova via `window.open`; mecanismo em
-  `specs/aviso-whatsapp-contagem-nova-aba.md`). Garantido em: módulo puro `avisoWhatsapp.ts`
-  (33 testes) — clique real pendente, issue 176.
-- [ ] "Agora não" para a contagem e não deixa religar (WCAG 2.2.1); "Enviar
+  `specs/arquivo/aviso-whatsapp-contagem-nova-aba.md`). Garantido em: módulo puro `avisoWhatsapp.ts`
+  (33 testes) — smoke manual, PR #167.
+- [x] "Agora não" para a contagem e não deixa religar (WCAG 2.2.1); "Enviar
   agora"/"Enviar mensagem" abre o WhatsApp numa aba nova sem tirar o cliente da
   confirmação. Garantido em: `avisoWhatsapp.test.ts` +
-  `ModalAvisoWhatsapp.test.tsx` — clique real pendente, issue 176.
-- [ ] Voltar do WhatsApp para a confirmação não reabre o modal (gate de uma vez
+  `ModalAvisoWhatsapp.test.tsx` — smoke manual, PR #167.
+- [x] Voltar do WhatsApp para a confirmação não reabre o modal (gate de uma vez
   por pedido). Garantido em: `sessionStorage` por pedido, testado com fake
-  injetado — clique real pendente, issue 176.
+  injetado — smoke manual, PR #167.
 
 ---
 
@@ -310,7 +310,7 @@ de ser necessária** quando o disparo se mudou para a página de confirmação
 (RN-A7): lá o destino já chega pronto do SSR, sem gap assíncrono no meio.
 **[rev v0.3.1]** A contagem abre aba nova com `window.open` e a navegação por
 gesto real é link declarativo `<a target="_blank" rel="noopener noreferrer">`
-(ver `specs/aviso-whatsapp-contagem-nova-aba.md`); antes da v0.3.1 eram
+(ver `specs/arquivo/aviso-whatsapp-contagem-nova-aba.md`); antes da v0.3.1 eram
 `window.location.href` e `window.open(destino, "_blank", "noopener")`. O teste que travava a ORDEM da pré-abertura
 (`useEnviarPedido.test.ts`) foi removido **deliberadamente**: a invariante que
 ele protegia não existe mais. `aberturaWhatsapp.ts`/`.test.ts` foram removidos do
@@ -342,7 +342,7 @@ mouse → passo 2, sem trocar a aba; bloqueado em tela de toque → fecha o moda
 noreferrer">` com `onClick` que fecha o modal; sem `window.open` nem fallback
 `location.href` no clique. **[rev v0.3.1]** Antes: contagem por
 `window.location.href` e gesto por `window.open(destino, "_blank", "noopener")`
-com fallback; ver `specs/aviso-whatsapp-contagem-nova-aba.md`. "Agora não" **para a
+com fallback; ver `specs/arquivo/aviso-whatsapp-contagem-nova-aba.md`. "Agora não" **para a
 contagem e ela não volta a correr** (WCAG 2.2.1 — Timing Adjustable) e leva ao
 passo 2, com a copy:
 
@@ -406,7 +406,7 @@ módulo puro testável (`avisoWhatsapp.ts`).
   carregar — exceção registrada em `seguranca.md` §15-A. Em tela de toque com
   popup bloqueado, `window.location.href` navega na própria aba: sem segunda aba
   nem `opener`. (Na v0.3.0 era `noopener` real em `window.open` e o caminho sem
-  gesto nunca abria segunda aba.) Fonte: `specs/aviso-whatsapp-contagem-nova-aba.md`.
+  gesto nunca abria segunda aba.) Fonte: `specs/arquivo/aviso-whatsapp-contagem-nova-aba.md`.
 
 **Criticidade de segurança:** média. Não há dinheiro/RLS nova, mas **toca a
 superfície de escrita cross-tenant de `lojas`** — a issue de painel admin deve

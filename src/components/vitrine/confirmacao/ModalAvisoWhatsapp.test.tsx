@@ -17,7 +17,7 @@
  * "noopener")` + fallback `location.href`) foi SUBSTITUÍDO pelas travas F2
  * (contagem abre com `window.open` sem feature + `opener = null`), F3 (botões
  * de envio como `<a target="_blank" rel="noopener noreferrer">`) e F4 (passo 1
- * em qualquer dispositivo). Spec: `specs/aviso-whatsapp-contagem-nova-aba.md`.
+ * em qualquer dispositivo). Spec: `specs/arquivo/aviso-whatsapp-contagem-nova-aba.md`.
  *
  * A regra de negócio em si (quando exibir, o gate uma-vez-por-pedido, a
  * contagem, o guard §15) já está travada em `avisoWhatsapp.test.ts`, no

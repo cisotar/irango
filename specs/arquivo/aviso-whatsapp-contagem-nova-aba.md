@@ -2,7 +2,7 @@
 
 **Versão:** 0.1.1 | **Atualizado:** 2026-09-29
 
-> Revisa **RN-A7** de `specs/5-whatsapp-envio-automatico-toggle.md` (issue 287) e a
+> Revisa **RN-A7** de `specs/arquivo/5-whatsapp-envio-automatico-toggle.md` (issue 287) e a
 > correção `d8d2a00` ("no PC, aviso do WhatsApp não navega sozinho na mesma aba").
 > Escopo: só `ModalAvisoWhatsapp` e o módulo puro `avisoWhatsapp.ts`. O botão manual
 > "Avisar a loja no WhatsApp" (spec 3) e `montarLinkWhatsappPedido` ficam como estão.
@@ -179,35 +179,35 @@ componente, `tentarAbrirNovaAba` é:
 ```
 
 **Behaviors:**
-- [ ] **Ver o passo 1 (spinner + contagem de 5s) em qualquer dispositivo**, inclusive no
+- [x] **Ver o passo 1 (spinner + contagem de 5s) em qualquer dispositivo**, inclusive no
   computador com mouse, quando o aviso está habilitado e o gate de sessão persistiu. Garantido
   em: decisão de exibir no **servidor** (`avisoHabilitado`, `href` no SSR). Armar a contagem é
   do **cliente** (`persistiu` → `contagem.iniciar()`, sem a condição `!ehComputadorComMouse()`).
   Teste: `ModalAvisoWhatsapp.test.tsx` (trava de texto-fonte: `if (persistiu) { contagem.iniciar() }`).
-- [ ] **Esperar a contagem acabar sem mexer em nada → o WhatsApp tenta abrir em aba nova.**
+- [x] **Esperar a contagem acabar sem mexer em nada → o WhatsApp tenta abrir em aba nova.**
   Garantido em: módulo puro `avisoWhatsapp.ts`: o último tick chama `tentarAbrirNovaAba(destino)`
   **antes** de qualquer outra navegação, uma vez só, e só com destino aprovado pelo guard §15.
   Teste: `avisoWhatsapp.test.ts` com fake injetado.
-- [ ] **Aba nova abriu → o modal fecha sozinho** e o cliente continua na confirmação.
+- [x] **Aba nova abriu → o modal fecha sozinho** e o cliente continua na confirmação.
   Garantido em: módulo (`aoEsgotar("aberta")`) + componente (`setAberto(false)`). Nenhuma
   navegação top-level nesse caminho. Teste: módulo (desfecho `"aberta"` ⇒ `navegarTopLevel`
   não chamado) + trava de fonte no componente.
-- [ ] **Popup bloqueado no computador → o modal vai para o passo 2 e a aba da confirmação fica
+- [x] **Popup bloqueado no computador → o modal vai para o passo 2 e a aba da confirmação fica
   onde está.** Garantido em: módulo (`podeNavegarTopLevel === false` ⇒ `navegarTopLevel`
   **nunca** chamado, desfecho `"bloqueada-sem-navegar"`) + componente (`setPasso(2)`).
   Teste: módulo, tabela `podeNavegarTopLevel × resultado`.
-- [ ] **Popup bloqueado → o passo 2 EXPLICA o bloqueio e chama o gesto** (RN-AN5). O componente
+- [x] **Popup bloqueado → o passo 2 EXPLICA o bloqueio e chama o gesto** (RN-AN5). O componente
   entra no passo 2 com `bloqueado === true` só nesse desfecho e troca a copy: título
   `COPY_POPUP_BLOQUEADO_TITULO` ("Clique em "Enviar mensagem"…") e descrição
   `COPY_POPUP_BLOQUEADO_DESC` (explicita o bloqueio, reafirma que o pedido já está gravado e
   oferece liberar pop-ups). Os outros caminhos do passo 2 ("Agora não", gate de storage não
   persistido) mantêm `COPY_ACELERE_PEDIDO`. Teste: trava de fonte (`bloqueado ? … : …` no passo
   2, `setBloqueado(true)` só no desfecho `"bloqueada-sem-navegar"`, literais das constantes).
-- [ ] **Popup bloqueado em tela de toque → abre o WhatsApp na mesma aba (`location.href`)**,
+- [x] **Popup bloqueado em tela de toque → abre o WhatsApp na mesma aba (`location.href`)**,
   como hoje, e o modal fecha (D4). Garantido em: módulo (`"bloqueada"` +
   `podeNavegarTopLevel === true` ⇒ `navegarTopLevel(destino)` uma vez, desfecho
   `"navegou-top-level"`) + componente (`setAberto(false)`). Teste: módulo.
-- [ ] **Tocar/clicar em "Enviar agora" (passo 1) ou "Enviar mensagem" (passo 2) → o WhatsApp
+- [x] **Tocar/clicar em "Enviar agora" (passo 1) ou "Enviar mensagem" (passo 2) → o WhatsApp
   abre em aba nova e o modal fecha, sem trocar a aba da confirmação.** Garantido em: **cliente**,
   com `<a href={contagem.destino} target="_blank" rel="noopener noreferrer" />` no `render`
   do `Button` (`nativeButton={false}`). O `onClick` chama `contagemRef.current?.parar()` e `setAberto(false)`,
