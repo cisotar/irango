@@ -7,8 +7,17 @@ import { HexColorPicker } from "react-colorful";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { PreviewVitrine } from "@/components/painel/PreviewVitrine";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -77,9 +86,9 @@ export function TemaClient({
   }
 
   const estiloPreview = {
-    "--preview-primaria": tema.primaria,
-    "--preview-fundo": tema.fundo,
-    "--preview-destaque": tema.destaque,
+    "--cor-primaria": tema.primaria,
+    "--cor-fundo": tema.fundo,
+    "--cor-destaque": tema.destaque,
   } as CSSProperties;
 
   return (
@@ -128,40 +137,28 @@ export function TemaClient({
         </Card>
 
         <div className="space-y-4">
-          <Card>
-            <CardContent className="p-0">
-              <div
-                style={estiloPreview}
-                className="overflow-hidden rounded-xl"
+          <div style={estiloPreview}>
+            <Dialog>
+              <DialogTrigger
+                className="block w-full cursor-pointer"
+                aria-label="Ampliar prévia da vitrine"
               >
-                <div
-                  className="p-6"
-                  style={{ backgroundColor: "var(--preview-fundo)" }}
-                >
-                  <div
-                    className="mb-3 inline-block rounded-md px-3 py-1 text-sm font-semibold text-white"
-                    style={{ backgroundColor: "var(--preview-primaria)" }}
-                  >
-                    {nomeLoja}
-                  </div>
-                  <div
-                    className="rounded-lg border p-4"
-                    style={{ borderColor: "var(--preview-destaque)" }}
-                  >
-                    <p className="text-sm" style={{ color: "var(--preview-primaria)" }}>
-                      Prévia da sua vitrine
-                    </p>
-                    <span
-                      className="mt-2 inline-block rounded px-2 py-0.5 text-xs font-medium text-white"
-                      style={{ backgroundColor: "var(--preview-destaque)" }}
-                    >
-                      Destaque
-                    </span>
-                  </div>
+                <PreviewVitrine tema={tema} nomeLoja={nomeLoja} />
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Prévia da vitrine</DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Prévia em tamanho maior da vitrine com as cores do tema
+                    atual
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="overflow-y-auto px-4 pb-4">
+                  <PreviewVitrine tema={tema} nomeLoja={nomeLoja} ampliado />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           <Separator />
 
