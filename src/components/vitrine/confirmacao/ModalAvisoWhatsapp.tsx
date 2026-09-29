@@ -6,7 +6,9 @@
 // (quando exibir, o gate de uma vez por pedido, a contagem, o guard §15) vive
 // no módulo puro, testável em `environment: node`. Aqui ficam apenas o estado
 // da UI e os três efeitos de janela — `sessionStorage`, `setTimeout` e a
-// navegação — injetados por parâmetro.
+// abertura/navegação da contagem esgotada — injetados por parâmetro. O envio
+// por gesto não passa pelo módulo: os botões de envio são links
+// `<a target="_blank">` declarativos, com o `destino` aprovado pelo guard.
 //
 // Quando este modal aparece, o PEDIDO JÁ EXISTE (RN-W4): a confirmação só
 // renderiza porque `criarPedido` devolveu id + token, e o pedido já está no
@@ -48,6 +50,20 @@ import {
 export const COPY_ACELERE_PEDIDO =
   "Envie a mensagem no WhatsApp e acelere seu pedido.";
 
+/**
+ * Copy do passo 2 quando o navegador BLOQUEOU a abertura automática no
+ * computador (desfecho `"bloqueada-sem-navegar"`). Decisão de produto do
+ * usuário: o spec deixava isto fora do escopo v1 ("copy nova exige decisão de
+ * produto"); agora o passo 2 explicita o bloqueio e chama o gesto. Segue as
+ * mesmas duas amarras da copy do projeto: verbo no imperativo manda agir (o
+ * título é a instrução, não o aviso de perda) e nada sugere que o pedido não
+ * foi feito — ele já está gravado (RN-W4). LITERAIS, travadas por teste.
+ */
+export const COPY_POPUP_BLOQUEADO_TITULO =
+  "Clique em “Enviar mensagem” para abrir o WhatsApp";
+export const COPY_POPUP_BLOQUEADO_DESC =
+  "Seu navegador bloqueou a abertura automática. O pedido já está registrado — clique para avisar a loja, ou libere os pop-ups deste site.";
+
 /** `sessionStorage` pode LANÇAR (aba privativa, política de site). */
 function lerSessionStorage(): Storage | null {
   try {
@@ -60,9 +76,10 @@ function lerSessionStorage(): Storage | null {
 /**
  * PC com mouse: `wa.me` abre `web.whatsapp.com` na MESMA aba, substituindo a
  * confirmação — no celular o link é interceptado pelo app e a aba original
- * sobrevive. Por isso o desktop nunca arma a contagem automática (que só
- * sabe navegar top-level, §15/plano [287]): só o clique — gesto real, que o
- * bloqueador de popup deixa passar — pode abrir a aba nova.
+ * sobrevive. A contagem é armada em QUALQUER dispositivo; esta heurística só
+ * decide o fallback quando o navegador bloqueia a aba nova da contagem
+ * esgotada: no toque, navegação top-level; no computador, passo 2 (a aba da
+ * confirmação nunca troca sem gesto — RN-AN1).
  */
 function ehComputadorComMouse(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -92,7 +109,16 @@ export function ModalAvisoWhatsapp({
 }: ModalAvisoWhatsappProps) {
   const [aberto, setAberto] = useState(false);
   const [passo, setPasso] = useState<1 | 2>(1);
+  /* Passo 2 alcançado porque o navegador BLOQUEOU a abertura automática
+     (desfecho "bloqueada-sem-navegar"). Só então a copy explica o bloqueio; o
+     passo 2 por "Agora não" ou por gate de storage não persistido mantém a copy
+     de incentivo (COPY_ACELERE_PEDIDO). */
+  const [bloqueado, setBloqueado] = useState(false);
   const [restante, setRestante] = useState(SEGUNDOS_AVISO_WHATSAPP);
+  /* `href` dos links de envio: o `destino` já aprovado pelo guard §15 dentro
+     da contagem. Fica em estado (e não lido da ref no render) para o React
+     re-renderizar quando a contagem é criada. */
+  const [destinoEnvio, setDestinoEnvio] = useState<string | null>(null);
   const contagemRef = useRef<ContagemAviso | null>(null);
   /* A decisão e a marca valem por INSTÂNCIA, não por execução do efeito: o
      remount do Strict Mode rodaria o efeito de novo e leria a marca que a
@@ -121,30 +147,42 @@ export function ModalAvisoWhatsapp({
         agendar: (cb, ms) => window.setTimeout(cb, ms),
         limpar: (id) => window.clearTimeout(id),
       },
-      // Contagem esgotada, sem gesto: `window.open` cairia no bloqueador de
-      // popup, então a navegação é top-level. O destino já passou pelo guard.
+      // Contagem esgotada: tenta aba nova. Sem 3º argumento de propósito —
+      // com "noopener" o `window.open` devolve `null` SEMPRE e não daria para
+      // distinguir bloqueio de sucesso. O `opener` é zerado na
+      // mesma tarefa, antes de a página de terceiro carregar (§15-A).
+      tentarAbrirNovaAba: (destino) => {
+        const aba = window.open(destino, "_blank");
+        if (aba == null) return "bloqueada";
+        aba.opener = null;
+        return "aberta";
+      },
+      // Só alcançado com popup bloqueado em tela de toque. O destino já
+      // passou pelo guard.
       navegarTopLevel: (destino) => {
         window.location.href = destino;
       },
-      // Gesto real: `noopener` de verdade, sem precisar zerar `opener` na mão.
-      // Bloqueador de popup devolve `null` — nesse caso cai para top-level
-      // (§2.4 do plano), senão o clique não faria nada e ninguém saberia.
-      abrirNovaAba: (destino) => {
-        const aba = window.open(destino, "_blank", "noopener");
-        if (aba == null) {
-          window.location.href = destino;
+      // Avaliado UMA vez, na montagem.
+      podeNavegarTopLevel: !ehComputadorComMouse(),
+      // O desfecho só mexe na UI; quem navega é o módulo.
+      aoEsgotar: (desfecho) => {
+        if (desfecho === "bloqueada-sem-navegar") {
+          setBloqueado(true);
+          setPasso(2);
+        } else {
+          setAberto(false);
         }
       },
       aoContar: setRestante,
     });
     contagemRef.current = contagem;
+    setDestinoEnvio(contagem.destino);
     setAberto(true);
-    if (persistiu && !ehComputadorComMouse()) {
+    if (persistiu) {
       contagem.iniciar();
     } else {
-      // Gate não confiável OU desktop (comentário de ehComputadorComMouse):
-      // nenhum tick pode navegar sozinho. O aviso vira direto o passo 2 —
-      // instrução + os dois botões, só gesto navega.
+      // Gate não confiável: nenhum tick pode abrir o WhatsApp sozinho. O aviso
+      // vira direto o passo 2 — instrução + os dois botões, só gesto abre.
       setPasso(2);
     }
 
@@ -157,19 +195,15 @@ export function ModalAvisoWhatsapp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Gesto do comprador: abre o WhatsApp em aba nova e fecha o aviso. */
-  function aoEnviar(): void {
-    contagemRef.current?.enviarAgora();
-    setAberto(false);
-  }
-
   /** Saída do passo 1: PARA a contagem (WCAG 2.2.1) e mostra o passo 2. */
   function aoAdiar(): void {
     contagemRef.current?.parar();
     setPasso(2);
   }
 
-  /** Fecha o aviso sem navegar. Nada é desfeito — o pedido segue gravado. */
+  /**
+   * Para a contagem e fecha o aviso; quem navega, se for o caso, é o próprio link.
+   */
   function aoFechar(): void {
     contagemRef.current?.parar();
     setAberto(false);
@@ -203,9 +237,16 @@ export function ModalAvisoWhatsapp({
 
             <DialogFooter className="flex-col gap-2 sm:flex-col">
               <Button
-                type="button"
+                nativeButton={false}
                 className="min-h-11 w-full"
-                onClick={aoEnviar}
+                onClick={aoFechar}
+                render={
+                  <a
+                    href={destinoEnvio ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
               >
                 Enviar agora
               </Button>
@@ -222,19 +263,39 @@ export function ModalAvisoWhatsapp({
         ) : (
           <>
             <DialogHeader>
-              {/* Copy LITERAL — ver COPY_ACELERE_PEDIDO. */}
-              <DialogTitle>{COPY_ACELERE_PEDIDO}</DialogTitle>
-              <DialogDescription>
-                Seu pedido já está registrado e a loja o vê no painel. A
-                mensagem avisa a cozinha na hora.
-              </DialogDescription>
+              {/* Copy LITERAL — ver COPY_ACELERE_PEDIDO / COPY_POPUP_BLOQUEADO_*.
+                  Só o passo 2 por bloqueio de popup troca a copy; os demais
+                  caminhos ("Agora não", gate sem storage) mantêm o incentivo. */}
+              {bloqueado ? (
+                <>
+                  <DialogTitle>{COPY_POPUP_BLOQUEADO_TITULO}</DialogTitle>
+                  <DialogDescription>
+                    {COPY_POPUP_BLOQUEADO_DESC}
+                  </DialogDescription>
+                </>
+              ) : (
+                <>
+                  <DialogTitle>{COPY_ACELERE_PEDIDO}</DialogTitle>
+                  <DialogDescription>
+                    Seu pedido já está registrado e a loja o vê no painel. A
+                    mensagem avisa a cozinha na hora.
+                  </DialogDescription>
+                </>
+              )}
             </DialogHeader>
 
             <DialogFooter className="flex-col gap-2 sm:flex-col">
               <Button
-                type="button"
+                nativeButton={false}
                 className="min-h-11 w-full"
-                onClick={aoEnviar}
+                onClick={aoFechar}
+                render={
+                  <a
+                    href={destinoEnvio ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
               >
                 Enviar mensagem
               </Button>

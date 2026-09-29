@@ -14,6 +14,10 @@
  *     lados poderiam divergir sem ninguém perceber.
  *  4. A saída PARA a contagem de verdade: depois dela, nenhum tick posterior
  *     navega. Sem este caso, "saída" vira "adiamento de 5s".
+ *  5. [aviso-wpp-nova-aba] Contagem esgotada TENTA ABA NOVA primeiro; o
+ *     desfecho segue a tabela F1 (`podeNavegarTopLevel` × resultado). No
+ *     computador (`podeNavegarTopLevel=false`) a aba da confirmação nunca
+ *     troca sem gesto. O gesto saiu do módulo (é o `<a target="_blank">`).
  *
  * O `destino`/`href` NUNCA é logado (precedente [161]) — nem aqui nem no
  * módulo. E nenhum número real de WhatsApp aparece nos fixtures.
@@ -32,6 +36,7 @@ import {
   type DepsContagemAviso,
   type EntradaDecisaoAviso,
   type MemoDecisaoAviso,
+  type ResultadoAbertura,
 } from "./avisoWhatsapp";
 
 const PEDIDO_ID = "11111111-1111-1111-1111-111111111111";
@@ -130,19 +135,32 @@ function timerFake() {
   return { timer, tick, pendentes };
 }
 
+/**
+ * Monta a contagem com todos os efeitos como `vi.fn`. Por default o navegador
+ * "deixa" a aba nova abrir (`"aberta"`) e o dispositivo é de toque
+ * (`podeNavegarTopLevel: true`); cada caso sobrescreve só o que prova.
+ */
 function montarContagem(
   href: string | null,
-  overrides: Partial<DepsContagemAviso> = {},
+  {
+    resultado = "aberta",
+    ...overrides
+  }: Partial<DepsContagemAviso> & { resultado?: ResultadoAbertura } = {},
 ) {
   const { timer, tick, pendentes } = timerFake();
+  const tentarAbrirNovaAba = vi.fn(
+    (_destino: string): ResultadoAbertura => resultado,
+  );
   const navegarTopLevel = vi.fn();
-  const abrirNovaAba = vi.fn();
+  const aoEsgotar = vi.fn();
   const aoContar = vi.fn();
   const deps: DepsContagemAviso = {
     href,
     timer,
+    tentarAbrirNovaAba,
     navegarTopLevel,
-    abrirNovaAba,
+    podeNavegarTopLevel: true,
+    aoEsgotar,
     aoContar,
     ...overrides,
   };
@@ -150,11 +168,13 @@ function montarContagem(
     contagem: criarContagemAviso(deps),
     tick,
     pendentes,
+    tentarAbrirNovaAba,
     navegarTopLevel,
-    abrirNovaAba,
+    aoEsgotar,
     aoContar,
   };
 }
+
 
 // ---------------------------------------------------------------------------
 // 1. Quando o aviso aparece — e quando NÃO aparece
@@ -286,7 +306,14 @@ describe("[287] gate 'uma vez por pedido' no storage injetado", () => {
 // 3. Contagem regressiva com timer INJETADO
 // ---------------------------------------------------------------------------
 
-describe("[287] contagem regressiva — navegação automática ao fim", () => {
+/**
+ * [aviso-wpp-nova-aba] REESCRITO DE PROPÓSITO. A versão [287] travava
+ * "contagem esgotada usa navegação TOP-LEVEL, nunca aba nova". A spec
+ * `aviso-whatsapp-contagem-nova-aba.md` (D2) inverte a ordem: a contagem
+ * esgotada PRIMEIRO tenta aba nova; top-level só sobra como fallback do
+ * bloqueio em tela de toque (D2.1).
+ */
+describe("[aviso-wpp-nova-aba] contagem regressiva — tenta aba nova ao fim", () => {
   it("conta de N-1 até 0 no `aoContar`, um valor por tick", () => {
     const { contagem, tick, aoContar } = montarContagem(HREF_VALIDO);
     contagem.iniciar();
@@ -294,69 +321,202 @@ describe("[287] contagem regressiva — navegação automática ao fim", () => {
     expect(aoContar.mock.calls.map((c) => c[0])).toEqual([4, 3, 2, 1, 0]);
   });
 
-  it(`só o ${SEGUNDOS_AVISO_WHATSAPP}º tick navega — nenhum antes`, () => {
-    const { contagem, tick, navegarTopLevel } = montarContagem(HREF_VALIDO);
+  it(`só o ${SEGUNDOS_AVISO_WHATSAPP}º tick tenta abrir a aba nova — nenhum antes`, () => {
+    const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel, aoEsgotar } =
+      montarContagem(HREF_VALIDO);
     contagem.iniciar();
 
     tick(SEGUNDOS_AVISO_WHATSAPP - 1);
+    expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
     expect(navegarTopLevel).not.toHaveBeenCalled();
+    expect(aoEsgotar).not.toHaveBeenCalled();
 
     tick(1);
-    expect(navegarTopLevel).toHaveBeenCalledTimes(1);
-    expect(navegarTopLevel).toHaveBeenCalledWith(HREF_VALIDO);
+    expect(tentarAbrirNovaAba).toHaveBeenCalledTimes(1);
+    expect(tentarAbrirNovaAba).toHaveBeenCalledWith(HREF_VALIDO);
   });
 
-  it("contagem esgotada usa navegação TOP-LEVEL, nunca aba nova (não há gesto)", () => {
-    const { contagem, tick, navegarTopLevel, abrirNovaAba } =
-      montarContagem(HREF_VALIDO);
+  it("REESCRITO: contagem esgotada tenta ABA NOVA antes de qualquer navegação top-level", () => {
+    // Mesmo no toque com popup bloqueado (o único caso que navega top-level),
+    // a tentativa de aba nova vem PRIMEIRO.
+    const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel } =
+      montarContagem(HREF_VALIDO, {
+        resultado: "bloqueada",
+        podeNavegarTopLevel: true,
+      });
     contagem.iniciar();
     tick(SEGUNDOS_AVISO_WHATSAPP);
+    expect(tentarAbrirNovaAba).toHaveBeenCalledTimes(1);
     expect(navegarTopLevel).toHaveBeenCalledTimes(1);
-    expect(abrirNovaAba).not.toHaveBeenCalled();
+    expect(tentarAbrirNovaAba.mock.invocationCallOrder[0]).toBeLessThan(
+      navegarTopLevel.mock.invocationCallOrder[0],
+    );
   });
 
-  it("navega UMA vez só: ticks depois do fim não repetem a navegação", () => {
-    const { contagem, tick, navegarTopLevel } = montarContagem(HREF_VALIDO);
+  it("tenta UMA vez só: ticks depois do fim não repetem tentativa nem desfecho", () => {
+    const { contagem, tick, tentarAbrirNovaAba, aoEsgotar } =
+      montarContagem(HREF_VALIDO);
     contagem.iniciar();
     tick(SEGUNDOS_AVISO_WHATSAPP + 10);
-    expect(navegarTopLevel).toHaveBeenCalledTimes(1);
+    expect(tentarAbrirNovaAba).toHaveBeenCalledTimes(1);
+    expect(aoEsgotar).toHaveBeenCalledTimes(1);
+  });
+
+  it("contagem esgotada não deixa timer pendente (a contagem terminou)", () => {
+    const { contagem, tick, pendentes } = montarContagem(HREF_VALIDO);
+    contagem.iniciar();
+    tick(SEGUNDOS_AVISO_WHATSAPP);
+    expect(pendentes.size).toBe(0);
   });
 
   it("`segundos` é parametrizável em um ponto só", () => {
-    const { contagem, tick, navegarTopLevel } = montarContagem(HREF_VALIDO, {
+    const { contagem, tick, tentarAbrirNovaAba } = montarContagem(HREF_VALIDO, {
       segundos: 2,
     });
     contagem.iniciar();
     tick(1);
-    expect(navegarTopLevel).not.toHaveBeenCalled();
+    expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
     tick(1);
+    expect(tentarAbrirNovaAba).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3.1 Tabela F1 — podeNavegarTopLevel × resultado da tentativa de aba nova
+// ---------------------------------------------------------------------------
+
+/**
+ * [aviso-wpp-nova-aba] SUBSTITUI o describe "[287] envio por gesto": o gesto
+ * não passa mais pelo módulo (D3 — é o próprio `<a target="_blank">`), então
+ * `abrirNovaAba`/`enviarAgora` saem do contrato. O que o módulo decide agora é
+ * o DESFECHO da contagem esgotada (RN-AN1, RN-AN2).
+ */
+type LinhaF1 = {
+  podeNavegarTopLevel: boolean;
+  resultado: ResultadoAbertura;
+  desfecho: "aberta" | "bloqueada-sem-navegar" | "navegou-top-level";
+  navegaTopLevel: boolean;
+};
+
+const TABELA_F1: ReadonlyArray<LinhaF1> = [
+  // toque + aba abriu: modal fecha, nada troca a aba.
+  { podeNavegarTopLevel: true, resultado: "aberta", desfecho: "aberta", navegaTopLevel: false },
+  // computador + aba abriu (pop-ups liberados): modal fecha.
+  { podeNavegarTopLevel: false, resultado: "aberta", desfecho: "aberta", navegaTopLevel: false },
+  // toque + bloqueado: fallback de hoje, `location.href` (D2.1).
+  { podeNavegarTopLevel: true, resultado: "bloqueada", desfecho: "navegou-top-level", navegaTopLevel: true },
+  // computador + bloqueado: passo 2, a aba da confirmação NUNCA troca (RN-AN1).
+  { podeNavegarTopLevel: false, resultado: "bloqueada", desfecho: "bloqueada-sem-navegar", navegaTopLevel: false },
+];
+
+describe("[aviso-wpp-nova-aba] F1 — desfecho da contagem esgotada (podeNavegarTopLevel × tentarAbrirNovaAba)", () => {
+  for (const linha of TABELA_F1) {
+    const nome = `podeNavegarTopLevel=${linha.podeNavegarTopLevel} × "${linha.resultado}" ⇒ aoEsgotar("${linha.desfecho}")${linha.navegaTopLevel ? " + navegarTopLevel(destino) 1x" : ", navegarTopLevel NUNCA"}`;
+    it(nome, () => {
+      const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel, aoEsgotar } =
+        montarContagem(HREF_VALIDO, {
+          resultado: linha.resultado,
+          podeNavegarTopLevel: linha.podeNavegarTopLevel,
+        });
+      contagem.iniciar();
+      tick(SEGUNDOS_AVISO_WHATSAPP + 3);
+
+      expect(tentarAbrirNovaAba).toHaveBeenCalledTimes(1);
+      expect(tentarAbrirNovaAba).toHaveBeenCalledWith(HREF_VALIDO);
+
+      expect(aoEsgotar).toHaveBeenCalledTimes(1);
+      expect(aoEsgotar).toHaveBeenCalledWith(linha.desfecho);
+
+      if (linha.navegaTopLevel) {
+        expect(navegarTopLevel).toHaveBeenCalledTimes(1);
+        expect(navegarTopLevel).toHaveBeenCalledWith(HREF_VALIDO);
+      } else {
+        expect(navegarTopLevel).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it("RN-AN1: podeNavegarTopLevel=false ⇒ navegarTopLevel NUNCA é chamado, qualquer que seja o resultado", () => {
+    for (const resultado of ["aberta", "bloqueada"] as const) {
+      const { contagem, tick, navegarTopLevel, aoEsgotar } = montarContagem(
+        HREF_VALIDO,
+        { resultado, podeNavegarTopLevel: false },
+      );
+      contagem.iniciar();
+      tick(SEGUNDOS_AVISO_WHATSAPP * 3);
+      expect(navegarTopLevel).not.toHaveBeenCalled();
+      // E o desfecho foi de fato entregue à UI (não é "não fez nada").
+      expect(aoEsgotar).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('D4: no fallback do toque o modal FECHA antes de navegar — aoEsgotar("navegou-top-level") vem antes de navegarTopLevel', () => {
+    const { contagem, tick, navegarTopLevel, aoEsgotar } = montarContagem(
+      HREF_VALIDO,
+      { resultado: "bloqueada", podeNavegarTopLevel: true },
+    );
+    contagem.iniciar();
+    tick(SEGUNDOS_AVISO_WHATSAPP);
+    expect(aoEsgotar).toHaveBeenCalledWith("navegou-top-level");
     expect(navegarTopLevel).toHaveBeenCalledTimes(1);
+    expect(aoEsgotar.mock.invocationCallOrder[0]).toBeLessThan(
+      navegarTopLevel.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("o desfecho só é entregue DEPOIS da tentativa de aba nova (é ela que decide)", () => {
+    for (const linha of TABELA_F1) {
+      const { contagem, tick, tentarAbrirNovaAba, aoEsgotar } = montarContagem(
+        HREF_VALIDO,
+        { resultado: linha.resultado, podeNavegarTopLevel: linha.podeNavegarTopLevel },
+      );
+      contagem.iniciar();
+      tick(SEGUNDOS_AVISO_WHATSAPP);
+      expect(tentarAbrirNovaAba).toHaveBeenCalledTimes(1);
+      expect(aoEsgotar).toHaveBeenCalledTimes(1);
+      expect(tentarAbrirNovaAba.mock.invocationCallOrder[0]).toBeLessThan(
+        aoEsgotar.mock.invocationCallOrder[0],
+      );
+    }
+  });
+
+  it("contrato: o gesto saiu do módulo — `enviarAgora` não existe mais em ContagemAviso", () => {
+    const { contagem } = montarContagem(HREF_VALIDO);
+    expect(contagem).not.toHaveProperty("enviarAgora");
+  });
+
+  it("`destino` exposto é EXATAMENTE urlHttpsSegura(href) — é o href do <a> dos botões (D3)", () => {
+    const { contagem } = montarContagem(HREF_VALIDO);
+    expect(contagem.destino).toBe(urlHttpsSegura(HREF_VALIDO));
+    expect(contagem.destino).toBe(HREF_VALIDO);
   });
 });
 
 describe("[287] saída do aviso — a contagem PARA e não volta a correr", () => {
-  it("parar() antes do fim ⇒ nada navega", () => {
-    const { contagem, tick, navegarTopLevel, abrirNovaAba } =
+  it("parar() antes do fim ⇒ nada abre, nada navega, nenhum desfecho", () => {
+    const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel, aoEsgotar } =
       montarContagem(HREF_VALIDO);
     contagem.iniciar();
     tick(2);
     contagem.parar();
     tick(SEGUNDOS_AVISO_WHATSAPP);
+    expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
     expect(navegarTopLevel).not.toHaveBeenCalled();
-    expect(abrirNovaAba).not.toHaveBeenCalled();
+    expect(aoEsgotar).not.toHaveBeenCalled();
   });
 
-  it("REGRESSÃO: depois de parar(), NENHUM tick posterior navega — o passo 2 não é adiamento de 5s", () => {
-    const { contagem, tick, navegarTopLevel, abrirNovaAba, aoContar } =
-      montarContagem(HREF_VALIDO);
+  it("REGRESSÃO: depois de parar(), NENHUM tick posterior abre aba ou navega — o passo 2 não é adiamento de 5s", () => {
+    const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel, aoEsgotar, aoContar } =
+      montarContagem(HREF_VALIDO, { resultado: "bloqueada" });
     contagem.iniciar();
     contagem.parar();
 
     aoContar.mockClear();
     tick(SEGUNDOS_AVISO_WHATSAPP * 10);
 
+    expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
     expect(navegarTopLevel).not.toHaveBeenCalled();
-    expect(abrirNovaAba).not.toHaveBeenCalled();
+    expect(aoEsgotar).not.toHaveBeenCalled();
     // E o contador também não continua andando por baixo do passo 2.
     expect(aoContar).not.toHaveBeenCalled();
   });
@@ -369,66 +529,56 @@ describe("[287] saída do aviso — a contagem PARA e não volta a correr", () =
   });
 
   it("parar() é idempotente — chamar duas vezes não ressuscita a contagem", () => {
-    const { contagem, tick, navegarTopLevel } = montarContagem(HREF_VALIDO);
+    const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel } =
+      montarContagem(HREF_VALIDO);
     contagem.iniciar();
     contagem.parar();
     contagem.parar();
     tick(SEGUNDOS_AVISO_WHATSAPP * 2);
+    expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
     expect(navegarTopLevel).not.toHaveBeenCalled();
   });
 
   it("iniciar() depois de parar() NÃO religa a contagem (a saída é definitiva no pedido)", () => {
-    const { contagem, tick, navegarTopLevel } = montarContagem(HREF_VALIDO);
+    const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel } =
+      montarContagem(HREF_VALIDO);
     contagem.iniciar();
     contagem.parar();
     contagem.iniciar();
     tick(SEGUNDOS_AVISO_WHATSAPP * 2);
+    expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
     expect(navegarTopLevel).not.toHaveBeenCalled();
   });
-});
 
-describe("[287] envio por gesto — aba nova com o destino do servidor", () => {
-  it("enviarAgora() abre a aba nova com o destino e NÃO navega top-level", () => {
-    const { contagem, navegarTopLevel, abrirNovaAba } =
+  it("parar() depois da contagem esgotada não repete a tentativa (clique no link após o fim)", () => {
+    const { contagem, tick, tentarAbrirNovaAba, aoEsgotar } =
       montarContagem(HREF_VALIDO);
     contagem.iniciar();
-    contagem.enviarAgora();
-    expect(abrirNovaAba).toHaveBeenCalledTimes(1);
-    expect(abrirNovaAba).toHaveBeenCalledWith(HREF_VALIDO);
-    expect(navegarTopLevel).not.toHaveBeenCalled();
-  });
-
-  it("enviarAgora() PARA a contagem: ticks posteriores não navegam de novo", () => {
-    const { contagem, tick, navegarTopLevel, abrirNovaAba } =
-      montarContagem(HREF_VALIDO);
-    contagem.iniciar();
-    contagem.enviarAgora();
-    tick(SEGUNDOS_AVISO_WHATSAPP * 3);
-    expect(abrirNovaAba).toHaveBeenCalledTimes(1);
-    expect(navegarTopLevel).not.toHaveBeenCalled();
-  });
-
-  it("enviarAgora() depois de parar() ainda funciona (botão do passo 2)", () => {
-    const { contagem, abrirNovaAba } = montarContagem(HREF_VALIDO);
-    contagem.iniciar();
+    tick(SEGUNDOS_AVISO_WHATSAPP);
     contagem.parar();
-    contagem.enviarAgora();
-    expect(abrirNovaAba).toHaveBeenCalledWith(HREF_VALIDO);
+    contagem.iniciar();
+    tick(SEGUNDOS_AVISO_WHATSAPP * 2);
+    expect(tentarAbrirNovaAba).toHaveBeenCalledTimes(1);
+    expect(aoEsgotar).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("[287] guard §15 — destino reprovado NUNCA navega, por nenhum caminho", () => {
-  it("nem a contagem esgotada nem o gesto navegam para destino reprovado", () => {
+  it("REESCRITO: destino reprovado ⇒ nem tentativa de aba nova, nem top-level, nem desfecho; `destino` é null", () => {
     for (const href of HREFS_REPROVADOS) {
-      const { contagem, tick, navegarTopLevel, abrirNovaAba } =
-        montarContagem(href);
+      for (const podeNavegarTopLevel of [true, false]) {
+        const { contagem, tick, tentarAbrirNovaAba, navegarTopLevel, aoEsgotar } =
+          montarContagem(href, { resultado: "bloqueada", podeNavegarTopLevel });
 
-      contagem.iniciar();
-      tick(SEGUNDOS_AVISO_WHATSAPP * 3);
-      contagem.enviarAgora();
+        contagem.iniciar();
+        tick(SEGUNDOS_AVISO_WHATSAPP * 3);
 
-      expect(navegarTopLevel).not.toHaveBeenCalled();
-      expect(abrirNovaAba).not.toHaveBeenCalled();
+        expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
+        expect(navegarTopLevel).not.toHaveBeenCalled();
+        expect(aoEsgotar).not.toHaveBeenCalled();
+        // O `<a>` dos botões lê `destino`: reprovado ⇒ sem href (null).
+        expect(contagem.destino).toBeNull();
+      }
     }
   });
 
@@ -438,15 +588,15 @@ describe("[287] guard §15 — destino reprovado NUNCA navega, por nenhum caminh
     expect(pendentes.size).toBe(0);
   });
 
-  it("href NULO explicitamente: iniciar() não agenda tick, enviarAgora() não abre nada", () => {
-    const { contagem, tick, pendentes, navegarTopLevel, abrirNovaAba } =
+  it("REESCRITO: href NULO explicitamente — iniciar() não agenda tick, nada abre e `destino` é null", () => {
+    const { contagem, tick, pendentes, tentarAbrirNovaAba, navegarTopLevel } =
       montarContagem(null);
     contagem.iniciar();
     expect(pendentes.size).toBe(0);
     tick(SEGUNDOS_AVISO_WHATSAPP);
-    contagem.enviarAgora();
+    expect(tentarAbrirNovaAba).not.toHaveBeenCalled();
     expect(navegarTopLevel).not.toHaveBeenCalled();
-    expect(abrirNovaAba).not.toHaveBeenCalled();
+    expect(contagem.destino).toBeNull();
   });
 });
 
