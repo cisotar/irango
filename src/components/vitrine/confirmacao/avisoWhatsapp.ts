@@ -29,7 +29,7 @@
 
 import { urlHttpsSegura } from "@/lib/utils/urlHttpsSegura";
 
-/** Segundos da contagem antes da navegação automática (decisão do usuário). */
+/** Segundos da contagem antes da abertura automática do WhatsApp (decisão do usuário). */
 export const SEGUNDOS_AVISO_WHATSAPP = 5;
 
 /** Intervalo entre os ticks da contagem. */
@@ -64,9 +64,10 @@ export function jaExibiuAvisoWhatsapp(
  *
  * O retorno existe porque o gate "uma vez por pedido" falha ABERTO: sem
  * storage (SSR, política de cookies, WebView restritiva, iframe particionado)
- * a marca some, e um aviso que navega sozinho voltaria a abrir e a navegar a
- * cada revisita da confirmação — laço de redirecionamento. Quem chama usa o
- * `false` para NÃO armar a navegação automática; o envio por gesto continua.
+ * a marca some, e um aviso que abre o WhatsApp sozinho voltaria a abrir a cada
+ * revisita da confirmação — no toque, com o fallback na mesma aba, laço de
+ * redirecionamento. Quem chama usa o `false` para NÃO armar a abertura
+ * automática; o envio por gesto continua.
  */
 export function marcarAvisoWhatsappExibido(
   storage: Storage | null,
@@ -77,7 +78,7 @@ export function marcarAvisoWhatsappExibido(
     storage.setItem(chaveAvisoWhatsapp(pedidoId), "1");
     return true;
   } catch {
-    // Sem persistência do gate: o chamador não pode auto-navegar.
+    // Sem persistência do gate: o chamador não pode armar a abertura automática.
     return false;
   }
 }
@@ -161,6 +162,12 @@ export type TimerAviso = {
 /** Resultado da tentativa de abrir a aba nova ao fim da contagem. */
 export type ResultadoAbertura = "aberta" | "bloqueada";
 
+/** Desfecho da contagem esgotada, entregue à UI por `aoEsgotar`. */
+export type DesfechoContagem =
+  | "aberta"
+  | "bloqueada-sem-navegar"
+  | "navegou-top-level";
+
 export type DepsContagemAviso = {
   /** Destino cru; o módulo o passa por `urlHttpsSegura` antes de qualquer uso. */
   href: string | null;
@@ -182,9 +189,7 @@ export type DepsContagemAviso = {
    * Desfecho da contagem esgotada, para a UI (tabela F1): chamado UMA vez e
    * ANTES de qualquer navegação top-level (D4).
    */
-  aoEsgotar: (
-    desfecho: "aberta" | "bloqueada-sem-navegar" | "navegou-top-level",
-  ) => void;
+  aoEsgotar: (desfecho: DesfechoContagem) => void;
   /** Segundos restantes a cada tick, para o spinner (N-1 … 0). */
   aoContar?: (restante: number) => void;
   /** Default: `SEGUNDOS_AVISO_WHATSAPP`. */

@@ -129,8 +129,8 @@ export function ModalAvisoWhatsapp({
         limpar: (id) => window.clearTimeout(id),
       },
       // Contagem esgotada: tenta aba nova. Sem 3º argumento de propósito —
-      // com a feature de desapossamento o navegador devolve `null` SEMPRE e
-      // não daria para distinguir bloqueio de sucesso. O `opener` é zerado na
+      // com "noopener" o `window.open` devolve `null` SEMPRE e não daria para
+      // distinguir bloqueio de sucesso. O `opener` é zerado na
       // mesma tarefa, antes de a página de terceiro carregar (§15-A).
       tentarAbrirNovaAba: (destino) => {
         const aba = window.open(destino, "_blank");
@@ -161,8 +161,8 @@ export function ModalAvisoWhatsapp({
     if (persistiu) {
       contagem.iniciar();
     } else {
-      // Gate não confiável: nenhum tick pode navegar sozinho. O aviso vira
-      // direto o passo 2 — instrução + os dois botões, só gesto navega.
+      // Gate não confiável: nenhum tick pode abrir o WhatsApp sozinho. O aviso
+      // vira direto o passo 2 — instrução + os dois botões, só gesto abre.
       setPasso(2);
     }
 
