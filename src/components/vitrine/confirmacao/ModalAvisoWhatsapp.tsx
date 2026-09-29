@@ -6,7 +6,9 @@
 // (quando exibir, o gate de uma vez por pedido, a contagem, o guard §15) vive
 // no módulo puro, testável em `environment: node`. Aqui ficam apenas o estado
 // da UI e os três efeitos de janela — `sessionStorage`, `setTimeout` e a
-// navegação — injetados por parâmetro.
+// abertura/navegação da contagem esgotada — injetados por parâmetro. O envio
+// por gesto não passa pelo módulo: os botões de envio são links
+// `<a target="_blank">` declarativos, com o `destino` aprovado pelo guard.
 //
 // Quando este modal aparece, o PEDIDO JÁ EXISTE (RN-W4): a confirmação só
 // renderiza porque `criarPedido` devolveu id + token, e o pedido já está no
@@ -60,9 +62,10 @@ function lerSessionStorage(): Storage | null {
 /**
  * PC com mouse: `wa.me` abre `web.whatsapp.com` na MESMA aba, substituindo a
  * confirmação — no celular o link é interceptado pelo app e a aba original
- * sobrevive. Por isso o desktop nunca arma a contagem automática (que só
- * sabe navegar top-level, §15/plano [287]): só o clique — gesto real, que o
- * bloqueador de popup deixa passar — pode abrir a aba nova.
+ * sobrevive. A contagem é armada em QUALQUER dispositivo; esta heurística só
+ * decide o fallback quando o navegador bloqueia a aba nova da contagem
+ * esgotada: no toque, navegação top-level; no computador, passo 2 (a aba da
+ * confirmação nunca troca sem gesto — RN-AN1).
  */
 function ehComputadorComMouse(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -93,6 +96,10 @@ export function ModalAvisoWhatsapp({
   const [aberto, setAberto] = useState(false);
   const [passo, setPasso] = useState<1 | 2>(1);
   const [restante, setRestante] = useState(SEGUNDOS_AVISO_WHATSAPP);
+  /* `href` dos links de envio: o `destino` já aprovado pelo guard §15 dentro
+     da contagem. Fica em estado (e não lido da ref no render) para o React
+     re-renderizar quando a contagem é criada. */
+  const [destinoEnvio, setDestinoEnvio] = useState<string | null>(null);
   const contagemRef = useRef<ContagemAviso | null>(null);
   /* A decisão e a marca valem por INSTÂNCIA, não por execução do efeito: o
      remount do Strict Mode rodaria o efeito de novo e leria a marca que a
@@ -121,30 +128,41 @@ export function ModalAvisoWhatsapp({
         agendar: (cb, ms) => window.setTimeout(cb, ms),
         limpar: (id) => window.clearTimeout(id),
       },
-      // Contagem esgotada, sem gesto: `window.open` cairia no bloqueador de
-      // popup, então a navegação é top-level. O destino já passou pelo guard.
+      // Contagem esgotada: tenta aba nova. Sem 3º argumento de propósito —
+      // com a feature de desapossamento o navegador devolve `null` SEMPRE e
+      // não daria para distinguir bloqueio de sucesso. O `opener` é zerado na
+      // mesma tarefa, antes de a página de terceiro carregar (§15-A).
+      tentarAbrirNovaAba: (destino) => {
+        const aba = window.open(destino, "_blank");
+        if (aba == null) return "bloqueada";
+        aba.opener = null;
+        return "aberta";
+      },
+      // Só alcançado com popup bloqueado em tela de toque. O destino já
+      // passou pelo guard.
       navegarTopLevel: (destino) => {
         window.location.href = destino;
       },
-      // Gesto real: `noopener` de verdade, sem precisar zerar `opener` na mão.
-      // Bloqueador de popup devolve `null` — nesse caso cai para top-level
-      // (§2.4 do plano), senão o clique não faria nada e ninguém saberia.
-      abrirNovaAba: (destino) => {
-        const aba = window.open(destino, "_blank", "noopener");
-        if (aba == null) {
-          window.location.href = destino;
+      // Avaliado UMA vez, na montagem.
+      podeNavegarTopLevel: !ehComputadorComMouse(),
+      // O desfecho só mexe na UI; quem navega é o módulo.
+      aoEsgotar: (desfecho) => {
+        if (desfecho === "bloqueada-sem-navegar") {
+          setPasso(2);
+        } else {
+          setAberto(false);
         }
       },
       aoContar: setRestante,
     });
     contagemRef.current = contagem;
+    setDestinoEnvio(contagem.destino);
     setAberto(true);
-    if (persistiu && !ehComputadorComMouse()) {
+    if (persistiu) {
       contagem.iniciar();
     } else {
-      // Gate não confiável OU desktop (comentário de ehComputadorComMouse):
-      // nenhum tick pode navegar sozinho. O aviso vira direto o passo 2 —
-      // instrução + os dois botões, só gesto navega.
+      // Gate não confiável: nenhum tick pode navegar sozinho. O aviso vira
+      // direto o passo 2 — instrução + os dois botões, só gesto navega.
       setPasso(2);
     }
 
@@ -157,19 +175,15 @@ export function ModalAvisoWhatsapp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Gesto do comprador: abre o WhatsApp em aba nova e fecha o aviso. */
-  function aoEnviar(): void {
-    contagemRef.current?.enviarAgora();
-    setAberto(false);
-  }
-
   /** Saída do passo 1: PARA a contagem (WCAG 2.2.1) e mostra o passo 2. */
   function aoAdiar(): void {
     contagemRef.current?.parar();
     setPasso(2);
   }
 
-  /** Fecha o aviso sem navegar. Nada é desfeito — o pedido segue gravado. */
+  /**
+   * Para a contagem e fecha o aviso; quem navega, se for o caso, é o próprio link.
+   */
   function aoFechar(): void {
     contagemRef.current?.parar();
     setAberto(false);
@@ -203,9 +217,16 @@ export function ModalAvisoWhatsapp({
 
             <DialogFooter className="flex-col gap-2 sm:flex-col">
               <Button
-                type="button"
+                nativeButton={false}
                 className="min-h-11 w-full"
-                onClick={aoEnviar}
+                onClick={aoFechar}
+                render={
+                  <a
+                    href={destinoEnvio ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
               >
                 Enviar agora
               </Button>
@@ -232,9 +253,16 @@ export function ModalAvisoWhatsapp({
 
             <DialogFooter className="flex-col gap-2 sm:flex-col">
               <Button
-                type="button"
+                nativeButton={false}
                 className="min-h-11 w-full"
-                onClick={aoEnviar}
+                onClick={aoFechar}
+                render={
+                  <a
+                    href={destinoEnvio ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
               >
                 Enviar mensagem
               </Button>

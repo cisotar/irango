@@ -10,7 +10,14 @@
 // Guard §15 (`seguranca.md`): o destino passa por `urlHttpsSegura` — fonte
 // ÚNICA do predicado, nunca reimplementado aqui — ANTES de qualquer navegação
 // e antes até de agendar o primeiro tick. Destino reprovado não navega por
-// caminho nenhum: nem a contagem esgotada, nem o gesto do botão.
+// caminho nenhum: nem a contagem esgotada, nem os links de envio (que leem o
+// `destino` exposto aqui, `null` quando reprovado).
+//
+// [aviso-wpp-nova-aba] O gesto do comprador NÃO passa mais por este módulo: os
+// botões de envio são `<a target="_blank">` declarativos. O que o módulo
+// decide é o DESFECHO da contagem esgotada: tenta aba nova primeiro; se o
+// navegador bloquear, só a tela de toque cai para navegação top-level — no
+// computador a aba da confirmação nunca troca sem gesto (RN-AN1).
 //
 // O `destino`/`href` NUNCA é logado (precedente [161] de `aberturaWhatsapp.ts`):
 // ele carrega PII do comprador na query string.
@@ -151,14 +158,33 @@ export type TimerAviso = {
   limpar: (id: number) => void;
 };
 
+/** Resultado da tentativa de abrir a aba nova ao fim da contagem. */
+export type ResultadoAbertura = "aberta" | "bloqueada";
+
 export type DepsContagemAviso = {
   /** Destino cru; o módulo o passa por `urlHttpsSegura` antes de qualquer uso. */
   href: string | null;
   timer: TimerAviso;
-  /** Contagem esgotada, sem gesto ⇒ navegação top-level (`location.href`). */
+  /**
+   * Contagem esgotada ⇒ PRIMEIRO tenta abrir a aba nova. Devolve se o
+   * navegador deixou (`"aberta"`) ou bloqueou (`"bloqueada"`).
+   */
+  tentarAbrirNovaAba: (destino: string) => ResultadoAbertura;
+  /** Fallback do bloqueio, só quando `podeNavegarTopLevel` (`location.href`). */
   navegarTopLevel: (destino: string) => void;
-  /** Gesto real ⇒ `window.open(destino, "_blank", "noopener")`. */
-  abrirNovaAba: (destino: string) => void;
+  /**
+   * Tela de toque: o app do WhatsApp intercepta e a aba sobrevive, então o
+   * bloqueio pode virar navegação top-level. Computador: `false` — a aba da
+   * confirmação nunca troca sem gesto.
+   */
+  podeNavegarTopLevel: boolean;
+  /**
+   * Desfecho da contagem esgotada, para a UI (tabela F1): chamado UMA vez e
+   * ANTES de qualquer navegação top-level (D4).
+   */
+  aoEsgotar: (
+    desfecho: "aberta" | "bloqueada-sem-navegar" | "navegou-top-level",
+  ) => void;
   /** Segundos restantes a cada tick, para o spinner (N-1 … 0). */
   aoContar?: (restante: number) => void;
   /** Default: `SEGUNDOS_AVISO_WHATSAPP`. */
@@ -168,20 +194,25 @@ export type DepsContagemAviso = {
 };
 
 export type ContagemAviso = {
+  /**
+   * Destino APROVADO pelo guard §15 (`null` se reprovado). É o `href` dos
+   * links de envio — a UI nunca usa o `href` cru.
+   */
+  readonly destino: string | null;
   /** Arma a contagem. Destino reprovado no guard ⇒ nada é agendado. */
   iniciar: () => void;
   /** Saída do aviso: PARA a contagem — e ela nunca volta a correr. */
   parar: () => void;
-  /** Botão de envio: para a contagem e abre a aba nova (gesto real). */
-  enviarAgora: () => void;
 };
 
 export function criarContagemAviso(deps: DepsContagemAviso): ContagemAviso {
   const {
     href,
     timer,
+    tentarAbrirNovaAba,
     navegarTopLevel,
-    abrirNovaAba,
+    podeNavegarTopLevel,
+    aoEsgotar,
     aoContar,
     segundos = SEGUNDOS_AVISO_WHATSAPP,
     intervaloMs = INTERVALO_PADRAO_MS,
@@ -193,7 +224,7 @@ export function criarContagemAviso(deps: DepsContagemAviso): ContagemAviso {
 
   let restante = segundos;
   let idTimer: number | null = null;
-  /** Fim de linha: a contagem parou (saída, envio ou esgotamento) e não religa. */
+  /** Fim de linha: a contagem parou (saída ou esgotamento) e não religa. */
   let encerrada = false;
 
   function limparPendente(): void {
@@ -212,6 +243,22 @@ export function criarContagemAviso(deps: DepsContagemAviso): ContagemAviso {
     idTimer = timer.agendar(aoTick, intervaloMs);
   }
 
+  function esgotar(aprovado: string): void {
+    if (tentarAbrirNovaAba(aprovado) === "aberta") {
+      aoEsgotar("aberta");
+      return;
+    }
+    if (!podeNavegarTopLevel) {
+      // Computador com popup bloqueado: a aba da confirmação fica; a UI mostra
+      // o passo 2 e só o gesto (link) abre o WhatsApp.
+      aoEsgotar("bloqueada-sem-navegar");
+      return;
+    }
+    // Toque com popup bloqueado: a UI fecha o aviso ANTES de a aba trocar (D4).
+    aoEsgotar("navegou-top-level");
+    navegarTopLevel(aprovado);
+  }
+
   function aoTick(): void {
     idTimer = null;
     if (encerrada) return;
@@ -221,23 +268,16 @@ export function criarContagemAviso(deps: DepsContagemAviso): ContagemAviso {
       agendarProximo();
       return;
     }
-    // Contagem esgotada SEM gesto: só navegação top-level sobrevive aqui —
-    // `window.open` cairia no bloqueador de popup.
     parar();
-    if (destino != null) navegarTopLevel(destino);
+    if (destino != null) esgotar(destino);
   }
 
   return {
+    destino,
     iniciar() {
       if (destino == null || encerrada || idTimer != null) return;
       agendarProximo();
     },
     parar,
-    enviarAgora() {
-      // Gesto real do comprador: aba nova com `noopener`, a confirmação fica
-      // aberta atrás. Continua valendo depois de `parar()` — é o botão do passo 2.
-      parar();
-      if (destino != null) abrirNovaAba(destino);
-    },
   };
 }
