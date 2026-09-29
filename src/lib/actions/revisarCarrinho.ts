@@ -34,6 +34,11 @@ import {
   buscarOpcionaisPorIds,
   buscarOpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
+import { buscarOcultosPorProdutos } from "@/lib/supabase/queries/opcionais";
+import {
+  agruparOcultosPorProduto,
+  idsPermitidosDoProduto,
+} from "@/lib/utils/opcionais-do-produto";
 import { buscarCupomPorCodigo } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
@@ -101,7 +106,7 @@ export async function revisarCarrinhoAction(
 
     // Onda única de leituras independentes. O cupom só é buscado quando o
     // cliente enviou um código — sem código não existe consulta de cupom.
-    const [loja, produtos, opcionaisBanco, cupom, categorias] = await Promise.all([
+    const [loja, produtos, opcionaisBanco, cupom, categorias, ocultos] = await Promise.all([
       // Gates de LOJA (paridade com `pedido.ts:92-107`): sem eles, quem guardou
       // um `produto_id` de loja suspensa obtinha preço e status de promoção
       // dela pelo preview. `lojaAberta` de propósito NÃO entra: horário não é
@@ -119,8 +124,13 @@ export async function revisarCarrinhoAction(
       // cuidado de quem escreveu, que garante a paridade preview ↔
       // autoritativo (§10-A).
       buscarCategorias(svc, dados.loja_id),
+      // (331) MESMA leitura e MESMA condição de `criarPedido`: grupos ocultos
+      // por produto só importam quando há adicional escolhido. Falha → catch
+      // externo → revisão recusada (fail-closed), nunca "sem ocultos".
+      opcionalIds.length > 0 ? buscarOcultosPorProdutos(svc, ids) : Promise.resolve([]),
     ]);
     const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
+    const ocultosPorProduto = agruparOcultosPorProduto(ocultos);
 
     if (
       loja == null ||
@@ -199,12 +209,16 @@ export async function revisarCarrinhoAction(
         return { ok: false, mensagem: ERRO_GENERICO };
       }
 
-      const permitidas = new Set(
+      const daCategoria = new Set(
         (produto.categoria_id
           ? allowlistPorCategoria[produto.categoria_id] ?? []
           : []
         ).map((g) => g.categoriaOpcionalId),
       );
+      // (331) Os grupos da categoria menos os OCULTOS neste produto — a MESMA
+      // regra pura de `criarPedido` e da vitrine.
+      const permitidas = idsPermitidosDoProduto(daCategoria, ocultosPorProduto[produto.id]);
+      let temOpcionalOculto = false;
 
       const opcionaisCalculo: OpcionalCalculo[] = [];
       for (const escolhido of item.opcionais ?? []) {
@@ -222,9 +236,16 @@ export async function revisarCarrinhoAction(
           opcional == null ||
           !opcional.ativo ||
           opcional.loja_id !== dados.loja_id ||
-          !permitidas.has(opcional.categoria_opcional_id)
+          !daCategoria.has(opcional.categoria_opcional_id)
         ) {
           return { ok: false, mensagem: ERRO_GENERICO };
+        }
+        // (331/D1) Grupo da categoria, mas OCULTO neste produto: o carrinho
+        // antigo não é recusado inteiro — a LINHA fica bloqueada (o cliente a
+        // remove), como `criarPedido` recusa o mesmo carrinho.
+        if (!permitidas.has(opcional.categoria_opcional_id)) {
+          temOpcionalOculto = true;
+          continue;
         }
         opcionaisCalculo.push({
           preco: opcional.preco,
@@ -239,7 +260,9 @@ export async function revisarCarrinhoAction(
       // linha fica bloqueada e o cliente a remove.
       // `disponivel` aqui é sempre true (o gate acima já derrubou o contrário):
       // a composição fica explícita para espelhar `projetarProdutoVitrine`.
-      const compravel = produto.disponivel && frequencia.disponivel;
+      // (331) Adicional de grupo oculto no produto também bloqueia a linha;
+      // a janela tem precedência no motivo (é o produto que não está à venda).
+      const compravel = produto.disponivel && frequencia.disponivel && !temOpcionalOculto;
 
       linhas.push({
         produto_id: produto.id,
@@ -248,7 +271,11 @@ export async function revisarCarrinhoAction(
         precoEfetivo: preco.precoEfetivo,
         temDesconto: preco.temDesconto,
         compravel,
-        motivoNaoCompravel: compravel ? null : "fora_da_janela",
+        motivoNaoCompravel: compravel
+          ? null
+          : !frequencia.disponivel
+            ? "fora_da_janela"
+            : "opcional_indisponivel",
       });
 
       // Linha bloqueada não entra no subtotal, na base do cupom nem na

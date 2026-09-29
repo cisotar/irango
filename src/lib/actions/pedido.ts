@@ -25,6 +25,11 @@ import {
   buscarOpcionaisPorIds,
   buscarOpcionaisPorCategoria,
 } from "@/lib/supabase/queries/produtos";
+import { buscarOcultosPorProdutos } from "@/lib/supabase/queries/opcionais";
+import {
+  agruparOcultosPorProduto,
+  idsPermitidosDoProduto,
+} from "@/lib/utils/opcionais-do-produto";
 import {
   listarZonasComTaxas,
   listarFormasPagamento,
@@ -75,6 +80,12 @@ const ERRO_REVISAO = "Os preços do seu carrinho mudaram. Revise o pedido antes 
 // pública no selo da vitrine.
 const ERRO_FORA_DA_JANELA =
   "Um item do seu pedido saiu do cardápio deste horário. Revise o carrinho.";
+// (331/D1) Adicional de um grupo que o lojista OCULTOU neste produto depois de
+// o carrinho ser montado. Vai com `codigo: "revisao_necessaria"`: o checkout
+// revisa o carrinho e `revisarCarrinhoAction` bloqueia a linha. Não é oráculo —
+// a mesma informação está pública na vitrine (o grupo sumiu do produto).
+const ERRO_OPCIONAL_OCULTO =
+  "Um adicional do seu pedido não está mais disponível para este produto. Revise o carrinho.";
 
 export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedido> {
   // (0) Rate limit por IP antes de qualquer I/O (incl. safeParse): payload
@@ -165,7 +176,7 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         dados.itens.flatMap((i) => (i.opcionais ?? []).map((o) => o.opcional_id)),
       ),
     ];
-    const [formas, produtos, opcionaisBanco, zonasPreCarregadas, categorias] =
+    const [formas, produtos, opcionaisBanco, zonasPreCarregadas, categorias, ocultos] =
       await Promise.all([
         listarFormasPagamento(svc, dados.loja_id),
         buscarProdutosPorIds(svc, ids),
@@ -180,8 +191,14 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         // Deliberadamente SEM try/catch local — rejeição sobe ao `Promise.all`
         // e ao catch externo, e o pedido é recusado (fail-closed, §14).
         buscarCategorias(svc, dados.loja_id),
+        // (331) Grupos de opcionais OCULTOS por produto (exceção à allowlist da
+        // categoria). Sem adicional escolhido não há o que subtrair: nenhuma
+        // query. Sem try/catch local: falha recusa o pedido (fail-closed),
+        // nunca vira "sem ocultos".
+        opcionalIds.length > 0 ? buscarOcultosPorProdutos(svc, ids) : Promise.resolve([]),
       ]);
     const categoriasPorId = new Map(categorias.map((c) => [c.id, c]));
+    const ocultosPorProduto = agruparOcultosPorProduto(ocultos);
 
     // (3) Forma de pagamento ∈ formas configuradas pela loja.
     if (!formas.some((f) => f.tipo === dados.forma_pagamento)) {
@@ -259,13 +276,15 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         };
       }
 
-      // Conjunto de categorias de opcional permitidas para a categoria do produto.
-      const permitidas = new Set(
+      // Grupos de opcional da categoria do produto e, deles, os que o produto
+      // NÃO oculta (331) — a MESMA regra pura da vitrine e da revisão.
+      const daCategoria = new Set(
         (produto.categoria_id
           ? allowlistPorCategoria[produto.categoria_id] ?? []
           : []
         ).map((g) => g.categoriaOpcionalId),
       );
+      const permitidas = idsPermitidosDoProduto(daCategoria, ocultosPorProduto[produto.id]);
 
       const opcionaisSnapshot: OpcionalSnapshot[] = [];
       const opcionaisCalculo: { preco: number; quantidade: number }[] = [];
@@ -277,9 +296,14 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
           opcional == null ||
           !opcional.ativo ||
           opcional.loja_id !== dados.loja_id ||
-          !permitidas.has(opcional.categoria_opcional_id)
+          !daCategoria.has(opcional.categoria_opcional_id)
         ) {
           return { erro: ERRO_GENERICO };
+        }
+        // (331/D1) Grupo da categoria, mas OCULTO neste produto → recusa o
+        // PEDIDO INTEIRO antes da RPC e manda o cliente à revisão.
+        if (!permitidas.has(opcional.categoria_opcional_id)) {
+          return { erro: ERRO_OPCIONAL_OCULTO, codigo: "revisao_necessaria" };
         }
         opcionaisSnapshot.push({
           opcional_id: opcional.id,

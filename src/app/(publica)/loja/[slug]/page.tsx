@@ -20,6 +20,8 @@ import {
   buscarOpcionaisPorCategoria,
   buscarProdutosPublicos,
 } from "@/lib/supabase/queries/produtos";
+import { buscarOcultosOpcionais } from "@/lib/supabase/queries/opcionais";
+import { agruparOcultosPorProduto } from "@/lib/utils/opcionais-do-produto";
 import {
   derivarProdutosDoModalSazonal,
   derivarPromocionaisParaModal,
@@ -230,10 +232,13 @@ export default async function VitrinePage({ params }: PageProps) {
   const categoriaIds = grupos
     .map((g) => g.id)
     .filter((id): id is string => id !== null);
-  const opcionaisPorCategoria = await buscarOpcionaisPorCategoria(
-    db,
-    categoriaIds,
-  );
+  // [331] Na MESMA onda: os grupos que o lojista OCULTOU por produto (policy
+  // pública só revela os de loja ativa). O modal mostra categoria − ocultos.
+  const [opcionaisPorCategoria, ocultos] = await Promise.all([
+    buscarOpcionaisPorCategoria(db, categoriaIds),
+    buscarOcultosOpcionais(db, lojaId),
+  ]);
+  const ocultosPorProduto = agruparOcultosPorProduto(ocultos);
 
   const tema = resolverTema(loja.tema);
 
@@ -272,6 +277,7 @@ export default async function VitrinePage({ params }: PageProps) {
     categoriasComProdutos,
     opcionaisPorCategoria,
     rotulosVigencia,
+    ocultosPorProduto,
   );
 
   // "Hoje" da LOJA (RN-16/RN-07), no servidor: o cliente que vira a meia-noite
@@ -303,6 +309,7 @@ export default async function VitrinePage({ params }: PageProps) {
               categorias: modalSazonalAtivo.categorias,
               cardapios: modalSazonalAtivo.cardapios,
             },
+            ocultosPorProduto,
           )
         : [],
     mensagem:
@@ -356,6 +363,7 @@ export default async function VitrinePage({ params }: PageProps) {
           <CatalogoVitrine
             categorias={categoriasComProdutos}
             opcionaisPorCategoria={opcionaisPorCategoria}
+            ocultosPorProduto={ocultosPorProduto}
             // [262/RN-06] O mapa desce junto com os produtos, do MESMO retorno:
             // é o que garante que nenhum produto marcado chegue à tela sem a
             // frase que diz quando ele volta.
