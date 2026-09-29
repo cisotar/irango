@@ -1390,13 +1390,8 @@ export function ProdutosClient({
             posicoes={posicoesArrastaveis}
             aoSoltar={aoSoltarProduto}
           >
-            {/* Sanfona na listagem NORMAL, todas ABERTAS por padrão: a tela não
-                pode mudar de comportamento para quem nunca vai reordenar nada. */}
-            <Accordion
-              multiple
-              defaultValue={grupos.map((g) => g.id ?? "sem-categoria")}
-              className="gap-6"
-            >
+            {/* Sanfona na listagem NORMAL, todas FECHADAS por padrão. */}
+            <Accordion multiple defaultValue={[]} className="gap-6">
               {gruposExibidos.map((grupo) => (
                 <AccordionItem
                   key={grupo.id ?? "sem-categoria"}
