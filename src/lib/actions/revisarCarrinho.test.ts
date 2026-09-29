@@ -921,6 +921,28 @@ describe("[228] o oráculo antigo não existe mais em src/", () => {
 // nunca é cobrada. `criarPedido` recusa o mesmo carrinho (pedido.test.ts).
 // Fase RED: a revisão ainda não lê `produto_opcionais_ocultos`.
 // ═══════════════════════════════════════════════════════════════════════════
+/**
+ * [331] A1 — client falso cuja leitura de `produto_opcionais_ocultos` veio
+ * CORTADA pelo `max_rows` do PostgREST: o banco conta 1 linha oculta, a resposta
+ * não a traz. A query REAL roda sobre ele (o mock do módulo delega), então o
+ * teste prova a cadeia inteira: query detecta o corte → action recusa.
+ */
+async function ocultosCortadosPeloMaxRows() {
+  const { buscarOcultosPorProdutos: real } = await vi.importActual<
+    typeof import("@/lib/supabase/queries/opcionais")
+  >("@/lib/supabase/queries/opcionais");
+  const resposta = { data: [], error: null, count: 1 };
+  const builder: Record<string, unknown> = {};
+  builder.select = () => builder;
+  builder.in = () => builder;
+  builder.eq = () => builder;
+  builder.then = (resolve: (v: typeof resposta) => unknown) => resolve(resposta);
+  const cortado = { from: () => builder } as unknown as Parameters<typeof real>[0];
+  buscarOcultosPorProdutos.mockImplementation((_c: unknown, ids: unknown) =>
+    real(cortado, ids as string[]),
+  );
+}
+
 describe("[331] revisarCarrinhoAction — grupo de opcionais oculto no produto", () => {
   const CAT_OPC_FORA = "eeeeeeee-0000-0000-0000-000000000009"; // fora da categoria (D3)
 
@@ -993,6 +1015,17 @@ describe("[331] revisarCarrinhoAction — grupo de opcionais oculto no produto",
   it("fail-closed: a leitura dos ocultos falha → revisão recusada (ok:false genérico)", async () => {
     banco();
     buscarOcultosPorProdutos.mockRejectedValue(new Error("falha simulada de banco"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await revisarCarrinhoAction({
+      loja_id: LOJA_A,
+      itens: [comBorda(FEIJOADA)],
+    }).finally(() => spy.mockRestore());
+    expect(r.ok).toBe(false);
+  });
+
+  it("A1: ocultos CORTADOS pelo max_rows (count > linhas) → revisão recusada (ok:false)", async () => {
+    banco();
+    await ocultosCortadosPeloMaxRows();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await revisarCarrinhoAction({
       loja_id: LOJA_A,

@@ -468,6 +468,92 @@ describe("331 F1 · produto_opcionais_ocultos: FKs compostas, UNIQUE e RLS", () 
 });
 
 /**
+ * [331] A2 (auditoria, BAIXA) — a leitura PÚBLICA não pode revelar ocultação de
+ * produto que a vitrine não publica. Com o `using` só de `loja_esta_ativa`, o
+ * anon enumerava (`?loja_id=eq.<loja>`) os ids de produto OCULTO e de produto em
+ * CATEGORIA OCULTA — ids que `vitrine_produtos` nega. A policy pública passa a
+ * exigir também o produto na view (mesma classe da 20260920133000). O dono segue
+ * lendo tudo pela `prod_opc_ocultos_leitura_propria` (F1-15).
+ */
+describe("331 A2 · leitura pública só de ocultação de produto publicado na vitrine", () => {
+  let t: TestDb;
+  let c: Cenario;
+  let produtoOculto: string;
+  let produtoCatOculta: string;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    c = await semear(t);
+    ({ produtoOculto, produtoCatOculta } = await t.asService(async (db) => {
+      const um = async (sql: string, params: unknown[]) =>
+        (await db.query<{ id: string }>(sql, params)).rows[0].id;
+      const catOculta = await um(
+        `insert into public.categorias (loja_id, nome, oculta) values ($1, 'Bastidores', true) returning id`,
+        [c.lojaA],
+      );
+      await db.query(
+        `insert into public.categoria_produto_opcionais (loja_id, categoria_id, categoria_opcional_id)
+         values ($1, $2, $3)`,
+        [c.lojaA, catOculta, c.grupoA1],
+      );
+      const ids = {
+        produtoOculto: await um(
+          `insert into public.produtos (loja_id, categoria_id, nome, preco, oculto)
+           values ($1, $2, 'X-Rascunho', 30.00, true) returning id`,
+          [c.lojaA, c.catA],
+        ),
+        produtoCatOculta: await um(
+          `insert into public.produtos (loja_id, categoria_id, nome, preco)
+           values ($1, $2, 'X-Bastidor', 30.00) returning id`,
+          [c.lojaA, catOculta],
+        ),
+      };
+      for (const produto of [c.produtoA1, ids.produtoOculto, ids.produtoCatOculta]) {
+        await db.query(INSERT_OCULTO, [c.lojaA, produto, c.grupoA1]);
+      }
+      return ids;
+    }));
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  const daLojaA = (db: import("@electric-sql/pglite").PGlite) =>
+    db.query<{ produto_id: string }>(
+      `select produto_id from public.produto_opcionais_ocultos where loja_id = $1 order by produto_id`,
+      [c.lojaA],
+    );
+
+  it("[A2-1] anon enumera a loja ATIVA e só recebe a ocultação do produto PUBLICADO", async () => {
+    const r = await t.asAnon(daLojaA);
+    expect(r.rows.map((x) => x.produto_id)).toEqual([c.produtoA1]);
+  });
+
+  it("[A2-2] anon NÃO lê a ocultação de produto oculto nem de produto em categoria oculta", async () => {
+    for (const produto of [produtoOculto, produtoCatOculta]) {
+      const r = await t.asAnon((db) =>
+        db.query(`select 1 from public.produto_opcionais_ocultos where produto_id = $1`, [produto]),
+      );
+      expect(r.rows, produto).toHaveLength(0);
+      // anti-falso-verde: a linha EXISTE.
+      expect(await linhasDoPar(t, produto, c.grupoA1), produto).toHaveLength(1);
+    }
+  });
+
+  it("[A2-3] outro dono (B) também não lê a de produto não publicado — mesma regra do anon", async () => {
+    const r = await t.asUser(DONO_B, daLojaA);
+    expect(r.rows.map((x) => x.produto_id)).toEqual([c.produtoA1]);
+  });
+
+  it("[A2-4] o DONO A continua lendo as três (painel), pela policy própria", async () => {
+    const r = await t.asUser(DONO_A, daLojaA);
+    expect(r.rows.map((x) => x.produto_id).sort()).toEqual(
+      [c.produtoA1, produtoOculto, produtoCatOculta].sort(),
+    );
+  });
+});
+
+/**
  * CONTRATO PARA A FASE GREEN (executar) — issue 331, F1:
  *
  * `supabase/migrations/20260930140000_produto_opcionais_ocultos.sql`

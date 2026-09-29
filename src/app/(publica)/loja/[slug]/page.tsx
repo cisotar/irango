@@ -238,7 +238,12 @@ export default async function VitrinePage({ params }: PageProps) {
     buscarOpcionaisPorCategoria(db, categoriaIds),
     buscarOcultosOpcionais(db, lojaId),
   ]);
-  const ocultosPorProduto = agruparOcultosPorProduto(ocultos);
+  // Só as ocultações dos produtos que a página PUBLICA descem ao client: o
+  // produto que a projeção tirou (fora da janela, RN-7) não vira id no Flight.
+  const idsPublicados = new Set(grupos.flatMap((g) => g.produtos.map((p) => p.id)));
+  const ocultosPorProduto = agruparOcultosPorProduto(
+    ocultos.filter((o) => idsPublicados.has(o.produto_id)),
+  );
 
   const tema = resolverTema(loja.tema);
 

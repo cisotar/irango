@@ -115,16 +115,27 @@ export async function buscarOcultosOpcionais(
  * (ids do carrinho já validados pelo zod; a posse do produto é checada depois,
  * contra a row do banco). Lista vazia não vai ao banco. Erro PROPAGA: quem
  * chama recusa o pedido (fail-closed), nunca trata como "sem ocultos".
+ *
+ * `count: "exact"`: o PostgREST corta a resposta em `max_rows` (config.toml,
+ * vale também para service_role) SEM erro, e uma linha oculta cortada faria
+ * `idsPermitidosDoProduto` liberar o adicional. Se o total do banco não coube
+ * na resposta (ou não veio), lança — mesmo caminho fail-closed do erro.
  */
 export async function buscarOcultosPorProdutos(
   client: Client,
   produtoIds: readonly string[],
 ): Promise<OcultoOpcional[]> {
   if (produtoIds.length === 0) return [];
-  const { data, error } = await client
+  const { data, error, count } = await client
     .from("produto_opcionais_ocultos")
-    .select("produto_id, categoria_opcional_id")
+    .select("produto_id, categoria_opcional_id", { count: "exact" })
     .in("produto_id", [...produtoIds]);
   if (error) throw error;
-  return data ?? [];
+  const linhas = data ?? [];
+  if (count == null || count > linhas.length) {
+    throw new Error(
+      `[buscarOcultosPorProdutos] resposta incompleta: ${linhas.length} de ${count ?? "?"} linhas`,
+    );
+  }
+  return linhas;
 }

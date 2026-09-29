@@ -54,12 +54,26 @@ create index on public.produto_opcionais_ocultos (loja_id, produto_id);
 -- ═══════════════════════════════════════════════════════════════════════ 2) RLS
 alter table public.produto_opcionais_ocultos enable row level security;
 
--- Leitura pública: ocultação de loja ativa (a vitrine já revela quais grupos
--- cada produto mostra). `loja_esta_ativa()` é security definer — um EXISTS
--- direto em `lojas` sob o anon devolveria zero linhas.
+-- Leitura pública: ocultação de PRODUTO PUBLICADO em loja ativa (a vitrine já
+-- revela quais grupos cada produto mostra). `loja_esta_ativa()` é security
+-- definer — um EXISTS direto em `lojas` sob o anon devolveria zero linhas.
+-- O EXISTS em `vitrine_produtos` (view definer, SELECT concedido a anon e
+-- authenticated) fecha o achado A2 da auditoria: sem ele, o anon enumerava por
+-- `loja_id` os ids de produto oculto, em categoria oculta ou de cardápio inativo
+-- — ids que a própria view nega. Mesma classe e mesmo desenho da 20260920133000
+-- (`cardapio_produtos`): policy de outra relação não restringe esta. O dono
+-- segue lendo tudo pela `prod_opc_ocultos_leitura_propria` (OR).
 create policy "prod_opc_ocultos_leitura_publica"
   on public.produto_opcionais_ocultos for select
-  using (public.loja_esta_ativa(produto_opcionais_ocultos.loja_id));
+  using (
+    public.loja_esta_ativa(produto_opcionais_ocultos.loja_id)
+    and exists (
+      select 1
+        from public.vitrine_produtos vp
+       where vp.id = produto_opcionais_ocultos.produto_id
+         and vp.loja_id = produto_opcionais_ocultos.loja_id
+    )
+  );
 
 -- Dono lê as PRÓPRIAS ocultações (painel), inclusive com a loja inativa — como
 -- em `categoria_produto_opcionais` (FOR ALL) e `cardapio_produtos`. OR com a pública.

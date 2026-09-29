@@ -2813,6 +2813,28 @@ describe("[auditoria 180-B/achado 1] criarPedido lê a ResolucaoCep no contrato 
 // (src/lib/supabase/queries/opcionais.ts). Nunca do cliente (§10).
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * [331] A1 — client falso cuja leitura de `produto_opcionais_ocultos` veio
+ * CORTADA pelo `max_rows` do PostgREST: o banco conta 1 linha oculta, a resposta
+ * não a traz. A query REAL roda sobre ele (o mock do módulo delega), então o
+ * teste prova a cadeia inteira: query detecta o corte → action recusa.
+ */
+async function ocultosCortadosPeloMaxRows() {
+  const { buscarOcultosPorProdutos: real } = await vi.importActual<
+    typeof import("@/lib/supabase/queries/opcionais")
+  >("@/lib/supabase/queries/opcionais");
+  const resposta = { data: [], error: null, count: 1 };
+  const builder: Record<string, unknown> = {};
+  builder.select = () => builder;
+  builder.in = () => builder;
+  builder.eq = () => builder;
+  builder.then = (resolve: (v: typeof resposta) => unknown) => resolve(resposta);
+  const cortado = { from: () => builder } as unknown as Parameters<typeof real>[0];
+  buscarOcultosPorProdutos.mockImplementation((_c: unknown, ids: unknown) =>
+    real(cortado, ids as string[]),
+  );
+}
+
 describe("[331] criarPedido — grupo de opcionais oculto no produto", () => {
   const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000002"; // MESMA categoria (Pães) do PROD_1
   const CAT_OPC_FORA = "eeeeeeee-0000-0000-0000-000000000009"; // grupo fora da categoria (D3)
@@ -2893,6 +2915,16 @@ describe("[331] criarPedido — grupo de opcionais oculto no produto", () => {
   it("fail-closed: a leitura dos ocultos falha → pedido recusado (nunca ignora a exceção)", async () => {
     cenario();
     buscarOcultosPorProdutos.mockRejectedValue(new Error("falha simulada de banco"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_1)] })).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(r).toEqual(expect.objectContaining({ erro: expect.any(String) }));
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+  it("A1: ocultos CORTADOS pelo max_rows (count > linhas) → pedido recusado, criar_pedido NÃO chamado", async () => {
+    cenario();
+    await ocultosCortadosPeloMaxRows();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_1)] })).finally(() =>
       spy.mockRestore(),
