@@ -54,6 +54,11 @@ vi.mock("@/lib/supabase/queries/produtos", () => ({
   buscarOpcionaisPorCategoria: (...a: unknown[]) => buscarOpcionaisPorCategoria(...a),
 }));
 
+// [331] Grupos ocultos por produto: nenhum aqui (o fake não tem `from`).
+vi.mock("@/lib/supabase/queries/opcionais", () => ({
+  buscarOcultosPorProdutos: async () => [],
+}));
+
 const buscarCupomPorCodigo = vi.fn();
 const listarFormasPagamento = vi.fn();
 const listarZonasComTaxas = vi.fn();

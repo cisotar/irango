@@ -33,6 +33,7 @@ import {
 } from "@/components/vitrine/resumoBusca";
 import { filtrarCatalogo, normalizarBusca } from "@/lib/utils/buscarProdutos";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
+import type { OcultosPorProduto } from "@/lib/utils/opcionais-do-produto";
 import type { SecaoVitrine } from "@/lib/utils/catalogoVitrine";
 
 /**
@@ -62,6 +63,8 @@ type CatalogoVitrineProps = {
   /** [263] `cardapio_id → rótulo de janela`, repassado intacto (design §13.1). */
   rotulosJanela?: Record<string, string>;
   opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
+  /** [331] Repassado intacto ao `SecaoCatalogo` (grupos ocultos por produto). */
+  ocultosPorProduto?: OcultosPorProduto;
   /**
    * [262] Repassado intacto ao `SecaoCatalogo`. Este componente não lê nem
    * reescreve o mapa: a frase vem pronta do servidor (247/254) e chaveada por
@@ -86,6 +89,7 @@ export function CatalogoVitrine({
   secoesDestaque = SEM_DESTAQUE,
   rotulosJanela,
   opcionaisPorCategoria,
+  ocultosPorProduto,
   rotulosVigencia,
 }: CatalogoVitrineProps) {
   const barraRef = useRef<HTMLDivElement>(null);
@@ -242,6 +246,7 @@ export function CatalogoVitrine({
           <SecaoCatalogo
             secoes={secoes}
             opcionaisPorCategoria={opcionaisPorCategoria}
+            ocultosPorProduto={ocultosPorProduto}
             rotulosVigencia={rotulosVigencia}
             rotulosJanela={rotulosJanela}
             termo={termo}

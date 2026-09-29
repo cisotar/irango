@@ -13,6 +13,7 @@ import {
   salvarAssociacaoOpcionaisAdmin,
   reordenarOpcionaisDaCategoriaAdmin,
   reordenarItensDoGrupoOpcionalAdmin,
+  salvarOcultacoesOpcionaisAdmin,
 } from "@/app/admin/assinantes/actions/admin-opcionais";
 
 /**
@@ -39,11 +40,19 @@ export function OpcionaisAdminClient({
   opcionais,
   categoriasProduto,
   associacoes,
+  produtos,
+  ocultosOpcionais,
 }: {
   lojaId: string;
 } & Pick<
   OpcionaisClientProps,
-  "categoriasOpcional" | "opcionais" | "categoriasProduto" | "associacoes"
+  | "categoriasOpcional"
+  | "opcionais"
+  | "categoriasProduto"
+  | "associacoes"
+  // [331] "Por produto": leitura do agregado 132; escrita pela action admin.
+  | "produtos"
+  | "ocultosOpcionais"
 >) {
   return (
     <OpcionaisClient
@@ -51,6 +60,8 @@ export function OpcionaisAdminClient({
       opcionais={opcionais}
       categoriasProduto={categoriasProduto}
       associacoes={associacoes}
+      produtos={produtos}
+      ocultosOpcionais={ocultosOpcionais}
       acoes={{
         criarCategoriaOpcional: (payload) =>
           criarCategoriaOpcionalAdmin(lojaId, payload),
@@ -70,6 +81,8 @@ export function OpcionaisAdminClient({
           reordenarOpcionaisDaCategoriaAdmin(lojaId, payload),
         reordenarItensDoGrupoOpcional: (payload) =>
           reordenarItensDoGrupoOpcionalAdmin(lojaId, payload),
+        salvarOcultacoesOpcionais: (alteracoes) =>
+          salvarOcultacoesOpcionaisAdmin(lojaId, alteracoes),
       }}
     />
   );

@@ -15,8 +15,9 @@ import { OpcionaisAdminClient } from "./OpcionaisAdminClient";
  * `OpcionaisAdminClient` (via `Pick`) exige espelha a `page.tsx` do painel:
  * `categoriasProduto` e `associacoes` são mapeados para `{ id, nome }` /
  * `{ categoria_id, categoria_opcional_id, ordem }`; `categoriasOpcional` e `opcionais`
- * passam direto. Os campos `produtos`/`opcionaisPorCategoria` do agregado
- * pertencem à rota Cardápio (143) e não são consumidos aqui.
+ * passam direto. `opcionaisPorCategoria` pertence à rota Cardápio (143) e não é
+ * consumido aqui. [331] `produtos` (estreitado a `{ id, nome, categoria_id }`) e
+ * `ocultosOpcionais` alimentam o "Por produto" de cada grupo.
  */
 export default async function OpcionaisAdminPage({
   params,
@@ -24,8 +25,14 @@ export default async function OpcionaisAdminPage({
   params: Promise<{ lojaId: string }>;
 }): Promise<ReactElement> {
   const { lojaId } = await params;
-  const { categoriasOpcional, opcionais, categoriasProduto, associacoes } =
-    await carregarOpcionaisAdmin(lojaId);
+  const {
+    categoriasOpcional,
+    opcionais,
+    categoriasProduto,
+    associacoes,
+    produtos,
+    ocultosOpcionais,
+  } = await carregarOpcionaisAdmin(lojaId);
 
   return (
     <OpcionaisAdminClient
@@ -41,6 +48,12 @@ export default async function OpcionaisAdminPage({
         categoria_opcional_id: a.categoria_opcional_id,
         ordem: a.ordem,
       }))}
+      produtos={produtos.map((p) => ({
+        id: p.id,
+        nome: p.nome,
+        categoria_id: p.categoria_id,
+      }))}
+      ocultosOpcionais={ocultosOpcionais}
     />
   );
 }

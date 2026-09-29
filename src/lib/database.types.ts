@@ -1089,6 +1089,66 @@ export type Database = {
         }
         Relationships: []
       }
+      produto_opcionais_ocultos: {
+        Row: {
+          categoria_opcional_id: string
+          criado_em: string
+          id: string
+          loja_id: string
+          produto_id: string
+        }
+        Insert: {
+          categoria_opcional_id: string
+          criado_em?: string
+          id?: string
+          loja_id: string
+          produto_id: string
+        }
+        Update: {
+          categoria_opcional_id?: string
+          criado_em?: string
+          id?: string
+          loja_id?: string
+          produto_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "produto_opcionais_ocultos_grupo_fk"
+            columns: ["categoria_opcional_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "opcionais_categorias"
+            referencedColumns: ["id", "loja_id"]
+          },
+          {
+            foreignKeyName: "produto_opcionais_ocultos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "produto_opcionais_ocultos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "produto_opcionais_ocultos_produto_fk"
+            columns: ["produto_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id", "loja_id"]
+          },
+          {
+            foreignKeyName: "produto_opcionais_ocultos_produto_fk"
+            columns: ["produto_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_produtos"
+            referencedColumns: ["id", "loja_id"]
+          },
+        ]
+      }
       produtos: {
         Row: {
           atualizado_em: string

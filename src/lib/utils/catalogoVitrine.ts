@@ -20,6 +20,7 @@ import {
   type Frequencia,
 } from "./frequencia";
 import { rotuloForaDaFrequencia } from "./descreverVigencia";
+import { gruposVisiveisDoProduto, type OcultosPorProduto } from "./opcionais-do-produto";
 
 /**
  * Entrada da projeção. A spec escreveu `produto: Produto`, mas depois da issue
@@ -66,8 +67,11 @@ export type ProdutoVitrine = {
  * v1 tinha um membro só. O Spec B (247) ACRESCENTA; não remove nem renomeia.
  * [323/D8] A frequência REUSA `fora_da_janela`: categoria oculta e período
  * encerrado nunca chegam aqui (o produto é omitido antes).
+ * [331] `opcional_indisponivel` só sai de `revisarCarrinhoAction`: a linha do
+ * carrinho leva um adicional de grupo que o lojista ocultou NESTE produto. O
+ * catálogo da vitrine nunca o produz (o grupo oculto nem aparece no modal).
  */
-export type MotivoNaoCompravel = "esgotado" | "fora_da_janela";
+export type MotivoNaoCompravel = "esgotado" | "fora_da_janela" | "opcional_indisponivel";
 
 /**
  * Projeção de UM produto. PURA; `agora` injetado (determinismo no teste, e
@@ -365,13 +369,36 @@ export function derivarPromocionaisParaModal(
   secoes: readonly CategoriaComProdutos[],
   opcionaisPorCategoria: Readonly<Record<string, GrupoOpcional[]>>,
   rotulosVigencia: Readonly<Record<string, string>>,
+  ocultosPorProduto?: OcultosPorProduto,
 ): ProdutoModalDados[] {
   return secoes
     .flatMap((secao) => secao.produtos)
     .filter((produto) => produto.temDesconto)
     .map((produto) =>
-      enriquecerParaModal(produto, opcionaisPorCategoria, rotulosVigencia),
+      enriquecerParaModal(produto, opcionaisPorCategoria, rotulosVigencia, ocultosPorProduto),
     );
+}
+
+/**
+ * [331] Os grupos de opcional que o modal do produto mostra: os da categoria
+ * dele MENOS os que o lojista ocultou NESTE produto, na ordem da categoria.
+ * ÚNICA cópia da derivação produto → grupos na vitrine (card, modal de
+ * promoções e modal sazonal); a regra é de `gruposVisiveisDoProduto`.
+ *
+ * Produto sem categoria (grupo "Outros") ⇒ `undefined`, como antes. Sem oculto
+ * no produto ⇒ a MESMA referência da categoria (o Flight serializa uma vez).
+ * Preview de UX: a autoridade é `criarPedido` (§10).
+ */
+export function gruposOpcionaisParaVitrine(
+  produto: { id: string; categoria_id: string | null },
+  opcionaisPorCategoria: Readonly<Record<string, GrupoOpcional[]>>,
+  ocultosPorProduto?: OcultosPorProduto,
+): GrupoOpcional[] | undefined {
+  if (!produto.categoria_id) return undefined;
+  const daCategoria = opcionaisPorCategoria[produto.categoria_id];
+  const ocultos = ocultosPorProduto?.[produto.id];
+  if (daCategoria == null || ocultos == null || ocultos.length === 0) return daCategoria;
+  return gruposVisiveisDoProduto(daCategoria, ocultos);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -391,16 +418,16 @@ function enriquecerParaModal(
   produto: ProdutoVitrine,
   opcionaisPorCategoria: Readonly<Record<string, GrupoOpcional[]>>,
   rotulosVigencia: Readonly<Record<string, string>>,
+  ocultosPorProduto?: OcultosPorProduto,
 ): ProdutoModalDados {
   return {
     // O `ProdutoVitrine` INTEIRO, nunca remontado campo a campo: era a
     // remontagem parcial que deixava comprabilidade e preço efetivo caírem no
     // chão em silêncio (D13).
     ...produto,
-    // Produto sem categoria (grupo "Outros") não tem opcional associado.
-    gruposOpcionais: produto.categoria_id
-      ? opcionaisPorCategoria[produto.categoria_id]
-      : undefined,
+    // Produto sem categoria (grupo "Outros") não tem opcional associado; os
+    // grupos ocultos neste produto (331) ficam de fora.
+    gruposOpcionais: gruposOpcionaisParaVitrine(produto, opcionaisPorCategoria, ocultosPorProduto),
     // Chave ausente ⇒ `undefined`: o modal cai no texto genérico dele. NUNCA
     // se inventa uma frase de vigência aqui.
     rotuloIndisponivel: rotulosVigencia[produto.id],
@@ -440,6 +467,7 @@ export function derivarProdutosDoModalSazonal(
   opcionaisPorCategoria: Readonly<Record<string, GrupoOpcional[]>>,
   rotulosVigencia: Readonly<Record<string, string>>,
   selecao: { categorias: readonly string[]; cardapios: readonly string[] },
+  ocultosPorProduto?: OcultosPorProduto,
 ): ProdutoModalDados[] {
   const categoriasSelecionadas = new Set(selecao.categorias);
   const cardapiosSelecionados = new Set(selecao.cardapios);
@@ -456,7 +484,7 @@ export function derivarProdutosDoModalSazonal(
         if (vistos.has(produto.id)) continue;
         vistos.add(produto.id);
         resultado.push(
-          enriquecerParaModal(produto, opcionaisPorCategoria, rotulosVigencia),
+          enriquecerParaModal(produto, opcionaisPorCategoria, rotulosVigencia, ocultosPorProduto),
         );
       }
     }

@@ -4,10 +4,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
+import { buscarProdutosDoLojista } from "@/lib/supabase/queries/produtos";
 import {
   buscarCategoriasOpcional,
   buscarOpcionaisDoLojista,
   buscarAssociacoesOpcional,
+  buscarOcultosOpcionais,
 } from "@/lib/supabase/queries/opcionais";
 import {
   criarCategoriaOpcional,
@@ -20,6 +22,7 @@ import {
   salvarAssociacaoOpcionais,
   reordenarOpcionaisDaCategoria,
   reordenarItensDoGrupoOpcional,
+  salvarOcultacoesOpcionais,
 } from "@/lib/actions/opcional";
 import { OpcionaisClient } from "./OpcionaisClient";
 
@@ -39,13 +42,23 @@ export default async function OpcionaisPage(): Promise<ReactElement> {
     redirect("/painel/onboarding");
   }
 
-  const [categoriasOpcional, opcionais, categoriasProduto, associacoes] =
-    await Promise.all([
-      buscarCategoriasOpcional(supabase, loja.id),
-      buscarOpcionaisDoLojista(supabase, loja.id),
-      buscarCategorias(supabase, loja.id),
-      buscarAssociacoesOpcional(supabase, loja.id),
-    ]);
+  const [
+    categoriasOpcional,
+    opcionais,
+    categoriasProduto,
+    associacoes,
+    produtos,
+    ocultosOpcionais,
+  ] = await Promise.all([
+    buscarCategoriasOpcional(supabase, loja.id),
+    buscarOpcionaisDoLojista(supabase, loja.id),
+    buscarCategorias(supabase, loja.id),
+    buscarAssociacoesOpcional(supabase, loja.id),
+    // [331] O "Por produto" de cada grupo lista os produtos da categoria e
+    // parte das ocultações gravadas. Em paralelo: a latência não sobe.
+    buscarProdutosDoLojista(supabase, loja.id),
+    buscarOcultosOpcionais(supabase, loja.id),
+  ]);
 
   return (
     <OpcionaisClient
@@ -62,6 +75,13 @@ export default async function OpcionaisPage(): Promise<ReactElement> {
         categoria_opcional_id: a.categoria_opcional_id,
         ordem: a.ordem,
       }))}
+      // [331] Shape estreito: o sheet só precisa de id, nome e categoria.
+      produtos={produtos.map((p) => ({
+        id: p.id,
+        nome: p.nome,
+        categoria_id: p.categoria_id,
+      }))}
+      ocultosOpcionais={ocultosOpcionais}
       // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
       // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
       acoes={{
@@ -75,6 +95,7 @@ export default async function OpcionaisPage(): Promise<ReactElement> {
         salvarAssociacaoOpcionais,
         reordenarOpcionaisDaCategoria,
         reordenarItensDoGrupoOpcional,
+        salvarOcultacoesOpcionais,
       }}
     />
   );

@@ -101,6 +101,26 @@ export const schemaReordenacaoItensDoGrupo = z
     message: "Ids repetidos na reordenação",
   });
 
+/**
+ * Lote de ocultação de grupo de opcionais POR PRODUTO (issue 331). A pílula e o
+ * modal mandam 1 alteração; o "Por produto" manda o diff. O cliente manda só
+ * ids e o booleano — `loja_id` vem de `auth.uid()` (lojista) ou do `lojaId` da
+ * URL (admin). `.strict()` barra propriedade hostil pendurada no item;
+ * `.max(200)`: teto de cardinalidade (CWE-770).
+ */
+export const schemaOcultacoesOpcionais = z
+  .array(
+    z
+      .object({
+        produtoId: z.guid(),
+        categoriaOpcionalId: z.guid(),
+        oculto: z.boolean(),
+      })
+      .strict(),
+  )
+  .min(1)
+  .max(200);
+
 // Tipos inferidos para react-hook-form
 export type CategoriaOpcionalFormData = z.infer<typeof schemaCategoriaOpcional>;
 export type OpcionalFormData = z.infer<typeof schemaOpcional>;

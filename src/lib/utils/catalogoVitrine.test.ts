@@ -435,6 +435,9 @@ describe("224 — a página da vitrine (RN-15): sem cache e sem query nova", () 
       // catálogo já carregado (`derivarProdutosDoModalSazonal`) — zero query
       // nova de produto (RN-10).
       "buscarModalSazonalAtivo",
+      // [331] Grupos de opcionais ocultos POR PRODUTO (`produto_opcionais_ocultos`):
+      // tabela nova, sem como derivar do catálogo — entra na onda dos opcionais.
+      "buscarOcultosOpcionais",
     ];
     expect([...new Set(chamadas)].filter((c) => !PERMITIDAS.includes(c))).toEqual([]);
     // E nenhuma query crua nova escapando pelo client do Supabase na página.
