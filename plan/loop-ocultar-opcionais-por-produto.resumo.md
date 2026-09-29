@@ -1,22 +1,29 @@
-# Esconder um grupo de adicionais em um produto específico
-2026-09-29 02:18 · plano detalhado: plan/loop-ocultar-opcionais-por-produto.md
+# Adicionais por produto: esconder os da categoria e acrescentar exclusivos
+2026-09-29 02:18 · revisado 02:33 · plano detalhado: plan/loop-ocultar-opcionais-por-produto.md
 
-**O que você pediu:** continuar ligando grupos de adicionais à categoria inteira, mas poder esconder um grupo em um produto só, clicando na etiqueta dele no cartão do produto.
+**O que você pediu:** continuar ligando grupos de adicionais à categoria inteira, mas poder, em cada produto, esconder um grupo que vem da categoria e também acrescentar um grupo só dele.
 
-**O que vai ser feito:** as etiquetas de adicionais nos cartões do painel viram botões de ligar/desligar. Etiqueta desligada fica apagada e aquele grupo some da loja pública só naquele produto — os outros produtos da categoria continuam com ele. O mesmo botão aparece na área de administração do SaaS. Guardar isso exige uma pequena mudança no banco de dados.
+**O que vai ser feito:** no cartão de cada produto, as etiquetas dos grupos que vêm da categoria viram botões de ligar/desligar (desligada fica apagada e riscada). Ao lado, um botão "+ grupo" abre a lista dos grupos que a categoria não tem; o escolhido vira uma etiqueta com borda diferente e um "×" para tirar. Na loja, cada produto mostra os grupos da categoria menos os escondidos, mais os exclusivos (estes por último, na ordem em que foram adicionados). O mesmo vale na área de administração do SaaS. Precisa de uma pequena mudança no banco de dados.
 
 **Cuidados:**
-- Um cliente espertinho poderia mandar no pedido um adicional escondido. O servidor passa a recusar isso, não só a tela.
-- Um lojista não consegue esconder (nem ver) adicionais de outra loja: o banco impede, não só o código.
-- Carrinho montado antes de você esconder o grupo é barrado na revisão do pedido, como já acontece com adicional desativado.
+- Um cliente mal-intencionado poderia pedir um adicional escondido, ou um adicional exclusivo de outro produto. O servidor passa a recusar os dois casos, não só a tela.
+- Um lojista não consegue mexer em adicionais de outra loja: o banco impede, não só o código.
+- Um carrinho montado antes de o grupo ser escondido é barrado na revisão do pedido.
 
-**Tempo estimado:** 2h15 a 3h · **Versão mais rápida:** pular a revisão de estilo do código e a atualização da documentação por agente — cerca de 20 minutos a menos, sem perder segurança.
+**Tempo estimado:** 3h a 4h · **Versão mais rápida:** pular a revisão de estilo do código e a atualização da documentação por agente. São cerca de 25 minutos a menos, sem perder segurança.
+
+**Já decidido com você:** esconder também bloqueia no pedido. Se o produto mudar de categoria, o "escondido" continua valendo, mas só tem efeito se a categoria nova tiver o grupo.
+
+**Assumimos (diga se não for isso):**
+- Produto sem categoria também pode receber grupo exclusivo.
+- Reordenar os grupos exclusivos fica para depois.
 
 **Precisa de você:**
-1. Responder (ou aceitar o que assumimos):
-   - Esconder também impede o cliente de pedir aquele adicional? (assumido: sim)
-   - Só esconder grupos que vêm da categoria, sem poder adicionar um grupo exclusivo a um produto? (assumido: sim, só esconder)
-   - Se o produto mudar de categoria, o "escondido" continua valendo? (assumido: sim, e só tem efeito se o grupo existir na categoria nova)
+1. Escolher a versão: completa ou rápida.
 2. Autorizar a mudança no banco de produção.
 3. Autorizar o envio do código e a abertura da revisão (PR).
-4. Testar na tela: clicar a etiqueta no painel, abrir o produto na loja e ver o grupo sumir só nele.
+4. Testar na tela:
+   - esconder uma etiqueta;
+   - adicionar um grupo exclusivo;
+   - tirar o grupo exclusivo;
+   - conferir tudo isso na loja e no admin.
