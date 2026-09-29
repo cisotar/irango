@@ -50,6 +50,20 @@ import {
 export const COPY_ACELERE_PEDIDO =
   "Envie a mensagem no WhatsApp e acelere seu pedido.";
 
+/**
+ * Copy do passo 2 quando o navegador BLOQUEOU a abertura automática no
+ * computador (desfecho `"bloqueada-sem-navegar"`). Decisão de produto do
+ * usuário: o spec deixava isto fora do escopo v1 ("copy nova exige decisão de
+ * produto"); agora o passo 2 explicita o bloqueio e chama o gesto. Segue as
+ * mesmas duas amarras da copy do projeto: verbo no imperativo manda agir (o
+ * título é a instrução, não o aviso de perda) e nada sugere que o pedido não
+ * foi feito — ele já está gravado (RN-W4). LITERAIS, travadas por teste.
+ */
+export const COPY_POPUP_BLOQUEADO_TITULO =
+  "Clique em “Enviar mensagem” para abrir o WhatsApp";
+export const COPY_POPUP_BLOQUEADO_DESC =
+  "Seu navegador bloqueou a abertura automática. O pedido já está registrado — clique para avisar a loja, ou libere os pop-ups deste site.";
+
 /** `sessionStorage` pode LANÇAR (aba privativa, política de site). */
 function lerSessionStorage(): Storage | null {
   try {
@@ -95,6 +109,11 @@ export function ModalAvisoWhatsapp({
 }: ModalAvisoWhatsappProps) {
   const [aberto, setAberto] = useState(false);
   const [passo, setPasso] = useState<1 | 2>(1);
+  /* Passo 2 alcançado porque o navegador BLOQUEOU a abertura automática
+     (desfecho "bloqueada-sem-navegar"). Só então a copy explica o bloqueio; o
+     passo 2 por "Agora não" ou por gate de storage não persistido mantém a copy
+     de incentivo (COPY_ACELERE_PEDIDO). */
+  const [bloqueado, setBloqueado] = useState(false);
   const [restante, setRestante] = useState(SEGUNDOS_AVISO_WHATSAPP);
   /* `href` dos links de envio: o `destino` já aprovado pelo guard §15 dentro
      da contagem. Fica em estado (e não lido da ref no render) para o React
@@ -148,6 +167,7 @@ export function ModalAvisoWhatsapp({
       // O desfecho só mexe na UI; quem navega é o módulo.
       aoEsgotar: (desfecho) => {
         if (desfecho === "bloqueada-sem-navegar") {
+          setBloqueado(true);
           setPasso(2);
         } else {
           setAberto(false);
@@ -243,12 +263,25 @@ export function ModalAvisoWhatsapp({
         ) : (
           <>
             <DialogHeader>
-              {/* Copy LITERAL — ver COPY_ACELERE_PEDIDO. */}
-              <DialogTitle>{COPY_ACELERE_PEDIDO}</DialogTitle>
-              <DialogDescription>
-                Seu pedido já está registrado e a loja o vê no painel. A
-                mensagem avisa a cozinha na hora.
-              </DialogDescription>
+              {/* Copy LITERAL — ver COPY_ACELERE_PEDIDO / COPY_POPUP_BLOQUEADO_*.
+                  Só o passo 2 por bloqueio de popup troca a copy; os demais
+                  caminhos ("Agora não", gate sem storage) mantêm o incentivo. */}
+              {bloqueado ? (
+                <>
+                  <DialogTitle>{COPY_POPUP_BLOQUEADO_TITULO}</DialogTitle>
+                  <DialogDescription>
+                    {COPY_POPUP_BLOQUEADO_DESC}
+                  </DialogDescription>
+                </>
+              ) : (
+                <>
+                  <DialogTitle>{COPY_ACELERE_PEDIDO}</DialogTitle>
+                  <DialogDescription>
+                    Seu pedido já está registrado e a loja o vê no painel. A
+                    mensagem avisa a cozinha na hora.
+                  </DialogDescription>
+                </>
+              )}
             </DialogHeader>
 
             <DialogFooter className="flex-col gap-2 sm:flex-col">

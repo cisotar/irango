@@ -196,6 +196,13 @@ componente, `tentarAbrirNovaAba` é:
   onde está.** Garantido em: módulo (`podeNavegarTopLevel === false` ⇒ `navegarTopLevel`
   **nunca** chamado, desfecho `"bloqueada-sem-navegar"`) + componente (`setPasso(2)`).
   Teste: módulo, tabela `podeNavegarTopLevel × resultado`.
+- [ ] **Popup bloqueado → o passo 2 EXPLICA o bloqueio e chama o gesto** (RN-AN5). O componente
+  entra no passo 2 com `bloqueado === true` só nesse desfecho e troca a copy: título
+  `COPY_POPUP_BLOQUEADO_TITULO` ("Clique em "Enviar mensagem"…") e descrição
+  `COPY_POPUP_BLOQUEADO_DESC` (explicita o bloqueio, reafirma que o pedido já está gravado e
+  oferece liberar pop-ups). Os outros caminhos do passo 2 ("Agora não", gate de storage não
+  persistido) mantêm `COPY_ACELERE_PEDIDO`. Teste: trava de fonte (`bloqueado ? … : …` no passo
+  2, `setBloqueado(true)` só no desfecho `"bloqueada-sem-navegar"`, literais das constantes).
 - [ ] **Popup bloqueado em tela de toque → abre o WhatsApp na mesma aba (`location.href`)**,
   como hoje, e o modal fecha (D4). Garantido em: módulo (`"bloqueada"` +
   `podeNavegarTopLevel === true` ⇒ `navegarTopLevel(destino)` uma vez, desfecho
@@ -259,6 +266,14 @@ spec 3 continua na página. Camada: cliente.
 
 **RN-AN4 — Gesto nunca usa `window.open` nem `location.href`.** Os botões de envio são link
 declarativo (D3). Camada: cliente, travado por teste de texto-fonte.
+
+**RN-AN5 — No bloqueio de popup, o passo 2 explica o bloqueio (decisão de produto).** O que a
+v1 do spec deixou fora ("copy nova exige decisão de produto") foi decidido: quando o desfecho é
+`"bloqueada-sem-navegar"`, o passo 2 mostra copy própria (`COPY_POPUP_BLOQUEADO_TITULO` /
+`COPY_POPUP_BLOQUEADO_DESC`) que nomeia o bloqueio, mantém o verbo no imperativo (o cliente
+clica para abrir) e pode citar liberar pop-ups. Os demais caminhos do passo 2 seguem com
+`COPY_ACELERE_PEDIDO`. A copy não sugere que o pedido não foi feito (RN-W4). Camada: cliente
+(`bloqueado`), travada por teste de texto-fonte e pelos literais exportados.
 
 **RN-A7 (spec 5): o que muda.** Deixam de valer "Contador esgotado sem interação →
 `window.location.href = destino`" e "`window.open(destino, "_blank", "noopener")`; se o
@@ -357,9 +372,7 @@ critério da spec 5.
 
 - O botão manual "Avisar a loja no WhatsApp" (spec 3) e qualquer outro uso de `wa.me` ou de
   `montarLinkWhatsappPedido` fora deste modal.
-- Mudar a duração da contagem, a copy dos passos 1 e 2 ou a trava de copy de RN-A7.
-- Instruir o cliente a liberar pop-ups ("Libere pop-ups para abrir sozinho"). O navegador já
-  mostra o próprio aviso. Copy nova exige decisão de produto.
+- Mudar a duração da contagem, a copy do passo 1 ou a trava de copy de RN-A7.
 - Detectar falso-positivo de WebView/extensão (handle devolvido sem aba real, `aba.closed`
   logo depois). Risco aceito, e a rede de segurança é o botão manual.
 - Tentar preservar a ativação transitória do clique de "Confirmar pedido" até o fim da

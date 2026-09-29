@@ -31,6 +31,8 @@ import { describe, it, expect } from "vitest";
 import {
   ModalAvisoWhatsapp,
   COPY_ACELERE_PEDIDO,
+  COPY_POPUP_BLOQUEADO_TITULO,
+  COPY_POPUP_BLOQUEADO_DESC,
 } from "./ModalAvisoWhatsapp";
 
 const FONTE = readFileSync(
@@ -68,6 +70,50 @@ describe("[287] COPY_ACELERE_PEDIDO — copy literal do passo 2 (gate §4 crit. 
     // um segundo lugar divergente que também tente exibir a copy do passo 2.
     const usos = CODIGO.match(/\{COPY_ACELERE_PEDIDO\}/g) ?? [];
     expect(usos).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 1-B. Copy do passo 2 QUANDO o popup foi bloqueado (decisão de produto nova)
+// ---------------------------------------------------------------------------
+
+describe("[aviso-wpp-nova-aba] copy do passo 2 no bloqueio de popup — literal e condicionada a `bloqueado`", () => {
+  it("os literais são exatamente os decididos pelo usuário", () => {
+    expect(COPY_POPUP_BLOQUEADO_TITULO).toBe(
+      "Clique em “Enviar mensagem” para abrir o WhatsApp",
+    );
+    expect(COPY_POPUP_BLOQUEADO_DESC).toBe(
+      "Seu navegador bloqueou a abertura automática. O pedido já está registrado — clique para avisar a loja, ou libere os pop-ups deste site.",
+    );
+  });
+
+  it("a copy de bloqueio não sugere que o pedido não foi feito (RN-W4)", () => {
+    const texto = `${COPY_POPUP_BLOQUEADO_TITULO} ${COPY_POPUP_BLOQUEADO_DESC}`;
+    // Reafirma que o pedido existe e nunca fala em desfazer/cancelar/refazer.
+    expect(COPY_POPUP_BLOQUEADO_DESC).toContain("O pedido já está registrado");
+    expect(texto).not.toMatch(/cancel|desfaz|desist|refaz|refaça|não foi feito/i);
+  });
+
+  it("o passo 2 escolhe a copy por `bloqueado`: constantes de bloqueio usadas 1× cada, na ramificação verdadeira", () => {
+    // As duas variantes coexistem no passo 2, separadas por `bloqueado ? … : …`.
+    expect(CODIGO).toMatch(/\{bloqueado \? \(/);
+    expect(
+      CODIGO.match(/<DialogTitle>\{COPY_POPUP_BLOQUEADO_TITULO\}<\/DialogTitle>/g),
+    ).toHaveLength(1);
+    expect(CODIGO.match(/\{COPY_POPUP_BLOQUEADO_DESC\}/g)).toHaveLength(1);
+    // A copy de incentivo continua existindo para os outros caminhos do passo 2.
+    expect(CODIGO).toMatch(/<DialogTitle>\{COPY_ACELERE_PEDIDO\}<\/DialogTitle>/);
+  });
+
+  it("`bloqueado` começa `false` e só vira `true` no desfecho \"bloqueada-sem-navegar\"", () => {
+    expect(CODIGO).toMatch(/const \[bloqueado, setBloqueado\] = useState\(false\)/);
+    // setBloqueado(true) mora exatamente uma vez, dentro do handler aoEsgotar.
+    expect(CODIGO.match(/setBloqueado\(true\)/g)).toHaveLength(1);
+    const corpo = propriedadeDeps("aoEsgotar");
+    expect(corpo).not.toBeNull();
+    expect(corpo).toMatch(
+      /if \(desfecho === "bloqueada-sem-navegar"\) \{\s*setBloqueado\(true\);\s*setPasso\(2\);/,
+    );
   });
 });
 
@@ -277,7 +323,9 @@ function propriedadeDeps(nome: string): string | null {
 
 /** Trecho JSX do `<Button>` cujo rótulo é `rotulo`. */
 function botaoComRotulo(rotulo: string): string {
-  const idx = CODIGO.indexOf(rotulo);
+  // ÚLTIMA ocorrência: a copy de bloqueio (COPY_POPUP_BLOQUEADO_TITULO) cita
+  // "Enviar mensagem" no topo do arquivo; o rótulo do botão é sempre o último.
+  const idx = CODIGO.lastIndexOf(rotulo);
   expect(idx, `rótulo "${rotulo}" não encontrado`).toBeGreaterThan(-1);
   const ini = CODIGO.lastIndexOf("<Button", idx);
   const candidatos = [
