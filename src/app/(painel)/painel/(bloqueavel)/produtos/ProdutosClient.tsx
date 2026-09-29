@@ -72,6 +72,9 @@ import {
 } from "@/components/ui/menu";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { FormProduto, type Categoria } from "@/components/painel/FormProduto";
+import { PilulasOpcionaisDoProduto } from "@/components/painel/PilulasOpcionaisDoProduto";
+import { SEM_OCULTOS, useOcultacoesOpcionais } from "@/components/painel/useOcultacoesOpcionais";
+import type { OcultoOpcional } from "@/lib/utils/opcionais-do-produto";
 import { ThumbProduto } from "@/components/painel/ThumbProduto";
 import { GerenciarCategorias } from "@/components/painel/GerenciarCategorias";
 import {
@@ -164,6 +167,13 @@ export type ProdutosClientProps = {
    * inicial do seletor de associação no título da categoria.
    */
   opcionaisPorCategoria: OpcionaisPorCategoria;
+  /**
+   * [331] Linhas de `produto_opcionais_ocultos` da loja (grupo oculto só num
+   * produto), lidas no Server Component. Semeiam a instância ÚNICA de
+   * `useOcultacoesOpcionais` que as pílulas do card e o `FormProduto` dividem.
+   * Opcional: ausente = nenhum grupo oculto.
+   */
+  ocultosOpcionais?: readonly OcultoOpcional[];
   /** Todas as categorias de opcional da loja, LINHAS INTEIRAS (217). */
   categoriasOpcional: CategoriaOpcional[];
   /**
@@ -288,6 +298,9 @@ export type AcoesProdutosClient = {
   definirFrequenciaCategoria: typeof definirFrequenciaCategoriaLojista;
 } & OpcionaisClientAcoes;
 
+/** Constante de módulo: um `[]` literal por render mudaria a identidade a cada vez. */
+const SEM_GRUPOS: OpcionaisPorCategoria[string] = [];
+
 type GrupoProdutos = {
   id: string | null;
   nome: string;
@@ -398,6 +411,7 @@ export function ProdutosClient({
   categorias,
   // Encanada no server (issue 105); consumida pela UI na issue 107.
   opcionaisPorCategoria,
+  ocultosOpcionais = SEM_OCULTOS,
   categoriasOpcional,
   opcionais,
   associacoes,
@@ -413,6 +427,16 @@ export function ProdutosClient({
   const router = useRouter();
 
   const { removerProduto, alternarDisponibilidade, alternarOculto } = acoes;
+
+  /**
+   * [331] UMA instância para a tela inteira: as pílulas de cada linha e o
+   * `FormProduto` aberto leem e gravam no MESMO mapa otimista — alternar no
+   * card aparece no modal sem refetch. Nenhum outro estado de ocultação aqui.
+   */
+  const ocultacoes = useOcultacoesOpcionais(
+    ocultosOpcionais,
+    acoes.salvarOcultacoesOpcionais,
+  );
 
   /**
    * [264] Devolve ESTE produto ao menu — a segunda saída do aviso de RN-12.
@@ -1153,6 +1177,10 @@ export function ProdutosClient({
       fusoLojaRotulo={fusoLojaRotulo}
       // Repasse puro: quem sabe a rota é a page/wrapper de cada mundo.
       hrefCardapios={hrefCardapios}
+      // [331] Os grupos por categoria (o form escolhe pela categoria do
+      // PRÓPRIO estado, D3) e a mesma instância das pílulas do card.
+      opcionaisPorCategoria={opcionaisPorCategoria}
+      ocultacoes={ocultacoes}
       // [261] Preview de UX para a recusa de RN-14: o form explica e oferece a
       // saída quando o produto não está em cardápio nenhum. A autoridade segue
       // sendo o trigger + a mensagem da Server Action.
@@ -1743,34 +1771,21 @@ export function ProdutosClient({
                                     );
                                   })()
                                 )}
-                                {!modoSelecao &&
-                                  (() => {
-                                    const gruposOpcionais =
-                                      opcionaisPorCategoria[
-                                        p.categoria_id ?? ""
-                                      ] ?? [];
-                                    if (gruposOpcionais.length === 0) return null;
-                                    return (
-                                      <ul
-                                        className="mt-1.5 flex flex-wrap gap-1.5"
-                                        aria-label={`Opcionais da categoria ${grupo.nome}`}
-                                      >
-                                        {gruposOpcionais
-                                          .slice()
-                                          .sort((a, b) => a.ordem - b.ordem)
-                                          .map((g) => (
-                                            <li key={g.categoriaOpcionalId}>
-                                              <Badge
-                                                variant="secondary"
-                                                className="font-normal"
-                                              >
-                                                {g.categoriaOpcionalNome}
-                                              </Badge>
-                                            </li>
-                                          ))}
-                                      </ul>
-                                    );
-                                  })()}
+                                {/* [331] Pílulas clicáveis: exibir/ocultar o grupo
+                                    herdado só neste produto. Somem no modo de
+                                    seleção, como os chips de antes (§5). */}
+                                {!modoSelecao && (
+                                  <PilulasOpcionaisDoProduto
+                                    produtoId={p.id}
+                                    produtoNome={p.nome}
+                                    grupos={
+                                      opcionaisPorCategoria[p.categoria_id ?? ""] ??
+                                      SEM_GRUPOS
+                                    }
+                                    ocultacoes={ocultacoes}
+                                    variante="card"
+                                  />
+                                )}
                                 {/* [261] De quais cardápios o produto participa e
                                     se algum está DENTRO da janela agora. Os dois
                                     vêm projetados do Server Component, com o

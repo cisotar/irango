@@ -56,6 +56,7 @@ ALTER TABLE opcionais_categorias       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE opcionais                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categoria_produto_opcionais ENABLE ROW LEVEL SECURITY;
 ALTER TABLE itens_pedido_opcionais     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE produto_opcionais_ocultos  ENABLE ROW LEVEL SECURITY;
 ```
 
 ### Políticas por tabela
@@ -384,6 +385,10 @@ CREATE POLICY "zonas_escrita_propria" ON zonas_entrega FOR ALL
 
 -- (idem taxas_entrega via zona → loja, bairros_zona via zona → loja, formas_pagamento via loja)
 ```
+
+#### `produto_opcionais_ocultos` (issue 331)
+
+Leitura pública exige `loja_esta_ativa(loja_id)` **e** `EXISTS` em `vitrine_produtos` (produto publicado): sem o segundo, o anon enumeraria ids de produto oculto, de categoria oculta ou de cardápio inativo que a própria view nega (mesma classe e desenho de `cardapio_produtos`). Dono lê as próprias linhas (inclusive loja inativa) e escreve só por `INSERT`/`DELETE` — sem `FOR ALL`, sem UPDATE (nem policy nem grant). Escopo por tenant vem das FKs compostas com `loja_id` (valem sob `service_role`). Migration `20260930140000_produto_opcionais_ocultos.sql`.
 
 ### RPC de escrita em lote do lojista — segunda variante do padrão RPC (issue 175, 208)
 
@@ -879,6 +884,8 @@ async function criarPedido(body) {
 | `preco` / `subtotal` / `desconto` / `taxa_entrega` / `total` | ❌ ignorado | **recalculado do zero** |
 
 `itens_pedido.preco` e `itens_pedido.nome` guardam o **snapshot do valor do banco** no momento do pedido — nunca o valor que veio do client.
+
+**Adicional de grupo oculto no produto (issue 331).** O servidor recusa adicional cujo grupo o lojista ocultou naquele produto (`produto_opcionais_ocultos`): `criarPedido` devolve `codigo: "revisao_necessaria"`; `revisarCarrinho` bloqueia a linha com `motivoNaoCompravel: "opcional_indisponivel"`. A regra é a mesma função pura da vitrine (`idsPermitidosDoProduto`, `src/lib/utils/opcionais-do-produto.ts`). A leitura dos ocultos (`buscarOcultosPorProdutos`) é **fail-closed**: erro, ou resposta cortada por `max_rows` (`count: "exact"` > linhas devolvidas), recusa — nunca vira "sem ocultos".
 
 ### §10-A — Reconciliação CEP↔bairro (issue 064)
 

@@ -16,10 +16,12 @@ import {
   buscarCategoriasOpcional,
   buscarOpcionaisDoLojista,
   buscarAssociacoesOpcional,
+  buscarOcultosOpcionais,
   type CategoriaOpcional,
   type Opcional,
   type AssociacaoCategoriaProdutoOpcional,
 } from "@/lib/supabase/queries/opcionais";
+import type { OcultoOpcional } from "@/lib/utils/opcionais-do-produto";
 
 /**
  * Agregado de leitura de opcionais do painel admin SaaS para UMA loja-alvo
@@ -34,6 +36,8 @@ export type OpcionaisAdminAgregado = {
   associacoes: AssociacaoCategoriaProdutoOpcional[];
   produtos: Produto[];
   opcionaisPorCategoria: OpcionaisPorCategoria;
+  /** [331] Grupo oculto por produto — as duas rotas (Opcionais e Cardápio) consomem. */
+  ocultosOpcionais: OcultoOpcional[];
 };
 
 /**
@@ -72,12 +76,14 @@ export async function carregarOpcionaisAdmin(
     opcionais,
     associacoes,
     produtos,
+    ocultosOpcionais,
     { categoriasProduto, opcionaisPorCategoria },
   ] = await Promise.all([
     buscarCategoriasOpcional(svc, idValidado),
     buscarOpcionaisDoLojista(svc, idValidado),
     buscarAssociacoesOpcional(svc, idValidado),
     buscarProdutosDoLojista(svc, idValidado),
+    buscarOcultosOpcionais(svc, idValidado),
     (async () => {
       const categoriasProduto = await buscarCategorias(svc, idValidado);
       const opcionaisPorCategoria = await buscarOpcionaisPorCategoriaDaLoja(
@@ -96,5 +102,6 @@ export async function carregarOpcionaisAdmin(
     associacoes,
     produtos,
     opcionaisPorCategoria,
+    ocultosOpcionais,
   };
 }

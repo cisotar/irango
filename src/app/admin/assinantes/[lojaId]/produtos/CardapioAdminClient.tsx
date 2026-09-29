@@ -46,6 +46,7 @@ import {
   salvarAssociacaoOpcionaisAdmin,
   reordenarOpcionaisDaCategoriaAdmin,
   reordenarItensDoGrupoOpcionalAdmin,
+  salvarOcultacoesOpcionaisAdmin,
 } from "@/app/admin/assinantes/actions/admin-opcionais";
 
 /**
@@ -66,6 +67,7 @@ export function CardapioAdminClient({
   produtos,
   categorias,
   opcionaisPorCategoria,
+  ocultosOpcionais,
   vinculosPorProduto,
   frequencias,
   categoriasOpcional,
@@ -96,6 +98,9 @@ export function CardapioAdminClient({
   | "associacoes"
   | "promocoes"
   | "fusoLojaRotulo"
+  // [331] Grupo oculto por produto da loja-alvo (agregado 132, service_role
+  // escopada por `lojaId`). A escrita vai pela action admin em `acoes`.
+  | "ocultosOpcionais"
 >) {
   // Foto: o `UploadFotoProduto` monta o FormData só com o arquivo (CAMPO_ARQUIVO).
   // A action admin lê `loja_id` do FormData; injetamos o `lojaId` da URL aqui.
@@ -120,6 +125,7 @@ export function CardapioAdminClient({
       // admin no `acoes` (abaixo) na MESMA mudança — a prop é OBRIGATÓRIA
       // (issue 160): omiti-la quebra a compilação, não cai mais em fallback.
       opcionaisPorCategoria={opcionaisPorCategoria}
+      ocultosOpcionais={ocultosOpcionais}
       vinculosPorProduto={vinculosPorProduto}
       frequencias={frequencias}
       // [269] A rota admin de cardápios EXISTE desde a fase 6, então o link
@@ -223,6 +229,8 @@ export function CardapioAdminClient({
           reordenarOpcionaisDaCategoriaAdmin(lojaId, payload),
         reordenarItensDoGrupoOpcional: (payload) =>
           reordenarItensDoGrupoOpcionalAdmin(lojaId, payload),
+        salvarOcultacoesOpcionais: (alteracoes) =>
+          salvarOcultacoesOpcionaisAdmin(lojaId, alteracoes),
       }}
     />
   );

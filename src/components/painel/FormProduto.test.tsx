@@ -316,3 +316,105 @@ describe("FormProduto — 'Está em:' com os dias do vínculo (278)", () => {
     expect(html).not.toContain("todos os dias");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [331] F5 — seção "Adicionais deste produto" (exibir/ocultar grupo por
+// produto). Fase RED: o form ainda não conhece as props novas, ambas OPCIONAIS:
+//   opcionaisPorCategoria?: OpcionaisPorCategoria   (grupos herdados)
+//   ocultacoes?: OcultacoesOpcionais                (o hook do ProdutosClient —
+//                                                    a MESMA instância do card)
+// Regras (plano, "Componentes"):
+//  - só em modo EDITAR (precisa de `produto.id` para gravar);
+//  - grava na hora — o texto da seção avisa isso;
+//  - herdados calculados pelo `categoria_id` do ESTADO do form (D3);
+//  - modo criar: a dica "salve o produto para escolher adicionais";
+//  - sem as props (quem não injeta), nada novo aparece.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("[331] FormProduto — Adicionais deste produto", () => {
+  const GRUPOS_C1 = [
+    {
+      categoriaOpcionalId: "g-molhos",
+      categoriaOpcionalNome: "Molhos",
+      ordem: 1,
+      opcionais: [{ id: "o1", nome: "Barbecue", preco: 2, ordem: 0 }],
+    },
+    {
+      categoriaOpcionalId: "g-adic",
+      categoriaOpcionalNome: "Adicionais",
+      ordem: 0,
+      opcionais: [{ id: "o2", nome: "Bacon", preco: 5, ordem: 0 }],
+    },
+  ];
+
+  function ocultacoes(ocultos: Array<[string, string]> = []) {
+    return {
+      oculto: (p: string, g: string) => ocultos.some(([pp, gg]) => pp === p && gg === g),
+      alternar: vi.fn(async () => true),
+      aplicarLote: vi.fn(async () => true),
+    };
+  }
+
+  /** Props novas via spread: o tipo do form ainda não as declara (RED). */
+  function renderComOcultacoes(
+    inicial: ProdutoInicial | undefined,
+    extras: Record<string, unknown> | null = {
+      opcionaisPorCategoria: { c1: GRUPOS_C1 },
+      ocultacoes: ocultacoes([["p1", "g-molhos"]]),
+    },
+  ): string {
+    return renderToStaticMarkup(
+      <FormProduto
+        categorias={CATEGORIAS}
+        inicial={inicial}
+        cardapiosDoProduto={[]}
+        hrefCardapios="/painel/cardapios"
+        lojaSlug="loja-teste"
+        lojaId="loja-1"
+        fusoLojaRotulo="America/Sao_Paulo (GMT-3)"
+        onCriar={vi.fn(async () => ({ ok: true }) as const)}
+        onAtualizar={vi.fn(async () => ({ ok: true }) as const)}
+        onEnviarFoto={vi.fn(async () => ({ ok: true, url: "" }) as never)}
+        {...(extras ?? {})}
+      />,
+    );
+  }
+
+  it("modo EDITAR: a seção aparece com uma pílula por grupo herdado da categoria", () => {
+    const html = renderComOcultacoes({ id: "p1", nome: "X-Burger", categoria_id: "c1" });
+    expect(html).toContain("Adicionais deste produto");
+    expect((html.match(/aria-pressed="/g) ?? []).length).toBe(2);
+    expect(html).toContain("Molhos");
+    expect(html).toContain("Adicionais");
+  });
+
+  it("modo EDITAR: o estado vem das `ocultacoes` (a mesma fonte do card) — Molhos oculto, Adicionais visível", () => {
+    const html = renderComOcultacoes({ id: "p1", nome: "X-Burger", categoria_id: "c1" });
+    expect((html.match(/aria-pressed="false"/g) ?? []).length).toBe(1);
+    expect((html.match(/aria-pressed="true"/g) ?? []).length).toBe(1);
+  });
+
+  it("modo EDITAR: o texto da seção avisa que a escolha é gravada na hora", () => {
+    const html = renderComOcultacoes({ id: "p1", nome: "X-Burger", categoria_id: "c1" });
+    const trecho = html.slice(html.indexOf("Adicionais deste produto"));
+    expect(trecho.toLowerCase()).toMatch(/na hora|imediatamente|automaticamente/);
+  });
+
+  it("modo CRIAR: sem seção e sem pílula; só a dica para salvar primeiro", () => {
+    const html = renderComOcultacoes({ categoria_id: "c1" });
+    expect(html).not.toContain("Adicionais deste produto");
+    expect(html).not.toContain('aria-pressed="');
+    expect(html.toLowerCase()).toContain("salve o produto para escolher adicionais");
+  });
+
+  it("sem as props novas (quem não injeta), nada novo aparece — nem em editar", () => {
+    const html = renderComOcultacoes({ id: "p1", nome: "X-Burger", categoria_id: "c1" }, null);
+    expect(html).not.toContain("Adicionais deste produto");
+    expect(html).not.toContain('aria-pressed="');
+    expect(html.toLowerCase()).not.toContain("salve o produto para escolher adicionais");
+  });
+
+  it("produto SEM categoria em editar: nenhuma pílula (sem categoria não há grupo)", () => {
+    const html = renderComOcultacoes({ id: "p1", nome: "X-Burger", categoria_id: null });
+    expect(html).not.toContain('aria-pressed="');
+  });
+});

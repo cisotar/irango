@@ -16,6 +16,13 @@ import { ROTULO_SEM_VOLTA } from "@/lib/utils/descreverVigencia";
 /** Texto visível do selo. */
 export const ROTULO_ESGOTADO = "Esgotado";
 
+/**
+ * [331] Texto do motivo `opcional_indisponivel` — só na revisão do carrinho: a
+ * linha leva um adicional de um grupo que o lojista ocultou NESTE produto. O
+ * produto segue à venda; é o adicional que precisa sair.
+ */
+export const ROTULO_OPCIONAL_INDISPONIVEL = "Adicional indisponível";
+
 /** Rótulo acessível — `aria-label` do card, texto do leitor de tela na linha. */
 export function rotuloAcessivelEsgotado(nome: string): string {
   return `${nome} esgotado`;
@@ -49,6 +56,7 @@ export function rotuloNaoCompravel(
   rotuloVigencia?: string,
 ): string {
   if (motivo === "fora_da_janela") return rotuloVigencia || ROTULO_SEM_VOLTA;
+  if (motivo === "opcional_indisponivel") return ROTULO_OPCIONAL_INDISPONIVEL;
   return ROTULO_ESGOTADO;
 }
 
@@ -66,7 +74,7 @@ export function rotuloAcessivelNaoCompravel(
   motivo: MotivoNaoCompravel | null,
   rotuloVigencia?: string,
 ): string {
-  if (motivo === "fora_da_janela") {
+  if (motivo === "fora_da_janela" || motivo === "opcional_indisponivel") {
     return `${nome} — ${rotuloNaoCompravel(motivo, rotuloVigencia)}`;
   }
   return rotuloAcessivelEsgotado(nome);
@@ -78,7 +86,7 @@ export function rotuloAcessivelNaoCompravel(
  * (design §4.2 — "CTA `Produto indisponível` desabilitado").
  */
 export function rotuloCtaNaoCompravel(motivo: MotivoNaoCompravel | null): string {
-  return motivo === "fora_da_janela"
+  return motivo === "fora_da_janela" || motivo === "opcional_indisponivel"
     ? "Produto indisponível"
     : "Produto esgotado";
 }

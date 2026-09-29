@@ -29,8 +29,10 @@ import {
   schemaAssociacaoCategoriaOpcional,
   schemaReordenacaoOpcionaisDaCategoria,
   schemaReordenacaoItensDoGrupo,
+  schemaOcultacoesOpcionais,
 } from "@/lib/validacoes/opcional";
 import { planejarAssociacaoOpcionais } from "@/lib/utils/associacao-opcionais";
+import { filtroDosPares, planejarOcultacoes } from "@/lib/utils/opcionais-do-produto";
 import {
   validarLojaIdAdmin,
   registrarAcessoAdmin,
@@ -551,5 +553,73 @@ export async function reordenarItensDoGrupoOpcionalAdmin(
   } catch (e) {
     console.error("[reordenarItensDoGrupoOpcionalAdmin]", e);
     return { ok: false, erro: ERRO_ORDEM_ADMIN };
+  }
+}
+
+// ── Ocultação de grupo de opcionais POR PRODUTO (issue 331) ─────────────────
+
+/** Mensagem única (seguranca.md §14): par alheio, FK e erro de banco não se distinguem. */
+const ERRO_OCULTACAO_ADMIN = "Não foi possível salvar os adicionais do produto.";
+
+/**
+ * Variante ADMIN de `salvarOcultacoesOpcionais`, na LOJA-ALVO da URL. Mesma
+ * regra, pela MESMA função pura (`planejarOcultacoes`); a diferença é de onde
+ * vem a loja e que aqui NÃO há RLS (service_role):
+ *  - upsert via `escopo.inserirVarios` (loja_id injetado por último em cada
+ *    linha). As FKs COMPOSTAS com `loja_id` valem sob service_role: par de
+ *    outra loja derruba o lote inteiro e o delete não roda;
+ *  - delete por PARES exatos com `.eq("loja_id", lojaId)` EXPLÍCITO — sem ele,
+ *    o `or` dos pares alcançaria linha de outra loja. Mesma exceção documentada
+ *    ao wrapper de `salvarAssociacaoOpcionaisAdmin` (escopo só deleta por `id`).
+ */
+export async function salvarOcultacoesOpcionaisAdmin(
+  lojaId: string,
+  alteracoes: unknown,
+): Promise<Resultado> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaOcultacoesOpcionais.safeParse(alteracoes);
+  if (!parsed.success) return { ok: false, erro: ERRO_OCULTACAO_ADMIN };
+
+  const { ocultar, exibir } = planejarOcultacoes(parsed.data);
+
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    if (ocultar.length > 0) {
+      const { error } = await escopo.inserirVarios("produto_opcionais_ocultos", ocultar, {
+        onConflict: "produto_id,categoria_opcional_id",
+        ignoreDuplicates: true,
+      });
+      if (error) {
+        console.error("[salvarOcultacoesOpcionaisAdmin:upsert]", error);
+        return { ok: false, erro: ERRO_OCULTACAO_ADMIN };
+      }
+    }
+
+    if (exibir.length > 0) {
+      const { error } = await svc
+        .from("produto_opcionais_ocultos")
+        .delete()
+        .eq("loja_id", loja.lojaId)
+        .or(filtroDosPares(exibir));
+      if (error) {
+        // O upsert (se houve) já valeu: revalida para a tela refletir o estado real.
+        console.error("[salvarOcultacoesOpcionaisAdmin:delete]", error);
+        revalidarLojaAdmin(loja.lojaId);
+        return { ok: false, erro: ERRO_OCULTACAO_ADMIN };
+      }
+    }
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "opcional.ocultacao.salvar",
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[salvarOcultacoesOpcionaisAdmin]", e);
+    return { ok: false, erro: ERRO_OCULTACAO_ADMIN };
   }
 }

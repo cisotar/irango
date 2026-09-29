@@ -20,6 +20,9 @@ import {
   type Visibilidade,
 } from "@/lib/validacoes/produto";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
+import type { OpcionaisPorCategoria } from "@/lib/supabase/queries/produtos";
+import { PilulasOpcionaisDoProduto } from "@/components/painel/PilulasOpcionaisDoProduto";
+import type { OcultacoesOpcionais } from "@/components/painel/useOcultacoesOpcionais";
 import {
   juntarPrazoLocal,
   separarPrazoLocal,
@@ -137,6 +140,15 @@ export type FormProdutoProps = {
    * `null` ⇒ nenhum link é renderizado: o aviso continua, sem saída falsa.
    */
   hrefCardapios: string | null;
+  /**
+   * [331] Os dois juntos ligam a seção "Adicionais deste produto" (exibir/ocultar
+   * grupo herdado da categoria só neste produto). `opcionaisPorCategoria` é o
+   * mapa da página; `ocultacoes` é a MESMA instância do `ProdutosClient` que as
+   * pílulas do card usam — alternar lá reflete aqui sem refetch. Ausentes, nada
+   * novo aparece.
+   */
+  opcionaisPorCategoria?: OpcionaisPorCategoria;
+  ocultacoes?: Pick<OcultacoesOpcionais, "oculto" | "alternar">;
 };
 
 /**
@@ -161,6 +173,8 @@ export function FormProduto({
   fusoLojaRotulo,
   cardapiosDoProduto,
   hrefCardapios,
+  opcionaisPorCategoria,
+  ocultacoes,
 }: FormProdutoProps) {
   const router = useRouter();
   const ehEdicao = inicial?.id != null;
@@ -321,6 +335,9 @@ export function FormProduto({
       void lojaId;
     });
   }
+
+  // [331] Grupos herdados da categoria escolhida no form (vazio sem o mapa).
+  const gruposDaCategoria = opcionaisPorCategoria?.[categoriaId] ?? [];
 
   return (
     <form
@@ -622,6 +639,39 @@ export function FormProduto({
           ))}
         </select>
       </div>
+
+      {/* [331] Grupos herdados da categoria ESCOLHIDA NO FORM (D3: trocar a
+          categoria aqui troca a lista). Grava na hora, pelo hook da página —
+          por isso só em editar: sem `id` não há produto onde gravar. */}
+      {ocultacoes != null &&
+        gruposDaCategoria.length > 0 &&
+        (inicial?.id != null ? (
+          <fieldset
+            aria-describedby="produto-adicionais-ajuda"
+            className="space-y-2 rounded-lg border border-input p-3"
+          >
+            <legend className="px-1 text-sm font-medium text-foreground">
+              Adicionais deste produto
+            </legend>
+            <p id="produto-adicionais-ajuda" className="text-xs text-muted-foreground">
+              Selecione um grupo para mostrar ou ocultar só neste produto. A
+              escolha é salva na hora.
+              {categoriaId !== (inicial.categoria_id ?? "") &&
+                " Estes são os grupos da nova categoria, que só vale depois de salvar o produto."}
+            </p>
+            <PilulasOpcionaisDoProduto
+              produtoId={inicial.id}
+              produtoNome={inicial.nome ?? nome}
+              grupos={gruposDaCategoria}
+              ocultacoes={ocultacoes}
+              variante="form"
+            />
+          </fieldset>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Salve o produto para escolher adicionais.
+          </p>
+        ))}
 
       <div className="space-y-3">
         <label className="flex cursor-pointer items-center gap-2 text-sm">

@@ -33,7 +33,14 @@ export default async function CardapioAdminPage({
     { loja, categorias, produtos },
     // [217] `opcionais` e `associacoes` NÃO são query nova: o agregado já as
     // carregava (carga-opcionais.ts) — a page só não as desestruturava.
-    { opcionaisPorCategoria, categoriasOpcional, opcionais, associacoes },
+    // [331] `ocultosOpcionais` idem: vem do mesmo agregado.
+    {
+      opcionaisPorCategoria,
+      categoriasOpcional,
+      opcionais,
+      associacoes,
+      ocultosOpcionais,
+    },
     // [323] A leitura de cardápios da loja-alvo SAIU (S5): a frequência mora
     // nas colunas de `produtos`/`categorias` que o agregado já traz.
   ] = await Promise.all([
@@ -72,6 +79,7 @@ export default async function CardapioAdminPage({
         exibir_imagens: c.exibir_imagens,
       }))}
       opcionaisPorCategoria={opcionaisPorCategoria}
+      ocultosOpcionais={ocultosOpcionais}
       // [323/D11] Sem índice de vínculos: o cardápio saiu da tela (S5).
       vinculosPorProduto={{}}
       frequencias={frequencias}

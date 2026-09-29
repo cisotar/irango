@@ -25,6 +25,11 @@ import {
 import { LinhaCategoriaReordenavel } from "@/components/painel/LinhaCategoriaReordenavel";
 import { PainelItensDoGrupo } from "@/components/painel/PainelItensDoGrupo";
 import type { ManipuladorModoReordenar } from "@/components/painel/ModoReordenar";
+import {
+  ProdutosDoGrupoOpcional,
+  type ProdutoDoGrupo,
+} from "@/components/painel/ProdutosDoGrupoOpcional";
+import type { OcultacoesOpcionais } from "@/components/painel/useOcultacoesOpcionais";
 import type {
   CategoriaProduto,
   OpcionaisClientAcoes,
@@ -88,6 +93,8 @@ export function CartaoAssociacaoOpcionais({
   cabecalhoFixo = false,
   onSalvo,
   acoes,
+  produtos,
+  ocultacoes,
 }: {
   categoriaProduto: CategoriaProduto;
   categoriasOpcional: CategoriaOpcional[];
@@ -117,6 +124,14 @@ export function CartaoAssociacaoOpcionais({
   cabecalhoFixo?: boolean;
   onSalvo: () => void;
   acoes: OpcionaisClientAcoes;
+  /**
+   * [331] Os dois juntos ligam o "Por produto" em cada grupo marcado E salvo:
+   * `produtos` é a loja inteira (o sheet filtra esta categoria) e `ocultacoes`
+   * é a instância única da tela (`useOcultacoesOpcionais`). Opcionais: quem não
+   * injeta (o modal de `/painel/produtos`) segue exatamente como antes.
+   */
+  produtos?: readonly ProdutoDoGrupo[];
+  ocultacoes?: Pick<OcultacoesOpcionais, "oculto" | "aplicarLote">;
 }) {
   const [selecionados, setSelecionados] =
     useState<Set<string>>(selecionadosIniciais);
@@ -390,6 +405,38 @@ export function CartaoAssociacaoOpcionais({
                     }) => {
                       const aberto = grupoAberto === item.id;
                       const idPainel = `itens-${categoriaProduto.id}-${item.id}`;
+                      /*
+                        [331] Só grupo com linha GRAVADA (tem `ordem` do
+                        servidor): o recém-marcado ainda não existe no banco, e
+                        ocultar um grupo que a categoria não tem seria inerte.
+                        Vai numa sub-linha (slot `painel`): a row já está no
+                        teto de largura em 360px.
+                      */
+                      const porProduto =
+                        produtos != null &&
+                        ocultacoes != null &&
+                        ordemPorGrupo.has(item.id) ? (
+                          <div className="flex justify-end">
+                            <ProdutosDoGrupoOpcional
+                              grupo={{ id: item.id, nome: item.nome }}
+                              categoriaProduto={categoriaProduto}
+                              produtos={produtos}
+                              ocultacoes={ocultacoes}
+                            />
+                          </div>
+                        ) : null;
+                      const painelDeItens = aberto ? (
+                        <PainelItensDoGrupo
+                          id={idPainel}
+                          grupoId={item.id}
+                          grupoNome={item.nome}
+                          itens={opcionaisPorGrupo.get(item.id) ?? []}
+                          alcance={alcancePorGrupo.get(item.id) ?? []}
+                          acoes={acoes}
+                          onSalvo={onSalvo}
+                          aoMudarStatus={setStatusItens}
+                        />
+                      ) : null;
                       return (
                         <LinhaCategoriaReordenavel
                           id={item.id}
@@ -438,18 +485,14 @@ export function CartaoAssociacaoOpcionais({
                             </button>
                           }
                           painel={
-                            aberto ? (
-                              <PainelItensDoGrupo
-                                id={idPainel}
-                                grupoId={item.id}
-                                grupoNome={item.nome}
-                                itens={opcionaisPorGrupo.get(item.id) ?? []}
-                                alcance={alcancePorGrupo.get(item.id) ?? []}
-                                acoes={acoes}
-                                onSalvo={onSalvo}
-                                aoMudarStatus={setStatusItens}
-                              />
-                            ) : null
+                            porProduto == null ? (
+                              painelDeItens
+                            ) : (
+                              <>
+                                {porProduto}
+                                {painelDeItens}
+                              </>
+                            )
                           }
                         />
                       );

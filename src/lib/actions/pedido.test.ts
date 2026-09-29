@@ -99,6 +99,16 @@ vi.mock("@/lib/supabase/queries/produtos", () => ({
   buscarOpcionaisPorCategoria: (...a: unknown[]) => buscarOpcionaisPorCategoria(...a),
 }));
 
+// [331] Exceção produto×grupo (`produto_opcionais_ocultos`): a action lê, sob o
+// MESMO client service_role, os grupos ocultos por produto e SUBTRAI da
+// allowlist da categoria (`idsPermitidosDoProduto`). Default: nenhuma linha —
+// todo teste anterior segue descrevendo o comportamento de antes.
+const buscarOcultosPorProdutos = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+vi.mock("@/lib/supabase/queries/opcionais", async (orig) => ({
+  ...((await orig()) as Record<string, unknown>),
+  buscarOcultosPorProdutos: (...a: unknown[]) => buscarOcultosPorProdutos(...a),
+}));
+
 // [125] Releitura AUTORITATIVA do pedido recém-gravado. A action deve montar o
 // whatsappHref a partir da LINHA GRAVADA (buscarPedidoPorToken), nunca do
 // snapshot em memória — a RPC pode divergir (trava de cupom perdida na corrida,
@@ -379,6 +389,8 @@ function cenarioFeliz() {
   // [085] sem opcionais por padrão: nenhuma leitura de opcional retorna nada.
   buscarOpcionaisPorIds.mockResolvedValue([]);
   buscarOpcionaisPorCategoria.mockResolvedValue({});
+  // [331] nenhum grupo oculto por produto.
+  buscarOcultosPorProdutos.mockResolvedValue([]);
   // [125] default: releitura não encontra linha → whatsappHref null. Mantém todo
   // teste pré-existente inalterado além do campo novo.
   buscarPedidoPorToken.mockResolvedValue(null);
@@ -2787,5 +2799,137 @@ describe("[auditoria 180-B/achado 1] criarPedido lê a ResolucaoCep no contrato 
     // Um CEP inventado não compra nem a zona barata nem o frete zero.
     expect(args.p_taxa_entrega).toBe(20);
     expect(args.p_frete_a_combinar).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [331] F3 — grupo de opcionais OCULTO por produto (D1: ocultar também bloqueia
+// no pedido). Fase RED: `criarPedido` ainda não lê `produto_opcionais_ocultos`.
+//
+//   permitidos(produto) = grupos(categoria do produto) − ocultos(produto)
+//
+// A regra mora em `idsPermitidosDoProduto` (src/lib/utils/opcionais-do-produto.ts)
+// e as linhas vêm de `buscarOcultosPorProdutos(svc, produtoIds)`
+// (src/lib/supabase/queries/opcionais.ts). Nunca do cliente (§10).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * [331] A1 — client falso cuja leitura de `produto_opcionais_ocultos` veio
+ * CORTADA pelo `max_rows` do PostgREST: o banco conta 1 linha oculta, a resposta
+ * não a traz. A query REAL roda sobre ele (o mock do módulo delega), então o
+ * teste prova a cadeia inteira: query detecta o corte → action recusa.
+ */
+async function ocultosCortadosPeloMaxRows() {
+  const { buscarOcultosPorProdutos: real } = await vi.importActual<
+    typeof import("@/lib/supabase/queries/opcionais")
+  >("@/lib/supabase/queries/opcionais");
+  const resposta = { data: [], error: null, count: 1 };
+  const builder: Record<string, unknown> = {};
+  builder.select = () => builder;
+  builder.in = () => builder;
+  builder.eq = () => builder;
+  builder.then = (resolve: (v: typeof resposta) => unknown) => resolve(resposta);
+  const cortado = { from: () => builder } as unknown as Parameters<typeof real>[0];
+  buscarOcultosPorProdutos.mockImplementation((_c: unknown, ids: unknown) =>
+    real(cortado, ids as string[]),
+  );
+}
+
+describe("[331] criarPedido — grupo de opcionais oculto no produto", () => {
+  const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000002"; // MESMA categoria (Pães) do PROD_1
+  const CAT_OPC_FORA = "eeeeeeee-0000-0000-0000-000000000009"; // grupo fora da categoria (D3)
+
+  function cenario() {
+    cenarioFeliz();
+    buscarProdutosPorIds.mockResolvedValue([
+      produtoRow({ categoria_id: CAT_PROD_PAES }),
+      produtoRow({ id: PROD_2, nome: "Pão de queijo", preco: 12.0, categoria_id: CAT_PROD_PAES }),
+    ]);
+    buscarOpcionaisPorCategoria.mockResolvedValue(permitidosPaesLaticinios());
+    buscarOpcionaisPorIds.mockResolvedValue([
+      opcionalRow({ id: OPC_BRIE, nome: "Brie extra", preco: 8.0 }),
+    ]);
+  }
+
+  const comBrie = (produto_id: string, quantidade = 1) => ({
+    produto_id,
+    quantidade,
+    opcionais: [{ opcional_id: OPC_BRIE, quantidade: 1 }],
+  });
+
+  it("opcional de grupo OCULTO no produto → pedido recusado, criar_pedido NÃO chamado", async () => {
+    cenario();
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: PROD_1, categoria_opcional_id: CAT_OPC_LATICINIOS },
+    ]);
+    const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_1)] }));
+    expect(r).toEqual(expect.objectContaining({ erro: expect.any(String) }));
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("a leitura dos ocultos usa o client do servidor e os ids dos produtos do carrinho (nunca dado do cliente)", async () => {
+    cenario();
+    await criarPedido(payloadBase({ itens: [comBrie(PROD_1)] }));
+    expect(buscarOcultosPorProdutos).toHaveBeenCalled();
+    const [client, ids] = buscarOcultosPorProdutos.mock.calls[0] as [unknown, string[]];
+    expect(client).toBe(fakeClient);
+    expect(ids).toContain(PROD_1);
+  });
+
+  it("MESMO grupo em OUTRO produto da mesma categoria → aceito, com o preço do BANCO", async () => {
+    cenario();
+    // Laticínios oculto só no PROD_1; o PROD_2 (mesma categoria) continua com ele.
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: PROD_1, categoria_opcional_id: CAT_OPC_LATICINIOS },
+    ]);
+    const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_2)] }));
+    expect(r).not.toHaveProperty("erro");
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_subtotal: number; p_total: number };
+    // pão de queijo 12 + brie 8 (do banco) = 20; + 5 frete = 25.
+    expect(args.p_subtotal).toBe(20.0);
+    expect(args.p_total).toBe(25.0);
+  });
+
+  it("(D3) linha oculta de grupo que NÃO está na categoria atual → sem efeito, pedido aceito", async () => {
+    cenario();
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: PROD_1, categoria_opcional_id: CAT_OPC_FORA },
+    ]);
+    const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_1)] }));
+    expect(r).not.toHaveProperty("erro");
+    const args = fakeClient.rpc.mock.calls[0][1] as { p_subtotal: number };
+    expect(args.p_subtotal).toBe(33.0); // 25 + 8
+  });
+
+  it("carrinho com um item válido e um item com grupo oculto → recusa o PEDIDO INTEIRO", async () => {
+    cenario();
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: PROD_1, categoria_opcional_id: CAT_OPC_LATICINIOS },
+    ]);
+    const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_2), comBrie(PROD_1)] }));
+    expect(r).toEqual(expect.objectContaining({ erro: expect.any(String) }));
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+
+  it("fail-closed: a leitura dos ocultos falha → pedido recusado (nunca ignora a exceção)", async () => {
+    cenario();
+    buscarOcultosPorProdutos.mockRejectedValue(new Error("falha simulada de banco"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_1)] })).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(r).toEqual(expect.objectContaining({ erro: expect.any(String) }));
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+  it("A1: ocultos CORTADOS pelo max_rows (count > linhas) → pedido recusado, criar_pedido NÃO chamado", async () => {
+    cenario();
+    await ocultosCortadosPeloMaxRows();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await criarPedido(payloadBase({ itens: [comBrie(PROD_1)] })).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(r).toEqual(expect.objectContaining({ erro: expect.any(String) }));
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
   });
 });

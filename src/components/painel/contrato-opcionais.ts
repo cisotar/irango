@@ -9,6 +9,7 @@ import type {
   salvarAssociacaoOpcionais,
   reordenarOpcionaisDaCategoria,
   reordenarItensDoGrupoOpcional,
+  salvarOcultacoesOpcionais,
 } from "@/lib/actions/opcional";
 
 /**
@@ -44,9 +45,9 @@ export type Associacao = {
 };
 
 /**
- * Actions injetadas das 10 operações de opcionais. Todas OBRIGATÓRIAS (issue
- * 160): as pages do painel passam as 10 do lojista, as vias admin (137/143)
- * passam as 10 variantes escopadas por `lojaId`. Sem default — omitir uma chave
+ * Actions injetadas das 11 operações de opcionais. Todas OBRIGATÓRIAS (issue
+ * 160): as pages do painel passam as 11 do lojista, as vias admin (137/143)
+ * passam as 11 variantes escopadas por `lojaId`. Sem default — omitir uma chave
  * aqui quebra o build em vez de cair na action do lojista (que resolve a loja
  * por `auth.uid()`) e gravar na loja errada. Tipadas via `typeof`
  * (single-source, espelha `ProdutosClient`).
@@ -54,7 +55,8 @@ export type Associacao = {
  * A 9ª (`reordenarOpcionaisDaCategoria`, issues 208/209) e a 10ª
  * (`reordenarItensDoGrupoOpcional`, issues 215/216) seguem a mesma regra: são
  * escrita de ordem escopada por loja, e um default aqui seria exatamente o bug
- * que a 160 existe para impedir.
+ * que a 160 existe para impedir. A 11ª (`salvarOcultacoesOpcionais`, issue 331)
+ * idem: ocultação de grupo por produto, escopada por loja.
  */
 export type OpcionaisClientAcoes = {
   criarCategoriaOpcional: typeof criarCategoriaOpcional;
@@ -67,4 +69,5 @@ export type OpcionaisClientAcoes = {
   salvarAssociacaoOpcionais: typeof salvarAssociacaoOpcionais;
   reordenarOpcionaisDaCategoria: typeof reordenarOpcionaisDaCategoria;
   reordenarItensDoGrupoOpcional: typeof reordenarItensDoGrupoOpcional;
+  salvarOcultacoesOpcionais: typeof salvarOcultacoesOpcionais;
 };

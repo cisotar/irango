@@ -44,6 +44,13 @@ vi.mock("@/lib/supabase/queries/produtos", () => ({
   buscarOpcionaisPorCategoria: (...a: unknown[]) => buscarOpcionaisPorCategoria(...a),
 }));
 
+// [331] Exceção produto×grupo: a MESMA leitura alimenta os dois caminhos.
+const buscarOcultosPorProdutos = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+vi.mock("@/lib/supabase/queries/opcionais", async (orig) => ({
+  ...((await orig()) as Record<string, unknown>),
+  buscarOcultosPorProdutos: (...a: unknown[]) => buscarOcultosPorProdutos(...a),
+}));
+
 const buscarCupomPorCodigo = vi.fn();
 const listarFormasPagamento = vi.fn();
 const listarZonasComTaxas = vi.fn();
@@ -287,6 +294,7 @@ async function descontoCobrado(comOpcional: boolean): Promise<number> {
 beforeEach(() => {
   vi.clearAllMocks();
   fakeClient.rpc.mockReset();
+  buscarOcultosPorProdutos.mockResolvedValue([]);
 });
 
 describe("[228/RN-11/D5-b] preview e autoritativo dizem o MESMO número", () => {
@@ -551,5 +559,58 @@ describe("[modalidades · B] preview e autoritativo concordam no modo do frete",
     expect(gravado.p_frete_a_combinar).toBe(false);
     expect(gravado.p_taxa_entrega).toBe(8);
     expect(gravado.p_total).toBe(58);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [331] Caso-espelho da exceção produto×grupo: o MESMO banco (Bordas oculto só
+// na Feijoada) nas duas pontas. O preview não pode confirmar um adicional que o
+// autoritativo recusa — nem cobrar diferente o que os dois aceitam.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("[331] preview e autoritativo concordam sobre o grupo oculto por produto", () => {
+  const carrinhoRetirada = (itensDoCarrinho: unknown[]) => ({
+    loja_id: LOJA_A,
+    tipo_entrega: "retirada" as const,
+    itens: itensDoCarrinho,
+    forma_pagamento: "pix",
+    nome_cliente: "Fulano",
+  });
+
+  it("Bordas oculto NA FEIJOADA: o autoritativo recusa e o preview bloqueia a MESMA linha", async () => {
+    mesmoBanco(true);
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: FEIJOADA, categoria_opcional_id: CAT_OPC },
+    ]);
+    const carrinho = [
+      { produto_id: FEIJOADA, quantidade: 1, opcionais: [{ opcional_id: OPC_BORDA, quantidade: 1 }] },
+    ];
+
+    const preview = await revisarCarrinhoAction({ loja_id: LOJA_A, itens: carrinho });
+    const autoritativo = await criarPedido(carrinhoRetirada(carrinho) as never);
+
+    expect(autoritativo).toEqual(expect.objectContaining({ erro: expect.any(String) }));
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+    // O preview não pode dizer "comprável" para o que o pedido recusa.
+    const linhaCompravel = preview.ok && preview.itens[0]?.compravel === true;
+    expect(linhaCompravel).toBe(false);
+  });
+
+  it("Bordas oculto NA FEIJOADA, borda no REFRIGERANTE: os dois aceitam e o subtotal é o MESMO", async () => {
+    mesmoBanco(true);
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: FEIJOADA, categoria_opcional_id: CAT_OPC },
+    ]);
+    const carrinho = [
+      { produto_id: REFRI, quantidade: 1, opcionais: [{ opcional_id: OPC_BORDA, quantidade: 1 }] },
+    ];
+
+    const preview = await revisarCarrinhoAction({ loja_id: LOJA_A, itens: carrinho });
+    const autoritativo = await criarPedido(carrinhoRetirada(carrinho) as never);
+
+    if (!preview.ok) throw new Error(`preview recusou: ${preview.mensagem}`);
+    if ("erro" in autoritativo) throw new Error(`criarPedido recusou: ${autoritativo.erro}`);
+    const args = fakeClient.rpc.mock.calls.at(-1)?.[1] as { p_subtotal: number };
+    expect(preview.subtotal).toBe(60);
+    expect(args.p_subtotal).toBe(preview.subtotal);
   });
 });

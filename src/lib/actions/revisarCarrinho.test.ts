@@ -48,6 +48,14 @@ vi.mock("@/lib/supabase/queries/produtos", () => ({
   buscarOpcionaisPorCategoria: (...a: unknown[]) => buscarOpcionaisPorCategoria(...a),
 }));
 
+// [331] Exceção produto×grupo: mesma leitura de `criarPedido`. Default: nenhuma
+// linha — todo teste anterior segue igual.
+const buscarOcultosPorProdutos = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+vi.mock("@/lib/supabase/queries/opcionais", async (orig) => ({
+  ...((await orig()) as Record<string, unknown>),
+  buscarOcultosPorProdutos: (...a: unknown[]) => buscarOcultosPorProdutos(...a),
+}));
+
 const buscarCupomPorCodigo = vi.fn();
 vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
   buscarCupomPorCodigo: (...a: unknown[]) => buscarCupomPorCodigo(...a),
@@ -268,6 +276,8 @@ beforeEach(() => {
   } as Awaited<ReturnType<typeof rateLimitMod.verificarRateLimit>>);
   // Loja saudável por padrão: cada teste que exercita o gate de loja sobrescreve.
   buscarLojaParaPedido.mockResolvedValue(lojaRow());
+  // [331] nenhum grupo oculto por produto.
+  buscarOcultosPorProdutos.mockResolvedValue([]);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -901,5 +911,126 @@ describe("[228] o oráculo antigo não existe mais em src/", () => {
   it("`validarCupom` deixou de ser exportada de cupom.ts — a porta RPC está fechada", () => {
     const cupom = readFileSync(join(RAIZ, "lib/actions/cupom.ts"), "utf8");
     expect(cupom).not.toMatch(/export\s+async\s+function\s+validarCupom\s*\(/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [331] F3 — grupo de opcionais OCULTO por produto (D1). O carrinho ANTIGO que
+// ainda carrega um adicional agora oculto é barrado na revisão: a LINHA fica
+// bloqueada (o cliente a remove), fora do subtotal — nunca some em silêncio e
+// nunca é cobrada. `criarPedido` recusa o mesmo carrinho (pedido.test.ts).
+// Fase RED: a revisão ainda não lê `produto_opcionais_ocultos`.
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * [331] A1 — client falso cuja leitura de `produto_opcionais_ocultos` veio
+ * CORTADA pelo `max_rows` do PostgREST: o banco conta 1 linha oculta, a resposta
+ * não a traz. A query REAL roda sobre ele (o mock do módulo delega), então o
+ * teste prova a cadeia inteira: query detecta o corte → action recusa.
+ */
+async function ocultosCortadosPeloMaxRows() {
+  const { buscarOcultosPorProdutos: real } = await vi.importActual<
+    typeof import("@/lib/supabase/queries/opcionais")
+  >("@/lib/supabase/queries/opcionais");
+  const resposta = { data: [], error: null, count: 1 };
+  const builder: Record<string, unknown> = {};
+  builder.select = () => builder;
+  builder.in = () => builder;
+  builder.eq = () => builder;
+  builder.then = (resolve: (v: typeof resposta) => unknown) => resolve(resposta);
+  const cortado = { from: () => builder } as unknown as Parameters<typeof real>[0];
+  buscarOcultosPorProdutos.mockImplementation((_c: unknown, ids: unknown) =>
+    real(cortado, ids as string[]),
+  );
+}
+
+describe("[331] revisarCarrinhoAction — grupo de opcionais oculto no produto", () => {
+  const CAT_OPC_FORA = "eeeeeeee-0000-0000-0000-000000000009"; // fora da categoria (D3)
+
+  function banco() {
+    buscarLojaParaPedido.mockResolvedValue(lojaRow());
+    // Feijoada (80 efetivo) e Refrigerante (50) na MESMA categoria (CAT_PROD).
+    buscarProdutosPorIds.mockResolvedValue([feijoadaComDesconto(), produtoRow()]);
+    buscarOpcionaisPorIds.mockResolvedValue([opcionalRow()]); // Borda R$ 10,00
+    buscarOpcionaisPorCategoria.mockResolvedValue(ALLOWLIST);
+    buscarCupomPorCodigo.mockResolvedValue(null);
+  }
+
+  const comBorda = (produto_id: string) => ({
+    produto_id,
+    quantidade: 1,
+    opcionais: [{ opcional_id: OPC_BORDA, quantidade: 1 }],
+  });
+
+  it("item com adicional de grupo OCULTO no produto → linha BLOQUEADA e fora do subtotal", async () => {
+    banco();
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: FEIJOADA, categoria_opcional_id: CAT_OPC },
+    ]);
+    const r = ok(
+      await revisarCarrinhoAction({
+        loja_id: LOJA_A,
+        itens: [comBorda(REFRI), comBorda(FEIJOADA)],
+      }),
+    );
+    expect(r.itens).toHaveLength(2);
+    // Refrigerante: mesmo grupo, outro produto → comprável.
+    expect(r.itens[0].compravel).toBe(true);
+    // Feijoada: grupo oculto nela → bloqueada, com motivo (null ⟺ compravel).
+    expect(r.itens[1].produto_id).toBe(FEIJOADA);
+    expect(r.itens[1].compravel).toBe(false);
+    expect(r.itens[1].motivoNaoCompravel).not.toBeNull();
+    // Só o refrigerante + borda entra na conta: 50 + 10.
+    expect(r.subtotal).toBe(60);
+  });
+
+  it("MESMO grupo em OUTRO produto da mesma categoria → aceito, preço da borda do BANCO", async () => {
+    banco();
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: FEIJOADA, categoria_opcional_id: CAT_OPC },
+    ]);
+    const r = ok(await revisarCarrinhoAction({ loja_id: LOJA_A, itens: [comBorda(REFRI)] }));
+    expect(r.itens[0].compravel).toBe(true);
+    expect(r.subtotal).toBe(60);
+  });
+
+  it("(D3) linha oculta de grupo que NÃO está na categoria atual → sem efeito", async () => {
+    banco();
+    buscarOcultosPorProdutos.mockResolvedValue([
+      { produto_id: FEIJOADA, categoria_opcional_id: CAT_OPC_FORA },
+    ]);
+    const r = ok(await revisarCarrinhoAction({ loja_id: LOJA_A, itens: [comBorda(FEIJOADA)] }));
+    expect(r.itens[0].compravel).toBe(true);
+    expect(r.subtotal).toBe(90); // 80 efetivo + 10
+  });
+
+  it("a leitura dos ocultos usa o client do servidor e os ids do carrinho", async () => {
+    banco();
+    await revisarCarrinhoAction({ loja_id: LOJA_A, itens: [comBorda(FEIJOADA)] });
+    expect(buscarOcultosPorProdutos).toHaveBeenCalled();
+    const [client, ids] = buscarOcultosPorProdutos.mock.calls[0] as [unknown, string[]];
+    expect(client).toBe(fakeClient);
+    expect(ids).toContain(FEIJOADA);
+  });
+
+  it("fail-closed: a leitura dos ocultos falha → revisão recusada (ok:false genérico)", async () => {
+    banco();
+    buscarOcultosPorProdutos.mockRejectedValue(new Error("falha simulada de banco"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await revisarCarrinhoAction({
+      loja_id: LOJA_A,
+      itens: [comBorda(FEIJOADA)],
+    }).finally(() => spy.mockRestore());
+    expect(r.ok).toBe(false);
+  });
+
+  it("A1: ocultos CORTADOS pelo max_rows (count > linhas) → revisão recusada (ok:false)", async () => {
+    banco();
+    await ocultosCortadosPeloMaxRows();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await revisarCarrinhoAction({
+      loja_id: LOJA_A,
+      itens: [comBorda(FEIJOADA)],
+    }).finally(() => spy.mockRestore());
+    expect(r.ok).toBe(false);
   });
 });

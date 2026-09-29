@@ -15,10 +15,12 @@ import {
 import { ancoraSecao, idNaSecao } from "@/lib/utils/ancoraCategoria";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
-import type {
-  ProdutoVitrine,
-  SecaoVitrine,
+import {
+  gruposOpcionaisParaVitrine,
+  type ProdutoVitrine,
+  type SecaoVitrine,
 } from "@/lib/utils/catalogoVitrine";
+import type { OcultosPorProduto } from "@/lib/utils/opcionais-do-produto";
 import type { OpcionalCarrinho } from "@/types/dominio";
 
 /** Uma categoria (ou "Outros") com seus produtos disponíveis. */
@@ -55,6 +57,11 @@ type SecaoCatalogoProps = {
    * Produto sem categoria ou sem associação → sem opcionais no modal.
    */
   opcionaisPorCategoria?: Record<string, GrupoOpcional[]>;
+  /**
+   * [331] `produto_id → grupos de opcional OCULTOS nele` (SSR, sob anon). O modal
+   * mostra os grupos da categoria menos estes. Ausente ⇒ nenhum oculto.
+   */
+  ocultosPorProduto?: OcultosPorProduto;
   /**
    * [262/RN-06] Mapa `produto_id → frase de "quando volta"`, produzido pelo
    * MESMO `projetarCatalogoVitrine` que produziu os produtos (247/254): não
@@ -114,6 +121,7 @@ const CLASSES_GRADE =
 export function SecaoCatalogo({
   secoes,
   opcionaisPorCategoria = {},
+  ocultosPorProduto,
   rotulosVigencia,
   rotulosJanela = {},
   termo,
@@ -150,9 +158,13 @@ export function SecaoCatalogo({
     abrir(
       {
         ...produto,
-        gruposOpcionais: produto.categoria_id
-          ? opcionaisPorCategoria[produto.categoria_id]
-          : undefined,
+        // [331] Grupos da categoria menos os ocultos neste produto — a MESMA
+        // derivação dos modais de promoções e sazonal.
+        gruposOpcionais: gruposOpcionaisParaVitrine(
+          produto,
+          opcionaisPorCategoria,
+          ocultosPorProduto,
+        ),
         // O modal é o único lugar onde a frase de vigência cabe inteira (§4.2).
         rotuloIndisponivel: rotulosVigencia[produto.id],
       },
