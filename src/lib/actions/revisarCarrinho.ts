@@ -40,6 +40,9 @@ import {
   idsPermitidosDoProduto,
 } from "@/lib/utils/opcionais-do-produto";
 import { buscarCupomPorCodigo } from "@/lib/supabase/queries/entregaPagamento";
+import { contarUsosCupomDoCliente } from "@/lib/supabase/queries/pedidos";
+import { resolverClienteDaSessao } from "@/lib/auth/clienteDaSessao";
+import { avaliarCupomPorCliente } from "@/lib/utils/cupomPorCliente";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
 import { avaliarFrequenciaNaLoja } from "@/lib/utils/frequencia";
@@ -297,9 +300,30 @@ export async function revisarCarrinhoAction(
     const subtotal = bases.subtotal;
     const economiaProdutos = arredondar(economiaBruta);
 
-    const veredito = dados.codigo
+    let veredito = dados.codigo
       ? avaliarCupom(dados.codigo, cupom, bases, agora)
       : null;
+
+    // (342) Cupom com limite por cliente: MESMA regra de `criarPedido`, no slot
+    // já existente `valido: false`. Só depois de o cupom passar nas regras
+    // globais (não revela nada de cupom inválido), e a sessão só é lida aqui.
+    if (veredito?.valido && cupom != null && cupom.limite_por_cliente != null) {
+      const clienteId = await resolverClienteDaSessao();
+      const usosDoCliente =
+        clienteId != null
+          ? await contarUsosCupomDoCliente(svc, {
+              lojaId: dados.loja_id,
+              clienteId,
+              codigo: cupom.codigo,
+            })
+          : 0;
+      const v = avaliarCupomPorCliente({
+        limitePorCliente: cupom.limite_por_cliente,
+        clienteId,
+        usosDoCliente,
+      });
+      if (!v.permitido) veredito = { valido: false, mensagem: v.mensagem };
+    }
 
     return {
       ok: true,

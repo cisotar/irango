@@ -2079,6 +2079,7 @@ describe("[159] criarPedido — caracterização pré-paralelização", () => {
       p_tipo_entrega: "entrega",
       p_troco_para: null,
       p_idempotency_key: null,
+      p_cliente_id: null,
     });
   });
 

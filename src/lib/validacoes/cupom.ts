@@ -54,6 +54,10 @@ export const cupomSchema = z
       })
       .nullable(),
     ativo: z.boolean(),
+    // (342) Quantos pedidos cada cliente LOGADO pode fazer com o cupom na loja;
+    // null = sem limite por cliente. Opcional: ausente = coluna não tocada
+    // (forms antigos e o admin). Mesma faixa do CHECK do banco.
+    limite_por_cliente: z.number().int().min(1).max(1000).nullable().optional(),
   })
   .refine(
     (c) => c.tipo !== "percentual" || (c.valor >= 1 && c.valor <= 100),
