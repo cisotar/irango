@@ -6,6 +6,8 @@ import {
   buscarPerfilCliente,
   listarEnderecosCliente,
   registrarUltimoAcessoCliente,
+  listarClientesDaLoja,
+  buscarClienteDaLoja,
 } from "./clientes";
 
 /**
@@ -110,5 +112,59 @@ describe("registrarUltimoAcessoCliente", () => {
     const erro = { code: "42501" };
     const { client } = criarClient({ error: erro });
     await expect(registrarUltimoAcessoCliente(client, ID)).rejects.toBe(erro);
+  });
+});
+
+// ── 346: RPCs da base de clientes do lojista ──────────────────────────────────
+
+function criarClientRpc(resposta: { data?: unknown; error?: unknown }) {
+  const chamadas: { fn: string; args: unknown }[] = [];
+  const client = {
+    rpc(fn: string, args: unknown) {
+      chamadas.push({ fn, args });
+      return Promise.resolve({ data: resposta.data ?? null, error: resposta.error ?? null });
+    },
+  };
+  return { client: client as unknown as SupabaseClient<Database>, chamadas };
+}
+
+describe("listarClientesDaLoja (346)", () => {
+  it("repassa limite/offset sem p_mes quando mes ausente e devolve as linhas", async () => {
+    const linhas = [{ cliente_id: ID, nome: "Pessoa Teste" }];
+    const { client, chamadas } = criarClientRpc({ data: linhas });
+    expect(await listarClientesDaLoja(client, { limite: 50, offset: 100 })).toEqual(linhas);
+    expect(chamadas).toEqual([{ fn: "clientes_da_loja", args: { p_limite: 50, p_offset: 100 } }]);
+  });
+  it("repassa p_mes quando informado", async () => {
+    const { client, chamadas } = criarClientRpc({ data: [] });
+    await listarClientesDaLoja(client, { mes: 3, limite: 50, offset: 0 });
+    expect(chamadas[0].args).toEqual({ p_mes: 3, p_limite: 50, p_offset: 0 });
+  });
+  it("data null → []", async () => {
+    const { client } = criarClientRpc({});
+    expect(await listarClientesDaLoja(client, { limite: 50, offset: 0 })).toEqual([]);
+  });
+  it("propaga o error", async () => {
+    const erro = { code: "42501", message: "x" };
+    const { client } = criarClientRpc({ error: erro });
+    await expect(listarClientesDaLoja(client, { limite: 50, offset: 0 })).rejects.toBe(erro);
+  });
+});
+
+describe("buscarClienteDaLoja (346)", () => {
+  it("chama cliente_da_loja com o id e devolve a primeira linha", async () => {
+    const linha = { cliente_id: ID, nome: "Pessoa Teste" };
+    const { client, chamadas } = criarClientRpc({ data: [linha] });
+    expect(await buscarClienteDaLoja(client, ID)).toEqual(linha);
+    expect(chamadas).toEqual([{ fn: "cliente_da_loja", args: { p_cliente_id: ID } }]);
+  });
+  it("sem linha → null", async () => {
+    const { client } = criarClientRpc({ data: [] });
+    expect(await buscarClienteDaLoja(client, ID)).toBeNull();
+  });
+  it("propaga o error", async () => {
+    const erro = { code: "XX000", message: "x" };
+    const { client } = criarClientRpc({ error: erro });
+    await expect(buscarClienteDaLoja(client, ID)).rejects.toBe(erro);
   });
 });

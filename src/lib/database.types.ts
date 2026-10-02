@@ -1756,6 +1756,36 @@ export type Database = {
         Args: { p_papel: string; p_usuario_id: string }
         Returns: string[]
       }
+      cliente_da_loja: {
+        Args: { p_cliente_id: string }
+        Returns: {
+          aceita_marketing: boolean
+          cliente_id: string
+          dia_aniversario: number
+          mes_aniversario: number
+          nome: string
+          telefone: string
+          total_cancelados: number
+          total_pedidos: number
+          ultimo_pedido_em: string
+          ultimo_pedido_status: string
+        }[]
+      }
+      clientes_da_loja: {
+        Args: { p_limite?: number; p_mes?: number; p_offset?: number }
+        Returns: {
+          aceita_marketing: boolean
+          cliente_id: string
+          dia_aniversario: number
+          mes_aniversario: number
+          nome: string
+          telefone: string
+          total_cancelados: number
+          total_pedidos: number
+          ultimo_pedido_em: string
+          ultimo_pedido_status: string
+        }[]
+      }
       criar_pedido: {
         Args: {
           p_cliente_id: string
