@@ -92,9 +92,12 @@ describe("LIMITES — chaves de rate limit por action", () => {
     expect(Object.keys(LIMITES).sort()).toEqual(
       [
         "cadastro",
+        "cadastroCliente",
         "criarPedido",
         "fretePreview",
         "login",
+        "loginCliente",
+        "recuperacaoCliente",
         "revisarCarrinho",
         "salvarLogoLoja",
         "salvarPerfil",

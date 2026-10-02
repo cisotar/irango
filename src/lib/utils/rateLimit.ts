@@ -26,6 +26,11 @@ export const LIMITES = {
   // cria linha em auth.users). Teto conservador ≤5/min por IP fecha enumeração de
   // conta, email bombing e flood de auth.users (achado pentest área 4).
   cadastro: { limite: 5, janela: "1 m" },
+  // Porta cliente (issue 336, RN-16): mesmos tetos da porta lojista, baldes próprios.
+  cadastroCliente: { limite: 5, janela: "1 m" },
+  loginCliente: { limite: 5, janela: "1 m" },
+  // Recuperação por link (decisão 10 alterada): cada chamada dispara e-mail.
+  recuperacaoCliente: { limite: 5, janela: "1 m" },
   criarPedido: { limite: 10, janela: "1 m" },
   validarCupom: { limite: 20, janela: "1 m" },
   // Balde PRÓPRIO da revisão do carrinho (achado do `auditar`): ela é

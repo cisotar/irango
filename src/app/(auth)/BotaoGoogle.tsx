@@ -1,12 +1,13 @@
 "use client";
 
-import { entrarComGoogle } from "@/lib/auth/googleOAuth";
+import { entrarComGoogle, type OpcoesEntrarComGoogle } from "@/lib/auth/googleOAuth";
 
-export function BotaoGoogle() {
+/** Sem props = porta `(auth)` do lojista; `contexto="cliente"` + `next` = porta cliente (issue 336). */
+export function BotaoGoogle({ contexto, next }: OpcoesEntrarComGoogle = {}) {
   return (
     <button
       type="button"
-      onClick={entrarComGoogle}
+      onClick={() => entrarComGoogle({ contexto, next })}
       className="flex min-h-11 w-full items-center justify-center gap-3 rounded-md border border-[#dadce0] bg-white px-4 py-2 text-sm font-medium text-[#3c4043] shadow-sm transition-colors hover:bg-[#f8f9fa] hover:border-[#c6c6c6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">

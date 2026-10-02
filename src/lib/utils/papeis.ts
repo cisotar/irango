@@ -12,7 +12,8 @@ export function ehPapel(valor: unknown): valor is Papel {
 
 /**
  * Destino padrão pós-login quando não há `next`: admin → `/admin`;
- * lojista → `/painel`; qualquer outro conjunto → `/` (nunca `/painel`).
+ * lojista → `/painel`; cliente → `/minha-conta` (Marco B); nenhum papel → `/`
+ * (nunca `/painel`).
  */
 export function destinoPadraoPorPapel({
   ehAdmin,
@@ -23,5 +24,6 @@ export function destinoPadraoPorPapel({
 }): string {
   if (ehAdmin) return "/admin";
   if (papeis.includes("lojista")) return "/painel";
+  if (papeis.includes("cliente")) return "/minha-conta";
   return "/";
 }
