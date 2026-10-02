@@ -137,7 +137,10 @@ async function chamarCriarPedido(
          p_cupom_codigo     => $12,
          p_itens            => $13::jsonb,
          p_tipo_entrega     => $14,
-         p_troco_para       => $15
+         p_troco_para       => $15,
+         p_idempotency_key  => null,
+         p_frete_a_combinar => false,
+         p_cliente_id       => null
        )`,
       [
         p.loja_id,

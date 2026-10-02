@@ -112,7 +112,7 @@ async function chamarCriarPedido(
   // inofensivo: a resolução de overload cai na assinatura LEGADA de 16 args.
   const arg17 = p.legada16
     ? ""
-    : ",\n         p_idempotency_key  => $16::uuid,\n         p_frete_a_combinar => $17::boolean";
+    : ",\n         p_idempotency_key  => $16::uuid,\n         p_frete_a_combinar => $17::boolean,\n         p_cliente_id       => null";
   return t.asService(async (db) => {
     const r = await db.query<{ pedido_id: string; token_acesso: string }>(
       `select * from public.criar_pedido(
@@ -370,57 +370,55 @@ describe("221 · itens_pedido.preco_original + criar_pedido que grava o snapshot
 
   // ───────────────────────────────────── assinatura: nenhum overload novo (17 args)
 
-  it("[221 · contrato] criar_pedido continua com UMA única versão de 17 argumentos", async () => {
+  it("[221/266 · contrato pós-266] criar_pedido tem UMA única versão, de 18 argumentos", async () => {
+    const r = await t.asService((db) =>
+      db.query<{ nargs: number }>(
+        `select p.pronargs::int as nargs
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'criar_pedido'`,
+      ),
+    );
+    expect(r.rows).toEqual([{ nargs: 18 }]);
+  });
+
+  it("[221/266 · contrato pós-266] as versões de 16 e de 17 args NÃO existem mais", async () => {
     const r = await t.asService((db) =>
       db.query<{ n: number }>(
         `select count(*)::int as n
            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname = 'criar_pedido'
-            and p.pronargs = 17`,
+            and p.pronargs in (16, 17)`,
       ),
     );
-    // Overload novo de 17 args ⇒ "function public.criar_pedido(...) is not unique"
-    // na chamada nomeada — o erro que a issue manda evitar.
-    expect(r.rows[0].n).toBe(1);
+    expect(r.rows[0].n).toBe(0);
   });
 
-  it("[221 · contrato] a assinatura LEGADA de 16 args continua existindo, intocada", async () => {
-    const r = await t.asService((db) =>
-      db.query<{ n: number }>(
-        `select count(*)::int as n
-           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'criar_pedido'
-            and p.pronargs = 16`,
-      ),
-    );
-    expect(r.rows[0].n).toBe(1);
-  });
-
-  it("[221 · armadilha de overload] omitir p_frete_a_combinar cai na LEGADA de 16 args, que NÃO grava preco_original", async () => {
-    // Descoberto na fase RED: com as duas assinaturas vivas, uma chamada de 15
-    // argumentos nomeados NÃO dá "is not unique" — o Postgres resolve para a
-    // legada de 16 (menos defaults a preencher), e ela ignora `preco_original`
-    // silenciosamente, sem erro. A Server Action passa os 17 e por isso está
-    // correta; este teste existe para que a armadilha fique VISÍVEL e para
-    // quebrar o dia em que alguém "simplificar" a chamada.
-    const { pedido_id } = await chamarCriarPedido(t, {
-      loja: c.loja,
-      subtotal: 80.0,
-      total: 80.0,
-      legada16: true,
-      itens: [
-        {
-          produto_id: c.produtoComDesconto,
-          nome: "Feijoada",
-          preco: 80.0,
-          quantidade: 1,
-          preco_original: 100.0,
-        },
-      ],
-    });
-
-    const itens = await itensDoPedido(t, pedido_id);
-    expect(itens[0].preco).toBe(PRECO_PAGO);
-    expect(itens[0].preco_original).toBeNull(); // o par de preços se PERDE por aqui
+  it("[221/266 · contrato pós-266] chamada só com os argumentos antigos (sem p_cliente_id) falha e nada é gravado", async () => {
+    // Antes da 266, omitir argumentos caía em silêncio na legada de 16 args, que
+    // perdia preco_original. Agora não há overload para onde cair: erro explícito.
+    const antes = await t.db.query<{ n: number }>(`select count(*)::int as n from public.pedidos`);
+    let erro: unknown = null;
+    try {
+      await chamarCriarPedido(t, {
+        loja: c.loja,
+        subtotal: 80.0,
+        total: 80.0,
+        legada16: true,
+        itens: [
+          {
+            produto_id: c.produtoComDesconto,
+            nome: "Feijoada",
+            preco: 80.0,
+            quantidade: 1,
+            preco_original: 100.0,
+          },
+        ],
+      });
+    } catch (e) {
+      erro = e;
+    }
+    expect(erro).not.toBeNull();
+    const depois = await t.db.query<{ n: number }>(`select count(*)::int as n from public.pedidos`);
+    expect(depois.rows[0].n).toBe(antes.rows[0].n);
   });
 });

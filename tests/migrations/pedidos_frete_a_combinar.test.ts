@@ -109,7 +109,8 @@ async function criarPedidoV17(p: {
          p_tipo_entrega     => 'entrega',
          p_troco_para       => null,
          p_idempotency_key  => $9,
-         p_frete_a_combinar => $10
+         p_frete_a_combinar => $10,
+         p_cliente_id       => null
        )`,
       [
         c.lojaA,
@@ -241,57 +242,55 @@ describe("180-B expand — RPC criar_pedido v17", () => {
   });
 });
 
-describe("180-B expand — o overload de 16 args sobrevive (janela de deploy)", () => {
-  it("as duas assinaturas coexistem", async () => {
-    const r = await t.db.query<{ n: number }>(
-      `select count(*)::int as n from pg_proc p
-        join pg_namespace n on n.oid = p.pronamespace
-       where n.nspname='public' and p.proname='criar_pedido'`,
+describe("180-B/266 · contrato pós-266 — só a RPC de 18 args existe", () => {
+  it("existe UMA única criar_pedido, de 18 args, com p_cliente_id sem default", async () => {
+    const r = await t.db.query<{ nargs: number; ultimo: string; defaults: number }>(
+      `select p.pronargs::int as nargs, (p.proargnames)[18] as ultimo, p.pronargdefaults::int as defaults
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname='public' and p.proname='criar_pedido'`,
     );
-    expect(r.rows[0].n).toBe(2);
+    expect(r.rows).toEqual([{ nargs: 18, ultimo: "p_cliente_id", defaults: 0 }]);
   });
 
-  it("chamada de 16 args (código ANTIGO) continua resolvendo sem ambiguidade", async () => {
-    // Se `p_frete_a_combinar` tivesse DEFAULT, isto falharia com
-    // "function public.criar_pedido(...) is not unique" — exatamente o código
-    // antigo que a fase expand precisa manter vivo.
-    const r = await t.asService((db) =>
-      db.query<{ pedido_id: string }>(
-        `select * from public.criar_pedido(
-           p_loja_id => $1, p_nome_cliente => 'Antigo', p_telefone_cliente => null,
-           p_endereco_entrega => $2::jsonb, p_forma_pagamento => 'pix', p_observacoes => null,
-           p_subtotal => 50, p_taxa_entrega => 9, p_desconto => 0, p_total => 59,
-           p_cupom_id => null, p_cupom_codigo => null, p_itens => $3::jsonb,
-           p_tipo_entrega => 'entrega', p_troco_para => null, p_idempotency_key => null
-         )`,
-        [
-          c.lojaA,
-          JSON.stringify({ cep: "01000-000", rua: "R", numero: "1", bairro: "Centro" }),
-          JSON.stringify([{ produto_id: c.produtoA, nome: "Pizza", preco: 25, quantidade: 2 }]),
-        ],
-      ),
-    );
-    const pedidoId = r.rows[0].pedido_id;
-    const lido = await t.asService((db) =>
-      db.query<{ frete_a_combinar: boolean; taxa_entrega: string }>(
-        `select frete_a_combinar, taxa_entrega from public.pedidos where id=$1`,
-        [pedidoId],
-      ),
-    );
-    // a função antiga não conhece a coluna: cai no DEFAULT false, coerente com o CHECK.
-    expect(lido.rows[0].frete_a_combinar).toBe(false);
-    expect(Number(lido.rows[0].taxa_entrega)).toBe(9);
+  it("chamadas de 16 args (código ANTIGO) e de 17 args falham e não gravam pedido", async () => {
+    const antes = await t.db.query<{ n: number }>(`select count(*)::int as n from public.pedidos`);
+    for (const extra of ["", ", p_frete_a_combinar => false"]) {
+      let erro: unknown = null;
+      try {
+        await t.asService((db) =>
+          db.query(
+            `select * from public.criar_pedido(
+               p_loja_id => $1, p_nome_cliente => 'Antigo', p_telefone_cliente => null,
+               p_endereco_entrega => $2::jsonb, p_forma_pagamento => 'pix', p_observacoes => null,
+               p_subtotal => 50, p_taxa_entrega => 9, p_desconto => 0, p_total => 59,
+               p_cupom_id => null, p_cupom_codigo => null, p_itens => $3::jsonb,
+               p_tipo_entrega => 'entrega', p_troco_para => null, p_idempotency_key => null${extra}
+             )`,
+            [
+              c.lojaA,
+              JSON.stringify({ cep: "01000-000", rua: "R", numero: "1", bairro: "Centro" }),
+              JSON.stringify([{ produto_id: c.produtoA, nome: "Pizza", preco: 25, quantidade: 2 }]),
+            ],
+          ),
+        );
+      } catch (e) {
+        erro = e;
+      }
+      expect(erro, `extra=${extra}`).not.toBeNull();
+    }
+    const depois = await t.db.query<{ n: number }>(`select count(*)::int as n from public.pedidos`);
+    expect(depois.rows[0].n).toBe(antes.rows[0].n);
   });
 
-  it("anon e authenticated continuam sem EXECUTE na RPC de 17 args", async () => {
+  it("anon e authenticated sem EXECUTE na RPC de 18 args; service_role com", async () => {
     const r = await t.db.query<{ anon: boolean; auth: boolean; svc: boolean }>(
       `select has_function_privilege('anon',   p.oid, 'execute') as anon,
               has_function_privilege('authenticated', p.oid, 'execute') as auth,
               has_function_privilege('service_role',  p.oid, 'execute') as svc
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname='public' and p.proname='criar_pedido' and p.pronargs = 17`,
+        where n.nspname='public' and p.proname='criar_pedido' and p.pronargs = 18`,
     );
-    expect(r.rows[0]).toEqual({ anon: false, auth: false, svc: true });
+    expect(r.rows).toEqual([{ anon: false, auth: false, svc: true }]);
   });
 });
 
