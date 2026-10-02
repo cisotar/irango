@@ -548,3 +548,103 @@ describe("341 [C4-4] expurgar_pedidos_antigos — final > 5 anos, cliente ou con
     expect(r.rows[0].n).toBe(0);
   });
 });
+
+// ===========================================================================
+// P30 — trava de 7 dias (altera decisão 16) e PII órfã via trigger
+// ===========================================================================
+const CLI_6D = "c3430000-0000-4000-8000-000000000061";
+const CLI_8D = "c3430000-0000-4000-8000-000000000081";
+const INAT_8D = "c3430000-0000-4000-8000-0000000000e8";
+const CLI_CASC = "c3430000-0000-4000-8000-0000000000c5";
+
+const obsItens = (t: TestDb, pedido: string) =>
+  n(t, `select count(*)::int as n from public.itens_pedido where pedido_id = $1 and observacao is not null`, [pedido]);
+
+describe("P30 [7d] pedido em aberto só bloqueia nos últimos 7 dias", () => {
+  let t: TestDb;
+  let p6: string;
+  let p8: string;
+  let pInat: string;
+  beforeAll(async () => {
+    t = await novoDbC();
+    await criarUsuarios(t, [DONO_C, CLI_6D, CLI_8D, INAT_8D]);
+    const loja = await lojaC(t, "p30-7d");
+    for (const c of [CLI_6D, CLI_8D, INAT_8D]) await criarPerfil(t, c);
+    p6 = await pedidoC(t, loja, CLI_6D, "pendente");
+    p8 = await pedidoC(t, loja, CLI_8D, "pendente");
+    pInat = await pedidoC(t, loja, INAT_8D, "pendente");
+    await t.db.query(`update public.pedidos set criado_em = now() - interval '6 days' where id = $1`, [p6]);
+    await t.db.query(`update public.pedidos set criado_em = now() - interval '8 days' where id = any($1::uuid[])`, [
+      [p8, pInat],
+    ]);
+    await t.db.query(`update public.clientes set ultimo_acesso_em = now() - interval '25 months' where id = $1`, [
+      INAT_8D,
+    ]);
+  });
+  afterAll(async () => t?.close());
+
+  it("[7d-a] pendente de 6 dias → pedido_em_aberto", async () => {
+    const e = await erroDe(t.asService((db) => db.query(`select public.anonimizar_cliente($1)`, [CLI_6D])));
+    expect(e?.message ?? "").toContain("pedido_em_aberto");
+    expect(await perfis(t, CLI_6D)).toBe(1);
+  });
+
+  it("[7d-b] pendente de 8 dias → passa, 'Cliente removido', valores intactos", async () => {
+    await t.asService((db) => db.query(`select public.anonimizar_cliente($1)`, [CLI_8D]));
+    const l = (await linhaC(t, p8))!;
+    expect(l.nome_cliente).toBe("Cliente removido");
+    expect(l.telefone_cliente).toBeNull();
+    expect(l.endereco_entrega).toBeNull();
+    expect(l.observacoes).toBeNull();
+    expect(l.cliente_id).toBeNull();
+    expect(Number(l.subtotal)).toBe(60);
+    expect(Number(l.desconto)).toBe(5);
+    expect(await obsItens(t, p8)).toBe(0);
+    expect(await perfis(t, CLI_8D)).toBe(0);
+  });
+
+  it("[7d-c] anonimizar_clientes_inativos não pula pendente de 8 dias", async () => {
+    await t.asService((db) => db.query(`select public.anonimizar_clientes_inativos()`));
+    expect(await perfis(t, INAT_8D)).toBe(0);
+    expect((await linhaC(t, pInat))!.nome_cliente).toBe("Cliente removido");
+  });
+});
+
+describe("P30 [orfa] delete de clientes fora da RPC anonimiza os pedidos (trigger)", () => {
+  let t: TestDb;
+  let p: string;
+  beforeAll(async () => {
+    t = await novoDbC();
+    await criarUsuarios(t, [DONO_C, CLI_CASC]);
+    const loja = await lojaC(t, "p30-orfa");
+    await criarPerfil(t, CLI_CASC);
+    p = await pedidoC(t, loja, CLI_CASC, "em_preparo");
+    await t.db.query(`delete from auth.users where id = $1`, [CLI_CASC]);
+  });
+  afterAll(async () => t?.close());
+
+  it("[orfa-a] pedido anonimizado, cliente_id null, valores intactos", async () => {
+    const l = (await linhaC(t, p))!;
+    expect(l.nome_cliente).toBe("Cliente removido");
+    expect(l.telefone_cliente).toBeNull();
+    expect(l.endereco_entrega).toBeNull();
+    expect(l.observacoes).toBeNull();
+    expect(l.cliente_id).toBeNull();
+    expect(Number(l.subtotal)).toBe(60);
+    expect(await obsItens(t, p)).toBe(0);
+  });
+
+  it("[orfa-b] função do trigger sem EXECUTE para anon/authenticated/public", async () => {
+    const r = await t.db.query<{ fn: string }>(
+      `select p.oid::regprocedure::text as fn from pg_trigger g join pg_proc p on p.oid = g.tgfoid
+        where g.tgrelid = 'public.clientes'::regclass and not g.tgisinternal and g.tgtype & 8 = 8`,
+    );
+    expect(r.rows.length).toBeGreaterThan(0);
+    for (const { fn } of r.rows) {
+      for (const role of ["anon", "authenticated", "public"]) {
+        const x = await t.db.query<{ ok: boolean }>(`select has_function_privilege($1, $2, 'EXECUTE') as ok`, [role, fn]);
+        expect(x.rows[0].ok).toBe(false);
+      }
+    }
+  });
+});

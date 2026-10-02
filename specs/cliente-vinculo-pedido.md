@@ -312,7 +312,7 @@ Detalhes:
 | RN-C11 | Cupom da loja X nunca vale na loja Y | **Server Action** (`buscarCupomPorCodigo(svc, loja_id, …)`, `pedido.ts:500`) + contagem filtrada por `loja_id` |
 | RN-C12 | Idempotência: retry com a mesma `idempotency_key` devolve o mesmo pedido e não conta outro uso | **RPC** (dedupe antes da trava, sem mudança) |
 | RN-C13 | Status final = `entregue` ou `cancelado`. Os únicos estados sem aresta de saída na máquina de status (`20260930130000:51-59`) | **Banco** |
-| RN-C14 | Exclusão de conta é recusada com pedido em status não final (decisão 16). A checagem fica dentro de `anonimizar_cliente` | **Banco** (função) + Server Action (mensagem) |
+| RN-C14 | Exclusão de conta é recusada com pedido em status não final criado nos últimos 7 dias (decisão 16, ajustada em 2026-10-03); pedido em aberto mais antigo é anonimizado. Trigger `BEFORE DELETE` em `clientes` anonimiza os pedidos por qualquer caminho. A checagem fica dentro de `anonimizar_cliente` | **Banco** (função) + Server Action (mensagem) |
 | RN-C15 | Anonimização: `nome_cliente = 'Cliente removido'`; telefone, endereço, observações e `cliente_id` ficam null; valores, itens e status intactos; faturamento histórico não muda (decisão 3) | **Banco** (`anonimizar_cliente`, `service_role`) |
 | RN-C16 | Pedido em status final com mais de 5 anos pode ser expurgado por `expurgar_pedidos_antigos()`, que não tem agendador (decisão 4) | **Banco** (função) |
 | RN-C17 | O "Entrar" do checkout volta ao checkout pelo `next` sanitizado. O carrinho sobrevive na mesma aba (decisão 21) | Servidor (`sanitizarNext`) + cliente (`sessionStorage`) |
