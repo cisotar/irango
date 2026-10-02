@@ -22,8 +22,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CampoTelefone } from "@/components/cliente/CampoTelefone";
 import { BlocoEndereco } from "@/components/cliente/BlocoEndereco";
+import { AlertaErro } from "@/components/cliente/Alerta";
+import { MSG_CAMPO } from "@/components/cliente/mensagens";
 
-const MSG_CAMPO = "Preencha este campo corretamente.";
 const MSG_DADOS = "Verifique os dados informados.";
 const MSG_ACEITE = "Aceite os termos para continuar.";
 
@@ -135,14 +136,7 @@ export function FormPerfilCliente(props: Props) {
         </p>
       )}
 
-      {erroGeral && (
-        <div
-          role="alert"
-          className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          ⚠ {erroGeral}
-        </div>
-      )}
+      {erroGeral && <AlertaErro>{erroGeral}</AlertaErro>}
 
       {/* FormEndereco tem o próprio <form>: o bloco de endereço fica FORA deste
           form (sem form aninhado) e o botão final aponta para ele via `form=`. */}

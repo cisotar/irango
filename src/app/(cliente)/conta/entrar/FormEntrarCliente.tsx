@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertaErro } from "@/components/cliente/Alerta";
+import { MSG_CAMPO } from "@/components/cliente/mensagens";
 import { CampoSenha } from "@/components/cliente/CampoSenha";
 import { SeparadorOu } from "@/components/cliente/Separador";
 import { comNext } from "@/components/cliente/rotas";
@@ -47,7 +48,7 @@ export function FormEntrarCliente({
       for (const issue of parsed.error.issues) {
         const campo = issue.path[0];
         if (campo === "email" || campo === "senha") {
-          setError(campo, { message: "Preencha este campo corretamente." });
+          setError(campo, { message: MSG_CAMPO });
         }
       }
       return;

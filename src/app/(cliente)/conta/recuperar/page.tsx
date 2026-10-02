@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
+import { ehSessaoDeRecuperacao } from "@/lib/utils/sessaoRecuperacao";
 import { TopoConta } from "@/components/cliente/TopoConta";
 import { AlertaErro } from "@/components/cliente/Alerta";
 import { comNext } from "@/components/cliente/rotas";
@@ -16,15 +17,6 @@ import { FormNovaSenhaCliente } from "./FormNovaSenhaCliente";
 
 const MSG_LINK = "Link inválido ou expirado. Peça um novo link.";
 
-function ehRecuperacao(amr: unknown): boolean {
-  if (!Array.isArray(amr)) return false;
-  return amr.some((e) =>
-    typeof e === "string"
-      ? e === "recovery"
-      : typeof e === "object" && e !== null && (e as { method?: unknown }).method === "recovery",
-  );
-}
-
 /** UX: a action repete a checagem; aqui só decide se o formulário aparece. */
 async function temSessaoDeRecuperacao(): Promise<boolean> {
   try {
@@ -32,7 +24,7 @@ async function temSessaoDeRecuperacao(): Promise<boolean> {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) return false;
     const { data: claims, error: erroClaims } = await supabase.auth.getClaims();
-    return !erroClaims && !!claims && ehRecuperacao(claims.claims.amr);
+    return !erroClaims && !!claims && ehSessaoDeRecuperacao(claims.claims.amr);
   } catch (e) {
     console.error("[recuperarCliente] sessao", e instanceof Error ? e.name : "erro");
     return false;

@@ -18,14 +18,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AlertaErro } from "@/components/cliente/Alerta";
+import { mensagemErroSenha } from "@/components/cliente/mensagens";
 import { CampoSenha } from "@/components/cliente/CampoSenha";
 import { SeparadorOu } from "@/components/cliente/Separador";
 import { comNext } from "@/components/cliente/rotas";
@@ -39,7 +40,7 @@ const validarEmail = (v: string) =>
   schemaCadastroCliente.shape.email.safeParse(v).success || "Informe um e-mail válido.";
 const validarSenha = (v: string) =>
   schemaCadastroCliente.shape.senha.safeParse(v).success ||
-  (v.length < 8 ? "Mínimo de 8 caracteres." : "Preencha este campo corretamente.");
+  mensagemErroSenha(v);
 
 const mensagemEnviado = (email: string) =>
   `Se ${email} estiver cadastrado, receberá um link para confirmar.`;
@@ -150,22 +151,22 @@ export function FormCadastroCliente({ next }: { next: string | undefined }) {
         </p>
       </CardContent>
 
-      <AlertDialog
+      <Dialog
         open={modalAberto}
         onOpenChange={(abrir) => {
-          // Esc / clique fora: volta ao formulário sem enviar.
+          // Dialog (não AlertDialog): Esc / clique fora volta ao formulário sem enviar.
           if (!abrir && !enviando) setModalAberto(false);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Tem certeza que quer usar essa forma de cadastro?</AlertDialogTitle>
-            <AlertDialogDescription>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Tem certeza que quer usar essa forma de cadastro?</DialogTitle>
+            <DialogDescription>
               Prefira cadastrar-se com sua conta Google: é mais seguro, mais rápido e mais prático.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+            </DialogDescription>
+          </DialogHeader>
           {/* Google primeiro no DOM: recebe o foco inicial e fica em cima no mobile. */}
-          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
+          <DialogFooter className="flex-col gap-2 p-0 sm:flex-col">
             <BotaoGoogle contexto="cliente" next={next} rotulo={ROTULO_GOOGLE} />
             <Button
               type="button"
@@ -177,9 +178,9 @@ export function FormCadastroCliente({ next }: { next: string | undefined }) {
               {enviando && <Loader2 className="animate-spin" aria-hidden="true" />}
               Prosseguir com e-mail
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

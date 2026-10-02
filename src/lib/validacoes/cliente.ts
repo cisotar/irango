@@ -13,6 +13,9 @@ import { schemaEnderecoCheckout } from "@/lib/validacoes/checkout";
 
 export const MENSAGEM_IDADE_MINIMA = "Você precisa ter 18 anos ou mais para criar uma conta.";
 
+/** Teto de endereços por cliente (o trigger do banco é a barreira real). */
+export const MAX_ENDERECOS = 3;
+
 const IDADE_MINIMA = 18;
 const IDADE_MAXIMA = 120;
 

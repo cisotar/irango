@@ -4,16 +4,13 @@
 // Papéis lidos da tabela (RLS), nunca do JWT.
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
-import { buscarPapeisDoUsuario } from "@/lib/supabase/queries/papeis";
-import { buscarPerfilCliente } from "@/lib/supabase/queries/clientes";
 import { ehAdminSaaS } from "@/lib/auth/admin";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
 import { TopoConta } from "@/components/cliente/TopoConta";
 import { FormPerfilCliente } from "@/components/cliente/FormPerfilCliente";
 import { comNext } from "@/components/cliente/rotas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { primeiro } from "../sessao";
+import { lerSessaoCliente, primeiro } from "../sessao";
 
 /** Nome vindo do Google (pré-preenchimento editável); nunca autoritativo. */
 function nomeDoProvedor(user: User): string {
@@ -39,19 +36,11 @@ export default async function CompletarPerfilPage({
 
   let estado: Estado;
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) {
-      estado = { tipo: "sem-sessao" };
-    } else if (!data.user.email_confirmed_at) {
-      await supabase.auth.signOut();
-      estado = { tipo: "nao-confirmado" };
+    const sessao = await lerSessaoCliente();
+    if (sessao.tipo !== "ok") {
+      estado = sessao;
     } else {
-      const user = data.user;
-      const [papeis, perfil] = await Promise.all([
-        buscarPapeisDoUsuario(supabase, user.id),
-        buscarPerfilCliente(supabase, user.id),
-      ]);
+      const { user, papeis, perfil } = sessao;
       estado =
         papeis.includes("cliente") && perfil
           ? { tipo: "completo" }

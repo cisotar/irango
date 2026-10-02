@@ -13,7 +13,11 @@ import {
   removerEnderecoCliente,
   salvarEnderecoCliente,
 } from "@/lib/actions/cliente";
-import { schemaEnderecoCliente, type EntradaEnderecoCliente } from "@/lib/validacoes/cliente";
+import {
+  MAX_ENDERECOS,
+  schemaEnderecoCliente,
+  type EntradaEnderecoCliente,
+} from "@/lib/validacoes/cliente";
 import type { EnderecoCliente } from "@/lib/supabase/queries/clientes";
 import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
 import { BlocoEndereco } from "@/components/cliente/BlocoEndereco";
@@ -30,7 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const MAX_ENDERECOS = 3;
+const NOVO = "novo";
 const ATRASO_AUTOSAVE_MS = 800;
 
 type Status = "ocioso" | "salvando" | "salvo";
@@ -67,23 +71,39 @@ function useAutosave(inicial: string | null, salvar: (e: EntradaEnderecoCliente)
     [],
   );
 
+  // Salva o valor pendente mais recente; se uma edição chega com salvamento em
+  // andamento, fica guardada e é salva quando ele terminar ("Salvo" só depois
+  // do último valor persistido).
+  const pendente = useRef<{ e: EntradaEnderecoCliente; k: string } | null>(null);
+
+  const drenar = useCallback(async () => {
+    if (ocupado.current) return;
+    ocupado.current = true;
+    let ok = true;
+    while (pendente.current) {
+      const { e, k } = pendente.current;
+      pendente.current = null;
+      if (k === ultimo.current) continue;
+      setStatus("salvando");
+      ok = await salvar(e);
+      if (ok) ultimo.current = k;
+    }
+    ocupado.current = false;
+    setStatus(ok ? "salvo" : "ocioso");
+  }, [salvar]);
+
   const aoMudar = useCallback(
     (e: EntradaEnderecoCliente | null) => {
       if (timer.current) clearTimeout(timer.current);
       if (!e || !schemaEnderecoCliente.safeParse(e).success) return;
       const k = chave(e);
-      if (k === ultimo.current) return;
-      timer.current = setTimeout(async () => {
-        if (ocupado.current) return;
-        ocupado.current = true;
-        setStatus("salvando");
-        const ok = await salvar(e);
-        ocupado.current = false;
-        if (ok) ultimo.current = k;
-        setStatus(ok ? "salvo" : "ocioso");
+      if (k === ultimo.current && !ocupado.current) return;
+      timer.current = setTimeout(() => {
+        pendente.current = { e, k };
+        void drenar();
       }, ATRASO_AUTOSAVE_MS);
     },
-    [salvar],
+    [drenar],
   );
 
   return { status, aoMudar };
@@ -105,7 +125,7 @@ function StatusAutosave({ status }: { status: Status }) {
 
 export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) {
   // Só um bloco de edição por vez (FormEndereco usa ids fixos).
-  const [editando, setEditando] = useState<string | "novo" | null>(null);
+  const [editando, setEditando] = useState<string | null>(null); // id do endereço ou NOVO
   const [removendo, setRemovendo] = useState<EnderecoCliente | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const fecharNovo = useCallback(() => setEditando(null), []);
@@ -204,7 +224,7 @@ export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) 
         </p>
       )}
 
-      {editando === "novo" && total < MAX_ENDERECOS && (
+      {editando === NOVO && total < MAX_ENDERECOS && (
         <Card>
           <CardContent>
             <NovoEndereco aoCriar={fecharNovo} />
@@ -213,14 +233,14 @@ export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) 
       )}
 
       {total >= MAX_ENDERECOS ? (
-        <p className="text-sm text-texto-muted">Você pode ter até 3 endereços.</p>
+        <p className="text-sm text-texto-muted">Você pode ter até {MAX_ENDERECOS} endereços.</p>
       ) : (
-        editando !== "novo" && (
+        editando !== NOVO && (
           <Button
             type="button"
             variant="outline"
             className="min-h-11 w-full"
-            onClick={() => setEditando("novo")}
+            onClick={() => setEditando(NOVO)}
           >
             <Plus aria-hidden="true" />
             Adicionar endereço
@@ -241,6 +261,7 @@ export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) 
                 <AlertDialogTitle>Remover “{removendo.rotulo}”?</AlertDialogTitle>
                 <AlertDialogDescription>
                   {removendo.rua}, {removendo.numero} — {removendo.bairro}.
+                  {removendo.padrao && " O endereço mais antigo passa a ser o padrão."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -297,13 +318,17 @@ function EdicaoEndereco({ endereco }: { endereco: EnderecoCliente }) {
 }
 
 function NovoEndereco({ aoCriar }: { aoCriar: () => void }) {
+  // Já criado: o bloco está fechando; edição pendente não cria um 2º endereço.
+  const criado = useRef(false);
   const salvar = useCallback(
     async (e: EntradaEnderecoCliente) => {
+      if (criado.current) return true;
       const r = await salvarEnderecoCliente(e);
       if (!r.ok) {
         toast.error(r.erro);
         return false;
       }
+      criado.current = true;
       aoCriar();
       return true;
     },

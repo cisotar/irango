@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertaErro } from "@/components/cliente/Alerta";
 import { CampoSenha } from "@/components/cliente/CampoSenha";
+import { mensagemErroSenha } from "@/components/cliente/mensagens";
 
 type Valores = { senha: string; confirmacao: string };
 
@@ -34,11 +35,12 @@ export function FormNovaSenhaCliente({ next }: { next: string | undefined }) {
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         const campo = issue.path[0];
-        if (campo === "confirmacao") setError("confirmacao", { message: issue.message });
-        if (campo === "senha") setError("senha", {
-            message:
-              valores.senha.length < 8 ? "Mínimo de 8 caracteres." : "Preencha este campo corretamente.",
-          });
+        if (campo === "confirmacao") {
+          setError("confirmacao", { message: issue.message });
+        }
+        if (campo === "senha") {
+          setError("senha", { message: mensagemErroSenha(valores.senha) });
+        }
       }
       return;
     }

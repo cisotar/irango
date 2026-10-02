@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { listarEnderecosCliente } from "@/lib/supabase/queries/clientes";
+import { MAX_ENDERECOS } from "@/lib/validacoes/cliente";
 import { ehAdminSaaS } from "@/lib/auth/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormPerfilCliente } from "@/components/cliente/FormPerfilCliente";
@@ -61,7 +62,7 @@ export default async function MinhaContaPage() {
             <div>
               <p className="font-medium text-texto">Endereços</p>
               {totalEnderecos !== null && (
-                <p className="text-sm text-texto-muted">{totalEnderecos} de 3 cadastrados</p>
+                <p className="text-sm text-texto-muted">{totalEnderecos} de {MAX_ENDERECOS} cadastrados</p>
               )}
             </div>
             <ChevronRight className="size-5 text-texto-muted" aria-hidden="true" />

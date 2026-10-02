@@ -3,8 +3,8 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { buscarPapeisDoUsuario } from "@/lib/supabase/queries/papeis";
-import { buscarPerfilCliente, type PerfilCliente } from "@/lib/supabase/queries/clientes";
+import type { PerfilCliente } from "@/lib/supabase/queries/clientes";
+import { lerSessaoCliente } from "../conta/sessao";
 import type { Papel } from "@/lib/utils/papeis";
 
 export type ClienteAutenticado = {
@@ -24,21 +24,9 @@ type Leitura =
 /** Uma leitura por requisição (layout + página compartilham via `cache`). */
 const lerCliente = cache(async (): Promise<Leitura> => {
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) return { tipo: "sem-sessao" };
-    const user = data.user;
-    if (!user.email_confirmed_at) {
-      // Decisão 18: encerra a sessão. Em Server Component os cookies podem não
-      // ser regravados, mas o GoTrue revoga a sessão (getUser passa a falhar).
-      await supabase.auth.signOut();
-      return { tipo: "nao-confirmado" };
-    }
-    // Papéis SEMPRE da tabela (RLS), nunca do JWT/metadata.
-    const [papeis, perfil] = await Promise.all([
-      buscarPapeisDoUsuario(supabase, user.id),
-      buscarPerfilCliente(supabase, user.id),
-    ]);
+    const sessao = await lerSessaoCliente();
+    if (sessao.tipo !== "ok") return sessao;
+    const { supabase, user, papeis, perfil } = sessao;
     if (!papeis.includes("cliente") || !perfil) return { tipo: "incompleto" };
     return { tipo: "ok", supabase, user, perfil, papeis };
   } catch (e) {

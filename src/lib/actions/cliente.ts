@@ -20,6 +20,7 @@ import {
   schemaPerfilCliente,
   schemaSairCliente,
   schemaSalvarEnderecoCliente,
+  MAX_ENDERECOS,
 } from "@/lib/validacoes/cliente";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
@@ -43,7 +44,6 @@ const MSG_EXCLUSAO = "Não foi possível excluir a conta. Tente novamente.";
 
 const ROTA_MINHA_CONTA = "/minha-conta";
 const ROTA_ENDERECOS = "/minha-conta/enderecos";
-const MAX_ENDERECOS = 3;
 
 type ErroPostgrest = { code?: string; message?: string };
 const comoErro = (e: unknown): ErroPostgrest =>

@@ -22,6 +22,7 @@ import {
 } from "@/lib/validacoes/cliente";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
+import { ehSessaoDeRecuperacao } from "@/lib/utils/sessaoRecuperacao";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { atribuirPapelInicial } from "@/lib/supabase/queries/papeis";
@@ -234,16 +235,6 @@ export async function reenviarConfirmacaoCliente(payload: unknown): Promise<Resu
     console.error("[reenviarConfirmacaoCliente]", e instanceof Error ? e.name : "erro");
   }
   return { ok: true };
-}
-
-/** Sessão aberta por link de recuperação: claim `amr` (JWT verificado) contém `recovery`. */
-function ehSessaoDeRecuperacao(amr: unknown): boolean {
-  if (!Array.isArray(amr)) return false;
-  return amr.some((e) =>
-    typeof e === "string"
-      ? e === "recovery"
-      : typeof e === "object" && e !== null && (e as { method?: unknown }).method === "recovery",
-  );
 }
 
 export async function redefinirSenhaCliente(payload: unknown): Promise<ResultadoNovaSenhaCliente> {
