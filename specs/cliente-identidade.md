@@ -450,3 +450,21 @@ mesmo papel, sem tomada; conta e-mail não confirmada de terceiro → GoTrue rem
 ## Perguntas ao usuário
 
 Nenhuma — respondidas em 2026-10-02.
+
+## Decisões do usuário após o P18 (aprovadas)
+
+- **A1** — Conta só-cliente que abre `/painel` vai para `/minha-conta` (teste [332-21] passa a esperar `/minha-conta`).
+- **B2** — Cadastro por e-mail responde sempre a mesma mensagem neutra, exista ou não a conta; recuperação também com resposta e tempo neutros (sem revelar se o e-mail existe).
+- **C1** — Link de recuperação inválido/expirado com `contexto=cliente` → `/conta/recuperar` com "Link inválido ou expirado. Peça um novo link."
+- **D1** — "Continuar com Google" só nas telas do cliente; login do lojista inalterado.
+- **D2** — Botão de envio por e-mail em estilo secundário (contorno); Google é a ação principal.
+- **D3** — Erros: Google → "Não foi possível entrar com o Google. Tente novamente."; sessão → "Sua sessão expirou. Entre novamente."; link de recuperação → "Link inválido ou expirado. Peça um novo link."
+- **D4** — Tela pós-cadastro: "Se <e-mail digitado> estiver cadastrado, receberá um link para confirmar." Botão "Reenviar link" liberado 60 s após o envio (mesmo intervalo mínimo do Supabase), com rate limit no servidor.
+- **D5** — Mensagem de e-mail já cadastrado substituída pela mensagem neutra (B2).
+- **D6** — "Aceito os Termos de Uso e a Política de Privacidade" · "Quero receber promoções por e-mail" · erro: "Aceite os termos para continuar."
+- **D7** — "Voltar para <loja>" só em `/conta/*`.
+- **D8** — Excluir conta: aviso ("Excluir sua conta? Seus dados e endereços serão apagados. Isso não pode ser desfeito." / lojista ou admin: "Excluir seu perfil de cliente? Sua conta e o acesso ao painel continuam.") e confirmação digitando a palavra **EXCLUIR**, validada também no servidor.
+- **D9** — No último endereço, "Remover" desabilitado com "Mantenha pelo menos um endereço."
+- **D10** — Editar/adicionar endereço no próprio card, com salvamento automático.
+- **E1** — Termos/Privacidade: rascunho do agente, mantendo o aviso "revisar com jurídico".
+- **Pendentes:** D11 (títulos "proposta" do mockup) e D12 ("Sair" no topo de `/minha-conta`, sem `next` → `/`).
