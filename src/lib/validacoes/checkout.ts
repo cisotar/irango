@@ -19,7 +19,7 @@ const schemaItemCheckout = z
   })
   .strict();
 
-const schemaEnderecoCheckout = z
+export const schemaEnderecoCheckout = z
   .object({
     cep: z.string(),
     rua: z.string(),

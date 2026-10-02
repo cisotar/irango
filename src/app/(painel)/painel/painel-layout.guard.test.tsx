@@ -118,7 +118,7 @@ describe("painel/layout — gate de papel (issue 332, RED)", () => {
 
     await expect(Layout({ children: CHILDREN })).rejects.toThrow(NEXT_REDIRECT);
 
-    expect(redirect).toHaveBeenCalledWith("/");
+    expect(redirect).toHaveBeenCalledWith("/minha-conta");
     expect(garantirLojaDoDono).not.toHaveBeenCalled();
   });
 

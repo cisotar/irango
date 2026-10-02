@@ -6,6 +6,8 @@
 
 Permite que o **lojista** redefina a própria senha sem intervenção do suporte, usando o fluxo nativo do **Supabase Auth** (`resetPasswordForEmail` + `updateUser`). Resolve o problema de recuperação de acesso quando o lojista esquece a senha — hoje não existe fluxo, a única alternativa é criar outra conta (bloqueada por RN-01: 1 conta = 1 loja) ou pedir suporte manual.
 
+> **Cruzamento com `cliente-identidade`:** lojista e cliente recuperam a senha por **link** (`resetPasswordForEmail`), nunca por código. O cliente tem tela, Server Actions e rate limit próprios (`/conta/recuperar`, `solicitarRecuperacaoCliente`/`redefinirSenhaCliente`), descritos em `specs/cliente-identidade.md`; o fluxo e o template do lojista não mudam. A frase abaixo sobre cliente final sem login vale para a vitrine, não para a conta de cliente.
+
 Vive no **mundo auth** (`src/app/(auth)/`), ao lado de `login` e `cadastro`. Só afeta contas de lojista (Supabase Auth email/senha). Cliente final da vitrine não tem login (ver `architecture.md` §4) — está fora do escopo. Contas criadas via Google OAuth não têm senha própria; o fluxo trata isso sem revelar o método de login (anti-enumeração).
 
 O SaaS não processa pagamento e esta feature não toca valor monetário — o eixo de segurança aqui é **identidade, token e anti-enumeração**, não recálculo de preço.

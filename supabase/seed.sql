@@ -374,3 +374,50 @@ values
 on conflict (id) do nothing;
 
 commit;
+
+-- ── clientes finais fictícios (issue 335) ────────────────────────────────────
+-- seed de desenvolvimento, não usar em produção. Cliente A: 3 endereços;
+-- cliente B: 1 endereço. Nomes, e-mails (.local), telefones e endereços fictícios.
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at
+)
+values
+  ('00000000-0000-4000-8000-000000000201', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'cliente.a.teste@irango.local',
+   crypt('senha-de-teste-123', gen_salt('bf')), now(), now(), now()),
+  ('00000000-0000-4000-8000-000000000202', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'cliente.b.teste@irango.local',
+   crypt('senha-de-teste-123', gen_salt('bf')), now(), now(), now())
+on conflict (id) do nothing;
+
+insert into public.papeis_usuario (usuario_id, papel)
+values
+  ('00000000-0000-4000-8000-000000000201', 'cliente'),
+  ('00000000-0000-4000-8000-000000000202', 'cliente')
+on conflict do nothing;
+
+insert into public.clientes (
+  id, nome, telefone, data_nascimento, aceita_marketing,
+  consentimento_em, consentimento_versao
+)
+values
+  ('00000000-0000-4000-8000-000000000201', 'Cliente A Teste', '(00) 90000-0001',
+   '1990-05-10', false, now(), 'seed-teste'),
+  ('00000000-0000-4000-8000-000000000202', 'Cliente B Teste', '(00) 90000-0002',
+   '1985-11-20', true, now(), 'seed-teste')
+on conflict (id) do nothing;
+
+insert into public.clientes_enderecos (
+  id, cliente_id, rotulo, cep, rua, numero, bairro, cidade, uf, complemento, padrao
+)
+values
+  ('00000000-0000-4000-8000-000000000211', '00000000-0000-4000-8000-000000000201',
+   'Casa', '00000-000', 'Rua de Teste', '1', 'Centro', 'Cidade Teste', 'SP', null, true),
+  ('00000000-0000-4000-8000-000000000212', '00000000-0000-4000-8000-000000000201',
+   'Trabalho', '00000-000', 'Rua de Teste', '2', 'Centro', 'Cidade Teste', 'SP', 'Sala 1', false),
+  ('00000000-0000-4000-8000-000000000213', '00000000-0000-4000-8000-000000000201',
+   'Mae', '00000-000', 'Rua de Teste', '3', 'Centro', 'Cidade Teste', 'SP', null, false),
+  ('00000000-0000-4000-8000-000000000221', '00000000-0000-4000-8000-000000000202',
+   'Casa', '00000-000', 'Rua de Teste', '4', 'Centro', 'Cidade Teste', 'SP', null, true)
+on conflict (id) do nothing;

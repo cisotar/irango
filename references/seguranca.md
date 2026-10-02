@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.6.3 | **Atualizado:** 2026-10-02
+**Versão:** 0.7.0 | **Atualizado:** 2026-10-02
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -62,6 +62,17 @@ ALTER TABLE produto_opcionais_ocultos  ENABLE ROW LEVEL SECURITY;
 ### Papel de conta — `papeis_usuario` e `lojas_exige_dono_lojista_trg`
 
 Migration `20261001120000_papel_cliente.sql`. `papeis_usuario` (`lojista` | `cliente`): RLS com policy única de SELECT própria (`usuario_id = (select auth.uid())`); sem INSERT/UPDATE/DELETE para `anon`/`authenticated`. Escrita só por `service_role` via `public.atribuir_papel_inicial` (`SECURITY DEFINER`, `search_path = ''`, EXECUTE só `service_role`, advisory lock): grava o papel apenas se a conta não tem nenhum e devolve os papéis atuais. O `usuarioId` vem sempre da sessão/signUp, nunca do payload. Trigger `BEFORE INSERT OR UPDATE OF dono_id` em `lojas` (`lojas_exige_dono_lojista_trg`) garante que conta só-cliente nunca é dona de loja, por qualquer role; conta sem papel recebe `lojista` ao virar dona. Quando um usuário final tenta inserir loja de outro dono, o trigger não toca papel alheio e a policy recusa (42501). Gate do painel por papel: `architecture.md` §5.
+
+### Perfil de cliente — `clientes` e `clientes_enderecos`
+
+Migration `20261002120000_clientes.sql`. As duas tabelas nascem com RLS ligada e `REVOKE ALL FROM public, anon, authenticated` antes dos grants explícitos.
+
+| Tabela | Policies (`authenticated`) | Grants |
+|---|---|---|
+| `clientes` | SELECT e UPDATE com `id = (select auth.uid())` (USING e WITH CHECK). Sem policy de INSERT/DELETE | `SELECT`; `UPDATE (nome, telefone, data_nascimento, aceita_marketing)`. `id`, `criado_em`, `ultimo_acesso_em` e `consentimento_*` não são graváveis pelo usuário (42501) |
+| `clientes_enderecos` | SELECT, INSERT, UPDATE e DELETE com `cliente_id = (select auth.uid())` (INSERT/UPDATE com WITH CHECK: não dá para criar nem mover endereço para outro cliente) | `SELECT, INSERT, UPDATE, DELETE` |
+
+`anon` e conta lojista não leem nenhuma das duas. INSERT e DELETE de `clientes` só passam pelas funções `SECURITY DEFINER` (`search_path = ''`, `REVOKE EXECUTE FROM public, anon, authenticated`, EXECUTE só `service_role`): `criar_perfil_cliente` (papel + perfil + 1º endereço, numa transação), `anonimizar_cliente`, `anonimizar_clientes_inativos` e `adicionar_papel_cliente` (acrescenta `cliente`, nunca `lojista`; nenhuma função remove papel). O `id` passado a elas vem sempre de `getUser()` da sessão, nunca do payload; a versão dos termos é `VERSAO_TERMOS` do servidor. Regras que o usuário não consegue contornar por PostgREST direto ficam no banco, não só na action: teto de 3 endereços e mínimo de 1 (triggers com advisory lock por cliente; o mínimo não vale para o CASCADE de `anonimizar_cliente`), um só endereço padrão (índice único parcial) e idade mínima de 18 anos (trigger em `clientes`). Tabelas e colunas: `schema.md` §2.
 
 ### Políticas por tabela
 
@@ -976,6 +987,11 @@ Endpoints sensíveis precisam de trava por IP — sem isso, brute force em login
 |--------------------------|--------|---------|
 | `entrar` (auth) | 5/min por IP | anti brute force de senha |
 | `cadastrar` (auth) | 5/min por IP | anti enumeração de conta, email bombing e flood de `auth.users` (pentest #2) |
+| `cadastrarCliente` (`cadastroCliente`) | 5/min por IP | mesmo motivo de `cadastrar`, balde próprio da porta cliente |
+| `entrarCliente` (`loginCliente`) | 5/min por IP | anti brute force de senha da conta de cliente |
+| `solicitarRecuperacaoCliente` (`recuperacaoCliente`) | 5/min por IP | cada chamada dispara e-mail (email bombing) |
+| `redefinirSenhaCliente` (`novaSenhaCliente`) | 5/min por IP | troca de senha na sessão de recuperação |
+| `reenviarConfirmacaoCliente` (`reenvioCliente`) | 1/min por IP | reenvio do link de confirmação; igual ao mínimo do GoTrue |
 | `criarPedido` | 10/min por IP | anti spam de pedido |
 | `validarCupom` | 20/min por IP | anti enumeração de códigos |
 | `calcularFreteAction` | 20/min por IP | anti abuso de lookup externo (ViaCEP + cálculo) |
@@ -1172,6 +1188,17 @@ Mesmo padrão vale para qualquer provider OAuth adicionado no futuro.
 
 A action `entrar` retorna sempre a mesma mensagem genérica independentemente de o email não existir, senha errada ou conta suspensa — impede enumeração de contas por tentativa e erro.
 
+### Conta do cliente: cadastro, confirmação e recuperação por link
+
+Porta própria (`app/(cliente)`, `src/lib/actions/clienteAuth.ts`), mesma conta `auth.users` do lojista (conta única). Spec: `specs/cliente-identidade.md`.
+
+- **Cadastro por e-mail:** `cadastrarCliente` pede só e-mail e senha (`.strict()`), faz `signUp` **sem** `options.data` e com `emailRedirectTo = /auth/callback?contexto=cliente[&next=…]`, e grava o papel `cliente` por `atribuir_papel_inicial`. Nada do perfil é guardado antes da confirmação do e-mail. Nunca cria loja, nunca grava `lojista`, nunca apaga conta (pode ser pré-existente). A resposta é sempre `{ ok: true }` (conta nova, já existente ou ofuscada pelo GoTrue): a UI mostra o estado neutro "Confirme seu e-mail", sem sessão.
+- **Login:** `entrarCliente` devolve uma única mensagem genérica para e-mail inexistente e senha errada; e-mail não confirmado tem mensagem própria e, se por algum caminho houver sessão com `email_confirmed_at` nulo, faz `signOut`. Login bem-sucedido atualiza `clientes.ultimo_acesso_em` (service_role, best-effort: não derruba o login).
+- **Callback:** só o literal `contexto=cliente` troca o papel inicial para `cliente`, e só para conta sem papel. Destino da porta cliente: sem perfil → `/conta/completar` (preservando `next`); com perfil → `next` sanitizado (`sanitizarNext`) ou `/minha-conta`. Link inválido ou expirado → `/conta/recuperar?erro=link`; erro de OAuth → `/conta/entrar?erro=google`. Como no lojista, `error_description` nunca é logado nem exibido.
+- **Recuperação por LINK (não OTP):** `solicitarRecuperacaoCliente` chama `resetPasswordForEmail` sempre, com `redirectTo = /auth/callback?contexto=cliente&next=/conta/recuperar?etapa=nova-senha`, e responde a mesma mensagem para e-mail existente, inexistente, conta só-Google ou falha do GoTrue, com latência mínima constante (~1,5 s). O callback troca o código (`exchangeCodeForSession`) e abre uma **sessão de recuperação**; a recuperação não atribui papel novo, não registra `ultimo_acesso_em` e nunca é desviada para `/conta/completar`.
+- **Nova senha só com sessão de recuperação:** `redefinirSenhaCliente` exige `getUser()` e, em seguida, o claim `amr` do JWT (`getClaims()`) contendo `recovery` (`ehSessaoDeRecuperacao`, `src/lib/utils/sessaoRecuperacao.ts`). Sessão aberta por senha ou OAuth não troca senha sem a atual por esta action. A página `/conta/recuperar?etapa=nova-senha` aplica o mesmo critério (UX); a autoridade é a action.
+- **Redirect Allow List:** a URL do callback precisa estar na allowlist de Redirect URLs do Supabase; é ela a barreira contra host forjado em `origin`/`x-forwarded-host`, usados para montar os links.
+
 ---
 
 ## 18. Supabase Storage — RLS
@@ -1300,14 +1327,14 @@ A auditoria dinâmica de 2026-07-02 (`plan/seguranca-auditoria-2026-07-02.md`, l
 
 ## 20. LGPD
 
-O iRango coleta dado pessoal de cliente final (nome, telefone, endereço de entrega) — Lei Geral de Proteção de Dados se aplica.
+O iRango coleta dado pessoal de cliente final (nome, telefone, endereço de entrega e, com conta, e-mail, data de nascimento e até 3 endereços salvos) — Lei Geral de Proteção de Dados se aplica.
 
 | Requisito | Decisão |
 |-----------|---------|
-| **Base legal** | execução de pedido (legítimo interesse / execução de contrato) |
-| **Minimização** | coletar só o necessário pra entregar — sem CPF, sem data de nascimento na v1 |
-| **Retenção** | definir prazo de expurgo de pedidos antigos (ex.: anonimizar dados de cliente após N meses) |
-| **Exclusão / portabilidade** | cliente solicita via `privacidade@irango.com.br` (atendimento manual v1); automação é follow-up |
+| **Base legal** | pedido como convidado: execução de pedido (legítimo interesse / execução de contrato). Conta de cliente: execução de contrato (a conta) com aceite dos termos e da política gravado em `clientes.consentimento_em` / `consentimento_versao` (`VERSAO_TERMOS` do servidor, só no passo `/conta/completar`, nunca antes da confirmação do e-mail). Marketing: consentimento (opt-in) em `clientes.aceita_marketing`, desmarcado por padrão |
+| **Minimização** | pedido como convidado: só o necessário pra entregar. Conta de cliente: nome, telefone, data de nascimento (única finalidade: confirmar 18+ e aniversário; trigger recusa menor de 18, data futura e > 120 anos) e endereços. Sem CPF. Nada do perfil é guardado antes da confirmação do e-mail; do Google vêm só nome e e-mail |
+| **Retenção** | a LGPD não fixa prazo; os números são decisão do produto. Perfil de cliente: enquanto a conta existir; inativo há mais de 24 meses (`ultimo_acesso_em`) é anonimizado por `anonimizar_clientes_inativos()` — função pronta, **sem agendador** ainda. Pedido anonimizado guardado 5 anos e depois expurgado: definido, ainda não implementado (vínculo cliente↔pedido é do Marco C) |
+| **Exclusão / portabilidade** | cliente com conta exclui sozinho em `/minha-conta` (`excluirConta`, confirmação digitada): `anonimizar_cliente` apaga perfil e endereços; conta só-cliente também perde o `auth.users`; conta lojista/admin + cliente perde só o perfil de cliente (papéis, loja e assinatura ficam). Convidado, lojista e portabilidade: `privacidade@irango.com.br` (atendimento manual) |
 | **Política de privacidade** | `/privacidade` — SSG, issue 062, conteúdo placeholder — revisar com jurídico antes de operar |
 | **Termos de uso** | `/termos` — SSG, issue 062, conteúdo placeholder — revisar com jurídico antes de operar |
 | **Dados do lojista** | email/telefone do lojista também são pessoais — mesmas regras |

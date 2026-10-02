@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.4.3 | **Atualizado:** 2026-10-02
+**Versão:** 0.4.4 | **Atualizado:** 2026-10-02
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -23,6 +23,9 @@
 auth.users (Supabase)
     │
     ├── papeis_usuario (usuario_id → auth.users.id, CASCADE)
+    │
+    ├── clientes (id → auth.users.id, CASCADE) — perfil de cliente final, 1:1
+    │       └── clientes_enderecos (cliente_id → clientes.id, CASCADE) — até 3
     │
     └── lojas (dono_id → auth.users.id)
             │
@@ -565,6 +568,68 @@ CREATE TABLE papeis_usuario (
 );
 ```
 
+### `clientes`
+
+```sql
+-- Perfil do cliente final (conta única iRango; spec cliente-identidade). 1:1 com auth.users.
+-- E-mail NÃO é duplicado aqui: vive em auth.users. O papel 'cliente' vive em papeis_usuario.
+-- Só existe depois da confirmação do e-mail: nada do perfil é guardado antes (RN-06).
+-- RLS: SELECT/UPDATE só da própria linha (id = (select auth.uid())). INSERT e DELETE só via
+-- funções abaixo (service_role). Grants: SELECT para authenticated; UPDATE só em
+-- (nome, telefone, data_nascimento, aceita_marketing) — id, criado_em, ultimo_acesso_em e
+-- consentimento_* não são graváveis pelo usuário.
+-- Trigger clientes_valida_idade_trg (BEFORE INSERT OR UPDATE OF data_nascimento): >= 18 anos em
+-- current_date, não futura, <= 120 anos (CHECK não serve: current_date não é imutável).
+-- Migration: 20261002120000_clientes.sql
+CREATE TABLE clientes (
+  id                  uuid PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
+  nome                text NOT NULL CHECK (char_length(nome) BETWEEN 1 AND 120),
+  telefone            text NOT NULL CHECK (telefone ~ '^\+?[\d\s()-]{8,20}$'),
+  data_nascimento     date NOT NULL,
+  aceita_marketing    boolean NOT NULL DEFAULT false,         -- opt-in, desmarcado por padrão
+  consentimento_em    timestamptz NOT NULL,                   -- aceite dos termos (servidor)
+  consentimento_versao text NOT NULL CHECK (char_length(consentimento_versao) BETWEEN 1 AND 50),  -- VERSAO_TERMOS
+  criado_em           timestamptz NOT NULL DEFAULT now(),
+  ultimo_acesso_em    timestamptz NOT NULL DEFAULT now()      -- base da retenção de 24 meses
+);
+```
+
+**Funções (todas `SECURITY DEFINER`, `search_path = ''`, EXECUTE só `service_role`):**
+
+| Função | Faz |
+|--------|-----|
+| `adicionar_papel_cliente(p_usuario uuid)` | Acrescenta `cliente` em `papeis_usuario` (`ON CONFLICT DO NOTHING`, mesmo advisory lock de `atribuir_papel_inicial`). Nunca grava `lojista`; nenhuma função remove papel |
+| `criar_perfil_cliente(p_usuario, p_nome, p_telefone, p_data_nascimento, p_aceita_marketing, p_versao_termos, p_endereco jsonb)` | Papel + `clientes` + 1º endereço (`padrao = true`) na mesma transação. Recusa sem versão de termos, sem endereço ou com perfil já existente (`23505`) |
+| `anonimizar_cliente(p_usuario uuid)` | Apaga o perfil (CASCADE nos endereços). Não toca `papeis_usuario`, `lojas` nem `auth.users` |
+| `anonimizar_clientes_inativos()` | Chama `anonimizar_cliente` para cada perfil com `ultimo_acesso_em` há mais de 24 meses; devolve a contagem. Sem agendador: execução manual/futura |
+
+### `clientes_enderecos`
+
+```sql
+-- Até 3 endereços salvos por cliente (mínimo 1 enquanto houver perfil, só para o usuário final).
+-- RLS: SELECT/INSERT/UPDATE/DELETE só com cliente_id = (select auth.uid()) (USING e WITH CHECK).
+-- Triggers (valem também para service_role, exceto o mínimo):
+--   clientes_enderecos_teto_trg    BEFORE INSERT OR UPDATE OF cliente_id — advisory lock por cliente, recusa o 4º (23514)
+--   clientes_enderecos_minimo_trg  BEFORE DELETE — recusa remover o último endereço quando auth.role() é anon/authenticated;
+--                                  o CASCADE de anonimizar_cliente (service_role) passa
+-- Migration: 20261002120000_clientes.sql
+CREATE TABLE clientes_enderecos (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cliente_id  uuid NOT NULL REFERENCES clientes (id) ON DELETE CASCADE,
+  rotulo      text NOT NULL CHECK (char_length(rotulo) BETWEEN 1 AND 30 AND rotulo !~ '[\n\r]'),
+  cep         text NOT NULL CHECK (cep ~ '^\d{5}-?\d{3}$'),
+  rua         text NOT NULL CHECK (char_length(rua) BETWEEN 1 AND 200),
+  numero      text NOT NULL CHECK (char_length(numero) BETWEEN 1 AND 20),
+  bairro      text NOT NULL CHECK (char_length(bairro) BETWEEN 1 AND 100),
+  cidade      text NOT NULL CHECK (char_length(cidade) BETWEEN 1 AND 100),
+  uf          text NOT NULL CHECK (char_length(uf) = 2),
+  complemento text CHECK (complemento IS NULL OR char_length(complemento) <= 100),
+  padrao      boolean NOT NULL DEFAULT false,
+  criado_em   timestamptz NOT NULL DEFAULT now()
+);
+-- Índices: clientes_enderecos(cliente_id); UNIQUE parcial (cliente_id) WHERE padrao — um padrão por cliente.
+```
+
 ### `taxas_entrega_duplicadas_182`
 
 ```sql
@@ -783,6 +848,13 @@ CREATE INDEX ON produto_opcionais_ocultos(loja_id, produto_id);
 -- Migration: 20260906120000_itens_pedido_pedido_id_idx.sql
 CREATE INDEX ON itens_pedido(pedido_id);
 
+-- Clientes: retenção (anonimizar_clientes_inativos filtra por ultimo_acesso_em) e endereços por cliente;
+-- no máximo um endereço padrão por cliente.
+-- Migration: 20261002120000_clientes.sql
+CREATE INDEX clientes_ultimo_acesso_em_idx ON clientes(ultimo_acesso_em);
+CREATE INDEX clientes_enderecos_cliente_id_idx ON clientes_enderecos(cliente_id);
+CREATE UNIQUE INDEX clientes_enderecos_um_padrao_idx ON clientes_enderecos(cliente_id) WHERE padrao;
+
 -- Auditoria admin por loja, mais recentes primeiro
 -- Migration: 20260707122000_admin_acessos.sql
 CREATE INDEX ON admin_acessos(loja_id, criado_em DESC);
@@ -800,6 +872,8 @@ Regra geral:
 - **INSERT de pedido** → só pela RPC `criar_pedido` sob `service_role` (Server Action de checkout;
   cliente sem login); `anon`/`authenticated` sem INSERT direto (migration `20260923060457`)
 - **`papeis_usuario`** → SELECT só das próprias linhas (`usuario_id = auth.uid()`); escrita só via `service_role` (`atribuir_papel_inicial`)
+- **`clientes`** → SELECT e UPDATE só da própria linha (`id = auth.uid()`), UPDATE com grant só nas colunas editáveis; INSERT/DELETE só via `criar_perfil_cliente`/`anonimizar_cliente` (`service_role`). Lojista e anon não leem
+- **`clientes_enderecos`** → CRUD só dos próprios (`cliente_id = auth.uid()`); teto de 3 e mínimo de 1 impostos por trigger, não só pela action
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`
 - **`admin_acessos`** → deny-all permanente; acesso exclusivo via `service_role` (trilha de auditoria de acesso admin, issues 146/147)
 - **`taxas_entrega_duplicadas_182`** → deny-all permanente; acesso exclusivo via `service_role` (arquivo de dedup do índice único de `taxas_entrega.zona_id`, issue 182)
