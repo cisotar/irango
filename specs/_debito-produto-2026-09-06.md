@@ -48,3 +48,23 @@ uma issue própria, de baixa prioridade.
 **Cuidado.** Não confundir com `formatarEnderecoLoja` (`src/lib/utils/enderecoLoja.ts`),
 criada pela feature de retirada: essa formata as **colunas da loja**, shape
 diferente. As duas não se fundem.
+
+## 3. Motor de promoção por data (aniversário)
+
+**Aberto em:** 2026-10-02, no fechamento do plano de cadastro de clientes.
+
+**O que falta.** A base de clientes do lojista mostra aniversário (dia/mês) e o filtro "Aniversariantes de <mês>", mas não há campanha, cupom pessoal nem mensagem automática de aniversário (e-mail/WhatsApp).
+
+**Decisão (dono do produto):** **fora** — decisão 5 de 2026-09-15. O lojista usa a lista e o opt-in de promoções para agir manualmente.
+
+**Quando vale reabrir.** Quando houver demanda de lojista por campanha automática; exige revisar consentimento (`aceita_marketing`) e LGPD antes.
+
+## 4. Vincular compras antigas de convidado à conta (SMS)
+
+**Aberto em:** 2026-10-02, no fechamento do plano de cadastro de clientes.
+
+**O que falta.** Pedido feito como convidado nunca é vinculado depois a uma conta; o histórico do cliente e a base do lojista começam do zero (só pedidos com `cliente_id` gravado na criação).
+
+**Decisão (dono do produto):** **fora** — decisão 20 de 2026-10-01. Vincular por telefone, nome, e-mail ou token sem prova de posse permitiria anexar pedidos alheios.
+
+**Quando vale reabrir.** Só com verificação de posse do telefone por SMS (código de uso único); sem isso, continua proibido.
