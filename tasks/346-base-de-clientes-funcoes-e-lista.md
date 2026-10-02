@@ -48,3 +48,6 @@ Lista: "só clientes com ≥1 pedido…", "Lojista A nunca vê…", "só as colu
 - [ ] Testes D1 vermelhos capturados, depois verdes
 - [ ] tsc, lint, test, build verdes
 - [ ] Migration aplicada no cloud só com autorização (`npx supabase migration list`)
+
+## Respostas do usuário (2026-10-03)
+- **D4 (telefone)** — formatado `(DD) NNNNN-NNNN` e clicável, abrindo conversa no WhatsApp (`wa.me`) — reusar o padrão de `linkWhatsappLoja` (só dígitos, `urlHttpsSegura`, fail-closed). Vale para a lista e o detalhe (347).
