@@ -18,7 +18,7 @@ cliente, coluna `cupons.limite_por_cliente`, extensão de `anonimizar_cliente` (
 - [ ] Migration `<ts>_pedidos_cliente_id.sql` (após `20261002120000_clientes.sql`): `cliente_id uuid null references public.clientes(id) on delete set null`; índice parcial `pedidos_cliente_id_criado_em_idx (cliente_id, criado_em desc) where cliente_id is not null`; trigger BEFORE UPDATE no molde de `pedidos_transicao_status` (SECURITY INVOKER, whitelist `service_role`/`postgres`/`supabase_admin`) recusando `new.cliente_id is distinct from old.cliente_id`.
 - [ ] Policies **só SELECT** `to authenticated`: `pedidos_select_cliente`, `itens_pedido_select_cliente`, `itens_pedido_opcionais_select_cliente` (tabela do spec). Não tocar `pedidos_acesso_lojista`; nenhuma policy de escrita nova; `anon` sem SELECT.
 - [ ] Migration `<ts>_cupons_limite_por_cliente.sql`: `limite_por_cliente int null check (limite_por_cliente is null or limite_por_cliente between 1 and 1000)`. RLS de `cupons` inalterada.
-- [ ] Migration `<ts>_rpc_criar_pedido_cliente.sql`: `criar_pedido` de **18** argumentos (17 atuais + `p_cliente_id uuid` por último), `security invoker`. **A versão de 17 NÃO é dropada** (resposta P1 do usuário; remoção na issue 344). Ordem: (1) dedupe `idempotency_key`; (2) loja ativa; (3) cupom por cliente — `p_cliente_id` null + cupom com limite → anula desconto, zera `p_cupom_id`/`cupom_codigo`, recalcula total; senão `pg_advisory_xact_lock(hashtext(p_cupom_id::text || p_cliente_id::text))` + `count(*)` em `pedidos` por `loja_id`+`cliente_id`+`cupom_codigo` (todos os status, inclusive cancelado — RN-C06); `>= limite` → anula desconto (D5); (4) trava global `usos_contagem` (sem mudança); (5) INSERT com `cliente_id`. `p_cliente_id` não nulo inexistente em `clientes` → `raise 'cliente_inexistente'`.
+- [ ] Migration `<ts>_rpc_criar_pedido_cliente.sql`: `criar_pedido` de **18** argumentos (17 atuais + `p_cliente_id uuid` por último, **obrigatório, sem default**), `security invoker`. A mesma migration faz `drop function` das versões de **16** e **17** argumentos (decisão do usuário: sem código morto; fecha a issue 266). Checkout indisponível só entre `db push` e deploy. Ordem: (1) dedupe `idempotency_key`; (2) loja ativa; (3) cupom por cliente — `p_cliente_id` null + cupom com limite → anula desconto, zera `p_cupom_id`/`cupom_codigo`, recalcula total; senão `pg_advisory_xact_lock(hashtext(p_cupom_id::text || p_cliente_id::text))` + `count(*)` em `pedidos` por `loja_id`+`cliente_id`+`cupom_codigo` (todos os status, inclusive cancelado — RN-C06); `>= limite` → anula desconto (D5); (4) trava global `usos_contagem` (sem mudança); (5) INSERT com `cliente_id`. `p_cliente_id` não nulo inexistente em `clientes` → `raise 'cliente_inexistente'`.
 - [ ] Estender `anonimizar_cliente(p_usuario)`: `raise 'pedido_em_aberto'` se houver pedido com status fora de `entregue`/`cancelado`; senão `update pedidos set nome_cliente='Cliente removido', telefone_cliente=null, endereco_entrega=null, observacoes=null, cliente_id=null`; zerar `itens_pedido.observacao` desses pedidos; depois o delete do Marco B. Valores, status, itens, `cupom_codigo` intactos.
 - [ ] `anonimizar_clientes_inativos()` captura `pedido_em_aberto` por cliente e segue o laço.
 - [ ] `expurgar_pedidos_antigos()` SECURITY DEFINER, `search_path = ''`: apaga pedidos em status final com `criado_em < now() - interval '5 years'` (cliente ou convidado — P2); conferir cascade de itens/opcionais; retorna a quantidade. `revoke execute from public, anon, authenticated`. Sem agendador.
@@ -26,7 +26,7 @@ cliente, coluna `cupons.limite_por_cliente`, extensão de `anonimizar_cliente` (
 - [ ] Atualizar `references/schema.md` (`pedidos`, `cupons`, funções) — via `escriba`.
 
 ## Fora de escopo
-- Server Actions, queries e UI (342, 343). Remoção da RPC de 17 args (344).
+- Server Actions, queries e UI (342, 343). 
 - Correções da `tasks/330` (só não ampliar). Tabela de usos por cliente (P3: aceito como limite conhecido). Devolver uso no cancelamento. `db push` (gate P31, autorização humana).
 
 ## Reuso esperado
@@ -52,7 +52,8 @@ cliente, coluna `cupons.limite_por_cliente`, extensão de `anonimizar_cliente` (
 - [ ] convidado + cupom sem limite → regra global idêntica a hoje.
 - [ ] pedido cancelado conta como uso; retry com mesma `idempotency_key` não conta outro uso; contagem filtrada por `loja_id`.
 - [ ] CHECK recusa `limite_por_cliente` 0 e 1001; `p_cliente_id` inexistente → `cliente_inexistente`.
-- [ ] RPC de 17 args continua existindo e funcionando (convidado).
+- [ ] Só existe UMA `public.criar_pedido` (18 args) após a migration; chamada sem `p_cliente_id` → erro (não cai em overload antigo).
+- [ ] Convidado (`p_cliente_id` null explícito) cria pedido como hoje.
 **C4 — `tests/migrations/anonimizar_cliente.test.ts` (estendido, só adição de caso)**
 - [ ] após `anonimizar_cliente(uid)`: `nome_cliente = 'Cliente removido'`; telefone, endereço, observações, `cliente_id` null; `subtotal`/`total`/`itens_pedido` intactos; trigger de status não bloqueia.
 - [ ] com pedido em status não final → `pedido_em_aberto`, nada muda.

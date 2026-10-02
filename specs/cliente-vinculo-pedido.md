@@ -228,8 +228,10 @@ Policies **só de SELECT**, `to authenticated`:
 ### RPC `criar_pedido` — nova versão
 
 - **Assinatura nova** com 18 argumentos: os 17 atuais + `p_cliente_id uuid` (último). Segue o precedente da issue
-  266 (overload). A versão de 17 argumentos **continua existindo** nesta entrega; uma migration pequena num deploy
-  seguinte a remove (issue 344). **[aprovado pelo usuário, 2026-10-03 — resposta P1]**
+  266 (overload). A MESMA migration remove as versões de 16 e de 17 argumentos (sem código morto) e cria a de 18
+  com `p_cliente_id` **obrigatório, sem default** (null explícito para convidado); a action sempre envia o argumento.
+  O checkout fica indisponível só entre o `db push` e o deploy do código. **[aprovado pelo usuário, 2026-10-03 —
+  substitui a resposta P1]** Fecha também a issue 266.
 - Continua `security invoker`, chamada pelo `service_role` da Server Action. `p_cliente_id` é **sempre** o
   `auth.uid()` que a Server Action obtém de `getUser()`, ou null. Nunca vem do payload.
 - Defesa em profundidade dentro da RPC: se `p_cliente_id` não é null e não existe em `public.clientes`, a RPC
@@ -403,4 +405,5 @@ Impacto: complexidade e retenção de identificador × brecha estreita.
 - **P1** — A versão antiga de `criar_pedido` (17 argumentos) NÃO é removida nesta migration: as duas convivem e uma migration pequena num deploy seguinte remove a antiga. Substitui a decisão proposta 13.
 - **P2** — `expurgar_pedidos_antigos()` remove todo pedido em status final com mais de 5 anos, de cliente ou de convidado (confirma a decisão proposta 14).
 - **P3** — Aceito como limite conhecido: lojista/admin que exclui e reativa o perfil de cliente tem a contagem de uso por cliente reiniciada. Sem tabela própria de usos.
+- **P1 revisada (2026-10-03)** — sem código morto: as versões de 16 e 17 de `criar_pedido` saem na mesma migration da 18; `p_cliente_id` sem default; checkout parado só entre `db push` e deploy. Issue 344 cancelada; issue 266 fechada pela 341.
 - Demais decisões propostas (1–12) aprovadas como estão.
