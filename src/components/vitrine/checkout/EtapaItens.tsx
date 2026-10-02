@@ -35,7 +35,8 @@ import {
   type ItemBloqueado,
 } from "./itensBloqueados";
 
-const MENSAGEM_ERRO_CUPOM = "Não foi possível validar o cupom. Tente novamente.";
+const MENSAGEM_ERRO_CUPOM =
+  "Não foi possível validar o cupom. Tente novamente.";
 
 const SECAO =
   "overflow-hidden rounded-xl border border-cinza-medio bg-white shadow-[0_4px_12px_rgba(0,0,0,0.10)]";
@@ -85,6 +86,8 @@ export type EtapaItensProps = {
    * sessão de cliente; ausente ⇒ nada muda na etapa.
    */
   entrarLojaSlug?: string | null;
+  /** (343) "completar" ⇒ "Complete seu perfil" no lugar do "Entrar". */
+  acaoConta?: "entrar" | "completar";
 };
 
 export function EtapaItens({
@@ -104,6 +107,7 @@ export function EtapaItens({
   onContinuar,
   variante = "wizard",
   entrarLojaSlug = null,
+  acaoConta = "entrar",
 }: EtapaItensProps) {
   const [codigo, setCodigo] = useState(codigoCupom ?? "");
   const [mensagemCupom, setMensagemCupom] = useState<string | null>(null);
@@ -390,7 +394,9 @@ export function EtapaItens({
                 {mensagemCupom}
               </p>
             ))}
-          {entrarLojaSlug && <LinkEntrarCheckout lojaSlug={entrarLojaSlug} />}
+          {entrarLojaSlug && (
+            <LinkEntrarCheckout lojaSlug={entrarLojaSlug} acao={acaoConta} />
+          )}
         </div>
       </div>
 

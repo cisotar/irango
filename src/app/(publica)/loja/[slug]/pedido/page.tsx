@@ -73,6 +73,8 @@ function extrairConfigPix(config: unknown): {
 type ClienteCheckout = {
   /** Sem sessão de cliente ⇒ "Entrar" junto do cupom. */
   mostrarEntrar: boolean;
+  /** Logado com e-mail confirmado e sem perfil ⇒ "Complete seu perfil". */
+  mostrarCompletarPerfil: boolean;
   perfil: PerfilClienteCheckout | null;
   enderecos: EnderecoClienteCheckout[];
 };
@@ -85,7 +87,12 @@ type ClienteCheckout = {
 async function lerClienteCheckout(
   db: Awaited<ReturnType<typeof createClient>>,
 ): Promise<ClienteCheckout> {
-  const convidado: ClienteCheckout = { mostrarEntrar: true, perfil: null, enderecos: [] };
+  const convidado: ClienteCheckout = {
+    mostrarEntrar: true,
+    mostrarCompletarPerfil: false,
+    perfil: null,
+    enderecos: [],
+  };
   try {
     const { data, error } = await db.auth.getUser();
     const user = data?.user;
@@ -94,9 +101,10 @@ async function lerClienteCheckout(
       buscarPerfilCliente(db, user.id),
       listarEnderecosCliente(db, user.id),
     ]);
-    if (!perfil) return { ...convidado, mostrarEntrar: false };
+    if (!perfil) return { ...convidado, mostrarEntrar: false, mostrarCompletarPerfil: true };
     return {
       mostrarEntrar: false,
+      mostrarCompletarPerfil: false,
       perfil: { nome: perfil.nome, telefone: perfil.telefone },
       enderecos: enderecos.map((e) => ({
         id: e.id,
@@ -186,6 +194,7 @@ export default async function CheckoutPage({ params }: PageProps) {
       perfilCliente={cliente.perfil}
       enderecosCliente={cliente.enderecos.length > 0 ? cliente.enderecos : undefined}
       mostrarEntrar={cliente.mostrarEntrar}
+      mostrarCompletarPerfil={cliente.mostrarCompletarPerfil}
     />
   );
 }

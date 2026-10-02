@@ -38,10 +38,7 @@ import {
   MSG_REVISAO_FALHOU,
   MSG_REVISAO_SEM_MUDANCA,
 } from "./reconfirmacaoPreco";
-import {
-  detectarItensBloqueados,
-  SEM_BLOQUEIOS,
-} from "./itensBloqueados";
+import { detectarItensBloqueados, SEM_BLOQUEIOS } from "./itensBloqueados";
 import { useRevisaoCarrinho } from "@/hooks/useRevisaoCarrinho";
 import { textosRevisao } from "@/lib/utils/copiaRevisaoPreco";
 import type {
@@ -100,6 +97,8 @@ export type CheckoutWizardProps = {
   enderecosCliente?: EnderecoClienteCheckout[];
   /** (343) Sem sessão de cliente ⇒ mostra "Entrar" junto do cupom. */
   mostrarEntrar?: boolean;
+  /** (343) Logado, e-mail confirmado, sem perfil ⇒ "Complete seu perfil". */
+  mostrarCompletarPerfil?: boolean;
 };
 
 /** Alvo de toque do controle de voltar do header, compartilhado entre o
@@ -120,6 +119,7 @@ export function CheckoutWizard({
   perfilCliente = null,
   enderecosCliente,
   mostrarEntrar = false,
+  mostrarCompletarPerfil = false,
 }: CheckoutWizardProps) {
   const { itens, incrementar, decrementar, remover } = useCarrinho();
   // Tailwind md = 768px. Escolhe UMA árvore (wizard mobile vs 2 colunas desktop)
@@ -382,7 +382,9 @@ export function CheckoutWizard({
     enderecoClienteId,
     onEnderecoClienteChange: handleEnderecoClienteChange,
   };
-  const entrarLojaSlug = mostrarEntrar ? lojaSlug : null;
+  const entrarLojaSlug =
+    mostrarEntrar || mostrarCompletarPerfil ? lojaSlug : null;
+  const acaoConta = mostrarEntrar ? "entrar" : "completar";
 
   // Voltar do header: etapa 1 vira <Link> (prefetch da vitrine — achado
   // acelerar 2026-09-16, F1); etapas 2/3 só recuam de etapa, sem navegar.
@@ -492,6 +494,7 @@ export function CheckoutWizard({
           onRemoverCupom={removerCupom}
           onContinuar={() => setEtapa(2)}
           entrarLojaSlug={entrarLojaSlug}
+          acaoConta={acaoConta}
         />
       )}
 
@@ -579,6 +582,7 @@ export function CheckoutWizard({
             onRemoverCupom={removerCupom}
             onContinuar={() => {}}
             entrarLojaSlug={entrarLojaSlug}
+            acaoConta={acaoConta}
           />
           <EtapaEntrega
             variante="desktop"

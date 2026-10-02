@@ -32,11 +32,12 @@ import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
 import { LinkMapsLoja } from "@/components/vitrine/confirmacao/LinkMapsLoja";
 import { StatusPedidoLive } from "@/components/vitrine/confirmacao/StatusPedidoLive";
 import { ModalAvisoWhatsapp } from "@/components/vitrine/confirmacao/ModalAvisoWhatsapp";
+import { textoAvisoCupom } from "@/components/vitrine/checkout/avisoCupom";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ pedido?: string; token?: string }>;
+  searchParams: Promise<{ pedido?: string; token?: string; aviso?: string | string[] }>;
 };
 
 export const metadata = { title: "Pedido confirmado — iRango" };
@@ -104,7 +105,9 @@ export default async function ConfirmacaoPage({
   searchParams,
 }: PageProps) {
   const { slug } = await params;
-  const { pedido: pedidoId, token } = await searchParams;
+  const { pedido: pedidoId, token, aviso } = await searchParams;
+  // (343) Código fixo → texto por tabela fixa; nunca reflete texto da URL.
+  const avisoCupom = textoAvisoCupom(aviso);
 
   // Sem par (id, token) não há o que buscar — comporta como "não encontrado".
   let pedido: PedidoComItens | null = null;
@@ -161,6 +164,15 @@ export default async function ConfirmacaoPage({
         avisoHabilitado={avisoWhatsappHabilitado}
         href={linkWhatsapp?.href ?? null}
       />
+
+      {avisoCupom && (
+        <p
+          role="status"
+          className="rounded-md border border-border bg-muted px-4 py-3 text-sm text-texto"
+        >
+          {avisoCupom}
+        </p>
+      )}
 
       <Card>
         <CardHeader className="items-center text-center">

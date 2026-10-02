@@ -27,6 +27,7 @@ import { toast } from "sonner";
 
 import { criarPedido } from "@/lib/actions/pedido";
 import { montarPayloadPedido, type EstadoWizard, type ItemPayload } from "./estado";
+import { codigoAvisoCupom } from "./avisoCupom";
 
 // [163] Type-only: `typeof import(...)` é apagado na compilação, não puxa zod
 // para o bundle. O valor chega só pelo import() dinâmico abaixo.
@@ -91,6 +92,12 @@ export type UsarEnviarPedidoArgs = {
    */
   indicesReconfirmados?: readonly number[];
 };
+
+/** (343) Aviso de cupom vira código fixo na URL — nunca texto livre. */
+function avisoNaUrl(avisoCupom: string | undefined): string {
+  const codigo = codigoAvisoCupom(avisoCupom);
+  return codigo ? `&aviso=${codigo}` : "";
+}
 
 export function useEnviarPedido({
   lojaId,
@@ -171,7 +178,7 @@ export function useEnviarPedido({
       router.push(
         `/loja/${lojaSlug}/confirmacao?pedido=${resultado.pedidoId}&token=${encodeURIComponent(
           resultado.token_acesso,
-        )}`,
+        )}${avisoNaUrl(resultado.avisoCupom)}`,
       );
     });
   }

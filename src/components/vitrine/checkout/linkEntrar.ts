@@ -11,3 +11,11 @@ const SLUG = /^[a-z0-9-]{1,80}$/i;
 export function hrefEntrarCheckout(slug: string): string {
   return comNext("/conta/entrar", SLUG.test(slug) ? `/loja/${slug}/pedido` : undefined);
 }
+
+/**
+ * (343) Logado com e-mail confirmado e sem perfil: "Complete seu perfil" →
+ * `/conta/completar?next=/loja/<slug>/pedido` (sanitizado de novo no servidor).
+ */
+export function hrefCompletarCheckout(slug: string): string {
+  return comNext("/conta/completar", SLUG.test(slug) ? `/loja/${slug}/pedido` : undefined);
+}
