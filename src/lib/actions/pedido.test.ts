@@ -253,6 +253,7 @@ function cupomRow(over: Partial<Tables<"cupons">> = {}): Tables<"cupons"> {
     valor: 5.0,
     pedido_minimo: 0,
     usos_maximos: null,
+    limite_por_cliente: null,
     usos_contagem: 0,
     expira_em: null,
     ativo: true,
