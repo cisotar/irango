@@ -66,14 +66,14 @@ editáveis. Junto do campo de cupom há um link "Entrar" (só sem sessão de cli
   (`revisarCarrinho-contrato.ts:49`). **Nenhum estado novo de cupom.**
 
 **Behaviors:**
-- [ ] Convidado fecha pedido exatamente como hoje: mesmos campos, mesmo payload, mesmos testes verdes, sem teste
-  existente alterado (gate C3). Garantido em: Server Action (`schemaPayloadPedido` `.strict()` não muda) + suíte.
+- [x] Convidado fecha pedido exatamente como hoje: mesmos campos, mesmo payload, mesmos testes verdes; nenhum valor esperado
+  de teste existente alterado (gate C3) — só a assinatura da chamada da RPC ganhou `p_cliente_id: null`, autorizado pelo usuário (2026-10-03). Garantido em: Server Action (`schemaPayloadPedido` `.strict()` não muda) + suíte.
 - [ ] Cliente logado abre o checkout e vê nome, telefone e endereço padrão pré-preenchidos. Garantido em: servidor
   (Server Component lê o perfil com o client da sessão + **RLS** de `clientes`/`clientes_enderecos` do Marco B). É
   só preenchimento de UX: o que vale é o que o payload envia, validado como hoje.
 - [ ] Cliente logado troca o endereço entre os ≤3 salvos ou escolhe "Usar outro endereço". Garantido em: cliente
   (UX). O frete continua recalculado no servidor a partir do CEP enviado (`seguranca.md` §10).
-- [ ] Pedido de cliente logado nasce com `cliente_id = auth.uid()`. Garantido em: **Server Action** (`getUser()`
+- [x] Pedido de cliente logado nasce com `cliente_id = auth.uid()`. Garantido em: **Server Action** (`getUser()`
   da sessão; o payload não tem campo `cliente_id`; `.strict()` recusa se vier) + **RPC** (`p_cliente_id`). Só é
   gravado se a conta tem perfil em `clientes` e e-mail confirmado (decisão 18). Caso contrário o pedido é de
   convidado (`cliente_id` null).
@@ -85,19 +85,19 @@ editáveis. Junto do campo de cupom há um link "Entrar" (só sem sessão de cli
   "Voltar para <loja>". Depois de entrar (e-mail ou Google, na mesma aba), o cliente volta ao checkout com o
   carrinho intacto e os dados pré-preenchidos. Garantido em: servidor (`sanitizarNext`) + cliente (`sessionStorage`).
   Limite aceito (decisão 21): link de confirmação aberto em outra aba não traz o carrinho.
-- [ ] Digitar cupom **sem** `limite_por_cliente` (convidado ou logado) → comportamento de hoje (só `usos_maximos`
+- [x] Digitar cupom **sem** `limite_por_cliente` (convidado ou logado) → comportamento de hoje (só `usos_maximos`
   global). Garantido em: **Server Action** (`revisarCarrinho` e `criarPedido`) + **RPC**.
-- [ ] Convidado digita cupom **com** `limite_por_cliente` → a revisão mostra "Entre na sua conta para usar este
+- [x] Convidado digita cupom **com** `limite_por_cliente` → a revisão mostra "Entre na sua conta para usar este
   cupom" com o link "Entrar"; o resumo mostra desconto zero; o pedido pode ser fechado sem desconto, sem bloqueio.
   Garantido em: **Server Action + RPC** (decisão 9-A). `desconto = 0`, `p_cupom_id` null, `usos_contagem` não
   incrementa, `cupom_codigo` não é gravado.
-- [ ] Cliente logado digita cupom com `limite_por_cliente = N` e ainda tem usos → desconto aplicado como hoje.
+- [x] Cliente logado digita cupom com `limite_por_cliente = N` e ainda tem usos → desconto aplicado como hoje.
   Garantido em: **Server Action + RPC (contagem e trava na mesma transação) + RLS**.
-- [ ] Cliente logado que já atingiu `N` usos daquele cupom naquela loja → desconto zero, o pedido segue sem
+- [x] Cliente logado que já atingiu `N` usos daquele cupom naquela loja → desconto zero, o pedido segue sem
   desconto, com a mensagem "Você já usou este cupom o máximo de vezes permitido."
   **[aprovado pelo usuário, 2026-10-03]** (copy; mesmo padrão de "cupom esgotado" que hoje segue sem desconto, D5).
   Garantido em: **Server Action + RPC**.
-- [ ] O preview do desconto na tela (`ResumoValores`) nunca é autoritativo. Se o servidor zerar o desconto entre a
+- [x] O preview do desconto na tela (`ResumoValores`) nunca é autoritativo. Se o servidor zerar o desconto entre a
   revisão e o envio (corrida, limite atingido em outra aba), o pedido é gravado com o valor do servidor. Garantido
   em: **Server Action + RPC**.
 
@@ -121,12 +121,12 @@ Paginação: 20 por página, com "Carregar mais".
 - Link "Minha conta → Pedidos" em `/minha-conta`.
 
 **Behaviors:**
-- [ ] Ver só os próprios pedidos. Pedido de convidado, mesmo com o mesmo telefone ou nome, nunca aparece (decisão
+- [x] Ver só os próprios pedidos. Pedido de convidado, mesmo com o mesmo telefone ou nome, nunca aparece (decisão
   20). Garantido em: **RLS** (`cliente_id = auth.uid()`) + query com o client da sessão.
-- [ ] Abrir um pedido pelo link de confirmação por token. Garantido em: fluxo atual (`buscarPedidoPorToken`, sem
+- [x] Abrir um pedido pelo link de confirmação por token. Garantido em: fluxo atual (`buscarPedidoPorToken`, sem
   mudança). O `token_acesso` só é lido pelo dono do pedido via RLS.
 - [ ] Sem sessão → redireciona para `/conta/entrar?next=/minha-conta/pedidos`. Garantido em: guard (layout) do Marco B.
-- [ ] Pedido anonimizado nunca aparece: após a anonimização o `cliente_id` é null. Garantido em: banco.
+- [x] Pedido anonimizado nunca aparece: após a anonimização o `cliente_id` é null. Garantido em: banco.
 
 ---
 
@@ -135,13 +135,13 @@ Paginação: 20 por página, com "Carregar mais".
 **Descrição:** O bloco "Excluir conta" do Marco B passa a respeitar a decisão 16.
 
 **Behaviors:**
-- [ ] Com pedido em aberto (status fora de `entregue`/`cancelado`), excluir conta é recusado, com a mensagem
+- [x] Com pedido em aberto (status fora de `entregue`/`cancelado`), excluir conta é recusado, com a mensagem
   "Aguarde a entrega dos seus pedidos em aberto para excluir a conta." Nada é apagado nem anonimizado. Garantido
   em: **função `anonimizar_cliente`** (o banco recusa, então nenhum caminho a contorna) + Server Action `excluirConta`
   (traduz o erro na mensagem). Vale também para lojista/admin + cliente (que perdem só o perfil).
-- [ ] Sem pedido em aberto → exclusão como no Marco B, agora anonimizando também os pedidos (ver Regras). Garantido
+- [x] Sem pedido em aberto → exclusão como no Marco B, agora anonimizando também os pedidos (ver Regras). Garantido
   em: `anonimizar_cliente` (`service_role`).
-- [ ] Quando o último pedido termina, a exclusão volta a funcionar sem fila nem agendador. Garantido em: a checagem
+- [x] Quando o último pedido termina, a exclusão volta a funcionar sem fila nem agendador. Garantido em: a checagem
   roda no momento da chamada.
 - [ ] O aviso é só resposta da action. A tela **não** pré-checa nem esconde o botão.
   **[aprovado pelo usuário, 2026-10-03]**: um único caminho de verdade (servidor) e nada a manter em sincronia na UI.
@@ -167,7 +167,7 @@ sem teto não tem uso real.
   (zod `.strict()`, escopo por `loja_id` do dono) + **RLS** `cupons_acesso_proprio` + **CHECK** no banco
   (`limite_por_cliente is null or limite_por_cliente >= 1`).
 - [ ] Lojista não define limite em cupom de outra loja. Garantido em: Server Action + RLS (sem mudança).
-- [ ] Mudar o limite de um cupom já usado vale para os próximos pedidos. Os usos passados continuam contando
+- [x] Mudar o limite de um cupom já usado vale para os próximos pedidos. Os usos passados continuam contando
   (a contagem lê `pedidos`). Garantido em: RPC.
 - [ ] O admin (`admin-cupom`) não muda nesta entrega.
   **[aprovado pelo usuário, 2026-10-03]**: o painel admin de cupom continua sem o campo. Se ele salvar um cupom, preserva o
