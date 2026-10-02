@@ -49,3 +49,4 @@ Lista: "Aniversariantes do mês". Detalhe: todos os 6 (dados da allowlist, 404 a
 - **D6 (erro de consulta)** — sem copy nova: segue a convenção existente (query propaga `error`, error boundary genérico do Next).
 - **D7 (rótulo do filtro)** — (b): "Aniversariantes de <mês>" com o mês de `mesDeReferencia` (fuso da loja), nome do mês em pt-BR minúsculo.
 - **D9 no detalhe** — lista TODOS os pedidos (cancelados inclusos, com `BadgeStatusPedido`) e o resumo "N pedidos · M cancelados".
+- **Nota da auditoria de 346** — `carregarMaisClientes` ainda não repassa `mes`; ao implementar o filtro de aniversariantes, o cursor/“Carregar mais” deve carregar o `p_mes` junto (validado no servidor).
