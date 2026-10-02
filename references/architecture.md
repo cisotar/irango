@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.3.7 | **Atualizado:** 2026-09-29
+**Versão:** 0.3.8 | **Atualizado:** 2026-10-02
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -218,7 +218,7 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 - **Provider:** Supabase Auth (email/senha + Google OAuth)
 - **Sessão:** gerenciada por `@supabase/ssr` via cookies HttpOnly
 - **Middleware:** `middleware.ts` na raiz — refresha sessão em toda request
-- **Guard de painel:** dois layouts em camada, posicionais. `app/(painel)/painel/layout.tsx` decide sessão/email/loja (`decidirAcessoBase`) e monta o chrome; o route group aninhado `app/(painel)/painel/(bloqueavel)/layout.tsx` decide só a assinatura (`decidirAssinatura`) sobre as rotas que estão posicionalmente dentro dele. Telas isentas do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) ficam fora do grupo por estrutura de pastas — isenção não depende de header de rota (achado #3B do pentest 2026-07-08, ver `seguranca.md` §4)
+- **Guard de painel:** dois layouts em camada, posicionais. `app/(painel)/painel/layout.tsx` decide sessão/papel/email/loja (`decidirAcessoBase`, com os papéis lidos de `papeis_usuario` por `buscarPapeisDoUsuario`) e monta o chrome; o route group aninhado `app/(painel)/painel/(bloqueavel)/layout.tsx` decide só a assinatura (`decidirAssinatura`) sobre as rotas que estão posicionalmente dentro dele. Telas isentas do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) ficam fora do grupo por estrutura de pastas — isenção não depende de header de rota (achado #3B do pentest 2026-07-08, ver `seguranca.md` §4)
 - **Vitrine pública:** sem auth — `app/(publica)` usa `supabase/server.ts` sem verificar sessão
 - **Guard admin do SaaS:** `verificarAdminSaaS()` (`src/lib/auth/admin.ts`) — fail-closed, compara `user.id` contra `SAAS_ADMIN_USER_ID` server-only. Usado em `admin/assinantes/layout.tsx` (guard de subárvore) e direto em `admin/page.tsx` (guard de page isolada, opção A — ver `seguranca.md` §7)
 
@@ -228,7 +228,7 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 /login → supabase.auth.signInWithPassword() → cookie setado → redirect /painel
 ```
 
-O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-login pela identidade: sem `next` explícito, dono do SaaS (`user.id === SAAS_ADMIN_USER_ID`, via `ehAdminSaaS()`) → `/admin` (hub de seleção); qualquer outro usuário → `/painel`, como hoje. `next` explícito sanitizado sempre tem prioridade sobre esse destino padrão.
+O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-login pela identidade: sem `next` explícito, dono do SaaS (`user.id === SAAS_ADMIN_USER_ID`, via `ehAdminSaaS()`) → `/admin` (hub de seleção); lojista → `/painel`; demais papéis → `/` (`destinoPadraoPorPapel`, `src/lib/utils/papeis.ts`). O callback é a porta `(auth)`: atribui `lojista` à conta que ainda não tem papel (`atribuirPapelInicial`, RPC `atribuir_papel_inicial`); papel existente nunca muda. `next` explícito sanitizado sempre tem prioridade sobre esse destino padrão (o guard do painel barra quem não é lojista).
 
 ### Fluxo de proteção do painel
 
@@ -236,8 +236,9 @@ O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-lo
 middleware.ts → só refresh de sessão/cookie — não decide acesso, não propaga header de rota
 painel/layout.tsx → decidirAcessoBase(user, loja)
     → sem sessão → redirect /login
+    → sem papel lojista → redirect pelo papel (admin → /admin, demais → /); nunca auto-cura
     → email não confirmado → redirect /confirmar-email
-    → sem loja (user órfão) → auto-cura + redirect /painel
+    → sem loja (lojista órfão) → auto-cura + redirect /painel
     → ok → chrome (Sidebar/Topbar) + children
 (bloqueavel)/layout.tsx (aninhado, só sob esse route group) → decidirAssinatura(loja, agora)
     → bloqueada → redirect /painel/assinatura-bloqueada

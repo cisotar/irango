@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.6.2 | **Atualizado:** 2026-09-29
+**Versão:** 0.6.3 | **Atualizado:** 2026-10-02
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -58,6 +58,10 @@ ALTER TABLE categoria_produto_opcionais ENABLE ROW LEVEL SECURITY;
 ALTER TABLE itens_pedido_opcionais     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE produto_opcionais_ocultos  ENABLE ROW LEVEL SECURITY;
 ```
+
+### Papel de conta — `papeis_usuario` e `lojas_exige_dono_lojista_trg`
+
+Migration `20261001120000_papel_cliente.sql`. `papeis_usuario` (`lojista` | `cliente`): RLS com policy única de SELECT própria (`usuario_id = (select auth.uid())`); sem INSERT/UPDATE/DELETE para `anon`/`authenticated`. Escrita só por `service_role` via `public.atribuir_papel_inicial` (`SECURITY DEFINER`, `search_path = ''`, EXECUTE só `service_role`, advisory lock): grava o papel apenas se a conta não tem nenhum e devolve os papéis atuais. O `usuarioId` vem sempre da sessão/signUp, nunca do payload. Trigger `BEFORE INSERT OR UPDATE OF dono_id` em `lojas` (`lojas_exige_dono_lojista_trg`) garante que conta só-cliente nunca é dona de loja, por qualquer role; conta sem papel recebe `lojista` ao virar dona. Quando um usuário final tenta inserir loja de outro dono, o trigger não toca papel alheio e a policy recusa (42501). Gate do painel por papel: `architecture.md` §5.
 
 ### Políticas por tabela
 
@@ -1113,7 +1117,7 @@ Supabase permite signup sem confirmar email — qualquer um cria loja com email 
 Sequência executada inteiramente no servidor (nunca no cliente):
 
 1. `supabase.auth.signUp(email, senha)` via cliente anon — retorna `user.id`.
-2. Criação de loja **delegada** à função `public.garantir_loja_do_dono` (ver abaixo) — `cadastrar` não cria mais loja diretamente.
+2. `atribuir_papel_inicial(userId, 'lojista')` via `service_role`; se a conta já existia com outro papel, recusa com a mesma mensagem de e-mail já cadastrado. Depois cria a loja direto com `criarLoja` sob `service_role` (`src/lib/actions/auth.ts`) — `cadastrar` não usa a RPC `garantir_loja_do_dono`.
 3. Loja nasce com `ativo = false`. Só vai à vitrine após confirmar email + completar perfil (guard na issue 016).
 4. `consentimento_em` e `consentimento_versao` são gravados dentro da função SQL — nunca enviados pelo cliente como campo livre.
 5. `assinatura_status = 'trial'` e `assinatura_fim_periodo = now() + interval '14 days'` gravados SERVER-SIDE pela função SQL.
@@ -1138,7 +1142,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public ...
 - Loja nasce `ativo = false`, `assinatura_status = 'trial'`, `consentimento_em = now()` — todos decididos server-side, nunca pelo cliente.
 - Slug derivado da parte local do email, sanitizado para `^[a-z0-9-]+$`; colisão resolvida com sufixo hash do `dono_id`.
 
-Usada em dois lugares: Server Action `cadastrar` (no signup) e guard do painel (auto-cura para usuários órfãos pré-existentes).
+Usada só pelo guard do painel (auto-cura de lojista órfão), e apenas para conta com papel `lojista`: `decidirAcessoBase` devolve `sem-papel-lojista` antes de `onboarding`, então conta só-cliente ou sem papel nunca dispara a cura. `cadastrar` não a chama.
 
 ### Reconciliação pós-confirmação de email (issue 066)
 

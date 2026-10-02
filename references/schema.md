@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.4.2 | **Atualizado:** 2026-09-29
+**Versão:** 0.4.3 | **Atualizado:** 2026-10-02
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -21,6 +21,8 @@
 
 ```
 auth.users (Supabase)
+    │
+    ├── papeis_usuario (usuario_id → auth.users.id, CASCADE)
     │
     └── lojas (dono_id → auth.users.id)
             │
@@ -544,6 +546,25 @@ CREATE TABLE admin_acessos (
 );
 ```
 
+### `papeis_usuario`
+
+```sql
+-- Papel explícito da conta. PK composta: uma conta pode ter mais de um papel.
+-- RLS: SELECT só das próprias linhas; escrita só por service_role via
+-- atribuir_papel_inicial(p_usuario_id uuid, p_papel text) RETURNS text[]
+-- (SECURITY DEFINER; grava só se a conta não tem papel; devolve os papéis atuais).
+-- Trigger lojas_exige_dono_lojista_trg em lojas (BEFORE INSERT OR UPDATE OF dono_id):
+-- recusa dono sem papel lojista (conta só-cliente); conta sem papel recebe 'lojista'.
+-- Backfill: toda conta pré-existente sem papel virou 'lojista'.
+-- Migration: 20261001120000_papel_cliente.sql
+CREATE TABLE papeis_usuario (
+  usuario_id uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+  papel      text NOT NULL CHECK (papel IN ('lojista', 'cliente')),
+  criado_em  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (usuario_id, papel)
+);
+```
+
 ### `taxas_entrega_duplicadas_182`
 
 ```sql
@@ -778,6 +799,7 @@ Regra geral:
 - **Dados do lojista** (cupons, pedidos, formas_pagamento, zonas) → somente `auth.uid() = lojas.dono_id`
 - **INSERT de pedido** → só pela RPC `criar_pedido` sob `service_role` (Server Action de checkout;
   cliente sem login); `anon`/`authenticated` sem INSERT direto (migration `20260923060457`)
+- **`papeis_usuario`** → SELECT só das próprias linhas (`usuario_id = auth.uid()`); escrita só via `service_role` (`atribuir_papel_inicial`)
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`
 - **`admin_acessos`** → deny-all permanente; acesso exclusivo via `service_role` (trilha de auditoria de acesso admin, issues 146/147)
 - **`taxas_entrega_duplicadas_182`** → deny-all permanente; acesso exclusivo via `service_role` (arquivo de dedup do índice único de `taxas_entrega.zona_id`, issue 182)
