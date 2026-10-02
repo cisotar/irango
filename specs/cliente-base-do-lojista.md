@@ -300,3 +300,4 @@ a base ignora convidados.
 - **P2** — O opt-in `aceita_marketing` vale para promoções das lojas onde o cliente compra; a coluna fica na lista do lojista.
 - **P3** — Atualizar a Política de Privacidade (a loja vê nome, telefone, aniversário dia/mês e opt-in de quem comprou logado) fica para depois: issue 345.
 - Decisões propostas aprovadas como estão.
+- **Atualização da allowlist (2026-10-03, aprovado pelo usuário):** cancelados são exibidos mas não contabilizados, explicitamente. Somam-se à allowlist `total_cancelados` e `ultimo_pedido_status`; `ultimo_pedido_em` passa a considerar qualquer status; `total_pedidos` continua sem cancelados. Detalhes nas issues 346/347.

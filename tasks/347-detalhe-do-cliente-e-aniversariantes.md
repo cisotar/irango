@@ -48,3 +48,4 @@ Lista: "Aniversariantes do mês". Detalhe: todos os 6 (dados da allowlist, 404 a
 - **D5 (estado vazio)** — (c): vazio de aniversariantes ganha botão "Ver todos os clientes" (→ `/painel/clientes`); base vazia fica só com o texto do spec.
 - **D6 (erro de consulta)** — sem copy nova: segue a convenção existente (query propaga `error`, error boundary genérico do Next).
 - **D7 (rótulo do filtro)** — (b): "Aniversariantes de <mês>" com o mês de `mesDeReferencia` (fuso da loja), nome do mês em pt-BR minúsculo.
+- **D9 no detalhe** — lista TODOS os pedidos (cancelados inclusos, com `BadgeStatusPedido`) e o resumo "N pedidos · M cancelados".

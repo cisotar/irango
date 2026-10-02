@@ -52,3 +52,7 @@ Lista: "só clientes com ≥1 pedido…", "Lojista A nunca vê…", "só as colu
 ## Respostas do usuário (2026-10-03)
 - **D4 (telefone)** — formatado `(DD) NNNNN-NNNN` e clicável, abrindo conversa no WhatsApp (`wa.me`) — reusar o padrão de `linkWhatsappLoja` (só dígitos, `urlHttpsSegura`, fail-closed). Vale para a lista e o detalhe (347).
 - **D4b (DDD obrigatório)** — o telefone do cliente passa a exigir DDD de 2 dígitos ao ser gravado. Com 55 prefixado, todo telefone novo vira link `wa.me`. Abrangência (b): zod do perfil do cliente (`cliente.ts`) e do checkout (`pedido.ts`/`checkout.ts`); CHECK do banco inalterado. Telefone legado sem DDD é exibido como gravado, sem link.
+- **D9 (cancelados)** — aprovado: cancelados são EXIBIDOS mas NÃO contabilizados, de forma explícita.
+  - `RETURNS TABLE` ganha `total_cancelados` (int) e `ultimo_pedido_status` (status do pedido mais recente de qualquer status); `ultimo_pedido_em` passa a ser o mais recente de QUALQUER status. `total_pedidos` segue excluindo cancelados.
+  - Lista: "N pedidos · M cancelados" (o "· M cancelados" só quando M>0); "Último pedido" só data `dd/mm/aaaa`, com "(cancelado)" quando `ultimo_pedido_status = 'cancelado'`. Coluna sempre tem data para quem tem ≥1 pedido.
+  - RED adicional: cliente só com cancelados → `total_pedidos=0`, `total_cancelados=N`, `ultimo_pedido_em` preenchido, status `cancelado`; cliente sem pedido algum não entra na base.
