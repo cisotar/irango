@@ -68,7 +68,7 @@ export default async function ProdutosPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   // `buscarOpcionaisPorCategoria` precisa dos ids já resolvidos de

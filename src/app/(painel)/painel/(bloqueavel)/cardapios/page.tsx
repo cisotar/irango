@@ -42,7 +42,7 @@ export default async function CardapiosPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   const { cardapios, produtos, vinculosPorProduto } =
