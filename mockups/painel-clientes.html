@@ -30,21 +30,11 @@
 </style>
 </head>
 <body class="min-h-screen">
-<!-- Seletor de cenário (só do mockup) -->
-<div class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b px-4 py-2 flex flex-wrap gap-2 text-xs">
-  <b class="self-center">Cenário:</b>
-  <button class="btn" data-v="lista">Lista</button>
-  <button class="btn" data-v="aniv">Aniversariantes</button>
-  <button class="btn" data-v="vazio">Base vazia</button>
-  <button class="btn" data-v="vazioaniv">Aniv. vazio</button>
-  <button class="btn" data-v="detalhe">Detalhe</button>
-</div>
-
 <div class="md:flex">
   <!-- NavPainel (resumo) -->
-  <aside class="hidden md:block w-56 shrink-0 bg-white border-r min-h-screen p-3">
+  <aside class="w-full md:w-56 shrink-0 bg-white border-b md:border-b-0 md:border-r md:min-h-screen p-3 flex flex-col gap-3">
     <p class="font-semibold px-3 py-2">Pizzaria do Bairro</p>
-    <nav class="nav" aria-label="Painel">
+    <nav class="nav hidden md:block" aria-label="Painel">
       <a href="#">Dashboard</a>
       <a href="#">Pedidos</a>
       <a href="#" aria-current="page">
@@ -54,6 +44,15 @@
       <a href="#">Cupons</a>
       <a href="#">Configurações</a>
     </nav>
+    <!-- Seletor de cenário (só do mockup) -->
+    <div class="border-t pt-3 flex flex-wrap md:flex-col gap-2 text-xs">
+      <b class="px-1">Cenário do mockup</b>
+      <button class="btn" data-v="lista">Lista</button>
+      <button class="btn" data-v="aniv">Aniversariantes</button>
+      <button class="btn" data-v="vazio">Base vazia</button>
+      <button class="btn" data-v="vazioaniv">Aniv. vazio</button>
+      <button class="btn" data-v="detalhe">Detalhe</button>
+    </div>
   </aside>
 
   <main class="flex-1 px-4 py-6 md:px-8">
