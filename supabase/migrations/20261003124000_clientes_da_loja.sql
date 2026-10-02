@@ -1,5 +1,9 @@
 -- 346 — base de clientes do lojista (camada banco).
--- Spec: specs/cliente-base-do-lojista.md §Banco · tasks/346 (D1, D9).
+-- Spec: specs/cliente-base-do-lojista.md §Banco · tasks/346 (D1, D9, D10).
+--
+-- D10: paginação keyset (sem offset). Ordem (ultimo_pedido_em desc, cliente_id desc);
+-- cursor (p_apos_ultimo, p_apos_id) devolve linhas com tupla < cursor. Cursor parcial
+-- (só um dos dois) → 22023. p_limite com teto 100.
 --
 -- Duas funções SECURITY DEFINER escopadas pela loja do usuário autenticado
 -- (lojas.dono_id = auth.uid()); RETURNS TABLE fechado (allowlist de 10 colunas:
@@ -9,7 +13,7 @@
 -- Cliente sem pedido na loja não entra; anonimizado some (cliente_id zerado).
 --
 -- Rollback (sem perda de dado — só funções e índice):
---   drop function if exists public.clientes_da_loja(smallint, integer, integer);
+--   drop function if exists public.clientes_da_loja(smallint, integer, timestamptz, uuid);
 --   drop function if exists public.cliente_da_loja(uuid);
 --   drop index if exists public.pedidos_loja_cliente_idx;
 
@@ -20,7 +24,8 @@ create index if not exists pedidos_loja_cliente_idx
 create or replace function public.clientes_da_loja(
   p_mes smallint default null,
   p_limite integer default 50,
-  p_offset integer default 0
+  p_apos_ultimo timestamptz default null,
+  p_apos_id uuid default null
 )
 returns table (
   cliente_id uuid,
@@ -42,6 +47,9 @@ as $$
 begin
   if p_mes is not null and (p_mes < 1 or p_mes > 12) then
     raise exception 'p_mes inválido' using errcode = '22023';
+  end if;
+  if (p_apos_ultimo is null) <> (p_apos_id is null) then
+    raise exception 'cursor incompleto' using errcode = '22023';
   end if;
 
   return query
@@ -74,10 +82,10 @@ begin
            limit 1)
     from agg a
     join public.clientes c on c.id = a.cid
-   where p_mes is null or extract(month from c.data_nascimento)::int = p_mes
-   order by a.ultimo desc, c.id
-   limit least(greatest(coalesce(p_limite, 50), 0), 100)
-  offset greatest(coalesce(p_offset, 0), 0);
+   where (p_mes is null or extract(month from c.data_nascimento)::int = p_mes)
+     and (p_apos_ultimo is null or (a.ultimo, c.id) < (p_apos_ultimo, p_apos_id))
+   order by a.ultimo desc, c.id desc
+   limit least(greatest(coalesce(p_limite, 50), 0), 100);
 end;
 $$;
 
@@ -121,7 +129,7 @@ as $$
      and exists (select 1 from ped);
 $$;
 
-revoke all on function public.clientes_da_loja(smallint, integer, integer) from public, anon;
+revoke all on function public.clientes_da_loja(smallint, integer, timestamptz, uuid) from public, anon;
 revoke all on function public.cliente_da_loja(uuid) from public, anon;
-grant execute on function public.clientes_da_loja(smallint, integer, integer) to authenticated;
+grant execute on function public.clientes_da_loja(smallint, integer, timestamptz, uuid) to authenticated;
 grant execute on function public.cliente_da_loja(uuid) to authenticated;
