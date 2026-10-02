@@ -7,7 +7,7 @@
 > `specs/cliente-vinculo-pedido.md` (`pedidos.cliente_id`, migration `20261003120000_pedidos_cliente_id.sql`).
 > As decisões 1–22 e as alterações 23–27 do plano são restrições e não são rediscutidas aqui. Este spec aplica
 > literalmente as decisões 2, 3, 5 (só dados), 11 e 20.
-> Linhas marcadas **[DECISÃO PROPOSTA — aprovar]** são escolhas que o P36 delegou a este spec: uma opção e o motivo.
+> Linhas marcadas **[aprovado pelo usuário, 2026-10-03]** são escolhas que o P36 delegou a este spec: uma opção e o motivo.
 > Dúvidas que o plano não delega estão em `## Perguntas ao usuário`.
 
 ## Visão Geral
@@ -77,14 +77,14 @@ Colunas exibidas (ver allowlist em Modelos de Dados): **Nome** (link para o deta
   **no fuso da loja** (`lojas.timezone`). O estado do filtro vive na URL (`?aniversariantes=1`), validado com zod
   (qualquer outro valor = sem filtro). Garantido em: servidor (mês calculado no Server Component por função pura;
   o filtro é aplicado no SQL). Não é dado sensível: só restringe um conjunto já escopado.
-  **[DECISÃO PROPOSTA — aprovar]** mês calculado no servidor, no fuso da loja, por função pura
+  **[aprovado pelo usuário, 2026-10-03]** mês calculado no servidor, no fuso da loja, por função pura
   `mesDeReferencia(agora: Date, timezone: string): number` em `src/lib/utils/` (teste unitário D2 ao lado, conforme a
   tabela de risco), e passado como `p_mes` à função do banco. Motivo: a lista é paginada (abaixo), então filtrar no
   cliente sobre uma página mostraria aniversariantes incompletos; e "mês corrente" num servidor em UTC erra na
   virada do mês (noite de 31 em São Paulo já é dia 1 em UTC). O teste D2 sai de `queries/clientes.test.ts` para o
   teste da função pura; o arquivo de teste de queries cobre só o repasse de parâmetros.
 - [ ] Lojista clica em "Carregar mais" e recebe as próximas 50 linhas.
-  **[DECISÃO PROPOSTA — aprovar]** paginação de 50 por página com "Carregar mais", mesmo padrão de
+  **[aprovado pelo usuário, 2026-10-03]** paginação de 50 por página com "Carregar mais", mesmo padrão de
   `/minha-conta/pedidos` (`architecture.md`, 20 por página). Motivo: a base cresce sem teto e a lista é agregada;
   carregar tudo é o N+1/payload que o `acelerar` de P42 vai procurar. `p_limite` tem teto no banco (≤ 100) e no zod.
 - [ ] Lojista clica no nome do cliente e vai para `/painel/clientes/[id]`. Garantido em: cliente (navegação); a
@@ -133,7 +133,7 @@ ao mais antigo: número/data, status, modalidade e total, cada um com link para 
 
 ### Fonte: função escopada, não view
 
-**[DECISÃO PROPOSTA — aprovar]** fonte = **funções `SECURITY DEFINER` que resolvem a loja pelo `auth.uid()`**, não
+**[aprovado pelo usuário, 2026-10-03]** fonte = **funções `SECURITY DEFINER` que resolvem a loja pelo `auth.uid()`**, não
 view `security_invoker`. Motivo:
 
 1. Uma view `security_invoker = true` (`seguranca.md` §19) roda com a RLS de quem consulta. A RLS de `clientes` só
@@ -180,7 +180,7 @@ O agregado é feito no SQL (P41: "agregado em SQL, não em JS").
 
 ### Allowlist de colunas — decisão por coluna
 
-**[DECISÃO PROPOSTA — aprovar]** cada coluna, com o motivo (minimização, LGPD art. 6º III):
+**[aprovado pelo usuário, 2026-10-03]** cada coluna, com o motivo (minimização, LGPD art. 6º III):
 
 | Coluna exposta | Origem | Entra? | Motivo |
 |---|---|---|---|
@@ -198,7 +198,7 @@ O agregado é feito no SQL (P41: "agregado em SQL, não em JS").
 | `consentimento_em`, `consentimento_versao`, `criado_em`, `ultimo_acesso_em` | `clientes` | **Não** | Uso interno de compliance e retenção; sem finalidade para o lojista. `ultimo_acesso_em` ainda revelaria atividade do cliente em outras lojas. |
 | totais em dinheiro (ticket médio, soma gasta) | `pedidos.total` | **Não (v1)** | Fora do pedido do P36; ver Fora do Escopo. |
 
-**[DECISÃO PROPOSTA — aprovar]** `total_pedidos` e `ultimo_pedido_em` contam **todos os pedidos com `cliente_id` na
+**[aprovado pelo usuário, 2026-10-03]** `total_pedidos` e `ultimo_pedido_em` contam **todos os pedidos com `cliente_id` na
 loja, exceto `cancelado`**. Motivo: a coluna se chama "Pedidos" na leitura do lojista e um pedido cancelado não foi
 uma compra. Um cliente cujos únicos pedidos foram cancelados **continua na base** (teve ≥1 pedido, regra do P36), com
 "0 pedidos" e "Último pedido —". Alternativa recusada: contar cancelados, que inflaria o número; e tirar o cliente
@@ -293,3 +293,10 @@ a base ignora convidados.
 - **P3 — Transparência ao cliente.** A Política de Privacidade (decisão 22) já diz que a loja onde o cliente comprou
   logado vê nome, telefone, aniversário (dia/mês) e opt-in? Se não, o texto precisa ser atualizado nesta entrega,
   como no Marco B.
+
+## Respostas do usuário (2026-10-03)
+
+- **P1** — Resolvida no código: índice único `lojas(dono_id)` (`20260614003500_unique_loja_por_dono.sql`) garante uma loja por dono; a loja sai de `auth.uid()`.
+- **P2** — O opt-in `aceita_marketing` vale para promoções das lojas onde o cliente compra; a coluna fica na lista do lojista.
+- **P3** — Atualizar a Política de Privacidade (a loja vê nome, telefone, aniversário dia/mês e opt-in de quem comprou logado) fica para depois: issue 345.
+- Decisões propostas aprovadas como estão.
