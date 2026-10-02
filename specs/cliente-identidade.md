@@ -467,4 +467,6 @@ Nenhuma — respondidas em 2026-10-02.
 - **D9** — No último endereço, "Remover" desabilitado com "Mantenha pelo menos um endereço."
 - **D10** — Editar/adicionar endereço no próprio card, com salvamento automático.
 - **E1** — Termos/Privacidade: rascunho do agente, mantendo o aviso "revisar com jurídico".
-- **Pendentes:** D11 (títulos "proposta" do mockup) e D12 ("Sair" no topo de `/minha-conta`, sem `next` → `/`).
+- **D11** — Títulos e rótulos marcados como "proposta" em `mockups/cliente-conta.*` aprovados como estão.
+- **D12** — "Sair" no topo de `/minha-conta`; sem `next` → `/`.
+- **Botão Google** — estilo escuro oficial (fundo `#131314`, borda `#8e918f`, texto `#e3e3e3`, logo colorido), igual em `/conta/entrar`, `/conta/cadastro` e no modal.
