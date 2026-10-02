@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel Clientes iRango</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* Tokens do painel (globals.css @theme) — sistema, NÃO o tema da loja */
+  :root{
+    --fundo:#f5f0e6; --card:#ffffff; --foreground:#0a0a0a; --muted:#f5f5f5;
+    --muted-foreground:#737373; --primary:#171717; --primary-foreground:#fafafa;
+    --border:#8a8a8a; /* .superficie-painel */
+  }
+  body{background:var(--fundo);color:var(--foreground);font-family:system-ui,sans-serif}
+  .card{background:var(--card);border-radius:.75rem;box-shadow:0 0 0 1px var(--border)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 .875rem;border-radius:.5rem;font-size:.875rem;font-weight:500;border:1px solid var(--border);background:var(--card)}
+  .btn[aria-current="page"]{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
+  .btn:focus-visible,.lnk:focus-visible{outline:none;box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--primary)}
+  .badge-outline{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:999px;padding:0 .5rem;font-size:.75rem;font-weight:500;line-height:1.25rem}
+  .muted{color:var(--muted-foreground)}
+  .bg-muted50{background:color-mix(in srgb,var(--muted) 50%,transparent)}
+  .row:hover,.mcard:hover{background:color-mix(in srgb,var(--muted) 50%,transparent)}
+  .stretch::after{content:"";position:absolute;inset:0}
+  .mcard:has(a:focus-visible){box-shadow:0 0 0 2px var(--primary)}
+  .nav a{display:flex;gap:.5rem;align-items:center;min-height:44px;padding:0 .75rem;border-radius:.5rem;font-size:.875rem}
+  .nav a[aria-current="page"]{background:var(--muted);font-weight:600}
+  .novo{font-size:.625rem;border:1px dashed #b45309;color:#92400e;border-radius:4px;padding:0 4px}
+  .view{display:none}.view.on{display:block}
+</style>
+</head>
+<body class="min-h-screen">
+<!-- Seletor de cenário (só do mockup) -->
+<div class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b px-4 py-2 flex flex-wrap gap-2 text-xs">
+  <b class="self-center">Cenário:</b>
+  <button class="btn" data-v="lista">Lista</button>
+  <button class="btn" data-v="aniv">Aniversariantes</button>
+  <button class="btn" data-v="vazio">Base vazia</button>
+  <button class="btn" data-v="vazioaniv">Aniv. vazio</button>
+  <button class="btn" data-v="detalhe">Detalhe</button>
+</div>
+
+<div class="md:flex">
+  <!-- NavPainel (resumo) -->
+  <aside class="hidden md:block w-56 shrink-0 bg-white border-r min-h-screen p-3">
+    <p class="font-semibold px-3 py-2">Pizzaria do Bairro</p>
+    <nav class="nav" aria-label="Painel">
+      <a href="#">Dashboard</a>
+      <a href="#">Pedidos</a>
+      <a href="#" aria-current="page">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Clientes <span class="novo">novo</span></a>
+      <a href="#">Produtos</a>
+      <a href="#">Cupons</a>
+      <a href="#">Configurações</a>
+    </nav>
+  </aside>
+
+  <main class="flex-1 px-4 py-6 md:px-8">
+    <div class="mx-auto w-full max-w-5xl flex flex-col gap-4" id="raiz"></div>
+  </main>
+</div>
+
+<script>
+const clientes = [
+  {id:"1",nome:"Mariana Souza",tel:"(11) 98765-4321",ped:12,ult:"01/10/2026",dia:"14/03",mk:true,mes:3},
+  {id:"2",nome:"Rafael Lima",tel:"(11) 91234-5678",ped:3,ult:"28/09/2026",dia:"02/10",mk:false,mes:10},
+  {id:"3",nome:"Juliana Ferreira dos Santos Albuquerque",tel:"(11) 99555-0101",ped:7,ult:"25/09/2026",dia:"19/10",mk:true,mes:10},
+  {id:"4",nome:"Carlos Eduardo Pereira",tel:"(11) 97777-2020",ped:1,ult:"10/09/2026",dia:"30/12",mk:false,mes:12},
+  {id:"5",nome:"Beatriz Nunes",tel:"(11) 99876-1234",ped:0,ult:null,dia:"21/07",mk:true,mes:7},
+];
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ult=c=>c.ult?c.ult:'<span aria-label="Sem pedido concluído">—</span>';
+const promo=c=>`<span class="badge-outline">${c.mk?"Aceita":"Não aceita"}</span>`;
+
+function cabecalho(voltar,rot,titulo){return `
+ <div class="card p-4 flex flex-col gap-1">
+   <a href="#" class="lnk w-fit text-sm underline">${rot}</a>
+   <h1 class="text-xl font-semibold">${esc(titulo)}</h1>
+ </div>`;}
+
+function filtro(aniv){return `
+ <nav aria-label="Filtrar clientes" class="flex flex-wrap gap-2">
+   <a href="#" class="btn" ${aniv?"":'aria-current="page"'}>Todos</a>
+   <a href="#" class="btn" ${aniv?'aria-current="page"':""}>Aniversariantes do mês</a>
+ </nav>`;}
+
+function vazio(t){return `<div class="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed py-12 text-center" style="border-color:var(--border)"><p class="text-sm muted">${t}</p></div>`;}
+
+function tabela(lista,mais){
+ const desk=`<div class="hidden md:block overflow-hidden rounded-lg">
+  <table class="w-full text-sm"><caption class="sr-only">Clientes da loja</caption>
+   <thead><tr class="border-b bg-muted50 text-left muted">
+    <th scope="col" class="px-4 py-2 font-medium">Nome</th>
+    <th scope="col" class="px-4 py-2 font-medium">Telefone</th>
+    <th scope="col" class="px-4 py-2 font-medium text-right">Pedidos</th>
+    <th scope="col" class="px-4 py-2 font-medium">Último pedido</th>
+    <th scope="col" class="px-4 py-2 font-medium">Aniversário</th>
+    <th scope="col" class="px-4 py-2 font-medium">Promoções</th></tr></thead>
+   <tbody>${lista.map(c=>`<tr class="row relative border-b last:border-0">
+    <td class="px-4 py-3"><a href="#" data-det class="lnk stretch font-medium">${esc(c.nome)}</a></td>
+    <td class="px-4 py-3 whitespace-nowrap">${c.tel}</td>
+    <td class="px-4 py-3 text-right tabular-nums">${c.ped}</td>
+    <td class="px-4 py-3 muted whitespace-nowrap">${ult(c)}</td>
+    <td class="px-4 py-3 tabular-nums">${c.dia}</td>
+    <td class="px-4 py-3">${promo(c)}</td></tr>`).join("")}</tbody></table></div>`;
+ const mob=`<ul class="flex flex-col gap-3 md:hidden">${lista.map(c=>`<li>
+   <div class="mcard card relative p-3 flex flex-col gap-1">
+     <a href="#" data-det class="lnk stretch font-medium break-words">${esc(c.nome)}</a>
+     <p class="text-sm">${c.tel}</p>
+     <p class="text-sm muted">${c.ped} ${c.ped===1?"pedido":"pedidos"} · último ${ult(c)}</p>
+     <p class="text-sm muted">Aniversário ${c.dia}</p>
+     <div>${promo(c)}</div>
+   </div></li>`).join("")}</ul>`;
+ const btn=mais?`<div class="flex justify-center pt-4"><a href="#" class="btn">Carregar mais</a></div>`:"";
+ return desk+mob+btn;
+}
+
+function lista(modo){
+ const aniv=modo==="aniv"||modo==="vazioaniv";
+ let dados=clientes; if(modo==="aniv")dados=clientes.filter(c=>c.mes===10);
+ let corpo;
+ if(modo==="vazio")corpo=vazio("Nenhum cliente com conta pediu na sua loja ainda.");
+ else if(modo==="vazioaniv")corpo=vazio("Nenhum aniversariante neste mês.");
+ else corpo=tabela(dados,modo==="lista");
+ return cabecalho("/painel","Painel","Clientes")+`
+ <div class="card"><div class="p-4 border-b" style="border-color:var(--border)">${filtro(aniv)}</div>
+  <div class="p-4">${corpo}</div></div>`;
+}
+
+function detalhe(){
+ const c=clientes[0];
+ const pedidos=[["A1B2C3","01/10/2026","Entregue","Entrega","R$ 89,90"],["F7E8D9","22/09/2026","Entregue","Retirada","R$ 54,00"],["0C4D1E","15/09/2026","Cancelado","Entrega","R$ 120,50"]];
+ const dl=[["Telefone",c.tel],["Aniversário",c.dia],["Promoções",promo(c)],["Pedidos",c.ped],["Último pedido",c.ult]];
+ return cabecalho("/painel/clientes","Clientes",c.nome)+`
+ <div class="card p-4"><dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+  ${dl.map(([k,v])=>`<dt class="muted">${k}</dt><dd>${v}</dd>`).join("")}</dl></div>
+ <div class="card p-4 flex flex-col gap-3">
+  <h2 class="font-semibold">Pedidos nesta loja <span class="novo">proposta</span></h2>
+  <p class="text-xs muted">Reuso de TabelaPedidos com status estático — ver Dúvidas D1/D2.</p>
+  <ul class="flex flex-col gap-3">${pedidos.map(p=>`<li><div class="mcard card relative p-3 flex flex-col gap-1">
+    <div class="flex justify-between gap-2"><a href="#" class="lnk stretch font-mono text-sm">#${p[0]}</a>
+    <span class="badge-outline">${p[2]}</span></div>
+    <p class="text-sm muted">${p[1]} · ${p[3]} · ${p[4]}</p></div></li>`).join("")}</ul>
+ </div>`;
+}
+
+function render(v){
+ document.getElementById("raiz").innerHTML=v==="detalhe"?detalhe():lista(v);
+ document.querySelectorAll("[data-v]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===v));
+ document.querySelectorAll("[data-det]").forEach(a=>a.onclick=e=>{e.preventDefault();render("detalhe")});
+}
+document.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>render(b.dataset.v));
+render("lista");
+</script>
+</body>
+</html>
