@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.5.0 | **Atualizado:** 2026-10-02
+**Versão:** 0.5.1 | **Atualizado:** 2026-10-02
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -91,6 +91,7 @@ irango/
 │   │   │           ├── produtos/
 │   │   │           ├── cupons/
 │   │   │           ├── pedidos/
+│   │   │           ├── clientes/         # base de clientes do lojista (lista paginada; issue 346)
 │   │   │           └── configuracoes/
 │   │   │               ├── perfil/       # nome, slug, telefone, whatsapp
 │   │   │               ├── horarios/
@@ -148,6 +149,7 @@ irango/
 │   │   ├── validacoes/                   # schemas zod — reutilizados no form e na action
 │   │   │   ├── produto.ts
 │   │   │   ├── cupom.ts
+│   │   │   ├── telefone.ts               # telefone com DDD — regra única (cliente.ts, pedido.ts, checkout.ts)
 │   │   │   ├── loja.ts
 │   │   │   └── pedido.ts
 │   │   ├── actions/                      # helpers neutros sem 'use server' compartilhados por Server Actions
@@ -253,6 +255,10 @@ O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-lo
 ```
 
 Lojista e admin ativam o perfil de cliente na mesma conta, em `/conta/completar`, sem perder o papel. `next` passa sempre por `sanitizarNext` (`src/lib/utils/sanitizarNext.ts`, só caminho interno). Server Actions: `src/lib/actions/clienteAuth.ts` (auth) e `cliente.ts` (perfil, endereços, exclusão); queries em `supabase/queries/clientes.ts`; schemas em `validacoes/cliente.ts`. Segurança: `seguranca.md` §2 e §17.
+
+### Lojista consulta a base de clientes
+
+`/painel/clientes` (dentro de `(bloqueavel)`, item "Clientes" na `NavPainel`) lista os clientes com ao menos 1 pedido na loja. Leitura via RPC `clientes_da_loja` (`supabase/queries/clientes.ts`, client da sessão); "Carregar mais" chama a Server Action `carregarMaisClientes` (`lib/actions/clientesDaLoja.ts`) com o cursor do último cliente exibido (keyset, 50 por página). Segurança: `seguranca.md` §2; funções: `schema.md` `clientes`.
 
 ### Fluxo de proteção do painel
 
@@ -373,6 +379,7 @@ const items = order.order_items
 
 - Lógica de negócio → `lib/utils/` — uma função, usada em qualquer lugar
 - Validação → `lib/validacoes/` — mesmo schema no form e na Server Action
+- Telefone de cliente → `lib/validacoes/telefone.ts` (`campoTelefoneComDdd`, `digitosNacionais`): DDD obrigatório, prefixo 55 descartado; reusado por `cliente.ts`, `pedido.ts` e `checkout.ts` — não reescrever a regra
 - Queries → `lib/supabase/queries/` — nunca escrever `.from('produtos').select(...)` inline
 - Helper de I/O compartilhado entre actions → `lib/actions/` — módulo neutro (sem `'use server'`); exporta só funções puras de validação/transformação; o I/O em si (upload, DB) fica em cada action. Exemplo: `upload-imagem.ts` reutilizado por `upload.ts` e `logo.ts`
 - Regra que os DOIS mundos de escrita (lojista sob RLS e hub admin sob `service_role`, que tem `BYPASSRLS` e por isso nenhuma regra que more só na RLS o alcança) precisam aplicar IGUAL → `lib/actions/*-contrato.ts` — módulo neutro (sem `'use server'`) com as mensagens literais, os reconhecedores de erro de trigger e as regras puras de borda (fuso, prévia); nenhum I/O. Uma cópia, dois callers — paridade por cópia vira drift na primeira correção de um lado só. Duas instâncias: `produto-contrato.ts` (issue 241; lojista `produto.ts`, admin `admin-produtos.ts`) e `cardapio-contrato.ts` (issue 269; lojista `cardapio.ts`, admin `admin-cardapios.ts`)

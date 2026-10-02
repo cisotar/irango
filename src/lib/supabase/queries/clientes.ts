@@ -58,3 +58,40 @@ export async function registrarUltimoAcessoCliente(svc: Client, clienteId: strin
     .eq("id", clienteId);
   if (error) throw error;
 }
+
+// ── base de clientes do lojista (issue 346) ─────────────────────────────────
+
+/**
+ * Linha da allowlist de `clientes_da_loja` / `cliente_da_loja` (RETURNS TABLE
+ * fechado: sem e-mail, sem ano de nascimento). As funções escopam pela loja de
+ * `auth.uid()` — por isso o client TEM de ser o da sessão, nunca service_role.
+ */
+export type ClienteDaLoja = Database["public"]["Functions"]["clientes_da_loja"]["Returns"][number];
+
+/**
+ * Página keyset da base de clientes da loja do usuário logado (ordem:
+ * `ultimo_pedido_em desc, cliente_id desc`). `cursor` = último item exibido;
+ * ausente na 1ª página (issue 346, D10).
+ */
+export async function listarClientesDaLoja(
+  client: Client,
+  { mes, limite, cursor }: { mes?: number; limite: number; cursor?: { ultimo: string; id: string } },
+): Promise<ClienteDaLoja[]> {
+  const { data, error } = await client.rpc("clientes_da_loja", {
+    ...(mes != null ? { p_mes: mes } : {}),
+    p_limite: limite,
+    ...(cursor ? { p_apos_ultimo: cursor.ultimo, p_apos_id: cursor.id } : {}),
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Um cliente da base da loja, ou `null` se não pediu nesta loja (→ 404 no chamador). */
+export async function buscarClienteDaLoja(
+  client: Client,
+  clienteId: string,
+): Promise<ClienteDaLoja | null> {
+  const { data, error } = await client.rpc("cliente_da_loja", { p_cliente_id: clienteId });
+  if (error) throw error;
+  return data?.[0] ?? null;
+}

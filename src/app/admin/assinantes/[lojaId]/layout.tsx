@@ -53,7 +53,8 @@ export default async function HubLojaLayout({
     voltarRotulo: "Voltar ao hub admin",
     // Quem sabe quais rotas existem sob esta base é este layout, não o
     // NavPainel: soltar um item de menu antes de a rota existir publica um 404.
-    rotasAusentes: ["configuracoes/promocoes"],
+    // "clientes" (346): a base é escopada por auth.uid() do dono — não há rota admin.
+    rotasAusentes: ["configuracoes/promocoes", "clientes"],
   };
 
   return (

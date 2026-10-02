@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.5.0 | **Atualizado:** 2026-10-02
+**Versão:** 0.5.1 | **Atualizado:** 2026-10-02
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -662,6 +662,15 @@ CREATE TABLE clientes_enderecos (
 -- Índices: clientes_enderecos(cliente_id); UNIQUE parcial (cliente_id) WHERE padrao — um padrão por cliente.
 ```
 
+**Leitura pelo lojista (`SECURITY DEFINER`, `STABLE`, `search_path = ''`, EXECUTE só `authenticated`; migration `20261003124000_clientes_da_loja.sql`):** a RLS de `clientes` não é ampliada; o lojista lê a base só por estas funções, escopadas pela loja de `auth.uid()` (`lojas.dono_id`), sem parâmetro de loja. Só entra cliente com ao menos 1 pedido na loja.
+
+| Função | Faz |
+|--------|-----|
+| `clientes_da_loja(p_mes smallint = null, p_limite int = 50, p_apos_ultimo timestamptz = null, p_apos_id uuid = null)` | Lista paginada por keyset: ordem `(ultimo_pedido_em, cliente_id) DESC`, cursor = último exibido (os dois nulos na 1ª página; só um deles → `22023`). `p_limite` com teto 100; `p_mes` fora de 1..12 → `22023` (filtro por mês de aniversário) |
+| `cliente_da_loja(p_cliente_id uuid)` | Uma linha, mesma allowlist; 0 linhas se o cliente não tem pedido na loja do usuário |
+
+`RETURNS TABLE` fechado = allowlist de 10 colunas: `cliente_id, nome, telefone, dia_aniversario, mes_aniversario, aceita_marketing, total_pedidos, total_cancelados, ultimo_pedido_em, ultimo_pedido_status`. Sem `email`, ano ou `data_nascimento`. `total_pedidos` exclui cancelados; `total_cancelados` os conta; `ultimo_pedido_em`/`ultimo_pedido_status` vêm do pedido mais recente de qualquer status.
+
 ### `taxas_entrega_duplicadas_182`
 
 ```sql
@@ -890,6 +899,10 @@ CREATE UNIQUE INDEX clientes_enderecos_um_padrao_idx ON clientes_enderecos(clien
 -- Histórico do cliente e contagem de cupom por cliente; parcial porque a maioria das linhas é convidado (null).
 -- Migration: 20261003120000_pedidos_cliente_id.sql
 CREATE INDEX pedidos_cliente_id_criado_em_idx ON pedidos(cliente_id, criado_em DESC) WHERE cliente_id IS NOT NULL;
+
+-- Agregação da base de clientes por loja (clientes_da_loja / cliente_da_loja).
+-- Migration: 20261003124000_clientes_da_loja.sql
+CREATE INDEX pedidos_loja_cliente_idx ON pedidos(loja_id, cliente_id) WHERE cliente_id IS NOT NULL;
 
 -- Auditoria admin por loja, mais recentes primeiro
 -- Migration: 20260707122000_admin_acessos.sql

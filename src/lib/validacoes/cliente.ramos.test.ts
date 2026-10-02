@@ -87,9 +87,9 @@ describe("schemaPerfilCliente — ramos de campo", () => {
     const r = schemaPerfilCliente.safeParse({ ...perfil(), nome: "  Ana  " });
     expect(r.success && r.data.nome).toBe("Ana");
   });
-  it("telefone: 8 e 20 caracteres passam; 7 e 21 não; letras não", () => {
-    expect(ok(schemaPerfilCliente, { ...perfil(), telefone: "12345678" })).toBe(true);
-    expect(ok(schemaPerfilCliente, { ...perfil(), telefone: "1".repeat(20) })).toBe(true);
+  it("telefone: DDD obrigatório (346 D4b) — 8 e 20 dígitos recusados; 7 e 21 não; letras não", () => {
+    expect(ok(schemaPerfilCliente, { ...perfil(), telefone: "12345678" })).toBe(false);
+    expect(ok(schemaPerfilCliente, { ...perfil(), telefone: "1".repeat(20) })).toBe(false);
     expect(ok(schemaPerfilCliente, { ...perfil(), telefone: "1234567" })).toBe(false);
     expect(ok(schemaPerfilCliente, { ...perfil(), telefone: "1".repeat(21) })).toBe(false);
     expect(ok(schemaPerfilCliente, { ...perfil(), telefone: "1199999-abcd" })).toBe(false);

@@ -118,7 +118,7 @@ describe("schemaPerfilCliente — nome, telefone e campos autoritativos", () => 
     expect(schemaPerfilCliente.safeParse({ ...perfil(), nome: "   " }).success).toBe(false);
   });
 
-  it("telefone fora da regex de pedido.ts → rejeitado", async () => {
+  it("telefone fora da regra única de telefone.ts (formato + DDD, 346 D4b) → rejeitado", async () => {
     const { schemaPerfilCliente } = await carregar();
     expect(schemaPerfilCliente.safeParse({ ...perfil(), telefone: "abc" }).success).toBe(false);
     expect(schemaPerfilCliente.safeParse({ ...perfil(), telefone: "1".repeat(21) }).success).toBe(false);

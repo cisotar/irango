@@ -8,6 +8,7 @@
 // é REJEITADO. O servidor recalcula todo valor a partir do banco.
 
 import { z } from "zod";
+import { campoTelefoneComDdd } from "./telefone";
 
 import { LIMITE_OBSERVACAO, MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import { normalizarObservacao } from "@/lib/utils/normalizarObservacao";
@@ -109,11 +110,8 @@ export const schemaPayloadPedido = z
     idempotency_key: z.guid().optional(),
     nome_cliente: z.string().trim().min(1).max(120),
     // Limites de tamanho: anti-abuso de storage (colunas text sem limite no banco).
-    telefone_cliente: z
-      .string()
-      .trim()
-      .regex(/^\+?[\d\s()-]{8,20}$/)
-      .optional(),
+    // DDD obrigatório (346 D4b) — regra única em `telefone.ts`.
+    telefone_cliente: campoTelefoneComDdd.optional(),
     // [167] mesma normalização e mesmo teto do `observacao` do item (paridade
     // de contrato). Sem migration: a coluna pedidos.observacoes nunca teve
     // CHECK — o teto novo vale só para pedidos novos.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { schemaCadastro } from "@/lib/validacoes/auth";
 import { schemaEnderecoCheckout } from "@/lib/validacoes/checkout";
+import { campoTelefoneComDdd } from "@/lib/validacoes/telefone";
 
 /**
  * Schemas da porta cliente (issues 336/337, specs/cliente-identidade.md).
@@ -93,11 +94,8 @@ const campoDataNascimento = z.string().superRefine((valor, ctx) => {
 
 const camposPerfil = {
   nome: z.string().trim().min(1).max(120),
-  // Mesma regex de telefone de `schemaPayloadPedido` (pedido.ts) e do CHECK do banco.
-  telefone: z
-    .string()
-    .trim()
-    .regex(/^\+?[\d\s()-]{8,20}$/),
+  // DDD obrigatório (346 D4b): regra única em `telefone.ts`, reusada no pedido/checkout.
+  telefone: campoTelefoneComDdd,
   data_nascimento: campoDataNascimento,
   aceita_marketing: z.boolean().default(false),
 };

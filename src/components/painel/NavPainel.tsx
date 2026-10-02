@@ -23,6 +23,7 @@ import {
   Ticket,
   Truck,
   User,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -158,6 +159,7 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
   const itens: ItemNav[] = [
     { href: base, rotulo: "Dashboard", icone: LayoutDashboard },
     { href: `${base}/pedidos`, rotulo: "Pedidos", icone: ClipboardList },
+    { href: `${base}/clientes`, rotulo: "Clientes", icone: Users },
     {
       href: `${base}/produtos`,
       rotulo: "Produtos",

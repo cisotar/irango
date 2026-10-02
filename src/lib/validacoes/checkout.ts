@@ -11,6 +11,7 @@
 // versão/variante RFC-4122 — alinhado com `schemaPayloadPedido`.
 
 import { z } from "zod";
+import { campoTelefoneComDdd } from "./telefone";
 
 const schemaItemCheckout = z
   .object({
@@ -39,7 +40,7 @@ export const schemaCheckout = z
     forma_pagamento_id: z.guid(),
     codigo_cupom: z.string().optional(),
     nome: z.string().min(1),
-    telefone: z.string().min(1),
+    telefone: campoTelefoneComDdd, // DDD obrigatório (346 D4b)
     observacoes: z.string().optional(),
   })
   .strict(); // rejeita total/subtotal/frete/desconto injetados pelo cliente
