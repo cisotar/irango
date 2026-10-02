@@ -7,7 +7,7 @@
 > ainda não mesclado no `main` quando este spec foi escrito.
 > As decisões 1–22 do plano e as alterações 23–27 são restrições e não são rediscutidas aqui. Este spec aplica
 > literalmente as decisões 2, 3, 6, 9, 9-A, 16, 20, 21 e a alteração 25.
-> Linhas marcadas **[DECISÃO PROPOSTA — aprovar]** são escolhas que o P23 delegou a este spec. Cada uma traz uma
+> Linhas marcadas **[aprovado pelo usuário, 2026-10-03]** são escolhas que o P23 delegou a este spec. Cada uma traz uma
 > opção e o motivo.
 
 ## Visão Geral
@@ -79,7 +79,7 @@ editáveis. Junto do campo de cupom há um link "Entrar" (só sem sessão de cli
   convidado (`cliente_id` null).
 - [ ] Lojista ou admin com perfil de cliente que compra em qualquer loja (inclusive a própria) recebe `cliente_id`
   como qualquer cliente (decisão 15). Garantido em: Server Action (mesma regra).
-  **[DECISÃO PROPOSTA — aprovar]** comprar na própria loja não é bloqueado: a decisão 15 diz "pode comprar em
+  **[aprovado pelo usuário, 2026-10-03]** comprar na própria loja não é bloqueado: a decisão 15 diz "pode comprar em
   qualquer loja como cliente". O cupom com limite por cliente vale para ele como para qualquer cliente.
 - [ ] Clicar "Entrar" (visível só sem sessão de cliente, junto do campo de cupom) leva a `/conta/entrar` com
   "Voltar para <loja>". Depois de entrar (e-mail ou Google, na mesma aba), o cliente volta ao checkout com o
@@ -95,7 +95,7 @@ editáveis. Junto do campo de cupom há um link "Entrar" (só sem sessão de cli
   Garantido em: **Server Action + RPC (contagem e trava na mesma transação) + RLS**.
 - [ ] Cliente logado que já atingiu `N` usos daquele cupom naquela loja → desconto zero, o pedido segue sem
   desconto, com a mensagem "Você já usou este cupom o máximo de vezes permitido."
-  **[DECISÃO PROPOSTA — aprovar]** (copy; mesmo padrão de "cupom esgotado" que hoje segue sem desconto, D5).
+  **[aprovado pelo usuário, 2026-10-03]** (copy; mesmo padrão de "cupom esgotado" que hoje segue sem desconto, D5).
   Garantido em: **Server Action + RPC**.
 - [ ] O preview do desconto na tela (`ResumoValores`) nunca é autoritativo. Se o servidor zerar o desconto entre a
   revisão e o envio (corrida, limite atingido em outra aba), o pedido é gravado com o valor do servidor. Garantido
@@ -108,9 +108,9 @@ editáveis. Junto do campo de cupom há um link "Entrar" (só sem sessão de cli
 **Descrição:** Lista dos pedidos do cliente, do mais recente ao mais antigo, de todas as lojas: data, nome da loja,
 status, total e link "Ver pedido" para a confirmação por token que já existe (`/loja/[slug]/confirmacao?pedido=…&token=…`).
 Estado vazio: "Você ainda não fez pedidos com sua conta."
-**[DECISÃO PROPOSTA — aprovar]** (copy). Ela evita sugerir que pedidos antigos de convidado vão aparecer (decisão 20).
+**[aprovado pelo usuário, 2026-10-03]** (copy). Ela evita sugerir que pedidos antigos de convidado vão aparecer (decisão 20).
 Paginação: 20 por página, com "Carregar mais".
-**[DECISÃO PROPOSTA — aprovar]** (mesmo tamanho de página da lista do painel; o índice `(cliente_id, criado_em desc)` atende).
+**[aprovado pelo usuário, 2026-10-03]** (mesmo tamanho de página da lista do painel; o índice `(cliente_id, criado_em desc)` atende).
 
 **Componentes:**
 - `listarPedidosDoCliente` (nova, em `src/lib/supabase/queries/pedidos.ts`, ao lado de `listarPedidosDoDono`) — client
@@ -144,7 +144,7 @@ Paginação: 20 por página, com "Carregar mais".
 - [ ] Quando o último pedido termina, a exclusão volta a funcionar sem fila nem agendador. Garantido em: a checagem
   roda no momento da chamada.
 - [ ] O aviso é só resposta da action. A tela **não** pré-checa nem esconde o botão.
-  **[DECISÃO PROPOSTA — aprovar]**: um único caminho de verdade (servidor) e nada a manter em sincronia na UI.
+  **[aprovado pelo usuário, 2026-10-03]**: um único caminho de verdade (servidor) e nada a manter em sincronia na UI.
 
 ---
 
@@ -153,13 +153,13 @@ Paginação: 20 por página, com "Carregar mais".
 **Descrição:** `FormCupom` ganha o campo opcional "Limite de usos por cliente" (inteiro ≥ 1; vazio = sem limite).
 Quando o campo está preenchido, aparece abaixo dele o aviso fixo (não modal): "Este cupom só vale para clientes que
 entrarem na conta. Quem compra sem conta não recebe o desconto."
-**[DECISÃO PROPOSTA — aprovar]** (aviso inline e não bloqueante, igual às dicas que o form já mostra. Um modal de
+**[aprovado pelo usuário, 2026-10-03]** (aviso inline e não bloqueante, igual às dicas que o form já mostra. Um modal de
 confirmação a cada salvamento seria atrito sem ganho de segurança).
 A listagem (`CuponsClient`) mostra "Limite por cliente: N" quando houver.
 
 **Componentes:** `FormCupom`, `CuponsClient` — **reuso** (campo novo). Schema do cupom em `src/lib/validacoes/` ganha
 `limite_por_cliente: z.number().int().min(1).max(1000).nullable()`.
-**[DECISÃO PROPOSTA — aprovar]** teto 1000: o mesmo tipo de trava de input do projeto (`tasks/165`/`198`). Um número
+**[aprovado pelo usuário, 2026-10-03]** teto 1000: o mesmo tipo de trava de input do projeto (`tasks/165`/`198`). Um número
 sem teto não tem uso real.
 
 **Behaviors:**
@@ -170,7 +170,7 @@ sem teto não tem uso real.
 - [ ] Mudar o limite de um cupom já usado vale para os próximos pedidos. Os usos passados continuam contando
   (a contagem lê `pedidos`). Garantido em: RPC.
 - [ ] O admin (`admin-cupom`) não muda nesta entrega.
-  **[DECISÃO PROPOSTA — aprovar]**: o painel admin de cupom continua sem o campo. Se ele salvar um cupom, preserva o
+  **[aprovado pelo usuário, 2026-10-03]**: o painel admin de cupom continua sem o campo. Se ele salvar um cupom, preserva o
   valor existente (o `update` não toca a coluna).
 
 ---
@@ -187,7 +187,7 @@ pedidos antigos são de convidado e continuam assim para sempre (decisão 20).
 | `cliente_id` | `uuid null` | `references public.clientes(id) on delete set null`. Gravado **só na criação**, pela RPC. Nunca por UPDATE. |
 
 - Índice `pedidos_cliente_id_criado_em_idx on pedidos (cliente_id, criado_em desc) where cliente_id is not null`.
-  **[DECISÃO PROPOSTA — aprovar]** índice parcial: a maioria das linhas é de convidado (null), e o parcial é menor
+  **[aprovado pelo usuário, 2026-10-03]** índice parcial: a maioria das linhas é de convidado (null), e o parcial é menor
   sem perder nenhuma consulta (o histórico e a contagem de cupom sempre filtram `cliente_id = X`).
 - **Imutabilidade de `cliente_id`** para autor não-sistema: trigger BEFORE UPDATE no molde de
   `pedidos_transicao_status` (SECURITY INVOKER, whitelist `service_role`/`postgres`/`supabase_admin`) recusa
@@ -230,7 +230,7 @@ Policies **só de SELECT**, `to authenticated`:
 - **Assinatura nova** com 18 argumentos: os 17 atuais + `p_cliente_id uuid` (último). Segue o precedente da issue
   266 (overload). A migration faz `drop function public.criar_pedido(<17 tipos>)` **na mesma migration** que cria
   a versão de 18, para não haver dois overloads ambíguos via PostgREST.
-  **[DECISÃO PROPOSTA — aprovar]** drop do overload antigo na mesma migration. O histórico da 266 não pôde ser
+  **[aprovado pelo usuário, 2026-10-03]** drop do overload antigo na mesma migration. O histórico da 266 não pôde ser
   conferido no clone (`git log --all -- 'tasks/266*'` só mostra um commit de docs, `262cb3d`). Ver Perguntas P1.
 - Continua `security invoker`, chamada pelo `service_role` da Server Action. `p_cliente_id` é **sempre** o
   `auth.uid()` que a Server Action obtém de `getUser()`, ou null. Nunca vem do payload.
@@ -264,12 +264,12 @@ Numa transação:
 
 Detalhes:
 - Ele zera `observacoes`?
-  **[DECISÃO PROPOSTA — aprovar]**: **sim**, `observacoes = null`. É texto livre do cliente e pode conter PII
+  **[aprovado pelo usuário, 2026-10-03]**: **sim**, `observacoes = null`. É texto livre do cliente e pode conter PII
   ("portão azul, falar com Maria"). A decisão 3 apaga a PII e mantém itens e valores. `itens_pedido.observacao`
   segue a mesma lógica e também é zerada.
 - `anonimizar_clientes_inativos()` (Marco B) passa a **pular** quem tem pedido em aberto (captura
   `pedido_em_aberto` por cliente e segue o laço), para que um cliente não aborte o lote inteiro.
-  **[DECISÃO PROPOSTA — aprovar]**
+  **[aprovado pelo usuário, 2026-10-03]**
 - Pedido de convidado nunca é tocado por `anonimizar_cliente`. Não há vínculo (decisão 20).
 
 ### `expurgar_pedidos_antigos()` — nova (SECURITY DEFINER, só `service_role`, sem agendador)
@@ -278,7 +278,7 @@ Detalhes:
   opcionais vão por cascade (ou são apagados explicitamente se a FK não for cascade: o `executar` confere).
   Retorna a quantidade apagada.
 - Vale para **todo** pedido (de cliente, anonimizado ou de convidado).
-  **[DECISÃO PROPOSTA — aprovar]**: a decisão 4 fala de "pedido anonimizado guardado 5 anos". Aplicar o mesmo prazo
+  **[aprovado pelo usuário, 2026-10-03]**: a decisão 4 fala de "pedido anonimizado guardado 5 anos". Aplicar o mesmo prazo
   ao pedido de convidado evita guardar PII de convidado para sempre, o que seria pior que a regra do cliente. Ver
   Perguntas P2: muda o que o lojista vê no painel.
 - `revoke execute … from public, anon, authenticated`. Sem cron (decisão 4 / plano P23).
@@ -304,7 +304,7 @@ Detalhes:
 | RN-C03 | `cliente_id` é gravado só na criação e é imutável para usuário (lojista e cliente) | **Banco** (trigger BEFORE UPDATE; só sistema passa) |
 | RN-C04 | Pedido de convidado nunca é vinculado depois: nem por telefone, nome, e-mail ou token (decisão 20) | **Banco** (RN-C03) + ausência de qualquer função de vínculo |
 | RN-C05 | Cliente lê só os próprios pedidos e itens. Convidado só por `token_acesso`. Lojista só os da própria loja | **RLS** (SELECT novo + policies atuais) |
-| RN-C06 | Uso por cliente = `count(pedidos)` com `loja_id` + `cliente_id` + `cupom_codigo` iguais, contando **todos os status, inclusive cancelado**. **[DECISÃO PROPOSTA — aprovar]**: contar a partir de `pedidos` (sem tabela nova). `cupom_codigo` só é gravado quando o desconto foi aplicado (`pedido.ts:508-515`), então ele já é o registro de "usou". O índice `(cliente_id, criado_em)` atende. Cancelado conta igual ao global, que hoje não devolve uso no cancelamento (nenhum decremento de `usos_contagem` no repositório). Isso fecha o "cancelar e repetir" que o P30 vai atacar. | **RPC** (contagem + trava) |
+| RN-C06 | Uso por cliente = `count(pedidos)` com `loja_id` + `cliente_id` + `cupom_codigo` iguais, contando **todos os status, inclusive cancelado**. **[aprovado pelo usuário, 2026-10-03]**: contar a partir de `pedidos` (sem tabela nova). `cupom_codigo` só é gravado quando o desconto foi aplicado (`pedido.ts:508-515`), então ele já é o registro de "usou". O índice `(cliente_id, criado_em)` atende. Cancelado conta igual ao global, que hoje não devolve uso no cancelamento (nenhum decremento de `usos_contagem` no repositório). Isso fecha o "cancelar e repetir" que o P30 vai atacar. | **RPC** (contagem + trava) |
 | RN-C07 | A contagem e o consumo são atômicos por (cupom, cliente): dois pedidos simultâneos do mesmo cliente não passam do limite | **RPC** (`pg_advisory_xact_lock` + contagem na mesma transação do INSERT) |
 | RN-C08 | Cupom com `limite_por_cliente` + convidado → `desconto = 0`, nada é consumido, `cupom_codigo` não é gravado, o pedido segue. Mensagem: "Entre na sua conta para usar este cupom" (decisão 9-A) | **Server Action** (`criarPedido`, `revisarCarrinho`) + **RPC** (defesa em profundidade) |
 | RN-C09 | Cupom sem `limite_por_cliente` → só `usos_maximos` global, idêntico a hoje (decisão 9) | Server Action + RPC (sem mudança) |
@@ -370,7 +370,7 @@ SELECT). Testes da fatia C1 (`tests/migrations/pedidos_cliente_id_rls.test.ts`):
   `cliente_id` cobre apenas a coluna nova.
 - Troca de e-mail e senha logado (alteração 26).
 
-## Perguntas ao usuário
+## Perguntas ao usuário (respondidas em 2026-10-03 — ver seção final)
 
 **P1 — Overload da RPC (`tasks/266`).** O histórico da 266 não está no clone: só aparece o commit de docs
 `262cb3d`, e não há arquivo da issue. O spec propõe criar a `criar_pedido` de 18 argumentos e dar `drop` na de 17
@@ -399,3 +399,10 @@ cliente, o mesmo limite de qualquer sistema baseado em conta.
   identificador da pessoa depois da exclusão, o que entra em tensão com a decisão 3.
 
 Impacto: complexidade e retenção de identificador × brecha estreita.
+
+## Respostas do usuário (2026-10-03)
+
+- **P1** — A versão antiga de `criar_pedido` (17 argumentos) NÃO é removida nesta migration: as duas convivem e uma migration pequena num deploy seguinte remove a antiga. Substitui a decisão proposta 13.
+- **P2** — `expurgar_pedidos_antigos()` remove todo pedido em status final com mais de 5 anos, de cliente ou de convidado (confirma a decisão proposta 14).
+- **P3** — Aceito como limite conhecido: lojista/admin que exclui e reativa o perfil de cliente tem a contagem de uso por cliente reiniciada. Sem tabela própria de usos.
+- Demais decisões propostas (1–12) aprovadas como estão.
