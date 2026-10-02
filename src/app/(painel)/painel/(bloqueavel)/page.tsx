@@ -19,7 +19,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   const pedidos = await listarPedidosDoDono(supabase);

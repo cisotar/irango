@@ -24,7 +24,7 @@ export default async function EntregasPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   const zonas = await listarZonasComTaxas(supabase, loja.id);

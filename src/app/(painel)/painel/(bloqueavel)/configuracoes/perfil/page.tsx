@@ -20,7 +20,7 @@ export default async function PerfilPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   return (

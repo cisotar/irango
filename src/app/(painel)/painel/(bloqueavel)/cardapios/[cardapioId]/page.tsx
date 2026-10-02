@@ -57,7 +57,7 @@ export default async function CardapioDetalhePage({
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   const cardapio = await buscarCardapioPorId(supabase, loja.id, cardapioId);

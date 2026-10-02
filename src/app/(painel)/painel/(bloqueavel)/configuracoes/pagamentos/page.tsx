@@ -25,7 +25,7 @@ export default async function PagamentosPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   const formas = await listarFormasPagamento(supabase, loja.id);

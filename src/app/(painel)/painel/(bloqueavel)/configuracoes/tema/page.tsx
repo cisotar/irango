@@ -18,7 +18,7 @@ export default async function TemaPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   return (

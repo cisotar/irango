@@ -41,7 +41,7 @@ export default async function AssinaturaPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   // Plano atual + catálogo + faturas em paralelo (todas escopadas por RLS via

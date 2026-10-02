@@ -40,7 +40,7 @@ export default async function PromocoesPage(): Promise<ReactElement> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (loja == null) {
-    redirect("/painel/onboarding");
+    redirect("/painel");
   }
 
   // Uma leitura por eixo, em paralelo: os modais do dono (com a seleção
