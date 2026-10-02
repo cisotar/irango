@@ -73,6 +73,7 @@ vi.mock("@/lib/supabase/server", () => ({
         resetPasswordForEmail: (...a: unknown[]) => resetPasswordForEmail(...a),
         updateUser: (...a: unknown[]) => updateUser(...a),
         getUser: (...a: unknown[]) => getUser(...a),
+        getClaims: async () => ({ data: { claims: { amr: [{ method: "recovery", timestamp: 1 }] } }, error: null }),
       },
       from: (t: string) => dbSessao.from(t),
     }),

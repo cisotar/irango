@@ -74,7 +74,7 @@ describe("GET /auth/callback — papel, bordas (issue 332)", () => {
     expect(res.headers.get("location")).toBe(`${ORIGIN}/login?erro=auth`);
   });
 
-  it("só-cliente com next open-redirect (//evil.com) → '/' (next descartado)", async () => {
+  it("só-cliente com next open-redirect (//evil.com) → '/minha-conta' (next descartado)", async () => {
     rpc.mockResolvedValue({ data: ["cliente"], error: null });
     const res = await GET(req("?code=abc&next=//evil.com"));
     expect(res.headers.get("location")).toBe(`${ORIGIN}/minha-conta`);

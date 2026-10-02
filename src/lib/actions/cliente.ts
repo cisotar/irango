@@ -124,14 +124,17 @@ export async function salvarPerfilCliente(payload: unknown): Promise<ResultadoCl
     const usuario = await usuarioDaSessao(supabase);
     if (!usuario) return { ok: false, erro: MSG_SESSAO };
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("clientes")
       .update({ nome, telefone, data_nascimento, aceita_marketing })
-      .eq("id", usuario.id);
+      .eq("id", usuario.id)
+      .select("id");
     if (error) {
       console.error("[salvarPerfilCliente]", error.code ?? "");
       return { ok: false, erro: MSG_GENERICA };
     }
+    // 0 linhas (sem perfil, RLS): não finge sucesso.
+    if (!data || data.length === 0) return { ok: false, erro: MSG_GENERICA };
   } catch (e) {
     console.error("[salvarPerfilCliente]", comoErro(e).code ?? "erro");
     return { ok: false, erro: MSG_GENERICA };
@@ -170,7 +173,9 @@ export async function salvarEnderecoCliente(payload: unknown): Promise<Resultado
         .select("id", { count: "exact", head: true })
         .eq("cliente_id", usuario.id);
       if (erroContagem) throw erroContagem;
-      if ((count ?? 0) >= MAX_ENDERECOS) return { ok: false, erro: MSG_TETO };
+      // Fail-closed: contagem desconhecida não vira "zero".
+      if (count === null || count === undefined) return { ok: false, erro: MSG_GENERICA };
+      if (count >= MAX_ENDERECOS) return { ok: false, erro: MSG_TETO };
 
       const { error } = await supabase
         .from("clientes_enderecos")

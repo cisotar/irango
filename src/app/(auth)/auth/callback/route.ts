@@ -51,7 +51,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    console.error("[authCallback]", error);
+    console.error("[authCallback]", error.status ?? "", error.code ?? "", error.name);
     return NextResponse.redirect(`${origin}/login?erro=auth`);
   }
 
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       portaCliente ? "cliente" : "lojista",
     );
   } catch (e) {
-    console.error("[authCallback] papel", e);
+    console.error("[authCallback] papel", e instanceof Error ? e.name : "erro");
     return NextResponse.redirect(`${origin}/login?erro=auth`);
   }
 
@@ -99,7 +99,7 @@ async function destinoPortaCliente(usuarioId: string, next: string | undefined):
   try {
     temPerfil = (await buscarPerfilCliente(await createClient(), usuarioId)) !== null;
   } catch (e) {
-    console.error("[authCallback] perfil", e);
+    console.error("[authCallback] perfil", e instanceof Error ? e.name : "erro");
   }
   if (!temPerfil) {
     return next ? `/conta/completar?${new URLSearchParams({ next }).toString()}` : "/conta/completar";
@@ -108,7 +108,7 @@ async function destinoPortaCliente(usuarioId: string, next: string | undefined):
   try {
     await registrarUltimoAcessoCliente(createServiceClient(), usuarioId);
   } catch (e) {
-    console.error("[authCallback] ultimo_acesso_em", e);
+    console.error("[authCallback] ultimo_acesso_em", e instanceof Error ? e.name : "erro");
   }
   return next ?? "/minha-conta";
 }

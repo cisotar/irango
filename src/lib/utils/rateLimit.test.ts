@@ -97,6 +97,7 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "fretePreview",
         "login",
         "loginCliente",
+        "novaSenhaCliente",
         "recuperacaoCliente",
         "revisarCarrinho",
         "salvarLogoLoja",

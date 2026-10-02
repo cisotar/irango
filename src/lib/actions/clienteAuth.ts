@@ -102,7 +102,7 @@ export async function cadastrarCliente(payload: unknown): Promise<ResultadoCadas
     }
     usuarioId = data.user.id; // autoritativo: do signUp, nunca do payload
   } catch (e) {
-    console.error("[cadastrarCliente] signUp", e);
+    console.error("[cadastrarCliente] signUp", e instanceof Error ? e.name : "erro");
     return { ok: false, erro: MSG_CADASTRO_FALHOU };
   }
 
@@ -115,7 +115,7 @@ export async function cadastrarCliente(payload: unknown): Promise<ResultadoCadas
       return { ok: false, erro: MSG_JA_CADASTRADO };
     }
   } catch (e) {
-    console.error("[cadastrarCliente] papel", e);
+    console.error("[cadastrarCliente] papel", e instanceof Error ? e.name : "erro");
     return { ok: false, erro: MSG_CADASTRO_FALHOU };
   }
 
@@ -152,7 +152,7 @@ export async function entrarCliente(payload: unknown): Promise<ResultadoEntrarCl
     }
     usuarioId = data.user.id;
   } catch (e) {
-    console.error("[entrarCliente]", e);
+    console.error("[entrarCliente]", e instanceof Error ? e.name : "erro");
     return { ok: false, erro: MSG_CREDENCIAL };
   }
 
@@ -160,7 +160,7 @@ export async function entrarCliente(payload: unknown): Promise<ResultadoEntrarCl
   try {
     await registrarUltimoAcessoCliente(createServiceClient(), usuarioId);
   } catch (e) {
-    console.error("[entrarCliente] ultimo_acesso_em", e);
+    console.error("[entrarCliente] ultimo_acesso_em", e instanceof Error ? e.name : "erro");
   }
 
   // Não grava papel (conta só-lojista continua só-lojista); o guard de
@@ -195,7 +195,21 @@ export async function solicitarRecuperacaoCliente(
   return { ok: true, mensagem: MSG_RECUPERACAO };
 }
 
+/** Sessão aberta por link de recuperação: claim `amr` (JWT verificado) contém `recovery`. */
+function ehSessaoDeRecuperacao(amr: unknown): boolean {
+  if (!Array.isArray(amr)) return false;
+  return amr.some((e) =>
+    typeof e === "string"
+      ? e === "recovery"
+      : typeof e === "object" && e !== null && (e as { method?: unknown }).method === "recovery",
+  );
+}
+
 export async function redefinirSenhaCliente(payload: unknown): Promise<ResultadoNovaSenhaCliente> {
+  if (!(await verificarRateLimit("novaSenhaCliente", extrairIp(await headers()))).permitido) {
+    return { ok: false, erro: MSG_MUITAS_TENTATIVAS };
+  }
+
   const parsed = schemaNovaSenhaCliente.safeParse(payload);
   if (!parsed.success) {
     return { ok: false, erro: "Verifique a nova senha e a confirmação." };
@@ -208,13 +222,19 @@ export async function redefinirSenhaCliente(payload: unknown): Promise<Resultado
     if (error || !data.user) {
       return { ok: false, erro: MSG_NOVA_SENHA_LINK };
     }
+    // Só sessão de recuperação troca senha sem a atual (achado P18): login por
+    // senha/OAuth não passa daqui.
+    const { data: dadosClaims, error: erroClaims } = await supabase.auth.getClaims();
+    if (erroClaims || !dadosClaims || !ehSessaoDeRecuperacao(dadosClaims.claims.amr)) {
+      return { ok: false, erro: MSG_NOVA_SENHA_LINK };
+    }
     const { error: erroUpdate } = await supabase.auth.updateUser({ password: parsed.data.senha });
     if (erroUpdate) {
       console.error("[redefinirSenhaCliente]", erroUpdate.status ?? "", erroUpdate.code ?? "");
       return { ok: false, erro: MSG_NOVA_SENHA_FALHOU };
     }
   } catch (e) {
-    console.error("[redefinirSenhaCliente]", e);
+    console.error("[redefinirSenhaCliente]", e instanceof Error ? e.name : "erro");
     return { ok: false, erro: MSG_NOVA_SENHA_FALHOU };
   }
   return { ok: true, destino: sanitizarNext(parsed.data.next) ?? DESTINO_PADRAO_CLIENTE };
