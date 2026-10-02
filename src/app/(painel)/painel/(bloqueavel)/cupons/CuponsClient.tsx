@@ -40,6 +40,11 @@ export type CuponsClientProps = {
    * omitir uma prop aqui quebra o build em vez de gravar na loja errada.
    */
   acoes: AcoesCuponsClient;
+  /**
+   * (343) Campo e rótulo de limite por cliente. Só o painel do lojista liga;
+   * a via admin não muda nesta entrega (spec).
+   */
+  comLimitePorCliente?: boolean;
 };
 
 /** Cupom expirado se tem data de expiração no passado. */
@@ -58,7 +63,11 @@ function formatarData(iso: string | null): string {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
 
-export function CuponsClient({ cupons, acoes }: CuponsClientProps) {
+export function CuponsClient({
+  cupons,
+  acoes,
+  comLimitePorCliente = false,
+}: CuponsClientProps) {
   const router = useRouter();
 
   const { remover } = acoes;
@@ -143,6 +152,11 @@ export function CuponsClient({ cupons, acoes }: CuponsClientProps) {
                       {c.usos_maximos != null ? `/${c.usos_maximos}` : ""} usos ·{" "}
                       {formatarData(c.expira_em)}
                     </span>
+                    {comLimitePorCliente && c.limite_por_cliente != null && (
+                      <span className="block text-sm text-muted-foreground">
+                        Limite por cliente: {c.limite_por_cliente}
+                      </span>
+                    )}
                   </div>
 
                   <Button
@@ -182,6 +196,7 @@ export function CuponsClient({ cupons, acoes }: CuponsClientProps) {
               key={emEdicao?.id ?? "novo"}
               acoes={acoes}
               onSucesso={aoSalvar}
+              comLimitePorCliente={comLimitePorCliente}
               inicial={
                 emEdicao
                   ? {
@@ -193,6 +208,7 @@ export function CuponsClient({ cupons, acoes }: CuponsClientProps) {
                       usos_maximos: emEdicao.usos_maximos,
                       expira_em: emEdicao.expira_em,
                       ativo: emEdicao.ativo,
+                      limite_por_cliente: emEdicao.limite_por_cliente ?? null,
                     }
                   : undefined
               }

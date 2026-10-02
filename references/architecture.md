@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.4.0 | **Atualizado:** 2026-10-02
+**Versão:** 0.5.0 | **Atualizado:** 2026-10-02
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -31,7 +31,7 @@ iRango é um **marketplace SaaS multitenant** no modelo iFood — lojistas cadas
 |-------|-----|---------|------|
 | Vitrine pública | `/loja/[slug]` | clientes finais | sem login |
 | Painel do lojista | `/painel/*` | donos de loja | obrigatório |
-| Conta do cliente | `/conta/*` (entrar, cadastro, completar, recuperar) e `/minha-conta/*` (perfil, endereços, exclusão) | clientes finais com conta (opcional; a compra continua possível como convidado) | `/conta/*` público; `/minha-conta/*` exige sessão, e-mail confirmado e perfil |
+| Conta do cliente | `/conta/*` (entrar, cadastro, completar, recuperar) e `/minha-conta/*` (perfil, endereços, pedidos, exclusão) | clientes finais com conta (opcional; a compra continua possível como convidado) | `/conta/*` público; `/minha-conta/*` exige sessão, e-mail confirmado e perfil |
 
 ---
 
@@ -108,7 +108,7 @@ irango/
 │   │   │   │   ├── entrar/ cadastro/ completar/ recuperar/
 │   │   │   │   └── sessao.ts             # lerSessaoCliente / redirecionarSeLogado — leitura de sessão compartilhada
 │   │   │   └── minha-conta/
-│   │   │       ├── layout.tsx            # guard (exigirCliente) + page.tsx, enderecos/ — ver §5
+│   │   │       ├── layout.tsx            # guard (exigirCliente) + page.tsx, enderecos/, pedidos/ (histórico do cliente) — ver §5
 │   │   │       └── guard.ts              # exigirCliente(rota) — fail-closed, cache() por requisição
 │   │   │
 │   │   ├── serwist/
@@ -294,8 +294,14 @@ A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configur
    - Valida cupom no servidor (ver `seguranca.md` §9)
    - INSERT em `pedidos` (com `token_acesso` gerado) + `itens_pedido` (snapshot de nome e preço)
    - Retorna `id` + `token_acesso` ao cliente
-7. Redireciona pra `/loja/[slug]/confirmacao?pedido=<id>&token=<token>` — cliente lê a própria confirmação sem login, escopado por token
+7. Redireciona pra `/loja/[slug]/confirmacao?pedido=<id>&token=<token>` — cliente lê a própria confirmação sem login, escopado por token. Se o cupom foi descartado por regra de cliente, a URL leva `&aviso=entrar|limite` (código curto fixo, traduzido por tabela em `avisoCupom.ts`; nunca texto livre da URL)
 8. Lojista vê o pedido no painel (futuro: Realtime + push)
+
+**Ramo logado (opcional, Marco C).** O convidado segue o fluxo acima, sem mudança. Com sessão de cliente (e-mail confirmado e perfil em `clientes`):
+- O Server Component de `/loja/[slug]/pedido` lê perfil e até 3 endereços com o client da sessão (RLS) e pré-preenche nome, telefone e endereço (seletor + "Usar outro endereço"). É só UX: o payload é revalidado como o do convidado e o frete é recalculado do CEP.
+- `criarPedido` obtém `cliente_id` de `resolverClienteDaSessao()` (`src/lib/auth/clienteDaSessao.ts`, `getUser()`; qualquer falha vira convidado) e o passa como `p_cliente_id` à RPC. O payload não tem esse campo (`.strict()`). Regra de cupom por cliente: `seguranca.md` §10.
+- Junto do campo de cupom, sem sessão aparece "Entrar" (leva a `/conta/entrar?next=…/pedido`, `sanitizarNext`; o carrinho sobrevive em `sessionStorage` na mesma aba). Logado sem perfil, o mesmo lugar mostra "Complete seu perfil" (`/conta/completar`).
+- `/minha-conta/pedidos` lista os pedidos do cliente (20 por página, "Carregar mais") com `listarPedidosDoCliente` (`queries/pedidos.ts`, client da sessão + RLS) e link para a confirmação por token.
 
 > ⚠️ O preview no client é só estética. O valor autoritativo é sempre o do servidor. O cliente nunca define quanto paga — ver `references/seguranca.md` §10.
 

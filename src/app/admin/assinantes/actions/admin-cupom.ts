@@ -87,7 +87,10 @@ export async function atualizarCupomAdmin(
 
   try {
     // Escopo cross-loja (loja_id + id) pelo wrapper; loja_id/id não vão no patch.
-    const { error, count } = await escopo.atualizar("cupons", id, parsed.data);
+    // (342) O admin não gerencia `limite_por_cliente`: o patch nunca toca a coluna.
+    const patch = { ...parsed.data };
+    delete patch.limite_por_cliente;
+    const { error, count } = await escopo.atualizar("cupons", id, patch);
     if (error) {
       console.error("[atualizarCupomAdmin]", error);
       return erroPersistenciaCupom(error);

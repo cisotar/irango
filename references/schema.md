@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.4.4 | **Atualizado:** 2026-10-02
+**Versão:** 0.5.0 | **Atualizado:** 2026-10-02
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -25,7 +25,8 @@ auth.users (Supabase)
     ├── papeis_usuario (usuario_id → auth.users.id, CASCADE)
     │
     ├── clientes (id → auth.users.id, CASCADE) — perfil de cliente final, 1:1
-    │       └── clientes_enderecos (cliente_id → clientes.id, CASCADE) — até 3
+    │       ├── clientes_enderecos (cliente_id → clientes.id, CASCADE) — até 3
+    │       └── pedidos (cliente_id → clientes.id, SET NULL) — pedido de cliente logado; null = convidado
     │
     └── lojas (dono_id → auth.users.id)
             │
@@ -247,6 +248,10 @@ CREATE TABLE cupons (
   expira_em       timestamptz,              -- NULL = sem expiração
   ativo           boolean NOT NULL DEFAULT true,
   criado_em       timestamptz NOT NULL DEFAULT now(),
+  -- NULL = sem limite por cliente (só usos_maximos global). 1..1000 = pedidos por cliente logado
+  -- na loja; com valor preenchido o cupom NÃO dá desconto a convidado (seguranca.md §10 regra 9-A).
+  -- Migration: 20261003121000_cupons_limite_por_cliente.sql
+  limite_por_cliente int CHECK (limite_por_cliente IS NULL OR limite_por_cliente BETWEEN 1 AND 1000),
   UNIQUE (loja_id, codigo)
 );
 ```
@@ -365,9 +370,36 @@ CREATE TABLE pedidos (
   -- A RPC criar_pedido retorna o mesmo pedido_id/token sem 2º INSERT nem 2º consumo de cupom.
   -- Migration: 20260614009000_pedidos_idempotency_key.sql
   idempotency_key   uuid,
-  criado_em         timestamptz NOT NULL DEFAULT now()
+  criado_em         timestamptz NOT NULL DEFAULT now(),
+  -- Pedido de cliente logado. Null = convidado (todo pedido anterior ao Marco C, sem backfill).
+  -- Gravado só na criação, pela RPC criar_pedido (p_cliente_id = auth.uid() da Server Action,
+  -- nunca do payload). Vira null na anonimização. Migration: 20261003120000_pedidos_cliente_id.sql
+  cliente_id        uuid REFERENCES clientes(id) ON DELETE SET NULL
 );
 ```
+
+**Trigger `pedidos_cliente_id_imutavel_trg`** (BEFORE UPDATE, `SECURITY INVOKER`): recusa
+(`42501`) troca de `cliente_id` para autor que não é `service_role`/`postgres`/`supabase_admin`.
+Fecha o lojista reescrevendo o vínculo (`pedidos_acesso_lojista` é `FOR ALL`) e o cliente se
+apropriando de pedido de convidado. Mesmo molde de `pedidos_transicao_status_trg`.
+
+**Funções de pedido e cliente** (`SECURITY DEFINER`, `search_path = ''`, EXECUTE só `service_role`;
+migration `20261003123000_anonimizar_cliente_pedidos.sql`):
+
+| Função / trigger | Faz |
+|------------------|-----|
+| `clientes_anonimizar_pedidos` (BEFORE DELETE em `clientes`, função `anonimizar_pedidos_do_cliente`) | Em qualquer caminho de exclusão do perfil: `nome_cliente = 'Cliente removido'`; `telefone_cliente`, `endereco_entrega`, `observacoes` e `cliente_id` = null; `itens_pedido.observacao` = null. Valores, status, itens e `cupom_codigo` ficam |
+| `anonimizar_cliente(p_usuario)` | Recusa `pedido_em_aberto` se há pedido do cliente fora de `entregue`/`cancelado` criado há menos de 7 dias; senão apaga o perfil (o trigger acima anonimiza os pedidos) |
+| `anonimizar_clientes_inativos()` | Idem, pulando quem tem pedido em aberto nos últimos 7 dias (o lote não aborta) |
+| `expurgar_pedidos_antigos()` | Apaga pedido `entregue`/`cancelado` com `criado_em` > 5 anos, de cliente ou convidado (itens e opcionais por cascade); devolve a contagem. Sem agendador |
+
+**RPC `criar_pedido`** (`SECURITY INVOKER`, EXECUTE só `service_role`): **uma única versão, 18 argumentos**
+(os 17 anteriores + `p_cliente_id uuid` por último, obrigatório, sem default; null explícito para convidado).
+As versões de 16 e 17 args foram removidas na migration `20261003122000_rpc_criar_pedido_cliente.sql`. Ordem:
+dedupe por `idempotency_key`; `cliente_inexistente` se `p_cliente_id` não existe em `clientes`; cupom com
+`limite_por_cliente` (convidado → desconto 0 e cupom descartado; cliente → `pg_advisory_xact_lock` por
+(cupom, cliente) + `count(pedidos)` por `loja_id`+`cliente_id`+`cupom_codigo`, todos os status; limite atingido →
+desconto 0); trava global de `usos_contagem`; INSERT com `cliente_id`.
 
 **Trigger `pedidos_protege_valor_trg`** (BEFORE UPDATE, `SECURITY INVOKER`): defesa em
 profundidade contra reescrita direta de `subtotal`/`desconto`/`taxa_entrega`/`total`/
@@ -855,6 +887,10 @@ CREATE INDEX clientes_ultimo_acesso_em_idx ON clientes(ultimo_acesso_em);
 CREATE INDEX clientes_enderecos_cliente_id_idx ON clientes_enderecos(cliente_id);
 CREATE UNIQUE INDEX clientes_enderecos_um_padrao_idx ON clientes_enderecos(cliente_id) WHERE padrao;
 
+-- Histórico do cliente e contagem de cupom por cliente; parcial porque a maioria das linhas é convidado (null).
+-- Migration: 20261003120000_pedidos_cliente_id.sql
+CREATE INDEX pedidos_cliente_id_criado_em_idx ON pedidos(cliente_id, criado_em DESC) WHERE cliente_id IS NOT NULL;
+
 -- Auditoria admin por loja, mais recentes primeiro
 -- Migration: 20260707122000_admin_acessos.sql
 CREATE INDEX ON admin_acessos(loja_id, criado_em DESC);
@@ -874,6 +910,7 @@ Regra geral:
 - **`papeis_usuario`** → SELECT só das próprias linhas (`usuario_id = auth.uid()`); escrita só via `service_role` (`atribuir_papel_inicial`)
 - **`clientes`** → SELECT e UPDATE só da própria linha (`id = auth.uid()`), UPDATE com grant só nas colunas editáveis; INSERT/DELETE só via `criar_perfil_cliente`/`anonimizar_cliente` (`service_role`). Lojista e anon não leem
 - **`clientes_enderecos`** → CRUD só dos próprios (`cliente_id = auth.uid()`); teto de 3 e mínimo de 1 impostos por trigger, não só pela action
+- **`pedidos` / `itens_pedido` / `itens_pedido_opcionais`** → além do lojista, `authenticated` lê os próprios com policy só SELECT (`pedidos_select_cliente`: `cliente_id = auth.uid()`; `itens_pedido_select_cliente` e `itens_pedido_opcionais_select_cliente` via `EXISTS` até `pedidos`). Nenhuma escrita para o cliente; `anon` continua sem SELECT (convidado só por `token_acesso`)
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`
 - **`admin_acessos`** → deny-all permanente; acesso exclusivo via `service_role` (trilha de auditoria de acesso admin, issues 146/147)
 - **`taxas_entrega_duplicadas_182`** → deny-all permanente; acesso exclusivo via `service_role` (arquivo de dedup do índice único de `taxas_entrega.zona_id`, issue 182)

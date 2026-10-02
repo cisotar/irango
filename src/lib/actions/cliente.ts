@@ -41,6 +41,7 @@ const MSG_TETO = "Você pode ter até 3 endereços.";
 const MSG_MINIMO = "Mantenha pelo menos um endereço.";
 const MSG_ENDERECO_NAO_ENCONTRADO = "Endereço não encontrado.";
 const MSG_EXCLUSAO = "Não foi possível excluir a conta. Tente novamente.";
+const MSG_PEDIDO_EM_ABERTO = "Aguarde a entrega dos seus pedidos em aberto para excluir a conta.";
 
 const ROTA_MINHA_CONTA = "/minha-conta";
 const ROTA_ENDERECOS = "/minha-conta/enderecos";
@@ -313,6 +314,11 @@ export async function excluirConta(payload?: unknown): Promise<ResultadoCliente>
 
     const svc = createServiceClient();
     const { error } = await svc.rpc("anonimizar_cliente", { p_usuario: usuario.id });
+    // (342, decisão 16) Recusa do banco com pedido em aberto: nada foi apagado,
+    // sessão mantida. Qualquer outro erro segue genérico.
+    if (error && String(error.message ?? "").includes("pedido_em_aberto")) {
+      return { ok: false, erro: MSG_PEDIDO_EM_ABERTO };
+    }
     if (error) throw error;
 
     if (soCliente) {

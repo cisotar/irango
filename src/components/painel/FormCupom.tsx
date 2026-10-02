@@ -23,6 +23,7 @@ export type CupomInicial = Pick<
   | "usos_maximos"
   | "expira_em"
   | "ativo"
+  | "limite_por_cliente"
 >;
 
 /**
@@ -43,6 +44,11 @@ export type FormCupomProps = {
   onSucesso?: () => void;
   /** Actions de persistência. Obrigatórias (issue 160). */
   acoes: AcoesFormCupom;
+  /**
+   * (343) Mostra o campo "Limite de usos por cliente". Só o painel do lojista
+   * liga; o admin não gerencia a coluna (spec) e o payload não a inclui.
+   */
+  comLimitePorCliente?: boolean;
 };
 
 const selectClassName =
@@ -55,7 +61,12 @@ const selectClassName =
  * (032) revalida o mesmo schema, deriva `loja_id` do dono e impõe código único
  * no banco; código duplicado retorna "Este código já existe".
  */
-export function FormCupom({ inicial, onSucesso, acoes }: FormCupomProps) {
+export function FormCupom({
+  inicial,
+  onSucesso,
+  acoes,
+  comLimitePorCliente = false,
+}: FormCupomProps) {
   const ehEdicao = inicial?.id != null;
 
   const { criar, atualizar } = acoes;
@@ -77,6 +88,9 @@ export function FormCupom({ inicial, onSucesso, acoes }: FormCupomProps) {
     isoParaDatetimeLocal(inicial?.expira_em ?? null),
   );
   const [ativo, setAtivo] = useState(inicial?.ativo ?? true);
+  const [limitePorCliente, setLimitePorCliente] = useState(
+    inicial?.limite_por_cliente != null ? String(inicial.limite_por_cliente) : "",
+  );
 
   const [enviando, startEnvio] = useTransition();
 
@@ -91,6 +105,14 @@ export function FormCupom({ inicial, onSucesso, acoes }: FormCupomProps) {
       // o offset local e produz ISO com 'Z' (offset:true aceito pelo schema).
       expira_em: dataFim ? new Date(dataFim).toISOString() : null,
       ativo,
+      // (343) Vazio = sem limite. O schema (servidor também) impõe 1–1000.
+      ...(comLimitePorCliente
+        ? {
+            limite_por_cliente: limitePorCliente.trim()
+              ? Number(limitePorCliente)
+              : null,
+          }
+        : {}),
     };
   }
 
@@ -183,6 +205,33 @@ export function FormCupom({ inicial, onSucesso, acoes }: FormCupomProps) {
           inputMode="numeric"
         />
       </div>
+
+      {comLimitePorCliente && (
+        <div className="space-y-1">
+          <Label htmlFor="cupom-limite-cliente">
+            Limite de usos por cliente
+          </Label>
+          <Input
+            id="cupom-limite-cliente"
+            value={limitePorCliente}
+            onChange={(e) => setLimitePorCliente(e.target.value)}
+            placeholder="Ilimitado se vazio"
+            inputMode="numeric"
+            aria-describedby={
+              limitePorCliente.trim() ? "cupom-limite-cliente-aviso" : undefined
+            }
+          />
+          {limitePorCliente.trim() && (
+            <p
+              id="cupom-limite-cliente-aviso"
+              className="text-xs text-muted-foreground"
+            >
+              Este cupom só vale para clientes que entrarem na conta. Quem
+              compra sem conta não recebe o desconto.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="space-y-1">
         <Label htmlFor="cupom-data-fim">Data de expiração (opcional)</Label>

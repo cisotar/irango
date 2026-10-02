@@ -436,6 +436,7 @@ export type Database = {
           criado_em: string
           expira_em: string | null
           id: string
+          limite_por_cliente?: number | null
           loja_id: string
           pedido_minimo: number
           tipo: string
@@ -449,6 +450,7 @@ export type Database = {
           criado_em?: string
           expira_em?: string | null
           id?: string
+          limite_por_cliente?: number | null
           loja_id: string
           pedido_minimo?: number
           tipo: string
@@ -462,6 +464,7 @@ export type Database = {
           criado_em?: string
           expira_em?: string | null
           id?: string
+          limite_por_cliente?: number | null
           loja_id?: string
           pedido_minimo?: number
           tipo?: string
@@ -1087,6 +1090,7 @@ export type Database = {
       }
       pedidos: {
         Row: {
+          cliente_id: string | null
           criado_em: string
           cupom_codigo: string | null
           desconto: number
@@ -1108,6 +1112,7 @@ export type Database = {
           troco_para: number | null
         }
         Insert: {
+          cliente_id?: string | null
           criado_em?: string
           cupom_codigo?: string | null
           desconto?: number
@@ -1129,6 +1134,7 @@ export type Database = {
           troco_para?: number | null
         }
         Update: {
+          cliente_id?: string | null
           criado_em?: string
           cupom_codigo?: string | null
           desconto?: number
@@ -1150,6 +1156,13 @@ export type Database = {
           troco_para?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "pedidos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "pedidos_loja_id_fkey"
             columns: ["loja_id"]
@@ -1743,56 +1756,32 @@ export type Database = {
         Args: { p_papel: string; p_usuario_id: string }
         Returns: string[]
       }
-      criar_pedido:
-        | {
-            Args: {
-              p_cupom_codigo: string
-              p_cupom_id: string
-              p_desconto: number
-              p_endereco_entrega: Json
-              p_forma_pagamento: string
-              p_idempotency_key?: string
-              p_itens: Json
-              p_loja_id: string
-              p_nome_cliente: string
-              p_observacoes: string
-              p_subtotal: number
-              p_taxa_entrega: number
-              p_telefone_cliente: string
-              p_tipo_entrega: string
-              p_total: number
-              p_troco_para: number
-            }
-            Returns: {
-              pedido_id: string
-              token_acesso: string
-            }[]
-          }
-        | {
-            Args: {
-              p_cupom_codigo: string
-              p_cupom_id: string
-              p_desconto: number
-              p_endereco_entrega: Json
-              p_forma_pagamento: string
-              p_frete_a_combinar: boolean
-              p_idempotency_key: string
-              p_itens: Json
-              p_loja_id: string
-              p_nome_cliente: string
-              p_observacoes: string
-              p_subtotal: number
-              p_taxa_entrega: number
-              p_telefone_cliente: string
-              p_tipo_entrega: string
-              p_total: number
-              p_troco_para: number
-            }
-            Returns: {
-              pedido_id: string
-              token_acesso: string
-            }[]
-          }
+      criar_pedido: {
+        Args: {
+          p_cliente_id: string
+          p_cupom_codigo: string
+          p_cupom_id: string
+          p_desconto: number
+          p_endereco_entrega: Json
+          p_forma_pagamento: string
+          p_frete_a_combinar: boolean
+          p_idempotency_key: string
+          p_itens: Json
+          p_loja_id: string
+          p_nome_cliente: string
+          p_observacoes: string
+          p_subtotal: number
+          p_taxa_entrega: number
+          p_telefone_cliente: string
+          p_tipo_entrega: string
+          p_total: number
+          p_troco_para: number
+        }
+        Returns: {
+          pedido_id: string
+          token_acesso: string
+        }[]
+      }
       criar_perfil_cliente: {
         Args: {
           p_aceita_marketing: boolean
@@ -1814,6 +1803,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      expurgar_pedidos_antigos: { Args: never; Returns: number }
       garantir_loja_do_dono: {
         Args: { p_dono_id: string; p_email: string; p_versao_termos?: string }
         Returns: string

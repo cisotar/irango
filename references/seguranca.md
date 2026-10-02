@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.7.0 | **Atualizado:** 2026-10-02
+**Versão:** 0.8.0 | **Atualizado:** 2026-10-02
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -336,6 +336,8 @@ CREATE POLICY "pedidos_acesso_lojista"
   USING  (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()))
   WITH CHECK (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()));
 ```
+
+**Leitura pelo cliente com conta (Marco C, migration `20261003120000_pedidos_cliente_id.sql`):** três policies **só de SELECT**, `to authenticated`: `pedidos_select_cliente` (`cliente_id = (select auth.uid())`), `itens_pedido_select_cliente` e `itens_pedido_opcionais_select_cliente` (`EXISTS` até `pedidos` com o mesmo critério). Nenhuma policy de escrita para o cliente e `pedidos_acesso_lojista` não muda; por serem permissivas (somam por `OR`), quem é lojista e cliente lê os pedidos da própria loja e os próprios em outras lojas, sem ganhar escrita sobre pedido alheio. `cliente_id` é imutável para quem não é sistema (`pedidos_cliente_id_imutavel_trg`, `42501`): sem ele o lojista (policy `FOR ALL`) reescreveria o vínculo e o cliente se apropriaria de pedido de convidado. O histórico (`/minha-conta/pedidos`) lê com o client da sessão, nunca `service_role`. `anon` segue sem SELECT.
 
 **Leitura pela confirmação = Server Component escopado por token**, nunca SELECT público:
 
@@ -916,6 +918,16 @@ Implementação: `src/lib/utils/resolverCepServidor.ts` (renomeado de `reconcili
 
 > **Nota sobre ViaCEP:** a tabela de APIs (§12) documenta ViaCEP como chamável do client (sem credencial). Isso continua válido para o autocomplete de endereço no checkout. A reconciliação de frete é um uso distinto e obrigatoriamente server-side — o mesmo endpoint externo, propósitos e contextos de segurança diferentes.
 
+### Cupom com limite por cliente — regra 9-A (Marco C)
+
+`cupons.limite_por_cliente` (1..1000, null = sem limite) é regra de valor e é decidida no servidor, como o resto do desconto. O cliente continua enviando só `codigo_cupom`.
+
+- **Convidado** com cupom que tem limite → `desconto = 0`, cupom descartado (`usos_contagem` não incrementa, `cupom_codigo` não é gravado) e o pedido segue sem bloqueio; a revisão orienta "Entre na sua conta para usar este cupom".
+- **Cliente logado** → a RPC conta `pedidos` com a mesma `loja_id`, `cliente_id` e `cupom_codigo`, **em todos os status (cancelado conta)**, sob `pg_advisory_xact_lock(hashtext(cupom_id || cliente_id))` na mesma transação do INSERT, para dois pedidos simultâneos não passarem do limite. Atingido → desconto 0, o pedido segue (mesmo padrão do esgotamento global). O dedupe por `idempotency_key` roda antes, então retry não conta outro uso.
+- A Server Action (`criarPedido`, `revisarCarrinho`) aplica a regra para o preview e para o que envia; a RPC repete como defesa em profundidade. Preview da tela nunca é autoritativo.
+- **`cliente_id` vem de `getUser()` da sessão**, nunca do payload (`.strict()` recusa o campo); só é enviado se a conta tem perfil em `clientes` e e-mail confirmado. A RPC levanta `cliente_inexistente` se o id não existe.
+- Limite conhecido (aceito): lojista/admin que exclui e recria o perfil de cliente, ou quem abre outra conta, recomeça a contagem. Contar por telefone/e-mail conflitaria com a minimização de dados (§20).
+
 ### Payload zod `.strict()` — sem campos monetários
 
 O schema zod do payload recebido pela action usa `.strict()`, que rejeita qualquer campo não declarado. Campos monetários (`subtotal`, `desconto`, `taxa_entrega`, `total`) não são declarados no schema — mesmo que o cliente os envie, o parser os rejeita antes do código rodar.
@@ -944,6 +956,8 @@ A parte que precisa de atomicidade (trava de cupom + INSERT pedido + INSERT iten
 - `REVOKE ALL … FROM public, anon, authenticated` + `GRANT EXECUTE … TO service_role` — anon nunca executa diretamente; só a Server Action via `createServiceClient()` pode chamar.
 - Trava atômica de cupom: `UPDATE cupons SET usos_contagem = usos_contagem + 1 WHERE … AND usos_contagem < usos_maximos RETURNING id`. Se `NOT FOUND` (esgotado na corrida), anula desconto e recomputa total — não rejeita o pedido (decisão de produto: cupom esgotado simultaneamente não bloqueia a compra).
 - INSERT `pedidos` + INSERT `itens_pedido` (snapshot `nome`/`preco`) na mesma transação — atomicidade garantida.
+
+**Assinatura atual:** uma única `criar_pedido` de 18 argumentos (`p_cliente_id uuid` por último, sem default); as versões de 16 e 17 foram removidas (`20261003122000`). Ordem e regras de cupom por cliente: regra 9-A acima.
 
 **Regra para devs e agentes:** toda operação multi-tabela com trava de concorrência segue este padrão — função Postgres `SECURITY INVOKER` + REVOKE/GRANT service_role + `SET search_path`. Nunca INSERT direto de pedido sem passar pela RPC.
 
@@ -1333,7 +1347,9 @@ O iRango coleta dado pessoal de cliente final (nome, telefone, endereço de entr
 |-----------|---------|
 | **Base legal** | pedido como convidado: execução de pedido (legítimo interesse / execução de contrato). Conta de cliente: execução de contrato (a conta) com aceite dos termos e da política gravado em `clientes.consentimento_em` / `consentimento_versao` (`VERSAO_TERMOS` do servidor, só no passo `/conta/completar`, nunca antes da confirmação do e-mail). Marketing: consentimento (opt-in) em `clientes.aceita_marketing`, desmarcado por padrão |
 | **Minimização** | pedido como convidado: só o necessário pra entregar. Conta de cliente: nome, telefone, data de nascimento (única finalidade: confirmar 18+ e aniversário; trigger recusa menor de 18, data futura e > 120 anos) e endereços. Sem CPF. Nada do perfil é guardado antes da confirmação do e-mail; do Google vêm só nome e e-mail |
-| **Retenção** | a LGPD não fixa prazo; os números são decisão do produto. Perfil de cliente: enquanto a conta existir; inativo há mais de 24 meses (`ultimo_acesso_em`) é anonimizado por `anonimizar_clientes_inativos()` — função pronta, **sem agendador** ainda. Pedido anonimizado guardado 5 anos e depois expurgado: definido, ainda não implementado (vínculo cliente↔pedido é do Marco C) |
+| **Retenção** | a LGPD não fixa prazo; os números são decisão do produto. Perfil de cliente: enquanto a conta existir; inativo há mais de 24 meses (`ultimo_acesso_em`) é anonimizado por `anonimizar_clientes_inativos()` — função pronta, **sem agendador** ainda. Pedido final (`entregue`/`cancelado`) com mais de 5 anos, de cliente ou de convidado, é apagado por `expurgar_pedidos_antigos()` (itens e opcionais por cascade) — função pronta, **sem agendador** ainda |
+| **Anonimização do pedido** | ao excluir o perfil, por qualquer caminho (trigger `BEFORE DELETE` `clientes_anonimizar_pedidos`, inclusive usuário removido fora do app): `nome_cliente = 'Cliente removido'`; telefone, endereço, observações (e `itens_pedido.observacao`) e `cliente_id` ficam null; valores, status, itens e `cupom_codigo` ficam, então o faturamento do lojista não muda. Pedido de convidado nunca é tocado (sem vínculo, e nenhum vínculo retroativo por telefone/nome/token) |
+| **Trava de exclusão** | `anonimizar_cliente` (e o lote de inativos) recusa `pedido_em_aberto` só para pedido fora de `entregue`/`cancelado` criado nos últimos **7 dias**; mais antigo não prende o cliente (LGPD art. 18) e é anonimizado. A checagem fica no banco, então nenhum caminho a contorna; `excluirConta` só traduz o erro |
 | **Exclusão / portabilidade** | cliente com conta exclui sozinho em `/minha-conta` (`excluirConta`, confirmação digitada): `anonimizar_cliente` apaga perfil e endereços; conta só-cliente também perde o `auth.users`; conta lojista/admin + cliente perde só o perfil de cliente (papéis, loja e assinatura ficam). Convidado, lojista e portabilidade: `privacidade@irango.com.br` (atendimento manual) |
 | **Política de privacidade** | `/privacidade` — SSG, issue 062, conteúdo placeholder — revisar com jurídico antes de operar |
 | **Termos de uso** | `/termos` — SSG, issue 062, conteúdo placeholder — revisar com jurídico antes de operar |

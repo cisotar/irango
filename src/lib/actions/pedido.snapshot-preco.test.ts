@@ -386,7 +386,7 @@ describe("[229/RN-13/D7] snapshot: `preco` pago e `preco_original` de tabela", (
     // o Postgres resolver para a assinatura de 16 args (menos defaults a
     // preencher), que ignora `preco_original` sem erro nenhum.
     expect(Object.keys(args)).toContain("p_frete_a_combinar");
-    expect(Object.keys(args)).toHaveLength(17);
+    expect(Object.keys(args)).toHaveLength(18);
     // E o par só é gravado porque viaja DENTRO do jsonb.
     expect(itemDaRpc(FEIJOADA).preco_original).toBe(100);
   });

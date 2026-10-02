@@ -181,3 +181,52 @@ export async function buscarPedidoDaLoja(
   if (error) throw error;
   return data;
 }
+
+// ── Issue 342: pedidos do cliente final ────────────────────────────────────
+
+const PEDIDOS_DO_CLIENTE_POR_PAGINA = 20;
+
+/** Linha do histórico "meus pedidos": sem PII nem itens. */
+export type PedidoDoCliente = Pick<
+  Pedido,
+  "id" | "loja_id" | "status" | "total" | "criado_em" | "token_acesso"
+> & { lojas: { nome: string; slug: string } | null };
+
+/**
+ * Histórico do cliente (client da SESSÃO). O `.eq("cliente_id")` é EXPLÍCITO:
+ * as policies somam por OR, e um lojista+cliente também leria os pedidos da
+ * própria loja sem ele. 20 por página, mais recente primeiro. Propaga `error`.
+ */
+export async function listarPedidosDoCliente(
+  client: SupabaseClient<Database>,
+  clienteId: string,
+  pagina = 0,
+): Promise<PedidoDoCliente[]> {
+  const inicio = pagina * PEDIDOS_DO_CLIENTE_POR_PAGINA;
+  const { data, error } = await client
+    .from("pedidos")
+    .select("id, loja_id, status, total, criado_em, token_acesso, lojas(nome, slug)")
+    .eq("cliente_id", clienteId)
+    .order("criado_em", { ascending: false })
+    .range(inicio, inicio + PEDIDOS_DO_CLIENTE_POR_PAGINA - 1);
+  if (error) throw error;
+  return (data ?? []) as PedidoDoCliente[];
+}
+
+/**
+ * Usos de um cupom por um cliente numa loja (RN-C06: TODOS os status contam,
+ * cancelado incluso). Client service_role. Propaga `error`.
+ */
+export async function contarUsosCupomDoCliente(
+  svc: SupabaseClient<Database>,
+  e: { lojaId: string; clienteId: string; codigo: string },
+): Promise<number> {
+  const { count, error } = await svc
+    .from("pedidos")
+    .select("id", { count: "exact", head: true })
+    .eq("loja_id", e.lojaId)
+    .eq("cliente_id", e.clienteId)
+    .eq("cupom_codigo", e.codigo);
+  if (error) throw error;
+  return count ?? 0;
+}

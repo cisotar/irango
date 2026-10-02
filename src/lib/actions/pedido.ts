@@ -18,7 +18,12 @@ import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
-import { buscarPedidoPorToken } from "@/lib/supabase/queries/pedidos";
+import {
+  buscarPedidoPorToken,
+  contarUsosCupomDoCliente,
+} from "@/lib/supabase/queries/pedidos";
+import { resolverClienteDaSessao } from "@/lib/auth/clienteDaSessao";
+import { avaliarCupomPorCliente } from "@/lib/utils/cupomPorCliente";
 import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
 import {
   buscarProdutosPorIds,
@@ -60,7 +65,14 @@ import {
 } from "@/lib/utils/assinatura";
 
 export type ResultadoCriarPedido =
-  | { pedidoId: string; token_acesso: string; whatsappHref: string | null }
+  | {
+      pedidoId: string;
+      token_acesso: string;
+      whatsappHref: string | null;
+      // (342) Cupom com limite por cliente recusado (convidado ou limite
+      // atingido): o pedido SAI sem desconto e o checkout mostra este aviso.
+      avisoCupom?: string;
+    }
   // `codigo` DISTINGUE a recusa de RN-12-a do erro genérico: o checkout precisa
   // saber que deve revisar o carrinho e mostrar o de/para (238), e não repetir
   // o mesmo envio. Ausente em toda outra recusa.
@@ -496,9 +508,36 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     let desconto = 0;
     let cupomId: string | null = null;
     let cupomCodigo: string | null = null;
+    let avisoCupom: string | undefined;
+    // (342/RN-C02) cliente_id da SESSÃO, nunca do payload; falha → convidado.
+    const clienteId = await resolverClienteDaSessao();
     if (dados.codigo_cupom) {
       const cupom = await buscarCupomPorCodigo(svc, dados.loja_id, dados.codigo_cupom);
-      if (cupom != null && validarUsoCupom(cupom, subtotal, agora).valido) {
+      // (342) Limite por cliente (decisões 9/9-A): mesma regra pura da revisão.
+      // Recusado → segue SEM desconto (como D5), com aviso; a RPC reaplica.
+      // Só para cupom que passa nas regras globais (não avisa sobre cupom inválido).
+      const usoGlobalValido = cupom != null && validarUsoCupom(cupom, subtotal, agora).valido;
+      let permitidoPorCliente = true;
+      if (usoGlobalValido && cupom.limite_por_cliente != null) {
+        const usosDoCliente =
+          clienteId != null
+            ? await contarUsosCupomDoCliente(svc, {
+                lojaId: dados.loja_id,
+                clienteId,
+                codigo: cupom.codigo,
+              })
+            : 0;
+        const v = avaliarCupomPorCliente({
+          limitePorCliente: cupom.limite_por_cliente,
+          clienteId,
+          usosDoCliente,
+        });
+        if (!v.permitido) {
+          permitidoPorCliente = false;
+          avisoCupom = v.mensagem;
+        }
+      }
+      if (usoGlobalValido && permitidoPorCliente) {
         const r = calcularDesconto(
           { ...cupom, tipo: cupom.tipo as "percentual" | "fixo" },
           bases,
@@ -532,9 +571,9 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       dados.forma_pagamento === "dinheiro" ? dados.troco_para ?? null : null;
 
     // (8) RPC transacional: insere pedido + itens + trava de cupom atomicamente.
-    //     O retorno da RPC (criar_pedido) ainda não está nos tipos gerados — será
-    //     adicionado em Database['public']['Functions'] no regen de tipos pós-deploy
-    //     da migration. Até lá, tipamos a chamada localmente.
+    //     (342) SEMPRE os 18 argumentos: a RPC não tem default em p_cliente_id.
+    //     Cast local mantido: a assinatura gerada declara text/numeric não-null,
+    //     e aqui vários vão como null de propósito.
     const { data, error } = await (
       svc.rpc as unknown as (
         fn: "criar_pedido",
@@ -578,6 +617,8 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       // (063) idempotência: a chave do client só desduplica (escopada por loja
       // pelo índice/SELECT da RPC); não influencia valor/autorização.
       p_idempotency_key: dados.idempotency_key ?? null,
+      // (342/RN-C02) null explícito para convidado.
+      p_cliente_id: clienteId,
     });
 
     if (error != null || data == null || data.length === 0) {
@@ -611,7 +652,12 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
       }
     }
 
-    return { pedidoId, token_acesso: tokenAcesso, whatsappHref };
+    return {
+      pedidoId,
+      token_acesso: tokenAcesso,
+      whatsappHref,
+      ...(avisoCupom ? { avisoCupom } : {}),
+    };
   } catch (e) {
     // §14: exceção inesperada nunca vaza `e.message` ao cliente.
     console.error("[criarPedido]", e);

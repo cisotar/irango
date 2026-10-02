@@ -38,10 +38,7 @@ import {
   MSG_REVISAO_FALHOU,
   MSG_REVISAO_SEM_MUDANCA,
 } from "./reconfirmacaoPreco";
-import {
-  detectarItensBloqueados,
-  SEM_BLOQUEIOS,
-} from "./itensBloqueados";
+import { detectarItensBloqueados, SEM_BLOQUEIOS } from "./itensBloqueados";
 import { useRevisaoCarrinho } from "@/hooks/useRevisaoCarrinho";
 import { textosRevisao } from "@/lib/utils/copiaRevisaoPreco";
 import type {
@@ -63,6 +60,11 @@ import {
   type ItemPayload,
   type TipoEntrega,
 } from "./estado";
+import {
+  OUTRO_ENDERECO,
+  type EnderecoClienteCheckout,
+  type PerfilClienteCheckout,
+} from "./clienteCheckout";
 
 export type CheckoutWizardProps = {
   lojaId: string;
@@ -89,6 +91,14 @@ export type CheckoutWizardProps = {
    * endereço e a tela mostra o fallback (RN-R5) — nunca bloqueia o checkout.
    */
   enderecoLoja?: string | null;
+  /** (343) Cliente logado com perfil: pré-preenche nome/telefone (só UX). */
+  perfilCliente?: PerfilClienteCheckout | null;
+  /** (343) ≤3 endereços salvos; o padrão vem primeiro e já selecionado. */
+  enderecosCliente?: EnderecoClienteCheckout[];
+  /** (343) Sem sessão de cliente ⇒ mostra "Entrar" junto do cupom. */
+  mostrarEntrar?: boolean;
+  /** (343) Logado, e-mail confirmado, sem perfil ⇒ "Complete seu perfil". */
+  mostrarCompletarPerfil?: boolean;
 };
 
 /** Alvo de toque do controle de voltar do header, compartilhado entre o
@@ -106,6 +116,10 @@ export function CheckoutWizard({
   formasPagamento,
   whatsappLoja = null,
   enderecoLoja = null,
+  perfilCliente = null,
+  enderecosCliente,
+  mostrarEntrar = false,
+  mostrarCompletarPerfil = false,
 }: CheckoutWizardProps) {
   const { itens, incrementar, decrementar, remover } = useCarrinho();
   // Tailwind md = 768px. Escolhe UMA árvore (wizard mobile vs 2 colunas desktop)
@@ -127,6 +141,8 @@ export function CheckoutWizard({
   // Com uma só modalidade disponível, ela já vem selecionada (spec
   // modalidades-entrega-loja); com as duas, o cliente escolhe.
   const [estado, setEstado] = useState<EstadoWizard>(ESTADO_INICIAL);
+  // (343) Endereço salvo escolhido no seletor (efêmero; não vai ao payload).
+  const [enderecoClienteId, setEnderecoClienteId] = useState(OUTRO_ENDERECO);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -140,9 +156,20 @@ export function CheckoutWizard({
       endereco: null,
     };
     base.tipoEntrega = tipoEntregaInicial(aceitaEntrega, aceitaRetirada);
+    // (343) Pré-preenchimento do cliente logado: só onde a sessão do wizard
+    // não trouxe nada digitado. Convidado (sem props) ⇒ nada muda.
+    if (perfilCliente) {
+      if (!base.nome.trim()) base.nome = perfilCliente.nome;
+      if (!base.telefone.trim()) base.telefone = perfilCliente.telefone;
+    }
+    const padrao = enderecosCliente?.[0];
+    if (padrao) {
+      base.endereco = padrao.endereco;
+      setEnderecoClienteId(padrao.id);
+    }
     setEstado(base);
     setMontado(true);
-  }, [aceitaEntrega, aceitaRetirada]);
+  }, [aceitaEntrega, aceitaRetirada, perfilCliente, enderecosCliente]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Persiste o estado a cada mudança (após hidratar).
@@ -340,6 +367,24 @@ export function CheckoutWizard({
     (endereco: EnderecoEntrega | null) => patch({ endereco }),
     [patch],
   );
+  // (343) Troca de endereço salvo: preenche o FormEndereco (remontado pela
+  // key). "Usar outro endereço" ⇒ form em branco.
+  const handleEnderecoClienteChange = useCallback(
+    (id: string) => {
+      const escolhido = enderecosCliente?.find((e) => e.id === id);
+      setEnderecoClienteId(escolhido ? id : OUTRO_ENDERECO);
+      patch({ endereco: escolhido ? escolhido.endereco : null });
+    },
+    [enderecosCliente, patch],
+  );
+  const propsEnderecoCliente = {
+    enderecosCliente,
+    enderecoClienteId,
+    onEnderecoClienteChange: handleEnderecoClienteChange,
+  };
+  const entrarLojaSlug =
+    mostrarEntrar || mostrarCompletarPerfil ? lojaSlug : null;
+  const acaoConta = mostrarEntrar ? "entrar" : "completar";
 
   // Voltar do header: etapa 1 vira <Link> (prefetch da vitrine — achado
   // acelerar 2026-09-16, F1); etapas 2/3 só recuam de etapa, sem navegar.
@@ -448,6 +493,8 @@ export function CheckoutWizard({
           onAplicarCupom={aplicarCupom}
           onRemoverCupom={removerCupom}
           onContinuar={() => setEtapa(2)}
+          entrarLojaSlug={entrarLojaSlug}
+          acaoConta={acaoConta}
         />
       )}
 
@@ -471,6 +518,7 @@ export function CheckoutWizard({
           lojaNome={lojaNome}
           onVoltar={() => setEtapa(1)}
           onContinuar={() => setEtapa(3)}
+          {...propsEnderecoCliente}
         />
       )}
 
@@ -533,6 +581,8 @@ export function CheckoutWizard({
             onAplicarCupom={aplicarCupom}
             onRemoverCupom={removerCupom}
             onContinuar={() => {}}
+            entrarLojaSlug={entrarLojaSlug}
+            acaoConta={acaoConta}
           />
           <EtapaEntrega
             variante="desktop"
@@ -554,6 +604,7 @@ export function CheckoutWizard({
             lojaNome={lojaNome}
             onVoltar={() => {}}
             onContinuar={() => {}}
+            {...propsEnderecoCliente}
           />
           <EtapaPagamento
             variante="desktop"

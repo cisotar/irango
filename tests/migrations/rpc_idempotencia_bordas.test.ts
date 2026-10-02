@@ -108,7 +108,9 @@ async function chamarRpc(
          p_itens            => $3::jsonb,
          p_tipo_entrega     => 'entrega',
          p_troco_para       => null,
-         p_idempotency_key  => $4
+         p_idempotency_key  => $4,
+         p_frete_a_combinar => false,
+         p_cliente_id       => null
        )`,
       [p.loja_id, p.produto_preco, itensJson, p.idempotency_key],
     );

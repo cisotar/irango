@@ -172,7 +172,9 @@ const clientePglite = {
              p_itens            => $13::jsonb,
              p_tipo_entrega     => $14,
              p_troco_para       => $15,
-             p_idempotency_key  => $16
+             p_idempotency_key  => $16,
+             p_frete_a_combinar => false,
+             p_cliente_id       => null
            )`,
           [
             args.p_loja_id,

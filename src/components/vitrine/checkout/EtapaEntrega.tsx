@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { FormEndereco, type EnderecoEntrega } from "@/components/vitrine/FormEndereco";
+import { SeletorEnderecoCliente } from "./SeletorEnderecoCliente";
+import { OUTRO_ENDERECO, type EnderecoClienteCheckout } from "./clienteCheckout";
 import {
   calcularFreteAction,
   type ResultadoFretePreview,
@@ -96,6 +98,13 @@ export type EtapaEntregaProps = {
    * "desktop": 3 seções empilhadas — resumo e CTA vivem na coluna sticky (006).
    */
   variante?: "wizard" | "desktop";
+  /**
+   * (343) Endereços salvos do cliente logado (≤3). Ausente/vazio ⇒ só o
+   * `FormEndereco`, como hoje (convidado). Seleção vive no wizard.
+   */
+  enderecosCliente?: EnderecoClienteCheckout[];
+  enderecoClienteId?: string;
+  onEnderecoClienteChange?: (id: string) => void;
 };
 
 type EstadoFrete =
@@ -137,6 +146,9 @@ export function EtapaEntrega({
   enderecoLoja = null,
   lojaNome = "",
   variante = "wizard",
+  enderecosCliente,
+  enderecoClienteId = OUTRO_ENDERECO,
+  onEnderecoClienteChange,
 }: EtapaEntregaProps) {
   const [frete, setFrete] = useState<EstadoFrete>({ status: "ocioso" });
   const [calculando, startCalculo] = useTransition();
@@ -404,7 +416,15 @@ export function EtapaEntrega({
         <div className={SECAO}>
           <h2 className={SECAO_TITULO}>Endereço de entrega</h2>
           <div className="space-y-3 p-4">
+            {enderecosCliente && enderecosCliente.length > 0 && onEnderecoClienteChange && (
+              <SeletorEnderecoCliente
+                enderecos={enderecosCliente}
+                valor={enderecoClienteId}
+                onChange={onEnderecoClienteChange}
+              />
+            )}
             <FormEndereco
+              key={enderecoClienteId}
               enderecoInicial={endereco}
               onEnderecoChange={onEnderecoChange}
             />
