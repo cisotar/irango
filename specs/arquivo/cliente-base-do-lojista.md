@@ -73,7 +73,7 @@ Colunas exibidas (ver allowlist em Modelos de Dados): **Nome** (link para o deta
   painel; e no banco `EXECUTE` revogado de `anon` (`asAnon` → erro/0 linhas).
 - [x] Usuário logado sem loja (só cliente) → `redirect("/painel")`, que segue o fluxo de papel de hoje; a função
   devolve 0 linhas para quem não é dono de loja. Garantido em: Server Component + função no banco.
-- [ ] Lojista clica em "Aniversariantes do mês" e a lista mostra só clientes cujo mês de nascimento é o mês corrente
+- [x] Lojista clica em "Aniversariantes do mês" e a lista mostra só clientes cujo mês de nascimento é o mês corrente
   **no fuso da loja** (`lojas.timezone`). O estado do filtro vive na URL (`?aniversariantes=1`), validado com zod
   (qualquer outro valor = sem filtro). Garantido em: servidor (mês calculado no Server Component por função pura;
   o filtro é aplicado no SQL). Não é dado sensível: só restringe um conjunto já escopado.
@@ -87,7 +87,7 @@ Colunas exibidas (ver allowlist em Modelos de Dados): **Nome** (link para o deta
   **[aprovado pelo usuário, 2026-10-03]** paginação de 50 por página com "Carregar mais", mesmo padrão de
   `/minha-conta/pedidos` (`architecture.md`, 20 por página). Motivo: a base cresce sem teto e a lista é agregada;
   carregar tudo é o N+1/payload que o `acelerar` de P42 vai procurar. `p_limite` tem teto no banco (≤ 100) e no zod.
-- [ ] Lojista clica no nome do cliente e vai para `/painel/clientes/[id]`. Garantido em: cliente (navegação); a
+- [x] Lojista clica no nome do cliente e vai para `/painel/clientes/[id]`. Garantido em: cliente (navegação); a
   autorização é do detalhe.
 
 ---
@@ -109,20 +109,20 @@ ao mais antigo: número/data, status, modalidade e total, cada um com link para 
 - `notFound()` do Next para id inválido ou cliente fora da base da loja.
 
 **Behaviors:**
-- [ ] Lojista abre o detalhe de um cliente da própria base e vê os dados da allowlist. Garantido em: **função no
+- [x] Lojista abre o detalhe de um cliente da própria base e vê os dados da allowlist. Garantido em: **função no
   banco** `cliente_da_loja(p_cliente_id)` escopada pela loja do dono da sessão.
-- [ ] Lojista abre `/painel/clientes/<id>` de cliente que nunca pediu na loja dele (mesmo que tenha pedido em outra
+- [x] Lojista abre `/painel/clientes/<id>` de cliente que nunca pediu na loja dele (mesmo que tenha pedido em outra
   loja, ou que seja um `auth.users` qualquer) → 404, sem distinguir "não existe" de "não é seu" (anti-IDOR). Garantido
   em: **função no banco** (0 linhas) + `notFound()`.
-- [ ] `[id]` que não é UUID → 404 sem bater no banco. Garantido em: `schemaUuid` (`src/lib/validacoes/`, reuso) no
+- [x] `[id]` que não é UUID → 404 sem bater no banco. Garantido em: `schemaUuid` (`src/lib/validacoes/`, reuso) no
   Server Component.
-- [ ] A lista de pedidos do detalhe mostra só pedidos com `loja_id` da loja do dono e `cliente_id = [id]`. Garantido
+- [x] A lista de pedidos do detalhe mostra só pedidos com `loja_id` da loja do dono e `cliente_id = [id]`. Garantido
   em: **RLS `pedidos_acesso_lojista`** (já existente; client da sessão, sem `service_role`) + filtro
   `.eq("cliente_id", id)`. Nenhum pedido do cliente em outra loja aparece (o cliente pode ler os dele por
   `pedidos_select_cliente`, mas o lojista não é esse cliente).
-- [ ] Lojista que também é cliente abre o próprio cadastro na base da loja (comprou na própria loja, decisão 15) e
+- [x] Lojista que também é cliente abre o próprio cadastro na base da loja (comprou na própria loja, decisão 15) e
   vê os mesmos campos da allowlist, nada além. Garantido em: função no banco (mesma projeção para todos).
-- [ ] Lojista clica em um pedido e vai para `/painel/pedidos/[id]` (tela e autorização existentes).
+- [x] Lojista clica em um pedido e vai para `/painel/pedidos/[id]` (tela e autorização existentes).
 
 ---
 

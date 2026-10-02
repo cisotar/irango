@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,11 @@ import type { LinhaCliente } from "@/lib/utils/linhaCliente";
  * é o link do detalhe e cobre a linha (`after:absolute after:inset-0`); o link
  * do WhatsApp fica acima dele (`relative z-10`) — nenhum `<a>` dentro de `<a>`.
  */
-type TabelaClientesProps = { clientes: LinhaCliente[] };
+type TabelaClientesProps = {
+  clientes: LinhaCliente[];
+  /** Estado vazio (issue 347, D5): default = texto da base vazia. */
+  vazio?: ReactNode;
+};
 
 function Telefone({ telefone }: { telefone: LinhaCliente["telefone"] }): ReactElement {
   if (!telefone.href) return <span>{telefone.texto || "—"}</span>;
@@ -28,11 +32,13 @@ function Telefone({ telefone }: { telefone: LinhaCliente["telefone"] }): ReactEl
   );
 }
 
-export function TabelaClientes({ clientes }: TabelaClientesProps): ReactElement {
+export function TabelaClientes({ clientes, vazio }: TabelaClientesProps): ReactElement {
   if (clientes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed py-12 text-center">
-        <p className="text-sm text-muted-foreground">Nenhum cliente com conta pediu na sua loja ainda.</p>
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-12 text-center">
+        {vazio ?? (
+          <p className="text-sm text-muted-foreground">Nenhum cliente com conta pediu na sua loja ainda.</p>
+        )}
       </div>
     );
   }

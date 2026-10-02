@@ -120,3 +120,23 @@ describe("TabelaPedidos — selo de status por linha (StatusDaLinha)", () => {
     expect(html).not.toContain("Pronto para retirada");
   });
 });
+
+describe("TabelaPedidos modo detalhe do cliente (347 D1/D2)", () => {
+  it("default preserva /painel/pedidos: coluna Cliente, Hora e menu de status", () => {
+    const html = render();
+    expect(html).toContain(">Cliente</th>");
+    expect(html).toContain(">Hora</th>");
+    expect(html).toContain("Fulano de Teste");
+  });
+  it("somenteLeitura + exibirCliente=false + exibirData: sem nome, coluna Data com dia", () => {
+    const html = render({ somenteLeitura: true, exibirCliente: false, exibirData: true });
+    expect(html).not.toContain(">Cliente</th>");
+    expect(html).not.toContain("Fulano de Teste");
+    expect(html).toContain(">Data</th>");
+    expect(html).toContain("03/07/2026 09:00");
+  });
+  it("somenteLeitura troca o menu (botão) pelo selo estático", () => {
+    expect(render()).toContain("<button");
+    expect(render({ somenteLeitura: true })).not.toContain("<button");
+  });
+});

@@ -1,5 +1,5 @@
 import type { PedidoLinha } from "@/components/painel/TabelaPedidos";
-import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
+import type { Pedido } from "@/lib/supabase/queries/pedidos";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
 /**
@@ -8,7 +8,9 @@ import type { StatusPedido } from "@/lib/utils/transicaoStatus";
  * `/painel/pedidos`) e pelo hub admin (`/admin/assinantes/[lojaId]/pedidos`),
  * evitando três cópias divergirem se `PedidoLinha` ganhar um campo novo.
  */
-export function paraLinhaPedido(pedido: PedidoComItens): PedidoLinha {
+export function paraLinhaPedido(
+  pedido: Pick<Pedido, "id" | "nome_cliente" | "total" | "status" | "criado_em" | "tipo_entrega">,
+): PedidoLinha {
   return {
     id: pedido.id,
     nome_cliente: pedido.nome_cliente,
