@@ -3,7 +3,7 @@
 **crítica:** NÃO
 **Mundo:** vitrine pública
 **Depende de:** Marco D (base de clientes do lojista)
-**Spec:** specs/cliente-base-do-lojista.md
+**Spec:** specs/arquivo/cliente-base-do-lojista.md
 
 ## Origem
 

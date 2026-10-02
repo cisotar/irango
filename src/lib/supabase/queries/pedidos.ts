@@ -6,14 +6,9 @@
 //
 // Tratamento de erro (seguranca.md §14): propagam o `error` do PostgREST.
 // `null`/`[]` significam "sem linha" — NUNCA mascaram erro.
-import { z } from "zod";
+import { schemaUuid } from "@/lib/validacoes/uuid";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
-
-// z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
-// RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda) —
-// mesmo padrão de src/lib/validacoes/pedido.ts.
-const schemaUuid = z.guid();
 
 // Projeção única de pedido + itens + opcionais (snapshot). Fonte única para
 // TODAS as leituras de pedido — painel e admin compartilham o mesmo shape
@@ -229,4 +224,40 @@ export async function contarUsosCupomDoCliente(
     .eq("cupom_codigo", e.codigo);
   if (error) throw error;
   return count ?? 0;
+}
+
+// ── Issue 347: pedidos de um cliente no detalhe do lojista ──────────────────
+
+/** Linha mínima para `TabelaPedidos` (sem itens, sem PII além do snapshot do nome). */
+export type PedidoDoClienteNaLoja = Pick<
+  Pedido,
+  "id" | "nome_cliente" | "total" | "status" | "criado_em" | "tipo_entrega"
+>;
+
+/**
+ * Pedidos (todos os status, cancelados inclusos — D9) de um cliente NA loja do
+ * dono, mais recente primeiro. Client da SESSÃO: a RLS `pedidos_acesso_lojista`
+ * escopa pela loja. O `.eq("loja_id")` é explícito porque as policies somam por
+ * OR: um lojista que é o próprio cliente leria, por `pedidos_select_cliente`,
+ * os pedidos dele em OUTRAS lojas. `lojaId` vem de `buscarLojaDoDono` (sessão),
+ * nunca do payload. Página `pagina` (0-based) de `porPagina`. Propaga `error`.
+ */
+export async function listarPedidosDoClienteNaLoja(
+  client: Client,
+  { lojaId, clienteId, pagina = 0, porPagina }: { lojaId: string; clienteId: string; pagina?: number; porPagina: number },
+): Promise<PedidoDoClienteNaLoja[]> {
+  if (!schemaUuid.safeParse(lojaId).success || !schemaUuid.safeParse(clienteId).success) {
+    return [];
+  }
+  const inicio = pagina * porPagina;
+  const { data, error } = await client
+    .from("pedidos")
+    .select("id, nome_cliente, total, status, criado_em, tipo_entrega")
+    .eq("loja_id", lojaId)
+    .eq("cliente_id", clienteId)
+    .order("criado_em", { ascending: false })
+    .order("id", { ascending: false })
+    .range(inicio, inicio + porPagina - 1);
+  if (error) throw error;
+  return data ?? [];
 }

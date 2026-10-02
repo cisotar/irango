@@ -7,6 +7,7 @@ import { BadgeStatusPedido } from "@/components/painel/BadgeStatusPedido";
 import { MenuStatusPedido } from "@/components/painel/MenuStatusPedido";
 import { ProvedorRefreshCoalescido } from "@/components/painel/ProvedorRefreshCoalescido";
 import type { AcaoStatus } from "@/lib/actions/status";
+import { formatarDataHora } from "@/lib/utils/formatarDataHora";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import { ROTULO_TIPO_ENTREGA } from "@/lib/utils/rotulosPedido";
@@ -43,6 +44,15 @@ type TabelaPedidosProps = {
    * Injeção de dependência de UI — a autoridade é a action.
    */
   acaoStatus?: AcaoStatus;
+  /**
+   * Issue 347 (D1/D2): o detalhe do cliente reusa a tabela só para leitura.
+   * `somenteLeitura` = status sempre via `BadgeStatusPedido` (sem menu);
+   * `exibirCliente={false}` oculta a coluna/linha do nome; `exibirData` troca
+   * "Hora" por data + hora. Defaults preservam `/painel/pedidos` exatamente.
+   */
+  somenteLeitura?: boolean;
+  exibirCliente?: boolean;
+  exibirData?: boolean;
 };
 
 const formatadorHora = new Intl.DateTimeFormat("pt-BR", {
@@ -62,11 +72,13 @@ function horaLocal(criadoEm: string): string {
 function StatusDaLinha({
   pedido,
   acaoStatus,
+  somenteLeitura = false,
 }: {
   pedido: PedidoLinha;
   acaoStatus?: AcaoStatus;
+  somenteLeitura?: boolean;
 }) {
-  if (ehStatusTerminal(pedido.status)) {
+  if (somenteLeitura || ehStatusTerminal(pedido.status)) {
     return <BadgeStatusPedido status={pedido.status} tipoEntrega={pedido.tipo_entrega} />;
   }
   return (
@@ -105,7 +117,11 @@ export function TabelaPedidos({
   pedidos,
   basePedidos = "/painel/pedidos",
   acaoStatus,
+  somenteLeitura = false,
+  exibirCliente = true,
+  exibirData = false,
 }: TabelaPedidosProps) {
+  const quando = exibirData ? formatarDataHora : horaLocal;
   if (pedidos.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed py-12 text-center">
@@ -122,10 +138,10 @@ export function TabelaPedidos({
           <thead>
             <tr className="border-b bg-muted/50 text-left text-muted-foreground">
               <th className="px-4 py-2 font-medium">Pedido</th>
-              <th className="px-4 py-2 font-medium">Cliente</th>
+              {exibirCliente && <th className="px-4 py-2 font-medium">Cliente</th>}
               <th className="px-4 py-2 font-medium">Total</th>
               <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 font-medium">Hora</th>
+              <th className="px-4 py-2 font-medium">{exibirData ? "Data" : "Hora"}</th>
             </tr>
           </thead>
           <tbody>
@@ -142,18 +158,29 @@ export function TabelaPedidos({
                     #{formatarNumeroPedido(pedido.id)}
                   </Link>
                 </td>
+                {exibirCliente && (
+                  <td className="px-4 py-3">
+                    <span className="flex flex-wrap items-center gap-2">
+                      {pedido.nome_cliente}
+                      <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
+                    </span>
+                  </td>
+                )}
                 <td className="px-4 py-3">
-                  <span className="flex flex-wrap items-center gap-2">
-                    {pedido.nome_cliente}
-                    <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
-                  </span>
+                  {exibirCliente ? (
+                    formatarMoeda(pedido.total)
+                  ) : (
+                    <span className="flex flex-wrap items-center gap-2">
+                      {formatarMoeda(pedido.total)}
+                      <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
+                    </span>
+                  )}
                 </td>
-                <td className="px-4 py-3">{formatarMoeda(pedido.total)}</td>
                 <td className="px-4 py-3">
-                  <StatusDaLinha pedido={pedido} acaoStatus={acaoStatus} />
+                  <StatusDaLinha pedido={pedido} acaoStatus={acaoStatus} somenteLeitura={somenteLeitura} />
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  {horaLocal(pedido.criado_em)}
+                  {quando(pedido.criado_em)}
                 </td>
               </tr>
             ))}
@@ -173,14 +200,16 @@ export function TabelaPedidos({
                 >
                   #{formatarNumeroPedido(pedido.id)}
                 </Link>
-                <StatusDaLinha pedido={pedido} acaoStatus={acaoStatus} />
+                <StatusDaLinha pedido={pedido} acaoStatus={acaoStatus} somenteLeitura={somenteLeitura} />
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-medium">{pedido.nome_cliente}</p>
-                <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
-              </div>
+              {(exibirCliente || pedido.tipo_entrega === "retirada") && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {exibirCliente && <p className="font-medium">{pedido.nome_cliente}</p>}
+                  <SeloRetirada tipoEntrega={pedido.tipo_entrega} />
+                </div>
+              )}
               <p className="text-sm text-muted-foreground">
-                {formatarMoeda(pedido.total)} · {horaLocal(pedido.criado_em)}
+                {formatarMoeda(pedido.total)} · {quando(pedido.criado_em)}
               </p>
             </Card>
           </li>

@@ -16,3 +16,12 @@ export const schemaCursorClientes = z
   .strict();
 
 export type CursorClientes = z.infer<typeof schemaCursorClientes>;
+
+// ── issue 347: detalhe do cliente + aniversariantes ─────────────────────────
+
+/** Mês de nascimento do filtro (RN-D10): inteiro 1..12. O banco repete a regra (22023). */
+export const schemaMes = z.int().min(1).max(12);
+
+/** Pedidos do detalhe do cliente (D3): 50 por página, "Carregar mais" por página. */
+export const POR_PAGINA_PEDIDOS_CLIENTE = 50;
+export const schemaPaginaPedidosCliente = z.int().min(1).max(1000);
