@@ -407,3 +407,6 @@ Impacto: complexidade e retenção de identificador × brecha estreita.
 - **P3** — Aceito como limite conhecido: lojista/admin que exclui e reativa o perfil de cliente tem a contagem de uso por cliente reiniciada. Sem tabela própria de usos.
 - **P1 revisada (2026-10-03)** — sem código morto: as versões de 16 e 17 de `criar_pedido` saem na mesma migration da 18; `p_cliente_id` sem default; checkout parado só entre `db push` e deploy. Issue 344 cancelada; issue 266 fechada pela 341.
 - Demais decisões propostas (1–12) aprovadas como estão.
+- **Decisão 16 ajustada (2026-10-03, após o P30)** — Só bloqueia a exclusão pedido em status não final criado nos últimos **7 dias**. Pedido em aberto mais antigo não impede a exclusão e é anonimizado ("Cliente removido", valores intactos), para o cliente não ficar preso por inação do lojista (LGPD art. 18).
+- **Achado P30** — Se o perfil em `clientes` for apagado por qualquer caminho fora de `anonimizar_cliente` (ex.: usuário removido no painel do Supabase), um trigger anonimiza os pedidos do mesmo jeito.
+- **Limite conhecido** — Quem exclui a conta e cria outra com o mesmo e-mail recomeça a contagem do cupom com limite por cliente (custo alto; contar por telefone/e-mail conflitaria com a minimização de dados).
