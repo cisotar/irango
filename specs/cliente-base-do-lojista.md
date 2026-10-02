@@ -61,17 +61,17 @@ Colunas exibidas (ver allowlist em Modelos de Dados): **Nome** (link para o deta
 - Item "Clientes" na `NavPainel` (`components/painel/NavPainel.tsx`), ao lado de "Pedidos", ícone `Users` do lucide.
 
 **Behaviors:**
-- [ ] Lojista abre `/painel/clientes` e vê só clientes com ≥1 pedido com `cliente_id` na própria loja. Comprador
+- [x] Lojista abre `/painel/clientes` e vê só clientes com ≥1 pedido com `cliente_id` na própria loja. Comprador
   convidado (pedido com `cliente_id` null) não aparece, nem os antigos (decisão 20). Garantido em: **função no banco
   escopada por `auth.uid()` → loja do dono** (nunca `loja_id` do payload) + guard do layout.
-- [ ] Lojista A nunca vê cliente que só pediu na loja B. Garantido em: **função no banco** (filtro
+- [x] Lojista A nunca vê cliente que só pediu na loja B. Garantido em: **função no banco** (filtro
   `pedidos.loja_id = loja do dono da sessão`) — teste RED em `tests/migrations/clientes_base_do_lojista_escopo.test.ts` (P40).
-- [ ] Cada linha traz só as colunas da allowlist; e-mail, senha, ano de nascimento, data de nascimento completa,
+- [x] Cada linha traz só as colunas da allowlist; e-mail, senha, ano de nascimento, data de nascimento completa,
   endereços cadastrados, consentimento e `ultimo_acesso_em` nunca saem do banco. Garantido em: **retorno tipado da
   função** (`RETURNS TABLE` fechado) — teste de allowlist de colunas no mesmo arquivo de P40.
-- [ ] Visitante sem sessão em `/painel/clientes` → redirect 30x para `/login`. Garantido em: guard do layout do
+- [x] Visitante sem sessão em `/painel/clientes` → redirect 30x para `/login`. Garantido em: guard do layout do
   painel; e no banco `EXECUTE` revogado de `anon` (`asAnon` → erro/0 linhas).
-- [ ] Usuário logado sem loja (só cliente) → `redirect("/painel")`, que segue o fluxo de papel de hoje; a função
+- [x] Usuário logado sem loja (só cliente) → `redirect("/painel")`, que segue o fluxo de papel de hoje; a função
   devolve 0 linhas para quem não é dono de loja. Garantido em: Server Component + função no banco.
 - [ ] Lojista clica em "Aniversariantes do mês" e a lista mostra só clientes cujo mês de nascimento é o mês corrente
   **no fuso da loja** (`lojas.timezone`). O estado do filtro vive na URL (`?aniversariantes=1`), validado com zod
@@ -83,7 +83,7 @@ Colunas exibidas (ver allowlist em Modelos de Dados): **Nome** (link para o deta
   cliente sobre uma página mostraria aniversariantes incompletos; e "mês corrente" num servidor em UTC erra na
   virada do mês (noite de 31 em São Paulo já é dia 1 em UTC). O teste D2 sai de `queries/clientes.test.ts` para o
   teste da função pura; o arquivo de teste de queries cobre só o repasse de parâmetros.
-- [ ] Lojista clica em "Carregar mais" e recebe as próximas 50 linhas.
+- [x] Lojista clica em "Carregar mais" e recebe as próximas 50 linhas.
   **[aprovado pelo usuário, 2026-10-03]** paginação de 50 por página com "Carregar mais", mesmo padrão de
   `/minha-conta/pedidos` (`architecture.md`, 20 por página). Motivo: a base cresce sem teto e a lista é agregada;
   carregar tudo é o N+1/payload que o `acelerar` de P42 vai procurar. `p_limite` tem teto no banco (≤ 100) e no zod.

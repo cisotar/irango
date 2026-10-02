@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.8.0 | **Atualizado:** 2026-10-02
+**Versão:** 0.8.1 | **Atualizado:** 2026-10-02
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -73,6 +73,8 @@ Migration `20261002120000_clientes.sql`. As duas tabelas nascem com RLS ligada e
 | `clientes_enderecos` | SELECT, INSERT, UPDATE e DELETE com `cliente_id = (select auth.uid())` (INSERT/UPDATE com WITH CHECK: não dá para criar nem mover endereço para outro cliente) | `SELECT, INSERT, UPDATE, DELETE` |
 
 `anon` e conta lojista não leem nenhuma das duas. INSERT e DELETE de `clientes` só passam pelas funções `SECURITY DEFINER` (`search_path = ''`, `REVOKE EXECUTE FROM public, anon, authenticated`, EXECUTE só `service_role`): `criar_perfil_cliente` (papel + perfil + 1º endereço, numa transação), `anonimizar_cliente`, `anonimizar_clientes_inativos` e `adicionar_papel_cliente` (acrescenta `cliente`, nunca `lojista`; nenhuma função remove papel). O `id` passado a elas vem sempre de `getUser()` da sessão, nunca do payload; a versão dos termos é `VERSAO_TERMOS` do servidor. Regras que o usuário não consegue contornar por PostgREST direto ficam no banco, não só na action: teto de 3 endereços e mínimo de 1 (triggers com advisory lock por cliente; o mínimo não vale para o CASCADE de `anonimizar_cliente`), um só endereço padrão (índice único parcial) e idade mínima de 18 anos (trigger em `clientes`). Tabelas e colunas: `schema.md` §2.
+
+**Leitura de dado pessoal de cliente pelo lojista (issue 346).** O lojista não ganha policy em `clientes`: lê a base só por `clientes_da_loja` e `cliente_da_loja` (`SECURITY DEFINER`, `search_path = ''`, `REVOKE ... FROM public, anon`, EXECUTE só `authenticated`). O escopo vem de `lojas.dono_id = (select auth.uid())` no corpo, nunca de parâmetro; o `RETURNS TABLE` fechado é a allowlist (sem e-mail, ano nem data de nascimento) e cliente sem pedido na loja ou anonimizado não aparece. Chamada sempre com o client da sessão, sem `service_role`. A paginação é por keyset (cursor `(ultimo_pedido_em, cliente_id)`, teto de 100 por página), sem offset; o cursor que volta do browser é revalidado com zod na Server Action. Validação do padrão: `SECURITY DEFINER` com `search_path` fixo e EXECUTE restrito, conforme [Supabase — Database Functions](https://supabase.com/docs/guides/database/functions#security-definer-vs-invoker). Colunas: `schema.md` §2.
 
 ### Políticas por tabela
 
