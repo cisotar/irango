@@ -421,3 +421,54 @@ values
   ('00000000-0000-4000-8000-000000000221', '00000000-0000-4000-8000-000000000202',
    'Casa', '00000-000', 'Rua de Teste', '4', 'Centro', 'Cidade Teste', 'SP', null, true)
 on conflict (id) do nothing;
+
+-- ── pedidos vinculados a cliente + cupom com limite por cliente (issue 341) ──
+-- seed de desenvolvimento, não usar em produção. Dados fictícios.
+-- Cobre: pedidos com cliente_id do Cliente A (um entregue com cupom, um pendente
+-- = "em aberto", que faz anonimizar_cliente recusar com pedido_em_aberto), um
+-- pedido de convidado (cliente_id null) e um cupom com limite_por_cliente = 1.
+-- Inserido como superuser (fora de RLS e dos triggers de pedidos).
+insert into public.cupons (
+  id, loja_id, codigo, tipo, valor, pedido_minimo, usos_maximos, usos_contagem, ativo, limite_por_cliente
+)
+values
+  ('00000000-0000-4000-8000-000000000081', '00000000-0000-4000-8000-000000000010',
+   'PRIMEIRA5', 'fixo', 5.00, 0, null, 1, true, 1)
+on conflict (id) do nothing;
+
+insert into public.pedidos (
+  id, loja_id, nome_cliente, telefone_cliente, endereco_entrega,
+  subtotal, desconto, taxa_entrega, total, forma_pagamento,
+  status, tipo_entrega, observacoes, cupom_codigo, cliente_id
+)
+values
+  ( -- Cliente A, entregue, usou o PRIMEIRA5 (limite 1 já atingido para A)
+    '00000000-0000-4000-8000-000000000102', '00000000-0000-4000-8000-000000000010',
+    'Cliente A Teste', '(00) 90000-0001',
+    '{"rua":"Rua de Teste","numero":"1","bairro":"Centro","cidade":"Cidade Teste","cep":"00000-000"}',
+    25.90, 5.00, 5.00, 25.90, 'pix', 'entregue', 'entrega', null, 'PRIMEIRA5',
+    '00000000-0000-4000-8000-000000000201'
+  ),
+  ( -- Cliente A, pendente (pedido em aberto)
+    '00000000-0000-4000-8000-000000000103', '00000000-0000-4000-8000-000000000010',
+    'Cliente A Teste', '(00) 90000-0001',
+    '{"rua":"Rua de Teste","numero":"1","bairro":"Centro","cidade":"Cidade Teste","cep":"00000-000"}',
+    28.50, 0, 5.00, 33.50, 'dinheiro', 'pendente', 'entrega', null, null,
+    '00000000-0000-4000-8000-000000000201'
+  ),
+  ( -- convidado (sem conta), mesmo telefone do Cliente A: NÃO é vinculado
+    '00000000-0000-4000-8000-000000000104', '00000000-0000-4000-8000-000000000010',
+    'Convidado Teste', '(00) 90000-0001', null,
+    6.00, 0, 0, 6.00, 'pix', 'entregue', 'retirada', null, null, null
+  )
+on conflict (id) do nothing;
+
+insert into public.itens_pedido (id, pedido_id, produto_id, nome, preco, quantidade, observacao)
+values
+  ('00000000-0000-4000-8000-000000000116', '00000000-0000-4000-8000-000000000102',
+   '00000000-0000-4000-8000-000000000030', 'X-Burguer Teste', 25.90, 1, null),
+  ('00000000-0000-4000-8000-000000000117', '00000000-0000-4000-8000-000000000103',
+   '00000000-0000-4000-8000-000000000031', 'X-Salada Teste', 28.50, 1, 'sem cebola'),
+  ('00000000-0000-4000-8000-000000000118', '00000000-0000-4000-8000-000000000104',
+   '00000000-0000-4000-8000-000000000032', 'Refrigerante Lata Teste', 6.00, 1, null)
+on conflict (id) do nothing;
