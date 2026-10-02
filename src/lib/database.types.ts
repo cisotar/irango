@@ -1772,7 +1772,12 @@ export type Database = {
         }[]
       }
       clientes_da_loja: {
-        Args: { p_limite?: number; p_mes?: number; p_offset?: number }
+        Args: {
+          p_apos_id?: string
+          p_apos_ultimo?: string
+          p_limite?: number
+          p_mes?: number
+        }
         Returns: {
           aceita_marketing: boolean
           cliente_id: string

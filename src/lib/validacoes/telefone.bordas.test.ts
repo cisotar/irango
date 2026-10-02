@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { digitosNacionais, telefoneComDddValido, campoTelefoneComDdd } from "./telefone";
+import { digitosNacionais, campoTelefoneComDdd } from "./telefone";
 
 // Telefones fictícios.
 describe("telefone bordas (346)", () => {
@@ -26,16 +26,16 @@ describe("telefone bordas (346)", () => {
   it.each(["(00) 90000-0000", "(01) 90000-0000", "(11) 9000-000", "0011900000000"])(
     "DDD 0X / curto %s → inválido",
     (v) => {
-      expect(telefoneComDddValido(v)).toBe(false);
+      expect(campoTelefoneComDdd.safeParse(v).success).toBe(false);
     },
   );
 
   it("formato bruto: letras, ponto, + no meio e >20 chars são recusados mesmo com dígitos certos", () => {
-    expect(telefoneComDddValido("11 9000a0000")).toBe(false);
-    expect(telefoneComDddValido("11.90000.0000")).toBe(false);
-    expect(telefoneComDddValido("11+900000000")).toBe(false);
-    expect(telefoneComDddValido("++5511900000000")).toBe(false);
-    expect(telefoneComDddValido("+55 (11) 9 0000 - 0000   ")).toBe(false); // 26 chars
+    expect(campoTelefoneComDdd.safeParse("11 9000a0000").success).toBe(false);
+    expect(campoTelefoneComDdd.safeParse("11.90000.0000").success).toBe(false);
+    expect(campoTelefoneComDdd.safeParse("11+900000000").success).toBe(false);
+    expect(campoTelefoneComDdd.safeParse("++5511900000000").success).toBe(false);
+    expect(campoTelefoneComDdd.safeParse("+55 (11) 9 0000 - 0000   ").success).toBe(false); // 26 chars
   });
 
   it("campoTelefoneComDdd faz trim e recusa vazio/só espaços/sem DDD", () => {

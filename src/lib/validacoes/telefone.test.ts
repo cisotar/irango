@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { digitosNacionais, telefoneComDddValido } from "./telefone";
+import { digitosNacionais, campoTelefoneComDdd } from "./telefone";
 
 // Telefones fictícios.
 describe("telefone com DDD (346 D4b/D4c)", () => {
@@ -11,13 +11,13 @@ describe("telefone com DDD (346 D4b/D4c)", () => {
     ["552130000000", "2130000000"],
   ])("%s → %s", (v, d) => {
     expect(digitosNacionais(v)).toBe(d);
-    expect(telefoneComDddValido(v)).toBe(true);
+    expect(campoTelefoneComDdd.safeParse(v).success).toBe(true);
   });
   it.each(["90000-0000", "12345678", "(01) 90000-0000", "119000000000", "550130000000", "", "abc"])(
     "%s → inválido",
     (v) => {
       expect(digitosNacionais(v)).toBeNull();
-      expect(telefoneComDddValido(v)).toBe(false);
+      expect(campoTelefoneComDdd.safeParse(v).success).toBe(false);
     },
   );
   it("null/undefined → null", () => {

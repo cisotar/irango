@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ClienteDaLoja } from "@/lib/supabase/queries/clientes";
-import { paraLinhaCliente } from "./linhaCliente";
+import { paraLinhaCliente, paginaDeClientes } from "./linhaCliente";
 
 // Dados fictícios.
 const base: ClienteDaLoja = {
@@ -26,7 +26,7 @@ describe("paraLinhaCliente (346 D9)", () => {
       pedidos: "3 pedidos",
       ultimoPedido: "30/09/2026",
       aniversario: "04/03",
-      promocoes: "Aceita",
+      aceitaPromocoes: true,
     });
   });
   it("cancelados exibidos e não contabilizados; último cancelado marcado", () => {
@@ -55,6 +55,19 @@ describe("paraLinhaCliente (346 D9)", () => {
     );
     expect(l.aniversario).toBe("—");
     expect(l.ultimoPedido).toBe("—");
-    expect(l.promocoes).toBe("Não aceita");
+    expect(l.aceitaPromocoes).toBe(false);
+  });
+});
+
+describe("paginaDeClientes (346 D10)", () => {
+  it("página cheia → cursor do último item (ultimo_pedido_em, cliente_id)", () => {
+    const outro = { ...base, cliente_id: "22222222-2222-2222-2222-222222222222", ultimo_pedido_em: "2026-09-01T00:00:00Z" };
+    const p = paginaDeClientes([base, outro], TZ, 2);
+    expect(p.linhas).toHaveLength(2);
+    expect(p.cursor).toEqual({ ultimo: "2026-09-01T00:00:00Z", id: outro.cliente_id });
+  });
+  it("página incompleta ou vazia → cursor null (acabou)", () => {
+    expect(paginaDeClientes([base], TZ, 2).cursor).toBeNull();
+    expect(paginaDeClientes([], TZ, 2)).toEqual({ linhas: [], cursor: null });
   });
 });

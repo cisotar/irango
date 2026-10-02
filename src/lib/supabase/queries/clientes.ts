@@ -68,15 +68,19 @@ export async function registrarUltimoAcessoCliente(svc: Client, clienteId: strin
  */
 export type ClienteDaLoja = Database["public"]["Functions"]["clientes_da_loja"]["Returns"][number];
 
-/** Página da base de clientes da loja do usuário logado (ordem: último pedido desc). */
+/**
+ * Página keyset da base de clientes da loja do usuário logado (ordem:
+ * `ultimo_pedido_em desc, cliente_id desc`). `cursor` = último item exibido;
+ * ausente na 1ª página (issue 346, D10).
+ */
 export async function listarClientesDaLoja(
   client: Client,
-  { mes, limite, offset }: { mes?: number; limite: number; offset: number },
+  { mes, limite, cursor }: { mes?: number; limite: number; cursor?: { ultimo: string; id: string } },
 ): Promise<ClienteDaLoja[]> {
   const { data, error } = await client.rpc("clientes_da_loja", {
     ...(mes != null ? { p_mes: mes } : {}),
     p_limite: limite,
-    p_offset: offset,
+    ...(cursor ? { p_apos_ultimo: cursor.ultimo, p_apos_id: cursor.id } : {}),
   });
   if (error) throw error;
   return data ?? [];

@@ -1,19 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { schemaPaginaClientes, schemaLimiteClientes, MAX_PAGINA_CLIENTES } from "./paginacao";
+import { schemaCursorClientes } from "./paginacao";
 
-describe("schemaPaginaClientes (346)", () => {
-  it.each([["0", 0], ["3", 3], [String(MAX_PAGINA_CLIENTES), MAX_PAGINA_CLIENTES]])("%s → %d", (v, n) => {
-    expect(schemaPaginaClientes.parse(v)).toBe(n);
-  });
-  it.each([undefined, "", "-1", "1.5", "abc", String(MAX_PAGINA_CLIENTES + 1), "1e9"])("%s → 0", (v) => {
-    expect(schemaPaginaClientes.parse(v)).toBe(0);
-  });
-});
+const ID = "11111111-1111-4111-8111-111111111111";
 
-describe("schemaLimiteClientes (346)", () => {
-  it("teto 100", () => {
-    expect(schemaLimiteClientes.safeParse(100).success).toBe(true);
-    expect(schemaLimiteClientes.safeParse(101).success).toBe(false);
-    expect(schemaLimiteClientes.safeParse(0).success).toBe(false);
+describe("schemaCursorClientes (346 D10)", () => {
+  it.each(["2026-10-02T12:00:00Z", "2026-10-02T12:00:00.123456+00:00", "2026-10-02T09:00:00-03:00"])(
+    "aceita ISO datetime %s + uuid",
+    (ultimo) => {
+      expect(schemaCursorClientes.safeParse({ ultimo, id: ID }).success).toBe(true);
+    },
+  );
+  it.each([
+    [{ ultimo: "2026-10-02T12:00:00Z" }],
+    [{ id: ID }],
+    [{ ultimo: "ontem", id: ID }],
+    [{ ultimo: "2026-10-02", id: ID }],
+    [{ ultimo: "2026-10-02T12:00:00Z", id: "abc" }],
+    [{ ultimo: "2026-10-02T12:00:00Z", id: ID, loja_id: ID }],
+    [null],
+  ])("recusa %j (parcial, inválido ou chave extra)", (v) => {
+    expect(schemaCursorClientes.safeParse(v).success).toBe(false);
   });
 });

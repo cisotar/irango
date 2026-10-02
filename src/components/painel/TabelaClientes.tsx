@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -10,9 +11,9 @@ import type { LinhaCliente } from "@/lib/utils/linhaCliente";
  * é o link do detalhe e cobre a linha (`after:absolute after:inset-0`); o link
  * do WhatsApp fica acima dele (`relative z-10`) — nenhum `<a>` dentro de `<a>`.
  */
-type TabelaClientesProps = { clientes: LinhaCliente[]; baseClientes?: string };
+type TabelaClientesProps = { clientes: LinhaCliente[] };
 
-function Telefone({ telefone }: { telefone: LinhaCliente["telefone"] }) {
+function Telefone({ telefone }: { telefone: LinhaCliente["telefone"] }): ReactElement {
   if (!telefone.href) return <span>{telefone.texto || "—"}</span>;
   return (
     <a
@@ -27,7 +28,7 @@ function Telefone({ telefone }: { telefone: LinhaCliente["telefone"] }) {
   );
 }
 
-export function TabelaClientes({ clientes, baseClientes = "/painel/clientes" }: TabelaClientesProps) {
+export function TabelaClientes({ clientes }: TabelaClientesProps): ReactElement {
   if (clientes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed py-12 text-center">
@@ -55,7 +56,7 @@ export function TabelaClientes({ clientes, baseClientes = "/painel/clientes" }: 
               <tr key={c.id} className="relative border-b transition-colors last:border-0 hover:bg-muted/50">
                 <td className="px-4 py-3">
                   <Link
-                    href={`${baseClientes}/${c.id}`}
+                    href={`/painel/clientes/${c.id}`}
                     className="font-medium text-foreground after:absolute after:inset-0"
                   >
                     {c.nome}
@@ -68,7 +69,7 @@ export function TabelaClientes({ clientes, baseClientes = "/painel/clientes" }: 
                 <td className="px-4 py-3 text-muted-foreground">{c.ultimoPedido}</td>
                 <td className="px-4 py-3 tabular-nums">{c.aniversario}</td>
                 <td className="px-4 py-3">
-                  <Badge variant="outline">{c.promocoes}</Badge>
+                  <Badge variant="outline">{c.aceitaPromocoes ? "Aceita" : "Não aceita"}</Badge>
                 </td>
               </tr>
             ))}
@@ -81,7 +82,7 @@ export function TabelaClientes({ clientes, baseClientes = "/painel/clientes" }: 
           <li key={c.id}>
             <Card size="sm" className="relative gap-2 transition-colors hover:bg-muted/50">
               <Link
-                href={`${baseClientes}/${c.id}`}
+                href={`/painel/clientes/${c.id}`}
                 className="font-medium text-foreground after:absolute after:inset-0"
               >
                 {c.nome}
@@ -95,7 +96,7 @@ export function TabelaClientes({ clientes, baseClientes = "/painel/clientes" }: 
               <p className="text-sm text-muted-foreground">Aniversário {c.aniversario}</p>
               <div>
                 <Badge variant="outline">
-                  {c.promocoes === "Aceita" ? "Aceita promoções" : "Não aceita promoções"}
+                  {c.aceitaPromocoes ? "Aceita promoções" : "Não aceita promoções"}
                 </Badge>
               </div>
             </Card>

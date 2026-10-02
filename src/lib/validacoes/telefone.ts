@@ -20,11 +20,11 @@ export function digitosNacionais(valor: string | null | undefined): string | nul
   return NACIONAL.test(d) ? d : null;
 }
 
-export function telefoneComDddValido(valor: string): boolean {
+function telefoneComDddValido(valor: string): boolean {
   return FORMATO_BRUTO.test(valor) && digitosNacionais(valor) !== null;
 }
 
-export const MENSAGEM_TELEFONE_DDD = "Informe o telefone com DDD.";
+const MENSAGEM_TELEFONE_DDD = "Informe o telefone com DDD.";
 
 export const campoTelefoneComDdd = z
   .string()

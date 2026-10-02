@@ -16,7 +16,7 @@ export type LinhaCliente = {
   ultimoPedido: string;
   /** "dd/mm" ou "—". */
   aniversario: string;
-  promocoes: "Aceita" | "Não aceita";
+  aceitaPromocoes: boolean;
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -49,6 +49,21 @@ export function paraLinhaCliente(c: ClienteDaLoja, timezone: string): LinhaClien
     pedidos,
     ultimoPedido,
     aniversario,
-    promocoes: c.aceita_marketing ? "Aceita" : "Não aceita",
+    aceitaPromocoes: c.aceita_marketing === true,
+  };
+}
+
+/** Página pronta para a UI: linhas formatadas + cursor keyset do último item (ou `null` se acabou). */
+export type PaginaClientes = {
+  linhas: LinhaCliente[];
+  cursor: { ultimo: string; id: string } | null;
+};
+
+export function paginaDeClientes(brutos: ClienteDaLoja[], timezone: string, porPagina = 50): PaginaClientes {
+  const ultimo = brutos.at(-1);
+  const temMais = brutos.length === porPagina && ultimo != null && ultimo.ultimo_pedido_em != null;
+  return {
+    linhas: brutos.map((c) => paraLinhaCliente(c, timezone)),
+    cursor: temMais ? { ultimo: ultimo.ultimo_pedido_em, id: ultimo.cliente_id } : null,
   };
 }

@@ -129,25 +129,30 @@ function criarClientRpc(resposta: { data?: unknown; error?: unknown }) {
 }
 
 describe("listarClientesDaLoja (346)", () => {
-  it("repassa limite/offset sem p_mes quando mes ausente e devolve as linhas", async () => {
+  it("1ª página: só p_limite (sem p_mes nem cursor) e devolve as linhas", async () => {
     const linhas = [{ cliente_id: ID, nome: "Pessoa Teste" }];
     const { client, chamadas } = criarClientRpc({ data: linhas });
-    expect(await listarClientesDaLoja(client, { limite: 50, offset: 100 })).toEqual(linhas);
-    expect(chamadas).toEqual([{ fn: "clientes_da_loja", args: { p_limite: 50, p_offset: 100 } }]);
+    expect(await listarClientesDaLoja(client, { limite: 50 })).toEqual(linhas);
+    expect(chamadas).toEqual([{ fn: "clientes_da_loja", args: { p_limite: 50 } }]);
+  });
+  it("com cursor: repassa p_apos_ultimo e p_apos_id juntos (sem p_offset)", async () => {
+    const { client, chamadas } = criarClientRpc({ data: [] });
+    await listarClientesDaLoja(client, { limite: 50, cursor: { ultimo: "2026-10-02T12:00:00Z", id: ID } });
+    expect(chamadas[0].args).toEqual({ p_limite: 50, p_apos_ultimo: "2026-10-02T12:00:00Z", p_apos_id: ID });
   });
   it("repassa p_mes quando informado", async () => {
     const { client, chamadas } = criarClientRpc({ data: [] });
-    await listarClientesDaLoja(client, { mes: 3, limite: 50, offset: 0 });
-    expect(chamadas[0].args).toEqual({ p_mes: 3, p_limite: 50, p_offset: 0 });
+    await listarClientesDaLoja(client, { mes: 3, limite: 50 });
+    expect(chamadas[0].args).toEqual({ p_mes: 3, p_limite: 50 });
   });
   it("data null → []", async () => {
     const { client } = criarClientRpc({});
-    expect(await listarClientesDaLoja(client, { limite: 50, offset: 0 })).toEqual([]);
+    expect(await listarClientesDaLoja(client, { limite: 50 })).toEqual([]);
   });
   it("propaga o error", async () => {
     const erro = { code: "42501", message: "x" };
     const { client } = criarClientRpc({ error: erro });
-    await expect(listarClientesDaLoja(client, { limite: 50, offset: 0 })).rejects.toBe(erro);
+    await expect(listarClientesDaLoja(client, { limite: 50 })).rejects.toBe(erro);
   });
 });
 
