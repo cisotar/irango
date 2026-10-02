@@ -10,7 +10,8 @@ import { buscarClienteDaLoja } from "@/lib/supabase/queries/clientes";
 import { listarPedidosDoClienteNaLoja } from "@/lib/supabase/queries/pedidos";
 import { paraLinhaCliente } from "@/lib/utils/linhaCliente";
 import { paraLinhaPedido } from "@/lib/utils/paraLinhaPedido";
-import { POR_PAGINA_PEDIDOS_CLIENTE, schemaUuid } from "@/lib/validacoes/paginacao";
+import { POR_PAGINA_PEDIDOS_CLIENTE } from "@/lib/validacoes/paginacao";
+import { schemaUuid } from "@/lib/validacoes/uuid";
 import { PedidosDoCliente } from "./PedidosDoCliente";
 
 /**

@@ -10,7 +10,7 @@ import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { listarClientesDaLoja } from "@/lib/supabase/queries/clientes";
 import { paginaDeClientes, type PaginaClientes } from "@/lib/utils/linhaCliente";
 import { mesDeReferencia, nomeDoMes } from "@/lib/utils/mesDeReferencia";
-import { POR_PAGINA_CLIENTES, schemaFiltroAniversariantes } from "@/lib/validacoes/paginacao";
+import { POR_PAGINA_CLIENTES } from "@/lib/validacoes/paginacao";
 import { ListaClientes } from "./ListaClientes";
 
 /**
@@ -27,7 +27,7 @@ export default async function ClientesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactElement> {
   const { aniversariantes } = await searchParams;
-  const filtrar = schemaFiltroAniversariantes.parse(aniversariantes);
+  const filtrar = aniversariantes === "1";
 
   const supabase = await createClient();
   const loja = await buscarLojaDoDono(supabase);
@@ -75,7 +75,7 @@ export default async function ClientesPage({
               className="min-h-11"
               aria-current={filtrar ? undefined : "page"}
               nativeButton={false}
-        render={<Link href="/painel/clientes" />}
+              render={<Link href="/painel/clientes" />}
             >
               Todos
             </Button>

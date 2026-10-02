@@ -19,8 +19,8 @@ import {
   schemaCursorClientes,
   schemaMes,
   schemaPaginaPedidosCliente,
-  schemaUuid,
 } from "@/lib/validacoes/paginacao";
+import { schemaUuid } from "@/lib/validacoes/uuid";
 
 export type ResultadoCarregarClientes = ({ ok: true } & PaginaClientes) | { ok: false; erro: string };
 

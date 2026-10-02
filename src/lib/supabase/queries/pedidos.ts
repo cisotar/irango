@@ -6,14 +6,9 @@
 //
 // Tratamento de erro (seguranca.md §14): propagam o `error` do PostgREST.
 // `null`/`[]` significam "sem linha" — NUNCA mascaram erro.
-import { z } from "zod";
+import { schemaUuid } from "@/lib/validacoes/uuid";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
-
-// z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
-// RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda) —
-// mesmo padrão de src/lib/validacoes/pedido.ts.
-const schemaUuid = z.guid();
 
 // Projeção única de pedido + itens + opcionais (snapshot). Fonte única para
 // TODAS as leituras de pedido — painel e admin compartilham o mesmo shape
