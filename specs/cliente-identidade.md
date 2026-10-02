@@ -110,14 +110,14 @@ por e-mail).
 
 **Behaviors:**
 - [ ] Clicar "Continuar com Google" e voltar autenticado ao `next` sanitizado (ou `/minha-conta`). Garantido em: callback (Route Handler) — `next` por `sanitizarNext`; papel pela RPC.
-- [ ] Conta Google nova iniciada aqui recebe papel `cliente`, nunca `lojista`, e nunca ganha loja. Garantido em: callback (`contexto=cliente` → `atribuir_papel_inicial(…,'cliente')`) + banco (trigger `lojas_exige_dono_lojista`).
-- [ ] Conta Google nova sem perfil é levada a `/conta/completar` (preservando `next`). Garantido em: guard de `/minha-conta` + destino do callback.
-- [ ] Erro/consentimento negado no Google volta para `/conta/entrar?erro=google` (não para `/login`) quando `contexto=cliente`. Garantido em: callback. **[aprovado pelo usuário, 2026-10-02]** manter o cliente no mundo dele também no erro.
-- [ ] Entrar com e-mail e senha. Garantido em: Server Action `entrarCliente` (rate limit `loginCliente` ≤5/min + `safeParse` `.strict()` + `signInWithPassword`).
-- [ ] E-mail não confirmado → recusa com "Confirme seu e-mail para entrar. Enviamos um link para você.", sem sessão (decisão 18). Garantido em: Server Action (mapeia o erro do GoTrue; se por algum caminho houver sessão com `email_confirmed_at` nulo, faz `signOut` antes de responder).
-- [ ] Credencial inválida → mensagem genérica única ("E-mail ou senha incorretos."), igual para e-mail inexistente e senha errada. Garantido em: Server Action (anti-enumeração, `seguranca.md` §17).
-- [ ] Entrar com conta só-lojista funciona (é a mesma conta, decisão 1) e cai em `/conta/completar` para ativar o perfil, sem mudar papel. Garantido em: Server Action não grava papel; guard redireciona.
-- [ ] Atualizar `clientes.ultimo_acesso_em` em login bem-sucedido (e-mail ou Google) quando há perfil. Garantido em: servidor (`service_role`), coluna não escrevível pelo usuário.
+- [x] Conta Google nova iniciada aqui recebe papel `cliente`, nunca `lojista`, e nunca ganha loja. Garantido em: callback (`contexto=cliente` → `atribuir_papel_inicial(…,'cliente')`) + banco (trigger `lojas_exige_dono_lojista`).
+- [x] Conta Google nova sem perfil é levada a `/conta/completar` (preservando `next`). Garantido em: guard de `/minha-conta` + destino do callback.
+- [x] Erro/consentimento negado no Google volta para `/conta/entrar?erro=google` (não para `/login`) quando `contexto=cliente`. Garantido em: callback. **[aprovado pelo usuário, 2026-10-02]** manter o cliente no mundo dele também no erro.
+- [x] Entrar com e-mail e senha. Garantido em: Server Action `entrarCliente` (rate limit `loginCliente` ≤5/min + `safeParse` `.strict()` + `signInWithPassword`).
+- [x] E-mail não confirmado → recusa com "Confirme seu e-mail para entrar. Enviamos um link para você.", sem sessão (decisão 18). Garantido em: Server Action (mapeia o erro do GoTrue; se por algum caminho houver sessão com `email_confirmed_at` nulo, faz `signOut` antes de responder).
+- [x] Credencial inválida → mensagem genérica única ("E-mail ou senha incorretos."), igual para e-mail inexistente e senha errada. Garantido em: Server Action (anti-enumeração, `seguranca.md` §17).
+- [x] Entrar com conta só-lojista funciona (é a mesma conta, decisão 1) e cai em `/conta/completar` para ativar o perfil, sem mudar papel. Garantido em: Server Action não grava papel; guard redireciona.
+- [x] Atualizar `clientes.ultimo_acesso_em` em login bem-sucedido (e-mail ou Google) quando há perfil. Garantido em: servidor (`service_role`), coluna não escrevível pelo usuário.
 - [ ] Clicar "Voltar para <loja>" e voltar à vitrine com o carrinho intacto (sessionStorage, mesma aba). Garantido em: cliente (navegação) — sem dado sensível.
 
 ---
@@ -158,13 +158,13 @@ Coleta (o plano delega "quando telefone, nascimento e endereço são coletados")
 - [ ] Submeter formulário válido abre o modal com a copy literal; o cadastro **não** é enviado antes de "Prosseguir com e-mail". Garantido em: cliente (UX) — persuasão, não trava de segurança. Prova: checklist P20 (sem jsdom, `tasks/176`).
 - [ ] No modal, "Continuar com Google" inicia o fluxo Google com `contexto=cliente` e `next`. Garantido em: cliente dispara; papel no callback.
 - [ ] No modal, "Prosseguir com e-mail" conclui o cadastro (o modal nunca bloqueia). Garantido em: cliente (UX).
-- [ ] Criar conta por e-mail. Garantido em: **Server Action `cadastrarCliente`**: rate limit `cadastroCliente` ≤5/min → `schemaCadastroCliente.safeParse` (`.strict()`, e-mail e senha; `aceiteTermos` no payload → rejeitado) → `signUp` **sem** `options.data` e com `emailRedirectTo` = `/auth/callback?contexto=cliente&next=<next sanitizado>` → `atribuirPapelInicial(svc, id, 'cliente')`. **Nunca** chama `criarLoja` nem `garantir_loja_do_dono`.
-- [ ] Nenhum dado de perfil é guardado antes da confirmação do e-mail (RN-06). Garantido em: Server Action (schema só aceita e-mail e senha; `signUp` sem metadata).
-- [ ] Campo extra no payload (`papel`, `loja_id`, `cliente_id`, `id`, `nome`, `telefone`…) → rejeitado. Garantido em: Server Action (`.strict()`).
-- [ ] E-mail que já é conta de lojista (ou já é cliente) → "Este email já está cadastrado.", sem alterar a conta e **sem** compensação `deleteUser`. Garantido em: Server Action (papéis devolvidos pela RPC não contêm `cliente` recém-gravado / `signUp` devolve erro) — padrão do ADR f.
+- [x] Criar conta por e-mail. Garantido em: **Server Action `cadastrarCliente`**: rate limit `cadastroCliente` ≤5/min → `schemaCadastroCliente.safeParse` (`.strict()`, e-mail e senha; `aceiteTermos` no payload → rejeitado) → `signUp` **sem** `options.data` e com `emailRedirectTo` = `/auth/callback?contexto=cliente&next=<next sanitizado>` → `atribuirPapelInicial(svc, id, 'cliente')`. **Nunca** chama `criarLoja` nem `garantir_loja_do_dono`.
+- [x] Nenhum dado de perfil é guardado antes da confirmação do e-mail (RN-06). Garantido em: Server Action (schema só aceita e-mail e senha; `signUp` sem metadata).
+- [x] Campo extra no payload (`papel`, `loja_id`, `cliente_id`, `id`, `nome`, `telefone`…) → rejeitado. Garantido em: Server Action (`.strict()`).
+- [x] E-mail que já é conta de lojista (ou já é cliente) → mesma resposta neutra do cadastro novo (decisões B2/D5: não revela se a conta existe), sem alterar a conta e **sem** compensação `deleteUser`. Garantido em: Server Action (papéis devolvidos pela RPC não contêm `cliente` recém-gravado / `signUp` devolve erro) — padrão do ADR f.
 - [ ] Ver o estado "Confirme seu e-mail" após concluir; nenhuma sessão é aberta. Garantido em: Server Action (não retorna sessão; Confirm email ligado no projeto).
-- [ ] Clicar o link de confirmação e cair em `/conta/completar` (preservando `next` sanitizado), nunca em `/painel`. Garantido em: callback (`contexto=cliente`, papel `cliente`) + guard de `/minha-conta` (sem perfil → `/conta/completar`).
-- [ ] Mensagens de erro na UI genéricas; detalhe só no log do servidor, sem PII. Garantido em: Server Action (`seguranca.md` §14/§21).
+- [x] Clicar o link de confirmação e cair em `/conta/completar` (preservando `next` sanitizado), nunca em `/painel`. Garantido em: callback (`contexto=cliente`, papel `cliente`) + guard de `/minha-conta` (sem perfil → `/conta/completar`).
+- [x] Mensagens de erro na UI genéricas; detalhe só no log do servidor, sem PII. Garantido em: Server Action (`seguranca.md` §14/§21).
 
 ---
 
@@ -184,14 +184,14 @@ seu contrato com o checkout, o rótulo fica num `Input` irmão — não alterar 
 `react-imask` (já em `package.json`) · data com `Input type="date"` · shadcn `Card`/`Input`/`Checkbox`/`Button`.
 
 **Behaviors:**
-- [ ] Concluir o passo complementar cria o perfil. Garantido em: **Server Action `completarPerfilCliente`** (rate limit `salvarPerfil` existente, `.strict()`, `aceiteTermos: z.literal(true)`, 18+) → RPC `criar_perfil_cliente(auth.uid(), …)` via `service_role`, numa transação: `adicionar_papel_cliente` + INSERT `clientes` + INSERT 1º endereço. O id vem da sessão (`getUser()`), nunca do payload.
-- [ ] Sem aceite de termos → rejeitado e **nenhuma** linha em `clientes` (decisão 19). Garantido em: Server Action + RPC (aceite é parâmetro obrigatório).
-- [ ] Data de nascimento com menos de 18 anos → "Você precisa ter 18 anos ou mais para criar uma conta."; data futura ou mais de 120 anos → recusada. Menor continua comprando como convidado. Garantido em: Server Action (zod) **e** banco (trigger em `clientes`, decisão 17).
-- [ ] Sem endereço → recusado (mínimo 1, decisão 8). Garantido em: Server Action + RPC.
-- [ ] Lojista/admin ativando o perfil continua com `lojista`, continua entrando no `/painel` e não ganha segunda conta. Garantido em: banco (`adicionar_papel_cliente` só acrescenta `cliente`; nenhuma função remove papel — ADR h/I5).
-- [ ] Ativar perfil nunca concede `lojista` a conta só-cliente. Garantido em: banco (não existe função que acrescente `lojista` a conta com papel; trigger em `lojas`).
-- [ ] Abandonar o passo complementar: a conta fica com papel `cliente` e sem perfil; `/minha-conta` sempre traz de volta a esta tela; o checkout continua tratando como convidado (Marco C). Garantido em: guard.
-- [ ] Ao concluir, ir para `next` sanitizado ou `/minha-conta`. Garantido em: Server Action (redirect com `sanitizarNext`).
+- [x] Concluir o passo complementar cria o perfil. Garantido em: **Server Action `completarPerfilCliente`** (rate limit `salvarPerfil` existente, `.strict()`, `aceiteTermos: z.literal(true)`, 18+) → RPC `criar_perfil_cliente(auth.uid(), …)` via `service_role`, numa transação: `adicionar_papel_cliente` + INSERT `clientes` + INSERT 1º endereço. O id vem da sessão (`getUser()`), nunca do payload.
+- [x] Sem aceite de termos → rejeitado e **nenhuma** linha em `clientes` (decisão 19). Garantido em: Server Action + RPC (aceite é parâmetro obrigatório).
+- [x] Data de nascimento com menos de 18 anos → "Você precisa ter 18 anos ou mais para criar uma conta."; data futura ou mais de 120 anos → recusada. Menor continua comprando como convidado. Garantido em: Server Action (zod) **e** banco (trigger em `clientes`, decisão 17).
+- [x] Sem endereço → recusado (mínimo 1, decisão 8). Garantido em: Server Action + RPC.
+- [x] Lojista/admin ativando o perfil continua com `lojista`, continua entrando no `/painel` e não ganha segunda conta. Garantido em: banco (`adicionar_papel_cliente` só acrescenta `cliente`; nenhuma função remove papel — ADR h/I5).
+- [x] Ativar perfil nunca concede `lojista` a conta só-cliente. Garantido em: banco (não existe função que acrescente `lojista` a conta com papel; trigger em `lojas`).
+- [x] Abandonar o passo complementar: a conta fica com papel `cliente` e sem perfil; `/minha-conta` sempre traz de volta a esta tela; o checkout continua tratando como convidado (Marco C). Garantido em: guard.
+- [x] Ao concluir, ir para `next` sanitizado ou `/minha-conta`. Garantido em: Server Action (redirect com `sanitizarNext`).
 
 ---
 
@@ -211,11 +211,11 @@ renderizado com sessão de recuperação válida; sem ela, estado de erro com CT
 (novo) · shadcn `Card`/`Input`/`Label`/`Button`, `sonner`.
 
 **Behaviors:**
-- [ ] Pedir o link. Garantido em: **Server Action `solicitarRecuperacaoCliente`** (rate limit `recuperacaoCliente` ≤5/min por IP, `.strict()`). Resposta **idêntica** para e-mail existente, inexistente e conta só-Google: "Se existe uma conta com esse e-mail, enviamos um link para redefinir a senha." (anti-enumeração; a chamada ao GoTrue acontece em todos os casos).
-- [ ] Clicar o link e chegar em `/conta/recuperar?etapa=nova-senha` com sessão de recuperação. Garantido em: **Route Handler de callback** (`exchangeCodeForSession` + `sanitizarNext`) + Redirect Allow List do Supabase. O callback não atribui papel novo a conta existente (I4).
-- [ ] Definir nova senha (8–72, regra de `schemaCadastro`, com confirmação). Garantido em: **Server Action `redefinirSenhaCliente`** (`updateUser({ password })` sobre a sessão de recuperação; sem ela, falha).
-- [ ] Link inválido, expirado ou já usado → estado de erro genérico, sem formulário. Garantido em: GoTrue + callback/página.
-- [ ] Após redefinir, seguir para `next` sanitizado ou `/minha-conta`. Garantido em: Server Action.
+- [x] Pedir o link. Garantido em: **Server Action `solicitarRecuperacaoCliente`** (rate limit `recuperacaoCliente` ≤5/min por IP, `.strict()`). Resposta **idêntica** para e-mail existente, inexistente e conta só-Google: "Se existe uma conta com esse e-mail, enviamos um link para redefinir a senha." (anti-enumeração; a chamada ao GoTrue acontece em todos os casos).
+- [x] Clicar o link e chegar em `/conta/recuperar?etapa=nova-senha` com sessão de recuperação. Garantido em: **Route Handler de callback** (`exchangeCodeForSession` + `sanitizarNext`) + Redirect Allow List do Supabase. O callback não atribui papel novo a conta existente (I4).
+- [x] Definir nova senha (8–72, regra de `schemaCadastro`, com confirmação). Garantido em: **Server Action `redefinirSenhaCliente`** (`updateUser({ password })` sobre a sessão de recuperação; sem ela, falha).
+- [x] Link inválido, expirado ou já usado → estado de erro genérico, sem formulário. Garantido em: GoTrue + callback/página.
+- [x] Após redefinir, seguir para `next` sanitizado ou `/minha-conta`. Garantido em: Server Action.
 
 ---
 
@@ -231,18 +231,18 @@ atalho para endereços, botão "Sair" e zona "Excluir conta".
 exclusão) · shadcn `Card`/`Switch` ou `Checkbox`/`Button`.
 
 **Behaviors:**
-- [ ] Ver os próprios dados e nenhum dado de outro cliente. Garantido em: **RLS** (`clientes` SELECT `id = auth.uid()`) + query com o client da sessão.
-- [ ] Editar nome, telefone, data de nascimento. Garantido em: **Server Action `salvarPerfilCliente`** (rate limit `salvarPerfil`, `.strict()`, tetos) → UPDATE com client da sessão + **RLS** (só a própria linha) + **trigger** de idade (decisão 17).
-- [ ] Ligar/desligar opt-in de marketing (padrão desligado). Garantido em: Server Action + RLS.
-- [ ] Tentar mudar `id`, `criado_em`, `ultimo_acesso_em`, `consentimento_*` por payload ou PostgREST direto → sem efeito/erro. Garantido em: Server Action (`.strict()`) + banco (grant de UPDATE só nas colunas editáveis).
-- [ ] Sair (encerra a sessão; volta ao `next` ou `/`). Garantido em: servidor (`signOut`).
-- [ ] Excluir a conta (ver bloco "Exclusão" abaixo).
+- [x] Ver os próprios dados e nenhum dado de outro cliente. Garantido em: **RLS** (`clientes` SELECT `id = auth.uid()`) + query com o client da sessão.
+- [x] Editar nome, telefone, data de nascimento. Garantido em: **Server Action `salvarPerfilCliente`** (rate limit `salvarPerfil`, `.strict()`, tetos) → UPDATE com client da sessão + **RLS** (só a própria linha) + **trigger** de idade (decisão 17).
+- [x] Ligar/desligar opt-in de marketing (padrão desligado). Garantido em: Server Action + RLS.
+- [x] Tentar mudar `id`, `criado_em`, `ultimo_acesso_em`, `consentimento_*` por payload ou PostgREST direto → sem efeito/erro. Garantido em: Server Action (`.strict()`) + banco (grant de UPDATE só nas colunas editáveis).
+- [x] Sair (encerra a sessão; volta ao `next` ou `/`). Garantido em: servidor (`signOut`).
+- [x] Excluir a conta (ver bloco "Exclusão" abaixo).
 
 **Exclusão de conta:**
 - Confirmação em `AlertDialog` com texto do que acontece (dados apagados, irreversível). **[aprovado pelo usuário,
   2026-10-02]** sem redigitar senha: Google não tem senha e a sessão já foi validada por `getUser()`.
-- [ ] Conta **só-cliente**: apaga perfil e conta. Garantido em: **Server Action `excluirConta`** — usa só `auth.uid()` da sessão (id no payload é ignorado; schema `.strict()` vazio) → `anonimizar_cliente(uid)` via `service_role` → `auth.admin.deleteUser(uid)` (cascade em `papeis_usuario`) → `signOut` → `/`. Se `deleteUser` falhar depois da anonimização, o perfil já sumiu e o erro vai ao log; a conta sem perfil volta a `/conta/completar` se a pessoa entrar de novo.
-- [ ] Conta **lojista+cliente** (ou admin+cliente): remove **só o perfil de cliente** (`anonimizar_cliente`); `auth.users`, loja, assinatura e as linhas de `papeis_usuario` permanecem; o `/painel` continua igual. **[aprovado pelo usuário, 2026-10-02]** Justificativa: a decisão 15 proíbe que o perfil de cliente tire o papel de lojista, e o ADR (h/I5) proíbe função que remova papel; a conta fica com `cliente` sem perfil, estado já tratado pelo guard (reativar = `/conta/completar`). Excluir a conta do lojista continua sendo atendimento manual (`/privacidade`).
+- [x] Conta **só-cliente**: apaga perfil e conta. Garantido em: **Server Action `excluirConta`** — usa só `auth.uid()` da sessão (id no payload é ignorado; schema `.strict()` vazio) → `anonimizar_cliente(uid)` via `service_role` → `auth.admin.deleteUser(uid)` (cascade em `papeis_usuario`) → `signOut` → `/`. Se `deleteUser` falhar depois da anonimização, o perfil já sumiu e o erro vai ao log; a conta sem perfil volta a `/conta/completar` se a pessoa entrar de novo.
+- [x] Conta **lojista+cliente** (ou admin+cliente): remove **só o perfil de cliente** (`anonimizar_cliente`); `auth.users`, loja, assinatura e as linhas de `papeis_usuario` permanecem; o `/painel` continua igual. **[aprovado pelo usuário, 2026-10-02]** Justificativa: a decisão 15 proíbe que o perfil de cliente tire o papel de lojista, e o ADR (h/I5) proíbe função que remova papel; a conta fica com `cliente` sem perfil, estado já tratado pelo guard (reativar = `/conta/completar`). Excluir a conta do lojista continua sendo atendimento manual (`/privacidade`).
 - [ ] Após excluir (só-cliente), tentar entrar de novo falha (credencial inválida genérica). Garantido em: GoTrue.
 - [ ] Decisão 16 (bloqueio com pedido em aberto) **não** se aplica neste marco: ainda não há vínculo cliente↔pedido. Entra no Marco C.
 
@@ -257,15 +257,15 @@ preenchem o campo), marcação de padrão, editar, remover, "Adicionar endereço
 "Padrão".
 
 **Behaviors:**
-- [ ] Listar só os próprios endereços. Garantido em: **RLS** (`cliente_id = auth.uid()`).
-- [ ] Adicionar endereço (rótulo `.trim().min(1).max(30)` sem `\n`; campos = `schemaEnderecoCheckout`; complemento ≤100). Garantido em: **Server Action `salvarEnderecoCliente`** (`.strict()`, `cliente_id` = `auth.uid()` do servidor) + **RLS** (WITH CHECK `cliente_id = auth.uid()`).
-- [ ] 4º endereço → recusado ("Você pode ter até 3 endereços."). Garantido em: Server Action (mensagem) **e** banco (trigger BEFORE INSERT com lock por cliente — vale também para POST direto no PostgREST).
-- [ ] Editar endereço próprio; id de endereço alheio no payload → 0 linhas, erro genérico. Garantido em: **RLS** (USING + WITH CHECK).
-- [ ] Marcar um endereço como padrão (desmarca o anterior na mesma operação). Garantido em: Server Action (transação via RPC ou duas escritas ordenadas) + banco (índice único parcial `(cliente_id) where padrao`).
-- [ ] O primeiro endereço nasce padrão. Garantido em: RPC `criar_perfil_cliente`.
-- [ ] Remover endereço; o último endereço **não** pode ser removido ("Mantenha pelo menos um endereço."). **[aprovado pelo usuário, 2026-10-02]** Justificativa: decisão 8 exige mínimo 1 no cadastro; manter o mínimo depois evita perfil incompleto que o Marco C teria de tratar. Garantido em: Server Action + trigger BEFORE DELETE (exceto quando a remoção vem de `anonimizar_cliente`/cascade da conta).
-- [ ] Remover o endereço padrão promove outro a padrão. Garantido em: Server Action/RPC. **[aprovado pelo usuário, 2026-10-02]** promover o mais antigo restante.
-- [ ] Rótulo, complemento e demais textos renderizados por JSX (escape padrão), nunca `dangerouslySetInnerHTML`. Garantido em: cliente (render) + gate `grep` (P17).
+- [x] Listar só os próprios endereços. Garantido em: **RLS** (`cliente_id = auth.uid()`).
+- [x] Adicionar endereço (rótulo `.trim().min(1).max(30)` sem `\n`; campos = `schemaEnderecoCheckout`; complemento ≤100). Garantido em: **Server Action `salvarEnderecoCliente`** (`.strict()`, `cliente_id` = `auth.uid()` do servidor) + **RLS** (WITH CHECK `cliente_id = auth.uid()`).
+- [x] 4º endereço → recusado ("Você pode ter até 3 endereços."). Garantido em: Server Action (mensagem) **e** banco (trigger BEFORE INSERT com lock por cliente — vale também para POST direto no PostgREST).
+- [x] Editar endereço próprio; id de endereço alheio no payload → 0 linhas, erro genérico. Garantido em: **RLS** (USING + WITH CHECK).
+- [x] Marcar um endereço como padrão (desmarca o anterior na mesma operação). Garantido em: Server Action (transação via RPC ou duas escritas ordenadas) + banco (índice único parcial `(cliente_id) where padrao`).
+- [x] O primeiro endereço nasce padrão. Garantido em: RPC `criar_perfil_cliente`.
+- [x] Remover endereço; o último endereço **não** pode ser removido ("Mantenha pelo menos um endereço."). **[aprovado pelo usuário, 2026-10-02]** Justificativa: decisão 8 exige mínimo 1 no cadastro; manter o mínimo depois evita perfil incompleto que o Marco C teria de tratar. Garantido em: Server Action + trigger BEFORE DELETE (exceto quando a remoção vem de `anonimizar_cliente`/cascade da conta).
+- [x] Remover o endereço padrão promove outro a padrão. Garantido em: Server Action/RPC. **[aprovado pelo usuário, 2026-10-02]** promover o mais antigo restante.
+- [x] Rótulo, complemento e demais textos renderizados por JSX (escape padrão), nunca `dangerouslySetInnerHTML`. Garantido em: cliente (render) + gate `grep` (P17).
 
 ---
 
@@ -288,9 +288,9 @@ preenchem o campo), marcação de padrão, editar, remover, "Adicionar endereço
 7. `/termos`: existência da conta de cliente, responsabilidade pelas credenciais, idade mínima.
 
 **Behaviors:**
-- [ ] Ler as páginas com o texto novo e a versão nova exibida. Garantido em: estático; versão vem de `VERSAO_TERMOS`.
-- [ ] `VERSAO_TERMOS` (`src/lib/constants/termos.ts`) sobe na mesma entrega e é a versão gravada no aceite do cliente. Garantido em: servidor (RPC recebe a constante do servidor, nunca do payload).
-- [ ] Lojista que aceitou versão anterior **não** é obrigado a re-aceitar. Garantido em: nada muda em `lojas.consentimento_versao`.
+- [x] Ler as páginas com o texto novo e a versão nova exibida. Garantido em: estático; versão vem de `VERSAO_TERMOS`.
+- [x] `VERSAO_TERMOS` (`src/lib/constants/termos.ts`) sobe na mesma entrega e é a versão gravada no aceite do cliente. Garantido em: servidor (RPC recebe a constante do servidor, nunca do payload).
+- [x] Lojista que aceitou versão anterior **não** é obrigado a re-aceitar. Garantido em: nada muda em `lojas.consentimento_versao`.
 
 ---
 
@@ -298,7 +298,7 @@ preenchem o campo), marcação de padrão, editar, remover, "Adicionar endereço
 **Mundo:** admin (`/admin/assinantes`, onboarding assistido existente).
 
 **Behaviors:**
-- [ ] Admin tenta criar loja para e-mail de conta só-cliente → recusado com mensagem específica "Este e-mail pertence a uma conta de cliente e não pode ser dono de loja." **[aprovado pelo usuário, 2026-10-02]** (o ADR L1-A permite trocar a mensagem genérica; texto proposto aqui). Garantido em: **banco** (trigger `lojas_exige_dono_lojista`) + Server Action `criarLojaAdmin` (consulta papéis via `service_role` antes de `criarLoja` só para escolher a mensagem; a barreira é o trigger).
+- [x] Admin tenta criar loja para e-mail de conta só-cliente → recusado com mensagem específica "Este e-mail pertence a uma conta de cliente e não pode ser dono de loja." **[aprovado pelo usuário, 2026-10-02]** (o ADR L1-A permite trocar a mensagem genérica; texto proposto aqui). Garantido em: **banco** (trigger `lojas_exige_dono_lojista`) + Server Action `criarLojaAdmin` (consulta papéis via `service_role` antes de `criarLoja` só para escolher a mensagem; a barreira é o trigger).
 
 ---
 

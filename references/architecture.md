@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.3.8 | **Atualizado:** 2026-10-02
+**Versão:** 0.4.0 | **Atualizado:** 2026-10-02
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -25,12 +25,13 @@
 
 iRango é um **marketplace SaaS multitenant** no modelo iFood — lojistas cadastram suas lojas, configuram catálogo, frete e formas de pagamento. Clientes acessam a vitrine pública de cada loja e fazem pedidos. **O SaaS não intermedia pagamentos** — cada lojista recebe diretamente via Pix, link ou dinheiro.
 
-### Dois mundos distintos
+### Mundos distintos (vitrine, painel, conta do cliente)
 
 | Mundo | URL | Público | Auth |
 |-------|-----|---------|------|
 | Vitrine pública | `/loja/[slug]` | clientes finais | sem login |
 | Painel do lojista | `/painel/*` | donos de loja | obrigatório |
+| Conta do cliente | `/conta/*` (entrar, cadastro, completar, recuperar) e `/minha-conta/*` (perfil, endereços, exclusão) | clientes finais com conta (opcional; a compra continua possível como convidado) | `/conta/*` público; `/minha-conta/*` exige sessão, e-mail confirmado e perfil |
 
 ---
 
@@ -101,6 +102,15 @@ irango/
 │   │   │   ├── login/
 │   │   │   └── cadastro/
 │   │   │
+│   │   ├── (cliente)/                    # conta do cliente final — telas neutras do iRango, sem tema de loja
+│   │   │   ├── layout.tsx                # card centralizado, sem guard (as telas /conta/* são públicas)
+│   │   │   ├── conta/
+│   │   │   │   ├── entrar/ cadastro/ completar/ recuperar/
+│   │   │   │   └── sessao.ts             # lerSessaoCliente / redirecionarSeLogado — leitura de sessão compartilhada
+│   │   │   └── minha-conta/
+│   │   │       ├── layout.tsx            # guard (exigirCliente) + page.tsx, enderecos/ — ver §5
+│   │   │       └── guard.ts              # exigirCliente(rota) — fail-closed, cache() por requisição
+│   │   │
 │   │   ├── serwist/
 │   │   │   └── [path]/
 │   │   │       └── route.ts              # Route Handler do Service Worker (compila src/app/sw.ts via @serwist/turbopack + esbuild; desligado em dev)
@@ -110,6 +120,7 @@ irango/
 │   │
 │   ├── components/
 │   │   ├── ui/                           # shadcn/ui (gerado pelo CLI — não editar manualmente)
+│   │   ├── cliente/                      # componentes da conta do cliente (formulários, alertas, TopoConta)
 │   │   ├── vitrine/                      # componentes da loja pública
 │   │   │   ├── CardProduto.tsx
 │   │   │   ├── Carrinho.tsx
@@ -219,6 +230,7 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 - **Sessão:** gerenciada por `@supabase/ssr` via cookies HttpOnly
 - **Middleware:** `middleware.ts` na raiz — refresha sessão em toda request
 - **Guard de painel:** dois layouts em camada, posicionais. `app/(painel)/painel/layout.tsx` decide sessão/papel/email/loja (`decidirAcessoBase`, com os papéis lidos de `papeis_usuario` por `buscarPapeisDoUsuario`) e monta o chrome; o route group aninhado `app/(painel)/painel/(bloqueavel)/layout.tsx` decide só a assinatura (`decidirAssinatura`) sobre as rotas que estão posicionalmente dentro dele. Telas isentas do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) ficam fora do grupo por estrutura de pastas — isenção não depende de header de rota (achado #3B do pentest 2026-07-08, ver `seguranca.md` §4)
+- **Guard da conta do cliente:** em `app/(cliente)/minha-conta/layout.tsx`, não no middleware. `exigirCliente(rota)` (`minha-conta/guard.ts`) é chamado pelo layout **e** por cada página (o layout não re-renderiza em navegação entre páginas irmãs), com uma leitura por requisição via `cache()`. Fail-closed, nesta ordem: sem sessão → `/conta/entrar?next=<rota>`; e-mail não confirmado → `signOut` + `/conta/entrar?erro=confirme`; sem papel `cliente` ou sem linha em `clientes` → `/conta/completar`; erro de leitura → `/conta/entrar?erro=sessao`. Papéis vêm sempre de `papeis_usuario` (RLS), nunca do JWT
 - **Vitrine pública:** sem auth — `app/(publica)` usa `supabase/server.ts` sem verificar sessão
 - **Guard admin do SaaS:** `verificarAdminSaaS()` (`src/lib/auth/admin.ts`) — fail-closed, compara `user.id` contra `SAAS_ADMIN_USER_ID` server-only. Usado em `admin/assinantes/layout.tsx` (guard de subárvore) e direto em `admin/page.tsx` (guard de page isolada, opção A — ver `seguranca.md` §7)
 
@@ -229,6 +241,18 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 ```
 
 O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-login pela identidade: sem `next` explícito, dono do SaaS (`user.id === SAAS_ADMIN_USER_ID`, via `ehAdminSaaS()`) → `/admin` (hub de seleção); lojista → `/painel`; demais papéis → `/` (`destinoPadraoPorPapel`, `src/lib/utils/papeis.ts`). O callback é a porta `(auth)`: atribui `lojista` à conta que ainda não tem papel (`atribuirPapelInicial`, RPC `atribuir_papel_inicial`); papel existente nunca muda. `next` explícito sanitizado sempre tem prioridade sobre esse destino padrão (o guard do painel barra quem não é lojista).
+
+### Fluxo da conta do cliente
+
+```
+/conta/cadastro (e-mail+senha) → signUp → "Confirme seu e-mail" (sem sessão) → link → /auth/callback?contexto=cliente
+/conta/entrar (e-mail ou Google) ─────────────────────────────────────────────→ /auth/callback?contexto=cliente
+    → papel 'cliente' só se a conta não tem papel; sem perfil → /conta/completar; com perfil → next sanitizado ou /minha-conta
+/conta/completar → completarPerfilCliente → RPC criar_perfil_cliente (papel + perfil + 1º endereço + aceite dos termos)
+/conta/recuperar → link por e-mail → callback → /conta/recuperar?etapa=nova-senha (sessão de recuperação) → redefinirSenhaCliente
+```
+
+Lojista e admin ativam o perfil de cliente na mesma conta, em `/conta/completar`, sem perder o papel. `next` passa sempre por `sanitizarNext` (`src/lib/utils/sanitizarNext.ts`, só caminho interno). Server Actions: `src/lib/actions/clienteAuth.ts` (auth) e `cliente.ts` (perfil, endereços, exclusão); queries em `supabase/queries/clientes.ts`; schemas em `validacoes/cliente.ts`. Segurança: `seguranca.md` §2 e §17.
 
 ### Fluxo de proteção do painel
 
