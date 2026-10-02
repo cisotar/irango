@@ -14,6 +14,9 @@
 // D6: rate limit por IP (~5/min) — issue 052 travou `entrar`; o pentest (área 4)
 //     estendeu a mesma trava a `cadastrar` sob a chave "cadastro". IP lido de
 //     headers() server-side (não forjável pelo payload). Guard no topo de ambas.
+// Issue 332: `cadastrar` atribui o papel `lojista` (RPC atribuir_papel_inicial)
+//     ANTES de criar a loja; conta existente com outro papel é recusada SEM
+//     compensação (não foi esta chamada que criou a conta).
 
 import { headers } from "next/headers";
 import { schemaCadastro, schemaLogin } from "@/lib/validacoes/auth";
@@ -22,6 +25,7 @@ import { sanitizarSlug } from "@/lib/validacoes/loja";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { contarLojasDoDono, slugExiste, criarLoja } from "@/lib/supabase/queries/lojas";
+import { atribuirPapelInicial } from "@/lib/supabase/queries/papeis";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
 import { ehAdminSaaS } from "@/lib/auth/admin";
 
@@ -80,6 +84,18 @@ export async function cadastrar(payload: unknown): Promise<ResultadoCadastro> {
     return { ok: false, erro: "Este email já está cadastrado." };
   }
   const userId = data.user.id; // AUTORITATIVO: dono_id vem do signUp, nunca do payload.
+
+  // 2b) Papel (issue 332). Try próprio e SEM compensação: a conta pode ser
+  //     pré-existente (signUp de e-mail já cadastrado), então nunca deleteUser aqui.
+  try {
+    const papeis = await atribuirPapelInicial(createServiceClient(), userId, "lojista");
+    if (!papeis.includes("lojista")) {
+      return { ok: false, erro: "Este email já está cadastrado." };
+    }
+  } catch (e: unknown) {
+    console.error("[cadastrar] papel", e);
+    return { ok: false, erro: "Não foi possível concluir o cadastro. Tente novamente." };
+  }
 
   // 3) RN-01 + slug + INSERT rodam via service_role (D7): logo após o signUp o
   //    cookie pode não estar síncrono, e as checagens precisam enxergar lojas

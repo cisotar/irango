@@ -1,11 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { atribuirPapelInicial } from "@/lib/supabase/queries/papeis";
+import { destinoPadraoPorPapel, type Papel } from "@/lib/utils/papeis";
 import { reconciliarPosConfirmacao } from "@/lib/auth/reconciliarPosConfirmacao";
 import { ehAdminSaaS } from "@/lib/auth/admin";
 
 /**
  * Callback OAuth / confirmação de email (padrão `@supabase/ssr`).
  * Troca `code` por sessão (seta cookies httpOnly) e redireciona.
+ * Porta `(auth)` (issue 332): conta sem papel recebe `lojista`; papel de conta
+ * existente nunca muda (lock + "só grava se não há papel" na RPC). O id vem do
+ * `exchangeCodeForSession`, nunca da query.
  * Erro → mensagem genérica ao usuário (§14), detalhe só no `console.error`.
  */
 export async function GET(request: NextRequest): Promise<Response> {
@@ -35,15 +41,27 @@ export async function GET(request: NextRequest): Promise<Response> {
     return NextResponse.redirect(`${origin}/login?erro=auth`);
   }
 
+  if (!data.user) {
+    return NextResponse.redirect(`${origin}${next ?? "/painel"}`);
+  }
+
+  let papeis: Papel[];
+  try {
+    papeis = await atribuirPapelInicial(createServiceClient(), data.user.id, "lojista");
+  } catch (e) {
+    console.error("[authCallback] papel", e);
+    return NextResponse.redirect(`${origin}/login?erro=auth`);
+  }
+
   // Issue 066: posse do email comprovada agora → reconcilia assinatura órfã (059).
-  // BEST-EFFORT: o helper já engole toda falha; não derruba o redirect.
-  if (data.user) {
+  // Só lojista (issue 332). BEST-EFFORT: o helper já engole toda falha.
+  if (papeis.includes("lojista")) {
     await reconciliarPosConfirmacao(data.user);
   }
 
-  // Destino padrão por identidade: dono do SaaS → hub `/admin`; lojista → `/painel`.
-  // Um `next` explícito já sanitizado tem prioridade sobre a decisão por identidade.
-  const destinoPadrao = data.user && ehAdminSaaS(data.user.id) ? "/admin" : "/painel";
+  // Destino padrão por papel: admin → `/admin`; lojista → `/painel`; demais → "/".
+  // Um `next` explícito já sanitizado tem prioridade (o gate do painel barra).
+  const destinoPadrao = destinoPadraoPorPapel({ ehAdmin: ehAdminSaaS(data.user.id), papeis });
   return NextResponse.redirect(`${origin}${next ?? destinoPadrao}`);
 }
 

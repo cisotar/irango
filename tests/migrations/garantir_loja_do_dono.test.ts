@@ -256,3 +256,95 @@ describe("065 — garantir_loja_do_dono (reconciliação de user órfão, fase R
     }
   });
 });
+
+/**
+ * Fase RED (TDD) da issue 332 — a RPC de auto-cura respeita o papel da conta.
+ *
+ * A RPC não é recriada (ADR §2 e): a barreira é o trigger
+ * `lojas_exige_dono_lojista_trg`, que o INSERT da RPC atravessa. L1 = (A): conta
+ * só-cliente nunca recebe loja, nem pela RPC.
+ *
+ * RED: `public.atribuir_papel_inicial` e `public.papeis_usuario` ainda não
+ * existem (migration `*_papel_cliente.sql`, P2). O caso [332-10] já é verde hoje
+ * e funciona como guard da ACL atual, não como RED.
+ */
+describe("332 — garantir_loja_do_dono × papel da conta", () => {
+  const SO_CLIENTE = "a3320000-0000-4000-8000-0000000000c1";
+  const LOJISTA_CLIENTE = "a3320000-0000-4000-8000-0000000000c2";
+  const SEM_PAPEL = "a3320000-0000-4000-8000-0000000000c3";
+  let u: TestDb;
+
+  async function papeisDe(id: string): Promise<string[]> {
+    const r = await u.asService((db) =>
+      db.query<{ papel: string }>(
+        `select papel from public.papeis_usuario where usuario_id = $1 order by papel`,
+        [id],
+      ),
+    );
+    return r.rows.map((x) => x.papel);
+  }
+
+  beforeAll(async () => {
+    u = await createTestDb();
+    await u.db.query(
+      `insert into auth.users (id, email) values
+         ($1, 'so.cliente@teste.local'),
+         ($2, 'lojista.cliente@teste.local'),
+         ($3, 'sem.papel@teste.local')
+       on conflict (id) do nothing`,
+      [SO_CLIENTE, LOJISTA_CLIENTE, SEM_PAPEL],
+    );
+  });
+  afterAll(async () => {
+    await u.close();
+  });
+
+  it("[332-7] conta só-cliente → RPC falha, 0 lojas, papéis {cliente}", async () => {
+    await u.asService((db) =>
+      db.query(`select public.atribuir_papel_inicial($1, 'cliente')`, [SO_CLIENTE]),
+    );
+
+    let erro: unknown = null;
+    try {
+      await chamarRpc(u, SO_CLIENTE, "so.cliente@teste.local");
+    } catch (e) {
+      erro = e;
+    }
+    expect(erro).not.toBeNull();
+    expect((await contarLojas(u, SO_CLIENTE)).rows[0].n).toBe(0);
+    expect(await papeisDe(SO_CLIENTE)).toEqual(["cliente"]);
+  });
+
+  it("[332-8] conta lojista+cliente → RPC cria a loja (decisão 15)", async () => {
+    await u.asService((db) =>
+      db.query(`select public.atribuir_papel_inicial($1, 'lojista')`, [LOJISTA_CLIENTE]),
+    );
+    // Segundo papel por escrita de superuser (setup): no Marco A não há função que acrescente.
+    await u.db.query(
+      `insert into public.papeis_usuario (usuario_id, papel) values ($1, 'cliente')`,
+      [LOJISTA_CLIENTE],
+    );
+
+    const r = await chamarRpc(u, LOJISTA_CLIENTE, "lojista.cliente@teste.local");
+    expect(r.rows[0].loja_id).toBeTruthy();
+    expect((await contarLojas(u, LOJISTA_CLIENTE)).rows[0].n).toBe(1);
+    expect(await papeisDe(LOJISTA_CLIENTE)).toEqual(["cliente", "lojista"]);
+  });
+
+  it("[332-9] conta sem papel → RPC cria a loja e atribui {lojista} (janela de deploy)", async () => {
+    const r = await chamarRpc(u, SEM_PAPEL, "sem.papel@teste.local");
+    expect(r.rows[0].loja_id).toBeTruthy();
+    expect((await contarLojas(u, SEM_PAPEL)).rows[0].n).toBe(1);
+    expect(await papeisDe(SEM_PAPEL)).toEqual(["lojista"]);
+  });
+
+  for (const role of ["anon", "authenticated"] as const) {
+    it(`[332-10 guard] has_function_privilege('${role}', garantir_loja_do_dono, EXECUTE) = false`, async () => {
+      const r = await u.db.query<{ ok: boolean }>(
+        `select has_function_privilege($1, 'public.garantir_loja_do_dono(uuid,text,text)', 'EXECUTE') as ok`,
+        [role],
+      );
+      expect(r.rows[0].ok).toBe(false);
+    });
+  }
+});
