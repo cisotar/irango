@@ -6,13 +6,15 @@ import { decidirAcessoBase, decidirAssinatura } from "./acessoPainel";
 // ###########################################################################
 // SPLIT (issue 140/142 — spec desacoplar-authz-assinatura-route-group.md §Contratos)
 //
-// decidirAcessoBase(user, loja): "ok" | "login" | "confirmar-email" | "onboarding"
-//   — sessão/email/existência de loja. SEM rota, SEM assinatura.
-//   Precedência FIXA:
+// decidirAcessoBase(user, loja, papeis):
+//   "ok" | "login" | "sem-papel-lojista" | "confirmar-email" | "onboarding"
+//   — sessão/papel/email/existência de loja. SEM rota, SEM assinatura.
+//   Precedência FIXA (issue 332 · plan/tecnico-identidade-cliente.md §2 c):
 //     1. user null                    → "login"
-//     2. !email_confirmed_at           → "confirmar-email"
-//     3. loja null                     → "onboarding"
-//     4. senão                         → "ok"   (NÃO olha assinatura — isso é decidirAssinatura)
+//     2. papeis sem "lojista"          → "sem-papel-lojista" (com/sem loja, com/sem email)
+//     3. !email_confirmed_at           → "confirmar-email"
+//     4. loja null                     → "onboarding" (só lojista órfão legítimo)
+//     5. senão                         → "ok"   (NÃO olha assinatura — isso é decidirAssinatura)
 //
 // decidirAssinatura(loja, agora): "ok" | "assinatura-bloqueada"
 //   — SÓ assinatura, loja NON-NULL, fail-closed. SEM rota, SEM headers().
@@ -60,29 +62,29 @@ const userConfirmado = fazerUser("2026-01-02T00:00:00Z");
 // ===========================================================================
 describe("decidirAcessoBase — precedência 1 (sessão)", () => {
   it("user null → 'login'", () => {
-    expect(decidirAcessoBase(null, null)).toBe("login");
+    expect(decidirAcessoBase(null, null, ["lojista"])).toBe("login");
   });
 
   it("user null mesmo com loja ativa → 'login' (sessão é pré-requisito)", () => {
-    expect(decidirAcessoBase(null, fazerLoja("ativa", null))).toBe("login");
+    expect(decidirAcessoBase(null, fazerLoja("ativa", null), ["lojista"])).toBe("login");
   });
 });
 
 describe("decidirAcessoBase — precedência 2 (email não confirmado)", () => {
   it("email_confirmed_at undefined → 'confirmar-email'", () => {
     expect(
-      decidirAcessoBase(fazerUser(undefined), fazerLoja("ativa", null)),
+      decidirAcessoBase(fazerUser(undefined), fazerLoja("ativa", null), ["lojista"]),
     ).toBe("confirmar-email");
   });
 
   it("email_confirmed_at null → 'confirmar-email'", () => {
     expect(
-      decidirAcessoBase(fazerUser(null), fazerLoja("ativa", null)),
+      decidirAcessoBase(fazerUser(null), fazerLoja("ativa", null), ["lojista"]),
     ).toBe("confirmar-email");
   });
 
   it("email não confirmado vence loja null (email antes de loja)", () => {
-    expect(decidirAcessoBase(fazerUser(undefined), null)).toBe(
+    expect(decidirAcessoBase(fazerUser(undefined), null, ["lojista"])).toBe(
       "confirmar-email",
     );
   });
@@ -90,14 +92,14 @@ describe("decidirAcessoBase — precedência 2 (email não confirmado)", () => {
 
 describe("decidirAcessoBase — precedência 3 (loja / user órfão)", () => {
   it("loja null → 'onboarding'", () => {
-    expect(decidirAcessoBase(userConfirmado, null)).toBe("onboarding");
+    expect(decidirAcessoBase(userConfirmado, null, ["lojista"])).toBe("onboarding");
   });
 });
 
 describe("decidirAcessoBase — precedência 4 (ok) — NÃO olha assinatura", () => {
   it("sessão+email+loja OK → 'ok'", () => {
     expect(
-      decidirAcessoBase(userConfirmado, fazerLoja("ativa", null)),
+      decidirAcessoBase(userConfirmado, fazerLoja("ativa", null), ["lojista"]),
     ).toBe("ok");
   });
 
@@ -105,8 +107,53 @@ describe("decidirAcessoBase — precedência 4 (ok) — NÃO olha assinatura", (
     // Prova o desacoplamento: decidirAcessoBase NÃO decide assinatura.
     // Uma loja 'suspensa' passa no base — quem bloqueia é decidirAssinatura.
     expect(
-      decidirAcessoBase(userConfirmado, fazerLoja("suspensa", PASSADO)),
+      decidirAcessoBase(userConfirmado, fazerLoja("suspensa", PASSADO), ["lojista"]),
     ).toBe("ok");
+  });
+});
+
+// ===========================================================================
+// decidirAcessoBase — gate de papel (issue 332, RED). Conta sem papel "lojista"
+// nunca recebe "onboarding" (auto-cura = ganhar loja) nem "ok".
+// ===========================================================================
+describe("decidirAcessoBase — papel (issue 332)", () => {
+  it("[332-11] confirmado, sem loja, papeis [] → 'sem-papel-lojista' (≠ onboarding/ok)", () => {
+    const d = decidirAcessoBase(userConfirmado, null, []);
+    expect(d).toBe("sem-papel-lojista");
+    expect(d).not.toBe("onboarding");
+    expect(d).not.toBe("ok");
+  });
+
+  it("[332-12a] ['cliente'] sem loja → 'sem-papel-lojista'", () => {
+    expect(decidirAcessoBase(userConfirmado, null, ["cliente"])).toBe("sem-papel-lojista");
+  });
+
+  it("[332-12b] ['cliente'] com loja ativa → 'sem-papel-lojista' (loja por dado manual não abre o painel)", () => {
+    expect(
+      decidirAcessoBase(userConfirmado, fazerLoja("ativa", null), ["cliente"]),
+    ).toBe("sem-papel-lojista");
+  });
+
+  it("[332-13] ['lojista','cliente'] com loja → 'ok' (decisão 15)", () => {
+    expect(
+      decidirAcessoBase(userConfirmado, fazerLoja("ativa", null), ["lojista", "cliente"]),
+    ).toBe("ok");
+  });
+
+  it("[332-14] ['lojista'] sem loja → 'onboarding' (lojista órfão legítimo)", () => {
+    expect(decidirAcessoBase(userConfirmado, null, ["lojista"])).toBe("onboarding");
+  });
+
+  it("[332-15a] user null + ['lojista'] → 'login' (sessão vence papel)", () => {
+    expect(decidirAcessoBase(null, null, ["lojista"])).toBe("login");
+  });
+
+  it("[332-15b] email não confirmado + [] → 'sem-papel-lojista' (papel vem antes do email)", () => {
+    expect(decidirAcessoBase(fazerUser(undefined), null, [])).toBe("sem-papel-lojista");
+  });
+
+  it("[332-15c] email não confirmado + ['lojista'] → 'confirmar-email'", () => {
+    expect(decidirAcessoBase(fazerUser(undefined), null, ["lojista"])).toBe("confirmar-email");
   });
 });
 

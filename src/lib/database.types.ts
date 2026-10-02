@@ -978,6 +978,24 @@ export type Database = {
           },
         ]
       }
+      papeis_usuario: {
+        Row: {
+          criado_em: string
+          papel: string
+          usuario_id: string
+        }
+        Insert: {
+          criado_em?: string
+          papel: string
+          usuario_id: string
+        }
+        Update: {
+          criado_em?: string
+          papel?: string
+          usuario_id?: string
+        }
+        Relationships: []
+      }
       pedidos: {
         Row: {
           criado_em: string
@@ -1626,6 +1644,10 @@ export type Database = {
         Returns: number
       }
       ativar_modal_sazonal: { Args: { p_modal_id: string }; Returns: undefined }
+      atribuir_papel_inicial: {
+        Args: { p_papel: string; p_usuario_id: string }
+        Returns: string[]
+      }
       criar_pedido:
         | {
             Args: {

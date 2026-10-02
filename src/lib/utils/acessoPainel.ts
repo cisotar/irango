@@ -1,8 +1,10 @@
 // Fonte ÚNICA da regra de autorização do painel (issue 016). PURA, testável,
 // sem I/O e sem Date.now() — `agora` é injetado. O guard (layout.tsx) faz o I/O
 // e apenas APLICA a decisão. Reusa `assinaturaPermiteAcesso` (056) — não recria
-// a regra de carência. Precedência fixa: sessão → email → loja → assinatura(+exceção).
+// a regra de carência. Precedência fixa: sessão → papel → email → loja → assinatura(+exceção).
+// Papel (issue 332): sem `lojista` nunca chega a "onboarding" (auto-cura) nem a "ok".
 import type { User } from "@supabase/supabase-js";
+import type { Papel } from "./papeis";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
 import {
   assinaturaPermiteAcesso,
@@ -61,32 +63,44 @@ function assinaturaLibera(loja: LojaCompleta, agora: Date): boolean {
 // `headers()` — a isenção do paywall é posicional (route group), não por string.
 // ---------------------------------------------------------------------------
 
-export type DecisaoBase = "ok" | "login" | "confirmar-email" | "onboarding";
+export type DecisaoBase =
+  | "ok"
+  | "login"
+  | "sem-papel-lojista"
+  | "confirmar-email"
+  | "onboarding";
 export type DecisaoAssinatura = "ok" | "assinatura-bloqueada";
 
 // Sessão / email / existência de loja. Sem rota, sem assinatura.
-// Precedência: user null → "login"; !email_confirmed_at → "confirmar-email";
-// loja null → "onboarding"; senão "ok".
+// Precedência: user null → "login"; sem papel lojista → "sem-papel-lojista";
+// !email_confirmed_at → "confirmar-email"; loja null → "onboarding"; senão "ok".
 export function decidirAcessoBase(
   user: User | null,
   loja: LojaCompleta | null,
+  papeis: readonly Papel[],
 ): DecisaoBase {
   // 1. Sessão — vence tudo (anônimo nunca vê tela de bloqueio).
   if (user === null) {
     return "login";
   }
 
-  // 2. Email não confirmado — defesa em profundidade (§17). Cobre undefined E null.
+  // 2. Papel (issue 332) — conta sem `lojista` (só-cliente ou sem papel) nunca
+  //    dispara a auto-cura nem abre o painel, mesmo que tenha loja.
+  if (!papeis.includes("lojista")) {
+    return "sem-papel-lojista";
+  }
+
+  // 3. Email não confirmado — defesa em profundidade (§17). Cobre undefined E null.
   if (!user.email_confirmed_at) {
     return "confirmar-email";
   }
 
-  // 3. Sessão+email OK mas sem loja (user órfão) → onboarding.
+  // 4. Sessão+papel+email OK mas sem loja (lojista órfão legítimo) → onboarding.
   if (loja === null) {
     return "onboarding";
   }
 
-  // 4. Tudo ok — NÃO consulta assinatura (isso é decidirAssinatura).
+  // 5. Tudo ok — NÃO consulta assinatura (isso é decidirAssinatura).
   return "ok";
 }
 

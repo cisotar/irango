@@ -40,6 +40,14 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => Promise.resolve(serverClient),
 }));
 
+// ── mock: @/lib/supabase/service (issue 332) ──────────────────────────────────
+// O callback atribui o primeiro papel via RPC `atribuir_papel_inicial` sob
+// service_role. Default (beforeEach): a conta é lojista → casos existentes intactos.
+const rpc = vi.fn();
+vi.mock("@/lib/supabase/service", () => ({
+  createServiceClient: () => ({ rpc: (...a: unknown[]) => rpc(...a) }),
+}));
+
 // ── mock: reconciliarPosConfirmacao ───────────────────────────────────────────
 const reconciliarPosConfirmacao = vi.fn();
 vi.mock("@/lib/auth/reconciliarPosConfirmacao", () => ({
@@ -59,6 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
   reconciliarPosConfirmacao.mockResolvedValue(undefined);
+  rpc.mockResolvedValue({ data: ["lojista"], error: null });
 });
 
 // Casos de identidade (issue 148) manipulam SAAS_ADMIN_USER_ID por caso.
@@ -261,5 +270,84 @@ describe("GET /auth/callback — destino padrão por identidade (issue 148)", ()
     const location = res.headers.get("location") ?? "";
     expect(location).toBe(`${ORIGIN}/admin`);
     expect(location).not.toContain("evil.com");
+  });
+});
+
+/**
+ * Issue 332 — RED: destino e reconciliação pelo PAPEL da conta.
+ *
+ * A porta `(auth)` atribui `lojista` a conta sem papel via
+ * `atribuir_papel_inicial(user.id do exchangeCodeForSession, "lojista")`; a RPC
+ * devolve os papéis atuais. Sem `next`: admin → /admin, lojista → /painel,
+ * demais → "/". `reconciliarPosConfirmacao` só para lojista. Query da URL
+ * (`?papel=`, `?usuario=`) nunca muda os argumentos da RPC.
+ */
+describe("GET /auth/callback — papel da conta (issue 332)", () => {
+  beforeEach(() => {
+    exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser }, error: null });
+  });
+
+  it("[332-25] rpc → ['cliente'], sem next → '/' (≠ /painel); reconciliar NÃO chamado", async () => {
+    rpc.mockResolvedValue({ data: ["cliente"], error: null });
+
+    const res = await GET(makeRequest("?code=abc"));
+
+    const location = res.headers.get("location") ?? "";
+    expect(location).not.toBe(`${ORIGIN}/painel`);
+    expect(location).toBe(`${ORIGIN}/`);
+    expect(reconciliarPosConfirmacao).not.toHaveBeenCalled();
+  });
+
+  it("[332-26] rpc → ['cliente'] com next=/loja/x → next vence", async () => {
+    rpc.mockResolvedValue({ data: ["cliente"], error: null });
+
+    const res = await GET(makeRequest("?code=abc&next=/loja/x"));
+
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/loja/x`);
+  });
+
+  it("[332-27a] conta sem papel → rpc('atribuir_papel_inicial', { p_usuario_id: user.id, p_papel: 'lojista' }) → /painel", async () => {
+    const res = await GET(makeRequest("?code=abc"));
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("atribuir_papel_inicial", {
+      p_usuario_id: fakeUser.id,
+      p_papel: "lojista",
+    });
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/painel`);
+  });
+
+  it("[332-27b] query forjada ?papel=cliente&usuario=<outro> → mesmos argumentos da RPC", async () => {
+    const res = await GET(
+      makeRequest("?code=abc&papel=cliente&usuario=99999999-9999-4999-8999-999999999999"),
+    );
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("atribuir_papel_inicial", {
+      p_usuario_id: fakeUser.id,
+      p_papel: "lojista",
+    });
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/painel`);
+  });
+
+  it("[332-28] admin (env) com ['cliente'] → /admin", async () => {
+    vi.stubEnv("SAAS_ADMIN_USER_ID", fakeUser.id);
+    rpc.mockResolvedValue({ data: ["cliente"], error: null });
+
+    const res = await GET(makeRequest("?code=abc"));
+
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/admin`);
+  });
+
+  it("[332-29] rpc devolve error → /login?erro=auth; reconciliar NÃO chamado; erro só no console.error", async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: "detalhe interno", code: "XX000" } });
+
+    const res = await GET(makeRequest("?code=abc"));
+
+    const location = res.headers.get("location") ?? "";
+    expect(location).toBe(`${ORIGIN}/login?erro=auth`);
+    expect(location).not.toContain("detalhe");
+    expect(reconciliarPosConfirmacao).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalled();
   });
 });

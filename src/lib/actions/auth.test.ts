@@ -44,7 +44,12 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 // ── service_role client (BYPASSRLS) — admin.deleteUser vive aqui ──────────────
-const fakeService = { auth: { admin: { deleteUser: (...a: unknown[]) => deleteUser(...a) } } };
+// Issue 332: `cadastrar` atribui o papel via RPC `atribuir_papel_inicial` neste client.
+const rpc = vi.fn();
+const fakeService = {
+  auth: { admin: { deleteUser: (...a: unknown[]) => deleteUser(...a) } },
+  rpc: (...a: unknown[]) => rpc(...a),
+};
 const createServiceClient = vi.fn(() => fakeService);
 vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => createServiceClient(),
@@ -81,6 +86,7 @@ beforeEach(() => {
   criarLoja.mockResolvedValue({ id: "loja-1", dono_id: USER_ID });
   deleteUser.mockResolvedValue({ error: null });
   reconciliarAssinatura.mockResolvedValue(undefined);
+  rpc.mockResolvedValue({ data: ["lojista"], error: null });
 });
 
 describe("cadastrar — caminho feliz", () => {
@@ -278,5 +284,47 @@ describe("entrar", () => {
       expect(r.erro.toLowerCase()).not.toContain("não existe");
       expect(r.erro.toLowerCase()).not.toContain("senha incorreta para");
     }
+  });
+});
+
+/**
+ * Issue 332 — RED: `cadastrar` atribui `lojista` ANTES de criar a loja, e recusa
+ * conta existente com outro papel SEM compensação (ela não criou a conta).
+ */
+describe("cadastrar — papel da conta (issue 332)", () => {
+  it("[332-30] rpc → ['cliente'] → 'Este email já está cadastrado.', sem criarLoja e sem deleteUser", async () => {
+    rpc.mockResolvedValue({ data: ["cliente"], error: null });
+
+    const r = await cadastrar(PAYLOAD_OK);
+
+    expect(r).toEqual({ ok: false, erro: "Este email já está cadastrado." });
+    expect(criarLoja).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("[332-31] rpc('atribuir_papel_inicial', { p_usuario_id: USER_ID, p_papel: 'lojista' }) ANTES de criarLoja", async () => {
+    const r = await cadastrar(PAYLOAD_OK);
+
+    expect(r).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("atribuir_papel_inicial", {
+      p_usuario_id: USER_ID,
+      p_papel: "lojista",
+    });
+    expect(criarLoja).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(criarLoja.mock.invocationCallOrder[0]);
+  });
+
+  it("[332-32] rpc devolve error → mensagem genérica, sem criarLoja e sem deleteUser", async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: "fk", code: "23503" } });
+
+    const r = await cadastrar(PAYLOAD_OK);
+
+    expect(r).toEqual({
+      ok: false,
+      erro: "Não foi possível concluir o cadastro. Tente novamente.",
+    });
+    expect(criarLoja).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
   });
 });

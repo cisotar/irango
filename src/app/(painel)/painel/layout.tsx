@@ -9,7 +9,9 @@ import {
   garantirLojaDoDono,
   type LojaCompleta,
 } from "@/lib/supabase/queries/lojas";
+import { buscarPapeisDoUsuario } from "@/lib/supabase/queries/papeis";
 import { decidirAcessoBase } from "@/lib/utils/acessoPainel";
+import { destinoPadraoPorPapel, type Papel } from "@/lib/utils/papeis";
 import { ehAdminSaaS } from "@/lib/auth/admin";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
 import { THEME_PADRAO } from "@/lib/utils/manifest";
@@ -32,7 +34,9 @@ export const viewport: Viewport = {
 /**
  * Guard de SESSÃO/IDENTIDADE e dono do chrome do painel (issue 016 / 142).
  * Server Component. Orquestra o I/O (sessão + loja) e APLICA `decidirAcessoBase`
- * (sessão → email → loja). O gate de ASSINATURA saiu daqui: virou posicional,
+ * (sessão → papel → email → loja). Gate de PAPEL (issue 332): conta sem
+ * `lojista` vai para o destino do seu papel (`destinoPadraoPorPapel`) e NUNCA
+ * dispara a auto-cura nem vê o chrome. O gate de ASSINATURA saiu daqui: virou posicional,
  * no layout aninhado `(bloqueavel)/layout.tsx` (issue 142). Não lê mais
  * `headers()` nem qualquer header de rota — authz não depende de dado de transporte.
  *
@@ -46,24 +50,34 @@ export default async function PainelLayout({
 }): Promise<ReactElement> {
   let user: User | null;
   let loja: LojaCompleta | null;
+  let papeis: Papel[];
   try {
     const supabase = await createClient();
     user = (await supabase.auth.getUser()).data.user;
-    loja = user ? await buscarLojaDoDono(supabase) : null;
+    [loja, papeis] = user
+      ? await Promise.all([
+          buscarLojaDoDono(supabase),
+          buscarPapeisDoUsuario(supabase, user.id),
+        ])
+      : [null, []];
   } catch (e) {
     console.error("[guardPainel]", e);
     redirect("/login?erro=sessao");
   }
 
-  const decisao = decidirAcessoBase(user, loja);
+  const decisao = decidirAcessoBase(user, loja, papeis);
 
   switch (decisao) {
     case "login":
       redirect("/login");
+    case "sem-papel-lojista":
+      // Só devolvido com `user` não-nulo. Destino pelo papel: admin → /admin,
+      // demais → "/". Nunca auto-cura (conta só-cliente não ganha loja).
+      redirect(destinoPadraoPorPapel({ ehAdmin: ehAdminSaaS(user!.id), papeis }));
     case "confirmar-email":
       redirect("/confirmar-email");
     case "onboarding": {
-      // User órfão (sessão + email OK, sem loja): em vez de mandar para uma tela
+      // Só lojista órfão legítimo (sessão + papel lojista + email OK, sem loja): em vez de mandar para uma tela
       // de onboarding inexistente, AUTO-CURA — cria a loja via service_role e
       // recarrega o painel. `decidirAcessoBase` só devolve "onboarding" quando
       // `user` é não-nulo e tem email confirmado, então o `!` é seguro aqui.
