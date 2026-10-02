@@ -45,10 +45,10 @@ describe("destinoPadraoPorPapel (issue 332)", () => {
     expect(destinoPadraoPorPapel({ ehAdmin: false, papeis: ["lojista", "cliente"] })).toBe("/painel");
   });
 
-  it("[332-16c] ['cliente'] → '/', nunca '/painel'", async () => {
+  it("[332-16c] ['cliente'] → '/minha-conta' (Marco B), nunca '/painel'", async () => {
     const { destinoPadraoPorPapel } = await carregar();
     const d = destinoPadraoPorPapel({ ehAdmin: false, papeis: ["cliente"] });
-    expect(d).toBe("/");
+    expect(d).toBe("/minha-conta");
     expect(d).not.toBe("/painel");
   });
 
