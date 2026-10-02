@@ -436,7 +436,7 @@ export type Database = {
           criado_em: string
           expira_em: string | null
           id: string
-          limite_por_cliente?: number | null
+          limite_por_cliente: number | null
           loja_id: string
           pedido_minimo: number
           tipo: string

@@ -44,6 +44,7 @@ function inicialBase(overrides: Partial<CupomInicial> = {}): CupomInicial {
     valor: 10,
     pedido_minimo: 20,
     usos_maximos: 5,
+    limite_por_cliente: null,
     expira_em: null,
     ativo: true,
     ...overrides,
