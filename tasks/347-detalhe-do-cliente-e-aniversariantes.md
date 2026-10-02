@@ -41,3 +41,6 @@ Lista: "Aniversariantes do mês". Detalhe: todos os 6 (dados da allowlist, 404 a
 ## Dúvidas
 - Criticidade: marquei NÃO porque a autorização (função + RLS de pedidos) é de 346 e aqui só se consome. Porém o detalhe é a superfície de IDOR (o `notFound()` e o `.eq("cliente_id")` vivem aqui). Se o orquestrador preferir tratar como SIM, o RED seria um teste do Server Component garantindo 404 idêntico para id alheio e inexistente.
 - RN-D07 ("29/02 aparece em fevereiro") já é natural por `extract(month)`; caso de teste opcional em 346.
+
+## Respostas do usuário (2026-10-03)
+- **D1/D2 (pedidos no detalhe)** — (a): parametrizar `TabelaPedidos` com props opcionais para ocultar o `MenuStatusPedido` (status só via `BadgeStatusPedido`), ocultar a coluna Cliente e exibir a data. Defaults preservam o comportamento atual de `/painel/pedidos`.
