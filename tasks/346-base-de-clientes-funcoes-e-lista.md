@@ -51,3 +51,4 @@ Lista: "só clientes com ≥1 pedido…", "Lojista A nunca vê…", "só as colu
 
 ## Respostas do usuário (2026-10-03)
 - **D4 (telefone)** — formatado `(DD) NNNNN-NNNN` e clicável, abrindo conversa no WhatsApp (`wa.me`) — reusar o padrão de `linkWhatsappLoja` (só dígitos, `urlHttpsSegura`, fail-closed). Vale para a lista e o detalhe (347).
+- **D4b (DDD obrigatório)** — o telefone do cliente passa a exigir DDD de 2 dígitos ao ser gravado. Com 55 prefixado, todo telefone novo vira link `wa.me`. (Abrangência — só cadastro de cliente ou também checkout/CHECK do banco — em aberto.)
