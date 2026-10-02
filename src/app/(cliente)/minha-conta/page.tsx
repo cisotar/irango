@@ -70,6 +70,18 @@ export default async function MinhaContaPage() {
         </Card>
       </Link>
 
+      <Link
+        href="/minha-conta/pedidos"
+        className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Card className="transition-colors hover:bg-muted/50">
+          <CardContent className="flex min-h-11 items-center justify-between gap-2">
+            <p className="font-medium text-texto">Pedidos</p>
+            <ChevronRight className="size-5 text-texto-muted" aria-hidden="true" />
+          </CardContent>
+        </Card>
+      </Link>
+
       <ExcluirConta soPerfil={soPerfil} />
     </div>
   );

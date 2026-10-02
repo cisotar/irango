@@ -27,6 +27,7 @@ export default async function CuponsPage(): Promise<ReactElement> {
   return (
     <CuponsClient
       cupons={cupons}
+      comLimitePorCliente
       // Actions do LOJISTA passadas explicitamente (issue 160): `acoes` é
       // obrigatória, sem default — a via admin injeta as variantes por `lojaId`.
       acoes={{

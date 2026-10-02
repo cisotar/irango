@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
+import { LinkEntrarCheckout } from "./LinkEntrarCheckout";
 import { fraseCupom } from "@/lib/utils/copiaCupom";
 import type {
   EstadoCupom,
@@ -79,6 +80,11 @@ export type EtapaItensProps = {
    * "desktop": 3 seções empilhadas — resumo e CTA vivem na coluna sticky (006).
    */
   variante?: "wizard" | "desktop";
+  /**
+   * (343) Slug para o link "Entrar" junto do cupom. Só vem quando NÃO há
+   * sessão de cliente; ausente ⇒ nada muda na etapa.
+   */
+  entrarLojaSlug?: string | null;
 };
 
 export function EtapaItens({
@@ -97,6 +103,7 @@ export function EtapaItens({
   onRemoverCupom,
   onContinuar,
   variante = "wizard",
+  entrarLojaSlug = null,
 }: EtapaItensProps) {
   const [codigo, setCodigo] = useState(codigoCupom ?? "");
   const [mensagemCupom, setMensagemCupom] = useState<string | null>(null);
@@ -383,6 +390,7 @@ export function EtapaItens({
                 {mensagemCupom}
               </p>
             ))}
+          {entrarLojaSlug && <LinkEntrarCheckout lojaSlug={entrarLojaSlug} />}
         </div>
       </div>
 

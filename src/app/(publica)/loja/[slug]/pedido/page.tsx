@@ -14,6 +14,14 @@ import {
   entregaDisponivel,
   retiradaDisponivel,
 } from "@/lib/utils/modalidadesEntrega";
+import {
+  buscarPerfilCliente,
+  listarEnderecosCliente,
+} from "@/lib/supabase/queries/clientes";
+import type {
+  EnderecoClienteCheckout,
+  PerfilClienteCheckout,
+} from "@/components/vitrine/checkout/clienteCheckout";
 import type {
   FormaPagamentoWizard,
   TipoPagamento,
@@ -62,6 +70,55 @@ function extrairConfigPix(config: unknown): {
   };
 }
 
+type ClienteCheckout = {
+  /** Sem sessão de cliente ⇒ "Entrar" junto do cupom. */
+  mostrarEntrar: boolean;
+  perfil: PerfilClienteCheckout | null;
+  enderecos: EnderecoClienteCheckout[];
+};
+
+/**
+ * (343) Sessão de cliente OPCIONAL: client da sessão + RLS do Marco B. Só
+ * pré-preenchimento (RN-C18) — o `cliente_id` do pedido é resolvido de novo em
+ * `criarPedido`. Qualquer falha ⇒ checkout de convidado, idêntico a hoje.
+ */
+async function lerClienteCheckout(
+  db: Awaited<ReturnType<typeof createClient>>,
+): Promise<ClienteCheckout> {
+  const convidado: ClienteCheckout = { mostrarEntrar: true, perfil: null, enderecos: [] };
+  try {
+    const { data, error } = await db.auth.getUser();
+    const user = data?.user;
+    if (error || !user || !user.email_confirmed_at) return convidado;
+    const [perfil, enderecos] = await Promise.all([
+      buscarPerfilCliente(db, user.id),
+      listarEnderecosCliente(db, user.id),
+    ]);
+    if (!perfil) return { ...convidado, mostrarEntrar: false };
+    return {
+      mostrarEntrar: false,
+      perfil: { nome: perfil.nome, telefone: perfil.telefone },
+      enderecos: enderecos.map((e) => ({
+        id: e.id,
+        rotulo: e.rotulo,
+        padrao: e.padrao,
+        endereco: {
+          cep: e.cep,
+          rua: e.rua,
+          numero: e.numero,
+          bairro: e.bairro,
+          cidade: e.cidade,
+          uf: e.uf,
+          ...(e.complemento ? { complemento: e.complemento } : {}),
+        },
+      })),
+    };
+  } catch (e) {
+    console.error("[checkout] cliente", e instanceof Error ? e.name : "erro");
+    return convidado;
+  }
+}
+
 export default async function CheckoutPage({ params }: PageProps) {
   const { slug } = await params;
   const db = await createClient();
@@ -71,9 +128,10 @@ export default async function CheckoutPage({ params }: PageProps) {
 
   const lojaId = loja.id;
 
-  const [zonasComTaxa, formas] = await Promise.all([
+  const [zonasComTaxa, formas, cliente] = await Promise.all([
     listarZonasComTaxas(db, lojaId),
     listarFormasPagamento(db, lojaId),
+    lerClienteCheckout(db),
   ]);
 
   // Preview de "loja aberta" — o servidor (criarPedido/RN-C6) é a verdade final.
@@ -125,6 +183,9 @@ export default async function CheckoutPage({ params }: PageProps) {
       formasPagamento={formasPagamento}
       whatsappLoja={whatsappLoja}
       enderecoLoja={enderecoLoja}
+      perfilCliente={cliente.perfil}
+      enderecosCliente={cliente.enderecos.length > 0 ? cliente.enderecos : undefined}
+      mostrarEntrar={cliente.mostrarEntrar}
     />
   );
 }
