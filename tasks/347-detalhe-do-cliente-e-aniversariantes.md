@@ -44,3 +44,4 @@ Lista: "Aniversariantes do mês". Detalhe: todos os 6 (dados da allowlist, 404 a
 
 ## Respostas do usuário (2026-10-03)
 - **D1/D2 (pedidos no detalhe)** — (a): parametrizar `TabelaPedidos` com props opcionais para ocultar o `MenuStatusPedido` (status só via `BadgeStatusPedido`), ocultar a coluna Cliente e exibir a data. Defaults preservam o comportamento atual de `/painel/pedidos`.
+- **D3 (paginação dos pedidos no detalhe)** — (a): 50 mais recentes por página com "Carregar mais", mesmo padrão da lista de clientes.
