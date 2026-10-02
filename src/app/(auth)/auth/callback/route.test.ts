@@ -287,14 +287,14 @@ describe("GET /auth/callback — papel da conta (issue 332)", () => {
     exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser }, error: null });
   });
 
-  it("[332-25] rpc → ['cliente'], sem next → '/' (≠ /painel); reconciliar NÃO chamado", async () => {
+  it("[332-25] rpc → ['cliente'], sem next → '/minha-conta' (Marco B, ≠ /painel); reconciliar NÃO chamado", async () => {
     rpc.mockResolvedValue({ data: ["cliente"], error: null });
 
     const res = await GET(makeRequest("?code=abc"));
 
     const location = res.headers.get("location") ?? "";
     expect(location).not.toBe(`${ORIGIN}/painel`);
-    expect(location).toBe(`${ORIGIN}/`);
+    expect(location).toBe(`${ORIGIN}/minha-conta`);
     expect(reconciliarPosConfirmacao).not.toHaveBeenCalled();
   });
 

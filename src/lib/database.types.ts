@@ -340,6 +340,95 @@ export type Database = {
           },
         ]
       }
+      clientes: {
+        Row: {
+          aceita_marketing: boolean
+          consentimento_em: string
+          consentimento_versao: string
+          criado_em: string
+          data_nascimento: string
+          id: string
+          nome: string
+          telefone: string
+          ultimo_acesso_em: string
+        }
+        Insert: {
+          aceita_marketing?: boolean
+          consentimento_em: string
+          consentimento_versao: string
+          criado_em?: string
+          data_nascimento: string
+          id: string
+          nome: string
+          telefone: string
+          ultimo_acesso_em?: string
+        }
+        Update: {
+          aceita_marketing?: boolean
+          consentimento_em?: string
+          consentimento_versao?: string
+          criado_em?: string
+          data_nascimento?: string
+          id?: string
+          nome?: string
+          telefone?: string
+          ultimo_acesso_em?: string
+        }
+        Relationships: []
+      }
+      clientes_enderecos: {
+        Row: {
+          bairro: string
+          cep: string
+          cidade: string
+          cliente_id: string
+          complemento: string | null
+          criado_em: string
+          id: string
+          numero: string
+          padrao: boolean
+          rotulo: string
+          rua: string
+          uf: string
+        }
+        Insert: {
+          bairro: string
+          cep: string
+          cidade: string
+          cliente_id: string
+          complemento?: string | null
+          criado_em?: string
+          id?: string
+          numero: string
+          padrao?: boolean
+          rotulo: string
+          rua: string
+          uf: string
+        }
+        Update: {
+          bairro?: string
+          cep?: string
+          cidade?: string
+          cliente_id?: string
+          complemento?: string | null
+          criado_em?: string
+          id?: string
+          numero?: string
+          padrao?: boolean
+          rotulo?: string
+          rua?: string
+          uf?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clientes_enderecos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cupons: {
         Row: {
           ativo: boolean
@@ -1631,6 +1720,12 @@ export type Database = {
       }
     }
     Functions: {
+      adicionar_papel_cliente: {
+        Args: { p_usuario: string }
+        Returns: undefined
+      }
+      anonimizar_cliente: { Args: { p_usuario: string }; Returns: undefined }
+      anonimizar_clientes_inativos: { Args: never; Returns: number }
       aplicar_cardapio_em_categoria: {
         Args: {
           p_cardapio_id: string
@@ -1698,6 +1793,18 @@ export type Database = {
               token_acesso: string
             }[]
           }
+      criar_perfil_cliente: {
+        Args: {
+          p_aceita_marketing: boolean
+          p_data_nascimento: string
+          p_endereco: Json
+          p_nome: string
+          p_telefone: string
+          p_usuario: string
+          p_versao_termos: string
+        }
+        Returns: undefined
+      }
       desconto_vigente: {
         Args: {
           p_agora: string

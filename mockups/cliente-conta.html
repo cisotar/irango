@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conta do cliente — mockup P10</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{--primaria:#332616;--fundo:#f5f0e6;--texto:#3e2723;--muted:#6b5d4f;--destr:#c0261a;--borda:#d6cfc2;--radius:.625rem}
+  body{background:var(--fundo);color:var(--texto);font-family:system-ui,sans-serif}
+  .card{background:#fff;border:1px solid var(--borda);border-radius:calc(var(--radius) + 4px);padding:1.5rem 1.25rem}
+  .lbl{display:block;font-size:.875rem;font-weight:500;margin-bottom:.375rem}
+  .inp{width:100%;min-height:44px;border:1px solid var(--borda);border-radius:var(--radius);padding:0 .75rem;background:#fff;font-size:1rem}
+  .inp:focus-visible,.btn:focus-visible,a:focus-visible,.chip:focus-visible,input[type=checkbox]:focus-visible{outline:none;box-shadow:0 0 0 3px #33261666}
+  .inp[aria-invalid=true]{border-color:var(--destr)}
+  .err{color:var(--destr);font-size:.875rem;margin-top:.25rem}
+  .btn{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;min-height:44px;border-radius:var(--radius);font-weight:500;font-size:.95rem;padding:0 1rem}
+  .btn-pri{background:var(--primaria);color:#fff}
+  .btn-out{background:#fff;border:1px solid var(--borda);color:var(--texto)}
+  .btn-ghost{background:transparent;color:var(--texto)}
+  .btn-destr{background:#fff;border:1px solid var(--destr);color:var(--destr)}
+  .btn-destr-fill{background:var(--destr);color:#fff}
+  .btn-google{background:#131314;border:1px solid #8e918f;color:#e3e3e3;min-height:48px;font-weight:600}.btn-google:hover{background:#2b2b2c}
+  .muted{color:var(--muted)}
+  .link{color:var(--primaria);text-decoration:underline;font-weight:500}
+  .alert{border:1px solid #c0261a80;background:#c0261a12;color:var(--destr);border-radius:var(--radius);padding:.5rem .75rem;font-size:.875rem}
+  .info{border:1px solid var(--borda);background:#f9f6ef;border-radius:var(--radius);padding:.625rem .75rem;font-size:.875rem}
+  .chip{min-height:44px;padding:0 1rem;border-radius:999px;border:1px solid var(--borda);background:#fff;font-size:.875rem}
+  .chip[aria-pressed=true]{background:var(--primaria);color:#fff;border-color:var(--primaria)}
+  .badge{display:inline-block;font-size:.75rem;font-weight:600;padding:.125rem .5rem;border-radius:999px;background:var(--primaria);color:#fff}
+  .sep{display:flex;align-items:center;gap:.75rem;font-size:.875rem;color:var(--muted);margin:1.25rem 0}
+  .sep:before,.sep:after{content:"";flex:1;height:1px;background:var(--borda)}
+  .overlay{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:1rem;z-index:50}
+  .tag{font-size:.7rem;background:#fde68a;color:#713f12;padding:0 .3rem;border-radius:4px;margin-left:.25rem;font-weight:600}
+  .scr{display:none}.scr.on{display:block}
+  .nav button{font-size:.75rem;padding:.4rem .6rem;border-radius:6px;border:1px solid #ccc;background:#fff;min-height:36px}
+  .nav button.on{background:#333;color:#fff}
+</style>
+</head>
+<body>
+<!-- Barra do mockup (não faz parte do produto) -->
+<div class="nav sticky top-0 z-40 flex flex-wrap gap-1 border-b bg-white/95 p-2">
+  <button data-s="entrar" class="on">/conta/entrar</button>
+  <button data-s="cadastro">/conta/cadastro</button>
+  <button data-s="confirme">cadastro: confirme e-mail</button>
+  <button data-s="completar">/conta/completar</button>
+  <button data-s="recuperar">/conta/recuperar</button>
+  <button data-s="novasenha">recuperar ?etapa=nova-senha</button>
+  <button data-s="minha">/minha-conta</button>
+  <button data-s="enderecos">/minha-conta/enderecos</button>
+  <label class="ml-2 flex items-center gap-1 text-xs"><input type="checkbox" id="tLoja" checked> com loja de origem</label>
+  <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="tLojista"> conta lojista/admin</label>
+  <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="tErro"> mostrar erros</label>
+</div>
+<p class="px-4 pt-2 text-xs muted"><span class="tag">proposta</span> = texto não fixado pelo spec (ver Dúvidas no .md). Texto sem marca = literal do spec ou dado fictício.</p>
+
+<div class="flex min-h-dvh flex-col items-center px-4 py-6">
+<main class="w-full max-w-sm">
+  <a href="#" class="voltar mb-2 inline-flex min-h-11 items-center gap-2 text-sm link" data-conta>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    Voltar para Padaria Pão Quente
+  </a>
+  <div class="mb-5 text-center"><span class="text-2xl font-bold" style="color:var(--primaria)">iRango</span></div>
+
+  <!-- ENTRAR -->
+  <section class="scr on" id="s-entrar"><div class="card">
+    <h1 class="mb-5 text-center text-xl font-semibold">Entrar na sua conta<span class="tag">proposta</span></h1>
+    <div class="erro-demo mb-4 space-y-2">
+      <div role="alert" class="alert">E-mail ou senha incorretos.</div>
+      <div role="alert" class="alert">Confirme seu e-mail para entrar. Enviamos um link para você.</div>
+    </div>
+    <button class="btn btn-google" type="button">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62Z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.8.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33A9 9 0 0 0 9 18Z"/><path fill="#FBBC05" d="M3.96 10.71A5.4 5.4 0 0 1 3.68 9c0-.59.1-1.17.28-1.71V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l3-2.33Z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.96l3 2.33C4.67 5.17 6.66 3.58 9 3.58Z"/></svg>
+      Continuar com Google
+    </button>
+    <div class="sep">ou entre com e-mail<span class="tag">proposta</span></div>
+    <form class="space-y-4" onsubmit="return false">
+      <div><label class="lbl" for="e1">E-mail</label><input class="inp" id="e1" type="email" autocomplete="email" value="maria@exemplo.com"></div>
+      <div><label class="lbl" for="p1">Senha</label>
+        <div class="flex gap-2"><input class="inp" id="p1" type="password" autocomplete="current-password" value="12345678">
+        <button type="button" class="btn btn-ghost !w-11 shrink-0" aria-label="Mostrar senha" aria-pressed="false">👁</button></div>
+        <div class="mt-2 text-right"><a href="#" class="link text-sm inline-flex min-h-11 items-center" onclick="go('recuperar')">Esqueci minha senha</a></div>
+      </div>
+      <button class="btn btn-out" type="submit">Entrar</button>
+    </form>
+    <p class="mt-5 text-center text-sm muted">Não tem conta? <a href="#" class="link" onclick="go('cadastro')">Criar conta</a></p>
+  </div></section>
+
+  <!-- CADASTRO -->
+  <section class="scr" id="s-cadastro"><div class="card">
+    <h1 class="mb-5 text-center text-xl font-semibold">Criar sua conta<span class="tag">proposta</span></h1>
+    <div class="erro-demo mb-4"><div role="alert" class="alert">Este email já está cadastrado.</div></div>
+    <button class="btn btn-google" type="button"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62Z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.8.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33A9 9 0 0 0 9 18Z"/><path fill="#FBBC05" d="M3.96 10.71A5.4 5.4 0 0 1 3.68 9c0-.59.1-1.17.28-1.71V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l3-2.33Z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.96l3 2.33C4.67 5.17 6.66 3.58 9 3.58Z"/></svg> Continuar com Google</button>
+    <div class="sep">ou cadastre-se com e-mail<span class="tag">proposta</span></div>
+    <form class="space-y-4" onsubmit="abrirModal();return false" novalidate>
+      <div><label class="lbl" for="e2">E-mail</label><input class="inp" id="e2" type="email" value="maria@exemplo.com"></div>
+      <div><label class="lbl" for="p2">Senha</label>
+        <div class="flex gap-2"><input class="inp" id="p2" type="password" value="minhasenha" aria-describedby="p2h">
+        <button type="button" class="btn btn-ghost !w-11 shrink-0" aria-label="Mostrar senha" aria-pressed="false">👁</button></div>
+        <p id="p2h" class="mt-1 text-sm muted">Mínimo de 8 caracteres.<span class="tag">proposta</span></p>
+      </div>
+      <button class="btn btn-out" type="submit">Criar conta com e-mail<span class="tag">proposta</span></button>
+    </form>
+    <p class="mt-5 text-center text-sm muted">Já tem conta? <a href="#" class="link" onclick="go('entrar')">Entrar</a></p>
+  </div></section>
+
+  <!-- CONFIRME -->
+  <section class="scr" id="s-confirme"><div class="card text-center">
+    <h1 class="mb-3 text-xl font-semibold">Confirme seu e-mail</h1>
+    <p role="status" class="muted text-sm">[Texto a definir — Dúvida 4] Enviamos um link para <strong class="text-[color:var(--texto)]">maria@exemplo.com</strong>.</p>
+  </div></section>
+
+  <!-- COMPLETAR -->
+  <section class="scr" id="s-completar"><div class="card">
+    <h1 class="mb-2 text-xl font-semibold">Complete seu perfil<span class="tag">proposta</span></h1>
+    <p class="lojista-only info mb-4">ⓘ Seu acesso ao painel continua o mesmo.</p>
+    <form class="space-y-4" onsubmit="return false" novalidate>
+      <div><label class="lbl" for="nome">Nome</label><input class="inp" id="nome" value="Maria Souza" autocomplete="name"></div>
+      <div><label class="lbl" for="tel">Telefone</label><input class="inp" id="tel" inputmode="tel" value="(11) 98765-4321" autocomplete="tel"></div>
+      <div><label class="lbl" for="nasc">Data de nascimento</label><input class="inp" id="nasc" type="date" value="2010-04-12" aria-invalid="false" aria-describedby="nasc-e">
+        <p id="nasc-e" class="err erro-demo">Você precisa ter 18 anos ou mais para criar uma conta.</p></div>
+      <fieldset class="space-y-3 border-t pt-4" style="border-color:var(--borda)">
+        <legend class="pr-2 text-sm font-semibold">Endereço</legend>
+        <div><label class="lbl" for="rot1">Rótulo</label><input class="inp rot" id="rot1" value="Casa" maxlength="30">
+          <div class="mt-2 flex gap-2 chips" role="group" aria-label="Sugestões de rótulo"><button type="button" class="chip" aria-pressed="true">Casa</button><button type="button" class="chip" aria-pressed="false">Trabalho</button><button type="button" class="chip" aria-pressed="false">Outro</button></div></div>
+        <p class="text-xs muted">↓ FormEndereco (reuso, inalterado)</p>
+        <div><label class="lbl" for="cep">CEP</label><input class="inp" id="cep" value="01310-100" inputmode="numeric"></div>
+        <div><label class="lbl" for="rua">Rua</label><input class="inp" id="rua" value="Rua das Flores"></div>
+        <div class="grid grid-cols-2 gap-2"><div><label class="lbl" for="bai">Bairro</label><input class="inp" id="bai" value="Centro"></div><div><label class="lbl" for="cid">Cidade</label><input class="inp" id="cid" value="São Paulo"></div></div>
+        <div class="grid grid-cols-2 gap-2"><div><label class="lbl" for="num">Número</label><input class="inp" id="num" value="120"></div><div><label class="lbl" for="comp">Complemento</label><input class="inp" id="comp" placeholder="opcional"></div></div>
+      </fieldset>
+      <label class="flex min-h-11 items-start gap-3 text-sm"><input type="checkbox" class="mt-1 h-5 w-5"> <span>[Copy do opt-in — Dúvida 6] Quero receber ofertas por e-mail.</span></label>
+      <div><label class="flex min-h-11 items-start gap-3 text-sm"><input type="checkbox" class="mt-1 h-5 w-5" aria-describedby="ac-e"> <span>[Copy — Dúvida 6] Li e aceito os <a href="#" class="link">Termos de Uso</a> e a <a href="#" class="link">Política de Privacidade</a>.</span></label>
+        <p id="ac-e" class="err erro-demo">[Mensagem — Dúvida 6] Aceite os termos para continuar.</p></div>
+      <button class="btn btn-pri" type="submit">Salvar e continuar<span class="tag">proposta</span></button>
+    </form>
+  </div></section>
+
+  <!-- RECUPERAR -->
+  <section class="scr" id="s-recuperar"><div class="card">
+    <h1 class="mb-2 text-xl font-semibold">Recuperar senha<span class="tag">proposta</span></h1>
+    <p class="mb-4 text-sm muted">Informe o e-mail da sua conta.<span class="tag">proposta</span></p>
+    <form class="space-y-4" onsubmit="document.getElementById('rec-ok').hidden=false;return false">
+      <div><label class="lbl" for="e3">E-mail</label><input class="inp" id="e3" type="email" value="maria@exemplo.com"></div>
+      <button class="btn btn-pri" type="submit">Enviar link<span class="tag">proposta</span></button>
+    </form>
+    <p id="rec-ok" role="status" class="info mt-4" hidden>Se existe uma conta com esse e-mail, enviamos um link para redefinir a senha.</p>
+    <p class="mt-5 text-center text-sm"><a href="#" class="link" onclick="go('entrar')">Voltar para entrar</a></p>
+  </div></section>
+
+  <!-- NOVA SENHA -->
+  <section class="scr" id="s-novasenha"><div class="card">
+    <div class="erro-demo"><div role="alert" class="alert mb-4">[Texto a definir — Dúvida 3] Este link não é mais válido.</div>
+      <button class="btn btn-pri" onclick="go('recuperar')">Pedir novo link</button></div>
+    <form class="ok-demo space-y-4" onsubmit="return false">
+      <h1 class="text-xl font-semibold">Nova senha<span class="tag">proposta</span></h1>
+      <div><label class="lbl" for="n1">Nova senha</label><input class="inp" id="n1" type="password" autocomplete="new-password"></div>
+      <div><label class="lbl" for="n2">Confirme a nova senha</label><input class="inp" id="n2" type="password" autocomplete="new-password"></div>
+      <button class="btn btn-pri" type="submit">Salvar nova senha<span class="tag">proposta</span></button>
+    </form>
+  </div></section>
+
+  <!-- MINHA CONTA -->
+  <section class="scr" id="s-minha">
+    <div class="mb-3 flex items-center justify-between"><h1 class="text-xl font-semibold">Minha conta</h1><button class="btn btn-ghost !w-auto">Sair</button></div>
+    <div class="card mb-4 space-y-4">
+      <h2 class="font-semibold">Dados pessoais<span class="tag">proposta</span></h2>
+      <div><span class="lbl">E-mail</span><p class="text-sm">maria@exemplo.com</p></div>
+      <div><label class="lbl" for="m1">Nome</label><input class="inp" id="m1" value="Maria Souza"></div>
+      <div><label class="lbl" for="m2">Telefone</label><input class="inp" id="m2" value="(11) 98765-4321"></div>
+      <div><label class="lbl" for="m3">Data de nascimento</label><input class="inp" id="m3" type="date" value="1990-04-12"></div>
+      <label class="flex min-h-11 items-start gap-3 text-sm"><input type="checkbox" class="mt-1 h-5 w-5" checked> <span>[Copy — Dúvida 6] Quero receber ofertas por e-mail.</span></label>
+      <button class="btn btn-pri">Salvar alterações<span class="tag">proposta</span></button>
+    </div>
+    <a href="#" onclick="go('enderecos')" class="card mb-4 flex min-h-11 items-center justify-between !py-4"><span><span class="font-semibold">Endereços</span><br><span class="text-sm muted">2 de 3 cadastrados</span></span><span aria-hidden="true">›</span></a>
+    <div class="card" style="border-color:#c0261a66">
+      <h2 class="font-semibold" style="color:var(--destr)">Excluir conta</h2>
+      <p class="my-2 text-sm muted">[Texto a definir — Dúvida 8]</p>
+      <button class="btn btn-destr" onclick="document.getElementById('dlg-excluir').hidden=false">Excluir conta</button>
+    </div>
+  </section>
+
+  <!-- ENDERECOS -->
+  <section class="scr" id="s-enderecos">
+    <a href="#" class="mb-2 inline-flex min-h-11 items-center gap-2 text-sm link" onclick="go('minha')">← Minha conta</a>
+    <div class="mb-3 flex items-baseline justify-between"><h1 class="text-xl font-semibold">Meus endereços<span class="tag">proposta</span></h1><span class="text-sm muted">2 de 3</span></div>
+    <ul class="space-y-3">
+      <li class="card !p-4"><p class="font-semibold">Casa <span class="badge">Padrão</span></p><p class="text-sm muted">Rua das Flores, 120 — Centro<br>São Paulo</p>
+        <div class="mt-3 flex gap-2"><button class="btn btn-out !w-auto" aria-label="Editar endereço Casa">Editar</button><button class="btn btn-ghost !w-auto" style="color:var(--destr)" aria-label="Remover endereço Casa" onclick="document.getElementById('dlg-rem').hidden=false">Remover</button></div></li>
+      <li class="card !p-4"><p class="font-semibold">Trabalho</p><p class="text-sm muted">Av. Paulista, 900, sala 12 — Bela Vista<br>São Paulo</p>
+        <div class="mt-3 flex flex-wrap gap-2"><button class="btn btn-out !w-auto" aria-label="Tornar Trabalho o endereço padrão">Tornar padrão</button><button class="btn btn-out !w-auto" aria-label="Editar endereço Trabalho">Editar</button><button class="btn btn-ghost !w-auto" style="color:var(--destr)" aria-label="Remover endereço Trabalho">Remover</button></div></li>
+    </ul>
+    <button class="btn btn-pri mt-4">+ Adicionar endereço</button>
+    <p class="mt-2 text-center text-sm muted">Com 3 endereços o botão some e aparece: “Você pode ter até 3 endereços.”</p>
+    <p class="erro-demo alert mt-3" role="alert">Mantenha pelo menos um endereço.</p>
+  </section>
+</main>
+</div>
+
+<!-- MODAL cadastro (AlertDialog) -->
+<div id="dlg-cad" class="overlay" hidden role="alertdialog" aria-modal="true" aria-labelledby="dc-t" aria-describedby="dc-d" onclick="if(event.target===this)this.hidden=true">
+  <div class="card w-full max-w-sm">
+    <h2 id="dc-t" class="text-lg font-semibold">Tem certeza que quer usar essa forma de cadastro?</h2>
+    <p id="dc-d" class="mt-2 text-sm muted">Prefira cadastrar-se com sua conta Google: é mais seguro, mais rápido e mais prático.</p>
+    <div class="mt-5 flex flex-col gap-2">
+      <button class="btn btn-google" id="dc-g"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62Z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.8.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33A9 9 0 0 0 9 18Z"/><path fill="#FBBC05" d="M3.96 10.71A5.4 5.4 0 0 1 3.68 9c0-.59.1-1.17.28-1.71V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l3-2.33Z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.96l3 2.33C4.67 5.17 6.66 3.58 9 3.58Z"/></svg> Continuar com Google</button>
+      <button class="btn btn-out" onclick="document.getElementById('dlg-cad').hidden=true;go('confirme')">Prosseguir com e-mail</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL excluir -->
+<div id="dlg-excluir" class="overlay" hidden role="alertdialog" aria-modal="true" aria-labelledby="dx-t">
+  <div class="card w-full max-w-sm">
+    <h2 id="dx-t" class="text-lg font-semibold">Excluir sua conta?<span class="tag">proposta</span></h2>
+    <p class="mt-2 text-sm muted cli-only">[Texto — Dúvida 8] Seus dados serão apagados. Essa ação não pode ser desfeita.</p>
+    <p class="mt-2 text-sm muted lojista-only">[Texto — Dúvida 8] Só o seu perfil de cliente será apagado. Seu acesso ao painel continua o mesmo.</p>
+    <div class="mt-5 flex flex-col gap-2"><button class="btn btn-out" onclick="this.closest('.overlay').hidden=true">Cancelar</button><button class="btn btn-destr-fill">Excluir conta</button></div>
+  </div>
+</div>
+
+<!-- MODAL remover endereço -->
+<div id="dlg-rem" class="overlay" hidden role="alertdialog" aria-modal="true" aria-labelledby="dr-t">
+  <div class="card w-full max-w-sm">
+    <h2 id="dr-t" class="text-lg font-semibold">Remover “Casa”?<span class="tag">proposta</span></h2>
+    <p class="mt-2 text-sm muted">Rua das Flores, 120 — Centro. [Este é o padrão: o endereço mais antigo restante vira padrão — copy a definir]</p>
+    <div class="mt-5 flex flex-col gap-2"><button class="btn btn-out" onclick="this.closest('.overlay').hidden=true">Cancelar</button><button class="btn btn-destr-fill">Remover</button></div>
+  </div>
+</div>
+
+<script>
+  const $=s=>document.querySelectorAll(s);
+  function go(s){$('.scr').forEach(e=>e.classList.toggle('on',e.id==='s-'+s));$('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));sync();scrollTo(0,0)}
+  $('.nav button').forEach(b=>b.onclick=()=>go(b.dataset.s));
+  function abrirModal(){const d=document.getElementById('dlg-cad');d.hidden=false;document.getElementById('dc-g').focus()}
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')$('.overlay').forEach(o=>o.hidden=true)});
+  function sync(){
+    const conta=document.querySelector('.scr.on').id.match(/entrar|cadastro|confirme|completar|recuperar|novasenha/);
+    $('.voltar').forEach(v=>v.style.display=(tLoja.checked&&conta)?'':'none');
+    $('.lojista-only').forEach(e=>e.style.display=tLojista.checked?'':'none');
+    $('.cli-only').forEach(e=>e.style.display=tLojista.checked?'none':'');
+    $('.erro-demo').forEach(e=>e.style.display=tErro.checked?'':'none');
+    $('.ok-demo').forEach(e=>e.style.display=tErro.checked?'none':'');
+    document.getElementById('nasc').setAttribute('aria-invalid',tErro.checked);
+  }
+  [tLoja,tLojista,tErro].forEach(t=>t.onchange=sync);
+  document.querySelectorAll('.chips').forEach(g=>g.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{const i=g.closest('div').querySelector('.rot');i.value=c.textContent;g.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x===c))}));
+  sync();
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import {
   resolverDonoPorEmail,
   slugExiste,
 } from "@/lib/supabase/queries/lojas";
+import { buscarPapeisDoUsuario } from "@/lib/supabase/queries/papeis";
 import { schemaNovaLojaAdmin } from "@/lib/validacoes/loja";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
 
@@ -64,10 +65,12 @@ export async function criarLojaAdmin(
   // (fail-closed, D-4) e o service client nunca é criado.
   await verificarAdminSaaS();
   const svc = createServiceClient();
+  let donoIdResolvido: string | null = null;
 
   try {
     // `dono_id` autoritativo: resolvido por e-mail server-side, nunca do payload.
     const donoId = await resolverDonoPorEmail(svc, email);
+    donoIdResolvido = donoId;
     if (donoId === null) {
       return { ok: false, erro: "Nenhuma conta encontrada para este e-mail." };
     }
@@ -94,7 +97,30 @@ export async function criarLojaAdmin(
     // RN-4: índice único lojas(dono_id) → dono já tem loja. Sem retry, sem
     // revalidate. Mensagem neutra; e-mail nunca logado em cru (§14/§21).
     console.error("[criarLojaAdmin]", e);
+    // L1 = A (issue 337): a barreira é o trigger `lojas_exige_dono_lojista`;
+    // os papéis (service_role) só escolhem a mensagem depois da recusa.
+    if (await ehContaSoCliente(svc, donoIdResolvido)) {
+      return { ok: false, erro: MSG_CONTA_CLIENTE };
+    }
     return { ok: false, erro: "Não foi possível criar a loja." };
+  }
+}
+
+const MSG_CONTA_CLIENTE =
+  "Este e-mail pertence a uma conta de cliente e não pode ser dono de loja.";
+
+/** Conta com papel `cliente` e sem `lojista`. Falha de leitura → false (mensagem neutra). */
+async function ehContaSoCliente(
+  svc: ReturnType<typeof createServiceClient>,
+  donoId: string | null,
+): Promise<boolean> {
+  if (!donoId) return false;
+  try {
+    const papeis = await buscarPapeisDoUsuario(svc, donoId);
+    return papeis.includes("cliente") && !papeis.includes("lojista");
+  } catch (e) {
+    console.error("[criarLojaAdmin] papeis", e);
+    return false;
   }
 }
 

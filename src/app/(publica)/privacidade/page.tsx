@@ -32,7 +32,7 @@ export default function PrivacidadePage() {
           Política de Privacidade
         </h1>
         <p className="mb-6 text-sm text-texto-muted">
-          Versão {VERSAO_TERMOS} · Atualizada em 14/06/2026
+          Versão {VERSAO_TERMOS} · Atualizada em 02/10/2026
         </p>
 
         <div className="mb-8">
@@ -56,32 +56,55 @@ export default function PrivacidadePage() {
               2. Dados coletados (minimização)
             </h2>
             <p>
-              Coletamos apenas o necessário para entregar seu pedido: nome,
-              telefone e endereço de entrega. Não solicitamos CPF nem data de
-              nascimento. Dados de cadastro do lojista (e-mail e telefone)
-              também são dados pessoais e seguem as mesmas regras.
+              Para fazer um pedido, coletamos o necessário para entregá-lo: nome, telefone e endereço de entrega. Dados de cadastro do lojista (e-mail e telefone) também são dados pessoais e seguem as mesmas regras.
+            </p>
+            <p>
+              Se você criar uma conta de cliente, também guardamos: e-mail, data de nascimento (usada para verificar a idade mínima de 18 anos e para o aniversário) e até 3 endereços salvos. Esses dados do perfil só são coletados depois que você confirma o seu e-mail; antes disso, nada do perfil é guardado.
             </p>
           </section>
 
           <section className="flex flex-col gap-2">
             <h2 className="text-lg font-semibold text-marrom-cafe">
-              3. Retenção
+              3. Conta de cliente e idade mínima
             </h2>
             <p>
-              Dados de pedido são mantidos pelo período necessário ao
-              atendimento e às obrigações legais. Pedidos antigos podem ser
-              anonimizados após o prazo de retenção definido.
+              A conta de cliente é opcional e destinada a maiores de 18 anos. O aceite destes termos e desta política é registrado ao completar o cadastro, junto com a versão aceita.
             </p>
           </section>
 
           <section className="flex flex-col gap-2">
             <h2 className="text-lg font-semibold text-marrom-cafe">
-              4. Compartilhamento
+              4. Login com Google
             </h2>
             <p>
-              Seus dados de pedido são compartilhados com a loja na qual você
-              comprou, para que ela possa preparar e entregar o pedido. Não
-              vendemos dados pessoais a terceiros.
+              Se você entrar com o Google, recebemos apenas o seu nome e o seu e-mail. Os demais dados do perfil (telefone, data de nascimento e endereços) são informados por você ao completar o cadastro.
+            </p>
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="text-lg font-semibold text-marrom-cafe">
+              5. Marketing
+            </h2>
+            <p>
+              O recebimento de comunicações de marketing é opcional e vem desmarcado por padrão. Você só recebe se marcar a opção, e pode desmarcá-la depois.
+            </p>
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="text-lg font-semibold text-marrom-cafe">
+              6. Retenção
+            </h2>
+            <p>
+              Dados de pedido são mantidos pelo período necessário ao atendimento e às obrigações legais, e pedidos antigos podem ser anonimizados após 5 anos. O perfil de cliente é mantido enquanto a conta existir. Contas inativas por 24 meses têm o perfil removido.
+            </p>
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="text-lg font-semibold text-marrom-cafe">
+              7. Compartilhamento
+            </h2>
+            <p>
+              Seus dados de pedido são compartilhados com a loja na qual você comprou, para que ela possa preparar e entregar o pedido. Não vendemos dados pessoais a terceiros.
             </p>
           </section>
 
@@ -89,13 +112,15 @@ export default function PrivacidadePage() {
 
           <section className="flex flex-col gap-2">
             <h2 className="text-lg font-semibold text-marrom-cafe">
-              5. Seus direitos (LGPD)
+              8. Seus direitos (LGPD)
             </h2>
             <p>
               Você pode solicitar a <strong>exclusão</strong> dos seus dados
-              pessoais e a <strong>portabilidade</strong> (exportação) deles. No
-              momento, essas solicitações são atendidas manualmente pela nossa
-              equipe pelo canal de contato:
+              pessoais e a <strong>portabilidade</strong> (exportação) deles. Se
+              você tem conta de cliente, pode excluir a conta e os dados do
+              perfil sozinho em <strong>/minha-conta</strong>. Para as demais
+              solicitações (e para contas de lojista), o atendimento é manual
+              pela nossa equipe, pelo canal de contato:
             </p>
             <p>
               <a
