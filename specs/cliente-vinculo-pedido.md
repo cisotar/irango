@@ -228,10 +228,8 @@ Policies **só de SELECT**, `to authenticated`:
 ### RPC `criar_pedido` — nova versão
 
 - **Assinatura nova** com 18 argumentos: os 17 atuais + `p_cliente_id uuid` (último). Segue o precedente da issue
-  266 (overload). A migration faz `drop function public.criar_pedido(<17 tipos>)` **na mesma migration** que cria
-  a versão de 18, para não haver dois overloads ambíguos via PostgREST.
-  **[aprovado pelo usuário, 2026-10-03]** drop do overload antigo na mesma migration. O histórico da 266 não pôde ser
-  conferido no clone (`git log --all -- 'tasks/266*'` só mostra um commit de docs, `262cb3d`). Ver Perguntas P1.
+  266 (overload). A versão de 17 argumentos **continua existindo** nesta entrega; uma migration pequena num deploy
+  seguinte a remove (issue 344). **[aprovado pelo usuário, 2026-10-03 — resposta P1]**
 - Continua `security invoker`, chamada pelo `service_role` da Server Action. `p_cliente_id` é **sempre** o
   `auth.uid()` que a Server Action obtém de `getUser()`, ou null. Nunca vem do payload.
 - Defesa em profundidade dentro da RPC: se `p_cliente_id` não é null e não existe em `public.clientes`, a RPC
