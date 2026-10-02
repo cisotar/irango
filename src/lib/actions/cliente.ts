@@ -299,7 +299,7 @@ export async function removerEnderecoCliente(payload: unknown): Promise<Resultad
  * papéis falhou → fail-closed (nada é apagado).
  */
 export async function excluirConta(payload?: unknown): Promise<ResultadoCliente> {
-  const parsed = schemaExcluirConta.safeParse(payload ?? {});
+  const parsed = schemaExcluirConta.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: MSG_EXCLUSAO };
 
   try {

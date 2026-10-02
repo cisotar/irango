@@ -39,6 +39,9 @@ export const schemaEntrarCliente = z
 
 export const schemaRecuperacaoCliente = z.object({ email: z.email(), next: campoNext }).strict();
 
+/** Reenvio do link de confirmação (D4): mesmo formato da recuperação. */
+export const schemaReenvioConfirmacaoCliente = schemaRecuperacaoCliente;
+
 export const schemaNovaSenhaCliente = z
   .object({ senha: campoSenha, confirmacao: z.string(), next: campoNext })
   .strict()
@@ -145,8 +148,11 @@ export const schemaSalvarEnderecoCliente = schemaEnderecoCliente.extend({ id: z.
 /** Marcar padrão / remover: só o id do endereço; a posse vem da sessão + RLS. */
 export const schemaIdEnderecoCliente = z.object({ id: z.guid() }).strict();
 
-/** Exclusão: nenhum campo — o alvo é sempre `auth.uid()` da sessão. */
-export const schemaExcluirConta = z.object({}).strict();
+/**
+ * Exclusão (D8): só a confirmação digitada, exata e em maiúsculas — o alvo é
+ * sempre `auth.uid()` da sessão, nunca um id do payload.
+ */
+export const schemaExcluirConta = z.object({ confirmacao: z.literal("EXCLUIR") }).strict();
 
 export const schemaSairCliente = z.object({ next: campoNext }).strict();
 

@@ -147,7 +147,7 @@ describe("callback contexto=cliente — sem perfil / falhas", () => {
   });
   it("sem code → /login?erro=auth e nada é trocado nem gravado", async () => {
     const res = await GET(req("?contexto=cliente"));
-    expect(res.headers.get("location")).toBe(`${ORIGIN}/login?erro=auth`);
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/conta/recuperar?erro=link`);
     expect(exchangeCodeForSession).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
   });

@@ -99,6 +99,7 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "loginCliente",
         "novaSenhaCliente",
         "recuperacaoCliente",
+        "reenvioCliente",
         "revisarCarrinho",
         "salvarLogoLoja",
         "salvarPerfil",

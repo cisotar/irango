@@ -21,7 +21,8 @@ import { ehAdminSaaS } from "@/lib/auth/admin";
  *
  * Porta cliente (issue 336): só o literal `contexto=cliente` troca o papel
  * inicial para `cliente` (conta existente não muda — a RPC só grava se não há
- * papel). Erro de OAuth → `/conta/entrar?erro=google`; conta sem perfil →
+ * papel). Erro de OAuth → `/conta/entrar?erro=google` (link de recuperação
+ * inválido/expirado → `/conta/recuperar?erro=link`, C1); conta sem perfil →
  * `/conta/completar` (preservando `next`); com perfil → `ultimo_acesso_em`
  * via service_role e `next` ou `/minha-conta`. A etapa 2 da recuperação por
  * link (`/conta/recuperar…`) sempre respeita o `next`.
@@ -36,15 +37,24 @@ export async function GET(request: NextRequest): Promise<Response> {
   // `?error=...&error_description=...`. Detecta ANTES de qualquer troca de
   // código. Loga só o `error` (sem `error_description`, que pode ter PII —
   // §14/§21) e redireciona genérico, sem expor JSON bruto ao usuário.
+  // C1: na porta cliente, link inválido/expirado (sem code, troca falhou, ou
+  // erro OAuth de recuperação) → `/conta/recuperar?erro=link`. Recuperação é
+  // reconhecida por `error_code=otp_expired` ou pelo `next=/conta/recuperar…`
+  // (o único fluxo que o gera); demais erros OAuth seguem como login Google.
+  const linkInvalidoCliente = `${origin}/conta/recuperar?erro=link`;
   const erroOAuth = searchParams.get("error");
   if (erroOAuth) {
     console.error("[authCallback] oauth", erroOAuth);
-    const entrada = portaCliente ? "/conta/entrar" : "/login";
-    return NextResponse.redirect(`${origin}${entrada}?erro=google`);
+    if (portaCliente) {
+      const ehRecuperacao =
+        searchParams.get("error_code") === "otp_expired" || next?.startsWith("/conta/recuperar") === true;
+      return NextResponse.redirect(ehRecuperacao ? linkInvalidoCliente : `${origin}/conta/entrar?erro=google`);
+    }
+    return NextResponse.redirect(`${origin}/login?erro=google`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/login?erro=auth`);
+    return NextResponse.redirect(portaCliente ? linkInvalidoCliente : `${origin}/login?erro=auth`);
   }
 
   const supabase = await createClient();
@@ -52,7 +62,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   if (error) {
     console.error("[authCallback]", error.status ?? "", error.code ?? "", error.name);
-    return NextResponse.redirect(`${origin}/login?erro=auth`);
+    return NextResponse.redirect(portaCliente ? linkInvalidoCliente : `${origin}/login?erro=auth`);
   }
 
   if (!data.user) {

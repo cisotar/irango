@@ -18,7 +18,6 @@ const EMAIL = "pessoa@exemplo.test";
 const MSG_CONFIRME = "Confirme seu e-mail para entrar. Enviamos um link para você.";
 const MSG_CREDENCIAL = "E-mail ou senha incorretos.";
 const MSG_RECUPERACAO = "Se existe uma conta com esse e-mail, enviamos um link para redefinir a senha.";
-const MSG_JA_CADASTRADO = "Este email já está cadastrado.";
 
 // ── fake PostgREST encadeável: registra (tabela, operação, args) e resolve por tabela ──
 type Resposta = { data?: unknown; error?: unknown; count?: number | null };
@@ -239,7 +238,7 @@ describe("cadastrarCliente", () => {
     const { cadastrarCliente } = await carregar();
     signUp.mockResolvedValueOnce({ data: { user: null, session: null }, error: { message: "User already registered" } });
     const r = await executar(cadastrarCliente, payload());
-    expect(r).toEqual({ ok: false, erro: MSG_JA_CADASTRADO });
+    expect(r).toEqual({ ok: true });
     expect(deleteUser).not.toHaveBeenCalled();
   });
 
@@ -247,7 +246,7 @@ describe("cadastrarCliente", () => {
     const { cadastrarCliente } = await carregar();
     rpc.mockResolvedValueOnce({ data: ["lojista"], error: null });
     const r = await executar(cadastrarCliente, payload());
-    expect(r).toEqual({ ok: false, erro: MSG_JA_CADASTRADO });
+    expect(r).toEqual({ ok: true });
     expect(deleteUser).not.toHaveBeenCalled();
     expect(rpcNomes()).not.toContain("adicionar_papel_cliente");
     expect(criarLoja).not.toHaveBeenCalled();

@@ -150,9 +150,10 @@ describe("schemaSalvarEnderecoCliente / schemaIdEnderecoCliente / excluir / sair
     expect(ok(schemaIdEnderecoCliente, { id: "x" })).toBe(false);
     expect(ok(schemaIdEnderecoCliente, { id: GUID, cliente_id: GUID })).toBe(false);
   });
-  it("schemaExcluirConta: {} passa; qualquer campo (ex.: id alheio) → rejeitado", () => {
-    expect(ok(schemaExcluirConta, {})).toBe(true);
-    expect(ok(schemaExcluirConta, { id: GUID })).toBe(false);
+  it("schemaExcluirConta: só { confirmacao: 'EXCLUIR' } passa; {} ou campo extra (ex.: id alheio) → rejeitado", () => {
+    expect(ok(schemaExcluirConta, { confirmacao: "EXCLUIR" })).toBe(true);
+    expect(ok(schemaExcluirConta, {})).toBe(false);
+    expect(ok(schemaExcluirConta, { confirmacao: "EXCLUIR", id: GUID })).toBe(false);
     expect(ok(schemaExcluirConta, [])).toBe(false);
   });
   it("schemaSairCliente: next opcional ≤2048; extra rejeitado", () => {

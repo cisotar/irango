@@ -397,34 +397,33 @@ describe("removerEnderecoCliente — promoção do padrão", () => {
 // ═════════════════════════ excluirConta ══════════════════════════════════════
 describe("excluirConta — ramos", () => {
   it("sucesso redireciona para '/' (conta encerrada) e faz signOut", async () => {
-    expect(await executar(acoes.excluirConta, {})).toEqual({ ok: true, destino: "/" });
+    expect(await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" })).toEqual({ ok: true, destino: "/" });
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  it("payload omitido ou null equivale a {} (alvo é sempre a sessão)", async () => {
+  it("payload omitido ou null → erro, nada apagado (D8: confirmação obrigatória)", async () => {
     await executar(acoes.excluirConta);
     await executar(acoes.excluirConta, null);
-    expect(rpc).toHaveBeenCalledTimes(2);
-    expect(rpc).toHaveBeenCalledWith("anonimizar_cliente", { p_usuario: USER_ID });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("conta SEM nenhum papel gravado (leitura vazia) → só anonimiza; deleteUser NÃO chamado (fail-closed)", async () => {
     papeis();
-    await executar(acoes.excluirConta, {});
+    await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" });
     expect(rpc).toHaveBeenCalledWith("anonimizar_cliente", { p_usuario: USER_ID });
     expect(deleteUser).not.toHaveBeenCalled();
   });
 
   it("papel desconhecido é descartado: ['cliente','xyz'] ainda é só-cliente → deleteUser", async () => {
     papeis("cliente", "xyz");
-    await executar(acoes.excluirConta, {});
+    await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" });
     expect(deleteUser).toHaveBeenCalledWith(USER_ID);
   });
 
   it("lojista+cliente+admin → nunca apaga auth.users; papel lojista intocado", async () => {
     vi.stubEnv("SAAS_ADMIN_USER_ID", USER_ID);
     papeis("lojista", "cliente");
-    await executar(acoes.excluirConta, {});
+    await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" });
     expect(deleteUser).not.toHaveBeenCalled();
     expect(signOut).toHaveBeenCalled();
     expect(db.cadeias.some((c) => c.tabela === "papeis_usuario" && c.op !== "select")).toBe(false);
@@ -432,13 +431,13 @@ describe("excluirConta — ramos", () => {
 
   it("só-cliente mas SAAS_ADMIN_USER_ID ausente → ehAdminSaaS é false (fail-safe) e a conta é apagada", async () => {
     vi.stubEnv("SAAS_ADMIN_USER_ID", "");
-    await executar(acoes.excluirConta, {});
+    await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" });
     expect(deleteUser).toHaveBeenCalledWith(USER_ID);
   });
 
   it("deleteUser falha DEPOIS de anonimizar → não vaza erro: segue com signOut e redireciona (perfil já apagado)", async () => {
     deleteUser.mockResolvedValue({ error: { status: 500, message: "detalhe interno" } });
-    const r = await executar(acoes.excluirConta, {});
+    const r = await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" });
     expect(r).toEqual({ ok: true, destino: "/" });
     expect(signOut).toHaveBeenCalled();
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("detalhe interno");
@@ -446,7 +445,7 @@ describe("excluirConta — ramos", () => {
 
   it("rpc lança exceção → mensagem genérica de exclusão; nada apagado, sem signOut", async () => {
     rpc.mockRejectedValue(Object.assign(new Error("boom"), { code: "XX000" }));
-    const r = await executar(acoes.excluirConta, {});
+    const r = await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" });
     expect(r).toEqual({ ok: false, erro: MSG_EXCLUSAO });
     expect(deleteUser).not.toHaveBeenCalled();
     expect(signOut).not.toHaveBeenCalled();
@@ -454,7 +453,7 @@ describe("excluirConta — ramos", () => {
 
   it("papéis ilegíveis → fail-closed: nada é chamado (nem anonimizar_cliente nem deleteUser)", async () => {
     responder("papeis_usuario", "select", { error: { code: "XX000", message: "x" } });
-    const r = await executar(acoes.excluirConta, {});
+    const r = await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" });
     expect(r).toEqual({ ok: false, erro: MSG_EXCLUSAO });
     expect(rpc).not.toHaveBeenCalled();
     expect(deleteUser).not.toHaveBeenCalled();
@@ -462,7 +461,7 @@ describe("excluirConta — ramos", () => {
 
   it("sem sessão → 'sessão expirou', nada chamado", async () => {
     getUser.mockResolvedValue({ data: { user: null }, error: null });
-    expect(await executar(acoes.excluirConta, {})).toEqual({ ok: false, erro: MSG_SESSAO });
+    expect(await executar(acoes.excluirConta, { confirmacao: "EXCLUIR" })).toEqual({ ok: false, erro: MSG_SESSAO });
     expect(rpc).not.toHaveBeenCalled();
   });
 });

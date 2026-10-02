@@ -194,7 +194,7 @@ describe("excluirConta — id só da sessão", () => {
   it("sem sessão → nada é apagado", async () => {
     const { excluirConta } = await carregar();
     getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
-    const r = await executar(excluirConta, {});
+    const r = await executar(excluirConta, { confirmacao: "EXCLUIR" });
     expect(r.ok).toBe(false);
     expect(rpc).not.toHaveBeenCalled();
     expect(deleteUser).not.toHaveBeenCalled();
@@ -205,7 +205,7 @@ describe("excluirConta — RN-13", () => {
   it("só-cliente → anonimizar_cliente(uid) ANTES de deleteUser(uid), depois signOut", async () => {
     const { excluirConta } = await carregar();
     papeis("cliente");
-    await executar(excluirConta, {});
+    await executar(excluirConta, { confirmacao: "EXCLUIR" });
     expect(rpc).toHaveBeenCalledWith("anonimizar_cliente", { p_usuario: USER_ID });
     expect(deleteUser).toHaveBeenCalledWith(USER_ID);
     expect(signOut).toHaveBeenCalled();
@@ -217,7 +217,7 @@ describe("excluirConta — RN-13", () => {
   it("lojista+cliente → só anonimizar_cliente; deleteUser NÃO chamado; papéis intactos", async () => {
     const { excluirConta } = await carregar();
     papeis("lojista", "cliente");
-    await executar(excluirConta, {});
+    await executar(excluirConta, { confirmacao: "EXCLUIR" });
     expect(rpc).toHaveBeenCalledWith("anonimizar_cliente", { p_usuario: USER_ID });
     expect(deleteUser).not.toHaveBeenCalled();
     expect(todasChamadas().some((c) => c.tabela === "papeis_usuario" && c.metodo === "delete")).toBe(false);
@@ -227,7 +227,7 @@ describe("excluirConta — RN-13", () => {
     const { excluirConta } = await carregar();
     vi.stubEnv("SAAS_ADMIN_USER_ID", USER_ID);
     papeis("cliente");
-    await executar(excluirConta, {});
+    await executar(excluirConta, { confirmacao: "EXCLUIR" });
     expect(rpc).toHaveBeenCalledWith("anonimizar_cliente", { p_usuario: USER_ID });
     expect(deleteUser).not.toHaveBeenCalled();
   });
@@ -235,7 +235,7 @@ describe("excluirConta — RN-13", () => {
   it("falha ao ler papéis → fail-closed: NÃO chama deleteUser", async () => {
     const { excluirConta } = await carregar();
     responder("papeis_usuario", { select: { data: null, error: { message: "falha", code: "XX000" } } });
-    const r = await executar(excluirConta, {});
+    const r = await executar(excluirConta, { confirmacao: "EXCLUIR" });
     expect(deleteUser).not.toHaveBeenCalled();
     expect(JSON.stringify(r)).not.toContain("XX000");
   });
@@ -245,7 +245,7 @@ describe("excluirConta — RN-13", () => {
     rpc.mockImplementation(async (nome: string) =>
       nome === "anonimizar_cliente" ? { data: null, error: { message: "detalhe interno", code: "XX000" } } : { data: null, error: null },
     );
-    const r = await executar(excluirConta, {});
+    const r = await executar(excluirConta, { confirmacao: "EXCLUIR" });
     expect(r.ok).toBe(false);
     expect(deleteUser).not.toHaveBeenCalled();
     expect(JSON.stringify(r)).not.toContain("detalhe interno");

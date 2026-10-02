@@ -31,6 +31,8 @@ export const LIMITES = {
   loginCliente: { limite: 5, janela: "1 m" },
   // Recuperação por link (decisão 10 alterada): cada chamada dispara e-mail.
   recuperacaoCliente: { limite: 5, janela: "1 m" },
+  // Reenvio do link de confirmação (D4): 1 a cada 60 s, igual ao mínimo do GoTrue.
+  reenvioCliente: { limite: 1, janela: "1 m" },
   // Troca de senha na sessão de recuperação (achado P18).
   novaSenhaCliente: { limite: 5, janela: "1 m" },
   criarPedido: { limite: 10, janela: "1 m" },

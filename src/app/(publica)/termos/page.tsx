@@ -23,7 +23,7 @@ export default function TermosPage() {
           Termos de Uso
         </h1>
         <p className="mb-6 text-sm text-texto-muted">
-          Versão {VERSAO_TERMOS} · Atualizada em 14/06/2026
+          Versão {VERSAO_TERMOS} · Atualizada em 02/10/2026
         </p>
 
         <div className="mb-8">
@@ -71,6 +71,13 @@ export default function TermosPage() {
             <p>
               Você é responsável por manter a confidencialidade das suas
               credenciais de acesso e por toda atividade realizada na sua conta.
+            </p>
+            <p>
+              A conta de cliente é opcional e destinada a maiores de 18 anos.
+              Ao completar o cadastro, você declara ter essa idade, informa
+              dados verdadeiros e aceita estes Termos e a Política de
+              Privacidade. Você pode excluir sua conta a qualquer momento em
+              /minha-conta.
             </p>
           </section>
 

@@ -9,6 +9,8 @@
 // options.data) e grava o papel `cliente` logo após o signUp; nunca cria loja,
 // nunca grava `lojista`, nunca apaga conta (pode ser pré-existente).
 // RN-14: recuperação por link do GoTrue, resposta idêntica exista ou não a conta.
+// B2/D5: cadastro responde SEMPRE `{ ok: true }` (exista, esteja pendente ou
+// seja usuário ofuscado do GoTrue) — a UI mostra a mensagem neutra.
 
 import { headers } from "next/headers";
 import {
@@ -16,6 +18,7 @@ import {
   schemaEntrarCliente,
   schemaNovaSenhaCliente,
   schemaRecuperacaoCliente,
+  schemaReenvioConfirmacaoCliente,
 } from "@/lib/validacoes/cliente";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
@@ -26,12 +29,12 @@ import { registrarUltimoAcessoCliente } from "@/lib/supabase/queries/clientes";
 
 type Falha = { ok: false; erro: string };
 export type ResultadoCadastroCliente = { ok: true } | Falha;
+export type ResultadoReenvioCliente = { ok: true } | Falha;
 export type ResultadoEntrarCliente = { ok: true; destino: string } | Falha;
 export type ResultadoRecuperacaoCliente = { ok: true; mensagem: string } | Falha;
 export type ResultadoNovaSenhaCliente = { ok: true; destino: string } | Falha;
 
 const MSG_MUITAS_TENTATIVAS = "Muitas tentativas. Tente novamente em alguns instantes.";
-const MSG_JA_CADASTRADO = "Este email já está cadastrado.";
 const MSG_CADASTRO_FALHOU = "Não foi possível concluir o cadastro. Tente novamente.";
 const MSG_CREDENCIAL = "E-mail ou senha incorretos.";
 const MSG_CONFIRME = "Confirme seu e-mail para entrar. Enviamos um link para você.";
@@ -39,6 +42,9 @@ const MSG_RECUPERACAO =
   "Se existe uma conta com esse e-mail, enviamos um link para redefinir a senha.";
 const MSG_NOVA_SENHA_LINK = "Link inválido ou expirado. Peça um novo link.";
 const MSG_NOVA_SENHA_FALHOU = "Não foi possível redefinir a senha. Tente novamente.";
+
+/** B2: tempo mínimo da recuperação, para não revelar existência pela latência. */
+const TEMPO_MINIMO_RECUPERACAO_MS = 1500;
 
 const DESTINO_PADRAO_CLIENTE = "/minha-conta";
 /** Etapa 2 da recuperação, preservando o `next` de origem (já sanitizado). */
@@ -97,8 +103,11 @@ export async function cadastrarCliente(payload: unknown): Promise<ResultadoCadas
       password: senha,
       options: { emailRedirectTo: urlCallbackCliente(origemDaRequisicao(h), next) },
     });
-    if (error || !data.user) {
-      return { ok: false, erro: MSG_JA_CADASTRADO };
+    // B2/D5: conta existente (erro, sem user, ou user ofuscado sem identities)
+    // recebe a MESMA resposta da conta nova, sem gravar papel.
+    if (error || !data.user || data.user.identities?.length === 0) {
+      if (error) console.error("[cadastrarCliente] signUp", error.status ?? "", error.code ?? "");
+      return { ok: true };
     }
     usuarioId = data.user.id; // autoritativo: do signUp, nunca do payload
   } catch (e) {
@@ -111,9 +120,8 @@ export async function cadastrarCliente(payload: unknown): Promise<ResultadoCadas
   // `contexto=cliente` e o callback grava `cliente`.
   try {
     const papeis = await atribuirPapelInicial(createServiceClient(), usuarioId, "cliente");
-    if (!papeis.includes("cliente")) {
-      return { ok: false, erro: MSG_JA_CADASTRADO };
-    }
+    // Conta pré-existente (ex.: só-lojista) não muda; resposta neutra (B2).
+    if (!papeis.includes("cliente")) return { ok: true };
   } catch (e) {
     console.error("[cadastrarCliente] papel", e instanceof Error ? e.name : "erro");
     return { ok: false, erro: MSG_CADASTRO_FALHOU };
@@ -171,6 +179,7 @@ export async function entrarCliente(payload: unknown): Promise<ResultadoEntrarCl
 export async function solicitarRecuperacaoCliente(
   payload: unknown,
 ): Promise<ResultadoRecuperacaoCliente> {
+  const inicio = Date.now();
   const h = await headers();
   if (!(await verificarRateLimit("recuperacaoCliente", extrairIp(h))).permitido) {
     return { ok: false, erro: MSG_MUITAS_TENTATIVAS };
@@ -192,7 +201,39 @@ export async function solicitarRecuperacaoCliente(
   } catch (e) {
     console.error("[solicitarRecuperacaoCliente]", e instanceof Error ? e.name : "erro");
   }
+  // B2: latência constante — existir ou não a conta não muda o tempo de resposta.
+  const restante = TEMPO_MINIMO_RECUPERACAO_MS - (Date.now() - inicio);
+  if (restante > 0) await new Promise((r) => setTimeout(r, restante));
   return { ok: true, mensagem: MSG_RECUPERACAO };
+}
+
+/**
+ * D4: reenvia o link de confirmação do cadastro. Resposta sempre neutra
+ * (exista ou não a conta); 1 envio por minuto por IP.
+ */
+export async function reenviarConfirmacaoCliente(payload: unknown): Promise<ResultadoReenvioCliente> {
+  const h = await headers();
+  if (!(await verificarRateLimit("reenvioCliente", extrairIp(h))).permitido) {
+    return { ok: false, erro: MSG_MUITAS_TENTATIVAS };
+  }
+
+  const parsed = schemaReenvioConfirmacaoCliente.safeParse(payload);
+  if (!parsed.success) {
+    return { ok: false, erro: "Informe um e-mail válido." };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: parsed.data.email,
+      options: { emailRedirectTo: urlCallbackCliente(origemDaRequisicao(h), sanitizarNext(parsed.data.next)) },
+    });
+    if (error) console.error("[reenviarConfirmacaoCliente]", error.status ?? "", error.code ?? "");
+  } catch (e) {
+    console.error("[reenviarConfirmacaoCliente]", e instanceof Error ? e.name : "erro");
+  }
+  return { ok: true };
 }
 
 /** Sessão aberta por link de recuperação: claim `amr` (JWT verificado) contém `recovery`. */

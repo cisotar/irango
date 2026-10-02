@@ -9,7 +9,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const USER_ID = "11111111-1111-1111-1111-111111111111";
 const EMAIL = "pessoa@exemplo.test";
 const MSG_CREDENCIAL = "E-mail ou senha incorretos.";
-const MSG_JA_CADASTRADO = "Este email já está cadastrado.";
 const MSG_CADASTRO_FALHOU = "Não foi possível concluir o cadastro. Tente novamente.";
 const MSG_LINK = "Link inválido ou expirado. Peça um novo link.";
 const MSG_NOVA_SENHA_FALHOU = "Não foi possível redefinir a senha. Tente novamente.";
@@ -128,7 +127,7 @@ describe("cadastrarCliente — ramos", () => {
   });
   it("signUp sem user e sem erro → 'já cadastrado' e NENHUMA RPC de papel", async () => {
     signUp.mockResolvedValue({ data: { user: null, session: null }, error: null });
-    expect(await acoes.cadastrarCliente(cad())).toEqual({ ok: false, erro: MSG_JA_CADASTRADO });
+    expect(await acoes.cadastrarCliente(cad())).toEqual({ ok: true });
     expect(rpc).not.toHaveBeenCalled();
   });
   it("signUp lança → mensagem genérica, sem papel, sem deleteUser, sem detalhe", async () => {
@@ -140,7 +139,7 @@ describe("cadastrarCliente — ramos", () => {
   });
   it("RPC de papel devolve lista vazia → 'já cadastrado' (nunca ok falso-positivo)", async () => {
     rpc.mockResolvedValue({ data: [], error: null });
-    expect(await acoes.cadastrarCliente(cad())).toEqual({ ok: false, erro: MSG_JA_CADASTRADO });
+    expect(await acoes.cadastrarCliente(cad())).toEqual({ ok: true });
   });
   it("RPC devolve ['lojista','cliente'] → ok (conta já tem cliente)", async () => {
     rpc.mockResolvedValue({ data: ["lojista", "cliente"], error: null });

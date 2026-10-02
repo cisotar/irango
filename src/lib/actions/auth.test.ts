@@ -27,7 +27,7 @@ vi.mock("@/lib/utils/rateLimit", () => ({
  */
 
 const USER_ID = "11111111-1111-1111-1111-111111111111";
-const VERSAO_TERMOS = "2026-06-13"; // D8 do plano — constante do servidor
+import { VERSAO_TERMOS } from "@/lib/constants/termos"; // D8 do plano — constante do servidor
 
 // ── Supabase Auth (server client) ────────────────────────────────────────────
 const signUp = vi.fn();
