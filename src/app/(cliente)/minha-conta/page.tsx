@@ -8,12 +8,23 @@ import { MAX_ENDERECOS } from "@/lib/validacoes/cliente";
 import { ehAdminSaaS } from "@/lib/auth/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormPerfilCliente } from "@/components/cliente/FormPerfilCliente";
+import { LinkVoltarLoja } from "@/components/cliente/LinkVoltarLoja";
+import { comNext } from "@/components/cliente/rotas";
+import { sanitizarNext } from "@/lib/utils/sanitizarNext";
+import { primeiro } from "../conta/sessao";
 import { exigirCliente } from "./guard";
-import { BotaoSair } from "./BotaoSair";
+import { BotaoSair } from "@/components/cliente/BotaoSair";
 import { ExcluirConta } from "./ExcluirConta";
 
-export default async function MinhaContaPage() {
+export default async function MinhaContaPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { supabase, user, perfil, papeis } = await exigirCliente("/minha-conta");
+  // Veio do menu da vitrine: `next=/loja/<slug>` vira "Voltar para <loja>" e
+  // segue nos links internos da conta.
+  const next = sanitizarNext(primeiro((await searchParams).next));
 
   let totalEnderecos: number | null = null;
   try {
@@ -27,9 +38,10 @@ export default async function MinhaContaPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <LinkVoltarLoja next={next} className="self-start" />
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-texto">Minha conta</h1>
-        <BotaoSair />
+        <BotaoSair next={next} />
       </div>
 
       <Card>
@@ -54,7 +66,7 @@ export default async function MinhaContaPage() {
       </Card>
 
       <Link
-        href="/minha-conta/enderecos"
+        href={comNext("/minha-conta/enderecos", next)}
         className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Card className="transition-colors hover:bg-muted/50">
@@ -71,7 +83,7 @@ export default async function MinhaContaPage() {
       </Link>
 
       <Link
-        href="/minha-conta/pedidos"
+        href={comNext("/minha-conta/pedidos", next)}
         className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Card className="transition-colors hover:bg-muted/50">

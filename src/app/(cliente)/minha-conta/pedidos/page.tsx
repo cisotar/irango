@@ -13,6 +13,9 @@ import { montarHistorico, paginaDoParam } from "@/components/cliente/historicoPe
 import { formatarDataHora } from "@/lib/utils/formatarDataHora";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
+import { LinkVoltarLoja } from "@/components/cliente/LinkVoltarLoja";
+import { comNext } from "@/components/cliente/rotas";
+import { sanitizarNext } from "@/lib/utils/sanitizarNext";
 import { primeiro } from "../../conta/sessao";
 import { exigirCliente } from "../guard";
 
@@ -22,7 +25,13 @@ export default async function PedidosClientePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { supabase, user } = await exigirCliente("/minha-conta/pedidos");
-  const pagina = paginaDoParam(primeiro((await searchParams).pagina));
+  const params = await searchParams;
+  const pagina = paginaDoParam(primeiro(params.pagina));
+  const next = sanitizarNext(primeiro(params.next));
+  const hrefMais = `/minha-conta/pedidos?${new URLSearchParams({
+    pagina: String(pagina + 1),
+    ...(next ? { next } : {}),
+  }).toString()}`;
 
   let historico: ReturnType<typeof montarHistorico>;
   try {
@@ -37,8 +46,9 @@ export default async function PedidosClientePage({
 
   return (
     <div className="flex flex-col gap-4">
+      <LinkVoltarLoja next={next} className="self-start" />
       <Link
-        href="/minha-conta"
+        href={comNext("/minha-conta", next)}
         className="inline-flex min-h-11 items-center gap-2 self-start rounded-md text-sm font-medium text-texto underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ArrowLeft className="size-4" aria-hidden="true" />
@@ -89,7 +99,7 @@ export default async function PedidosClientePage({
           className="min-h-11"
           nativeButton={false}
           render={
-            <Link href={`/minha-conta/pedidos?pagina=${pagina + 1}`} scroll={false}>
+            <Link href={hrefMais} scroll={false}>
               Carregar mais
             </Link>
           }

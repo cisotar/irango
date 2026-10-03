@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
 
 import { Carrinho } from "@/components/vitrine/Carrinho";
+import {
+  decidirGavetaConta,
+  lerDispensa,
+  sessionStorageSeguro,
+} from "@/components/vitrine/decisaoGavetaConta";
+import { abrirGavetaConta } from "@/hooks/useGavetaConta";
 import { ID_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
 import { ModalPromocoes } from "@/components/vitrine/ModalPromocoes";
 import { ModalSazonal } from "@/components/vitrine/ModalSazonal";
@@ -48,6 +55,8 @@ type VitrineClientProps = {
    * resolve qual modal abre.
    */
   suprimirPromocoes: boolean;
+  /** Sessão de cliente com e-mail confirmado (SSR). Só o booleano. */
+  clienteLogado: boolean;
 };
 
 /**
@@ -64,9 +73,22 @@ export function VitrineClient({
   diaDeHojeNaLoja,
   modalSazonal,
   suprimirPromocoes,
+  clienteLogado,
 }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
+  const router = useRouter();
+
+  // Sem login, o "Finalizar pedido" abre a gaveta "Sua conta" (a mesma do ☰).
+  // Decidido no clique, não na montagem: a dispensa pode ter sido gravada
+  // nesta aba depois de a vitrine abrir.
+  const pedirConta = useCallback(() => {
+    const dispensado = lerDispensa(sessionStorageSeguro(), lojaSlug);
+    if (!decidirGavetaConta({ logado: clienteLogado, dispensado })) return false;
+    abrirGavetaConta("finalizar");
+    router.prefetch(`/loja/${lojaSlug}/pedido`);
+    return true;
+  }, [clienteLogado, lojaSlug, router]);
 
   // Destino do foco quando o `ModalPromocoes` fecha (234, design §5.3). O
   // `<main>` é renderizado por um IRMÃO client, então a referência é resolvida
@@ -112,8 +134,8 @@ export function VitrineClient({
         onOpenChange={setOpen}
         lojaSlug={lojaSlug}
         lojaId={lojaId}
+        pedirConta={pedirConta}
       />
-
       {/* Trava 7 (design §5.2): renderizado INCONDICIONALMENTE — quem devolve
           `null` quando não há promoção ou o lojista desligou o modal é o
           próprio componente. Duas guardas seria uma a mais para alguém

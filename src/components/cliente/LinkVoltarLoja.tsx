@@ -11,12 +11,20 @@ function slugDoNext(next: string): string | null {
 }
 
 /**
- * "Voltar para <loja>" (decisão 21 / D7): só nas telas `/conta/*`. A loja é
+ * "Voltar para <loja>" (decisão 21 / D7): telas `/conta/*` e `/minha-conta/*`
+ * (estas quando abertas pelo menu da vitrine). A loja é
  * derivada só do `next` sanitizado e buscada na view pública `vitrine_lojas`;
  * `next` fora do padrão, loja inexistente/inativa ou erro de leitura → nada
  * é renderizado (sem espaço reservado). Nome renderizado por JSX (escape).
  */
-export async function LinkVoltarLoja({ next }: { next: string | undefined }) {
+export async function LinkVoltarLoja({
+  next,
+  className = "mb-4",
+}: {
+  next: string | undefined;
+  /** Espaçamento externo: `/conta/*` usa `mb-4`; páginas com `gap` passam `self-start`. */
+  className?: string;
+}) {
   const destino = sanitizarNext(next);
   if (!destino) return null;
   const slug = slugDoNext(destino);
@@ -34,7 +42,7 @@ export async function LinkVoltarLoja({ next }: { next: string | undefined }) {
   return (
     <Link
       href={destino}
-      className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-medium text-texto underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={`${className} inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-medium text-texto underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
     >
       <ArrowLeft className="size-4" aria-hidden="true" />
       Voltar para {nome}

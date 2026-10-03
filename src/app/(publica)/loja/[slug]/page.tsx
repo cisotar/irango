@@ -10,6 +10,8 @@ import {
 } from "@/components/vitrine/layoutVitrine";
 
 import { VitrineClient } from "@/components/vitrine/VitrineClient";
+import { MenuCliente } from "@/components/vitrine/MenuCliente";
+import { sessaoClienteConfirmada } from "@/lib/auth/clienteDaSessao";
 import { montarModalSazonal } from "./montarModalSazonal";
 import { createClient } from "@/lib/supabase/server";
 import { buscarCategorias } from "@/lib/supabase/queries/categorias";
@@ -185,10 +187,13 @@ export default async function VitrinePage({ params }: PageProps) {
   // escopa por `loja_id`, mas a JANELA de exibição NÃO é avaliada em SQL (RN-02)
   // — é decidida abaixo pela função pura, no instante do request. Sob role anon
   // a RLS `modais_sazonais_leitura_publica` só revela o ativo de loja ativa.
-  const [categorias, produtos, modalSazonalAtivo] = await Promise.all([
+  // Sessão de cliente: só o booleano desce (menu da conta e aviso do
+  // "Finalizar pedido"); nenhum dado pessoal no HTML público.
+  const [categorias, produtos, modalSazonalAtivo, clienteLogado] = await Promise.all([
     buscarCategorias(db, lojaId),
     buscarProdutosPublicos(db, lojaId),
     buscarModalSazonalAtivo(db, lojaId),
+    sessaoClienteConfirmada(),
   ]);
   // Contrato de catálogo (224): UM objeto por produto, produzido no servidor e
   // fonte única de preço/selo/comprabilidade. `agora` injetado — a vigência da
@@ -343,6 +348,7 @@ export default async function VitrinePage({ params }: PageProps) {
           horarios={resolverHorarios(loja.horarios)}
           timezone={timezoneLoja}
           whatsapp={loja.whatsapp}
+          menuCliente={<MenuCliente lojaSlug={slug} logado={clienteLogado} />}
         />
 
         {/* Catálogo vazio (RN-4): sem barra e sem wrapper client — o `<main>`
@@ -386,6 +392,7 @@ export default async function VitrinePage({ params }: PageProps) {
           // decisão de supressão, ambos já resolvidos no SSR (RN-09).
           modalSazonal={modalSazonal}
           suprimirPromocoes={suprimirPromocoes}
+          clienteLogado={clienteLogado}
         />
       </div>
     </>

@@ -26,6 +26,11 @@ export type CarrinhoProps = {
   /** [237] Loja da vitrine — a gaveta revisa o carrinho no servidor para
    *  exibir "Você economizou". Sem ela, a linha não existe. */
   lojaId?: string | null;
+  /**
+   * Chamado no "Finalizar pedido": `true` ⇒ a gaveta "Sua conta" abriu e a
+   * navegação para `/pedido` é cancelada (a gaveta fecha do mesmo jeito).
+   */
+  pedirConta?: () => boolean;
 };
 
 export function Carrinho({
@@ -33,6 +38,7 @@ export function Carrinho({
   onOpenChange,
   lojaSlug,
   lojaId = null,
+  pedirConta,
 }: CarrinhoProps) {
   const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho();
 
@@ -173,7 +179,10 @@ export function Carrinho({
               <Button
                 className="min-h-11 bg-[var(--cor-primaria)] text-white hover:bg-[var(--cor-primaria)]/90"
                 nativeButton={false}
-                onClick={() => onOpenChange(false)}
+                onClick={(e) => {
+                  if (pedirConta?.()) e.preventDefault();
+                  onOpenChange(false);
+                }}
                 render={
                   <Link href={`/loja/${lojaSlug}/pedido`} prefetch>
                     Finalizar pedido
