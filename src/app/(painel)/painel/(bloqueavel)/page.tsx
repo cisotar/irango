@@ -30,7 +30,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
         Dashboard
       </h1>
 
-      <DashboardLoja pedidos={pedidos} />
+      <DashboardLoja pedidos={pedidos} timezone={loja.timezone} />
     </div>
   );
 }
