@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   chaveDispensaConta,
-  decidirModalConta,
+  decidirGavetaConta,
   lerDispensa,
   marcarDispensa,
-} from "./decisaoModalConta";
+} from "./decisaoGavetaConta";
 
 function storageEmMemoria(): Storage {
   const m = new Map<string, string>();
@@ -27,17 +27,17 @@ function storageQueLanca(): Storage {
   return { length: 0, clear: lanca, getItem: lanca, key: lanca, removeItem: lanca, setItem: lanca };
 }
 
-describe("decidirModalConta", () => {
+describe("decidirGavetaConta", () => {
   it("convidado que não dispensou → abre", () => {
-    expect(decidirModalConta({ logado: false, dispensado: false })).toBe(true);
+    expect(decidirGavetaConta({ logado: false, dispensado: false })).toBe(true);
   });
 
   it("logado → não abre", () => {
-    expect(decidirModalConta({ logado: true, dispensado: false })).toBe(false);
+    expect(decidirGavetaConta({ logado: true, dispensado: false })).toBe(false);
   });
 
   it("dispensou nesta aba → não abre", () => {
-    expect(decidirModalConta({ logado: false, dispensado: true })).toBe(false);
+    expect(decidirGavetaConta({ logado: false, dispensado: true })).toBe(false);
   });
 });
 
@@ -50,7 +50,7 @@ describe("dispensa por loja", () => {
     expect(s.getItem(chaveDispensaConta("lanches-base"))).toBe("1");
   });
 
-  it("storage ausente ou lançando → não dispensado e sem exceção (o aviso abre)", () => {
+  it("storage ausente ou lançando → não dispensado e sem exceção (a gaveta abre)", () => {
     expect(lerDispensa(null, "x")).toBe(false);
     expect(lerDispensa(storageQueLanca(), "x")).toBe(false);
     expect(() => marcarDispensa(storageQueLanca(), "x")).not.toThrow();

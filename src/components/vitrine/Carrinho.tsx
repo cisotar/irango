@@ -27,7 +27,7 @@ export type CarrinhoProps = {
    *  exibir "Você economizou". Sem ela, a linha não existe. */
   lojaId?: string | null;
   /**
-   * Chamado no "Finalizar pedido": `true` ⇒ o aviso de conta assumiu e a
+   * Chamado no "Finalizar pedido": `true` ⇒ a gaveta "Sua conta" abriu e a
    * navegação para `/pedido` é cancelada (a gaveta fecha do mesmo jeito).
    */
   pedirConta?: () => boolean;

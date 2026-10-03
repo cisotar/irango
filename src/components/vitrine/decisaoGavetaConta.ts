@@ -1,7 +1,7 @@
 /**
- * Decisão do aviso "Já é nosso cliente?" no "Finalizar pedido" — módulo neutro,
- * testável sem jsdom (mesmo molde de `decisaoModalPromocoes.ts`). "Prosseguir
- * sem login" vale até a aba fechar: `sessionStorage`, chave por loja.
+ * Se o "Finalizar pedido" abre a gaveta "Sua conta" antes do checkout — módulo
+ * neutro, testável sem jsdom (mesmo molde de `decisaoModalPromocoes.ts`).
+ * "Prosseguir sem login" vale até a aba fechar: `sessionStorage`, chave por loja.
  */
 
 const PREFIXO_CHAVE = "irango:conta-dispensada:";
@@ -19,7 +19,7 @@ export function sessionStorageSeguro(): Storage | null {
   }
 }
 
-/** Storage ausente ou lançando ⇒ `false`: pior caso o aviso reaparece. */
+/** Storage ausente ou lançando ⇒ `false`: pior caso a gaveta reaparece. */
 export function lerDispensa(storage: Storage | null, slug: string): boolean {
   if (storage === null) return false;
   try {
@@ -38,7 +38,7 @@ export function marcarDispensa(storage: Storage | null, slug: string): void {
   }
 }
 
-export function decidirModalConta({
+export function decidirGavetaConta({
   logado,
   dispensado,
 }: {

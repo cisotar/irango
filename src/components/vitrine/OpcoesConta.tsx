@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { hrefsConta } from "@/components/vitrine/menuCliente";
 
 /**
- * Bloco único de "entrar ou criar conta" do menu da vitrine e do aviso do
- * "Finalizar pedido": o Google em destaque (cria a conta ou entra) e os dois
+ * Bloco de "entrar ou criar conta" da gaveta "Sua conta" (aberta pelo ☰ ou
+ * pelo "Finalizar pedido"): o Google em destaque (cria a conta ou entra) e os dois
  * caminhos por e-mail com o mesmo peso. `next` volta o cliente para a loja.
  */
 export function OpcoesConta({ next }: { next: string | undefined }) {

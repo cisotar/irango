@@ -6,11 +6,11 @@ import { ShoppingCart } from "lucide-react";
 
 import { Carrinho } from "@/components/vitrine/Carrinho";
 import {
-  decidirModalConta,
+  decidirGavetaConta,
   lerDispensa,
   sessionStorageSeguro,
-} from "@/components/vitrine/decisaoModalConta";
-import { ModalConta } from "@/components/vitrine/ModalConta";
+} from "@/components/vitrine/decisaoGavetaConta";
+import { abrirGavetaConta } from "@/hooks/useGavetaConta";
 import { ID_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
 import { ModalPromocoes } from "@/components/vitrine/ModalPromocoes";
 import { ModalSazonal } from "@/components/vitrine/ModalSazonal";
@@ -76,16 +76,16 @@ export function VitrineClient({
   clienteLogado,
 }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
-  const [contaAberta, setContaAberta] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
   const router = useRouter();
 
-  // Decidido no clique (não na montagem): a dispensa pode ter sido gravada
+  // Sem login, o "Finalizar pedido" abre a gaveta "Sua conta" (a mesma do ☰).
+  // Decidido no clique, não na montagem: a dispensa pode ter sido gravada
   // nesta aba depois de a vitrine abrir.
   const pedirConta = useCallback(() => {
     const dispensado = lerDispensa(sessionStorageSeguro(), lojaSlug);
-    if (!decidirModalConta({ logado: clienteLogado, dispensado })) return false;
-    setContaAberta(true);
+    if (!decidirGavetaConta({ logado: clienteLogado, dispensado })) return false;
+    abrirGavetaConta("finalizar");
     router.prefetch(`/loja/${lojaSlug}/pedido`);
     return true;
   }, [clienteLogado, lojaSlug, router]);
@@ -136,14 +136,6 @@ export function VitrineClient({
         lojaId={lojaId}
         pedirConta={pedirConta}
       />
-
-      <ModalConta
-        aberto={contaAberta}
-        onOpenChange={setContaAberta}
-        lojaSlug={lojaSlug}
-        destinoFoco={destinoFoco}
-      />
-
       {/* Trava 7 (design §5.2): renderizado INCONDICIONALMENTE — quem devolve
           `null` quando não há promoção ou o lojista desligou o modal é o
           próprio componente. Duas guardas seria uma a mais para alguém
