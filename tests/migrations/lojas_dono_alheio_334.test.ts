@@ -231,6 +231,21 @@ describe("334 [A] lojas_exige_dono_lojista — dono_id alheio é recusado pelo t
     expect(await contarLojas(t, SEM_SVC)).toBe(1);
     expect(await papeis(t, SEM_SVC)).toEqual(["lojista"]);
   });
+
+  // Achado info do `auditar` da 334: patch de linha inteira (upsert) do próprio
+  // dono leva `dono_id` inalterado no SET e não pode ser recusado.
+  it("[5c] dono authenticated UPDATE com o próprio dono_id no SET → passa; papel ['lojista'] inalterado", async () => {
+    await t.asUser(DONO_UPD, (db) =>
+      db.query(`update public.lojas set dono_id = $1, nome = 'Y334' where id = $2`, [DONO_UPD, lojaUpd]),
+    );
+    const r = await t.asService((db) =>
+      db.query<{ dono_id: string; nome: string }>(`select dono_id, nome from public.lojas where id = $1`, [
+        lojaUpd,
+      ]),
+    );
+    expect(r.rows[0]).toEqual({ dono_id: DONO_UPD, nome: "Y334" });
+    expect(await papeis(t, DONO_UPD)).toEqual(["lojista"]);
+  });
 });
 
 // ===========================================================================
