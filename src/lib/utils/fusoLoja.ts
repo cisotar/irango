@@ -219,5 +219,8 @@ export function rotuloFusoLoja(timezone: string, agora: Date): string {
   })
     .formatToParts(agora)
     .find((p) => p.type === "timeZoneName")?.value;
-  return nome ? `${timezone} (${nome})` : timezone;
+  // Para deslocamento zero, o ICU do Node devolve "GMT" sem sufixo; outros
+  // runtimes devolvem "GMT+0". Normaliza para não depender do runtime.
+  const nomeNormalizado = nome === "GMT" ? "GMT+0" : nome;
+  return nomeNormalizado ? `${timezone} (${nomeNormalizado})` : timezone;
 }
