@@ -1012,6 +1012,7 @@ Endpoints sensíveis precisam de trava por IP — sem isso, brute force em login
 | `validarCupom` | 20/min por IP | anti enumeração de códigos |
 | `calcularFreteAction` | 20/min por IP | anti abuso de lookup externo (ViaCEP + cálculo) |
 | `consultarStatusPedido` | 30/min por IP | anti brute force do par `(id, token_acesso)` — polling da confirmação (issue 128) |
+| `carregarMaisClientes` / `carregarMaisPedidosDoCliente` (`clientesDaLoja`) | 30/min por lojista (`dono_id`, não IP) | action só existe autenticada; contém loop de paginação contra `clientes_da_loja`/`pedidos` (issue 350) |
 
 Implementado em `src/lib/utils/rateLimit.ts` via **`@upstash/ratelimit`** + **`@upstash/redis`** (issue 052). Sliding window por IP/minuto. Supabase Auth tem rate limit interno de login, mas a camada própria cobre todas as Server Actions sensíveis.
 
