@@ -100,3 +100,49 @@ describe("cadastrar — papel, bordas (issue 332)", () => {
     expect(deleteUser).toHaveBeenCalledWith(USER_ID);
   });
 });
+
+/**
+ * Issue 334, fatia B: CARACTERIZAÇÃO (verde desde já, sem mudança de produção).
+ * Com "Confirm email" ON, `signUp` de e-mail já cadastrado e ainda não confirmado
+ * devolve a conta EXISTENTE (id real, `identities` não vazio), sem erro. Estes
+ * casos travam o que `cadastrar` faz hoje nesse cenário.
+ */
+describe("cadastrar — conta existente não confirmada (issue 334)", () => {
+  const ID_EXISTENTE = "33400000-0000-4000-8000-0000000000b1";
+
+  beforeEach(() => {
+    signUp.mockResolvedValue({
+      data: { user: { id: ID_EXISTENTE, email_confirmed_at: null, identities: [{ id: "x" }] } },
+      error: null,
+    });
+  });
+
+  it("conta só-cliente → recusa 'já cadastrado', sem criarLoja nem deleteUser; rpc com o id do signUp", async () => {
+    rpc.mockResolvedValue({ data: ["cliente"], error: null });
+    const r = await cadastrar(PAYLOAD);
+    expect(r).toEqual({ ok: false, erro: "Este email já está cadastrado." });
+    expect(criarLoja).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0][1]).toEqual({ p_usuario_id: ID_EXISTENTE, p_papel: "lojista" });
+  });
+
+  it("conta lojista que já tem loja → recusa 'já cadastrado', sem criarLoja nem deleteUser", async () => {
+    rpc.mockResolvedValue({ data: ["lojista"], error: null });
+    contarLojasDoDono.mockResolvedValue(1);
+    const r = await cadastrar(PAYLOAD);
+    expect(r).toEqual({ ok: false, erro: "Este email já está cadastrado." });
+    expect(criarLoja).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("conta sem papel → ok e cria a loja — risco aceito na issue 334: papel decidido antes da posse do e-mail (ADR §5 item 1)", async () => {
+    rpc.mockResolvedValue({ data: ["lojista"], error: null }); // gravado agora
+    contarLojasDoDono.mockResolvedValue(0);
+    const r = await cadastrar(PAYLOAD);
+    expect(r).toEqual({ ok: true });
+    expect(criarLoja).toHaveBeenCalledTimes(1);
+    expect(criarLoja.mock.calls[0][1]).toMatchObject({ dono_id: ID_EXISTENTE });
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+});
