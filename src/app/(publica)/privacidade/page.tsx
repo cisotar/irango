@@ -32,7 +32,7 @@ export default function PrivacidadePage() {
           Política de Privacidade
         </h1>
         <p className="mb-6 text-sm text-texto-muted">
-          Versão {VERSAO_TERMOS} · Atualizada em 02/10/2026
+          Versão {VERSAO_TERMOS} · Atualizada em 03/10/2026
         </p>
 
         <div className="mb-8">
@@ -88,6 +88,9 @@ export default function PrivacidadePage() {
             <p>
               O recebimento de comunicações de marketing é opcional e vem desmarcado por padrão. Você só recebe se marcar a opção, e pode desmarcá-la depois.
             </p>
+            <p>
+              Ao marcar a opção, você aceita receber promoções das lojas em que compra com a sua conta. Cada loja vê, na sua lista de clientes, se você marcou ou não essa opção.
+            </p>
           </section>
 
           <section className="flex flex-col gap-2">
@@ -105,6 +108,9 @@ export default function PrivacidadePage() {
             </h2>
             <p>
               Seus dados de pedido são compartilhados com a loja na qual você comprou, para que ela possa preparar e entregar o pedido. Não vendemos dados pessoais a terceiros.
+            </p>
+            <p>
+              Se você fez o pedido logado na sua conta de cliente, a loja onde comprou também mantém uma lista de clientes, na qual vê o seu nome, o seu telefone, o dia e o mês do seu aniversário (sem o ano), se você aceitou receber promoções, a quantidade de pedidos e o histórico dos seus pedidos naquela loja. A loja não vê o seu e-mail, a sua data de nascimento completa nem os endereços salvos na sua conta. Pedidos feitos sem conta (como convidado) não entram nessa lista.
             </p>
           </section>
 

@@ -23,7 +23,7 @@ export default function TermosPage() {
           Termos de Uso
         </h1>
         <p className="mb-6 text-sm text-texto-muted">
-          Versão {VERSAO_TERMOS} · Atualizada em 02/10/2026
+          Versão {VERSAO_TERMOS} · Atualizada em 03/10/2026
         </p>
 
         <div className="mb-8">

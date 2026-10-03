@@ -5,4 +5,4 @@
 //   - as páginas públicas /termos e /privacidade (exibem a versão — issue 062)
 // A versão exibida ao usuário SEMPRE bate com a que é gravada no aceite.
 // Bump quando os termos mudarem (futuro: re-consentimento).
-export const VERSAO_TERMOS = "2026-10-02";
+export const VERSAO_TERMOS = "2026-10-03";
