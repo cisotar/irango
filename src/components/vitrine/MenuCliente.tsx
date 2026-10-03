@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Menu, X } from "lucide-react";
 
-import { BotaoSair } from "@/app/(cliente)/minha-conta/BotaoSair";
+import { BotaoSair } from "@/components/cliente/BotaoSair";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -67,7 +67,7 @@ export function MenuCliente({ lojaSlug, logado }: { lojaSlug: string; logado: bo
                 </ul>
               </nav>
               <Separator className="my-3" />
-              <BotaoSair next={next} className="min-h-[44px] justify-start px-2 text-base" />
+              <BotaoSair next={next} className="justify-start px-2 text-base" />
             </>
           ) : (
             <OpcoesConta next={next} />

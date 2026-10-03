@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { sairCliente } from "@/lib/actions/cliente";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
  * D12: "Sair" no topo de /minha-conta e no menu da vitrine. Sem `next` → `/`;
@@ -16,7 +17,7 @@ export function BotaoSair({ next, className }: { next?: string; className?: stri
     <Button
       type="button"
       variant="ghost"
-      className={className ?? "min-h-11"}
+      className={cn("min-h-11", className)}
       disabled={pendente}
       onClick={() =>
         iniciar(async () => {

@@ -29,7 +29,7 @@ export default async function EnderecosPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <LinkVoltarLoja next={next} />
+      <LinkVoltarLoja next={next} className="self-start" />
       <Link
         href={comNext("/minha-conta", next)}
         className="inline-flex min-h-11 items-center gap-2 self-start rounded-md text-sm font-medium text-texto underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

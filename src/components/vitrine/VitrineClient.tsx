@@ -137,7 +137,12 @@ export function VitrineClient({
         pedirConta={pedirConta}
       />
 
-      <ModalConta aberto={contaAberta} onOpenChange={setContaAberta} lojaSlug={lojaSlug} />
+      <ModalConta
+        aberto={contaAberta}
+        onOpenChange={setContaAberta}
+        lojaSlug={lojaSlug}
+        destinoFoco={destinoFoco}
+      />
 
       {/* Trava 7 (design §5.2): renderizado INCONDICIONALMENTE — quem devolve
           `null` quando não há promoção ou o lojista desligou o modal é o

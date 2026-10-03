@@ -13,7 +13,7 @@ import { comNext } from "@/components/cliente/rotas";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
 import { primeiro } from "../conta/sessao";
 import { exigirCliente } from "./guard";
-import { BotaoSair } from "./BotaoSair";
+import { BotaoSair } from "@/components/cliente/BotaoSair";
 import { ExcluirConta } from "./ExcluirConta";
 
 export default async function MinhaContaPage({
@@ -38,7 +38,7 @@ export default async function MinhaContaPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <LinkVoltarLoja next={next} />
+      <LinkVoltarLoja next={next} className="self-start" />
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-texto">Minha conta</h1>
         <BotaoSair next={next} />

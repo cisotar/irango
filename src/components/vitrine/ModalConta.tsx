@@ -1,5 +1,6 @@
 "use client";
 
+import type { RefObject } from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
 
@@ -23,15 +24,18 @@ export function ModalConta({
   aberto,
   onOpenChange,
   lojaSlug,
+  destinoFoco,
 }: {
   aberto: boolean;
   onOpenChange: (aberto: boolean) => void;
   lojaSlug: string;
+  /** O "Finalizar pedido" que abriu o aviso some com a gaveta: o foco volta ao `<main>`. */
+  destinoFoco: RefObject<HTMLElement | null>;
 }) {
   return (
     <Dialog open={aberto} onOpenChange={onOpenChange}>
       {/* ✕ próprio de 44×44: o do shadcn é `icon-sm` (ver ModalPromocoes). */}
-      <DialogContent className="max-w-[420px]" showCloseButton={false}>
+      <DialogContent className="max-w-[420px]" showCloseButton={false} finalFocus={destinoFoco}>
         <button
           type="button"
           onClick={() => onOpenChange(false)}
