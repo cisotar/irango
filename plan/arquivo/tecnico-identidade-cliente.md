@@ -432,6 +432,20 @@ Os casos completos, arquivo por arquivo, estão na issue 332.
    cadastrar-se como lojista, ou usar outro e-mail. A mesma classe de problema já existe hoje para lojista: um
    cadastro com e-mail alheio cria uma loja inativa. O spec P9 decide se vale apagar o perfil não confirmado no
    momento do vínculo; P18 audita.
+
+   **Adendo (issue 334, 2026-10-03) — aceito.** Caso particular: `cadastrar` recebe do `signUp` uma conta
+   pré-existente **não confirmada e sem papel** (resto de falha da RPC logo após outro cadastro) e grava
+   `lojista` nela (pela RPC e pelo trigger no `criarLoja`) antes de a posse do e-mail ser comprovada. Decisão:
+   aceitar, sem mudança de código. Não dá acesso (o painel exige e-mail confirmado; a loja nasce inativa; a senha
+   continua a de quem criou a conta); é variante mais fraca do caso geral acima, já aceito. Com "Confirm email"
+   ligado, o `signUp` devolve a mesma forma para conta nova e para conta existente não confirmada, então não há
+   correção determinística barata: as saídas são checar o e-mail antes do `signUp` (quebra o reenvio de
+   confirmação pelo próprio cadastro), mover papel e loja para depois da confirmação (redesenho do cadastro do
+   lojista, sem fechar o caso porque quem dispara o link escolhe o redirect) ou comparar `created_at` com
+   `now()` (heurística de tempo, rejeitada em §2(f)). Travado por teste de caracterização em
+   `src/lib/actions/auth.cadastrar-papel.test.ts` ("conta existente não confirmada (issue 334)"). Na mesma issue,
+   o trigger `lojas_exige_dono_lojista` passou a recusar sozinho (42501) loja de outro dono pedida por
+   `anon`/`authenticated` (migration `20261003130000_lojas_dono_alheio_recusa.sql`), sem depender da policy.
 2. **Allowlist de redirect (Marco B).** O GoTrue aceita um `redirectTo` com `?contexto=cliente&next=…` quando o
    host bate com a Site URL. Se a Site URL do projeto não for o domínio de produção, a URL precisa casar com um
    padrão da allowlist (`…/**`); caso contrário o GoTrue volta para a Site URL sem dar erro. Conferir no dashboard
