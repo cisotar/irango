@@ -7,7 +7,7 @@ import { BadgeStatusPedido } from "@/components/painel/BadgeStatusPedido";
 import { MenuStatusPedido } from "@/components/painel/MenuStatusPedido";
 import { ProvedorRefreshCoalescido } from "@/components/painel/ProvedorRefreshCoalescido";
 import type { AcaoStatus } from "@/lib/actions/status";
-import { formatarDataHora } from "@/lib/utils/formatarDataHora";
+import { FUSO_PADRAO, formatarDataHora } from "@/lib/utils/formatarDataHora";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import { formatarNumeroPedido } from "@/lib/utils/formatarNumeroPedido";
 import { ROTULO_TIPO_ENTREGA } from "@/lib/utils/rotulosPedido";
@@ -53,15 +53,23 @@ type TabelaPedidosProps = {
   somenteLeitura?: boolean;
   exibirCliente?: boolean;
   exibirData?: boolean;
+  /**
+   * Fuso IANA da loja (`lojas.timezone`, issue 351) para a coluna Hora/Data.
+   * Default = São Paulo, para o hub admin e quem ainda não passa a loja. Sem
+   * ele a hora saía no fuso do SERVIDOR (UTC na Vercel), não no da loja.
+   */
+  timezone?: string;
 };
 
-const formatadorHora = new Intl.DateTimeFormat("pt-BR", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
+const formatadoresHora = new Map<string, Intl.DateTimeFormat>();
 
-function horaLocal(criadoEm: string): string {
-  return formatadorHora.format(new Date(criadoEm));
+function horaLocal(criadoEm: string, timezone: string): string {
+  let f = formatadoresHora.get(timezone);
+  if (f == null) {
+    f = new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
+    formatadoresHora.set(timezone, f);
+  }
+  return f.format(new Date(criadoEm));
 }
 
 /**
@@ -120,8 +128,10 @@ export function TabelaPedidos({
   somenteLeitura = false,
   exibirCliente = true,
   exibirData = false,
+  timezone = FUSO_PADRAO,
 }: TabelaPedidosProps) {
-  const quando = exibirData ? formatarDataHora : horaLocal;
+  const quando = (criadoEm: string): string =>
+    exibirData ? formatarDataHora(criadoEm, timezone) : horaLocal(criadoEm, timezone);
   if (pedidos.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed py-12 text-center">

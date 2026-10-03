@@ -22,6 +22,8 @@ export type PedidosClientProps = {
   basePedidos?: string;
   /** Server Action do selo clicável, repassada a `TabelaPedidos` (issue 329). */
   acaoStatus?: AcaoStatus;
+  /** Fuso IANA da loja, repassado a `TabelaPedidos` (issue 351). */
+  timezone?: string;
 };
 
 type FiltroStatus = "todos" | StatusPedido;
@@ -41,6 +43,7 @@ export function PedidosClient({
   pedidos,
   basePedidos = "/painel/pedidos",
   acaoStatus,
+  timezone,
 }: PedidosClientProps) {
   const [filtro, setFiltro] = useState<FiltroStatus>("todos");
 
@@ -85,6 +88,7 @@ export function PedidosClient({
             pedidos={visiveis}
             basePedidos={basePedidos}
             acaoStatus={acaoStatus}
+            timezone={timezone}
           />
         </CardContent>
       </Card>

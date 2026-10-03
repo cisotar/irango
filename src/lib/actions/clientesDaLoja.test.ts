@@ -9,17 +9,51 @@ const listarPedidos = vi.fn();
 vi.mock("@/lib/supabase/queries/pedidos", () => ({
   listarPedidosDoClienteNaLoja: (...a: unknown[]) => listarPedidos(...a),
 }));
+const verificarRateLimit = vi.fn();
+vi.mock("@/lib/utils/rateLimit", () => ({
+  verificarRateLimit: (...a: unknown[]) => verificarRateLimit(...a),
+}));
 
 import { carregarMaisClientes, carregarMaisPedidosDoCliente } from "./clientesDaLoja";
 
 const ID = "11111111-1111-1111-1111-111111111111";
 const LOJA_ID = "22222222-2222-2222-2222-222222222222";
+const DONO_ID = "33333333-3333-3333-3333-333333333333";
 const CURSOR = { ultimo: "2026-10-02T12:00:00+00:00", id: ID };
 
 beforeEach(() => {
   listar.mockReset().mockResolvedValue([]);
-  buscarLoja.mockReset().mockResolvedValue({ id: LOJA_ID, timezone: "America/Sao_Paulo" });
+  buscarLoja.mockReset().mockResolvedValue({ id: LOJA_ID, dono_id: DONO_ID, timezone: "America/Sao_Paulo" });
   listarPedidos.mockReset().mockResolvedValue([]);
+  verificarRateLimit.mockReset().mockResolvedValue({ permitido: true });
+});
+
+describe("rate limit por lojista (350)", () => {
+  it("carregarMaisClientes: balde `carregarMaisClientes` chaveado pelo dono da loja da sessão", async () => {
+    await carregarMaisClientes(CURSOR);
+    expect(verificarRateLimit).toHaveBeenCalledWith("carregarMaisClientes", DONO_ID);
+  });
+  it("carregarMaisClientes: estourou → erro genérico, sem consultar", async () => {
+    verificarRateLimit.mockResolvedValue({ permitido: false });
+    const r = await carregarMaisClientes(CURSOR);
+    expect(r).toEqual({ ok: false, erro: expect.not.stringMatching(/limite|rate|redis/i) });
+    expect(listar).not.toHaveBeenCalled();
+  });
+  it("carregarMaisPedidosDoCliente: mesmo balde, mesma chave", async () => {
+    await carregarMaisPedidosDoCliente(ID, 1);
+    expect(verificarRateLimit).toHaveBeenCalledWith("carregarMaisClientes", DONO_ID);
+  });
+  it("carregarMaisPedidosDoCliente: estourou → erro genérico, sem consultar", async () => {
+    verificarRateLimit.mockResolvedValue({ permitido: false });
+    const r = await carregarMaisPedidosDoCliente(ID, 1);
+    expect(r).toEqual({ ok: false, erro: expect.not.stringMatching(/limite|rate|redis/i) });
+    expect(listarPedidos).not.toHaveBeenCalled();
+  });
+  it("entrada inválida não gasta cota", async () => {
+    await carregarMaisClientes(undefined);
+    await carregarMaisPedidosDoCliente("x", 1);
+    expect(verificarRateLimit).not.toHaveBeenCalled();
+  });
 });
 
 describe("carregarMaisClientes (346 D10)", () => {

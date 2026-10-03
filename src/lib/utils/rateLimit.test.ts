@@ -93,6 +93,7 @@ describe("LIMITES — chaves de rate limit por action", () => {
       [
         "cadastro",
         "cadastroCliente",
+        "carregarMaisClientes",
         "criarPedido",
         "fretePreview",
         "login",
