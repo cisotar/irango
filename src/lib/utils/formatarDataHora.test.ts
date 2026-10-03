@@ -25,4 +25,16 @@ describe("formatarDataHora", () => {
     // 12:05Z é 09:05 em São Paulo.
     expect(formatarDataHora("2026-01-05T12:05:00Z")).toBe("05/01/2026 09:05");
   });
+
+  it("usa o fuso da loja quando informado (issue 351)", () => {
+    // 17:32Z é 13:32 em Manaus (UTC-4) e 14:32 em São Paulo (UTC-3).
+    expect(formatarDataHora("2026-07-07T17:32:00Z", "America/Manaus")).toBe("07/07/2026 13:32");
+    expect(formatarDataHora("2026-07-07T17:32:00Z", "America/Sao_Paulo")).toBe("07/07/2026 14:32");
+  });
+
+  it("cruza a meia-noite no fuso da loja, não no de São Paulo", () => {
+    // 03:30Z de 08/07 é 23:30 de 07/07 em Manaus, mas já 00:30 de 08/07 em São Paulo.
+    expect(formatarDataHora("2026-07-08T03:30:00Z", "America/Manaus")).toBe("07/07/2026 23:30");
+    expect(formatarDataHora("2026-07-08T03:30:00Z")).toBe("08/07/2026 00:30");
+  });
 });

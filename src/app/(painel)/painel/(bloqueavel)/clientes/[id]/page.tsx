@@ -97,6 +97,7 @@ export default async function DetalheClientePage({
             clienteId={clienteId}
             inicial={brutos.map(paraLinhaPedido)}
             temMaisInicial={brutos.length === POR_PAGINA_PEDIDOS_CLIENTE}
+            timezone={loja.timezone}
           />
         </CardContent>
       </Card>

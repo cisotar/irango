@@ -25,5 +25,5 @@ export default async function PedidosPage(): Promise<ReactElement> {
 
   const pedidos = await listarPedidosDoDono(supabase);
 
-  return <PedidosClient pedidos={pedidos.map(paraLinhaPedido)} />;
+  return <PedidosClient pedidos={pedidos.map(paraLinhaPedido)} timezone={loja.timezone} />;
 }

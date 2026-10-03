@@ -30,10 +30,13 @@ export function DashboardLoja({
   pedidos,
   basePedidos = "/painel/pedidos",
   acaoStatus,
+  timezone,
 }: {
   pedidos: PedidoComItens[];
   basePedidos?: string;
   acaoStatus?: AcaoStatus;
+  /** Fuso IANA da loja, repassado a `TabelaPedidos` (issue 351). */
+  timezone?: string;
 }): ReactElement {
   const metricas = calcularMetricasDoDia(pedidos);
   const recentes = pedidos.slice(0, 20).map(paraLinhaPedido);
@@ -73,6 +76,7 @@ export function DashboardLoja({
             pedidos={recentes}
             basePedidos={basePedidos}
             acaoStatus={acaoStatus}
+            timezone={timezone}
           />
         </CardContent>
       </Card>
