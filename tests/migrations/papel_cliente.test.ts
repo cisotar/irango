@@ -360,7 +360,7 @@ describe("332 [5] lojas_exige_dono_lojista_trg", () => {
     expect(await papeis(t, SEM_U)).toEqual(["lojista"]);
   });
 
-  it("[5f] asUser(B) criando loja com dono_id = A sem papel → recusado pela policy; A continua sem papel", async () => {
+  it("[5f] asUser(B) criando loja com dono_id = A sem papel → recusado (trigger desde a 334, e a policy); A continua sem papel", async () => {
     const e = await erroDe(
       t.asUser(ATACANTE, (db) =>
         db.query(`insert into public.lojas (dono_id, slug, nome) values ($1, 'p332-alheia', 'X')`, [ALVO]),
