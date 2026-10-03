@@ -16,10 +16,13 @@ export function PedidosDoCliente({
   clienteId,
   inicial,
   temMaisInicial,
+  timezone,
 }: {
   clienteId: string;
   inicial: PedidoLinha[];
   temMaisInicial: boolean;
+  /** Fuso IANA da loja (`lojas.timezone`, issue 351) para a coluna Data. */
+  timezone: string;
 }): ReactElement {
   const [pedidos, setPedidos] = useState(inicial);
   const [pagina, setPagina] = useState(1);
@@ -41,7 +44,7 @@ export function PedidosDoCliente({
 
   return (
     <>
-      <TabelaPedidos pedidos={pedidos} somenteLeitura exibirCliente={false} exibirData />
+      <TabelaPedidos pedidos={pedidos} somenteLeitura exibirCliente={false} exibirData timezone={timezone} />
       {temMais && (
         <Button variant="outline" className="min-h-11 self-center" onClick={carregar} disabled={pendente}>
           {pendente ? "Carregando..." : "Carregar mais"}

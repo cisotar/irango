@@ -5,6 +5,8 @@
 //    de auth.uid(). Nunca recebe loja_id do cliente, nunca usa service_role.
 //  - O cursor vindo do browser é revalidado com zod (ambos ou nenhum).
 //  - Erro interno: só o código vai ao log; a UI recebe mensagem genérica (§14).
+//  - Rate limit por lojista (issue 350): a chave é `dono_id` da loja da sessão
+//    (= auth.uid()), depois de `buscarLojaDoDono` e ANTES da consulta paginada.
 
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
@@ -21,6 +23,7 @@ import {
   schemaPaginaPedidosCliente,
 } from "@/lib/validacoes/paginacao";
 import { schemaUuid } from "@/lib/validacoes/uuid";
+import { verificarRateLimit } from "@/lib/utils/rateLimit";
 
 export type ResultadoCarregarClientes = ({ ok: true } & PaginaClientes) | { ok: false; erro: string };
 
@@ -51,6 +54,9 @@ export async function carregarMaisClientes(
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: ERRO_GENERICO };
+    if (!(await verificarRateLimit("carregarMaisClientes", loja.dono_id)).permitido) {
+      return { ok: false, erro: ERRO_GENERICO };
+    }
     const brutos = await listarClientesDaLoja(supabase, {
       ...(mes != null ? { mes } : {}),
       limite: POR_PAGINA_CLIENTES,
@@ -85,6 +91,9 @@ export async function carregarMaisPedidosDoCliente(
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: ERRO_PEDIDOS };
+    if (!(await verificarRateLimit("carregarMaisClientes", loja.dono_id)).permitido) {
+      return { ok: false, erro: ERRO_PEDIDOS };
+    }
     const brutos = await listarPedidosDoClienteNaLoja(supabase, {
       lojaId: loja.id,
       clienteId: clienteId.data,

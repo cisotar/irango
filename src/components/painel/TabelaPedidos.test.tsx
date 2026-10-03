@@ -27,6 +27,21 @@ function render(props: Partial<Parameters<typeof TabelaPedidos>[0]> = {}): strin
   return renderToStaticMarkup(<TabelaPedidos pedidos={[PEDIDO]} {...props} />);
 }
 
+describe("TabelaPedidos fuso da loja (issue 351)", () => {
+  // PEDIDO.criado_em = 12:00Z → 09:00 em São Paulo (UTC-3), 08:00 em Manaus (UTC-4).
+  it("coluna Hora no fuso da loja, não no do servidor", () => {
+    const html = render({ timezone: "America/Manaus" });
+    expect(html).toContain("08:00");
+    expect(html).not.toContain("09:00");
+  });
+  it("sem `timezone` → São Paulo (hub admin inalterado)", () => {
+    expect(render()).toContain("09:00");
+  });
+  it("`exibirData` também segue o fuso da loja", () => {
+    expect(render({ exibirData: true, timezone: "America/Manaus" })).toContain("03/07/2026 08:00");
+  });
+});
+
 describe("TabelaPedidos href", () => {
   it("sem basePedidos, aponta para /painel/pedidos/[id] (default)", () => {
     const html = render();

@@ -46,6 +46,11 @@ export const LIMITES = {
   salvarPerfil: { limite: 10, janela: "1 m" },
   salvarLogoLoja: { limite: 10, janela: "1 m" },
   statusPedido: { limite: 30, janela: "1 m" },
+  // "Carregar mais" do painel de clientes (issue 350): balde por LOJISTA
+  // (auth.uid()), não por IP — a action só existe autenticada. 50 linhas por
+  // página; 30 páginas/min fica acima de qualquer uso humano e fecha o loop
+  // automatizado contra `clientes_da_loja`/`pedidos`.
+  carregarMaisClientes: { limite: 30, janela: "1 m" },
 } as const satisfies Record<string, { limite: number; janela: `${number} m` }>;
 
 export type ChaveRateLimit = keyof typeof LIMITES;
