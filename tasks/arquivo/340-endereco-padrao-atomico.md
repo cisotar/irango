@@ -1,3 +1,15 @@
+**Arquivada em 2026-10-03:** decisão de produto — débito baixíssimo, não vale o custo.
+
+**O problema em termos simples:** o cliente tem vários endereços salvos, um marcado como "padrão"
+(vem pré-selecionado no checkout). Trocar o padrão são dois passos: desmarcar o antigo, marcar o novo.
+Se o segundo falhar, ou se dois cliques correrem juntos, o cliente fica sem nenhum padrão.
+
+**Efeito prático:** o checkout abre sem endereço pré-selecionado e o cliente escolhe de novo.
+Nada quebra, nada vaza, nenhum pedido se perde. Sem dinheiro, sem RLS, sem dado de outra loja.
+
+**Custo do fix:** migration (RPC + trigger), teste pglite, tipos regenerados e `db push` irreversível —
+desproporcional ao efeito. Nenhum código foi alterado. Reabrir se a percepção mudar.
+
 # 340 — Troca e promoção do endereço padrão do cliente em uma única transação
 
 **crítica:** NÃO
