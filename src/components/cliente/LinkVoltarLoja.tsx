@@ -11,7 +11,8 @@ function slugDoNext(next: string): string | null {
 }
 
 /**
- * "Voltar para <loja>" (decisão 21 / D7): só nas telas `/conta/*`. A loja é
+ * "Voltar para <loja>" (decisão 21 / D7): telas `/conta/*` e `/minha-conta/*`
+ * (estas quando abertas pelo menu da vitrine). A loja é
  * derivada só do `next` sanitizado e buscada na view pública `vitrine_lojas`;
  * `next` fora do padrão, loja inexistente/inativa ou erro de leitura → nada
  * é renderizado (sem espaço reservado). Nome renderizado por JSX (escape).

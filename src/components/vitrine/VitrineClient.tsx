@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
 
 import { Carrinho } from "@/components/vitrine/Carrinho";
+import {
+  decidirModalConta,
+  lerDispensa,
+  sessionStorageSeguro,
+} from "@/components/vitrine/decisaoModalConta";
+import { ModalConta } from "@/components/vitrine/ModalConta";
 import { ID_MAIN_VITRINE } from "@/components/vitrine/layoutVitrine";
 import { ModalPromocoes } from "@/components/vitrine/ModalPromocoes";
 import { ModalSazonal } from "@/components/vitrine/ModalSazonal";
@@ -48,6 +55,8 @@ type VitrineClientProps = {
    * resolve qual modal abre.
    */
   suprimirPromocoes: boolean;
+  /** Sessão de cliente com e-mail confirmado (SSR). Só o booleano. */
+  clienteLogado: boolean;
 };
 
 /**
@@ -64,9 +73,22 @@ export function VitrineClient({
   diaDeHojeNaLoja,
   modalSazonal,
   suprimirPromocoes,
+  clienteLogado,
 }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
+  const [contaAberta, setContaAberta] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
+  const router = useRouter();
+
+  // Decidido no clique (não na montagem): a dispensa pode ter sido gravada
+  // nesta aba depois de a vitrine abrir.
+  const pedirConta = useCallback(() => {
+    const dispensado = lerDispensa(sessionStorageSeguro(), lojaSlug);
+    if (!decidirModalConta({ logado: clienteLogado, dispensado })) return false;
+    setContaAberta(true);
+    router.prefetch(`/loja/${lojaSlug}/pedido`);
+    return true;
+  }, [clienteLogado, lojaSlug, router]);
 
   // Destino do foco quando o `ModalPromocoes` fecha (234, design §5.3). O
   // `<main>` é renderizado por um IRMÃO client, então a referência é resolvida
@@ -112,7 +134,10 @@ export function VitrineClient({
         onOpenChange={setOpen}
         lojaSlug={lojaSlug}
         lojaId={lojaId}
+        pedirConta={pedirConta}
       />
+
+      <ModalConta aberto={contaAberta} onOpenChange={setContaAberta} lojaSlug={lojaSlug} />
 
       {/* Trava 7 (design §5.2): renderizado INCONDICIONALMENTE — quem devolve
           `null` quando não há promoção ou o lojista desligou o modal é o

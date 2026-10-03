@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Image from "next/image";
 import { MessageCircle } from "lucide-react";
 
@@ -13,6 +14,8 @@ type HeaderLojaProps = {
   horarios: Parameters<typeof useLojaAberta>[0];
   timezone: string;
   whatsapp?: string | null;
+  /** Botão do menu da conta, no topo esquerdo; o bloco central não se move. */
+  menuCliente?: ReactNode;
 };
 
 /** Formata dígitos do WhatsApp em (DD) NNNNN-NNNN (com ou sem DDI 55). */
@@ -37,11 +40,17 @@ export function HeaderLoja({
   horarios,
   timezone,
   whatsapp,
+  menuCliente,
 }: HeaderLojaProps) {
   const logo = fotoSegura(logoUrl);
 
   return (
-    <header className="bg-[var(--cor-primaria)] px-4 py-2.5 text-white">
+    // Com o menu, `px-14` dos dois lados: o botão (44px) nunca cobre a logo em
+    // tela estreita e o bloco continua centralizado.
+    <header
+      className={`relative bg-[var(--cor-primaria)] py-2.5 text-white ${menuCliente ? "px-14" : "px-4"}`}
+    >
+      {menuCliente ? <div className="absolute top-2 left-2">{menuCliente}</div> : null}
       <div className="mx-auto flex max-w-3xl items-center justify-center gap-4 md:max-w-5xl lg:max-w-6xl xl:max-w-7xl">
         {logo ? (
           <Image

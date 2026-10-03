@@ -20,6 +20,7 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { HeaderLoja } from "@/components/vitrine/HeaderLoja";
+import { MenuCliente } from "@/components/vitrine/MenuCliente";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -169,5 +170,27 @@ describe("render — estrutura e nome", () => {
   it("whatsapp ausente → sem link wa.me", () => {
     const html = render({ whatsapp: undefined });
     expect(html).not.toContain("wa.me");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Menu da conta — slot opcional no topo esquerdo
+// ---------------------------------------------------------------------------
+
+describe("menu da conta", () => {
+  it("sem slot → sem botão de menu e header com px-4", () => {
+    const html = render();
+    expect(html).not.toContain('aria-label="Abrir menu da conta"');
+    expect(html).toContain("px-4");
+  });
+
+  it.each([false, true])("com MenuCliente (logado=%s) → botão no topo esquerdo, gaveta fechada", (logado) => {
+    const html = render({ menuCliente: <MenuCliente lojaSlug="lanches-base" logado={logado} /> });
+    expect(html).toContain('aria-label="Abrir menu da conta"');
+    expect(html).toContain("absolute top-2 left-2");
+    expect(html).toContain("px-14");
+    // Gaveta fechada no SSR: nenhum conteúdo da conta no HTML inicial.
+    expect(html).not.toContain("Sua conta");
+    expect(html).not.toContain("/minha-conta");
   });
 });

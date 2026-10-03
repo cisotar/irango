@@ -21,3 +21,18 @@ export async function resolverClienteDaSessao(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Vitrine pública: só o BOOLEANO "há sessão com e-mail confirmado" desce ao
+ * HTML — nunca nome, e-mail ou id. Qualquer falha ⇒ `false` (menu de convidado).
+ */
+export async function sessaoClienteConfirmada(): Promise<boolean> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    return !error && !!data?.user?.email_confirmed_at;
+  } catch (e) {
+    console.error("[sessaoClienteConfirmada]", e instanceof Error ? e.name : "erro");
+    return false;
+  }
+}

@@ -6,18 +6,21 @@ import { Loader2 } from "lucide-react";
 import { sairCliente } from "@/lib/actions/cliente";
 import { Button } from "@/components/ui/button";
 
-/** D12: "Sair" no topo de /minha-conta; sem `next` → `/` (a action redireciona). */
-export function BotaoSair() {
+/**
+ * D12: "Sair" no topo de /minha-conta e no menu da vitrine. Sem `next` → `/`;
+ * com `next` (sanitizado de novo pela action) → volta para lá.
+ */
+export function BotaoSair({ next, className }: { next?: string; className?: string } = {}) {
   const [pendente, iniciar] = useTransition();
   return (
     <Button
       type="button"
       variant="ghost"
-      className="min-h-11"
+      className={className ?? "min-h-11"}
       disabled={pendente}
       onClick={() =>
         iniciar(async () => {
-          const r = await sairCliente({});
+          const r = await sairCliente(next ? { next } : {});
           if (r && !r.ok) toast.error(r.erro);
         })
       }
