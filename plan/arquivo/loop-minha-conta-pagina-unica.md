@@ -1,5 +1,5 @@
 # Loop · /minha-conta em página única com navegação lateral
-gerado: orquestrar-autonomo · 2026-10-06 10:23 · degrau: 2 · resumo humano: plan/loop-minha-conta-pagina-unica.resumo.md
+gerado: orquestrar-autonomo · 2026-10-06 10:23 · degrau: 2 · resumo humano: plan/arquivo/loop-minha-conta-pagina-unica.resumo.md
 
 ## Pedido
 Refatorar /minha-conta: página única com três seções sempre expandidas (Dados pessoais, Endereços, Pedidos),

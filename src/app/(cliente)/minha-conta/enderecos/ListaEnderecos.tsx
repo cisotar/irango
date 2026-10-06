@@ -130,7 +130,7 @@ export function ListaEnderecos({
 }: {
   enderecos: EnderecoCliente[];
   /** h1 na página dedicada; h2 como seção da página única. */
-  titulo: { nivel: "h1" | "h2"; texto: string; id?: string };
+  titulo: { nivel: "h1"; texto: string; id?: undefined } | { nivel: "h2"; texto: string; id: string };
 }) {
   const Titulo = titulo.nivel;
   // Só um bloco de edição por vez (FormEndereco usa ids fixos).

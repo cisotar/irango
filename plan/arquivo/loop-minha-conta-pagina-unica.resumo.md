@@ -1,5 +1,5 @@
 # Minha conta em uma página só, com menu lateral
-2026-10-06 10:23 · plano detalhado: plan/loop-minha-conta-pagina-unica.md
+2026-10-06 10:23 · plano detalhado: plan/arquivo/loop-minha-conta-pagina-unica.md
 
 **O que você pediu:** trocar a tela "Minha conta" de uma lista de atalhos estreita por uma página que mostra tudo de uma vez (dados, endereços, pedidos) e aproveita a largura do computador, com um menu lateral aberto por um botão no canto.
 

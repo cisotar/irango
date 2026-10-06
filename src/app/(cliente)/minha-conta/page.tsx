@@ -16,7 +16,8 @@ import { ListaEnderecos } from "./enderecos/ListaEnderecos";
 import { primeiro } from "../conta/sessao";
 import { exigirCliente } from "./guard";
 
-const rotulo = (id: IdSecaoConta) => SECOES_CONTA.find((s) => s.id === id)?.rotulo ?? "";
+const ROTULOS = Object.fromEntries(SECOES_CONTA.map((s) => [s.id, s.rotulo])) as Record<IdSecaoConta, string>;
+const rotulo = (id: IdSecaoConta) => ROTULOS[id];
 const idTitulo = (id: IdSecaoConta) => `titulo-${id}`;
 
 /** Seção-âncora: `scroll-mt` deixa o título abaixo do kebab fixo; `tabIndex` recebe o foco da navegação. */

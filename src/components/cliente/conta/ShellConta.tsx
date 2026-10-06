@@ -10,7 +10,7 @@
 // kebab e o `<aside>` existem só no seu breakpoint): nada depende de JS depois
 // do mount, então não há flash. A lista de itens vem de `SECOES_CONTA` e o
 // conteúdo da lateral é um único componente nos dois containers.
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { EllipsisVertical } from "lucide-react";
@@ -182,27 +182,24 @@ export function ShellConta({
     return () => midia.removeEventListener("change", aoMudar);
   }, []);
 
-  const aoClicar = useCallback(
-    (e: MouseEvent<HTMLAnchorElement>, id: IdSecaoConta, naGaveta: boolean) => {
-      if (!cliqueSimples(e)) return;
-      if (!paginaUnica) {
-        // Página dedicada: o Link navega até /minha-conta#<id>; a gaveta fecha.
-        if (naGaveta) setGavetaAberta(false);
-        return;
-      }
-      e.preventDefault();
-      // Âncora na URL sem recarregar (o Next sincroniza o history nativo).
-      window.history.replaceState(null, "", `#${id}`);
-      setAtivaPorScroll(id);
-      if (naGaveta) {
-        destinoPendente.current = id;
-        setGavetaAberta(false);
-      } else {
-        rolarAte(id);
-      }
-    },
-    [paginaUnica],
-  );
+  function aoClicar(e: MouseEvent<HTMLAnchorElement>, id: IdSecaoConta, naGaveta: boolean) {
+    if (!cliqueSimples(e)) return;
+    if (!paginaUnica) {
+      // Página dedicada: o Link navega até /minha-conta#<id>; a gaveta fecha.
+      if (naGaveta) setGavetaAberta(false);
+      return;
+    }
+    e.preventDefault();
+    // Âncora na URL sem recarregar (o Next sincroniza o history nativo).
+    window.history.replaceState(null, "", `#${id}`);
+    setAtivaPorScroll(id);
+    if (naGaveta) {
+      destinoPendente.current = id;
+      setGavetaAberta(false);
+    } else {
+      rolarAte(id);
+    }
+  }
 
   const props = { email, soPerfil, next, ativa };
 
@@ -218,7 +215,11 @@ export function ShellConta({
         aberta={gavetaAberta}
         controla={ID_GAVETA}
         className="fixed top-3 left-3 z-40 lg:hidden"
-        onClick={() => setGavetaAberta(true)}
+        onClick={() => {
+          // Destino de um fechamento anterior que não completou não vale mais.
+          destinoPendente.current = null;
+          setGavetaAberta(true);
+        }}
       />
 
       <aside
