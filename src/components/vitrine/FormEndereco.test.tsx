@@ -12,6 +12,7 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  cepConsultadoInicial,
   FormEndereco,
   montarEnderecoCompleto,
   type EnderecoEntrega,
@@ -111,5 +112,16 @@ describe("FormEndereco — hidratação a partir de enderecoInicial (issue 001)"
     );
     expect(html).not.toContain('value="Av. Paulista"');
     expect(html).not.toContain('value="Bela Vista"');
+  });
+});
+
+describe("cepConsultadoInicial — endereço salvo não consulta o ViaCEP na montagem", () => {
+  it("com enderecoInicial → o CEP dele já conta como consultado (só dígitos)", () => {
+    expect(cepConsultadoInicial(ENDERECO)).toBe("01310100");
+  });
+
+  it("sem enderecoInicial → nada consultado (o 8º dígito digitado consulta)", () => {
+    expect(cepConsultadoInicial(null)).toBeNull();
+    expect(cepConsultadoInicial(undefined)).toBeNull();
   });
 });

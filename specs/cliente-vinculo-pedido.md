@@ -68,10 +68,10 @@ editáveis. Junto do campo de cupom há um link "Entrar" (só sem sessão de cli
 **Behaviors:**
 - [x] Convidado fecha pedido exatamente como hoje: mesmos campos, mesmo payload, mesmos testes verdes; nenhum valor esperado
   de teste existente alterado (gate C3) — só a assinatura da chamada da RPC ganhou `p_cliente_id: null`, autorizado pelo usuário (2026-10-03). Garantido em: Server Action (`schemaPayloadPedido` `.strict()` não muda) + suíte.
-- [ ] Cliente logado abre o checkout e vê nome, telefone e endereço padrão pré-preenchidos. Garantido em: servidor
+- [x] Cliente logado abre o checkout e vê nome, telefone e endereço padrão pré-preenchidos. Garantido em: servidor
   (Server Component lê o perfil com o client da sessão + **RLS** de `clientes`/`clientes_enderecos` do Marco B). É
   só preenchimento de UX: o que vale é o que o payload envia, validado como hoje.
-- [ ] Cliente logado troca o endereço entre os ≤3 salvos ou escolhe "Usar outro endereço". Garantido em: cliente
+- [x] Cliente logado troca o endereço entre os ≤3 salvos ou escolhe "Usar outro endereço". Garantido em: cliente
   (UX). O frete continua recalculado no servidor a partir do CEP enviado (`seguranca.md` §10).
 - [x] Pedido de cliente logado nasce com `cliente_id = auth.uid()`. Garantido em: **Server Action** (`getUser()`
   da sessão; o payload não tem campo `cliente_id`; `.strict()` recusa se vier) + **RPC** (`p_cliente_id`). Só é
@@ -81,7 +81,7 @@ editáveis. Junto do campo de cupom há um link "Entrar" (só sem sessão de cli
   como qualquer cliente (decisão 15). Garantido em: Server Action (mesma regra).
   **[aprovado pelo usuário, 2026-10-03]** comprar na própria loja não é bloqueado: a decisão 15 diz "pode comprar em
   qualquer loja como cliente". O cupom com limite por cliente vale para ele como para qualquer cliente.
-- [ ] Clicar "Entrar" (visível só sem sessão de cliente, junto do campo de cupom) leva a `/conta/entrar` com
+- [x] Clicar "Entrar" (visível só sem sessão de cliente, junto do campo de cupom) leva a `/conta/entrar` com
   "Voltar para <loja>". Depois de entrar (e-mail ou Google, na mesma aba), o cliente volta ao checkout com o
   carrinho intacto e os dados pré-preenchidos. Garantido em: servidor (`sanitizarNext`) + cliente (`sessionStorage`).
   Limite aceito (decisão 21): link de confirmação aberto em outra aba não traz o carrinho.
