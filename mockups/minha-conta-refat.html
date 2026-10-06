@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minha conta — refat (sidebar sanfona)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* Tokens neutros do iRango (globals.css). Mundo cliente: SEM tema de loja (decisão 21). */
+  :root{
+    --fundo:#f5f0e6; --card:#ffffff; --texto:#3e2723; --texto-muted:#6b5d4f;
+    --border:#e5e5e5; --muted:#f5f5f5; --primary:#171717; --primary-fg:#fafafa;
+    --destructive:#e7000b; --radius:.625rem; --primaria:#332616;
+  }
+  html{scroll-behavior:smooth}
+  body{background:var(--fundo);color:var(--texto);font-family:system-ui,-apple-system,sans-serif}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:44px;padding:0 1rem;
+       border-radius:.5rem;font-size:.875rem;font-weight:500;border:1px solid var(--border);background:var(--card);cursor:pointer}
+  .btn-primary{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
+  .btn-destructive{background:color-mix(in srgb,var(--destructive) 12%,#fff);color:var(--destructive);
+       border-color:color-mix(in srgb,var(--destructive) 35%,#fff)}
+  .btn:focus-visible,.lnk:focus-visible,.navlink:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px var(--primary)}
+  .input{width:100%;min-height:44px;padding:0 .75rem;border:1px solid var(--border);border-radius:.5rem;background:#fff;font-size:.875rem;color:var(--texto)}
+  .muted{color:var(--texto-muted)}
+  .badge{display:inline-flex;align-items:center;border-radius:999px;background:var(--primary);color:var(--primary-fg);
+         padding:.125rem .5rem;font-size:.75rem;font-weight:500}
+  .badge-outline{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:999px;
+         padding:.125rem .5rem;font-size:.75rem;font-weight:500}
+  .sep{height:1px;background:var(--border)}
+
+  /* ---------- Navegação lateral ---------- */
+  .navlink{display:flex;align-items:center;gap:.625rem;min-height:44px;padding:0 .75rem;border-radius:.5rem;
+           font-size:.875rem;color:var(--texto);text-decoration:none}
+  .navlink:hover{background:var(--muted)}
+  .navlink[aria-current="true"]{background:var(--muted);font-weight:600;box-shadow:inset 3px 0 0 var(--primaria)}
+
+  #sidebar{display:none}
+  body.nav-aberta #sidebar{display:block}
+  /* Mobile: gaveta sobre o conteúdo, entra pela esquerda (mesmo lado do kebab) */
+  @media (max-width:1023.98px){
+    #sidebar{position:fixed;top:0;left:0;bottom:0;width:16.5rem;z-index:40;background:var(--card);
+             border-right:1px solid var(--border);overflow-y:auto;padding-top:3.5rem}
+    body.nav-aberta #backdrop{display:block;position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.4)}
+  }
+  /* Desktop: painel FIXO na borda esquerda, do topo ao rodapé da tela.
+     `fixed` (não `sticky`): a lateral não acompanha o scroll da página. */
+  @media (min-width:1024px){
+    #sidebar{position:fixed;top:0;left:0;bottom:0;width:16rem;z-index:30;overflow-y:auto;
+             padding-top:3.5rem;background:var(--card);border-right:1px solid var(--border);
+             box-shadow:1px 0 2px rgba(0,0,0,.04)}
+    /* Largura da lateral + respiro entre ela e os cards */
+    body.nav-aberta #conteudo{padding-left:calc(16rem + 2.5rem)}
+    /* Conteúdo não estica sem limite em tela larga; a lateral continua colada na borda */
+    #conteudo{max-width:82rem}
+    #backdrop{display:none !important}
+  }
+  #backdrop{display:none}
+
+  /* Âncoras: o kebab é fixo, a seção não pode parar embaixo dele */
+  section[id]{scroll-margin-top:4.5rem}
+
+  /* ---------- Responsividade horizontal do conteúdo ----------
+     O conteúdo reflui pelo espaço que SOBRA, não pelo tamanho da janela: ao
+     abrir ou fechar a lateral no PC, os grids recalculam as colunas sozinhos.
+     Por isso container query (`@container`), não media query. */
+  #conteudo{container-type:inline-size;transition:padding-left .18s ease}
+  .grid-campos{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))}
+  .grid-cards{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))}
+  .col-2{grid-column:1/-1}
+  .linha-pedido{display:flex;flex-direction:column;gap:.5rem}
+  .linha-pedido>.dados{min-width:0}
+  .linha-pedido>.meta{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+  @container (min-width:34rem){
+    .linha-pedido{flex-direction:row;align-items:center;justify-content:space-between;gap:1.5rem}
+    .linha-pedido>.meta{justify-content:flex-end}
+    .acao-larga{width:auto}
+  }
+  .acao-larga{width:100%}
+
+  /* ---------- Chrome do mockup (só este arquivo, não é tela) ---------- */
+  html.is-frame #chrome{display:none}
+  html:not(.is-frame) #tela{display:none}
+  .moldura{border:1px solid #cbbfa6;border-radius:.75rem;background:#fff;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+  .palco{position:relative;overflow:hidden}
+  .palco>iframe{border:0;display:block;transform-origin:top left}
+  .on{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
+</style>
+</head>
+<body class="min-h-dvh">
+
+<!-- ====================================================================
+     CHROME — página de apresentação (não faz parte da tela)
+     Cada viewport é um iframe real deste mesmo arquivo com ?frame=1,
+     então as media queries valem de verdade (não é container query).
+     ==================================================================== -->
+<div id="chrome" class="mx-auto flex max-w-[1400px] flex-col gap-4 p-4 md:p-8">
+  <header class="flex flex-col gap-1">
+    <h1 class="text-2xl font-semibold">/minha-conta — refatoração</h1>
+    <p class="text-sm muted">Página única com as três seções sempre expandidas + navegação lateral aberta por kebab.
+      No PC a lateral já vem aberta; no mobile ela é gaveta.</p>
+  </header>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <button class="btn" data-vista="ambos">Lado a lado</button>
+    <button class="btn" data-vista="pc">Só PC</button>
+    <button class="btn" data-vista="mobile">Só mobile</button>
+    <a class="btn lnk" href="?frame=1" target="_blank" rel="noopener">Abrir tela em aba cheia</a>
+  </div>
+
+  <div id="palcos" class="flex flex-wrap items-start gap-6">
+    <figure id="fig-pc" class="flex flex-col gap-2">
+      <figcaption class="text-sm font-medium">PC — 1366 × 860 (escala 60%)</figcaption>
+      <div class="moldura palco" style="width:820px;height:516px">
+        <iframe src="?frame=1" width="1366" height="860" style="transform:scale(.6)" title="Minha conta no desktop"></iframe>
+      </div>
+    </figure>
+    <figure id="fig-mobile" class="flex flex-col gap-2">
+      <figcaption class="text-sm font-medium">Mobile — 390 × 844</figcaption>
+      <div class="moldura palco" style="width:390px;height:700px">
+        <iframe src="?frame=1" width="390" height="700" title="Minha conta no mobile"></iframe>
+      </div>
+    </figure>
+  </div>
+
+  <p class="text-sm muted">No mobile toque no kebab (⋮) do canto superior esquerdo para abrir a gaveta.
+    No PC o mesmo kebab fecha e reabre a coluna.</p>
+</div>
+
+<!-- ====================================================================
+     TELA — /minha-conta
+     ==================================================================== -->
+<div id="tela">
+  <div id="backdrop" data-fechar></div>
+
+  <!-- Kebab: fixo no canto superior ESQUERDO, idêntico em PC e mobile -->
+  <button id="kebab" type="button" aria-expanded="false" aria-controls="sidebar"
+          class="btn card fixed left-3 top-3 z-50 size-11 p-0" style="min-height:44px;width:44px">
+    <span class="sr-only">Abrir menu da conta</span>
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/>
+    </svg>
+  </button>
+
+  <div class="flex w-full items-stretch">
+    <!-- Navegação lateral -->
+    <aside id="sidebar" aria-label="Seções da conta">
+      <div class="flex h-full flex-col gap-3 p-3">
+        <p class="px-3 text-base font-semibold" style="color:var(--primaria)">iRango</p>
+        <p class="px-3 text-sm muted">cliente@exemplo.com</p>
+        <div class="sep"></div>
+        <nav class="flex flex-col gap-1">
+          <a class="navlink" href="#dados-pessoais" aria-current="true">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>
+            Dados pessoais
+          </a>
+          <a class="navlink" href="#enderecos">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            Endereços
+          </a>
+          <a class="navlink" href="#pedidos">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 4 6v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6l-2-4Z"/><path d="M4 6h16M9 10a3 3 0 0 0 6 0"/></svg>
+            Pedidos
+          </a>
+        </nav>
+        <div class="sep"></div>
+        <a class="navlink" href="#" style="color:var(--texto-muted)">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          Sair
+        </a>
+
+        <!-- Zona de risco: fim da lateral, separada das seções da página -->
+        <div class="mt-auto flex flex-col gap-2 pt-3">
+          <div class="sep"></div>
+          <button class="btn btn-destructive w-full">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+            Excluir conta
+          </button>
+          <p class="px-1 text-xs muted">Seus dados e endereços serão apagados. Isso não pode ser desfeito.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Conteúdo -->
+    <main id="conteudo" class="min-w-0 flex-1 px-4 pb-10 pt-14 lg:px-10 lg:pt-8">
+      <a class="lnk inline-flex min-h-11 items-center gap-2 text-sm font-medium underline-offset-4 hover:underline" href="#">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Voltar para Padaria Pão Quente
+      </a>
+
+      <h1 class="mt-2 text-2xl font-semibold">Minha conta</h1>
+
+      <div class="mt-5 flex flex-col gap-8">
+
+        <!-- ============ 1. DADOS PESSOAIS ============ -->
+        <section id="dados-pessoais" class="flex flex-col gap-3">
+          <h2 class="text-lg font-semibold">Dados pessoais</h2>
+
+          <div class="card p-4 lg:p-6">
+            <div class="grid-campos">
+              <div class="col-2">
+                <p class="text-sm font-medium">E-mail</p>
+                <p class="text-sm break-all muted">cliente@exemplo.com</p>
+              </div>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium" for="f-nome">Nome</label>
+                <input class="input" id="f-nome" value="Mariana Souza">
+              </div>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium" for="f-tel">Telefone</label>
+                <input class="input" id="f-tel" value="(11) 90000-0000">
+              </div>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium" for="f-nasc">Data de nascimento</label>
+                <input class="input" id="f-nasc" type="date" value="1991-03-14">
+              </div>
+              <label class="col-2 flex min-h-11 cursor-pointer items-center gap-3 text-sm">
+                <input type="checkbox" class="size-4 rounded" style="accent-color:var(--primary)">
+                Quero receber promoções por e-mail
+              </label>
+              <div class="col-2 max-w-xs">
+                <button class="btn btn-primary w-full">Salvar alterações</button>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ============ 2. ENDEREÇOS ============ -->
+        <section id="enderecos" class="flex flex-col gap-3">
+          <div class="flex items-baseline justify-between gap-2">
+            <h2 class="text-lg font-semibold">Endereços</h2>
+            <span class="text-sm muted">2 de 3</span>
+          </div>
+
+          <ul class="grid-cards">
+            <li class="card flex flex-col gap-3 p-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="font-medium">Casa</p><span class="badge">Padrão</span>
+              </div>
+              <div class="text-sm muted">
+                <p>Rua das Acácias, 128, apto 42 — Jardim Primavera</p><p>São Paulo</p>
+              </div>
+              <div class="mt-auto flex flex-wrap gap-2">
+                <button class="btn">Editar</button>
+                <button class="btn">Remover</button>
+              </div>
+            </li>
+            <li class="card flex flex-col gap-3 p-4">
+              <div class="flex flex-wrap items-center gap-2"><p class="font-medium">Trabalho</p></div>
+              <div class="text-sm muted">
+                <p>Avenida Central, 900, sala 12 — Centro</p><p>São Paulo</p>
+              </div>
+              <div class="mt-auto flex flex-wrap gap-2">
+                <button class="btn">Tornar padrão</button>
+                <button class="btn">Editar</button>
+                <button class="btn">Remover</button>
+              </div>
+            </li>
+          </ul>
+
+          <button class="btn acao-larga self-start">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Adicionar endereço
+          </button>
+        </section>
+
+        <!-- ============ 3. PEDIDOS ============ -->
+        <section id="pedidos" class="flex flex-col gap-3">
+          <h2 class="text-lg font-semibold">Pedidos</h2>
+          <div id="lista-pedidos"></div>
+        </section>
+
+      </div>
+
+      <!-- Seletor de cenário: só do mockup, não vai para a tela -->
+      <div class="mt-10 flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-3 text-xs"
+           style="border-color:#cbbfa6">
+        <b>Cenário do mockup</b>
+        <button class="btn" style="min-height:36px" data-cen="cheio">Com pedidos</button>
+        <button class="btn" style="min-height:36px" data-cen="vazio">Sem pedidos</button>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const noFrame = new URLSearchParams(location.search).has("frame");
+if (noFrame) document.documentElement.classList.add("is-frame");
+
+/* ---------- chrome: alternar vistas ---------- */
+if (!noFrame) {
+  const vistas = { ambos:["fig-pc","fig-mobile"], pc:["fig-pc"], mobile:["fig-mobile"] };
+  function vista(v){
+    for (const id of ["fig-pc","fig-mobile"]) document.getElementById(id).hidden = !vistas[v].includes(id);
+    document.querySelectorAll("[data-vista]").forEach(b => b.classList.toggle("on", b.dataset.vista === v));
+  }
+  document.querySelectorAll("[data-vista]").forEach(b => b.onclick = () => vista(b.dataset.vista));
+  vista("ambos");
+}
+
+/* ---------- tela ---------- */
+if (noFrame) {
+  const pedidos = [
+    { loja:"Padaria Pão Quente", data:"05/10/2026 19:42", total:"R$ 48,90", status:"Entregue" },
+    { loja:"Pizzaria do Bairro",  data:"28/09/2026 20:10", total:"R$ 112,00", status:"Entregue" },
+    { loja:"Padaria Pão Quente", data:"15/09/2026 08:25", total:"R$ 23,50", status:"Cancelado" },
+  ];
+
+  function renderPedidos(cenario) {
+    const alvo = document.getElementById("lista-pedidos");
+    if (cenario === "vazio") {
+      alvo.innerHTML = `<div class="card p-8 text-center text-sm muted">Você ainda não fez pedidos com sua conta.</div>`;
+      return;
+    }
+    alvo.innerHTML = `
+      <ul class="flex flex-col gap-3">
+        ${pedidos.map(p => `
+          <li class="card linha-pedido p-4">
+            <div class="dados">
+              <p class="truncate font-medium">${p.loja}</p>
+              <p class="text-sm muted">${p.data}</p>
+            </div>
+            <div class="meta">
+              <span class="badge-outline">${p.status}</span>
+              <p class="font-semibold">${p.total}</p>
+              <a href="#" class="lnk inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">Ver pedido</a>
+            </div>
+          </li>`).join("")}
+      </ul>
+      <button class="btn acao-larga mt-3">Carregar mais</button>`;
+  }
+  document.querySelectorAll("[data-cen]").forEach(b => b.onclick = () => {
+    renderPedidos(b.dataset.cen);
+    document.querySelectorAll("[data-cen]").forEach(x => x.classList.toggle("on", x === b));
+  });
+  renderPedidos("cheio");
+  document.querySelector('[data-cen="cheio"]').classList.add("on");
+
+  /* Abrir/fechar: aberta por padrão no PC, fechada no mobile */
+  const kebab = document.getElementById("kebab");
+  const pc = window.matchMedia("(min-width:1024px)");
+  function setAberta(v) {
+    document.body.classList.toggle("nav-aberta", v);
+    kebab.setAttribute("aria-expanded", String(v));
+    kebab.querySelector(".sr-only").textContent = v ? "Fechar menu da conta" : "Abrir menu da conta";
+  }
+  setAberta(pc.matches);
+  pc.addEventListener("change", e => setAberta(e.matches));
+  kebab.onclick = () => setAberta(!document.body.classList.contains("nav-aberta"));
+  document.getElementById("backdrop").onclick = () => setAberta(false);
+  addEventListener("keydown", e => { if (e.key === "Escape" && !pc.matches) setAberta(false); });
+
+  /* Clique no link rola até a seção; no mobile fecha a gaveta antes */
+  document.querySelectorAll('#sidebar a[href^="#"]').forEach(a => a.onclick = e => {
+    e.preventDefault();
+    if (!pc.matches) setAberta(false);
+    document.querySelector(a.getAttribute("href")).scrollIntoView({ behavior:"smooth", block:"start" });
+  });
+
+  /* Seção visível fica destacada na lateral */
+  const links = [...document.querySelectorAll('#sidebar a[href^="#"]')];
+  const obs = new IntersectionObserver(entradas => {
+    const visivel = entradas.filter(x => x.isIntersecting).sort((a,b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (!visivel) return;
+    links.forEach(l => l.setAttribute("aria-current", String(l.getAttribute("href") === "#" + visivel.target.id)));
+  }, { rootMargin:"-20% 0px -65% 0px" });
+  document.querySelectorAll("section[id]").forEach(s => obs.observe(s));
+}
+</script>
+</body>
+</html>

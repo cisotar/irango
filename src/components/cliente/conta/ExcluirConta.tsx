@@ -1,16 +1,16 @@
 "use client";
 
-// Zona "Excluir conta" (D8): aviso em AlertDialog + digitar EXCLUIR. O servidor
-// valida a mesma palavra (`schemaExcluirConta`) e usa só o uid da sessão.
+// Zona "Excluir conta" (D8), no rodapé da navegação lateral de /minha-conta:
+// botão + frase de consequência; aviso em AlertDialog + digitar EXCLUIR. O
+// servidor valida a mesma palavra (`schemaExcluirConta`) e usa só o uid da sessão.
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 
 import { excluirConta } from "@/lib/actions/cliente";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -25,6 +25,7 @@ const PALAVRA = "EXCLUIR";
 
 export function ExcluirConta({ soPerfil }: { soPerfil: boolean }) {
   const idCampo = useId();
+  const idConsequencia = useId();
   const [aberto, setAberto] = useState(false);
   const [digitado, setDigitado] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -47,23 +48,23 @@ export function ExcluirConta({ soPerfil }: { soPerfil: boolean }) {
   }
 
   return (
-    <Card className="border border-destructive/40">
-      <CardHeader>
-        <CardTitle className="text-destructive">Excluir conta</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Button
-          type="button"
-          variant="destructive"
-          className="min-h-11 w-full"
-          onClick={() => {
-            setDigitado("");
-            setAberto(true);
-          }}
-        >
-          Excluir conta
-        </Button>
-      </CardContent>
+    <div className="flex flex-col gap-2">
+      <Button
+        type="button"
+        variant="destructive"
+        className="min-h-11 w-full"
+        aria-describedby={idConsequencia}
+        onClick={() => {
+          setDigitado("");
+          setAberto(true);
+        }}
+      >
+        <Trash2 aria-hidden="true" />
+        Excluir conta
+      </Button>
+      <p id={idConsequencia} className="px-1 text-xs text-texto-muted">
+        {texto}
+      </p>
 
       <AlertDialog
         open={aberto}
@@ -111,6 +112,6 @@ export function ExcluirConta({ soPerfil }: { soPerfil: boolean }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </div>
   );
 }

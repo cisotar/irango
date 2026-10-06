@@ -42,3 +42,17 @@ export function montarHistorico(paginas: PedidoDoCliente[][]): {
   const ultima = paginas[paginas.length - 1] ?? [];
   return { linhas, temMais: ultima.length >= POR_PAGINA };
 }
+
+/**
+ * "Carregar mais": próxima página via `?pagina=N` na mesma rota, preservando o
+ * `next`; na página única leva a âncora da seção para a URL continuar nela.
+ */
+export function hrefCarregarMais(
+  rota: string,
+  pagina: number,
+  next: string | undefined,
+  ancora?: string,
+): string {
+  const query = new URLSearchParams({ pagina: String(pagina + 1), ...(next ? { next } : {}) });
+  return `${rota}?${query.toString()}${ancora ? `#${ancora}` : ""}`;
+}

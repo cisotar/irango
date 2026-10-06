@@ -2,16 +2,20 @@
 
 import { useTransition } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { sairCliente } from "@/lib/actions/cliente";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * D12: "Sair" no topo de /minha-conta e no menu da vitrine. Sem `next` → `/`;
- * com `next` (sanitizado de novo pela action) → volta para lá.
+ * D12: "Sair" na navegação lateral de /minha-conta e no menu da vitrine. Sem
+ * `next` → `/`; com `next` (sanitizado de novo pela action) → volta para lá.
  */
-export function BotaoSair({ next, className }: { next?: string; className?: string } = {}) {
+export function BotaoSair({
+  next,
+  className,
+  icone = false,
+}: { next?: string; className?: string; icone?: boolean } = {}) {
   const [pendente, iniciar] = useTransition();
   return (
     <Button
@@ -26,7 +30,11 @@ export function BotaoSair({ next, className }: { next?: string; className?: stri
         })
       }
     >
-      {pendente && <Loader2 className="animate-spin" aria-hidden="true" />}
+      {pendente ? (
+        <Loader2 className="animate-spin" aria-hidden="true" />
+      ) : (
+        icone && <LogOut aria-hidden="true" />
+      )}
       Sair
     </Button>
   );

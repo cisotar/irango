@@ -1,5 +1,6 @@
 // /minha-conta/enderecos — até 3 endereços (decisão 8). Guard repetido com a
-// rota da página; lista lida com o client da sessão (RLS por auth.uid()).
+// rota da página; lista lida com o client da sessão (RLS por auth.uid()). O
+// conteúdo é o mesmo da seção "Endereços" de /minha-conta (`ListaEnderecos`).
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -37,7 +38,7 @@ export default async function EnderecosPage({
         <ArrowLeft className="size-4" aria-hidden="true" />
         Minha conta
       </Link>
-      <ListaEnderecos enderecos={enderecos} />
+      <ListaEnderecos enderecos={enderecos} titulo={{ nivel: "h1", texto: "Meus endereços" }} />
     </div>
   );
 }

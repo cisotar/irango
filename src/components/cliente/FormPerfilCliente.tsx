@@ -45,7 +45,7 @@ type Props =
       avisoPainel: boolean;
       next?: string;
     }
-  | { modo: "editar"; inicial: ValoresPerfil };
+  | { modo: "editar"; inicial: ValoresPerfil; email: string };
 
 function validarPerfil(v: ValoresPerfil): Erros {
   const erros: Erros = {};
@@ -120,6 +120,11 @@ export function FormPerfilCliente(props: Props) {
   }
 
   const formId = id("form");
+  // Editar (seção de /minha-conta): grade auto-fit pela largura do container;
+  // e-mail, promoções e "Salvar" ocupam a linha toda (`col-span-full`, sem
+  // efeito no layout em coluna do modo completar). O <form> vira `contents`
+  // para os campos serem células da grade.
+  const editar = props.modo === "editar";
   const erroCampo = (chave: keyof Erros) =>
     erros[chave] ? (
       <p id={id(`${chave}-erro`)} className="text-sm text-destructive">
@@ -128,7 +133,18 @@ export function FormPerfilCliente(props: Props) {
     ) : null;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div
+      className={
+        editar ? "grid grid-cols-[repeat(auto-fit,minmax(min(15rem,100%),1fr))] gap-4" : "flex flex-col gap-5"
+      }
+    >
+      {props.modo === "editar" && (
+        <div className="col-span-full">
+          <p className="text-sm font-medium text-texto">E-mail</p>
+          <p className="text-sm break-all text-texto-muted">{props.email}</p>
+        </div>
+      )}
+
       {props.modo === "completar" && props.avisoPainel && (
         <p className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm text-texto">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -136,11 +152,15 @@ export function FormPerfilCliente(props: Props) {
         </p>
       )}
 
-      {erroGeral && <AlertaErro>{erroGeral}</AlertaErro>}
+      {erroGeral && (
+        <div className="col-span-full">
+          <AlertaErro>{erroGeral}</AlertaErro>
+        </div>
+      )}
 
       {/* FormEndereco tem o próprio <form>: o bloco de endereço fica FORA deste
           form (sem form aninhado) e o botão final aponta para ele via `form=`. */}
-      <form id={formId} onSubmit={enviar} noValidate className="flex flex-col gap-4">
+      <form id={formId} onSubmit={enviar} noValidate className={editar ? "contents" : "flex flex-col gap-4"}>
         <div className="space-y-2">
           <Label htmlFor={id("nome")}>Nome</Label>
           <Input
@@ -191,7 +211,7 @@ export function FormPerfilCliente(props: Props) {
         </fieldset>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="col-span-full flex flex-col gap-2">
         <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-texto">
           <Checkbox
             checked={valores.aceita_marketing}
@@ -225,7 +245,12 @@ export function FormPerfilCliente(props: Props) {
         )}
       </div>
 
-      <Button type="submit" form={formId} className="min-h-11 w-full" disabled={enviando}>
+      <Button
+        type="submit"
+        form={formId}
+        className={editar ? "col-span-full min-h-11 w-full max-w-xs" : "min-h-11 w-full"}
+        disabled={enviando}
+      >
         {enviando && <Loader2 className="animate-spin" aria-hidden="true" />}
         {props.modo === "completar" ? "Salvar e continuar" : "Salvar alterações"}
       </Button>
