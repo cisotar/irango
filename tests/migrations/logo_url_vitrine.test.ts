@@ -37,7 +37,9 @@ const DONO_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const SLUG_A = "loja-a-logo"; // ativa, tem logo https
 const SLUG_INATIVA = "loja-inativa-logo"; // inativa — não pode aparecer na view
 
-const LOGO_HTTPS = "https://cdn.exemplo.com/lojas/a/logo.png";
+// Desde M4 (fotos_exigem_galeria) toda logo gravada precisa ser imagem registrada
+// da própria loja: o cenário registra `<loja>/logo/inicial.png` e grava a URL dela.
+const logoInicial = (lojaId: string) => urlStorage(`${lojaId}/logo/inicial.png`);
 
 type Lojas = { lojaA: string; lojaInativa: string };
 
@@ -53,26 +55,32 @@ async function garantirDonos(t: TestDb): Promise<void> {
 
 /**
  * Cria via asService:
- *   A        ativa   (dono A) com logo_url = LOGO_HTTPS,
- *   inativa  inativa (dono B) com logo_url = LOGO_HTTPS.
- * Os INSERTs já gravam `logo_url` — se a coluna não existir, criar o cenário
- * falha no beforeAll, o que é parte legítima do RED desta issue.
+ *   A        ativa   (dono A) com logo_url = logoInicial(A),
+ *   inativa  inativa (dono B) com logo_url = logoInicial(inativa).
+ * Loja nasce sem logo; a imagem é registrada e a logo gravada em seguida (M4).
  */
 async function criarCenario(t: TestDb): Promise<Lojas> {
   await garantirDonos(t);
-  return t.asService(async (db) => {
+  const ids = await t.asService(async (db) => {
     const a = await db.query<{ id: string }>(
-      `insert into public.lojas (dono_id, slug, nome, ativo, logo_url)
-       values ($1, $2, 'Loja A', true, $3) returning id`,
-      [DONO_A, SLUG_A, LOGO_HTTPS],
+      `insert into public.lojas (dono_id, slug, nome, ativo)
+       values ($1, $2, 'Loja A', true) returning id`,
+      [DONO_A, SLUG_A],
     );
     const inativa = await db.query<{ id: string }>(
-      `insert into public.lojas (dono_id, slug, nome, ativo, logo_url)
-       values ($1, $2, 'Loja Inativa', false, $3) returning id`,
-      [DONO_B, SLUG_INATIVA, LOGO_HTTPS],
+      `insert into public.lojas (dono_id, slug, nome, ativo)
+       values ($1, $2, 'Loja Inativa', false) returning id`,
+      [DONO_B, SLUG_INATIVA],
     );
     return { lojaA: a.rows[0].id, lojaInativa: inativa.rows[0].id };
   });
+  for (const id of [ids.lojaA, ids.lojaInativa]) {
+    await registrarImagem(t, id, `${id}/logo/inicial.png`);
+    await t.asService((db) =>
+      db.query(`update public.lojas set logo_url = $2 where id = $1`, [id, logoInicial(id)]),
+    );
+  }
+  return ids;
 }
 
 /** Reconfere via service o logo_url atual de uma loja — fonte de verdade. */
@@ -107,7 +115,7 @@ describe("001 lojas.logo_url + vitrine_lojas (TDD red-first)", () => {
     );
     expect(r.rows.length).toBe(1);
     expect(r.rows[0].id).toBe(ids.lojaA);
-    expect(r.rows[0].logo_url).toBe(LOGO_HTTPS);
+    expect(r.rows[0].logo_url).toBe(logoInicial(ids.lojaA));
   });
 
   // ───────────────────── [2] loja INATIVA não aparece (filtro ativo=true)

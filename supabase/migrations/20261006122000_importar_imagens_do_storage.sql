@@ -43,6 +43,7 @@ begin
      and split_part(o.name, '/', 1) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
      and strpos(o.name, '/') > 0
      and position('..' in o.name) = 0
+     and o.name !~ '[%?#\\]|//'
      and o.metadata ->> 'mimetype' in ('image/jpeg', 'image/png', 'image/webp')
      and not starts_with(o.name, l.id::text || '/galeria/mini/')
      and not exists (select 1 from public.imagens_loja m where m.miniatura_caminho = o.name)

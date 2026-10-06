@@ -33,13 +33,18 @@ create table public.imagens_loja (
   -- Cópia e original sempre da mesma loja; apagar a original apaga as cópias.
   constraint imagens_loja_origem_fk foreign key (origem_id, loja_id)
     references public.imagens_loja (id, loja_id) on delete cascade,
-  -- Linha da loja A nunca aponta para objeto da pasta da loja B.
+  -- Linha da loja A nunca aponta para objeto da pasta da loja B. Também recusa
+  -- `%`, `?`, `#`, `\` e `//`: o navegador normaliza `%2e%2e` e a vitrine de A
+  -- exibiria imagem pública de B.
   constraint imagens_loja_caminho_da_loja
-    check (starts_with(caminho, loja_id::text || '/') and position('..' in caminho) = 0),
+    check (starts_with(caminho, loja_id::text || '/')
+           and position('..' in caminho) = 0
+           and caminho !~ '[%?#\\]|//'),
   constraint imagens_loja_miniatura_da_loja
     check (miniatura_caminho is null
            or (starts_with(miniatura_caminho, loja_id::text || '/')
-               and position('..' in miniatura_caminho) = 0)),
+               and position('..' in miniatura_caminho) = 0
+               and miniatura_caminho !~ '[%?#\\]|//')),
   constraint imagens_loja_recorte_sem_miniatura
     check (origem_id is null or miniatura_caminho is null)
 );
@@ -108,3 +113,44 @@ $$;
 
 revoke all on function public.caminho_storage_produtos(text) from public, anon;
 grant execute on function public.caminho_storage_produtos(text) to authenticated, service_role;
+
+-- ── Cópia só de original disponível ─────────────────────────────────────────
+-- A FK composta confere só a existência da original. Sem esta trava, uma action
+-- de recorte que validou a origem antes de uma remoção concorrente inseriria a
+-- cópia depois do commit da remoção; o DELETE da original (passo 11) levaria a
+-- linha da cópia em cascata com um produto ainda apontando para ela.
+-- FOR KEY SHARE espera o FOR UPDATE da remoção e relê a linha já pendente.
+-- INVOKER: o lojista enxerga pela RLS só a própria loja (e tem UPDATE de coluna,
+-- exigido pelo FOR KEY SHARE); service_role ignora RLS.
+create or replace function public.galeria_exige_origem_disponivel()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_pendente timestamptz;
+  v_origem   uuid;
+begin
+  select o.remocao_pendente_em, o.origem_id
+    into v_pendente, v_origem
+    from public.imagens_loja o
+   where o.id = new.origem_id
+     and o.loja_id = new.loja_id
+     for key share;
+  -- Inexistente ou de outra loja: a FK composta recusa (23503, imagens_loja_origem_fk).
+  if found and (v_pendente is not null or v_origem is not null) then
+    raise exception 'imagens_loja: origem indisponível' using errcode = '23503';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.galeria_exige_origem_disponivel() from public, anon, authenticated, service_role;
+
+drop trigger if exists imagens_loja_origem_disponivel_trg on public.imagens_loja;
+create trigger imagens_loja_origem_disponivel_trg
+  before insert on public.imagens_loja
+  for each row
+  when (new.origem_id is not null)
+  execute function public.galeria_exige_origem_disponivel();

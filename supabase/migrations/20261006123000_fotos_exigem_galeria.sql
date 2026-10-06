@@ -21,6 +21,10 @@
 -- dado (marcas de pendência já feitas ficam; a varredura apaga do Storage).
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Os CREATE TRIGGER pegam SHARE ROW EXCLUSIVE em produtos/lojas na mesma
+-- transação da reimportação: falhar rápido em vez de enfileirar escritas.
+set local lock_timeout = '5s';
+
 -- Reimporta o que o código antigo subiu entre o 1º push e o deploy.
 do $$
 begin
@@ -49,12 +53,18 @@ begin
   if tg_table_name = 'produtos' then
     -- INSERT OR UPDATE no mesmo trigger: o WHEN não pode citar OLD, então a
     -- comparação com o valor antigo fica aqui.
-    if tg_op = 'UPDATE' and new.foto_url is not distinct from old.foto_url then
+    if tg_op = 'UPDATE'
+       and new.foto_url is not distinct from old.foto_url
+       and new.loja_id is not distinct from old.loja_id then
       return new;
     end if;
     v_loja := new.loja_id;
     v_url  := new.foto_url;
   else
+    -- INSERT OR UPDATE: o WHEN não pode citar OLD.
+    if tg_op = 'UPDATE' and new.logo_url is not distinct from old.logo_url then
+      return new;
+    end if;
     v_loja := new.id;
     v_url  := new.logo_url;
   end if;
@@ -84,20 +94,20 @@ begin
 end;
 $$;
 
-revoke all on function public.galeria_exige_imagem_registrada() from public, anon, authenticated;
+revoke all on function public.galeria_exige_imagem_registrada() from public, anon, authenticated, service_role;
 
 drop trigger if exists produtos_foto_na_galeria_trg on public.produtos;
 create trigger produtos_foto_na_galeria_trg
-  before insert or update of foto_url on public.produtos
+  before insert or update of foto_url, loja_id on public.produtos
   for each row
   when (new.foto_url is not null)
   execute function public.galeria_exige_imagem_registrada();
 
 drop trigger if exists lojas_logo_na_galeria_trg on public.lojas;
 create trigger lojas_logo_na_galeria_trg
-  before update of logo_url on public.lojas
+  before insert or update of logo_url on public.lojas
   for each row
-  when (new.logo_url is not null and new.logo_url is distinct from old.logo_url)
+  when (new.logo_url is not null)
   execute function public.galeria_exige_imagem_registrada();
 
 -- ── AFTER: recorte que perdeu o último uso fica pendente ────────────────────
@@ -120,7 +130,9 @@ declare
   v_id      uuid;
 begin
   if tg_table_name = 'produtos' then
-    if tg_op = 'UPDATE' and new.foto_url is not distinct from old.foto_url then
+    if tg_op = 'UPDATE'
+       and new.foto_url is not distinct from old.foto_url
+       and new.loja_id is not distinct from old.loja_id then
       return null;
     end if;
     v_loja    := old.loja_id;
@@ -178,7 +190,7 @@ revoke all on function public.galeria_marca_recorte_sem_uso() from public, anon,
 
 drop trigger if exists produtos_recorte_sem_uso_trg on public.produtos;
 create trigger produtos_recorte_sem_uso_trg
-  after update of foto_url or delete on public.produtos
+  after update of foto_url, loja_id or delete on public.produtos
   for each row
   when (old.foto_url is not null)
   execute function public.galeria_marca_recorte_sem_uso();
