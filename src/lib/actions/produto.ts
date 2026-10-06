@@ -47,6 +47,10 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { revalidatePath } from "next/cache";
+// Galeria (D5, RN-G20): o trigger AFTER marca o recorte que perdeu o uso; a
+// action apaga do Storage depois do save, best-effort.
+import { erroDeEscritaDeImagem } from "@/lib/actions/galeria-contrato";
+import { processarRemocoesPendentes } from "@/lib/actions/galeria-pendentes";
 
 export type ResultadoGestaoProduto = { ok: true } | { ok: false; erro: string };
 export type ResultadoGestaoCategoria =
@@ -57,6 +61,7 @@ const CAMINHO_PAINEL = "/painel/cardapio";
 
 /** A genérica de escrita de produto, declarada uma vez (`seguranca.md` §14). */
 const MSG_SALVAR_PRODUTO = "Não foi possível salvar o produto.";
+const MSG_REMOVER_PRODUTO = "Não foi possível remover o produto.";
 
 /**
  * [293] A genérica ÚNICA de reordenação (`seguranca.md` §14). Mesma frase de
@@ -199,6 +204,10 @@ export async function atualizarProduto(
       // vira frase acionável; o resto segue genérico.
       return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR_PRODUTO) };
     }
+    // Best-effort (D5): falha nunca derruba a escrita já feita.
+    await processarRemocoesPendentes(supabase, loja.id).catch((e: unknown) =>
+      console.error("[produto] pendentes da galeria", e),
+    );
     revalidatePath(CAMINHO_PAINEL);
     return { ok: true };
   } catch (e) {
@@ -294,7 +303,7 @@ export async function removerProduto(
   id: string,
 ): Promise<ResultadoGestaoProduto> {
   if (!schemaIdProduto.safeParse(id).success) {
-    return { ok: false, erro: "Não foi possível remover o produto." };
+    return { ok: false, erro: MSG_REMOVER_PRODUTO };
   }
 
   try {
@@ -313,13 +322,17 @@ export async function removerProduto(
       .eq("loja_id", loja.id);
     if (error) {
       console.error("[removerProduto]", error);
-      return { ok: false, erro: "Não foi possível remover o produto." };
+      return { ok: false, erro: erroDeEscritaDeImagem(error, MSG_REMOVER_PRODUTO) };
     }
+    // Best-effort (D5): falha nunca derruba a escrita já feita.
+    await processarRemocoesPendentes(supabase, loja.id).catch((e: unknown) =>
+      console.error("[produto] pendentes da galeria", e),
+    );
     revalidatePath(CAMINHO_PAINEL);
     return { ok: true };
   } catch (e) {
     console.error("[removerProduto]", e);
-    return { ok: false, erro: "Não foi possível remover o produto." };
+    return { ok: false, erro: erroDeEscritaDeImagem(e, MSG_REMOVER_PRODUTO) };
   }
 }
 

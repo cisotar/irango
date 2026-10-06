@@ -47,6 +47,10 @@ import {
   type EscopoLoja,
 } from "@/lib/actions/admin-loja";
 import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
+// Galeria (D5, RN-G20): mesma tradução de erro e mesmo processamento de
+// pendentes do lojista — o trigger de M4 vale também sob service_role.
+import { erroDeEscritaDeImagem } from "@/lib/actions/galeria-contrato";
+import { processarRemocoesPendentes } from "@/lib/actions/galeria-pendentes";
 // [322] Frequência de exibição: MESMO zod e MESMO contrato do lojista.
 import {
   schemaAplicarFrequencia,
@@ -63,6 +67,7 @@ type Resultado = { ok: true } | { ok: false; erro: string };
 
 /** A genérica de escrita de produto (`seguranca.md` §14), declarada uma vez. */
 const MSG_SALVAR = "Não foi possível salvar o produto.";
+const MSG_REMOVER = "Não foi possível remover o produto.";
 
 /**
  * Confere que `categoriaId` pertence à LOJA-ALVO. Sem RLS por dono aqui (service_
@@ -275,6 +280,8 @@ export async function atualizarProdutoAdmin(
       acao: "produto.atualizar",
       entidadeId: id,
     });
+    // Best-effort: nunca rejeita (falha vai para o log e é retentada).
+    await processarRemocoesPendentes(svc, loja.lojaId);
     revalidarLojaAdmin(loja.lojaId);
     return { ok: true };
   } catch (e) {
@@ -297,18 +304,19 @@ export async function removerProdutoAdmin(
     const { error } = await escopo.remover("produtos", id);
     if (error) {
       console.error("[removerProdutoAdmin]", error);
-      return { ok: false, erro: "Não foi possível remover o produto." };
+      return { ok: false, erro: erroDeEscritaDeImagem(error, MSG_REMOVER) };
     }
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
       acao: "produto.remover",
       entidadeId: id,
     });
+    await processarRemocoesPendentes(svc, loja.lojaId);
     revalidarLojaAdmin(loja.lojaId);
     return { ok: true };
   } catch (e) {
     console.error("[removerProdutoAdmin]", e);
-    return { ok: false, erro: "Não foi possível remover o produto." };
+    return { ok: false, erro: erroDeEscritaDeImagem(e, MSG_REMOVER) };
   }
 }
 

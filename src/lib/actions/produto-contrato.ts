@@ -22,6 +22,7 @@ import {
   ehMensagemDescontoMaiorQuePreco,
 } from "@/lib/validacoes/produto";
 import { instanteNoFuso } from "@/lib/utils/fusoLoja";
+import { erroDeEscritaDeImagem } from "@/lib/actions/galeria-contrato";
 
 /** Forma já validada/normalizada do produto — o que pode chegar ao banco. */
 export type DadosProduto = ReturnType<typeof schemaProduto.parse>;
@@ -94,9 +95,11 @@ export function ehErroDeExclusivoSemCardapio(erro: unknown): boolean {
 }
 
 /**
- * Erro de ESCRITA de produto → mensagem para quem salvou. A recusa de RN-14
- * vira a frase acionável; todo o resto (23514 dos CHECKs de desconto, falha de
- * rede, qualquer outro código) continua genérico, com o texto cru só no log.
+ * Erro de ESCRITA de produto → mensagem para quem salvou. Viram frase acionável:
+ * a recusa de RN-14, a do trigger de M4 da galeria (`foto_url` fora da galeria)
+ * e o deadlock com a remoção de imagens. Todo o resto (23514 dos CHECKs de
+ * desconto, falha de rede, qualquer outro código) continua genérico, com o
+ * texto cru só no log.
  */
 export function erroDeEscritaDeProduto(
   erro: unknown,
@@ -104,7 +107,7 @@ export function erroDeEscritaDeProduto(
 ): string {
   return ehErroDeExclusivoSemCardapio(erro)
     ? MSG_EXCLUSIVO_SEM_CARDAPIO
-    : generica;
+    : erroDeEscritaDeImagem(erro, generica);
 }
 
 export function comPrazosNoFuso(
