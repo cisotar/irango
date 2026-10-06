@@ -46,6 +46,7 @@ import {
   salvarOcultacoesOpcionais,
 } from "@/lib/actions/opcional";
 import { enviarFotoProduto } from "@/lib/actions/upload";
+import { enviarImagemGaleria, listarImagensGaleria } from "@/lib/actions/galeria";
 import {
   projetarPromocaoDoPainel,
   type PromocaoDoPainel,
@@ -173,6 +174,8 @@ export default async function ProdutosPage(): Promise<ReactElement> {
         atualizarProduto,
         atualizarNomeEPreco,
         enviarFotoProduto,
+        listarImagensGaleria,
+        enviarImagemGaleria,
         criarCategoria,
         atualizarCategoria,
         removerCategoria,

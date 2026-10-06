@@ -37,6 +37,7 @@ import {
   UploadFotoProduto,
   type EnviarFotoProduto,
 } from "@/components/painel/UploadFotoProduto";
+import type { EnviarParaGaleria, ListarGaleria } from "@/components/painel/fluxoRecorte";
 
 /** Um id só para os DOIS inputs do par: D10 é erro de par, não de campo. */
 const ID_ERRO_PAR = "produto-erro-preco-desconto";
@@ -98,6 +99,10 @@ export type FormProdutoProps = {
   onAtualizar: typeof atualizarProdutoLojista;
   /** Repassada ao `UploadFotoProduto` (a variante admin escopa o path por `lojaId`). */
   onEnviarFoto: EnviarFotoProduto;
+  /** Galeria da MESMA loja para o seletor da foto (admin: variante por `lojaId`). */
+  onListarGaleria: ListarGaleria;
+  /** Original de um arquivo novo vai para a galeria antes do recorte (P3). */
+  onEnviarParaGaleria: EnviarParaGaleria;
   /**
    * Linha de fuso exibida ao lado dos campos de prazo, pronta do servidor
    * (ex.: `America/Sao_Paulo (GMT-3)`). É OBRIGATÓRIA por desenho (§8.1): data
@@ -170,6 +175,8 @@ export function FormProduto({
   onCriar,
   onAtualizar,
   onEnviarFoto,
+  onListarGaleria,
+  onEnviarParaGaleria,
   fusoLojaRotulo,
   cardapiosDoProduto,
   hrefCardapios,
@@ -364,6 +371,8 @@ export function FormProduto({
         onUploadConcluido={(url) => setFotoUrl(url || null)}
         disabled={enviando}
         onEnviar={onEnviarFoto}
+        onListarGaleria={onListarGaleria}
+        onEnviarParaGaleria={onEnviarParaGaleria}
       />
 
       <div className="space-y-1">

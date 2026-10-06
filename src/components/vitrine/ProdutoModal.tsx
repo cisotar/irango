@@ -32,6 +32,7 @@ import type { GrupoOpcional } from "@/lib/supabase/queries/produtos";
 import type { ProdutoVitrine } from "@/lib/utils/catalogoVitrine";
 import type { OpcionalCarrinho } from "@/types/dominio";
 import { linhaCarrinhoId, useCarrinho } from "@/hooks/useCarrinho";
+import { CLASSE_DIALOG_TELA_CHEIA } from "@/components/shared/dialogTelaCheia";
 
 // Emoji fixo e único do fallback do campo de imagem (RN-9, spec
 // toggle-imagens-por-categoria.md) — sem customização, sem campo novo.
@@ -292,7 +293,7 @@ export function ProdutoModal({
         // [289/RN-6] Só quando quem abriu pediu: ausente ⇒ o Base UI devolve o
         // foco ao gatilho, exatamente como hoje no caminho do card/linha.
         {...(focoDeSaida ? { finalFocus: focoDeSaida } : {})}
-        className="gap-0 p-0 top-0 left-0 translate-x-0 translate-y-0 h-dvh max-h-none w-screen max-w-none rounded-none md:top-1/2 md:left-1/2 md:h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-2rem)] md:w-[calc(100vw-2rem)] md:max-w-lg md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl [&>button.absolute]:hidden"
+        className={CLASSE_DIALOG_TELA_CHEIA}
       >
         {/* Coluna ÚNICA — header faixa primária + corpo rolável + footer fixo,
             igual nos dois breakpoints. min-h-0/min-w-0 deixam o overflow funcionar. */}

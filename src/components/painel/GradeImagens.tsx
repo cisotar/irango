@@ -50,6 +50,8 @@ export type GradeImagensProps = {
   listarMais: (cursor: CursorGaleria) => Promise<ResultadoListagemGaleria>;
   /** Página seguinte já carregada; o dono da lista anexa e guarda o cursor. */
   onPaginaCarregada: (pagina: PaginaGaleria) => void;
+  /** Ajuste de colunas de quem monta (o seletor usa 4 no desktop). */
+  classeGrade?: string;
 };
 
 /** Miniatura quando houver; legada usa o próprio arquivo (P9). */
@@ -94,6 +96,7 @@ export function GradeImagens({
   proximoCursor,
   listarMais,
   onPaginaCarregada,
+  classeGrade,
 }: GradeImagensProps): ReactElement {
   const [carregando, setCarregando] = useState(false);
 
@@ -120,7 +123,7 @@ export function GradeImagens({
 
   return (
     <div className="flex flex-col gap-4">
-      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+      <ul className={cn("grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6", classeGrade)}>
         {imagens.map((imagem, i) => {
           const rotulo = `Imagem ${i + 1} da galeria`;
           const usada = emUso.has(imagem.id);

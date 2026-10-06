@@ -84,6 +84,8 @@ export function PerfilClient({
   onDefinirPublicacao,
   onSalvarLogo,
   onRemoverLogo,
+  onListarGaleria,
+  onEnviarParaGaleria,
 }: {
   inicial: PerfilInicial;
   publicado: boolean;
@@ -97,6 +99,10 @@ export function PerfilClient({
   onSalvarLogo: UploadLogoLojaProps["onSalvar"];
   /** Action de remover a logo. Obrigatória (issue 160). */
   onRemoverLogo: UploadLogoLojaProps["onRemover"];
+  /** Galeria da MESMA loja no seletor da logo. Obrigatória (issue 160). */
+  onListarGaleria: UploadLogoLojaProps["onListarGaleria"];
+  /** Original de um arquivo novo vai para a galeria antes do recorte. Obrigatória. */
+  onEnviarParaGaleria: UploadLogoLojaProps["onEnviarParaGaleria"];
 }) {
   const router = useRouter();
 
@@ -322,6 +328,8 @@ export function PerfilClient({
                 logoUrlInicial={logoUrlInicial}
                 onSalvar={onSalvarLogo}
                 onRemover={onRemoverLogo}
+                onListarGaleria={onListarGaleria}
+                onEnviarParaGaleria={onEnviarParaGaleria}
               />
             </div>
 

@@ -33,9 +33,8 @@ import {
   rotuloSelecao,
   tirarIds,
 } from "@/components/painel/estadoGaleria";
-import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
+import { montarFormDataOriginal } from "@/components/painel/fluxoRecorte";
 import {
-  CAMPO_MINIATURA,
   MSG_ENVIO_FALHOU,
   MSG_REMOCAO_FALHOU,
   MSG_TETO,
@@ -50,13 +49,11 @@ import {
   type ResultadoUsoImagens,
   type UsoImagem,
 } from "@/lib/actions/galeria-contrato";
-import { prepararImagemParaGaleria } from "@/lib/utils/reducaoImagem";
 import {
-  TAMANHO_MAXIMO_BYTES,
-  TIPOS_IMAGEM_PERMITIDOS,
-  validarImagem,
-  validarMagicBytes,
-} from "@/lib/utils/validarImagem";
+  prepararImagemParaGaleria,
+  validarArquivoParaGaleria,
+} from "@/lib/utils/reducaoImagem";
+import { TIPOS_IMAGEM_PERMITIDOS } from "@/lib/utils/validarImagem";
 
 /** A régua de `design-system.md` §5: valor LITERAL, nunca `min-h-11`. */
 const ALVO = "min-h-[44px] min-w-[44px]";
@@ -95,27 +92,6 @@ type ItemFila = {
 };
 
 type Fila = { itens: ItemFila[]; rodando: boolean };
-
-/**
- * Gate de UX de um arquivo antes de reduzir (o servidor revalida tudo).
- *
- * O tamanho do arquivo CRU não é barrado aqui: a original é reduzida no
- * navegador (P4) justamente para que a foto de 6 MB do celular caiba nos 2 MB
- * do bucket. O limite de tamanho é aplicado depois, nos arquivos reduzidos
- * (`prepararImagemParaGaleria`). Aqui valem o tipo declarado, arquivo vazio e o
- * conteúdo real (magic bytes).
- */
-async function validarArquivo(arquivo: File): Promise<string | null> {
-  const meta = validarImagem({
-    tipo: arquivo.type,
-    tamanho: Math.min(arquivo.size, TAMANHO_MAXIMO_BYTES),
-  });
-  if (!meta.valido) return meta.erro ?? MSG_ENVIO_FALHOU;
-  const cabecalho = await arquivo.slice(0, 12).arrayBuffer();
-  const magic = validarMagicBytes(new Uint8Array(cabecalho));
-  if (!magic.valido) return magic.erro ?? MSG_ENVIO_FALHOU;
-  return null;
-}
 
 /**
  * Corpo da página Galeria (specs/galeria-imagens-loja.md, páginas 1 e 2),
@@ -179,14 +155,11 @@ export function GaleriaImagens({
   }
 
   async function enviarUm(arquivo: File): Promise<ResultadoEnvioGaleria> {
-    const invalido = await validarArquivo(arquivo);
+    const invalido = await validarArquivoParaGaleria(arquivo);
     if (invalido) return { ok: false, erro: invalido };
     const par = await prepararImagemParaGaleria(arquivo);
     if (!par.ok) return { ok: false, erro: par.erro };
-    const fd = new FormData();
-    fd.append(CAMPO_ARQUIVO, par.original, "original.webp");
-    fd.append(CAMPO_MINIATURA, par.miniatura, "miniatura.webp");
-    return acoes.enviarImagem(fd);
+    return acoes.enviarImagem(montarFormDataOriginal(par.original, par.miniatura));
   }
 
   /** P5: fila SEQUENCIAL, uma chamada por arquivo; erro de um não derruba os outros. */

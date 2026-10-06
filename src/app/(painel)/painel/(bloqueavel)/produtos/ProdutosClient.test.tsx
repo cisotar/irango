@@ -63,6 +63,8 @@ function acoesBase(): AcoesProdutosClient {
     criarProduto: vi.fn(async () => ({ ok: true }) as const),
     atualizarProduto: vi.fn(async () => ({ ok: true }) as const),
     enviarFotoProduto: vi.fn(async () => ({ ok: true, url: "" }) as never),
+    listarImagensGaleria: vi.fn(async () => ({ ok: true as const, imagens: [], proximo_cursor: null })),
+    enviarImagemGaleria: vi.fn(async () => ({ ok: false as const, erro: "" })),
     criarCategoria: vi.fn(async () => ({ ok: true }) as const),
     atualizarCategoria: vi.fn(async () => ({ ok: true }) as const),
     removerCategoria: vi.fn(async () => ({ ok: true }) as const),

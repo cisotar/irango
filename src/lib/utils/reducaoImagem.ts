@@ -14,9 +14,14 @@
 import {
   LADO_MAXIMO_ORIGINAL,
   LADO_MINIATURA,
+  MSG_ENVIO_FALHOU,
 } from "@/lib/actions/galeria-contrato";
 import { exportarCrop } from "@/lib/utils/exportarCrop";
-import { validarImagem } from "@/lib/utils/validarImagem";
+import {
+  TAMANHO_MAXIMO_BYTES,
+  validarImagem,
+  validarMagicBytes,
+} from "@/lib/utils/validarImagem";
 
 /**
  * RN-G5: original + miniatura cabem em 1,9 MB por chamada. O `bodySizeLimit`
@@ -28,6 +33,31 @@ export const MSG_PAR_GRANDE_DEMAIS =
   "Esta imagem continua acima de 1,9 MB depois de reduzida. Escolha uma versão menor.";
 export const MSG_PROCESSAMENTO_FALHOU =
   "Não foi possível processar a imagem. Tente outro arquivo.";
+
+/**
+ * Gate de UX de um arquivo ANTES de reduzir (o servidor revalida tudo).
+ * Devolve a mensagem de recusa ou `null` quando o arquivo pode seguir.
+ *
+ * O tamanho do arquivo CRU não é barrado aqui: a original é reduzida no
+ * navegador (P4) justamente para que a foto de 6 MB do celular caiba nos 2 MB
+ * do bucket. O limite de tamanho é aplicado depois, nos arquivos reduzidos
+ * (`prepararImagemParaGaleria`). Aqui valem o tipo declarado, arquivo vazio e o
+ * conteúdo real (magic bytes).
+ *
+ * Usado pela página da galeria e pelos uploaders do form (arquivo local e a
+ * original baixada da galeria passam pelo MESMO gate).
+ */
+export async function validarArquivoParaGaleria(arquivo: Blob): Promise<string | null> {
+  const meta = validarImagem({
+    tipo: arquivo.type,
+    tamanho: Math.min(arquivo.size, TAMANHO_MAXIMO_BYTES),
+  });
+  if (!meta.valido) return meta.erro ?? MSG_ENVIO_FALHOU;
+  const cabecalho = await arquivo.slice(0, 12).arrayBuffer();
+  const magic = validarMagicBytes(new Uint8Array(cabecalho));
+  if (!magic.valido) return magic.erro ?? MSG_ENVIO_FALHOU;
+  return null;
+}
 
 /**
  * Dimensões de saída para que o lado maior não passe de `ladoMaximo`.

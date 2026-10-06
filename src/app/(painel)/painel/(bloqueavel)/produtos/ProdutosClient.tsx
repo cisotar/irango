@@ -145,6 +145,7 @@ import type {
   definirFrequenciaCategoria as definirFrequenciaCategoriaLojista,
 } from "@/lib/actions/produto";
 import type { EnviarFotoProduto } from "@/components/painel/UploadFotoProduto";
+import type { EnviarParaGaleria, ListarGaleria } from "@/components/painel/fluxoRecorte";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type {
   Produto,
@@ -276,6 +277,14 @@ export type AcoesProdutosClient = {
    */
   atualizarNomeEPreco: typeof atualizarNomeEPrecoLojista;
   enviarFotoProduto: EnviarFotoProduto;
+  /**
+   * Galeria da loja no seletor da foto (specs/galeria-imagens-loja.md, página
+   * 3). OBRIGATÓRIAS (issue 160): o hub admin passa as variantes `*Admin` com o
+   * `lojaId` da URL; omitir uma quebra o build em vez de listar ou gravar na
+   * galeria do admin logado.
+   */
+  listarImagensGaleria: ListarGaleria;
+  enviarImagemGaleria: EnviarParaGaleria;
   criarCategoria: typeof criarCategoriaLojista;
   atualizarCategoria: typeof atualizarCategoriaLojista;
   removerCategoria: typeof removerCategoriaLojista;
@@ -1174,6 +1183,8 @@ export function ProdutosClient({
       onCriar={acoes.criarProduto}
       onAtualizar={acoes.atualizarProduto}
       onEnviarFoto={acoes.enviarFotoProduto}
+      onListarGaleria={acoes.listarImagensGaleria}
+      onEnviarParaGaleria={acoes.enviarImagemGaleria}
       fusoLojaRotulo={fusoLojaRotulo}
       // Repasse puro: quem sabe a rota é a page/wrapper de cada mundo.
       hrefCardapios={hrefCardapios}
