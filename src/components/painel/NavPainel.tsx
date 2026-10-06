@@ -12,6 +12,7 @@ import {
   Clock,
   CreditCard,
   ExternalLink,
+  Images,
   LayoutDashboard,
   ListPlus,
   LogOut,
@@ -174,6 +175,10 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
         },
       ],
     },
+    // D9 (specs/galeria-imagens-loja.md): "Galeria" é item de primeiro nível
+    // logo depois de Produtos, nos dois mundos. A rota admin existe, então
+    // não entra em `rotasAusentes`.
+    { href: `${base}/galeria`, rotulo: "Galeria", icone: Images },
     // [323] "Cardápios" SAIU do menu (nos dois mundos): o cardápio sazonal
     // virou função morta, substituído pela frequência de exibição de produto
     // e categoria em "Produtos". As rotas continuam existindo, fora do menu.

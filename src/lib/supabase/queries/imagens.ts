@@ -7,6 +7,7 @@ import {
   type CursorGaleria,
   type ImagemGaleria,
   type PaginaGaleria,
+  type UsoImagem,
 } from "@/lib/actions/galeria-contrato";
 
 // Queries da galeria de imagens (specs/galeria-imagens-loja.md, RN-G2, RN-G12).
@@ -114,4 +115,25 @@ export async function contarOriginaisDaLoja(client: Client, lojaId: string): Pro
   if (error) throw error;
   if (count == null) throw new Error("contarOriginaisDaLoja: contagem ausente");
   return count;
+}
+
+/**
+ * Selo "Em uso" da primeira página (Server Component das páginas 1 e 2). É
+ * PRÉVIA: a conta que vale é a da RPC de remoção. A RPC filtra
+ * `loja_id = p_loja_id` e prova posse (dono pela RLS, ou service_role); sem
+ * ids não há chamada (a RPC recusa lote vazio). Erro PROPAGA — quem chama
+ * decide se a página segue sem selo.
+ */
+export async function buscarUsoDasImagens(
+  client: Client,
+  lojaId: string,
+  ids: readonly string[],
+): Promise<UsoImagem[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await client.rpc("uso_imagens_loja", {
+    p_loja_id: lojaId,
+    p_ids: [...ids],
+  });
+  if (error) throw error;
+  return data ?? [];
 }

@@ -24,6 +24,7 @@ import {
   listarImagensDaLojaAdmin,
   buscarOriginalDaLoja,
   contarOriginaisDaLoja,
+  buscarUsoDasImagens,
 } from "./imagens";
 
 const LOJA = "11111111-1111-1111-1111-111111111111";
@@ -35,6 +36,7 @@ type Resposta = { data: unknown; error: unknown; count?: number | null };
 
 let ops: Op[];
 let resposta: Resposta;
+let rpcs: { fn: string; args: unknown }[];
 
 function criarClient() {
   const client = {
@@ -57,6 +59,10 @@ function criarClient() {
         },
       );
       return proxy;
+    },
+    rpc(fn: string, args: unknown) {
+      rpcs.push({ fn, args });
+      return Promise.resolve(resposta);
     },
     storage: {
       from: (bucket: string) => ({
@@ -105,6 +111,7 @@ const client = () => criarClient() as never;
 
 beforeEach(() => {
   ops = [];
+  rpcs = [];
   resposta = { data: [], error: null, count: 0 };
 });
 
@@ -188,5 +195,25 @@ describe("contarOriginaisDaLoja — base do teto (RN-G12)", () => {
   it("erro de contagem PROPAGA — contar 0 num erro furaria o teto", async () => {
     resposta = { data: null, error: { message: "falha", code: "XX000" }, count: null };
     await expect(contarOriginaisDaLoja(client(), LOJA)).rejects.toBeDefined();
+  });
+});
+
+describe("buscarUsoDasImagens — selo 'Em uso' da primeira página", () => {
+  it("chama uso_imagens_loja com a loja e os ids recebidos", async () => {
+    const linhas = [{ imagem_id: ID, produtos_total: 1, produtos: [], na_logo: false }];
+    resposta = { data: linhas, error: null };
+    const r = await buscarUsoDasImagens(client(), LOJA, [ID]);
+    expect(rpcs).toEqual([{ fn: "uso_imagens_loja", args: { p_loja_id: LOJA, p_ids: [ID] } }]);
+    expect(r).toBe(linhas);
+  });
+
+  it("sem ids não chama a RPC (ela recusa lote vazio)", async () => {
+    expect(await buscarUsoDasImagens(client(), LOJA, [])).toEqual([]);
+    expect(rpcs).toHaveLength(0);
+  });
+
+  it("erro do banco propaga", async () => {
+    resposta = { data: null, error: { message: "falha", code: "42501" } };
+    await expect(buscarUsoDasImagens(client(), LOJA, [ID])).rejects.toBeDefined();
   });
 });
