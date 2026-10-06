@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/pglite";
+import { erroDe, esperarErro, registrarImagem, urlStorage } from "../helpers/galeria";
 
 /**
  * Fase RED (TDD) da issue 001 — `lojas.logo_url` + projeção na view `vitrine_lojas`.
@@ -145,43 +146,44 @@ describe("001 lojas.logo_url + vitrine_lojas (TDD red-first)", () => {
   });
 
   // ───────────────────── [4] CHECK https — rejeita não-https, aceita https/NULL
-  it("[4a] CHECK REJEITA logo_url http:// (UPDATE lança, valor intacto)", async () => {
-    const antes = await logoAtual(t, ids.lojaA);
-    let rejeitou = false;
+  // Desde M4 da galeria (20261006123000_fotos_exigem_galeria.sql, DP1 estrito) o
+  // trigger BEFORE `lojas_logo_na_galeria_trg` recusa antes do CHECK toda URL
+  // que não seja de imagem registrada da loja. Os casos [4a]/[4b] afirmam essa
+  // recusa E provam o CHECK isolado, com o trigger desligado na sessão dona.
+  async function semTriggerDaGaleria<T>(fn: () => Promise<T>): Promise<T> {
+    await t.db.exec("alter table public.lojas disable trigger lojas_logo_na_galeria_trg");
     try {
-      await t.asService((db) =>
-        db.query(`update public.lojas set logo_url = 'http://x.com/l.png' where id = $1`, [
-          ids.lojaA,
-        ]),
-      );
-    } catch {
-      rejeitou = true;
+      return await fn();
+    } finally {
+      await t.db.exec("alter table public.lojas enable trigger lojas_logo_na_galeria_trg");
     }
-    expect(rejeitou).toBe(true);
-    expect(await logoAtual(t, ids.lojaA)).toBe(antes);
-  });
+  }
 
-  it("[4b] CHECK REJEITA logo_url javascript: (UPDATE lança, valor intacto)", async () => {
-    const antes = await logoAtual(t, ids.lojaA);
-    let rejeitou = false;
-    try {
-      await t.asService((db) =>
-        db.query(`update public.lojas set logo_url = 'javascript:alert(1)' where id = $1`, [
-          ids.lojaA,
-        ]),
-      );
-    } catch {
-      rejeitou = true;
-    }
-    expect(rejeitou).toBe(true);
-    expect(await logoAtual(t, ids.lojaA)).toBe(antes);
-  });
-
-  it("[4c] CHECK ACEITA logo_url https:// (persistido)", async () => {
-    const novo = "https://cdn.exemplo.com/lojas/a/nova.png";
-    const r = await t.asService((db) =>
-      db.query(`update public.lojas set logo_url = $1 where id = $2`, [novo, ids.lojaA]),
+  function gravarLogo(valor: string) {
+    return t.asService((db) =>
+      db.query(`update public.lojas set logo_url = $1 where id = $2`, [valor, ids.lojaA]),
     );
+  }
+
+  it.each([
+    ["[4a]", "http://x.com/l.png"],
+    ["[4b]", "javascript:alert(1)"],
+  ])("%s logo_url %s ⇒ trigger da galeria recusa; com o trigger desligado, o CHECK recusa; valor intacto", async (_id, valor) => {
+    const antes = await logoAtual(t, ids.lojaA);
+
+    esperarErro(await erroDe(gravarLogo(valor)), "P0001", "imagem_fora_da_galeria");
+    expect(await logoAtual(t, ids.lojaA)).toBe(antes);
+
+    const semTrigger = await semTriggerDaGaleria(() => erroDe(gravarLogo(valor)));
+    esperarErro(semTrigger, "23514", "lojas_logo_url_https_chk");
+    expect(await logoAtual(t, ids.lojaA)).toBe(antes);
+  });
+
+  it("[4c] CHECK ACEITA logo_url https:// de imagem registrada (persistido)", async () => {
+    const caminho = `${ids.lojaA}/logo/nova.webp`;
+    await registrarImagem(t, ids.lojaA, caminho);
+    const novo = urlStorage(caminho);
+    const r = await gravarLogo(novo);
     expect(r.affectedRows).toBe(1);
     expect(await logoAtual(t, ids.lojaA)).toBe(novo);
   });
