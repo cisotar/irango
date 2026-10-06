@@ -60,6 +60,18 @@ export function montarEnderecoCompleto(campos: {
   };
 }
 
+/**
+ * CEP que conta como já consultado na montagem. O endereço inicial é um
+ * endereço salvo/persistido: reconsultar o ViaCEP sobrescreveria rua, bairro,
+ * cidade e UF que o cliente já confirmou — e, em cidade de CEP único, apagaria
+ * rua e bairro (o ViaCEP os devolve vazios).
+ */
+export function cepConsultadoInicial(
+  enderecoInicial: EnderecoEntrega | null | undefined,
+): string | null {
+  return enderecoInicial ? limparCep(enderecoInicial.cep) : null;
+}
+
 export function FormEndereco({
   onEnderecoChange,
   enderecoInicial,
@@ -82,7 +94,7 @@ export function FormEndereco({
   const numeroRef = useRef<HTMLInputElement>(null);
   // Último CEP (8 dígitos) que já disparou consulta. Sem isso, qualquer
   // re-render com o CEP completo refaria a chamada ao ViaCEP.
-  const cepConsultado = useRef<string | null>(null);
+  const cepConsultado = useRef(cepConsultadoInicial(enderecoInicial));
 
   // Notifica o pai: endereço completo só quando todos obrigatórios estão
   // preenchidos. Reusa montarEnderecoCompleto (fonte única, RN-1-B). Roda também
