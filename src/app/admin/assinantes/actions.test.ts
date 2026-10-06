@@ -57,6 +57,23 @@ let listResponder: (bucket: string, prefix: string) => ListReturn | Promise<List
 let removeResponder: (bucket: string, paths: string[]) => RemoveReturn | Promise<RemoveReturn>;
 
 const clientServico = {
+  // [galeria] `limparStorageDaLoja` passa a ler `imagens_loja` antes do DELETE
+  // (coberto em actions.limpar-storage-galeria.test.ts). Aqui a tabela vem vazia
+  // e a cadeia aceita qualquer método — este arquivo segue testando a orquestração.
+  from: () => {
+    const cadeia: unknown = new Proxy(
+      {},
+      {
+        get(_alvo, prop) {
+          if (prop === "then") {
+            return (ok: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(ok);
+          }
+          return () => cadeia;
+        },
+      },
+    );
+    return cadeia;
+  },
   storage: {
     from: (bucket: string) => ({
       list: async (prefix: string) => {

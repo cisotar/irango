@@ -47,7 +47,10 @@ vi.mock("@/lib/utils/rateLimit", () => ({
   extrairIp: (_headers: Headers) => "127.0.0.1",
   verificarRateLimit: (...args: unknown[]) => verificarRateLimitMock(...args),
 }));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+const revalidatePath = vi.fn();
+vi.mock("next/cache", () => ({
+  revalidatePath: (...a: unknown[]) => revalidatePath(...a),
+}));
 
 // ── Magic bytes reais (espelham ASSINATURAS de validarImagem.ts) ──────────────
 // WEBP (container RIFF): "RIFF" no offset 0 + "WEBP" no offset 8.
@@ -79,13 +82,42 @@ const updatePatch = vi.fn();
 const updateEq = vi.fn();
 let updateResposta: { error: unknown };
 
+// [galeria] linha do tempo das escritas (INSERT da cópia ANTES do UPDATE lojas),
+// remove() de compensação e a cadeia do INSERT em imagens_loja.
+let sequencia: string[];
+let removes: { bucket: string; caminhos: string[] }[];
+let insertsImagens: Record<string, unknown>[];
+let insertResposta: { data: unknown; error: unknown };
+
+function cadeiaInsert(): unknown {
+  const proxy: unknown = new Proxy(
+    {},
+    {
+      get(_alvo, prop) {
+        if (prop === "then") {
+          return (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
+            Promise.resolve(insertResposta).then(ok, falha);
+        }
+        return () => proxy;
+      },
+    },
+  );
+  return proxy;
+}
+
 function makeClient() {
   return {
     storage: {
       from: (bucket: string) => ({
         upload: async (path: string, _file: unknown, opts?: Record<string, unknown>) => {
           uploads.push({ bucket, path, opts });
+          sequencia.push("upload");
           return uploadResposta;
+        },
+        remove: async (caminhos: string[]) => {
+          removes.push({ bucket, caminhos });
+          sequencia.push("remove");
+          return { data: [], error: null };
         },
         getPublicUrl: (path: string) => ({
           data: {
@@ -99,9 +131,19 @@ function makeClient() {
     },
     from: (tabela: string) => {
       fromTabela(tabela);
+      if (tabela === "imagens_loja") {
+        return {
+          insert: (linha: Record<string, unknown>) => {
+            insertsImagens.push(linha);
+            sequencia.push("insert:imagens_loja");
+            return cadeiaInsert();
+          },
+        };
+      }
       return {
         update: (patch: Record<string, unknown>) => {
           updatePatch(patch);
+          sequencia.push(`update:${tabela}`);
           // PostgREST exige WHERE (.eq) no UPDATE — a action encadeia .eq("id", …).
           return {
             eq: (coluna: string, valor: unknown) => {
@@ -132,7 +174,38 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
   buscarLojaDoDono: (...a: unknown[]) => buscarLojaDoDono(...a),
 }));
 
+// [galeria] origem do recorte (tabela em memória respeitada pela query mockada)
+// e o processamento best-effort de pendentes depois do UPDATE.
+type LinhaImagem = { id: string; loja_id: string; origem_id: string | null; remocao_pendente_em: string | null };
+let imagens: LinhaImagem[];
+const buscarOriginalDaLoja = vi.fn(
+  async (_client: unknown, lojaId: string, id: string) =>
+    imagens.find(
+      (i) => i.id === id && i.loja_id === lojaId && i.origem_id === null && i.remocao_pendente_em === null,
+    ) ?? null,
+);
+vi.mock("@/lib/supabase/queries/imagens", () => ({
+  buscarOriginalDaLoja: (...a: unknown[]) =>
+    buscarOriginalDaLoja(...(a as [unknown, string, string])),
+  contarOriginaisDaLoja: vi.fn(),
+  listarImagensDaLoja: vi.fn(),
+  listarImagensDaLojaAdmin: vi.fn(),
+}));
+const processarRemocoesPendentes = vi.fn();
+vi.mock("@/lib/actions/galeria-pendentes", () => ({
+  processarRemocoesPendentes: (...a: unknown[]) => processarRemocoesPendentes(...a),
+}));
+
 import { salvarLogoLoja, removerLogoLoja } from "./logo";
+
+// Literais do contrato da galeria (galeria-contrato.ts ainda não existe).
+const CAMPO_ORIGEM = "origem_id";
+const MSG_ORIGEM_REMOVIDA = "Essa imagem foi removida da galeria.";
+const MSG_FOTO_REMOVIDA_DA_GALERIA = "A foto escolhida foi removida da galeria. Escolha outra.";
+const MSG_TENTE_DE_NOVO = "Não foi possível salvar. Tente de novo.";
+const ORIGEM = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001";
+const ORIGEM_ALHEIA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000002";
+const ORIGEM_PENDENTE = "aaaaaaaa-aaaa-aaaa-aaaa-000000000003";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
   return { id: LOJA_DONO, dono_id: "dono-1", slug: "minha-loja", ativo: true };
@@ -147,11 +220,15 @@ function blob(bytes: Uint8Array, over: { type?: string; size?: number } = {}): B
   return b;
 }
 
-/** FormData com o arquivo no campo CAMPO_ARQUIVO + extras opcionais. */
+/**
+ * FormData com o arquivo no campo CAMPO_ARQUIVO e, desde a galeria, o
+ * `origem_id` OBRIGATÓRIO (original da própria loja). `extras` sobrescreve.
+ */
 function fd(arquivo: Blob, extras: Record<string, string> = {}): FormData {
   const f = new FormData();
   f.append(CAMPO_ARQUIVO, arquivo);
-  for (const [k, v] of Object.entries(extras)) f.append(k, v);
+  const campos = { [CAMPO_ORIGEM]: ORIGEM, ...extras };
+  for (const [k, v] of Object.entries(campos)) f.append(k, v);
   return f;
 }
 
@@ -168,6 +245,16 @@ beforeEach(() => {
   authClient = makeClient();
   buscarLojaDoDono.mockResolvedValue(lojaDoDono());
   verificarRateLimitMock.mockResolvedValue({ permitido: true });
+  sequencia = [];
+  removes = [];
+  insertsImagens = [];
+  insertResposta = { data: null, error: null };
+  imagens = [
+    { id: ORIGEM, loja_id: LOJA_DONO, origem_id: null, remocao_pendente_em: null },
+    { id: ORIGEM_ALHEIA, loja_id: LOJA_OUTRA, origem_id: null, remocao_pendente_em: null },
+    { id: ORIGEM_PENDENTE, loja_id: LOJA_DONO, origem_id: null, remocao_pendente_em: "2026-10-06T12:00:00Z" },
+  ];
+  processarRemocoesPendentes.mockResolvedValue(undefined);
 });
 
 describe("salvarLogoLoja (Server Action — issue 003)", () => {
@@ -325,5 +412,139 @@ describe("removerLogoLoja (Server Action — issue 003)", () => {
     const r = await removerLogoLoja();
     expect(r.ok).toBe(false);
     expect(updatePatch).not.toHaveBeenCalled();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Fase RED — galeria de imagens (specs/galeria-imagens-loja.md, página 4, D2,
+// D5, RN-G3, RN-G20, casos-limite de deadlock e de INSERT da cópia). A logo
+// passa a EXIGIR `origem_id`, grava a linha-cópia ANTES do `UPDATE lojas`,
+// traduz a recusa do trigger e o deadlock, processa pendentes depois do UPDATE
+// (best-effort) e revalida a vitrine certa (`/loja/${slug}`).
+// ═════════════════════════════════════════════════════════════════════════════
+describe("salvarLogoLoja — origem_id obrigatório e linha-cópia (galeria)", () => {
+  function fdSemOrigem(arquivo: Blob): FormData {
+    const f = new FormData();
+    f.append(CAMPO_ARQUIVO, arquivo);
+    return f;
+  }
+
+  it("sem origem_id → recusa, SEM upload e SEM UPDATE", async () => {
+    const r = await salvarLogoLoja(fdSemOrigem(blob(WEBP, { type: "image/webp" })));
+    expect(r.ok).toBe(false);
+    expect(opEscrita()).toBeUndefined();
+    expect(updatePatch).not.toHaveBeenCalled();
+    expect(insertsImagens).toHaveLength(0);
+  });
+
+  it("ATAQUE: origem_id de OUTRA loja → MSG_ORIGEM_REMOVIDA, SEM upload e SEM UPDATE", async () => {
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" }), { [CAMPO_ORIGEM]: ORIGEM_ALHEIA }));
+    expect(r).toEqual({ ok: false, erro: MSG_ORIGEM_REMOVIDA });
+    expect(opEscrita()).toBeUndefined();
+    expect(updatePatch).not.toHaveBeenCalled();
+    expect(buscarOriginalDaLoja).toHaveBeenCalledWith(authClient, LOJA_DONO, ORIGEM_ALHEIA);
+  });
+
+  it("origem pendente → MSG_ORIGEM_REMOVIDA, SEM upload", async () => {
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" }), { [CAMPO_ORIGEM]: ORIGEM_PENDENTE }));
+    expect(r).toEqual({ ok: false, erro: MSG_ORIGEM_REMOVIDA });
+    expect(opEscrita()).toBeUndefined();
+  });
+
+  it("feliz: INSERT da cópia (origem_id, caminho do recorte) ANTES do UPDATE lojas", async () => {
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
+    expect(r.ok).toBe(true);
+    const path = opEscrita()?.path ?? "";
+    expect(path.startsWith(`${LOJA_DONO}/logo/`)).toBe(true);
+    expect(insertsImagens).toHaveLength(1);
+    expect(insertsImagens[0]).toMatchObject({
+      loja_id: LOJA_DONO,
+      origem_id: ORIGEM,
+      caminho: path,
+      bytes: WEBP.byteLength,
+    });
+    const iInsert = sequencia.indexOf("insert:imagens_loja");
+    const iUpdate = sequencia.indexOf("update:lojas");
+    expect(iInsert).toBeGreaterThanOrEqual(0);
+    expect(iUpdate).toBeGreaterThan(iInsert);
+  });
+
+  it("INSERT da cópia falha → remove([caminho]) de compensação, SEM UPDATE, erro genérico", async () => {
+    insertResposta = { data: null, error: { message: "duplicate key imagens_loja_caminho_unico", code: "23505" } };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toMatch(/imagens_loja|23505|duplicate/);
+    expect(updatePatch).not.toHaveBeenCalled();
+    expect(removes).toEqual([{ bucket: "produtos", caminhos: [opEscrita()?.path] }]);
+    spy.mockRestore();
+  });
+
+  it("UPDATE recusado pelo trigger (imagem_fora_da_galeria) → MSG_FOTO_REMOVIDA_DA_GALERIA, nunca o texto cru", async () => {
+    updateResposta = { error: { code: "P0001", message: "imagem_fora_da_galeria" } };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
+    expect(r).toEqual({ ok: false, erro: MSG_FOTO_REMOVIDA_DA_GALERIA });
+    spy.mockRestore();
+  });
+
+  it("UPDATE aborta por deadlock (40P01) → MSG_TENTE_DE_NOVO, nunca o texto cru", async () => {
+    updateResposta = { error: { code: "40P01", message: "deadlock detected" } };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
+    expect(r).toEqual({ ok: false, erro: MSG_TENTE_DE_NOVO });
+    spy.mockRestore();
+  });
+
+  it("depois do UPDATE processa pendentes da loja da sessão (D5)", async () => {
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
+    expect(r.ok).toBe(true);
+    expect(processarRemocoesPendentes).toHaveBeenCalledWith(authClient, LOJA_DONO);
+  });
+
+  it("falha ao processar pendentes NÃO derruba o save (best-effort)", async () => {
+    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
+    expect(processarRemocoesPendentes).toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    spy.mockRestore();
+  });
+
+  it("revalida a vitrine em /loja/${slug} (não em /${slug})", async () => {
+    await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
+    const rotas = revalidatePath.mock.calls.map((c) => c[0]);
+    expect(rotas).toContain("/loja/minha-loja");
+    expect(rotas).not.toContain("/minha-loja");
+  });
+});
+
+describe("removerLogoLoja — pendentes e vitrine (galeria)", () => {
+  it("depois do UPDATE processa pendentes da loja da sessão (o recorte antigo perdeu o uso)", async () => {
+    const r = await removerLogoLoja();
+    expect(r.ok).toBe(true);
+    expect(processarRemocoesPendentes).toHaveBeenCalledWith(authClient, LOJA_DONO);
+  });
+
+  it("falha ao processar pendentes NÃO derruba a remoção", async () => {
+    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await removerLogoLoja();
+    expect(processarRemocoesPendentes).toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    spy.mockRestore();
+  });
+
+  it("deadlock (40P01) no UPDATE → MSG_TENTE_DE_NOVO", async () => {
+    updateResposta = { error: { code: "40P01", message: "deadlock detected" } };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await removerLogoLoja();
+    expect(r).toEqual({ ok: false, erro: MSG_TENTE_DE_NOVO });
+    spy.mockRestore();
+  });
+
+  it("revalida a vitrine em /loja/${slug}", async () => {
+    await removerLogoLoja();
+    expect(revalidatePath.mock.calls.map((c) => c[0])).toContain("/loja/minha-loja");
   });
 });

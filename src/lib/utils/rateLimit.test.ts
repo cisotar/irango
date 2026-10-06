@@ -95,12 +95,16 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "cadastroCliente",
         "carregarMaisClientes",
         "criarPedido",
+        "enviarImagemGaleria",
         "fretePreview",
+        "listarImagensGaleria",
         "login",
         "loginCliente",
         "novaSenhaCliente",
+        "recorteImagem",
         "recuperacaoCliente",
         "reenvioCliente",
+        "removerImagensGaleria",
         "revisarCarrinho",
         "salvarLogoLoja",
         "salvarPerfil",
@@ -108,6 +112,16 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "validarCupom",
       ].sort(),
     );
+  });
+
+  // Galeria de imagens (specs/galeria-imagens-loja.md, RN-G13): baldes por
+  // LOJA da sessão (identificador = loja.id), valores do spec.
+  it("galeria: enviarImagemGaleria 30/min, recorteImagem 20/min, removerImagensGaleria 10/min, listarImagensGaleria 30/min", () => {
+    const limites = LIMITES as Record<string, { limite: number; janela: string }>;
+    expect(limites.enviarImagemGaleria).toEqual({ limite: 30, janela: "1 m" });
+    expect(limites.recorteImagem).toEqual({ limite: 20, janela: "1 m" });
+    expect(limites.removerImagensGaleria).toEqual({ limite: 10, janela: "1 m" });
+    expect(limites.listarImagensGaleria).toEqual({ limite: 30, janela: "1 m" });
   });
 
   // Achado do `auditar`: a revisão automática do carrinho não pode gastar a
