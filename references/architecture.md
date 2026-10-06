@@ -104,12 +104,14 @@ irango/
 │   │   │   └── cadastro/
 │   │   │
 │   │   ├── (cliente)/                    # conta do cliente final — telas neutras do iRango, sem tema de loja
-│   │   │   ├── layout.tsx                # card centralizado, sem guard (as telas /conta/* são públicas)
+│   │   │   ├── layout.tsx                # só fundo neutro, sem guard (as telas /conta/* são públicas)
 │   │   │   ├── conta/
+│   │   │   │   ├── layout.tsx            # card centralizado e estreito (max-w-sm)
 │   │   │   │   ├── entrar/ cadastro/ completar/ recuperar/
 │   │   │   │   └── sessao.ts             # lerSessaoCliente / redirecionarSeLogado — leitura de sessão compartilhada
 │   │   │   └── minha-conta/
-│   │   │       ├── layout.tsx            # guard (exigirCliente) + page.tsx, enderecos/, pedidos/ (histórico do cliente) — ver §5
+│   │   │       ├── layout.tsx            # guard (exigirCliente) + ShellConta (kebab + navegação lateral) — ver §5
+│   │   │       ├── page.tsx              # página única: Dados pessoais, Endereços e Pedidos com âncoras; enderecos/ e pedidos/ seguem como páginas dedicadas
 │   │   │       └── guard.ts              # exigirCliente(rota) — fail-closed, cache() por requisição
 │   │   │
 │   │   ├── serwist/
@@ -309,7 +311,8 @@ A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configur
 - Junto do campo de cupom, sem sessão aparece "Entrar" (leva a `/conta/entrar?next=…/pedido`, `sanitizarNext`; o carrinho sobrevive em `sessionStorage` na mesma aba). Logado sem perfil, o mesmo lugar mostra "Complete seu perfil" (`/conta/completar`).
 - Na página da loja, o menu no topo esquerdo (`MenuCliente`, gaveta à esquerda) mostra "Continuar com Google" + "Entrar/Criar conta com e-mail" sem sessão (`OpcoesConta`, `next=/loja/<slug>`) e Minha conta / Endereços / Pedidos / Sair com sessão. Os links levam `next=/loja/<slug>`, e `/minha-conta/*` mostra "Voltar para <loja>" (`LinkVoltarLoja`) e o propaga; "Sair" volta à loja (`sairCliente({ next })`).
 - Sem sessão, o "Finalizar pedido" do carrinho abre a mesma gaveta (estado compartilhado em `hooks/useGavetaConta.ts`, origem `finalizar`): entrar/criar conta levam `next=…/pedido`, e aparece "Prosseguir sem login", que segue para `/pedido` e faz o carrinho ir direto ao checkout naquela loja até a aba fechar (`decisaoGavetaConta.ts`, `sessionStorage`).
-- `/minha-conta/pedidos` lista os pedidos do cliente (20 por página, "Carregar mais") com `listarPedidosDoCliente` (`queries/pedidos.ts`, client da sessão + RLS) e link para a confirmação por token.
+- `/minha-conta` é página única com três seções-âncora (`#dados-pessoais`, `#enderecos`, `#pedidos`, ids em `components/cliente/conta/secoesConta.ts`) e navegação lateral (`ShellConta`: `<aside>` fixo no PC, `Sheet` no mobile, Sair e Excluir conta no rodapé). `/minha-conta/enderecos` e `/minha-conta/pedidos` continuam como páginas dedicadas com os mesmos componentes (`ListaEnderecos`, `HistoricoPedidos`); as actions de endereço revalidam as duas rotas.
+- O histórico de pedidos (`HistoricoPedidos`, 20 por página, "Carregar mais" via `?pagina=N`) usa `listarPedidosDoCliente` (`queries/pedidos.ts`, client da sessão + RLS) e link para a confirmação por token.
 
 > ⚠️ O preview no client é só estética. O valor autoritativo é sempre o do servidor. O cliente nunca define quanto paga — ver `references/seguranca.md` §10.
 

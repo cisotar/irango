@@ -1,6 +1,7 @@
 "use client";
 
-// Lista de endereços (≤3). Edição e inclusão no próprio card com salvamento
+// Lista de endereços (≤3): seção "Endereços" de /minha-conta e página dedicada
+// /minha-conta/enderecos. Edição e inclusão no próprio card com salvamento
 // automático (D10); remover com AlertDialog; "Remover" desabilitado no último
 // (D9). Toda regra (teto, mínimo, padrão, posse) é do servidor/banco — aqui é
 // só preview. Textos do usuário vão por JSX (escape), nunca HTML cru.
@@ -123,7 +124,15 @@ function StatusAutosave({ status }: { status: Status }) {
   );
 }
 
-export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) {
+export function ListaEnderecos({
+  enderecos,
+  titulo,
+}: {
+  enderecos: EnderecoCliente[];
+  /** h1 na página dedicada; h2 como seção da página única. */
+  titulo: { nivel: "h1"; texto: string; id?: undefined } | { nivel: "h2"; texto: string; id: string };
+}) {
+  const Titulo = titulo.nivel;
   // Só um bloco de edição por vez (FormEndereco usa ids fixos).
   const [editando, setEditando] = useState<string | null>(null); // id do endereço ou NOVO
   const [removendo, setRemovendo] = useState<EnderecoCliente | null>(null);
@@ -152,17 +161,24 @@ export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) 
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <h1 className="text-xl font-semibold text-texto">Meus endereços</h1>
+        <Titulo
+          id={titulo.id}
+          className={titulo.nivel === "h1" ? "text-xl font-semibold text-texto" : "text-lg font-semibold text-texto"}
+        >
+          {titulo.texto}
+        </Titulo>
         <span className="text-sm text-texto-muted">
           {total} de {MAX_ENDERECOS}
         </span>
       </div>
 
-      <ul className="flex flex-col gap-3">
+      {/* Colunas pela largura do container (não da janela): abrir/fechar a
+          lateral no PC recalcula. */}
+      <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(18rem,100%),1fr))] gap-3">
         {enderecos.map((e) => (
           <li key={e.id}>
-            <Card>
-              <CardContent className="flex flex-col gap-3">
+            <Card className="h-full">
+              <CardContent className="flex flex-1 flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium break-words text-texto">{e.rotulo}</p>
                   {e.padrao && <Badge>Padrão</Badge>}
@@ -177,7 +193,7 @@ export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) 
 
                 {editando === e.id && <EdicaoEndereco endereco={e} />}
 
-                <div className="flex flex-wrap gap-2">
+                <div className="mt-auto flex flex-wrap gap-2">
                   {!e.padrao && (
                     <Button
                       type="button"
@@ -239,7 +255,7 @@ export function ListaEnderecos({ enderecos }: { enderecos: EnderecoCliente[] }) 
           <Button
             type="button"
             variant="outline"
-            className="min-h-11 w-full"
+            className="min-h-11 w-full self-start @min-[34rem]:w-auto"
             onClick={() => setEditando(NOVO)}
           >
             <Plus aria-hidden="true" />

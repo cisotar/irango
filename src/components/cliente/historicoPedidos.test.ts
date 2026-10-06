@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { montarHistorico, paginaDoParam, POR_PAGINA } from "./historicoPedidos";
+import { hrefCarregarMais, montarHistorico, paginaDoParam, POR_PAGINA } from "./historicoPedidos";
 import type { PedidoDoCliente } from "@/lib/supabase/queries/pedidos";
 
 function pedido(i: number, slug: string | null = "loja-a"): PedidoDoCliente {
@@ -59,5 +59,23 @@ describe("montarHistorico", () => {
 
   it("vazio", () => {
     expect(montarHistorico([[]])).toEqual({ linhas: [], temMais: false });
+  });
+});
+
+describe("hrefCarregarMais", () => {
+  it("página dedicada: próxima página, sem âncora", () => {
+    expect(hrefCarregarMais("/minha-conta/pedidos", 0, undefined)).toBe("/minha-conta/pedidos?pagina=1");
+  });
+
+  it("preserva o next sanitizado", () => {
+    expect(hrefCarregarMais("/minha-conta/pedidos", 2, "/loja/padaria")).toBe(
+      "/minha-conta/pedidos?pagina=3&next=%2Floja%2Fpadaria",
+    );
+  });
+
+  it("página única: mantém a âncora #pedidos depois do Carregar mais", () => {
+    expect(hrefCarregarMais("/minha-conta", 0, "/loja/padaria", "pedidos")).toBe(
+      "/minha-conta?pagina=1&next=%2Floja%2Fpadaria#pedidos",
+    );
   });
 });

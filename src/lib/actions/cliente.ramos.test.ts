@@ -166,6 +166,8 @@ describe("salvarEnderecoCliente — editar", () => {
     expect(valores).not.toHaveProperty("padrao");
     expect(valores).not.toHaveProperty("id");
     expect(valores.complemento).toBe("Ap 2");
+    // A lista aparece em /minha-conta (seção) e em /minha-conta/enderecos (página dedicada).
+    expect(revalidatePath).toHaveBeenCalledWith("/minha-conta");
     expect(revalidatePath).toHaveBeenCalledWith("/minha-conta/enderecos");
   });
 
@@ -267,6 +269,8 @@ describe("definirEnderecoPadrao", () => {
     expect(arg(upds[1], "update")).toEqual({ padrao: true });
     expect(eqs(upds[1])).toEqual(expect.arrayContaining([["id", B], ["cliente_id", USER_ID]]));
     expect(db.cadeias.indexOf(upds[0])).toBeLessThan(db.cadeias.indexOf(upds[1])); // índice único parcial
+    // A lista aparece em /minha-conta (seção) e em /minha-conta/enderecos (página dedicada).
+    expect(revalidatePath).toHaveBeenCalledWith("/minha-conta");
     expect(revalidatePath).toHaveBeenCalledWith("/minha-conta/enderecos");
   });
 
@@ -326,6 +330,8 @@ describe("removerEnderecoCliente — promoção do padrão", () => {
     expect(arg(prom, "update")).toEqual({ padrao: true });
     expect(eqs(prom)).toEqual(expect.arrayContaining([["id", A], ["cliente_id", USER_ID]]));
     expect(db.cadeias.indexOf(del)).toBeLessThan(db.cadeias.indexOf(prom));
+    expect(revalidatePath).toHaveBeenCalledWith("/minha-conta");
+    expect(revalidatePath).toHaveBeenCalledWith("/minha-conta/enderecos");
   });
 
   it("remove o padrão que é o MAIS ANTIGO (A) → promove o próximo (B), não o último", async () => {

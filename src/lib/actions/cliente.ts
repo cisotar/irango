@@ -46,6 +46,12 @@ const MSG_PEDIDO_EM_ABERTO = "Aguarde a entrega dos seus pedidos em aberto para 
 const ROTA_MINHA_CONTA = "/minha-conta";
 const ROTA_ENDERECOS = "/minha-conta/enderecos";
 
+/** A lista de endereços aparece na seção de /minha-conta e na página dedicada. */
+function revalidarEnderecos() {
+  revalidatePath(ROTA_MINHA_CONTA);
+  revalidatePath(ROTA_ENDERECOS);
+}
+
 type ErroPostgrest = { code?: string; message?: string };
 const comoErro = (e: unknown): ErroPostgrest =>
   typeof e === "object" && e !== null ? (e as ErroPostgrest) : {};
@@ -191,7 +197,7 @@ export async function salvarEnderecoCliente(payload: unknown): Promise<Resultado
     return { ok: false, erro: MSG_GENERICA };
   }
 
-  revalidatePath(ROTA_ENDERECOS);
+  revalidarEnderecos();
   return { ok: true };
 }
 
@@ -237,7 +243,7 @@ export async function definirEnderecoPadrao(payload: unknown): Promise<Resultado
     return { ok: false, erro: MSG_GENERICA };
   }
 
-  revalidatePath(ROTA_ENDERECOS);
+  revalidarEnderecos();
   return { ok: true };
 }
 
@@ -287,7 +293,7 @@ export async function removerEnderecoCliente(payload: unknown): Promise<Resultad
     return { ok: false, erro: MSG_GENERICA };
   }
 
-  revalidatePath(ROTA_ENDERECOS);
+  revalidarEnderecos();
   return { ok: true };
 }
 
