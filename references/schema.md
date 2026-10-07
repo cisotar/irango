@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.5.1 | **Atualizado:** 2026-10-02
+**Versão:** 0.6.0 | **Atualizado:** 2026-10-06
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -43,6 +43,7 @@ auth.users (Supabase)
             │               └── itens_pedido_opcionais
             ├── categoria_produto_opcionais (categorias ⋈ opcionais_categorias)
             ├── produto_opcionais_ocultos (produtos ⋈ opcionais_categorias — exceção por produto)
+            ├── imagens_loja (original; recorte aponta para a original via origem_id, mesma loja)
             └── pedidos
                     └── itens_pedido
                             └── itens_pedido_opcionais
@@ -122,6 +123,7 @@ CREATE TABLE lojas (
   -- Logo da loja (exibida na vitrine pública — dado público, não PII)
   -- NULL = loja sem logo. CHECK de defesa-em-profundidade; autoridade real é a Server Action.
   -- Migration: 20260615013000_logo_url_lojas.sql
+  -- Só URL de imagem registrada em `imagens_loja` da mesma loja (trigger BEFORE, migration 20261006123000)
   logo_url         text CHECK (logo_url IS NULL OR logo_url LIKE 'https://%'),
 
   -- Frete fallback quando o bairro/CEP não casa nenhuma zona configurada.
@@ -203,7 +205,7 @@ CREATE TABLE produtos (
   disponivel     boolean NOT NULL DEFAULT true,   -- comprável vs. esgotado (esgotado ainda aparece na vitrine, marcado)
   oculto         boolean NOT NULL DEFAULT false,  -- oculto = nunca aparece na vitrine, independente de `disponivel`
   ordem          int NOT NULL DEFAULT 0,
-  foto_url       text,
+  foto_url       text,         -- só URL de imagem registrada em `imagens_loja` da mesma loja (trigger BEFORE, M4)
   dias_semana    smallint[],   -- 0=dom..6=sab; NULL=sem restrição; '{}'=nunca (RN-8)
   hora_inicio    time,         -- INCLUSIVO, fuso da loja; par com hora_fim
   hora_fim       time,         -- EXCLUSIVO, fuso da loja; par com hora_inicio
@@ -831,6 +833,49 @@ CREATE TABLE modal_sazonal_cardapios (
 -- GRANTs: anon=SELECT / authenticated=CRUD / service_role=ALL
 ```
 
+### `imagens_loja`
+
+```sql
+-- Galeria de imagens da loja: registro de todo objeto do bucket `produtos`.
+-- Original (origem_id NULL) aparece na grade; cópia recortada (origem_id preenchido) fica oculta.
+-- Migration: 20261006120000_imagens_loja.sql (spec galeria-imagens-loja)
+CREATE TABLE imagens_loja (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loja_id             uuid NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+  origem_id           uuid NULL,
+  caminho             text NOT NULL,   -- relativo ao bucket `produtos`, nunca prefixado por "produtos/"
+  miniatura_caminho   text NULL,       -- só da original; NULL em cópia e em legada
+  bytes               integer NULL CHECK (bytes IS NULL OR bytes BETWEEN 1 AND 2097152),  -- medido no servidor
+  remocao_pendente_em timestamptz NULL,  -- marcada antes de apagar do Storage (banco antes do Storage)
+  criado_em           timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT imagens_loja_id_loja_unico UNIQUE (id, loja_id),
+  CONSTRAINT imagens_loja_caminho_unico UNIQUE (caminho),
+  -- FK composta: cópia e original da mesma loja; apagar a original apaga as cópias
+  CONSTRAINT imagens_loja_origem_fk FOREIGN KEY (origem_id, loja_id)
+    REFERENCES imagens_loja (id, loja_id) ON DELETE CASCADE,
+  -- Prefixo = pasta da loja; recusa `..`, `%`, `?`, `#`, `\` e `//`
+  CONSTRAINT imagens_loja_caminho_da_loja
+    CHECK (starts_with(caminho, loja_id::text || '/') AND position('..' in caminho) = 0 AND caminho !~ '[%?#\\]|//'),
+  CONSTRAINT imagens_loja_miniatura_da_loja
+    CHECK (miniatura_caminho IS NULL OR (starts_with(miniatura_caminho, loja_id::text || '/')
+           AND position('..' in miniatura_caminho) = 0 AND miniatura_caminho !~ '[%?#\\]|//')),
+  CONSTRAINT imagens_loja_recorte_sem_miniatura CHECK (origem_id IS NULL OR miniatura_caminho IS NULL)
+);
+```
+
+- **RLS:** 4 policies para `authenticated` (`imagens_loja_{leitura,insert,update,delete}_propria`), todas por `EXISTS` em `lojas.dono_id = (select auth.uid())`. `anon` sem acesso (a vitrine não lê esta tabela).
+- **GRANTs:** `REVOKE ALL FROM public, anon, authenticated`; `authenticated` = `SELECT, INSERT, DELETE` + `UPDATE (remocao_pendente_em)` (grant de coluna, precedente: `clientes`); `service_role` = ALL.
+- **Funções** (todas com `REVOKE ALL ... FROM public, anon`, `EXECUTE` a `authenticated` e `service_role`, exceto onde indicado):
+  - `caminho_storage_produtos(url text) → text` (`IMMUTABLE`): extrai o caminho relativo ao bucket de uma URL pública `.../storage/v1/object/public/produtos/<caminho>`; ignora o host; `NULL` para outra forma. Fonte única do casamento URL ↔ registro.
+  - `uso_imagens_loja(p_loja_id, p_ids uuid[])` (`STABLE`, INVOKER): produtos (até 5, mais o total) e logo que usam a original ou qualquer cópia. Lote 1..50.
+  - `remover_imagens_loja(p_loja_id, p_ids uuid[]) → jsonb` (INVOKER): limpa `foto_url`/`logo_url` que usam a original ou cópias, marca todas como pendentes e devolve os caminhos (com miniaturas) para a action apagar do Storage. Lote 1..50 distintos; ids inválidos/alheios são ignorados e contados.
+  - `limpar_recortes_sem_uso(p_loja_id) → text[]` (INVOKER): marca recorte sem uso há mais de 24 h e devolve até 50 caminhos pendentes.
+  - `importar_imagens_do_storage() → integer` (`SECURITY DEFINER`, backfill M3): registra como original todo objeto do bucket cujo primeiro segmento é id de loja existente (jpeg/png/webp); idempotente (`ON CONFLICT (caminho) DO NOTHING`). Sem `EXECUTE` para `authenticated`.
+- **Triggers:**
+  - `imagens_loja_origem_disponivel_trg` (BEFORE INSERT, quando `origem_id` não é nulo, INVOKER): recusa cópia de origem pendente ou que já é cópia (23503); `FOR KEY SHARE` serializa com a remoção.
+  - `produtos_foto_na_galeria_trg` / `lojas_logo_na_galeria_trg` (BEFORE INSERT/UPDATE de `foto_url`/`loja_id`, `logo_url`; INVOKER): URL nova não nula só passa se o caminho for de linha da mesma loja sem remoção pendente; senão `imagem_fora_da_galeria` (P0001). Reenviar a mesma URL passa (produto legado segue editável).
+  - `produtos_recorte_sem_uso_trg` / `lojas_recorte_sem_uso_trg` (AFTER UPDATE/DELETE, `SECURITY DEFINER`): recorte antigo sem outra referência (produto ou logo) é marcado pendente. Nunca toca original nem outra loja. Racional BEFORE INVOKER × AFTER DEFINER em `seguranca.md` §2.
+
 ---
 
 ## 3. Indexes
@@ -907,6 +952,11 @@ CREATE INDEX pedidos_loja_cliente_idx ON pedidos(loja_id, cliente_id) WHERE clie
 -- Auditoria admin por loja, mais recentes primeiro
 -- Migration: 20260707122000_admin_acessos.sql
 CREATE INDEX ON admin_acessos(loja_id, criado_em DESC);
+
+-- Galeria: grade (originais visíveis, keyset por criado_em, id) e família de uma original (uso, remoção, cascata).
+-- Migration: 20261006120000_imagens_loja.sql
+CREATE INDEX imagens_loja_grade_idx ON imagens_loja(loja_id, criado_em DESC, id DESC) WHERE origem_id IS NULL AND remocao_pendente_em IS NULL;
+CREATE INDEX imagens_loja_origem_idx ON imagens_loja(origem_id) WHERE origem_id IS NOT NULL;
 ```
 
 ---
@@ -926,6 +976,7 @@ Regra geral:
 - **`pedidos` / `itens_pedido` / `itens_pedido_opcionais`** → além do lojista, `authenticated` lê os próprios com policy só SELECT (`pedidos_select_cliente`: `cliente_id = auth.uid()`; `itens_pedido_select_cliente` e `itens_pedido_opcionais_select_cliente` via `EXISTS` até `pedidos`). Nenhuma escrita para o cliente; `anon` continua sem SELECT (convidado só por `token_acesso`)
 - **`webhook_eventos_hotmart`** → deny-all permanente; acesso exclusivo via `service_role`
 - **`admin_acessos`** → deny-all permanente; acesso exclusivo via `service_role` (trilha de auditoria de acesso admin, issues 146/147)
+- **`imagens_loja`** → dono lê/insere/atualiza/apaga só da própria loja (`EXISTS` em `lojas.dono_id`); UPDATE com grant só em `remocao_pendente_em`; `anon` sem acesso. Admin opera sob `service_role` com `loja_id` explícito
 - **`taxas_entrega_duplicadas_182`** → deny-all permanente; acesso exclusivo via `service_role` (arquivo de dedup do índice único de `taxas_entrega.zona_id`, issue 182)
 
 ---

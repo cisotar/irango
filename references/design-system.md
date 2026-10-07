@@ -1,6 +1,6 @@
 # Design System — iRango
 
-**Versão:** 0.3.1 | **Atualizado:** 2026-09-27
+**Versão:** 0.3.2 | **Atualizado:** 2026-10-06
 
 > Referência de design e UI. Leia antes de criar qualquer componente ou tela. Garante consistência visual entre os dois mundos do produto: a vitrine pública (cliente final, mobile-first, sem login) e o painel do lojista (gestão, desktop-friendly mas responsivo). Itens marcados como **proposta** ainda não estão fundamentados no spec/architecture e precisam de revisão antes de virarem regra.
 
@@ -298,6 +298,8 @@ Toda UI que controla o submit do checkout deve consultar `podeConfirmar` — nun
 #### ProdutoModal — largura desktop
 
 `ProdutoModal` usa `md:max-w-3xl` (não `md:max-w-2xl`). Fonte: `ProdutoModal.tsx`.
+
+O dialog de tela cheia no mobile e janela centralizada a partir de `md:` vem de `CLASSE_DIALOG_TELA_CHEIA` (`src/components/shared/dialogTelaCheia.ts`), compartilhada entre a vitrine (`ProdutoModal`) e o painel (`SeletorGaleria`). Não copiar a string; quem precisa de outra largura acrescenta `md:max-w-*` via `cn`.
 
 #### Página de confirmação
 
