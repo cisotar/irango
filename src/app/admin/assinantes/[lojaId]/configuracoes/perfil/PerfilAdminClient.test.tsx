@@ -37,6 +37,10 @@ const capturado = vi.hoisted(() => ({
   // Issue 124: a fiação de `onSalvar` é a MESMA classe de vetor do bug de logo
   // da 119 — se a prop sumir, `PerfilClient` cai no default do LOJISTA.
   onSalvar: undefined as ((payload: unknown) => unknown) | undefined,
+  // Galeria (specs/galeria-imagens-loja.md, página 4): sem a injeção admin, o
+  // seletor da logo listaria/gravaria na galeria do ADMIN logado.
+  onListarGaleria: undefined as ((cursor?: unknown) => unknown) | undefined,
+  onEnviarParaGaleria: undefined as ((formData: FormData) => unknown) | undefined,
 }));
 
 // --- child client do painel: stub que captura as props e não renderiza árvore real ---
@@ -47,7 +51,11 @@ vi.mock(
       onSalvarLogo?: (formData: FormData) => unknown;
       onRemoverLogo?: () => unknown;
       onSalvar?: (payload: unknown) => unknown;
+      onListarGaleria?: (cursor?: unknown) => unknown;
+      onEnviarParaGaleria?: (formData: FormData) => unknown;
     }) => {
+      capturado.onListarGaleria = props.onListarGaleria;
+      capturado.onEnviarParaGaleria = props.onEnviarParaGaleria;
       capturado.onSalvarLogo = props.onSalvarLogo;
       capturado.onRemoverLogo = props.onRemoverLogo;
       capturado.onSalvar = props.onSalvar;
@@ -69,6 +77,15 @@ vi.mock("@/app/admin/assinantes/actions/admin-logo", () => ({
     logo_url: "https://storage.local/loja/logo/x.webp",
   })),
   removerLogoAdmin: vi.fn(async () => ({ ok: true })),
+}));
+vi.mock("@/app/admin/assinantes/actions/admin-galeria", () => ({
+  listarImagensGaleriaAdmin: vi.fn(async () => ({ ok: true, imagens: [], proximo_cursor: null })),
+  enviarImagemGaleriaAdmin: vi.fn(async () => ({ ok: false, erro: "stub" })),
+}));
+// Galeria do LOJISTA: resolve a loja pelo auth — nunca no caminho admin.
+vi.mock("@/lib/actions/galeria", () => ({
+  listarImagensGaleria: vi.fn(async () => ({ ok: true, imagens: [], proximo_cursor: null })),
+  enviarImagemGaleria: vi.fn(async () => ({ ok: false, erro: "stub" })),
 }));
 
 // --- defaults do LOJISTA: devem permanecer intocados no caminho admin ---
@@ -93,6 +110,11 @@ import {
   removerLogoAdmin,
 } from "@/app/admin/assinantes/actions/admin-logo";
 import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
+import {
+  enviarImagemGaleriaAdmin,
+  listarImagensGaleriaAdmin,
+} from "@/app/admin/assinantes/actions/admin-galeria";
+import { enviarImagemGaleria, listarImagensGaleria } from "@/lib/actions/galeria";
 import { salvarPerfilAdmin } from "@/app/admin/assinantes/actions/admin-perfil";
 import { salvarPerfil } from "@/lib/actions/loja";
 
@@ -109,6 +131,40 @@ function renderizar(lojaId = LOJA_ALVO) {
     />,
   );
 }
+
+describe("PerfilAdminClient — fiação da galeria admin no seletor da logo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturado.onListarGaleria = undefined;
+    capturado.onEnviarParaGaleria = undefined;
+  });
+
+  it("onListarGaleria(cursor) chama listarImagensGaleriaAdmin(lojaId, cursor) — nunca a do lojista", async () => {
+    renderizar();
+    expect(capturado.onListarGaleria).toBeTypeOf("function");
+    const cursor = { criado_em: "2026-10-01T00:00:00.000Z", id: "22222222-2222-4222-8222-222222222222" };
+
+    await capturado.onListarGaleria!(cursor);
+
+    expect(listarImagensGaleriaAdmin).toHaveBeenCalledWith(LOJA_ALVO, cursor);
+    expect(listarImagensGaleria).not.toHaveBeenCalled();
+  });
+
+  it("onEnviarParaGaleria(fd) SOBRESCREVE loja_id com o da URL e chama enviarImagemGaleriaAdmin — nunca a do lojista", async () => {
+    renderizar();
+    expect(capturado.onEnviarParaGaleria).toBeTypeOf("function");
+    const fd = new FormData();
+    fd.set("loja_id", "99999999-9999-4999-8999-999999999999");
+    fd.set(CAMPO_ARQUIVO, new Blob(["x"], { type: "image/webp" }), "original.webp");
+
+    await capturado.onEnviarParaGaleria!(fd);
+
+    expect(enviarImagemGaleriaAdmin).toHaveBeenCalledTimes(1);
+    const recebido = vi.mocked(enviarImagemGaleriaAdmin).mock.calls[0][0];
+    expect(recebido.getAll("loja_id")).toEqual([LOJA_ALVO]);
+    expect(enviarImagemGaleria).not.toHaveBeenCalled();
+  });
+});
 
 describe("PerfilAdminClient — fiação das actions admin de logo (issue 119, migrado em 154)", () => {
   beforeEach(() => {

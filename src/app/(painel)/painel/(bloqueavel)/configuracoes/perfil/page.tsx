@@ -6,6 +6,7 @@ import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { podePublicarLoja } from "@/lib/utils/publicacao";
 import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
 import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
+import { enviarImagemGaleria, listarImagensGaleria } from "@/lib/actions/galeria";
 import { PerfilClient } from "./PerfilClient";
 
 /**
@@ -50,6 +51,8 @@ export default async function PerfilPage(): Promise<ReactElement> {
       onDefinirPublicacao={definirPublicacao}
       onSalvarLogo={salvarLogoLoja}
       onRemoverLogo={removerLogoLoja}
+      onListarGaleria={listarImagensGaleria}
+      onEnviarParaGaleria={enviarImagemGaleria}
     />
   );
 }

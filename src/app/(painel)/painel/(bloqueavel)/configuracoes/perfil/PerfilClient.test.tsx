@@ -67,14 +67,22 @@ vi.mock("@/lib/actions/loja", () => ({
 const capturado = vi.hoisted(() => ({
   onSalvar: undefined as ((formData: FormData) => unknown) | undefined,
   onRemover: undefined as (() => unknown) | undefined,
+  // Galeria (specs/galeria-imagens-loja.md, página 4): mesma classe de vetor
+  // — uma action trocada listaria ou gravaria na galeria de outra loja.
+  onListarGaleria: undefined as ((cursor?: unknown) => unknown) | undefined,
+  onEnviarParaGaleria: undefined as ((formData: FormData) => unknown) | undefined,
 }));
 vi.mock("@/components/painel/UploadLogoLoja", () => ({
   UploadLogoLoja: (props: {
     onSalvar?: (formData: FormData) => unknown;
     onRemover?: () => unknown;
+    onListarGaleria?: (cursor?: unknown) => unknown;
+    onEnviarParaGaleria?: (formData: FormData) => unknown;
   }) => {
     capturado.onSalvar = props.onSalvar;
     capturado.onRemover = props.onRemover;
+    capturado.onListarGaleria = props.onListarGaleria;
+    capturado.onEnviarParaGaleria = props.onEnviarParaGaleria;
     return null;
   },
 }));
@@ -102,8 +110,19 @@ const INICIAL: PerfilInicial = {
 function acoesLogoLojista(): {
   onSalvarLogo: UploadLogoLojaProps["onSalvar"];
   onRemoverLogo: UploadLogoLojaProps["onRemover"];
+  onListarGaleria: UploadLogoLojaProps["onListarGaleria"];
+  onEnviarParaGaleria: UploadLogoLojaProps["onEnviarParaGaleria"];
 } {
   return {
+    onListarGaleria: vi.fn(async () => ({
+      ok: true as const,
+      imagens: [],
+      proximo_cursor: null,
+    })),
+    onEnviarParaGaleria: vi.fn(async (_fd: FormData) => ({
+      ok: false as const,
+      erro: "stub",
+    })),
     onSalvarLogo: vi.fn(async (_fd: FormData) => ({
       ok: true as const,
       logo_url: "https://storage.local/loja-do-lojista/logo/x.webp",
@@ -116,6 +135,8 @@ function renderizar(
   extra: {
     onSalvarLogo?: UploadLogoLojaProps["onSalvar"];
     onRemoverLogo?: UploadLogoLojaProps["onRemover"];
+    onListarGaleria?: UploadLogoLojaProps["onListarGaleria"];
+    onEnviarParaGaleria?: UploadLogoLojaProps["onEnviarParaGaleria"];
     inicial?: Partial<PerfilInicial>;
   } = {},
 ): string {
@@ -144,6 +165,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   capturado.onSalvar = undefined;
   capturado.onRemover = undefined;
+  capturado.onListarGaleria = undefined;
+  capturado.onEnviarParaGaleria = undefined;
 });
 
 describe("PerfilClient — repasse das actions de logo ao UploadLogoLoja (cenário 3, spec fix-logo-admin-cross-tenant)", () => {
@@ -173,6 +196,34 @@ describe("PerfilClient — repasse das actions de logo ao UploadLogoLoja (cenár
     expect(capturado.onRemover).toBe(onRemoverLogo);
     expect(capturado.onSalvar).not.toBe(onRemoverLogo);
     expect(capturado.onRemover).not.toBe(onSalvarLogo);
+  });
+
+  it("galeria: repassa a MESMA referência de onListarGaleria/onEnviarParaGaleria ao UploadLogoLoja — sem trocar uma pela outra nem por uma action de logo", () => {
+    const acoes = acoesLogoLojista();
+
+    renderizar(acoes);
+
+    expect(capturado.onListarGaleria).toBe(acoes.onListarGaleria);
+    expect(capturado.onEnviarParaGaleria).toBe(acoes.onEnviarParaGaleria);
+    expect(capturado.onListarGaleria).not.toBe(acoes.onEnviarParaGaleria);
+    expect(capturado.onEnviarParaGaleria).not.toBe(acoes.onSalvarLogo);
+    expect(capturado.onListarGaleria).not.toBe(acoes.onRemoverLogo);
+  });
+
+  it("galeria via ADMIN: adapters diferentes a cada wrapper chegam intactos (identidade da closure por lojaId preservada)", () => {
+    const onListarGaleria: UploadLogoLojaProps["onListarGaleria"] = vi.fn(async () => ({
+      ok: true as const,
+      imagens: [],
+      proximo_cursor: null,
+    }));
+    const onEnviarParaGaleria: UploadLogoLojaProps["onEnviarParaGaleria"] = vi.fn(
+      async (_fd: FormData) => ({ ok: false as const, erro: "stub" }),
+    );
+
+    renderizar({ onListarGaleria, onEnviarParaGaleria });
+
+    expect(capturado.onListarGaleria).toBe(onListarGaleria);
+    expect(capturado.onEnviarParaGaleria).toBe(onEnviarParaGaleria);
   });
 });
 

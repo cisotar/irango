@@ -105,6 +105,8 @@ function renderFormAdmin(hrefCardapios: string | null): string {
       onCriar={vi.fn(async () => ({ ok: true }) as const)}
       onAtualizar={vi.fn(async () => ({ ok: true }) as const)}
       onEnviarFoto={vi.fn(async () => ({ ok: true, url: "" }) as never)}
+      onListarGaleria={vi.fn(async () => ({ ok: true as const, imagens: [], proximo_cursor: null }))}
+      onEnviarParaGaleria={vi.fn(async () => ({ ok: false as const, erro: "" }))}
     />,
   );
 }

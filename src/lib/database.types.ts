@@ -525,6 +525,61 @@ export type Database = {
           },
         ]
       }
+      imagens_loja: {
+        Row: {
+          bytes: number | null
+          caminho: string
+          criado_em: string
+          id: string
+          loja_id: string
+          miniatura_caminho: string | null
+          origem_id: string | null
+          remocao_pendente_em: string | null
+        }
+        Insert: {
+          bytes?: number | null
+          caminho: string
+          criado_em?: string
+          id?: string
+          loja_id: string
+          miniatura_caminho?: string | null
+          origem_id?: string | null
+          remocao_pendente_em?: string | null
+        }
+        Update: {
+          bytes?: number | null
+          caminho?: string
+          criado_em?: string
+          id?: string
+          loja_id?: string
+          miniatura_caminho?: string | null
+          origem_id?: string | null
+          remocao_pendente_em?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "imagens_loja_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "imagens_loja_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "imagens_loja_origem_fk"
+            columns: ["origem_id", "loja_id"]
+            isOneToOne: false
+            referencedRelation: "imagens_loja"
+            referencedColumns: ["id", "loja_id"]
+          },
+        ]
+      }
       itens_pedido: {
         Row: {
           id: string
@@ -1756,6 +1811,7 @@ export type Database = {
         Args: { p_papel: string; p_usuario_id: string }
         Returns: string[]
       }
+      caminho_storage_produtos: { Args: { url: string }; Returns: string }
       cliente_da_loja: {
         Args: { p_cliente_id: string }
         Returns: {
@@ -1843,9 +1899,14 @@ export type Database = {
         Args: { p_dono_id: string; p_email: string; p_versao_termos?: string }
         Returns: string
       }
+      importar_imagens_do_storage: { Args: never; Returns: number }
       item_pedido_aceita_opcionais: {
         Args: { p_item_pedido_id: string }
         Returns: boolean
+      }
+      limpar_recortes_sem_uso: {
+        Args: { p_loja_id: string }
+        Returns: string[]
       }
       loja_esta_ativa: { Args: { p_loja_id: string }; Returns: boolean }
       loja_por_email_dono: {
@@ -1951,6 +2012,10 @@ export type Database = {
         }
       }
       pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
+      remover_imagens_loja: {
+        Args: { p_ids: string[]; p_loja_id: string }
+        Returns: Json
+      }
       reordenar_categorias: {
         Args: { p_ids: string[]; p_loja_id: string }
         Returns: number
@@ -1992,6 +2057,15 @@ export type Database = {
           p_titulo: string
         }
         Returns: string
+      }
+      uso_imagens_loja: {
+        Args: { p_ids: string[]; p_loja_id: string }
+        Returns: {
+          imagem_id: string
+          na_logo: boolean
+          produtos: Json
+          produtos_total: number
+        }[]
       }
     }
     Enums: {

@@ -51,6 +51,12 @@ export const LIMITES = {
   // página; 30 páginas/min fica acima de qualquer uso humano e fecha o loop
   // automatizado contra `clientes_da_loja`/`pedidos`.
   carregarMaisClientes: { limite: 30, janela: "1 m" },
+  // Galeria de imagens (specs/galeria-imagens-loja.md, RN-G13): baldes por LOJA
+  // da sessão (identificador = loja.id). Contenção de custo, fail-open.
+  enviarImagemGaleria: { limite: 30, janela: "1 m" },
+  recorteImagem: { limite: 20, janela: "1 m" },
+  removerImagensGaleria: { limite: 10, janela: "1 m" },
+  listarImagensGaleria: { limite: 30, janela: "1 m" },
 } as const satisfies Record<string, { limite: number; janela: `${number} m` }>;
 
 export type ChaveRateLimit = keyof typeof LIMITES;

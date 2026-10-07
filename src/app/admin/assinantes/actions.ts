@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { verificarAdminSaaS } from "@/lib/auth/admin";
 import { createServiceClient } from "@/lib/supabase/service";
 import { lojaIdSchema, registrarAcessoAdmin } from "@/lib/actions/admin-loja";
+import { particionarCaminhos } from "@/lib/actions/galeria-contrato";
 import {
   aplicarStatusAdmin,
   excluirLojaPermanente,
@@ -246,40 +247,76 @@ export async function excluirLoja(lojaId: string): Promise<Resultado> {
   }
 }
 
+/** Máximo de caminhos por `storage.remove` (a API trabalha em lotes de 100). */
+const BLOCO_REMOCAO_STORAGE = 100;
+
 /**
  * Limpeza best-effort do storage da loja (issue 084). NUNCA aborta o DELETE:
  * qualquer falha é logada e engolida (objetos órfãos são aceitos). Buckets:
- *   - `pix-qr`: plano → `list(lojaId)`.
- *   - `produtos`: fotos na raiz `${lojaId}/` E logo em `${lojaId}/logo/` (subpasta
- *     que `list` da raiz devolve só como entrada de pasta) → listar ambos.
- * Para cada listagem, monta `${prefixo}/${item.name}` e remove (guard p/ vazio).
+ *   - `produtos`, registrados: `caminho` + `miniatura_caminho` de `imagens_loja`
+ *     DA LOJA, lidos ANTES do DELETE (a tabela cai em cascata com a loja) —
+ *     cobre a pasta `galeria/` e passa do limite de 100 do `list()` (RN-G15);
+ *   - `pix-qr`: plano → `list(lojaId)`;
+ *   - `produtos`, complemento: raiz `${lojaId}/` E `${lojaId}/logo/` listadas,
+ *     para objetos que não estejam registrados.
+ * Todo caminho passa pela trava de prefixo `${lojaId}/` (sob service_role é a
+ * única amarra no Storage) e sai em blocos de até 100 por `remove`.
  */
 async function limparStorageDaLoja(
   svc: ReturnType<typeof createServiceClient>,
   lojaId: string,
 ): Promise<void> {
-  // Um remove por bucket: `produtos` agrega a raiz E a subpasta `logo/` (as duas
-  // listagens). `pix-qr` é plano.
-  const buckets: { bucket: string; prefixos: string[] }[] = [
-    { bucket: "pix-qr", prefixos: [lojaId] },
-    { bucket: "produtos", prefixos: [lojaId, `${lojaId}/logo`] },
+  const registrados = await caminhosRegistradosDaLoja(svc, lojaId);
+
+  const buckets: { bucket: string; prefixos: string[]; extras: string[] }[] = [
+    { bucket: "pix-qr", prefixos: [lojaId], extras: [] },
+    { bucket: "produtos", prefixos: [lojaId, `${lojaId}/logo`], extras: registrados },
   ];
-  for (const { bucket, prefixos } of buckets) {
-    try {
-      const paths: string[] = [];
-      for (const prefixo of prefixos) {
+  for (const { bucket, prefixos, extras } of buckets) {
+    const paths = new Set<string>(extras);
+    for (const prefixo of prefixos) {
+      try {
         const { data, error } = await svc.storage.from(bucket).list(prefixo);
         if (error) throw error;
-        for (const item of data ?? []) paths.push(`${prefixo}/${item.name}`);
+        for (const item of data ?? []) paths.add(`${prefixo}/${item.name}`);
+      } catch (e) {
+        console.error("[excluirLoja] storage list", { bucket, prefixo }, e);
       }
-      if (paths.length === 0) continue;
-      const { error: erroRemove } = await svc.storage
-        .from(bucket)
-        .remove(paths);
-      if (erroRemove) throw erroRemove;
-    } catch (e) {
-      console.error("[excluirLoja] storage", { bucket }, e);
     }
+    const { daLoja, alheios } = particionarCaminhos([...paths], lojaId);
+    if (alheios.length > 0) {
+      console.error("[excluirLoja] caminhos fora da loja descartados", { bucket, alheios });
+    }
+    for (let i = 0; i < daLoja.length; i += BLOCO_REMOCAO_STORAGE) {
+      try {
+        const { error } = await svc.storage
+          .from(bucket)
+          .remove(daLoja.slice(i, i + BLOCO_REMOCAO_STORAGE));
+        if (error) throw error;
+      } catch (e) {
+        console.error("[excluirLoja] storage remove", { bucket }, e);
+      }
+    }
+  }
+}
+
+/** Caminhos de imagem registrados da loja (best-effort: falha → lista vazia). */
+async function caminhosRegistradosDaLoja(
+  svc: ReturnType<typeof createServiceClient>,
+  lojaId: string,
+): Promise<string[]> {
+  try {
+    const { data, error } = await svc
+      .from("imagens_loja")
+      .select("caminho, miniatura_caminho")
+      .eq("loja_id", lojaId);
+    if (error) throw error;
+    return (data ?? []).flatMap((l) =>
+      l.miniatura_caminho ? [l.caminho, l.miniatura_caminho] : [l.caminho],
+    );
+  } catch (e) {
+    console.error("[excluirLoja] leitura de imagens_loja", e);
+    return [];
   }
 }
 

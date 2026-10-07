@@ -97,11 +97,35 @@ type UpdateRegistro = {
 let updates: UpdateRegistro[];
 let erroUpdate: unknown;
 
+// [galeria] linha do tempo das escritas, remove() de compensação e INSERTs da
+// linha-cópia em imagens_loja.
+let sequencia: string[];
+let removes: { bucket: string; caminhos: string[] }[];
+let insertsImagens: Record<string, unknown>[];
+let insertResposta: { data: unknown; error: unknown };
+
+function cadeiaResolvida(resposta: () => unknown): unknown {
+  const proxy: unknown = new Proxy(
+    {},
+    {
+      get(_alvo, prop) {
+        if (prop === "then") {
+          return (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
+            Promise.resolve().then(resposta).then(ok, falha);
+        }
+        return () => proxy;
+      },
+    },
+  );
+  return proxy;
+}
+
 function builderLojas() {
   return {
     update(patch: Record<string, unknown>, opts?: unknown) {
       const reg: UpdateRegistro = { patch, opts };
       updates.push(reg);
+      sequencia.push("update:lojas");
       return {
         eq(col: string, val: unknown) {
           reg.eqCol = col;
@@ -126,6 +150,10 @@ function makeServiceClient() {
           uploads.push({ bucket, path, opts });
           return uploadResposta;
         },
+        remove: async (caminhos: string[]) => {
+          removes.push({ bucket, caminhos });
+          return { data: [], error: null };
+        },
         getPublicUrl: (path: string) => ({
           data: {
             publicUrl:
@@ -137,6 +165,18 @@ function makeServiceClient() {
       }),
     },
     from(tabela: string) {
+      if (tabela === "imagens_loja") {
+        return {
+          insert(linha: Record<string, unknown>) {
+            insertsImagens.push(linha);
+            sequencia.push("insert:imagens_loja");
+            return cadeiaResolvida(() => insertResposta);
+          },
+        };
+      }
+      if (tabela === "admin_acessos") {
+        return { insert: () => cadeiaResolvida(() => ({ data: null, error: null })) };
+      }
       if (tabela !== "lojas") {
         throw new Error(`from() inesperado para tabela: ${tabela}`);
       }
@@ -171,7 +211,58 @@ vi.mock("@/lib/supabase/service", () => ({
 
 // 'use server' é só diretiva; o módulo importa no runner node. HOJE o módulo NÃO
 // EXISTE → a resolução falha e o arquivo quebra na coleta (RED).
+// [galeria] origem do recorte (tabela em memória respeitada pela query mockada)
+// e o processamento best-effort de pendentes depois do UPDATE.
+type LinhaImagem = { id: string; loja_id: string; origem_id: string | null; remocao_pendente_em: string | null };
+let imagens: LinhaImagem[];
+const buscarOriginalDaLoja = vi.fn(
+  async (_client: unknown, lojaId: string, id: string) =>
+    imagens.find(
+      (i) => i.id === id && i.loja_id === lojaId && i.origem_id === null && i.remocao_pendente_em === null,
+    ) ?? null,
+);
+vi.mock("@/lib/supabase/queries/imagens", () => ({
+  buscarOriginalDaLoja: (...a: unknown[]) =>
+    buscarOriginalDaLoja(...(a as [unknown, string, string])),
+  contarOriginaisDaLoja: vi.fn(),
+  listarImagensDaLoja: vi.fn(),
+  listarImagensDaLojaAdmin: vi.fn(),
+}));
+const processarRemocoesPendentes = vi.fn();
+vi.mock("@/lib/actions/galeria-pendentes", () => ({
+  processarRemocoesPendentes: (...a: unknown[]) => processarRemocoesPendentes(...a),
+}));
+
+/**
+ * "Falha não derruba o save": a garantia é do helper REAL, que nunca rejeita
+ * (provado em galeria-pendentes.test.ts). Aqui ele roda de verdade contra um
+ * client cuja varredura cai — o caller não tem `.catch` próprio, então se o
+ * helper voltasse a rejeitar este teste ficaria vermelho.
+ */
+async function pendentesReaisComFalha(): Promise<void> {
+  const real = await vi.importActual<typeof import("@/lib/actions/galeria-pendentes")>(
+    "@/lib/actions/galeria-pendentes",
+  );
+  const clientQueCai = {
+    rpc: () => {
+      throw new Error("storage fora do ar");
+    },
+  };
+  processarRemocoesPendentes.mockImplementation((_client: unknown, lojaId: string) =>
+    real.processarRemocoesPendentes(clientQueCai as never, lojaId),
+  );
+}
+
 import { salvarLogoAdmin, removerLogoAdmin } from "./admin-logo";
+
+// Literais do contrato da galeria (galeria-contrato.ts ainda não existe).
+const CAMPO_ORIGEM = "origem_id";
+const MSG_ORIGEM_REMOVIDA = "Essa imagem foi removida da galeria.";
+const MSG_FOTO_REMOVIDA_DA_GALERIA = "A foto escolhida foi removida da galeria. Escolha outra.";
+const MSG_TENTE_DE_NOVO = "Não foi possível salvar. Tente de novo.";
+const ORIGEM = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001";
+const ORIGEM_ALHEIA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000002";
+const ORIGEM_PENDENTE = "aaaaaaaa-aaaa-aaaa-aaaa-000000000003";
 
 /** Blob com magic bytes + type; força size quando necessário. */
 function blob(bytes: Uint8Array, over: { type?: string; size?: number } = {}): Blob {
@@ -182,11 +273,19 @@ function blob(bytes: Uint8Array, over: { type?: string; size?: number } = {}): B
   return b;
 }
 
-/** FormData com o arquivo no campo CAMPO_ARQUIVO + o `loja_id` informado. */
-function fd(arquivo: Blob, lojaId: string | null = LOJA_ALVO): FormData {
+/**
+ * FormData com o arquivo no campo CAMPO_ARQUIVO, o `loja_id` informado e, desde
+ * a galeria, o `origem_id` OBRIGATÓRIO (null = omitir).
+ */
+function fd(
+  arquivo: Blob,
+  lojaId: string | null = LOJA_ALVO,
+  origemId: string | null = ORIGEM,
+): FormData {
   const f = new FormData();
   f.append(CAMPO_ARQUIVO, arquivo);
   if (lojaId !== null) f.append("loja_id", lojaId);
+  if (origemId !== null) f.append(CAMPO_ORIGEM, origemId);
   return f;
 }
 
@@ -204,6 +303,16 @@ beforeEach(() => {
   publicUrlResposta = null;
   serviceClient = makeServiceClient();
   verificarAdminSaaS.mockResolvedValue(undefined);
+  sequencia = [];
+  removes = [];
+  insertsImagens = [];
+  insertResposta = { data: null, error: null };
+  imagens = [
+    { id: ORIGEM, loja_id: LOJA_ALVO, origem_id: null, remocao_pendente_em: null },
+    { id: ORIGEM_ALHEIA, loja_id: LOJA_ADMIN, origem_id: null, remocao_pendente_em: null },
+    { id: ORIGEM_PENDENTE, loja_id: LOJA_ALVO, origem_id: null, remocao_pendente_em: "2026-10-06T12:00:00Z" },
+  ];
+  processarRemocoesPendentes.mockResolvedValue(undefined);
 });
 
 // ───────── Caso 1: bug principal — admin salva logo em loja alheia ────────────
@@ -343,5 +452,85 @@ describe("salvarLogoAdmin — extras de segurança", () => {
     expect(r.ok).toBe(false);
     // O upload pode ter ocorrido, mas a URL externa JAMAIS pode ser persistida.
     expect(updates).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Fase RED — galeria de imagens (specs/galeria-imagens-loja.md, página 4 via
+// admin, D2/D5, RN-G3/G20). Paridade com `salvarLogoLoja`: `origem_id`
+// obrigatório validado na LOJA-ALVO, linha-cópia ANTES do UPDATE (via
+// escopo.inserir), tradução do trigger/deadlock, pendentes depois do UPDATE.
+// ═════════════════════════════════════════════════════════════════════════════
+describe("salvarLogoAdmin — origem_id e linha-cópia (galeria)", () => {
+  it("sem origem_id → recusa, SEM upload e SEM UPDATE", async () => {
+    const r = await salvarLogoAdmin(fd(blob(PNG), LOJA_ALVO, null));
+    expect(r.ok).toBe(false);
+    expect(opUpload()).toBeUndefined();
+    expect(updates).toHaveLength(0);
+  });
+
+  it("ATAQUE: origem de outra loja → MSG_ORIGEM_REMOVIDA, SEM upload; consulta na loja-alvo via svc", async () => {
+    const r = await salvarLogoAdmin(fd(blob(PNG), LOJA_ALVO, ORIGEM_ALHEIA));
+    expect(r).toEqual({ ok: false, erro: MSG_ORIGEM_REMOVIDA });
+    expect(opUpload()).toBeUndefined();
+    expect(updates).toHaveLength(0);
+    expect(buscarOriginalDaLoja).toHaveBeenCalledWith(serviceClient, LOJA_ALVO, ORIGEM_ALHEIA);
+  });
+
+  it("origem pendente → MSG_ORIGEM_REMOVIDA, SEM upload", async () => {
+    const r = await salvarLogoAdmin(fd(blob(PNG), LOJA_ALVO, ORIGEM_PENDENTE));
+    expect(r).toEqual({ ok: false, erro: MSG_ORIGEM_REMOVIDA });
+    expect(opUpload()).toBeUndefined();
+  });
+
+  it("feliz: INSERT da cópia (loja-alvo, origem_id, caminho) ANTES do UPDATE lojas", async () => {
+    const r = await salvarLogoAdmin(fd(blob(PNG)));
+    expect(r.ok).toBe(true);
+    expect(insertsImagens).toHaveLength(1);
+    expect(insertsImagens[0]).toMatchObject({
+      loja_id: LOJA_ALVO,
+      origem_id: ORIGEM,
+      caminho: opUpload()?.path,
+    });
+    const iInsert = sequencia.indexOf("insert:imagens_loja");
+    expect(iInsert).toBeGreaterThanOrEqual(0);
+    expect(sequencia.indexOf("update:lojas")).toBeGreaterThan(iInsert);
+  });
+
+  it("INSERT da cópia falha → remove([caminho]), SEM UPDATE, erro genérico", async () => {
+    insertResposta = { data: null, error: { message: "duplicate key imagens_loja_caminho_unico", code: "23505" } };
+    const r = await salvarLogoAdmin(fd(blob(PNG)));
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toMatch(/imagens_loja|23505|duplicate/);
+    expect(updates).toHaveLength(0);
+    expect(removes).toEqual([{ bucket: "produtos", caminhos: [opUpload()?.path] }]);
+  });
+
+  it("UPDATE recusado pelo trigger → MSG_FOTO_REMOVIDA_DA_GALERIA", async () => {
+    erroUpdate = { code: "P0001", message: "imagem_fora_da_galeria" };
+    const r = await salvarLogoAdmin(fd(blob(PNG)));
+    expect(r).toEqual({ ok: false, erro: MSG_FOTO_REMOVIDA_DA_GALERIA });
+  });
+
+  it("UPDATE aborta por deadlock → MSG_TENTE_DE_NOVO", async () => {
+    erroUpdate = { code: "40P01", message: "deadlock detected" };
+    const r = await salvarLogoAdmin(fd(blob(PNG)));
+    expect(r).toEqual({ ok: false, erro: MSG_TENTE_DE_NOVO });
+  });
+
+  it("depois do UPDATE processa pendentes da loja-alvo com o service client; falha não derruba", async () => {
+    await pendentesReaisComFalha();
+    const r = await salvarLogoAdmin(fd(blob(PNG)));
+    expect(processarRemocoesPendentes).toHaveBeenCalledWith(serviceClient, LOJA_ALVO);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("removerLogoAdmin — pendentes (galeria)", () => {
+  it("depois do UPDATE processa pendentes da loja-alvo; falha não derruba", async () => {
+    await pendentesReaisComFalha();
+    const r = await removerLogoAdmin(LOJA_ALVO);
+    expect(processarRemocoesPendentes).toHaveBeenCalledWith(serviceClient, LOJA_ALVO);
+    expect(r.ok).toBe(true);
   });
 });

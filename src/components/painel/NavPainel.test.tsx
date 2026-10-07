@@ -380,3 +380,51 @@ describe("NavPainel — subitens de Configurações em ambos os contextos", () =
     );
   });
 });
+
+/**
+ * D9 (specs/galeria-imagens-loja.md, página 5): "Galeria" é item de primeiro
+ * nível LOGO DEPOIS de Produtos (e do subitem Opcionais, que pertence a
+ * Produtos), nos dois mundos, com `href` derivado do `basePath`.
+ */
+describe("NavPainel — item Galeria (D9)", () => {
+  const BASES = ["/painel", "/admin/assinantes/L1"] as const;
+
+  it.each(BASES)("em %s, Galeria vem logo depois de Produtos/Opcionais e antes de Cupons", (base) => {
+    const ctx: ContextoNav | undefined = base === "/painel" ? undefined : { basePath: base };
+    const hrefs = links(render(base, ctx)).map((l) => l.href);
+    const iGaleria = hrefs.indexOf(`${base}/galeria`);
+    expect(iGaleria).toBeGreaterThan(-1);
+    expect(hrefs[iGaleria - 1]).toBe(`${base}/produtos/opcionais`);
+    expect(hrefs[iGaleria - 2]).toBe(`${base}/produtos`);
+    expect(hrefs[iGaleria + 1]).toBe(`${base}/cupons`);
+  });
+
+  it.each(BASES)("em %s, o rótulo é 'Galeria' com ícone", (base) => {
+    const ctx: ContextoNav | undefined = base === "/painel" ? undefined : { basePath: base };
+    const html = render(base, ctx);
+    const escapado = `${base}/galeria`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    expect(html).toMatch(
+      new RegExp(`<a[^>]*href="${escapado}"[^>]*>\\s*<svg[^>]*lucide-images[\\s\\S]*?Galeria</a>`),
+    );
+  });
+
+  it.each(BASES)("em %s, acende em /galeria e só ele", (base) => {
+    const ctx: ContextoNav | undefined = base === "/painel" ? undefined : { basePath: base };
+    const ativos = links(render(`${base}/galeria`, ctx)).filter((l) => l.ativo);
+    expect(ativos.map((l) => l.href)).toEqual([`${base}/galeria`]);
+  });
+
+  it("o hub admin real (rotasAusentes do layout admin) mantém a Galeria", () => {
+    const ctx: ContextoNav = {
+      basePath: "/admin/assinantes/L1",
+      rotasAusentes: ["configuracoes/promocoes", "clientes"],
+    };
+    expect(links(render("/admin/assinantes/L1", ctx)).map((l) => l.href)).toContain(
+      "/admin/assinantes/L1/galeria",
+    );
+  });
+
+  it("aparece também no mobile (Sheet)", () => {
+    expect(renderMobile("/painel")).toContain('href="/painel/galeria"');
+  });
+});

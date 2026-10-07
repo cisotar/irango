@@ -504,3 +504,206 @@ describe("enforcement CAMADA 4 — escopo de tenant em toda RPC admin", () => {
  * propósito: se o GREEN precisar de uma origem nova, ela entra em
  * `ORIGEM_DERIVADA` com revisão humana, nunca por afrouxamento da regex.
  */
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Camada 5 — HELPERS NEUTROS da galeria: o `lojaId` que a action admin entrega
+// a um helper sob service_role vem da MESMA origem derivada da CAMADA 4.
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Por que existe: a galeria tirou dos módulos admin a RPC e a escrita no
+// Storage/`imagens_loja` e as pôs em helpers neutros de `src/lib/actions/`
+// (`galeria-pendentes.ts`, `galeria-operacoes.ts`, `galeria-upload.ts`). Lá
+// dentro o escopo é só o parâmetro `lojaId`: a varredura, o `storage.remove`, o
+// DELETE e o `p_loja_id` da RPC usam o que o chamador mandou. As camadas 3 e 4
+// leem só os módulos admin, então um `processarRemocoesPendentes(svc, id)` — id
+// do PRODUTO no lugar da loja — passava com a suíte inteira verde (achado da
+// auditoria da galeria, P10). Esta camada fecha os dois lados:
+//   (a) nos módulos admin, todo `helper(svc, X)` e todo `lojaId:` entregue a
+//       `subirOriginalNaGaleria`/`subirRecorteDaGaleria` tem X casando
+//       `ORIGEM_DERIVADA`;
+//   (b) nos helpers neutros, o `lojaId` recebido segue LITERAL para o
+//       `p_loja_id` de toda RPC e para todo helper encadeado — sem isso (a)
+//       provaria a entrada e deixaria o miolo sem trava.
+//
+// ANTI-VACUIDADE: contagens mínimas iguais ao número real de hoje; rede de
+// legibilidade (toda ocorrência textual precisa ser lida pelo parser).
+// LETALIDADE: [G5-C6] planta as formas hostis no MESMO analisador.
+
+const HELPERS_COM_LOJA = [
+  "processarRemocoesPendentes",
+  "apagarImagensPendentes",
+  "executarRemocaoDaGaleria",
+  "consultarUsoDaGaleria",
+] as const;
+const ENVIOS_COM_LOJA = ["subirOriginalNaGaleria", "subirRecorteDaGaleria"] as const;
+
+/** Ocorrência textual de chamada (exclui a própria declaração `function nome(`). */
+function reTextual(nomes: readonly string[]): RegExp {
+  return new RegExp(`(?<!function\\s+)\\b(${nomes.join("|")})\\s*\\(`, "g");
+}
+
+/** `helper(<cliente>, <valor>` — o 2º argumento é o escopo de tenant. */
+function chamadasDeHelper(
+  fonte: string,
+  cliente: string,
+): { fn: string; valor: string; trecho: string }[] {
+  const re = new RegExp(
+    `(?<!function\\s+)\\b(${HELPERS_COM_LOJA.join("|")})\\s*\\(\\s*${cliente}\\s*,\\s*([^,)]+?)\\s*[,)]`,
+    "g",
+  );
+  const out: { fn: string; valor: string; trecho: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fonte)) !== null) out.push({ fn: m[1], valor: m[2], trecho: m[0] });
+  return out;
+}
+
+/** Objeto literal que abre em `inicio` (`{`), com chaves balanceadas. */
+function objetoLiteral(fonte: string, inicio: number): string {
+  let nivel = 0;
+  for (let i = inicio; i < fonte.length; i++) {
+    if (fonte[i] === "{") nivel++;
+    else if (fonte[i] === "}") {
+      nivel--;
+      if (nivel === 0) return fonte.slice(inicio, i + 1);
+    }
+  }
+  return fonte.slice(inicio);
+}
+
+/**
+ * `subir*({ … lojaId[: valor], … })`. Shorthand `lojaId,` vale `lojaId`. Cada
+ * chamada precisa de EXATAMENTE uma propriedade `lojaId` legível.
+ */
+function enviosComLoja(fonte: string): { fn: string; valores: string[] }[] {
+  const re = new RegExp(`\\b(${ENVIOS_COM_LOJA.join("|")})\\s*\\(\\s*\\{`, "g");
+  const out: { fn: string; valores: string[] }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fonte)) !== null) {
+    const corpo = objetoLiteral(fonte, m.index + m[0].length - 1);
+    const valores = [...corpo.matchAll(/(?:^|[{,\n])\s*lojaId\s*(?::\s*([^,\n}]+?))?\s*(?=[,\n}])/g)].map(
+      (p) => (p[1] ?? "lojaId").trim(),
+    );
+    out.push({ fn: m[1], valores });
+  }
+  return out;
+}
+
+const NEUTROS = ["src/lib/actions/galeria-pendentes.ts", "src/lib/actions/galeria-operacoes.ts"].map(
+  (rotulo) => ({ rotulo, fonte: readFileSync(join(process.cwd(), rotulo), "utf8") }),
+);
+
+const helpersAdmin = modulos.flatMap((mod) =>
+  chamadasDeHelper(mod.fonte, "svc").map((c) => ({ rotulo: mod.rotulo, ...c })),
+);
+const enviosAdmin = modulos.flatMap((mod) =>
+  enviosComLoja(mod.fonte).map((e) => ({ rotulo: mod.rotulo, ...e })),
+);
+const rpcsNeutras = NEUTROS.flatMap((mod) => chamadasRpcDe(mod.rotulo, mod.fonte));
+const helpersNeutros = NEUTROS.flatMap((mod) =>
+  chamadasDeHelper(mod.fonte, "client").map((c) => ({ rotulo: mod.rotulo, ...c })),
+);
+
+describe("enforcement CAMADA 5 — lojaId entregue aos helpers neutros da galeria", () => {
+  it("[G5-C1] ANTI-VACUIDADE: acha as chamadas reais de hoje", () => {
+    // admin-produtos ×2, admin-logo ×2, admin-galeria ×2 (executar/consultar).
+    expect(helpersAdmin.length, JSON.stringify(helpersAdmin, null, 2)).toBeGreaterThanOrEqual(6);
+    // admin-galeria (original), admin-upload e admin-logo (recortes).
+    expect(enviosAdmin.length, JSON.stringify(enviosAdmin, null, 2)).toBeGreaterThanOrEqual(3);
+    // uso_imagens_loja + remover_imagens_loja + limpar_recortes_sem_uso.
+    expect(rpcsNeutras.length, JSON.stringify(rpcsNeutras, null, 2)).toBeGreaterThanOrEqual(3);
+    // executar → apagar + processar; processar → apagar.
+    expect(helpersNeutros.length, JSON.stringify(helpersNeutros, null, 2)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("[G5-C2] toda chamada textual dos helpers/envios nos módulos admin é legível pelo parser", () => {
+    const ilegiveis = modulos
+      .map((mod) => ({
+        rotulo: mod.rotulo,
+        helpers: [contarOcorrencias(mod.fonte, reTextual(HELPERS_COM_LOJA)), chamadasDeHelper(mod.fonte, "svc").length],
+        envios: [contarOcorrencias(mod.fonte, reTextual(ENVIOS_COM_LOJA)), enviosComLoja(mod.fonte).length],
+      }))
+      .filter((m) => m.helpers[0] !== m.helpers[1] || m.envios[0] !== m.envios[1]);
+    expect(
+      ilegiveis,
+      "chamada em forma que o parser da camada 5 não lê (1º arg diferente de `svc`, args " +
+        `fora de objeto literal): ficaria FORA da trava:\n${JSON.stringify(ilegiveis, null, 2)}`,
+    ).toHaveLength(0);
+  });
+
+  it("[G5-C3] nos helpers neutros, toda RPC e todo helper encadeado são legíveis", () => {
+    const ilegiveis = NEUTROS.map((mod) => ({
+      rotulo: mod.rotulo,
+      rpc: [contarOcorrencias(mod.fonte, QUALQUER_RPC), chamadasRpcDe(mod.rotulo, mod.fonte).length],
+      helpers: [contarOcorrencias(mod.fonte, reTextual(HELPERS_COM_LOJA)), chamadasDeHelper(mod.fonte, "client").length],
+    })).filter((m) => m.rpc[0] !== m.rpc[1] || m.helpers[0] !== m.helpers[1]);
+    expect(ilegiveis, JSON.stringify(ilegiveis, null, 2)).toHaveLength(0);
+  });
+
+  for (const c of helpersAdmin) {
+    it(`[G5-C4] ${c.rotulo} → ${c.fn}(svc, ${c.valor}) usa o lojaId validado`, () => {
+      expect(
+        ORIGEM_DERIVADA.test(c.valor),
+        `${c.fn} recebe "${c.valor}" como loja em ${c.rotulo}. Sob service_role esse valor é o ` +
+          `escopo da varredura, do storage.remove e do DELETE: só loja.lojaId ou lojaId.\n${c.trecho}`,
+      ).toBe(true);
+    });
+  }
+
+  for (const e of enviosAdmin) {
+    it(`[G5-C4] ${e.rotulo} → ${e.fn}({ lojaId }) usa o lojaId validado`, () => {
+      expect(e.valores, `${e.fn} sem exatamente uma propriedade lojaId legível`).toHaveLength(1);
+      expect(
+        ORIGEM_DERIVADA.test(e.valores[0]),
+        `${e.fn} recebe lojaId "${e.valores[0]}" em ${e.rotulo}: vira o 1º segmento do caminho ` +
+          `no Storage e o escopo da origem — só loja.lojaId ou lojaId.`,
+      ).toBe(true);
+    });
+  }
+
+  for (const c of rpcsNeutras) {
+    it(`[G5-C5] ${c.rotulo} → rpc("${c.fn}") repassa o lojaId recebido`, () => {
+      expect(rpcEscopadaPorLoja(c.args), `args: {${c.args}}`).toBe(true);
+    });
+  }
+
+  for (const c of helpersNeutros) {
+    it(`[G5-C5] ${c.rotulo} → ${c.fn}(client, ${c.valor}) repassa o lojaId recebido`, () => {
+      expect(ORIGEM_DERIVADA.test(c.valor), c.trecho).toBe(true);
+    });
+  }
+
+  it("[G5-C6] LETALIDADE: o analisador reprova as formas hostis e aprova as derivadas", () => {
+    const hostis = [
+      "await processarRemocoesPendentes(svc, id);",
+      "await processarRemocoesPendentes(svc, parsed.data.loja_id);",
+      "const r = await executarRemocaoDaGaleria(\n    svc,\n    parsed.data.lojaId,\n    ids,\n  );",
+      'return consultarUsoDaGaleria(svc, produto.loja_id, ids, "x");',
+    ];
+    for (const fonte of hostis) {
+      const [c] = chamadasDeHelper(fonte, "svc");
+      expect(c, `fixture não casou: ${fonte}`).toBeDefined();
+      expect(ORIGEM_DERIVADA.test(c.valor), `DEIXOU PASSAR: ${fonte}`).toBe(false);
+    }
+    const [envioHostil] = enviosComLoja(
+      "await subirRecorteDaGaleria({\n  client: svc,\n  lojaId: payload.loja_id,\n  inserir: (l) => x({ ...l, loja_id: y }),\n});",
+    );
+    expect(envioHostil.valores).toEqual(["payload.loja_id"]);
+    expect(ORIGEM_DERIVADA.test(envioHostil.valores[0])).toBe(false);
+
+    // Chamada com 1º arg fora do padrão não some: a rede de legibilidade a vê.
+    const fonteFora = "await processarRemocoesPendentes(outroClient, loja.lojaId);";
+    expect(contarOcorrencias(fonteFora, reTextual(HELPERS_COM_LOJA))).toBe(1);
+    expect(chamadasDeHelper(fonteFora, "svc")).toHaveLength(0);
+
+    const legitimas = [
+      "await processarRemocoesPendentes(svc, loja.lojaId);",
+      "await processarRemocoesPendentes(svc, lojaId);",
+    ];
+    for (const fonte of legitimas) {
+      const [c] = chamadasDeHelper(fonte, "svc");
+      expect(ORIGEM_DERIVADA.test(c.valor), fonte).toBe(true);
+    }
+    const [envioShorthand] = enviosComLoja("subirRecorteDaGaleria({\n  client: svc,\n  lojaId,\n  origemId,\n})");
+    expect(envioShorthand.valores).toEqual(["lojaId"]);
+  });
+});

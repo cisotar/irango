@@ -36,6 +36,10 @@ import {
 import { rotaCardapiosAdmin } from "@/lib/utils/rotasCardapios";
 import { enviarFotoProdutoAdmin } from "@/app/admin/assinantes/actions/admin-upload";
 import {
+  enviarImagemGaleriaAdmin,
+  listarImagensGaleriaAdmin,
+} from "@/app/admin/assinantes/actions/admin-galeria";
+import {
   criarCategoriaOpcionalAdmin,
   atualizarCategoriaOpcionalAdmin,
   removerCategoriaOpcionalAdmin,
@@ -102,7 +106,7 @@ export function CardapioAdminClient({
   // escopada por `lojaId`). A escrita vai pela action admin em `acoes`.
   | "ocultosOpcionais"
 >) {
-  // Foto: o `UploadFotoProduto` monta o FormData só com o arquivo (CAMPO_ARQUIVO).
+  // Foto: o `UploadFotoProduto` monta o FormData com o recorte e o `origem_id`.
   // A action admin lê `loja_id` do FormData; injetamos o `lojaId` da URL aqui.
   const enviarFotoProduto = useCallback(
     async (formData: FormData) => {
@@ -206,6 +210,13 @@ export function CardapioAdminClient({
           alternarDisponibilidadeAdmin(lojaId, id, disponivel),
         alternarOculto: (id, oculto) => alternarOcultoAdmin(lojaId, id, oculto),
         enviarFotoProduto,
+        // Galeria da LOJA-ALVO no seletor da foto: `lojaId` da URL por closure
+        // (listagem) e `set` no FormData (envio, um só valor, o da URL).
+        listarImagensGaleria: (cursor) => listarImagensGaleriaAdmin(lojaId, cursor),
+        enviarImagemGaleria: (formData) => {
+          formData.set("loja_id", lojaId);
+          return enviarImagemGaleriaAdmin(formData);
+        },
         salvarAssociacaoOpcionais: (payload) =>
           salvarAssociacaoOpcionaisAdmin(lojaId, payload),
         // [217] As 9 do CRUD de opcionais, mesmas assinaturas do

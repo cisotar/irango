@@ -50,14 +50,45 @@ let uploads: UploadCall[];
 let uploadResposta: { data: unknown; error: unknown };
 let publicUrlResposta: string | null;
 
+// [galeria] remove() de compensação + cadeia PostgREST gravada por tabela.
+type Chamada = { metodo: string; args: unknown[] };
+type OpTabela = { tabela: string; chamadas: Chamada[] };
+let removes: { bucket: string; caminhos: string[] }[];
+let opsTabela: OpTabela[];
+let respostaTabela: (op: OpTabela) => { data: unknown; error: unknown; count?: number };
+
+function cadeia(op: OpTabela): unknown {
+  const proxy: unknown = new Proxy(
+    {},
+    {
+      get(_alvo, prop) {
+        if (prop === "then") {
+          return (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
+            Promise.resolve().then(() => respostaTabela(op)).then(ok, falha);
+        }
+        return (...args: unknown[]) => {
+          op.chamadas.push({ metodo: String(prop), args });
+          return proxy;
+        };
+      },
+    },
+  );
+  return proxy;
+}
+
 function makeServiceClient() {
   return {
     // O client real SEMPRE tem `from` (método de protótipo) — o escopo do
-    // contexto admin faz `svc.from.bind(svc)` na criação, mesmo em action que
-    // só usa storage. `enviarFotoProdutoAdmin` não deve consultar tabela alguma:
-    // se chamar, o teste falha aqui.
+    // contexto admin faz `svc.from.bind(svc)` na criação. Desde a galeria, o
+    // upload registra a linha-cópia em `imagens_loja` (via escopo.inserir) e o
+    // log vai a `admin_acessos`; QUALQUER outra tabela é uso inesperado.
     from: (tabela: string) => {
-      throw new Error(`uso inesperado de from("${tabela}") no upload admin`);
+      if (tabela !== "imagens_loja" && tabela !== "admin_acessos") {
+        throw new Error(`uso inesperado de from("${tabela}") no upload admin`);
+      }
+      const op: OpTabela = { tabela, chamadas: [] };
+      opsTabela.push(op);
+      return cadeia(op);
     },
     storage: {
       from: (bucket: string) => ({
@@ -71,6 +102,10 @@ function makeServiceClient() {
           else if (file instanceof ArrayBuffer) fileBytes = new Uint8Array(file);
           uploads.push({ bucket, path, fileBytes, opts });
           return uploadResposta;
+        },
+        remove: async (caminhos: string[]) => {
+          removes.push({ bucket, caminhos });
+          return { data: [], error: null };
         },
         getPublicUrl: (path: string) => ({
           data: {
@@ -105,8 +140,32 @@ vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => createServiceClient(),
 }));
 
+// [galeria] Origem do recorte: tabela em memória respeitada pela query mockada.
+type LinhaImagem = { id: string; loja_id: string; origem_id: string | null; remocao_pendente_em: string | null };
+let imagens: LinhaImagem[];
+const buscarOriginalDaLoja = vi.fn(
+  async (_client: unknown, lojaId: string, id: string) =>
+    imagens.find(
+      (i) => i.id === id && i.loja_id === lojaId && i.origem_id === null && i.remocao_pendente_em === null,
+    ) ?? null,
+);
+vi.mock("@/lib/supabase/queries/imagens", () => ({
+  buscarOriginalDaLoja: (...a: unknown[]) =>
+    buscarOriginalDaLoja(...(a as [unknown, string, string])),
+  contarOriginaisDaLoja: vi.fn(),
+  listarImagensDaLoja: vi.fn(),
+  listarImagensDaLojaAdmin: vi.fn(),
+}));
+
 // 'use server' é só diretiva; o módulo é importável no runner node.
 import { enviarFotoProdutoAdmin } from "./admin-upload";
+
+// Literais do contrato da galeria (galeria-contrato.ts ainda não existe).
+const CAMPO_ORIGEM = "origem_id";
+const MSG_ORIGEM_REMOVIDA = "Essa imagem foi removida da galeria.";
+const ORIGEM = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001"; // original da loja-alvo
+const ORIGEM_ALHEIA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000002"; // original de outra loja
+const ORIGEM_PENDENTE = "aaaaaaaa-aaaa-aaaa-aaaa-000000000003";
 
 /** Cria um Blob com magic bytes e type, forçando size quando necessário. */
 function blob(
@@ -120,12 +179,27 @@ function blob(
   return b;
 }
 
-/** FormData com o arquivo no campo `file` e o `loja_id` informado. */
-function fd(arquivo: Blob, lojaId: string | null = LOJA_ID): FormData {
+/**
+ * FormData com o arquivo no campo `file`, o `loja_id` informado e, desde a
+ * galeria, o `origem_id` OBRIGATÓRIO (null = omitir).
+ */
+function fd(
+  arquivo: Blob,
+  lojaId: string | null = LOJA_ID,
+  origemId: string | null = ORIGEM,
+): FormData {
   const f = new FormData();
   f.append("file", arquivo);
   if (lojaId !== null) f.append("loja_id", lojaId);
+  if (origemId !== null) f.append(CAMPO_ORIGEM, origemId);
   return f;
+}
+
+function insertsImagens(): Record<string, unknown>[] {
+  return opsTabela
+    .filter((o) => o.tabela === "imagens_loja")
+    .flatMap((o) => o.chamadas.filter((c) => c.metodo === "insert"))
+    .map((c) => c.args[0] as Record<string, unknown>);
 }
 
 function opEscrita(): UploadCall | undefined {
@@ -139,6 +213,14 @@ beforeEach(() => {
   publicUrlResposta = null;
   serviceClient = makeServiceClient();
   verificarAdminSaaS.mockResolvedValue(undefined);
+  removes = [];
+  opsTabela = [];
+  respostaTabela = () => ({ data: null, error: null, count: 1 });
+  imagens = [
+    { id: ORIGEM, loja_id: LOJA_ID, origem_id: null, remocao_pendente_em: null },
+    { id: ORIGEM_ALHEIA, loja_id: LOJA_OUTRA, origem_id: null, remocao_pendente_em: null },
+    { id: ORIGEM_PENDENTE, loja_id: LOJA_ID, origem_id: null, remocao_pendente_em: "2026-10-06T12:00:00Z" },
+  ];
 });
 
 describe("enviarFotoProdutoAdmin (Server Action admin — issue 090)", () => {
@@ -218,5 +300,68 @@ describe("enviarFotoProdutoAdmin (Server Action admin — issue 090)", () => {
     const path = opEscrita()?.path ?? "";
     expect(path).toContain(LOJA_ID);
     expect(path).not.toContain(LOJA_OUTRA);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Fase RED — galeria de imagens (specs/galeria-imagens-loja.md, página 3 via
+// admin, D2/D4, RN-G3). Mesma mudança do lojista: `origem_id` OBRIGATÓRIO,
+// validado como original não pendente DA LOJA-ALVO antes de qualquer upload;
+// linha-cópia registrada por `escopo.inserir` (loja_id injetado); compensação
+// se o INSERT falha.
+// ═════════════════════════════════════════════════════════════════════════════
+describe("enviarFotoProdutoAdmin — origem_id obrigatório (galeria)", () => {
+  it("sem origem_id → recusa, ZERO upload", async () => {
+    const r = await enviarFotoProdutoAdmin(fd(blob(PNG), LOJA_ID, null));
+    expect(r.ok).toBe(false);
+    expect(opEscrita()).toBeUndefined();
+    expect(insertsImagens()).toHaveLength(0);
+  });
+
+  it("ATAQUE: origem de OUTRA loja → MSG_ORIGEM_REMOVIDA, ZERO upload; consulta na loja-alvo via svc", async () => {
+    const r = await enviarFotoProdutoAdmin(fd(blob(PNG), LOJA_ID, ORIGEM_ALHEIA));
+    expect(r).toEqual({ ok: false, erro: MSG_ORIGEM_REMOVIDA });
+    expect(opEscrita()).toBeUndefined();
+    expect(buscarOriginalDaLoja).toHaveBeenCalledWith(serviceClient, LOJA_ID, ORIGEM_ALHEIA);
+  });
+
+  it("origem pendente → MSG_ORIGEM_REMOVIDA, ZERO upload", async () => {
+    const r = await enviarFotoProdutoAdmin(fd(blob(PNG), LOJA_ID, ORIGEM_PENDENTE));
+    expect(r).toEqual({ ok: false, erro: MSG_ORIGEM_REMOVIDA });
+    expect(opEscrita()).toBeUndefined();
+  });
+
+  it("não-admin → PROPAGA antes de consultar a origem", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+    await expect(enviarFotoProdutoAdmin(fd(blob(PNG)))).rejects.toThrow("acesso negado");
+    expect(buscarOriginalDaLoja).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  it("feliz: linha-cópia em imagens_loja com loja_id da loja-alvo, origem_id e caminho do recorte", async () => {
+    const r = await enviarFotoProdutoAdmin(fd(blob(PNG)));
+    expect(r.ok).toBe(true);
+    const path = opEscrita()?.path;
+    const linhas = insertsImagens();
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toMatchObject({
+      loja_id: LOJA_ID,
+      origem_id: ORIGEM,
+      caminho: path,
+      bytes: PNG.byteLength,
+    });
+  });
+
+  it("INSERT da cópia falha → compensação remove([caminho]) e erro genérico", async () => {
+    respostaTabela = (op) =>
+      op.tabela === "imagens_loja" && op.chamadas.some((c) => c.metodo === "insert")
+        ? { data: null, error: { message: "duplicate key imagens_loja_caminho_unico", code: "23505" } }
+        : { data: null, error: null };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await enviarFotoProdutoAdmin(fd(blob(PNG)));
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).not.toMatch(/imagens_loja|23505|duplicate/);
+    expect(removes).toEqual([{ bucket: "produtos", caminhos: [opEscrita()?.path] }]);
+    spy.mockRestore();
   });
 });

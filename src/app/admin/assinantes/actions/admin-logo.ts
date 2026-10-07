@@ -19,9 +19,11 @@
 //   - `schemaStorageUrl` valida a URL pública ANTES do UPDATE (barra URL externa);
 //   - UPDATE allowlist `{ logo_url }` via `escopo.atualizarLoja` (escopo por `id`
 //     na loja-alvo — nunca um UPDATE cru sem filtro na tabela lojas);
-//   - erro genérico ao client, detalhe só em `console.error` (seguranca.md §14).
+//   - erro genérico ao client, detalhe só em `console.error` (seguranca.md §14);
+//   - [galeria] `origem_id` obrigatório validado na loja-alvo, linha-cópia por
+//     `escopo.inserir` ANTES do UPDATE, pendentes processados depois.
 //
-// Módulo `'use server'`: só EXPORTA funções async. `BUCKET`/`ERRO_GENERICO`/tipos
+// Módulo `'use server'`: só EXPORTA funções async. `ERRO_GENERICO`/tipos
 // ficam locais e não exportados (const exportada daqui quebra só no `next build`).
 
 import {
@@ -30,19 +32,25 @@ import {
   registrarAcessoAdmin,
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
-import { validarBlobImagem } from "@/lib/actions/upload-imagem";
 import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
-import { schemaStorageUrl } from "@/lib/validacoes/storage";
 import type { ResultadoLogo, ResultadoSalvarLogo } from "@/lib/actions/logo-contrato";
+import {
+  CAMPO_ORIGEM,
+  MSG_IMAGEM_INVALIDA,
+  MSG_LOJA_INVALIDA,
+  erroDeEscritaDeImagem,
+} from "@/lib/actions/galeria-contrato";
+import { subirRecorteDaGaleria } from "@/lib/actions/galeria-upload";
+import { processarRemocoesPendentes } from "@/lib/actions/galeria-pendentes";
+import { schemaOrigemId } from "@/lib/validacoes/galeria";
 
-const BUCKET = "produtos";
 const ERRO_GENERICO = "Não foi possível salvar a logo. Tente novamente.";
 
 /**
  * Salva a logo da loja-alvo (`loja_id` da URL, via FormData) sob service_role.
  * O `loja_id` validado é a única autoridade do escopo: vira o 1º segmento do path
- * de Storage e o `.eq("id", lojaId)` do UPDATE. Qualquer amarra de tenant é
- * reconstruída server-side — nunca do auth do admin nem de `file.name`.
+ * de Storage, o escopo da origem e da linha-cópia, e o `.eq("id", lojaId)` do
+ * UPDATE. Nada vem do auth do admin nem de `file.name`.
  */
 export async function salvarLogoAdmin(
   formData: FormData,
@@ -51,64 +59,58 @@ export async function salvarLogoAdmin(
   //    ausente → rejeitado, ZERO upload, sem elevar a service_role (anti-DoS).
   const validacaoLoja = validarLojaIdAdmin(formData.get("loja_id"));
   if (!validacaoLoja.ok) {
-    return { ok: false, erro: "Loja inválida." };
+    return { ok: false, erro: MSG_LOJA_INVALIDA };
   }
   const { lojaId } = validacaoLoja;
 
-  // 2. arquivo presente? Só checa Blob não-vazio aqui; a validação de CONTEÚDO
+  // 2. arquivo presente e origem com forma de uuid. A validação de CONTEÚDO
   //    (CPU/memória) fica DEPOIS da prova de admin.
   const value = formData.get(CAMPO_ARQUIVO);
   if (!(value instanceof Blob) || value.size <= 0) {
-    return { ok: false, erro: "Imagem inválida." };
+    return { ok: false, erro: MSG_IMAGEM_INVALIDA };
   }
-  const file = value;
+  const origem = schemaOrigemId.safeParse(formData.get(CAMPO_ORIGEM));
+  if (!origem.success) {
+    return { ok: false, erro: MSG_IMAGEM_INVALIDA };
+  }
 
   // 3. prova de admin FORA do try — se `verificarAdminSaaS` lança, PROPAGA
   //    (fail-closed): service client nunca criado, nada é validado nem gravado.
   const { svc, escopo } = await prepararContextoAdmin(lojaId);
 
   try {
-    // 4. dupla validação da imagem (metadado + magic bytes), DEPOIS da prova.
-    const validacao = await validarBlobImagem(file);
-    if (!validacao.ok) {
-      return { ok: false, erro: validacao.erro };
-    }
-    const { buffer, tipoReal, ext } = validacao;
+    // 4. blob + origem da LOJA-ALVO + upload em `${lojaId}/logo/${uuid}.${ext}` +
+    //    schemaStorageUrl + linha-cópia por `escopo.inserir`, ANTES do UPDATE.
+    const recorte = await subirRecorteDaGaleria({
+      client: svc,
+      lojaId,
+      origemId: origem.data,
+      destino: "logo",
+      arquivo: value,
+      exigirUrlDoStorage: true,
+      inserir: (linha) => escopo.inserir("imagens_loja", linha),
+      erroGenerico: ERRO_GENERICO,
+      rotulo: "salvarLogoAdmin",
+    });
+    if (!recorte.ok) return recorte;
+    const logoUrl = recorte.url;
 
-    // 5. path SERVER-SIDE `${lojaId}/logo/${uuid}.${ext}` — sem prefixo `produtos/`,
-    //    nome UUID (nunca file.name). Sob service_role, o path é o isolamento.
-    const path = `${lojaId}/logo/${crypto.randomUUID()}.${ext}`;
-
-    const { error: erroUpload } = await svc.storage
-      .from(BUCKET)
-      .upload(path, buffer, { contentType: tipoReal });
-
-    if (erroUpload) {
-      console.error("[salvarLogoAdmin] falha no upload:", erroUpload);
-      return { ok: false, erro: ERRO_GENERICO };
-    }
-
-    // 6. schemaStorageUrl ANTES do UPDATE — URL fora do Storage do iRango NÃO persiste.
-    const { data } = svc.storage.from(BUCKET).getPublicUrl(path);
-    const urlValida = schemaStorageUrl.safeParse(data.publicUrl);
-    if (!urlValida.success) {
-      console.error("[salvarLogoAdmin] URL pública fora do Storage:", data.publicUrl);
-      return { ok: false, erro: ERRO_GENERICO };
-    }
-    const logoUrl = urlValida.data;
-
-    // 7. UPDATE allowlist `{ logo_url }` escopado por `id` na loja-alvo.
+    // 5. UPDATE allowlist `{ logo_url }` escopado por `id` na loja-alvo. O
+    //    trigger de M4 vale sob service_role: a recusa vira frase acionável.
     const { error: erroUpdate } = await escopo.atualizarLoja({ logo_url: logoUrl });
     if (erroUpdate) {
       console.error("[salvarLogoAdmin] falha no UPDATE:", erroUpdate);
-      return { ok: false, erro: ERRO_GENERICO };
+      return { ok: false, erro: erroDeEscritaDeImagem(erroUpdate, ERRO_GENERICO) };
     }
+
+    // 6. D5: recorte antigo sem uso → Storage. Best-effort: o helper nunca rejeita.
+    await processarRemocoesPendentes(svc, lojaId);
 
     registrarAcessoAdmin(svc, {
       lojaId,
       acao: "salvar_logo",
       // path (storage) NÃO é uuid → coluna entidade_id é uuid: vai em metadados (jsonb).
-      metadados: { path },
+      metadados: { path: recorte.caminho },
     });
     revalidarLojaAdmin(lojaId);
 
@@ -121,28 +123,30 @@ export async function salvarLogoAdmin(
 
 /**
  * Zera `lojas.logo_url` da loja-alvo (UPDATE `null` escopado por `id`) sob
- * service_role. Sem upload, sem Storage. Mesmo gate de admin do salvar.
+ * service_role. Mesmo gate de admin do salvar. A original fica na galeria; o
+ * recorte sem outro uso é apagado (D5).
  */
 export async function removerLogoAdmin(lojaId: string): Promise<ResultadoLogo> {
   // 1. valida `lojaId` ANTES de qualquer efeito.
-  const validacaoLoja = validarLojaIdAdmin(lojaId);
-  if (!validacaoLoja.ok) {
-    return { ok: false, erro: "Loja inválida." };
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) {
+    return { ok: false, erro: MSG_LOJA_INVALIDA };
   }
-  const { lojaId: alvo } = validacaoLoja;
 
   // 2. prova de admin FORA do try — propaga se lança (fail-closed).
-  const { svc, escopo } = await prepararContextoAdmin(alvo);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
     const { error } = await escopo.atualizarLoja({ logo_url: null });
     if (error) {
       console.error("[removerLogoAdmin] falha no UPDATE:", error);
-      return { ok: false, erro: ERRO_GENERICO };
+      return { ok: false, erro: erroDeEscritaDeImagem(error, ERRO_GENERICO) };
     }
 
-    registrarAcessoAdmin(svc, { lojaId: alvo, acao: "remover_logo" });
-    revalidarLojaAdmin(alvo);
+    await processarRemocoesPendentes(svc, loja.lojaId);
+
+    registrarAcessoAdmin(svc, { lojaId: loja.lojaId, acao: "remover_logo" });
+    revalidarLojaAdmin(loja.lojaId);
 
     return { ok: true };
   } catch (e) {

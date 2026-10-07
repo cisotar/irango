@@ -14,6 +14,10 @@ import {
   salvarLogoAdmin,
   removerLogoAdmin,
 } from "@/app/admin/assinantes/actions/admin-logo";
+import {
+  enviarImagemGaleriaAdmin,
+  listarImagensGaleriaAdmin,
+} from "@/app/admin/assinantes/actions/admin-galeria";
 
 /**
  * Wrapper admin fino da sub-rota de Perfil (issue 152). Reusa o `PerfilClient`
@@ -55,6 +59,21 @@ export function PerfilAdminClient({
     NonNullable<UploadLogoLojaProps["onRemover"]>
   >(() => removerLogoAdmin(lojaId), [lojaId]);
 
+  // Galeria da LOJA-ALVO no seletor da logo: listagem com o `lojaId` da URL por
+  // closure; envio da original com `loja_id` fixado no FormData (`set`).
+  const onListarGaleria = useCallback<UploadLogoLojaProps["onListarGaleria"]>(
+    (cursor) => listarImagensGaleriaAdmin(lojaId, cursor),
+    [lojaId],
+  );
+
+  const onEnviarParaGaleria = useCallback<UploadLogoLojaProps["onEnviarParaGaleria"]>(
+    (formData) => {
+      formData.set("loja_id", lojaId);
+      return enviarImagemGaleriaAdmin(formData);
+    },
+    [lojaId],
+  );
+
   return (
     <PerfilClient
       inicial={inicial}
@@ -65,6 +84,8 @@ export function PerfilAdminClient({
       onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
       onSalvarLogo={onSalvarLogo}
       onRemoverLogo={onRemoverLogo}
+      onListarGaleria={onListarGaleria}
+      onEnviarParaGaleria={onEnviarParaGaleria}
     />
   );
 }

@@ -56,6 +56,13 @@ vi.mock("@/app/admin/assinantes/actions/admin-upload", () => ({
   enviarFotoProdutoAdmin: vi.fn(async () => ({ ok: true })),
 }));
 
+// Galeria (specs/galeria-imagens-loja.md, página 3): o seletor da foto lista e
+// envia na galeria da LOJA-ALVO.
+vi.mock("@/app/admin/assinantes/actions/admin-galeria", () => ({
+  listarImagensGaleriaAdmin: vi.fn(async () => ({ ok: true, imagens: [], proximo_cursor: null })),
+  enviarImagemGaleriaAdmin: vi.fn(async () => ({ ok: false, erro: "stub" })),
+}));
+
 vi.mock("@/app/admin/assinantes/actions/admin-opcionais", () => ({
   salvarAssociacaoOpcionaisAdmin: vi.fn(async () => ({ ok: true })),
   // [217] As 9 restantes do CRUD de opcionais: o modal do cardápio monta o
@@ -82,6 +89,10 @@ import {
   alternarOcultaCategoriaAdmin,
   definirFrequenciaCategoriaAdmin,
 } from "@/app/admin/assinantes/actions/admin-categorias";
+import {
+  enviarImagemGaleriaAdmin,
+  listarImagensGaleriaAdmin,
+} from "@/app/admin/assinantes/actions/admin-galeria";
 
 const CHAVES_ESPERADAS = [
   "criarCategoria",
@@ -115,6 +126,9 @@ const CHAVES_ESPERADAS = [
   "salvarGradeDeDias",
   "alternarOcultaCategoria",
   "definirFrequenciaCategoria",
+  // Galeria no seletor da foto.
+  "listarImagensGaleria",
+  "enviarImagemGaleria",
 ] as const;
 
 function renderizar(lojaId = LOJA_ALVO) {
@@ -142,7 +156,7 @@ describe("CardapioAdminClient — paridade de injeção de acoes (achado 143)", 
     capturado.acoes = undefined;
   });
 
-  it("injeta as 25 actions do ProdutosClient — nenhuma cai no fallback do lojista", () => {
+  it("injeta as 27 actions do ProdutosClient — nenhuma cai no fallback do lojista", () => {
     renderizar();
     for (const chave of CHAVES_ESPERADAS) {
       expect(
@@ -193,6 +207,25 @@ describe("CardapioAdminClient — paridade de injeção de acoes (achado 143)", 
     expect(salvarGradeDeDiasAdmin).toHaveBeenCalledWith(LOJA_ALVO, payload);
     expect(alternarOcultaCategoriaAdmin).toHaveBeenCalledWith(LOJA_ALVO, "cat-1", true);
     expect(definirFrequenciaCategoriaAdmin).toHaveBeenCalledWith(LOJA_ALVO, payload);
+  });
+
+  it("galeria: listarImagensGaleria(cursor) chama listarImagensGaleriaAdmin(lojaId, cursor)", async () => {
+    renderizar();
+    const a = capturado.acoes as Record<string, (...args: unknown[]) => unknown>;
+    const cursor = { criado_em: "2026-10-01T00:00:00.000Z", id: "22222222-2222-4222-8222-222222222222" };
+    await a.listarImagensGaleria(cursor);
+    expect(listarImagensGaleriaAdmin).toHaveBeenCalledWith(LOJA_ALVO, cursor);
+  });
+
+  it("galeria: enviarImagemGaleria(fd) SOBRESCREVE o loja_id com o da URL e chama enviarImagemGaleriaAdmin", async () => {
+    renderizar();
+    const a = capturado.acoes as Record<string, (fd: FormData) => unknown>;
+    const fd = new FormData();
+    fd.set("loja_id", "99999999-9999-4999-8999-999999999999");
+    await a.enviarImagemGaleria(fd);
+    expect(enviarImagemGaleriaAdmin).toHaveBeenCalledTimes(1);
+    const recebido = vi.mocked(enviarImagemGaleriaAdmin).mock.calls[0][0];
+    expect(recebido.getAll("loja_id")).toEqual([LOJA_ALVO]);
   });
 
   it("[323] a prop `lote` (cardápio) não é mais passada", () => {
