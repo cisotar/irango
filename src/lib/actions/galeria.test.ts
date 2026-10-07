@@ -43,6 +43,9 @@ const WEBP_MINI = new Uint8Array([
   0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
 ]); // 20 bytes
+const PNG_MINI = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+]); // PNG válido: a miniatura precisa ser webp (galeria-upload.ts)
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x00, 0x00]);
 
 // ── Client autenticado gravador ──────────────────────────────────────────────
@@ -162,7 +165,7 @@ import {
   consultarUsoImagens,
   removerImagensGaleria,
 } from "./galeria";
-import { CAMPO_MINIATURA, MSG_TETO } from "./galeria-contrato";
+import { CAMPO_MINIATURA, MSG_IMAGEM_INVALIDA, MSG_TETO } from "./galeria-contrato";
 import { CAMPO_ARQUIVO } from "./upload-contrato";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
@@ -301,6 +304,12 @@ describe("enviarImagemGaleria — original + miniatura", () => {
       fdEnvio({ miniatura: blob(WEBP_MINI, { size: 2 * 1024 * 1024 + 1 }) }),
     );
     expect(r.ok).toBe(false);
+    expect(uploads).toHaveLength(0);
+  });
+
+  it("miniatura PNG válida (não webp) → MSG_IMAGEM_INVALIDA, ZERO upload", async () => {
+    const r = await enviarImagemGaleria(fdEnvio({ miniatura: blob(PNG_MINI, { type: "image/png" }) }));
+    expect(r).toEqual({ ok: false, erro: MSG_IMAGEM_INVALIDA });
     expect(uploads).toHaveLength(0);
   });
 

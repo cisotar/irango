@@ -28,6 +28,7 @@ import {
   CAMPO_ORIGEM,
   MSG_IMAGEM_INVALIDA,
   MSG_MUITAS_TENTATIVAS,
+  MSG_NAO_AUTORIZADO,
   erroDeEscritaDeImagem,
 } from "./galeria-contrato";
 import { subirRecorteDaGaleria } from "./galeria-upload";
@@ -78,7 +79,7 @@ export async function salvarLogoLoja(
   // loja DERIVADA do auth (RLS) — payload do client é ignorado.
   const loja = await buscarLojaDoDono(supabase);
   if (!loja) {
-    return { ok: false, erro: "Não autorizado." };
+    return { ok: false, erro: MSG_NAO_AUTORIZADO };
   }
 
   // Blob + posse da origem + upload + schemaStorageUrl + linha-cópia (antes do
@@ -108,10 +109,8 @@ export async function salvarLogoLoja(
     return { ok: false, erro: erroDeEscritaDeImagem(erroUpdate, ERRO_GENERICO) };
   }
 
-  // Best-effort (D5): falha nunca derruba a escrita já feita.
-    await processarRemocoesPendentes(supabase, loja.id).catch((e: unknown) =>
-      console.error("[logo] pendentes da galeria", e),
-    );
+  // Best-effort (D5): o helper nunca rejeita; falha vai para o log.
+  await processarRemocoesPendentes(supabase, loja.id);
   revalidarVitrine(loja.slug);
   return { ok: true, logo_url: logoUrl };
 }
@@ -125,7 +124,7 @@ export async function removerLogoLoja(): Promise<ResultadoLogo> {
 
   const loja = await buscarLojaDoDono(supabase);
   if (!loja) {
-    return { ok: false, erro: "Não autorizado." };
+    return { ok: false, erro: MSG_NAO_AUTORIZADO };
   }
 
   const { error } = await supabase
@@ -138,10 +137,8 @@ export async function removerLogoLoja(): Promise<ResultadoLogo> {
     return { ok: false, erro: erroDeEscritaDeImagem(error, ERRO_GENERICO) };
   }
 
-  // Best-effort (D5): falha nunca derruba a escrita já feita.
-    await processarRemocoesPendentes(supabase, loja.id).catch((e: unknown) =>
-      console.error("[logo] pendentes da galeria", e),
-    );
+  // Best-effort (D5): o helper nunca rejeita; falha vai para o log.
+  await processarRemocoesPendentes(supabase, loja.id);
   revalidarVitrine(loja.slug);
   return { ok: true };
 }

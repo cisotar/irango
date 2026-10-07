@@ -196,6 +196,26 @@ vi.mock("@/lib/actions/galeria-pendentes", () => ({
   processarRemocoesPendentes: (...a: unknown[]) => processarRemocoesPendentes(...a),
 }));
 
+/**
+ * "Falha não derruba o save": a garantia é do helper REAL, que nunca rejeita
+ * (provado em galeria-pendentes.test.ts). Aqui ele roda de verdade contra um
+ * client cuja varredura cai — o caller não tem `.catch` próprio, então se o
+ * helper voltasse a rejeitar este teste ficaria vermelho.
+ */
+async function pendentesReaisComFalha(): Promise<void> {
+  const real = await vi.importActual<typeof import("@/lib/actions/galeria-pendentes")>(
+    "@/lib/actions/galeria-pendentes",
+  );
+  const clientQueCai = {
+    rpc: () => {
+      throw new Error("storage fora do ar");
+    },
+  };
+  processarRemocoesPendentes.mockImplementation((_client: unknown, lojaId: string) =>
+    real.processarRemocoesPendentes(clientQueCai as never, lojaId),
+  );
+}
+
 import { salvarLogoLoja, removerLogoLoja } from "./logo";
 
 // Literais do contrato da galeria (galeria-contrato.ts ainda não existe).
@@ -503,7 +523,7 @@ describe("salvarLogoLoja — origem_id obrigatório e linha-cópia (galeria)", (
   });
 
   it("falha ao processar pendentes NÃO derruba o save (best-effort)", async () => {
-    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    await pendentesReaisComFalha();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await salvarLogoLoja(fd(blob(WEBP, { type: "image/webp" })));
     expect(processarRemocoesPendentes).toHaveBeenCalled();
@@ -527,7 +547,7 @@ describe("removerLogoLoja — pendentes e vitrine (galeria)", () => {
   });
 
   it("falha ao processar pendentes NÃO derruba a remoção", async () => {
-    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    await pendentesReaisComFalha();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await removerLogoLoja();
     expect(processarRemocoesPendentes).toHaveBeenCalled();

@@ -89,6 +89,26 @@ vi.mock("@/lib/actions/galeria-pendentes", () => ({
   processarRemocoesPendentes: (...a: unknown[]) => processarRemocoesPendentes(...a),
 }));
 
+/**
+ * "Falha não derruba o save": a garantia é do helper REAL, que nunca rejeita
+ * (provado em galeria-pendentes.test.ts). Aqui ele roda de verdade contra um
+ * client cuja varredura cai — o caller não tem `.catch` próprio, então se o
+ * helper voltasse a rejeitar este teste ficaria vermelho.
+ */
+async function pendentesReaisComFalha(): Promise<void> {
+  const real = await vi.importActual<typeof import("@/lib/actions/galeria-pendentes")>(
+    "@/lib/actions/galeria-pendentes",
+  );
+  const clientQueCai = {
+    rpc: () => {
+      throw new Error("storage fora do ar");
+    },
+  };
+  processarRemocoesPendentes.mockImplementation((_client: unknown, lojaId: string) =>
+    real.processarRemocoesPendentes(clientQueCai as never, lojaId),
+  );
+}
+
 import { criarProduto, atualizarProduto, removerProduto } from "./produto";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
@@ -186,14 +206,14 @@ describe("processa pendentes depois do save (D5, RN-G20) — best-effort", () =>
   });
 
   it("falha ao processar pendentes NÃO derruba o save", async () => {
-    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    await pendentesReaisComFalha();
     const r = await atualizarProduto(PRODUTO_ID, payload());
     expect(processarRemocoesPendentes).toHaveBeenCalled();
     expect(r).toEqual({ ok: true });
   });
 
   it("falha ao processar pendentes NÃO derruba a remoção", async () => {
-    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    await pendentesReaisComFalha();
     const r = await removerProduto(PRODUTO_ID);
     expect(processarRemocoesPendentes).toHaveBeenCalled();
     expect(r).toEqual({ ok: true });

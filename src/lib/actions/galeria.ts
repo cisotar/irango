@@ -18,9 +18,7 @@ import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { listarImagensDaLoja } from "@/lib/supabase/queries/imagens";
 import { verificarRateLimit } from "@/lib/utils/rateLimit";
 import { schemaCursorGaleria, schemaIdsImagens } from "@/lib/validacoes/galeria";
-import { CAMPO_ARQUIVO } from "./upload-contrato";
 import {
-  CAMPO_MINIATURA,
   MSG_IMAGEM_INVALIDA,
   MSG_LISTAGEM_FALHOU,
   MSG_MUITAS_TENTATIVAS,
@@ -28,7 +26,6 @@ import {
   MSG_REMOCAO_FALHOU,
   MSG_SELECAO_INVALIDA,
   MSG_USO_FALHOU,
-  lerRespostaRpcRemocao,
   type CursorGaleria,
   type ResultadoEnvioGaleria,
   type ResultadoListagemGaleria,
@@ -36,23 +33,19 @@ import {
   type ResultadoUsoImagens,
 } from "./galeria-contrato";
 import { subirOriginalNaGaleria } from "./galeria-upload";
-import { apagarImagensPendentes, processarRemocoesPendentes } from "./galeria-pendentes";
+import {
+  consultarUsoDaGaleria,
+  executarRemocaoDaGaleria,
+  extrairParDeBlobs,
+} from "./galeria-operacoes";
 
 /**
  * Envia uma original (+ miniatura, P9) para a galeria da loja do auth. Teto,
  * validação de conteúdo e caminhos ficam no servidor (`subirOriginalNaGaleria`).
  */
 export async function enviarImagemGaleria(formData: FormData): Promise<ResultadoEnvioGaleria> {
-  const original = formData.get(CAMPO_ARQUIVO);
-  const miniatura = formData.get(CAMPO_MINIATURA);
-  if (
-    !(original instanceof Blob) ||
-    original.size <= 0 ||
-    !(miniatura instanceof Blob) ||
-    miniatura.size <= 0
-  ) {
-    return { ok: false, erro: MSG_IMAGEM_INVALIDA };
-  }
+  const par = extrairParDeBlobs(formData);
+  if (!par) return { ok: false, erro: MSG_IMAGEM_INVALIDA };
 
   const supabase = await createClient();
   const loja = await buscarLojaDoDono(supabase);
@@ -64,8 +57,8 @@ export async function enviarImagemGaleria(formData: FormData): Promise<Resultado
   const r = await subirOriginalNaGaleria({
     client: supabase,
     lojaId: loja.id,
-    original,
-    miniatura,
+    original: par.original,
+    miniatura: par.miniatura,
     inserir: (linha) =>
       supabase
         .from("imagens_loja")
@@ -111,15 +104,7 @@ export async function consultarUsoImagens(ids: string[]): Promise<ResultadoUsoIm
     const loja = await buscarLojaDoDono(supabase);
     if (!loja) return { ok: false, erro: MSG_NAO_AUTORIZADO };
 
-    const { data, error } = await supabase.rpc("uso_imagens_loja", {
-      p_loja_id: loja.id,
-      p_ids: parsed.data,
-    });
-    if (error) {
-      console.error("[consultarUsoImagens]", error);
-      return { ok: false, erro: MSG_USO_FALHOU };
-    }
-    return { ok: true, usos: data ?? [] };
+    return await consultarUsoDaGaleria(supabase, loja.id, parsed.data, "consultarUsoImagens");
   } catch (e) {
     console.error("[consultarUsoImagens]", e);
     return { ok: false, erro: MSG_USO_FALHOU };
@@ -127,10 +112,8 @@ export async function consultarUsoImagens(ids: string[]): Promise<ResultadoUsoIm
 }
 
 /**
- * Remove originais da loja do auth (e as cópias). A RPC prova posse, ignora o
- * que não é original não pendente da loja (D8), recalcula o uso, limpa produtos
- * e logo e marca a família como pendente. Depois do commit: Storage → DELETE,
- * e a varredura de recortes sem uso (RN-G21).
+ * Remove originais da loja do auth (e as cópias): RPC → Storage → DELETE e a
+ * varredura de recortes sem uso, em `executarRemocaoDaGaleria`.
  */
 export async function removerImagensGaleria(ids: string[]): Promise<ResultadoRemocao> {
   const parsed = schemaIdsImagens.safeParse(ids);
@@ -144,33 +127,20 @@ export async function removerImagensGaleria(ids: string[]): Promise<ResultadoRem
     const rl = await verificarRateLimit("removerImagensGaleria", loja.id);
     if (!rl.permitido) return { ok: false, erro: MSG_MUITAS_TENTATIVAS };
 
-    const { data, error } = await supabase.rpc("remover_imagens_loja", {
-      p_loja_id: loja.id,
-      p_ids: parsed.data,
-    });
-    const resposta = error ? null : lerRespostaRpcRemocao(data);
-    if (!resposta) {
-      console.error("[removerImagensGaleria] falha na RPC", error ?? data);
-      return { ok: false, erro: MSG_REMOCAO_FALHOU };
-    }
-
-    // Passos 9–12: prefixo da loja, Storage e DELETE das pendentes. Nunca rejeita.
-    await apagarImagensPendentes(supabase, loja.id, resposta.caminhos, "removerImagensGaleria");
-    await processarRemocoesPendentes(supabase, loja.id);
+    const r = await executarRemocaoDaGaleria(
+      supabase,
+      loja.id,
+      parsed.data,
+      "removerImagensGaleria",
+    );
+    if (!r.ok) return r;
 
     // Passo 13.
     revalidatePath("/painel/galeria");
     revalidatePath("/painel/produtos");
     revalidatePath("/painel/configuracoes/perfil");
     revalidatePath("/loja/[slug]", "page");
-
-    return {
-      ok: true,
-      removidas: resposta.removidas,
-      ignoradas: resposta.ignoradas,
-      produtosLimpos: resposta.produtosLimpos,
-      logoLimpa: resposta.logoLimpa,
-    };
+    return r;
   } catch (e) {
     console.error("[removerImagensGaleria]", e);
     return { ok: false, erro: MSG_REMOCAO_FALHOU };

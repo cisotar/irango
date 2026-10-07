@@ -62,6 +62,10 @@ vi.mock("@/lib/auth/admin", () => ({
   obterAdminUserId: () => "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+const processarRemocoesPendentes = vi.fn();
+vi.mock("@/lib/actions/galeria-pendentes", () => ({
+  processarRemocoesPendentes: (...a: unknown[]) => processarRemocoesPendentes(...a),
+}));
 
 import { criarProdutoAdmin, atualizarProdutoAdmin, removerProdutoAdmin } from "./admin-produtos";
 
@@ -83,6 +87,34 @@ function payload(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   respostaEscrita = { data: null, error: null, count: 1 };
+  processarRemocoesPendentes.mockReset();
+  processarRemocoesPendentes.mockResolvedValue(undefined);
+});
+
+describe("admin: pendentes da galeria processados na LOJA-ALVO (escopo, D5)", () => {
+  // Sob service_role o `lojaId` passado aqui é o escopo da varredura, do remove
+  // e do DELETE. Trocar por `id` (do produto) apontaria a limpeza para outro
+  // tenant — e passava verde antes desta trava.
+  it("atualizarProdutoAdmin bem-sucedido → processarRemocoesPendentes(svc, LOJA_ALVO)", async () => {
+    const r = await atualizarProdutoAdmin(LOJA_ALVO, PRODUTO_ID, payload());
+    expect(r).toEqual({ ok: true });
+    expect(processarRemocoesPendentes).toHaveBeenCalledTimes(1);
+    expect(processarRemocoesPendentes).toHaveBeenCalledWith(servico, LOJA_ALVO);
+  });
+
+  it("removerProdutoAdmin bem-sucedido → processarRemocoesPendentes(svc, LOJA_ALVO)", async () => {
+    const r = await removerProdutoAdmin(LOJA_ALVO, PRODUTO_ID);
+    expect(r).toEqual({ ok: true });
+    expect(processarRemocoesPendentes).toHaveBeenCalledTimes(1);
+    expect(processarRemocoesPendentes).toHaveBeenCalledWith(servico, LOJA_ALVO);
+  });
+
+  it("escrita recusada → nenhum processamento de pendentes", async () => {
+    respostaEscrita = { data: null, error: ERRO_DEADLOCK };
+    await atualizarProdutoAdmin(LOJA_ALVO, PRODUTO_ID, payload());
+    await removerProdutoAdmin(LOJA_ALVO, PRODUTO_ID);
+    expect(processarRemocoesPendentes).not.toHaveBeenCalled();
+  });
 });
 
 describe("admin: recusa do trigger de M4 → frase da galeria", () => {

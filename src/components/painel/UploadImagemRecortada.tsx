@@ -59,6 +59,7 @@ import { cn } from "@/lib/utils";
 import { exportarCrop } from "@/lib/utils/exportarCrop";
 import { fotoSegura } from "@/lib/utils/fotoSegura";
 import {
+  MSG_PROCESSAMENTO_FALHOU,
   prepararImagemParaGaleria,
   validarArquivoParaGaleria,
 } from "@/lib/utils/reducaoImagem";
@@ -123,7 +124,6 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 3;
 const ZOOM_PASSO = 0.05;
 const ZOOM_PASSO_BOTAO = 0.1;
-const MSG_PROCESSAR_FALHOU = "Não foi possível processar a imagem. Tente novamente.";
 
 export function UploadImagemRecortada({
   textos,
@@ -213,7 +213,7 @@ export function UploadImagemRecortada({
         recorte = await exportarCrop({ imageSrc, croppedAreaPixels: area, aspect, larguraAlvo });
       } catch (erro) {
         console.error("[UploadImagemRecortada] exportarCrop", erro);
-        toast.error(MSG_PROCESSAR_FALHOU);
+        toast.error(MSG_PROCESSAMENTO_FALHOU);
         return;
       }
       const r = await enviarRecorteComOrigem({
@@ -465,11 +465,7 @@ export function UploadImagemRecortada({
       />
 
       <SeletorGaleria
-        aberto={seletor.props.aberto}
-        onAbertoChange={seletor.props.onAbertoChange}
-        primeiraPagina={seletor.props.primeiraPagina}
-        onRecarregar={seletor.props.onRecarregar}
-        listar={seletor.props.listar}
+        {...seletor.props}
         onEscolher={(imagem) => void escolherDaGaleria(imagem)}
         onArquivoEscolhido={(arquivo) => void processarArquivo(arquivo)}
       />

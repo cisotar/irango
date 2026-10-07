@@ -46,6 +46,9 @@ const WEBP_MINI = new Uint8Array([
   0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
 ]);
+const PNG_MINI = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+]); // PNG válido: a miniatura precisa ser webp (galeria-upload.ts)
 const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x00, 0x00]);
 
 type Chamada = { metodo: string; args: unknown[] };
@@ -151,7 +154,7 @@ import {
   consultarUsoImagensAdmin,
   removerImagensGaleriaAdmin,
 } from "./admin-galeria";
-import { CAMPO_MINIATURA, MSG_TETO } from "@/lib/actions/galeria-contrato";
+import { CAMPO_MINIATURA, MSG_IMAGEM_INVALIDA, MSG_TETO } from "@/lib/actions/galeria-contrato";
 import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
 
 function blob(bytes: Uint8Array, over: { type?: string; size?: number } = {}): Blob {
@@ -422,6 +425,12 @@ describe("enviarImagemGaleriaAdmin — loja_id no FormData", () => {
     expect(r.ok).toBe(false);
     expect(uploads).toHaveLength(0);
     expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  it("miniatura PNG válida (não webp) → MSG_IMAGEM_INVALIDA, ZERO upload", async () => {
+    const r = await enviarImagemGaleriaAdmin(fdEnvio({ miniatura: blob(PNG_MINI, { type: "image/png" }) }));
+    expect(r).toEqual({ ok: false, erro: MSG_IMAGEM_INVALIDA });
+    expect(uploads).toHaveLength(0);
   });
 
   it("não-admin → PROPAGA, ZERO upload, sem service client", async () => {

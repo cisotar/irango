@@ -233,6 +233,26 @@ vi.mock("@/lib/actions/galeria-pendentes", () => ({
   processarRemocoesPendentes: (...a: unknown[]) => processarRemocoesPendentes(...a),
 }));
 
+/**
+ * "Falha não derruba o save": a garantia é do helper REAL, que nunca rejeita
+ * (provado em galeria-pendentes.test.ts). Aqui ele roda de verdade contra um
+ * client cuja varredura cai — o caller não tem `.catch` próprio, então se o
+ * helper voltasse a rejeitar este teste ficaria vermelho.
+ */
+async function pendentesReaisComFalha(): Promise<void> {
+  const real = await vi.importActual<typeof import("@/lib/actions/galeria-pendentes")>(
+    "@/lib/actions/galeria-pendentes",
+  );
+  const clientQueCai = {
+    rpc: () => {
+      throw new Error("storage fora do ar");
+    },
+  };
+  processarRemocoesPendentes.mockImplementation((_client: unknown, lojaId: string) =>
+    real.processarRemocoesPendentes(clientQueCai as never, lojaId),
+  );
+}
+
 import { salvarLogoAdmin, removerLogoAdmin } from "./admin-logo";
 
 // Literais do contrato da galeria (galeria-contrato.ts ainda não existe).
@@ -499,7 +519,7 @@ describe("salvarLogoAdmin — origem_id e linha-cópia (galeria)", () => {
   });
 
   it("depois do UPDATE processa pendentes da loja-alvo com o service client; falha não derruba", async () => {
-    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    await pendentesReaisComFalha();
     const r = await salvarLogoAdmin(fd(blob(PNG)));
     expect(processarRemocoesPendentes).toHaveBeenCalledWith(serviceClient, LOJA_ALVO);
     expect(r.ok).toBe(true);
@@ -508,7 +528,7 @@ describe("salvarLogoAdmin — origem_id e linha-cópia (galeria)", () => {
 
 describe("removerLogoAdmin — pendentes (galeria)", () => {
   it("depois do UPDATE processa pendentes da loja-alvo; falha não derruba", async () => {
-    processarRemocoesPendentes.mockRejectedValue(new Error("storage fora do ar"));
+    await pendentesReaisComFalha();
     const r = await removerLogoAdmin(LOJA_ALVO);
     expect(processarRemocoesPendentes).toHaveBeenCalledWith(serviceClient, LOJA_ALVO);
     expect(r.ok).toBe(true);

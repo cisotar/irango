@@ -29,6 +29,7 @@ import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
 import type { ResultadoUpload } from "@/lib/actions/upload-contrato";
 import {
   CAMPO_ORIGEM,
+  MSG_ENVIO_FALHOU,
   MSG_IMAGEM_INVALIDA,
   MSG_LOJA_INVALIDA,
 } from "@/lib/actions/galeria-contrato";
@@ -76,7 +77,7 @@ export async function enviarFotoProdutoAdmin(
     arquivo: value,
     exigirUrlDoStorage: false,
     inserir: (linha) => escopo.inserir("imagens_loja", linha),
-    erroGenerico: "Não foi possível enviar a imagem.",
+    erroGenerico: MSG_ENVIO_FALHOU,
     rotulo: "enviarFotoProdutoAdmin",
   });
   if (!r.ok) return r;

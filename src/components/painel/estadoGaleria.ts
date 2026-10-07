@@ -7,13 +7,10 @@ import {
   MSG_MUITAS_TENTATIVAS,
   MSG_TETO,
   TETO_IMAGENS_POR_LOJA,
+  plural,
   type ImagemGaleria,
   type UsoImagem,
 } from "@/lib/actions/galeria-contrato";
-
-function plural(n: number, um: string, varios: string): string {
-  return n === 1 ? um : varios;
-}
 
 // ── Lista da grade ───────────────────────────────────────────────────────────
 // Idempotentes por `id`: a resposta da action e o refresh do servidor podem

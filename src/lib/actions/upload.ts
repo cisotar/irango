@@ -19,7 +19,13 @@ import { verificarRateLimit } from "@/lib/utils/rateLimit";
 import { schemaOrigemId } from "@/lib/validacoes/galeria";
 import { CAMPO_ARQUIVO } from "./upload-contrato";
 import type { ResultadoUpload } from "./upload-contrato";
-import { CAMPO_ORIGEM, MSG_IMAGEM_INVALIDA, MSG_MUITAS_TENTATIVAS } from "./galeria-contrato";
+import {
+  CAMPO_ORIGEM,
+  MSG_ENVIO_FALHOU,
+  MSG_IMAGEM_INVALIDA,
+  MSG_MUITAS_TENTATIVAS,
+  MSG_NAO_AUTORIZADO,
+} from "./galeria-contrato";
 import { subirRecorteDaGaleria } from "./galeria-upload";
 
 /**
@@ -46,7 +52,7 @@ export async function enviarFotoProduto(
   // loja DERIVADA do auth (RLS) — payload do client é ignorado.
   const loja = await buscarLojaDoDono(supabase);
   if (!loja) {
-    return { ok: false, erro: "Não autorizado." };
+    return { ok: false, erro: MSG_NAO_AUTORIZADO };
   }
 
   // Rate limit por loja da sessão (RN-G13, fail-open — contenção de custo).
@@ -66,7 +72,7 @@ export async function enviarFotoProduto(
     arquivo: value,
     exigirUrlDoStorage: false,
     inserir: (linha) => supabase.from("imagens_loja").insert({ ...linha, loja_id: loja.id }),
-    erroGenerico: "Não foi possível enviar a imagem.",
+    erroGenerico: MSG_ENVIO_FALHOU,
     rotulo: "enviarFotoProduto",
   });
   if (!r.ok) return r;

@@ -204,10 +204,8 @@ export async function atualizarProduto(
       // vira frase acionável; o resto segue genérico.
       return { ok: false, erro: erroDeEscritaDeProduto(error, MSG_SALVAR_PRODUTO) };
     }
-    // Best-effort (D5): falha nunca derruba a escrita já feita.
-    await processarRemocoesPendentes(supabase, loja.id).catch((e: unknown) =>
-      console.error("[produto] pendentes da galeria", e),
-    );
+    // Best-effort (D5): o helper nunca rejeita; falha vai para o log.
+    await processarRemocoesPendentes(supabase, loja.id);
     revalidatePath(CAMINHO_PAINEL);
     return { ok: true };
   } catch (e) {
@@ -324,10 +322,8 @@ export async function removerProduto(
       console.error("[removerProduto]", error);
       return { ok: false, erro: erroDeEscritaDeImagem(error, MSG_REMOVER_PRODUTO) };
     }
-    // Best-effort (D5): falha nunca derruba a escrita já feita.
-    await processarRemocoesPendentes(supabase, loja.id).catch((e: unknown) =>
-      console.error("[produto] pendentes da galeria", e),
-    );
+    // Best-effort (D5): o helper nunca rejeita; falha vai para o log.
+    await processarRemocoesPendentes(supabase, loja.id);
     revalidatePath(CAMINHO_PAINEL);
     return { ok: true };
   } catch (e) {

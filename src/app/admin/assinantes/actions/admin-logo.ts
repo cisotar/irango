@@ -103,10 +103,8 @@ export async function salvarLogoAdmin(
       return { ok: false, erro: erroDeEscritaDeImagem(erroUpdate, ERRO_GENERICO) };
     }
 
-    // 6. D5: recorte antigo sem uso → Storage. Best-effort.
-    await processarRemocoesPendentes(svc, lojaId).catch((e: unknown) =>
-      console.error("[salvarLogoAdmin] pendentes da galeria", e),
-    );
+    // 6. D5: recorte antigo sem uso → Storage. Best-effort: o helper nunca rejeita.
+    await processarRemocoesPendentes(svc, lojaId);
 
     registrarAcessoAdmin(svc, {
       lojaId,
@@ -130,14 +128,13 @@ export async function salvarLogoAdmin(
  */
 export async function removerLogoAdmin(lojaId: string): Promise<ResultadoLogo> {
   // 1. valida `lojaId` ANTES de qualquer efeito.
-  const validacaoLoja = validarLojaIdAdmin(lojaId);
-  if (!validacaoLoja.ok) {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) {
     return { ok: false, erro: MSG_LOJA_INVALIDA };
   }
-  const { lojaId: alvo } = validacaoLoja;
 
   // 2. prova de admin FORA do try — propaga se lança (fail-closed).
-  const { svc, escopo } = await prepararContextoAdmin(alvo);
+  const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
     const { error } = await escopo.atualizarLoja({ logo_url: null });
@@ -146,12 +143,10 @@ export async function removerLogoAdmin(lojaId: string): Promise<ResultadoLogo> {
       return { ok: false, erro: erroDeEscritaDeImagem(error, ERRO_GENERICO) };
     }
 
-    await processarRemocoesPendentes(svc, alvo).catch((e: unknown) =>
-      console.error("[removerLogoAdmin] pendentes da galeria", e),
-    );
+    await processarRemocoesPendentes(svc, loja.lojaId);
 
-    registrarAcessoAdmin(svc, { lojaId: alvo, acao: "remover_logo" });
-    revalidarLojaAdmin(alvo);
+    registrarAcessoAdmin(svc, { lojaId: loja.lojaId, acao: "remover_logo" });
+    revalidarLojaAdmin(loja.lojaId);
 
     return { ok: true };
   } catch (e) {

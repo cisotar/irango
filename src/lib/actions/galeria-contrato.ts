@@ -152,7 +152,8 @@ export function erroDeEscritaDeImagem(erro: unknown, generica: string): string {
   return generica;
 }
 
-function plural(n: number, um: string, varios: string): string {
+/** Concordância de número das frases da galeria (1 → singular; 0 e 2+ → plural). */
+export function plural(n: number, um: string, varios: string): string {
   return n === 1 ? um : varios;
 }
 

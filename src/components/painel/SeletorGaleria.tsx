@@ -289,7 +289,7 @@ function ListaSeletor({
       emUso={SEM_USO}
       selecao={{ modo: "unica", onEscolher }}
       proximoCursor={lista.cursor}
-      listarMais={(cursor) => listar(cursor)}
+      listarMais={listar}
       onPaginaCarregada={(pagina) =>
         setLista((atual) => ({
           imagens: anexarPagina(atual.imagens, pagina.imagens),

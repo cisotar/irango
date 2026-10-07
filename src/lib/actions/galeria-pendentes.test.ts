@@ -23,7 +23,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  *        retentada na próxima ação da loja (RN-G10, RN-G20).
  */
 
-import { processarRemocoesPendentes } from "./galeria-pendentes";
+import { BLOCO_DELETE_CAMINHOS, processarRemocoesPendentes } from "./galeria-pendentes";
 
 const LOJA = "11111111-1111-1111-1111-111111111111";
 const OUTRA = "22222222-2222-2222-2222-222222222222";
@@ -190,6 +190,43 @@ describe("processarRemocoesPendentes — varredura + Storage + DELETE", () => {
     };
     await expect(rodar()).resolves.toBeUndefined();
     expect(caminhosRemovidos()).toEqual([]);
+  });
+
+  it("muitos caminhos → DELETE fatiado em blocos de 50 (o .in vai na URL do PostgREST), cobrindo todos", async () => {
+    expect(BLOCO_DELETE_CAMINHOS).toBe(50);
+    const caminhos = Array.from(
+      { length: 120 },
+      (_, i) => `${LOJA}/galeria/${String(i).padStart(36, "0")}.webp`,
+    );
+    respostaRpc = { data: caminhos, error: null };
+
+    await rodar();
+
+    // O Storage recebe tudo de uma vez (corpo JSON, não URL).
+    expect([...caminhosRemovidos()].sort()).toEqual([...caminhos].sort());
+
+    const dels = deletesEmImagens();
+    const blocos = dels.map(
+      (d) => d.chamadas.find((c) => c.metodo === "in" && c.args[0] === "caminho")?.args[1] as string[],
+    );
+    expect(blocos.map((b) => b.length)).toEqual([50, 50, 20]);
+    expect(blocos.flat().sort()).toEqual([...caminhos].sort());
+    // Cada bloco mantém o escopo da loja e o filtro de pendente.
+    for (const d of dels) {
+      expect(
+        d.chamadas.some((c) => c.metodo === "eq" && c.args[0] === "loja_id" && c.args[1] === LOJA),
+      ).toBe(true);
+      expect(d.chamadas.some((c) => c.args[0] === "remocao_pendente_em")).toBe(true);
+    }
+  });
+
+  it("exatamente 50 caminhos → um único DELETE", async () => {
+    respostaRpc = {
+      data: Array.from({ length: 50 }, (_, i) => `${LOJA}/${i}.webp`),
+      error: null,
+    };
+    await rodar();
+    expect(deletesEmImagens()).toHaveLength(1);
   });
 
   it("falha do DELETE depois do Storage → resolve e loga (retentativa idempotente)", async () => {

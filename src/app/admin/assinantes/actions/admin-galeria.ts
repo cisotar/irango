@@ -7,9 +7,10 @@
 //     service client);
 //   - `prepararContextoAdmin` FORA do try: prova admin antes de elevar; se lança,
 //     PROPAGA (fail-closed);
-//   - RPC com `p_loja_id` = lojaId VALIDADO; antes do `remove`, cada caminho é
-//     conferido contra `${lojaId}/` (sob service_role o caminho é a única amarra
-//     no Storage); DELETE das linhas escopado por `loja_id`;
+//   - uso e remoção por `galeria-operacoes.ts` com lojaId VALIDADO (vira o
+//     `p_loja_id` da RPC); antes do `remove`, cada caminho é conferido contra
+//     `${lojaId}/` (sob service_role o caminho é a única amarra no Storage);
+//     DELETE das linhas escopado por `loja_id`;
 //   - INSERT por `escopo.inserir`; `admin_acessos` registra cada ação;
 //   - sem rate limit (um operador, RN-G13).
 //
@@ -22,16 +23,11 @@ import {
   registrarAcessoAdmin,
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
-import { CAMPO_ARQUIVO } from "@/lib/actions/upload-contrato";
 import {
-  CAMPO_MINIATURA,
   MSG_IMAGEM_INVALIDA,
   MSG_LISTAGEM_FALHOU,
   MSG_LOJA_INVALIDA,
-  MSG_REMOCAO_FALHOU,
   MSG_SELECAO_INVALIDA,
-  MSG_USO_FALHOU,
-  lerRespostaRpcRemocao,
   type CursorGaleria,
   type ResultadoEnvioGaleria,
   type ResultadoListagemGaleria,
@@ -40,9 +36,10 @@ import {
 } from "@/lib/actions/galeria-contrato";
 import { subirOriginalNaGaleria } from "@/lib/actions/galeria-upload";
 import {
-  apagarImagensPendentes,
-  processarRemocoesPendentes,
-} from "@/lib/actions/galeria-pendentes";
+  consultarUsoDaGaleria,
+  executarRemocaoDaGaleria,
+  extrairParDeBlobs,
+} from "@/lib/actions/galeria-operacoes";
 import { listarImagensDaLojaAdmin } from "@/lib/supabase/queries/imagens";
 import { schemaCursorGaleria, schemaIdsImagens } from "@/lib/validacoes/galeria";
 
@@ -61,16 +58,8 @@ export async function enviarImagemGaleriaAdmin(
   if (!loja.ok) return { ok: false, erro: MSG_LOJA_INVALIDA };
 
   // 2. presença dos arquivos; o CONTEÚDO só é validado depois da prova de admin.
-  const original = formData.get(CAMPO_ARQUIVO);
-  const miniatura = formData.get(CAMPO_MINIATURA);
-  if (
-    !(original instanceof Blob) ||
-    original.size <= 0 ||
-    !(miniatura instanceof Blob) ||
-    miniatura.size <= 0
-  ) {
-    return { ok: false, erro: MSG_IMAGEM_INVALIDA };
-  }
+  const par = extrairParDeBlobs(formData);
+  if (!par) return { ok: false, erro: MSG_IMAGEM_INVALIDA };
 
   // 3. prova de admin FORA do try. Se lança, PROPAGA.
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
@@ -79,8 +68,8 @@ export async function enviarImagemGaleriaAdmin(
   const r = await subirOriginalNaGaleria({
     client: svc,
     lojaId: loja.lojaId,
-    original,
-    miniatura,
+    original: par.original,
+    miniatura: par.miniatura,
     inserir: (linha) =>
       escopo.inserir("imagens_loja", linha).select("criado_em").maybeSingle(),
     rotulo: "enviarImagemGaleriaAdmin",
@@ -129,23 +118,15 @@ export async function consultarUsoImagensAdmin(
 
   const { svc } = await prepararContextoAdmin(loja.lojaId);
 
-  try {
-    const { data, error } = await svc.rpc("uso_imagens_loja", { p_loja_id: loja.lojaId, p_ids: parsed.data });
-    if (error) {
-      console.error("[consultarUsoImagensAdmin]", error);
-      return { ok: false, erro: MSG_USO_FALHOU };
-    }
-    return { ok: true, usos: data ?? [] };
-  } catch (e) {
-    console.error("[consultarUsoImagensAdmin]", e);
-    return { ok: false, erro: MSG_USO_FALHOU };
-  }
+  // Nunca rejeita: falha vira MSG_USO_FALHOU, detalhe só no log.
+  return consultarUsoDaGaleria(svc, loja.lojaId, parsed.data, "consultarUsoImagensAdmin");
 }
 
 /**
- * Remove originais da loja-alvo pela mesma RPC do lojista, via serviço com
- * `p_loja_id` = lojaId validado (nunca do payload). Depois do commit: prefixo
- * `${lojaId}/` → Storage → DELETE escopado; e a varredura de recortes sem uso.
+ * Remove originais da loja-alvo pela mesma operação do lojista
+ * (`executarRemocaoDaGaleria`), com o service client e `lojaId` validado
+ * (nunca do payload): RPC → prefixo `${lojaId}/` → Storage → DELETE escopado,
+ * e a varredura de recortes sem uso.
  */
 export async function removerImagensGaleriaAdmin(
   lojaId: string,
@@ -158,35 +139,20 @@ export async function removerImagensGaleriaAdmin(
 
   const { svc } = await prepararContextoAdmin(loja.lojaId);
 
-  try {
-    const { data, error } = await svc.rpc("remover_imagens_loja", { p_loja_id: loja.lojaId, p_ids: parsed.data });
-    const resposta = error ? null : lerRespostaRpcRemocao(data);
-    if (!resposta) {
-      console.error("[removerImagensGaleriaAdmin] falha na RPC", error ?? data);
-      return { ok: false, erro: MSG_REMOCAO_FALHOU };
-    }
+  // Nunca rejeita: falha vira MSG_REMOCAO_FALHOU, detalhe só no log.
+  const r = await executarRemocaoDaGaleria(
+    svc,
+    loja.lojaId,
+    parsed.data,
+    "removerImagensGaleriaAdmin",
+  );
+  if (!r.ok) return r;
 
-    // Passos 9–12 (nunca rejeitam): prefixo da loja-alvo, Storage, DELETE com
-    // `.eq("loja_id", lojaId)`, e a varredura RN-G21.
-    await apagarImagensPendentes(svc, loja.lojaId, resposta.caminhos, "removerImagensGaleriaAdmin");
-    await processarRemocoesPendentes(svc, loja.lojaId);
-
-    registrarAcessoAdmin(svc, {
-      lojaId: loja.lojaId,
-      acao: "galeria_remover",
-      metadados: { quantidade: resposta.removidas },
-    });
-    revalidarGaleriaAdmin(loja.lojaId);
-
-    return {
-      ok: true,
-      removidas: resposta.removidas,
-      ignoradas: resposta.ignoradas,
-      produtosLimpos: resposta.produtosLimpos,
-      logoLimpa: resposta.logoLimpa,
-    };
-  } catch (e) {
-    console.error("[removerImagensGaleriaAdmin]", e);
-    return { ok: false, erro: MSG_REMOCAO_FALHOU };
-  }
+  registrarAcessoAdmin(svc, {
+    lojaId: loja.lojaId,
+    acao: "galeria_remover",
+    metadados: { quantidade: r.removidas },
+  });
+  revalidarGaleriaAdmin(loja.lojaId);
+  return r;
 }
