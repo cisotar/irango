@@ -79,3 +79,33 @@ prontos às pages do painel e do admin — uma única montagem compartilhada, se
       **não** chama `ranking_clientes_da_loja`.
 - [ ] Falha de RPC → log no servidor e resultado de falha genérico (nenhuma mensagem do Postgres no retorno).
 - [ ] Testes vermelhos com `FAIL` capturado antes da implementação; depois verdes; `npx tsc --noEmit` limpo.
+
+## RED (tdd)
+
+Arquivos (plano §8.6): `src/lib/supabase/queries/vendas.test.ts` (verde na fatia A),
+`src/lib/validacoes/vendas.test.ts`, `src/lib/utils/periodoVendas.test.ts`,
+`src/lib/utils/agregarVendas.test.ts`, `src/lib/vendas/carregarRelatorioVendas.test.ts`,
+`src/lib/vendas/carregarRankingClientes.test.ts`, `src/app/admin/assinantes/[lojaId]/carga-vendas.test.ts`.
+
+```bash
+npx vitest run src/lib/supabase/queries/vendas.test.ts src/lib/validacoes/vendas.test.ts \
+  src/lib/utils/periodoVendas.test.ts src/lib/utils/agregarVendas.test.ts src/lib/vendas \
+  "src/app/admin/assinantes/[lojaId]/carga-vendas.test.ts"
+```
+
+```
+ FAIL  src/lib/supabase/queries/vendas.test.ts > buscarVendasPorDia > 'ambos' → rpc vendas_por_dia SEM a chave p_tipo_entrega; …
+Error: Cannot find module '/src/lib/supabase/queries/vendas' imported from …/queries/vendas.test.ts
+ FAIL  src/lib/utils/periodoVendas.test.ts > …            (16 casos)
+Error: Cannot find module '/src/lib/utils/periodoVendas' imported from …
+ FAIL  src/lib/utils/agregarVendas.test.ts > …            (9 casos)
+Error: Cannot find module '/src/lib/utils/agregarVendas' imported from …
+ FAIL  src/lib/validacoes/vendas.test.ts > …              (30 casos)
+Error: Cannot find module '/src/lib/validacoes/vendas' imported from …
+ FAIL  src/lib/vendas/carregarRelatorioVendas.test.ts > … (6 casos)
+ FAIL  src/lib/vendas/carregarRankingClientes.test.ts > … (4 casos)
+ FAIL  src/app/admin/assinantes/[lojaId]/carga-vendas.test.ts > … (6 casos)
+Error: Cannot find module '/src/app/admin/assinantes/[lojaId]/carga-vendas' imported from …
+```
+
+Import dinâmico por caso (sem stub de produção): cada caso falha isolado pelo módulo ausente.

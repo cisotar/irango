@@ -56,3 +56,23 @@ fora do ranking — sem nenhum dado de contato.
       `asService` → vazio; `asAnon` → erro de permissão (fragmento da mensagem + SQLSTATE).
 - [ ] `p_ordem = 'nome'`, `p_limite = 21`, `p_limite = 0` → `22023` com fragmento da mensagem.
 - [ ] Teste vermelho com `FAIL` capturado antes da migration; depois verde; tsc limpo.
+
+## RED (tdd)
+
+Arquivo: `tests/migrations/ranking_clientes_fieis.test.ts` (T356-01..15, plano §8.5).
+
+```bash
+npx vitest run tests/migrations/ranking_clientes_fieis.test.ts
+```
+
+```
+ FAIL  … > T356-01 RN-V17: convidado e anonimizado fora do ranking; ranking [A] com 3 pedidos; convidados 3
+error: function public.ranking_clientes_da_loja(p_fim => timestamp with time zone) does not exist
+ FAIL  … > T356-12 anon → 42501 permission denied for function (ranking e convidados)
+AssertionError: expected '42883' to be '42501' // Object.is equality
+ FAIL  … > T356-14 fonte única: a migration não lista status à mão e usa public.status_faturamento
+Error: [RED 356] migration ausente: 20261007125000_ranking_clientes_fieis.sql
+ FAIL  … > T356-15 SECURITY DEFINER, search_path vazio; EXECUTE só authenticated
+AssertionError: expected [] to deeply equal [ { …(5) }, { …(5) } ]
+      Tests  15 failed (15)
+```

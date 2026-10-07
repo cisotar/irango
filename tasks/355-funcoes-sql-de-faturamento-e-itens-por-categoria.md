@@ -73,7 +73,36 @@ banco, sobre valores já gravados pelo checkout.
       período de março.
 - [ ] Paridade: valor bruto da linha SQL = `totalDaLinha` TS na mesma fixture (com opcionais de quantidade > 1).
 - [ ] **RN-V21:** `asUser` dono de X vê X; dono de X chamando com `p_loja_id = Y` (sendo ele **cliente** com pedidos em
-      Y) → zero linhas/zeros, nenhuma linha de Y; `asAnon` → erro de permissão (afirmar fragmento `permission denied`
+      Y) → recusa `42501` com fragmento `sem posse da loja` (plano técnico D2; mais forte que "zero linhas"), nenhuma linha de Y; `asAnon` → erro de permissão (afirmar fragmento `permission denied`
       junto do SQLSTATE); `asService` vê a loja passada.
 - [ ] `p_inicio`/`p_fim` nulos → `22023` com fragmento da mensagem.
 - [ ] Teste vermelho com `FAIL` capturado (função inexistente) antes da migration; depois verde; tsc limpo.
+
+## RED (tdd)
+
+Arquivos (plano §8.3 e §8.4): `tests/migrations/vendas_funcoes_faturamento.test.ts` (T355-01..21) e
+`tests/migrations/vendas_itens_por_categoria.test.ts` (T355-30..38).
+
+```bash
+npx vitest run tests/migrations/vendas_funcoes_faturamento.test.ts tests/migrations/vendas_itens_por_categoria.test.ts
+```
+
+```
+ FAIL  … > T355-01 status_faturamento: false → 4 status; true → {entregue}; null → null
+error: function public.status_faturamento(boolean) does not exist
+ FAIL  … > T355-02..10, 13, 20
+error: function public.vendas_por_dia(p_loja_id => uuid, p_inicio => timestamp with time zone, …) does not exist
+ FAIL  … > T355-15 RN-V21: lojista-cliente pedindo a loja onde comprou → 42501 sem posse da loja
+AssertionError: expected '42883' to be '42501' // Object.is equality
+ FAIL  … > T355-21 ACL e segurança …
+AssertionError: expected [] to deeply equal [ 'status_faturamento', …(3) ]
+      Tests  20 failed | 1 passed (21)
+ FAIL  … > T355-30..37 (itens por categoria)
+error: column "categoria_id_snapshot" of relation "itens_pedido" does not exist
+ FAIL  … > T355-38 RN-V21 …
+AssertionError: expected '42883' to be '42501' // Object.is equality
+      Tests  9 failed (9)
+```
+
+T355-14 passa já no RED de propósito: prova que a RLS sozinha entrega ao lojista-cliente os 2 pedidos dele
+na loja alheia (vetor real que o T2 `sem posse da loja` fecha).

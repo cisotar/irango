@@ -55,3 +55,33 @@ editam: a do lojista (própria loja) e a do admin (loja-alvo, paridade).
       `createServiceClient()`; caminho feliz grava só `dia_inicio_ciclo` da loja-alvo.
 - [ ] `vitrine_lojas` não expõe a coluna (teste ou asserção na suíte de `vitrine_lojas`).
 - [ ] Teste vermelho com `FAIL` capturado antes da migration/actions; depois verde; `npx tsc --noEmit` limpo.
+
+## RED (tdd)
+
+Arquivos (plano §8.2 e §8.6): `tests/migrations/lojas_dia_inicio_ciclo.test.ts`,
+`src/lib/actions/patches-loja.ciclo.test.ts`, `src/lib/actions/vendas.test.ts`,
+`src/app/admin/assinantes/actions/admin-vendas.test.ts`,
+`src/app/admin/assinantes/actions/admin-vendas.paridade.test.ts`, parte "ciclo" de
+`src/lib/validacoes/vendas.test.ts`.
+
+```bash
+npx vitest run tests/migrations/lojas_dia_inicio_ciclo.test.ts src/lib/actions/patches-loja.ciclo.test.ts \
+  src/lib/actions/vendas.test.ts src/app/admin/assinantes/actions/admin-vendas.test.ts \
+  src/app/admin/assinantes/actions/admin-vendas.paridade.test.ts
+```
+
+```
+ FAIL  … > T354-01 default 1 em loja nova; smallint NOT NULL
+error: column "dia_inicio_ciclo" does not exist
+ FAIL  … > T354-02 0 recusado → 23514 lojas_dia_inicio_ciclo_check
+AssertionError: expected '42703' to be '23514' // Object.is equality
+ FAIL  … > T354-08 gravar o ciclo não abre billing …
+AssertionError: expected '42703' to be 'P0001' // Object.is equality
+      Tests  9 failed (9)
+ FAIL  src/lib/actions/patches-loja.ciclo.test.ts > montarPatchCiclo — allowlist (354) > …
+Error: [RED 354] `montarPatchCiclo` ainda não existe em src/lib/actions/patches-loja.ts (§7.7).
+ FAIL  src/lib/actions/vendas.test.ts > salvarCicloVendas (lojista) > …   (6 casos)
+Error: Cannot find module '/src/lib/actions/vendas' imported from …/vendas.test.ts
+ FAIL  src/app/admin/assinantes/actions/admin-vendas.test.ts > …          (7 casos)
+Error: Cannot find module '/src/app/admin/assinantes/actions/admin-vendas' imported from …
+```

@@ -64,3 +64,27 @@ vendidos por categoria" (issue 355).
       versão da função existe.
 - [ ] Teste vermelho com `FAIL` capturado (coluna inexistente / snapshot nulo) antes das migrations; depois verde.
 - [ ] `npx vitest run tests/migrations` verde, incluindo `rpc_criar_pedido*`; `npx tsc --noEmit` limpo.
+
+## RED (tdd)
+
+Arquivo: `tests/migrations/itens_pedido_categoria_snapshot.test.ts` (T353-01..16, plano §8.1).
+
+```bash
+npx vitest run tests/migrations/itens_pedido_categoria_snapshot.test.ts
+```
+
+```
+ FAIL  … > T353-01 colunas existem: categoria_id_snapshot uuid YES, categoria_nome_snapshot text YES
+AssertionError: expected [] to deeply equal [ { …(3) }, { …(3) } ]
+ FAIL  … > T353-03 CHECK do par: id sem nome → 23514 itens_pedido_categoria_snapshot_par_check
+AssertionError: expected '42703' to be '23514' // Object.is equality
+ FAIL  … > T353-05..11 (RPC grava o snapshot)
+error: column "categoria_id_snapshot" does not exist
+ FAIL  … > T353-12 / T353-13 (backfill)
+Error: [RED 353] migration ausente: 20261007122000_…backfill.sql
+ FAIL  … > T353-15 corpo literal: fora do bloco [353], prosrc = corpo de 20261003122000
+AssertionError: expected '\ndeclare\n  v_desconto        numeri…' to match /    -- >>> \[353\][\s\S]*?    -- <<< …/
+      Tests  15 failed | 1 passed (16)
+```
+
+T353-14 (assinatura/ACL de `criar_pedido`) passa já no RED: é guarda de regressão, mantida de propósito.
