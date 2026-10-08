@@ -698,7 +698,7 @@ CREATE TABLE clientes_enderecos (
 
 ### Funções do relatório de vendas
 
-Spec `specs/relatorio-vendas.md`. Migrations `20261007124000_relatorio_vendas_funcoes.sql` (financeiras) e `20261007125000_ranking_clientes_fieis.sql` (clientes). Nenhum índice novo (reusa `pedidos(loja_id, criado_em)` e `itens_pedido(pedido_id)`). `revoke` de `public`/`anon` obrigatório em todas.
+Spec `specs/arquivo/relatorio-vendas.md`. Migrations `20261007124000_relatorio_vendas_funcoes.sql` (financeiras) e `20261007125000_ranking_clientes_fieis.sql` (clientes). Nenhum índice novo (reusa `pedidos(loja_id, criado_em)` e `itens_pedido(pedido_id)`). `revoke` de `public`/`anon` obrigatório em todas.
 
 | Função | Modo | Faz |
 |--------|------|-----|
