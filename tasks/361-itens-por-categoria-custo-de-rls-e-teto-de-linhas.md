@@ -1,6 +1,6 @@
 # 361 — Itens por categoria: custo de RLS em janela longa e teto de 1000 linhas
 
-crítica: SIM (mexe em função de valor e em fronteira de segurança INVOKER/DEFINER) · Spec: specs/relatorio-vendas.md (RN-V16)
+crítica: SIM (mexe em função de valor e em fronteira de segurança INVOKER/DEFINER) · Spec: specs/arquivo/relatorio-vendas.md (RN-V16)
 
 ## Origem
 Achados do `acelerar` no loop relatorio-vendas (branch feat/relatorio-vendas, após o commit 7ba43d3;

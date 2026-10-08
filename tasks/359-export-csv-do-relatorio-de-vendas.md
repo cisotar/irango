@@ -6,7 +6,7 @@
 **crítica:** SIM (TDD red-first)
 **Mundo:** painel (+ admin, se a paridade for decidida)
 **Depende de:** [357] (montagem do relatório e filtros validados), [358] (tela onde o botão vive)
-**Spec:** specs/relatorio-vendas.md — RN-V25 (fora da v1); precisa de spec própria ou de seção nova antes de
+**Spec:** specs/arquivo/relatorio-vendas.md — RN-V25 (fora da v1); precisa de spec própria ou de seção nova antes de
 implementar
 
 ## Objetivo

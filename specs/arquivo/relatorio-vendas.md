@@ -62,7 +62,7 @@ servidor.
   (ex.: `ChartColumn`/`BarChart3`), já disponível pelo `lucide-react` do projeto.
 
 **Behaviors:**
-- [ ] Ver "Vendas" logo abaixo de "Dashboard" no menu do painel e no menu do hub admin, com item ativo derivado de
+- [x] Ver "Vendas" logo abaixo de "Dashboard" no menu do painel e no menu do hub admin, com item ativo derivado de
   `usePathname`. Garantido em: cliente (UX de navegação); a barreira real é o guard do layout de cada mundo.
 
 ---
@@ -115,31 +115,31 @@ em cards brancos (`design-system.md` §10.2 regras 4 e 5):
   `lib/validacoes/vendas.ts`.
 
 **Behaviors:**
-- [ ] Ver os avisos "só vendas feitas pelo iRango" e "faturamento nominal, sem status de pago". Garantido em:
+- [x] Ver os avisos "só vendas feitas pelo iRango" e "faturamento nominal, sem status de pago". Garantido em:
   cliente (copy fixa) — RN-V22.
-- [ ] Escolher o período por preset (hoje, esta semana, este mês, mês anterior, este ano). Garantido em: servidor —
+- [x] Escolher o período por preset (hoje, esta semana, este mês, mês anterior, este ano). Garantido em: servidor —
   o preset na URL é validado por zod e os limites são calculados no servidor no fuso da loja (RN-V07, RN-V08,
   RN-V09); a UI só escreve a URL.
-- [ ] Escolher um intervalo personalizado de/até. Garantido em: **Server Component (zod)** — de ≤ até e teto de
+- [x] Escolher um intervalo personalizado de/até. Garantido em: **Server Component (zod)** — de ≤ até e teto de
   366 dias; inválido nunca vira erro 500 nem consulta sem limite (RN-V09).
-- [ ] Filtrar por tipo de entrega: Entrega / No local / Ambos. Garantido em: servidor — `tipo_entrega` validado
+- [x] Filtrar por tipo de entrega: Entrega / No local / Ambos. Garantido em: servidor — `tipo_entrega` validado
   contra a allowlist `entrega | retirada | ambos` antes de virar parâmetro SQL (RN-V10).
-- [ ] Alternar "só concluídos". Garantido em: **função SQL** — o cliente envia só um booleano; o conjunto de status
+- [x] Alternar "só concluídos". Garantido em: **função SQL** — o cliente envia só um booleano; o conjunto de status
   é fixado no banco, nunca uma lista vinda da URL (RN-V01, RN-V02).
-- [ ] Ver bruto, descontos, líquido e frete do período. Garantido em: **função SQL (agregação autoritativa sobre
+- [x] Ver bruto, descontos, líquido e frete do período. Garantido em: **função SQL (agregação autoritativa sobre
   valores gravados) + RLS/reconferência de posse** — o cliente só exibe (RN-V03, RN-V04, RN-V13).
-- [ ] Ver "N pedidos com frete a combinar, não somados" quando houver. Garantido em: função SQL (contagem de
+- [x] Ver "N pedidos com frete a combinar, não somados" quando houver. Garantido em: função SQL (contagem de
   `taxa_entrega IS NULL` no mesmo conjunto filtrado) — RN-V05.
-- [ ] Ver o gráfico e trocar entre Diário / Semanal / Mensal. Garantido em: servidor (linhas diárias do SQL +
+- [x] Ver o gráfico e trocar entre Diário / Semanal / Mensal. Garantido em: servidor (linhas diárias do SQL +
   rollup em TS puro no servidor); a troca de aba é só UX no cliente (RN-V11, RN-V12).
-- [ ] Ver o intervalo explícito do ciclo atual (ex.: "05/out a 04/nov"). Garantido em: servidor (cálculo no fuso da
+- [x] Ver o intervalo explícito do ciclo atual (ex.: "05/out a 04/nov"). Garantido em: servidor (cálculo no fuso da
   loja a partir de `lojas.dia_inicio_ciclo`) — RN-V07.
-- [ ] Editar o dia de início do ciclo (1..28). Garantido em: **Server Action (zod) + RLS `lojas_update_proprio` +
+- [x] Editar o dia de início do ciclo (1..28). Garantido em: **Server Action (zod) + RLS `lojas_update_proprio` +
   CHECK no banco** (RN-V08).
-- [ ] Ver itens mais vendidos por categoria, com valor bruto por linha e a nota "O desconto é do pedido e não é
+- [x] Ver itens mais vendidos por categoria, com valor bruto por linha e a nota "O desconto é do pedido e não é
   dividido entre os itens". Garantido em: **função SQL** sobre os snapshots de `itens_pedido` /
   `itens_pedido_opcionais` + categoria congelada (RN-V14, RN-V15, RN-V16).
-- [ ] Ver mensagem genérica quando a carga falha, sem detalhe técnico. Garantido em: servidor (erro logado, UI
+- [x] Ver mensagem genérica quando a carga falha, sem detalhe técnico. Garantido em: servidor (erro logado, UI
   genérica) — RN-V23.
 
 #### 2.1 Ranking de clientes fiéis (seção da mesma página, só painel)
@@ -149,17 +149,17 @@ início). Tabela com nome, nº de pedidos, total gasto e último pedido; cada li
 comprados pelo cliente no período. Abaixo, "N pedidos de convidados fora do ranking".
 
 **Behaviors:**
-- [ ] Escolher o período do ranking (semana, mês, ano, desde o início) sem mexer no filtro global. Garantido em:
+- [x] Escolher o período do ranking (semana, mês, ano, desde o início) sem mexer no filtro global. Garantido em:
   servidor — parâmetro próprio na URL, validado por zod; limites calculados no fuso da loja (RN-V18).
-- [ ] Ver o ranking ordenado por nº de pedidos (padrão). Garantido em: **função SQL `SECURITY DEFINER` escopada
+- [x] Ver o ranking ordenado por nº de pedidos (padrão). Garantido em: **função SQL `SECURITY DEFINER` escopada
   por `auth.uid()`** (RN-V17, RN-V19).
-- [ ] Ordenar por nº de pedidos, total gasto ou último pedido. Garantido em: **função SQL** — a ordenação é
+- [x] Ordenar por nº de pedidos, total gasto ou último pedido. Garantido em: **função SQL** — a ordenação é
   parâmetro da função (allowlist) e o limite de linhas é aplicado **depois** de ordenar no banco; nunca reordenar
   no cliente um top-N já cortado (RN-V19).
-- [ ] Ver os 3 itens mais comprados de cada cliente. Garantido em: função SQL (mesmo escopo) — RN-V19.
-- [ ] Ver "N pedidos de convidados fora do ranking". Garantido em: função SQL (mesmo escopo e mesmo período) —
+- [x] Ver os 3 itens mais comprados de cada cliente. Garantido em: função SQL (mesmo escopo) — RN-V19.
+- [x] Ver "N pedidos de convidados fora do ranking". Garantido em: função SQL (mesmo escopo e mesmo período) —
   RN-V17.
-- [ ] Não ver telefone nem e-mail do cliente no ranking. Garantido em: **função SQL (allowlist de colunas no
+- [x] Não ver telefone nem e-mail do cliente no ranking. Garantido em: **função SQL (allowlist de colunas no
   `RETURNS TABLE`)** — RN-V20.
 
 ---
@@ -182,17 +182,17 @@ Dados por loader server-only `src/app/admin/assinantes/[lojaId]/carga-vendas.ts`
   closure com `lojaId` (padrão dos wrappers `*AdminClient`).
 
 **Behaviors:**
-- [ ] Ver a parte financeira (faturamento, frete, filtro de retirada/entrega, itens por categoria, gráfico) da
+- [x] Ver a parte financeira (faturamento, frete, filtro de retirada/entrega, itens por categoria, gráfico) da
   loja-alvo. Garantido em: **loader `service_role` escopado por `lojaId` validado + `verificarAdminSaaS()` antes
   de elevar** (RN-V21).
-- [ ] Filtrar período, tipo de entrega e "só concluídos" com as mesmas regras do painel. Garantido em: servidor
+- [x] Filtrar período, tipo de entrega e "só concluídos" com as mesmas regras do painel. Garantido em: servidor
   (mesmo schema zod da rota 2).
-- [ ] Editar o dia de início do ciclo da loja-alvo. Garantido em: **Server Action admin
+- [x] Editar o dia de início do ciclo da loja-alvo. Garantido em: **Server Action admin
   (`prepararContextoAdmin(lojaId)` → `escopo.atualizarLoja`) + CHECK no banco** (RN-V08).
-- [ ] Não ver o ranking de clientes fiéis nem a rota de clientes. Garantido em: estrutura — a page admin não importa
+- [x] Não ver o ranking de clientes fiéis nem a rota de clientes. Garantido em: estrutura — a page admin não importa
   `RankingClientesFieis` nem chama a função do ranking (que, sob `service_role`, não tem `auth.uid()` e devolveria
   vazio); `"clientes"` segue em `rotasAusentes` (RN-V20).
-- [ ] Ver mensagem genérica quando a carga falha. Garantido em: servidor (RN-V23).
+- [x] Ver mensagem genérica quando a carga falha. Garantido em: servidor (RN-V23).
 
 ---
 
@@ -202,19 +202,19 @@ Dados por loader server-only `src/app/admin/assinantes/[lojaId]/carga-vendas.ts`
 `createTestDb()` (`asAnon`/`asUser`/`asService`).
 
 **Behaviors:**
-- [ ] Migration adiciona o snapshot de categoria em `itens_pedido` (id + nome, nullable). Garantido em: migration.
-- [ ] Backfill dos itens existentes com a categoria **atual** do produto; item com `produto_id` NULL ou produto sem
+- [x] Migration adiciona o snapshot de categoria em `itens_pedido` (id + nome, nullable). Garantido em: migration.
+- [x] Backfill dos itens existentes com a categoria **atual** do produto; item com `produto_id` NULL ou produto sem
   categoria fica NULL ("Sem categoria"). Garantido em: migration (RN-V15).
-- [ ] `criar_pedido` grava o snapshot de categoria resolvido **no servidor** a partir de `produto_id` + `p_loja_id`,
+- [x] `criar_pedido` grava o snapshot de categoria resolvido **no servidor** a partir de `produto_id` + `p_loja_id`,
   ignorando qualquer chave de categoria no jsonb do item; assinatura de 18 argumentos inalterada. Garantido em:
   **RPC (servidor)** — RN-V14.
-- [ ] Migration adiciona `lojas.dia_inicio_ciclo` (default 1, CHECK 1..28). Garantido em: **CHECK no banco** —
+- [x] Migration adiciona `lojas.dia_inicio_ciclo` (default 1, CHECK 1..28). Garantido em: **CHECK no banco** —
   RN-V08.
-- [ ] Funções financeiras de agregação (por dia local e itens por categoria) com escopo de loja. Garantido em:
+- [x] Funções financeiras de agregação (por dia local e itens por categoria) com escopo de loja. Garantido em:
   **função SQL + RLS + reconferência de posse no corpo** (RN-V21).
-- [ ] Função do ranking no molde de `clientes_da_loja`. Garantido em: **função SQL `SECURITY DEFINER` +
+- [x] Função do ranking no molde de `clientes_da_loja`. Garantido em: **função SQL `SECURITY DEFINER` +
   `auth.uid()` + allowlist** (RN-V17 a RN-V20).
-- [ ] `anon` não executa nenhuma função nova. Garantido em: `REVOKE ALL … FROM public, anon` (RN-V21).
+- [x] `anon` não executa nenhuma função nova. Garantido em: `REVOKE ALL … FROM public, anon` (RN-V21).
 
 ---
 
