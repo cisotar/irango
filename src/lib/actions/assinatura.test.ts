@@ -130,6 +130,7 @@ function lojaRow(over: Partial<Tables<"lojas">> = {}): Tables<"lojas"> {
     consentimento_em: null,
     consentimento_versao: null,
     criado_em: "2026-01-01T00:00:00.000Z",
+    dia_inicio_ciclo: 1,
     atualizado_em: "2026-01-01T00:00:00.000Z",
     endereco_bairro: null,
     endereco_cep: null,

@@ -582,6 +582,8 @@ export type Database = {
       }
       itens_pedido: {
         Row: {
+          categoria_id_snapshot: string | null
+          categoria_nome_snapshot: string | null
           id: string
           nome: string
           observacao: string | null
@@ -592,6 +594,8 @@ export type Database = {
           quantidade: number
         }
         Insert: {
+          categoria_id_snapshot?: string | null
+          categoria_nome_snapshot?: string | null
           id?: string
           nome: string
           observacao?: string | null
@@ -602,6 +606,8 @@ export type Database = {
           quantidade: number
         }
         Update: {
+          categoria_id_snapshot?: string | null
+          categoria_nome_snapshot?: string | null
           id?: string
           nome?: string
           observacao?: string | null
@@ -691,6 +697,7 @@ export type Database = {
           consentimento_em: string | null
           consentimento_versao: string | null
           criado_em: string
+          dia_inicio_ciclo: number
           dono_id: string
           endereco_bairro: string | null
           endereco_cep: string | null
@@ -733,6 +740,7 @@ export type Database = {
           consentimento_em?: string | null
           consentimento_versao?: string | null
           criado_em?: string
+          dia_inicio_ciclo?: number
           dono_id: string
           endereco_bairro?: string | null
           endereco_cep?: string | null
@@ -775,6 +783,7 @@ export type Database = {
           consentimento_em?: string | null
           consentimento_versao?: string | null
           criado_em?: string
+          dia_inicio_ciclo?: number
           dono_id?: string
           endereco_bairro?: string | null
           endereco_cep?: string | null
@@ -1924,6 +1933,7 @@ export type Database = {
           consentimento_em: string | null
           consentimento_versao: string | null
           criado_em: string
+          dia_inicio_ciclo: number
           dono_id: string
           endereco_bairro: string | null
           endereco_cep: string | null
@@ -1975,6 +1985,7 @@ export type Database = {
           consentimento_em: string | null
           consentimento_versao: string | null
           criado_em: string
+          dia_inicio_ciclo: number
           dono_id: string
           endereco_bairro: string | null
           endereco_cep: string | null
@@ -2012,6 +2023,26 @@ export type Database = {
         }
       }
       pedido_aceita_itens: { Args: { p_pedido_id: string }; Returns: boolean }
+      pedidos_convidados_da_loja: {
+        Args: { p_fim?: string; p_inicio?: string }
+        Returns: number
+      }
+      ranking_clientes_da_loja: {
+        Args: {
+          p_fim?: string
+          p_inicio?: string
+          p_limite?: number
+          p_ordem?: string
+        }
+        Returns: {
+          cliente_id: string
+          itens_top: Json
+          nome: string
+          total_gasto: number
+          total_pedidos: number
+          ultimo_pedido_em: string
+        }[]
+      }
       remover_imagens_loja: {
         Args: { p_ids: string[]; p_loja_id: string }
         Returns: Json
@@ -2058,6 +2089,7 @@ export type Database = {
         }
         Returns: string
       }
+      status_faturamento: { Args: { p_so_concluidos: boolean }; Returns: string[] }
       uso_imagens_loja: {
         Args: { p_ids: string[]; p_loja_id: string }
         Returns: {
@@ -2066,6 +2098,52 @@ export type Database = {
           produtos: Json
           produtos_total: number
         }[]
+      }
+      vendas_itens_por_categoria: {
+        Args: {
+          p_fim: string
+          p_inicio: string
+          p_loja_id: string
+          p_so_concluidos?: boolean
+          p_tipo_entrega?: string
+        }
+        Returns: {
+          categoria_id: string
+          categoria_nome: string
+          categoria_quantidade: number
+          categoria_valor_bruto: number
+          item_nome: string
+          quantidade: number
+          valor_bruto: number
+        }[]
+      }
+      vendas_por_dia: {
+        Args: {
+          p_fim: string
+          p_inicio: string
+          p_loja_id: string
+          p_so_concluidos?: boolean
+          p_tipo_entrega?: string
+        }
+        Returns: {
+          bruto: number
+          descontos: number
+          dia: string
+          frete: number
+          liquido: number
+          qtd_frete_a_combinar: number
+          qtd_pedidos: number
+        }[]
+      }
+      vendas_preparar_consulta: {
+        Args: {
+          p_fim: string
+          p_inicio: string
+          p_loja_id: string
+          p_so_concluidos?: boolean
+          p_tipo_entrega?: string
+        }
+        Returns: string
       }
     }
     Enums: {

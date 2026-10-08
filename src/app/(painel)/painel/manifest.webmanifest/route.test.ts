@@ -45,6 +45,7 @@ function lojaFake(overrides: Partial<LojaCompleta>): LojaCompleta {
     consentimento_em: null,
     consentimento_versao: null,
     criado_em: "2026-01-01T00:00:00Z",
+    dia_inicio_ciclo: 1,
     dono_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     endereco_bairro: null,
     endereco_cep: null,
