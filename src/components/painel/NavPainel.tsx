@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BadgeCheck,
+  ChartColumn,
   ChevronDown,
   ClipboardList,
   Clock,
@@ -159,6 +160,9 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
 
   const itens: ItemNav[] = [
     { href: base, rotulo: "Dashboard", icone: LayoutDashboard },
+    // [358] Relatório de vendas: logo depois do Dashboard, nos dois mundos. A
+    // rota admin existe, então não entra em `rotasAusentes`.
+    { href: `${base}/vendas`, rotulo: "Vendas", icone: ChartColumn },
     { href: `${base}/pedidos`, rotulo: "Pedidos", icone: ClipboardList },
     { href: `${base}/clientes`, rotulo: "Clientes", icone: Users },
     {
