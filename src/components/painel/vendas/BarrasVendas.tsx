@@ -4,6 +4,9 @@ import { cn } from "@/lib/utils";
 import { formatarMoeda } from "@/lib/utils/formatarMoeda";
 import type { BarraVendas } from "@/lib/utils/agregarVendas";
 
+/** Só o que a barra desenha: o resto da linha agregada não cruza para o cliente. */
+export type BarraGrafico = Pick<BarraVendas, "chave" | "rotulo" | "liquido">;
+
 /** Até este número de barras o valor fica visível embaixo de cada uma; acima, só para leitor de tela. */
 const MAX_VALORES_VISIVEIS = 14;
 
@@ -26,7 +29,7 @@ export function BarrasVendas({
   barras,
   granularidade,
 }: {
-  barras: BarraVendas[];
+  barras: BarraGrafico[];
   granularidade: GranularidadeVendas;
 }): ReactElement {
   const maior = Math.max(0, ...barras.map((b) => b.liquido));

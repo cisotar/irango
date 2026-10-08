@@ -4,8 +4,7 @@ import { useState, type ReactElement } from "react";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { BarraVendas } from "@/lib/utils/agregarVendas";
-import { BarrasVendas, type GranularidadeVendas } from "./BarrasVendas";
+import { BarrasVendas, type BarraGrafico, type GranularidadeVendas } from "./BarrasVendas";
 
 const ABAS: { valor: GranularidadeVendas; rotulo: string }[] = [
   { valor: "diario", rotulo: "Diário" },
@@ -21,7 +20,7 @@ const ABAS: { valor: GranularidadeVendas; rotulo: string }[] = [
 export function GraficoBarrasVendas({
   barras,
 }: {
-  barras: Record<GranularidadeVendas, BarraVendas[]>;
+  barras: Record<GranularidadeVendas, BarraGrafico[]>;
 }): ReactElement {
   const [aba, setAba] = useState<GranularidadeVendas>("diario");
 

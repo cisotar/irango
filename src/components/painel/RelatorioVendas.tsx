@@ -7,6 +7,8 @@ import type { ResultadoRelatorioVendas } from "@/lib/vendas/carregarRelatorioVen
 import type { ResultadoCiclo } from "@/lib/vendas/tipos";
 import { CicloMensal } from "./vendas/CicloMensal";
 import { FiltrosVendas } from "./vendas/FiltrosVendas";
+import type { BarraVendas } from "@/lib/utils/agregarVendas";
+import type { BarraGrafico, GranularidadeVendas } from "./vendas/BarrasVendas";
 import { GraficoBarrasVendas } from "./vendas/GraficoBarrasVendas";
 import { ItensPorCategoria } from "./vendas/ItensPorCategoria";
 import { ResumoFaturamento } from "./vendas/ResumoFaturamento";
@@ -36,6 +38,14 @@ export type RelatorioVendasProps = {
  * hub admin. Só exibe: todo número já chega calculado do servidor. Os dados de
  * clientes não passam por aqui; a página do painel compõe o card deles ao lado.
  */
+/** Só chave/rótulo/líquido cruzam a fronteira do client component (achado do `acelerar`). */
+function paraGrafico(
+  barras: Record<GranularidadeVendas, BarraVendas[]>,
+): Record<GranularidadeVendas, BarraGrafico[]> {
+  const enxuta = (b: BarraVendas): BarraGrafico => ({ chave: b.chave, rotulo: b.rotulo, liquido: b.liquido });
+  return { diario: barras.diario.map(enxuta), semanal: barras.semanal.map(enxuta), mensal: barras.mensal.map(enxuta) };
+}
+
 export function RelatorioVendas({
   baseVendas,
   filtros,
@@ -80,7 +90,7 @@ export function RelatorioVendas({
       {relatorio.ok ? (
         <>
           <ResumoFaturamento totais={relatorio.dados.totais} rotuloPeriodo={relatorio.contexto.rotuloPeriodo} />
-          <GraficoBarrasVendas barras={relatorio.dados.barras} />
+          <GraficoBarrasVendas barras={paraGrafico(relatorio.dados.barras)} />
           <ItensPorCategoria categorias={relatorio.dados.categorias} />
         </>
       ) : (
