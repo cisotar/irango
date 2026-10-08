@@ -10,6 +10,7 @@ import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { listarClientesDaLoja } from "@/lib/supabase/queries/clientes";
 import { paginaDeClientes, type PaginaClientes } from "@/lib/utils/linhaCliente";
 import { mesDeReferencia, nomeDoMes } from "@/lib/utils/mesDeReferencia";
+import { codigoDoErro } from "@/lib/utils/codigoDoErro";
 import { POR_PAGINA_CLIENTES } from "@/lib/validacoes/paginacao";
 import { ListaClientes } from "./ListaClientes";
 
@@ -45,7 +46,7 @@ export default async function ClientesPage({
     inicial = paginaDeClientes(brutos, loja.timezone, POR_PAGINA_CLIENTES);
   } catch (e) {
     // Só o código vai ao log (seguranca.md §14); a UI recebe mensagem genérica.
-    const codigo = typeof e === "object" && e !== null && "code" in e ? String(e.code) : "erro";
+    const codigo = codigoDoErro(e);
     console.error("[painel/clientes] listar", codigo);
   }
 

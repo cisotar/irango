@@ -9,6 +9,7 @@
 // latitude, longitude) JAMAIS entram, mesmo que cheguem num payload hostil.
 
 import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
+import type { DadosCicloVendas } from "@/lib/validacoes/vendas";
 
 /** Campos que o caller pode tentar gravar no perfil (já validados a montante). */
 export type DadosPerfil = {
@@ -73,6 +74,17 @@ export function montarPatchModalidades(d: DadosModalidadesEntrega): DadosModalid
     aceita_entrega: d.aceita_entrega,
     modo_frete: d.modo_frete,
   };
+}
+
+/**
+ * Patch do ciclo mensal do relatório de vendas (issue 354, RN-V08). Mesma regra
+ * das demais: allowlist COLUNA A COLUNA, nunca spread. Sai daqui EXATAMENTE
+ * `dia_inicio_ciclo`, mesmo que o objeto carregue billing, `dono_id` ou `id`.
+ * Usado pelo painel (`salvarCicloVendas`) e pelo hub admin
+ * (`salvarCicloVendasAdmin`), que por isso não podem divergir.
+ */
+export function montarPatchCiclo(d: DadosCicloVendas): DadosCicloVendas {
+  return { dia_inicio_ciclo: d.dia_inicio_ciclo };
 }
 
 /**

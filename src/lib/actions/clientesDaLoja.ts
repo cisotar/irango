@@ -24,14 +24,11 @@ import {
 } from "@/lib/validacoes/paginacao";
 import { schemaUuid } from "@/lib/validacoes/uuid";
 import { verificarRateLimit } from "@/lib/utils/rateLimit";
+import { codigoDoErro } from "@/lib/utils/codigoDoErro";
 
 export type ResultadoCarregarClientes = ({ ok: true } & PaginaClientes) | { ok: false; erro: string };
 
 const ERRO_GENERICO = "Não foi possível carregar mais clientes. Tente novamente.";
-
-function codigoDoErro(e: unknown): string {
-  return typeof e === "object" && e !== null && "code" in e ? String(e.code) : "erro";
-}
 
 /**
  * `mesBruto` (issue 347): o mês do filtro de aniversariantes da 1ª página, para

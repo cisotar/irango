@@ -428,3 +428,48 @@ describe("NavPainel — item Galeria (D9)", () => {
     expect(renderMobile("/painel")).toContain('href="/painel/galeria"');
   });
 });
+
+/**
+ * [358] "Vendas" é item de primeiro nível LOGO DEPOIS de Dashboard, nos dois
+ * mundos, com `href` derivado do `basePath`. A rota admin existe: o
+ * `rotasAusentes` real do layout admin não a omite.
+ */
+describe("NavPainel — item Vendas (358)", () => {
+  const BASES = ["/painel", "/admin/assinantes/L1"] as const;
+  const ctxDe = (base: string): ContextoNav | undefined =>
+    base === "/painel" ? undefined : { basePath: base };
+
+  it.each(BASES)("em %s, Vendas vem logo depois de Dashboard", (base) => {
+    const hrefs = links(render(base, ctxDe(base))).map((l) => l.href);
+    const iDashboard = hrefs.indexOf(base);
+    expect(iDashboard).toBeGreaterThan(-1);
+    expect(hrefs[iDashboard + 1]).toBe(`${base}/vendas`);
+  });
+
+  it.each(BASES)("em %s, o rótulo é 'Vendas' com ícone de gráfico", (base) => {
+    const html = render(base, ctxDe(base));
+    const escapado = `${base}/vendas`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    expect(html).toMatch(
+      new RegExp(`<a[^>]*href="${escapado}"[^>]*>\\s*<svg[^>]*lucide-chart-column[\\s\\S]*?Vendas</a>`),
+    );
+  });
+
+  it.each(BASES)("em %s, acende em /vendas e só ele", (base) => {
+    const ativos = links(render(`${base}/vendas`, ctxDe(base))).filter((l) => l.ativo);
+    expect(ativos.map((l) => l.href)).toEqual([`${base}/vendas`]);
+  });
+
+  it("o hub admin real (rotasAusentes do layout admin) mantém Vendas", () => {
+    const ctx: ContextoNav = {
+      basePath: "/admin/assinantes/L1",
+      rotasAusentes: ["configuracoes/promocoes", "clientes"],
+    };
+    const hrefs = links(render("/admin/assinantes/L1", ctx)).map((l) => l.href);
+    expect(hrefs).toContain("/admin/assinantes/L1/vendas");
+    expect(hrefs).not.toContain("/admin/assinantes/L1/clientes");
+  });
+
+  it("aparece também no mobile (Sheet)", () => {
+    expect(renderMobile("/painel")).toContain('href="/painel/vendas"');
+  });
+});

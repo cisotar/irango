@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.6.0 | **Atualizado:** 2026-10-06
+**Versão:** 0.7.0 | **Atualizado:** 2026-10-07
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -92,6 +92,7 @@ irango/
 │   │   │           ├── cupons/
 │   │   │           ├── pedidos/
 │   │   │           ├── clientes/         # base de clientes do lojista (lista paginada; issue 346)
+│   │   │           ├── vendas/           # relatório de vendas (faturamento por dia, itens por categoria, clientes fiéis, ciclo mensal); espelho admin em `admin/assinantes/[lojaId]/vendas/`
 │   │   │           ├── galeria/          # galeria de imagens da loja (originais, upload, remoção em lote); espelho admin em `admin/assinantes/[lojaId]/galeria/`
 │   │   │           └── configuracoes/
 │   │   │               ├── perfil/       # nome, slug, telefone, whatsapp
@@ -149,6 +150,7 @@ irango/
 │   │   │       ├── lojas.ts
 │   │   │       ├── produtos.ts
 │   │   │       └── pedidos.ts
+│   │   ├── vendas/                       # montagem do relatório, compartilhada por painel e admin: carregarRelatorioVendas / carregarRankingClientes (recebem o client e o loja_id; as pages só escolhem a via) + tipos.ts
 │   │   ├── validacoes/                   # schemas zod — reutilizados no form e na action
 │   │   │   ├── produto.ts
 │   │   │   ├── cupom.ts
@@ -175,6 +177,9 @@ irango/
 │   │       ├── fotoSegura.ts             # fotoSegura(url?): string|null — fonte única da invariante anti-XSS §15 (só https vira src)
 │   │       ├── metricasPedidos.ts        # calcularMetricasDoDia(pedidos) + chaveDia(data); puro; extraído do Dashboard do lojista, reuso previsto pelo Dashboard admin (issues 122/138)
 │   │       ├── publicacao.ts             # podePublicarLoja(nome, whatsapp) + ERRO_PERFIL_INCOMPLETO; fonte única do gate "perfil mínimo pra publicar" — preview no cliente, gate autoritativo revalidado no servidor (lojista e admin) — ver seguranca.md §7 (issue 152)
+│   │       ├── periodoVendas.ts          # período do relatório (presets, ciclo mensal por dia_inicio_ciclo, fuso da loja) → faixa [inicio, fim); puro
+│   │       ├── agregarVendas.ts          # agrega as linhas das funções SQL em totais/séries/ranking; puro
+│   │       ├── codigoDoErro.ts           # extrai o SQLSTATE de um erro do PostgREST (usado por clientesDaLoja e vendas)
 │   │       ├── tema.ts                   # montarTemaInicial(tema) → Tema; unifica lerCor/TEMA_PADRAO antes duplicado entre a page de tema do lojista e a page de tema do admin (issue 152; admin era página consolidada até a issue 154, hoje sub-rota própria `configuracoes/tema/`)
 │   │       └── rotasCardapios.ts         # ROTA_CARDAPIOS_LOJISTA + rotaCardapiosAdmin(lojaId) — as duas bases de rota da área de cardápios, uma por mundo, módulo puro; existe para que um mundo não herde a rota do outro por descuido (bug que voltou 2x — `8bfe902`, `f26cc6a` — issue 269)
 │   │
@@ -262,6 +267,10 @@ Lojista e admin ativam o perfil de cliente na mesma conta, em `/conta/completar`
 ### Lojista consulta a base de clientes
 
 `/painel/clientes` (dentro de `(bloqueavel)`, item "Clientes" na `NavPainel`) lista os clientes com ao menos 1 pedido na loja. Leitura via RPC `clientes_da_loja` (`supabase/queries/clientes.ts`, client da sessão); "Carregar mais" chama a Server Action `carregarMaisClientes` (`lib/actions/clientesDaLoja.ts`) com o cursor do último cliente exibido (keyset, 50 por página). Segurança: `seguranca.md` §2; funções: `schema.md` `clientes`.
+
+### Lojista consulta o relatório de vendas
+
+`/painel/vendas` (dentro de `(bloqueavel)`) e `/admin/assinantes/[lojaId]/vendas` (mesmo front, `service_role` escopado por `lojaId`) mostram faturamento por dia, itens por categoria, ranking de clientes fiéis e o ciclo mensal. Fluxo: `lib/validacoes/vendas.ts` valida filtros (`.strict()`, sem valor monetário) → `lib/utils/periodoVendas.ts` resolve a faixa no fuso da loja → `lib/supabase/queries/vendas.ts` chama as funções SQL → `lib/vendas/carregarRelatorioVendas.ts` monta o resultado (`agregarVendas.ts`) para as duas pages. `salvarCicloVendas` (`lib/actions/vendas.ts`) grava `lojas.dia_inicio_ciclo`. Segurança: `seguranca.md` §2 (sétima instância INVOKER); funções: `schema.md` §2.
 
 ### Fluxo de proteção do painel
 
@@ -455,3 +464,6 @@ const items = order.order_items
 | Funções de retenção sem agendador | `anonimizar_clientes_inativos()` e `expurgar_pedidos_antigos()` existem (só `service_role`) mas nada as executa; a política promete a retenção | issue 349 — decisão: pg_cron ou rotina externa |
 | "Carregar mais" do painel de clientes sem rate limit | **resolvido (issue 350):** chave `carregarMaisClientes` (30/min por lojista, `dono_id` da sessão) em `rateLimit.ts`, aplicada nas duas actions de `clientesDaLoja.ts` antes da consulta | issue 350 |
 | Datas do painel fixas em America/Sao_Paulo | **resolvido (issue 351):** `formatarDataHora(iso, timezone)` e `TabelaPedidos` recebem `loja.timezone` no dashboard, em `/painel/pedidos` e no detalhe do cliente; admin, recibo, comanda e `/minha-conta/pedidos` seguem em São Paulo | issue 351 |
+| Relatório de vendas sem exportação CSV | fora da v1 (RN-V25); precisa de spec própria | issue 359 |
+| `salvarCicloVendas` sem rate limit | mesma classe de `salvarHorarios`/`salvarTema`; custo de UPDATE de 1 linha na própria loja, sem vazamento | issue 360 |
+| `vendas_itens_por_categoria` com custo de RLS em janela longa e teto de 1000 linhas do PostgREST | `INVOKER` reavalia a cadeia de RLS por linha (366 dias: ~1,9 s lojista vs ~0,26 s service_role em pglite); posse já provada antes pela trava do corpo | issue 361 (`performance/2026-10-07-relatorio-vendas.md`) |

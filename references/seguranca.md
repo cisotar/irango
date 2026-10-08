@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.9.0 | **Atualizado:** 2026-10-06
+**Versão:** 0.10.0 | **Atualizado:** 2026-10-07
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -519,6 +519,18 @@ Migration `20261006121000_rpc_galeria.sql`. As três RPCs são `SECURITY INVOKER
 **Caminho do Storage na tabela:** `imagens_loja` tem CHECK de prefixo (`starts_with(caminho, loja_id || '/')`) e recusa `..`, `%`, `?`, `#`, `\` e `//` — o navegador normaliza `%2e%2e`, e a vitrine de A exibiria imagem pública de B. `caminho_storage_produtos(url)` é a fonte única do casamento URL ↔ registro (ignora o host; `NULL` para outro bucket, `object/sign` ou esquema não-http(s)).
 
 **Resíduo conhecido, registrado e NÃO fechado (pré-existente, `architecture.md` §10):** `produtos_insert_propria` (§18) permite ao lojista subir objeto direto ao bucket pela API REST com anon key + JWT, sem passar pela action — contorna magic bytes e o teto de 200. `authenticated` tem `INSERT` em `imagens_loja`, então ele pode registrar a própria linha e o trigger BEFORE aceita o objeto como `foto_url`. `UPDATE(remocao_pendente_em)` e `DELETE` diretos permitem bagunçar o registro da própria loja. O alcance continua o de hoje: só a pasta da própria loja (CHECK + RLS) e só tipos aceitos pelo bucket; a galeria não o agrava. Fechar exige upload e escrita em `imagens_loja` só por funções `SECURITY DEFINER` com checagem de posse e retirada do INSERT direto no bucket.
+
+### Sétima instância do INVOKER — relatório de vendas: `vendas_por_dia`, `vendas_itens_por_categoria` (spec `relatorio-vendas`)
+
+Migration `20261007124000_relatorio_vendas_funcoes.sql`. Lojista **e** admin (`service_role`) chamam as mesmas funções, `SECURITY INVOKER`, com `p_loja_id` explícito. Agregam dinheiro, então a **posse da loja é conferida no corpo antes de qualquer leitura** (`vendas_preparar_consulta`, `42501 'vendas: sem posse da loja'`), e a RLS sozinha não basta: `pedidos` soma `pedidos_acesso_lojista` e `pedidos_select_cliente` por **OR**, então um lojista que também é cliente de outra loja passaria a agregar as próprias compras nela se a função confiasse só na RLS. A mesma mensagem vale para loja alheia e inexistente (não vira oráculo de existência). Admin passa pelo ramo de serviço e fica escopado pelo `WHERE loja_id = p_loja_id`.
+
+- **Detecção de `service_role` fail-closed:** `coalesce(auth.role(), '') = 'service_role'` **e** `current_setting('role')` fora de `authenticated`/`anon`. Sem JWT, a função nega.
+- **Forma antes de tudo:** faixa obrigatória, `p_fim > p_inicio`, teto de 367 dias, `tipo_entrega` em allowlist; violação é `22023`.
+- **Valor vem do banco:** bruto, descontos, líquido e frete são somados sobre o que o checkout gravou (§10); a categoria do item é o **snapshot** gravado por `criar_pedido`, resolvido a partir de `produto_id` + `p_loja_id`, **nunca do payload** (um `categoria_id` vindo do cliente seria vetor de relatório forjado e de vazamento entre lojas).
+- **Ranking de clientes (`ranking_clientes_da_loja`, `pedidos_convidados_da_loja`):** `SECURITY DEFINER` no molde de `clientes_da_loja` (acima); escopo é a loja de `auth.uid()`, sem parâmetro de loja, e sob `service_role` nada casa. `RETURNS TABLE` fechado é a allowlist: só **nome**, sem telefone nem e-mail.
+- `REVOKE ... FROM public, anon` em todas (toda rotina nasce executável por `anon`).
+
+Validação do padrão: [Supabase — Database Functions](https://supabase.com/docs/guides/database/functions#security-definer-vs-invoker). Colunas e assinaturas: `schema.md` §2.
 
 ### Alternativa sem RPC: sequência de requests sob constraint trigger DEFERRED (issues 284/285)
 
