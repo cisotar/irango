@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.6.0 | **Atualizado:** 2026-10-06
+**Versão:** 0.7.0 | **Atualizado:** 2026-10-07
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -71,6 +71,13 @@ CREATE TABLE lojas (
   -- fica fora de CAMPOS_LOJA_SOMENTE_SERVIDOR e é gravável pelo lojista (RLS
   -- lojas_update_proprio) e pelo admin SaaS (escopo.atualizarLoja).
   whatsapp_envio_automatico boolean NOT NULL DEFAULT true,
+
+  -- Ciclo mensal do relatório de vendas (RN-V08): dia 1..28 em que o ciclo
+  -- começa (fevereiro sempre tem o dia). NÃO é billing nem PII — fora de
+  -- CAMPOS_LOJA_SOMENTE_SERVIDOR e do trigger lojas_protege_billing; gravável
+  -- pelo lojista (lojas_update_proprio) e pelo admin (escopo.atualizarLoja).
+  -- Fora de vitrine_lojas. Migration: 20261007123000_lojas_dia_inicio_ciclo.sql.
+  dia_inicio_ciclo smallint NOT NULL DEFAULT 1 CHECK (dia_inicio_ciclo BETWEEN 1 AND 28),
 
   -- Endereço
   endereco_rua     text,
@@ -401,7 +408,8 @@ As versões de 16 e 17 args foram removidas na migration `20261003122000_rpc_cri
 dedupe por `idempotency_key`; `cliente_inexistente` se `p_cliente_id` não existe em `clientes`; cupom com
 `limite_por_cliente` (convidado → desconto 0 e cupom descartado; cliente → `pg_advisory_xact_lock` por
 (cupom, cliente) + `count(pedidos)` por `loja_id`+`cliente_id`+`cupom_codigo`, todos os status; limite atingido →
-desconto 0); trava global de `usos_contagem`; INSERT com `cliente_id`.
+desconto 0); trava global de `usos_contagem`; INSERT com `cliente_id`. Desde `20261007121000_rpc_criar_pedido_categoria_snapshot.sql`
+grava também `categoria_id_snapshot`/`categoria_nome_snapshot` em cada item (resolvidos no banco; assinatura inalterada).
 
 **Trigger `pedidos_protege_valor_trg`** (BEFORE UPDATE, `SECURITY INVOKER`): defesa em
 profundidade contra reescrita direta de `subtotal`/`desconto`/`taxa_entrega`/`total`/
@@ -436,7 +444,22 @@ CREATE TABLE itens_pedido (
   -- observação. Snapshot imutável, mesma família de nome/preco. Autoridade de
   -- tamanho é o zod da Server Action; o CHECK é defesa em profundidade.
   -- Migration: 20260907120000_itens_pedido_observacao.sql (issue 166).
-  observacao  text CHECK (observacao IS NULL OR char_length(observacao) <= 200)
+  observacao  text CHECK (observacao IS NULL OR char_length(observacao) <= 200),
+  -- Preço de tabela no momento do pedido, quando houve desconto no produto. NULL =
+  -- sem desconto (gatilho do "de/por"). Snapshot imutável; sempre >= preco
+  -- (itens_pedido_preco_original_check). Derivado do banco, nunca do payload.
+  -- Migration: 20260920126000_itens_pedido_preco_original.sql (issue 221).
+  preco_original numeric(10,2) CHECK (preco_original IS NULL OR preco_original >= preco),
+  -- Categoria do produto NO MOMENTO da venda (RN-V14), para o relatório de vendas.
+  -- SEM FK de propósito: renomear/mover/apagar a categoria não muda pedido. NULL no par
+  -- = "Sem categoria" (item sem produto, produto sem categoria ou cadeia que cruza loja).
+  -- Gravado pela RPC criar_pedido a partir de produto_id + p_loja_id, nunca do payload.
+  -- Migrations: 20261007120000 (colunas + CHECK de par), 20261007121000 (RPC),
+  -- 20261007122000 (backfill dos itens antigos).
+  categoria_id_snapshot   uuid,
+  categoria_nome_snapshot text,
+  CONSTRAINT itens_pedido_categoria_snapshot_par_check
+    CHECK ((categoria_id_snapshot IS NULL) = (categoria_nome_snapshot IS NULL))
 );
 ```
 
@@ -672,6 +695,21 @@ CREATE TABLE clientes_enderecos (
 | `cliente_da_loja(p_cliente_id uuid)` | Uma linha, mesma allowlist; 0 linhas se o cliente não tem pedido na loja do usuário |
 
 `RETURNS TABLE` fechado = allowlist de 10 colunas: `cliente_id, nome, telefone, dia_aniversario, mes_aniversario, aceita_marketing, total_pedidos, total_cancelados, ultimo_pedido_em, ultimo_pedido_status`. Sem `email`, ano ou `data_nascimento`. `total_pedidos` exclui cancelados; `total_cancelados` os conta; `ultimo_pedido_em`/`ultimo_pedido_status` vêm do pedido mais recente de qualquer status.
+
+### Funções do relatório de vendas
+
+Spec `specs/relatorio-vendas.md`. Migrations `20261007124000_relatorio_vendas_funcoes.sql` (financeiras) e `20261007125000_ranking_clientes_fieis.sql` (clientes). Nenhum índice novo (reusa `pedidos(loja_id, criado_em)` e `itens_pedido(pedido_id)`). `revoke` de `public`/`anon` obrigatório em todas.
+
+| Função | Modo | Faz |
+|--------|------|-----|
+| `status_faturamento(p_so_concluidos bool)` → `text[]` | `IMMUTABLE STRICT` | Fonte única do conjunto de status que fatura: `confirmado, em_preparo, saiu_entrega, entregue` (ou só `entregue`). `null` não casa nada (fail-closed). Lida também pelo ranking |
+| `vendas_preparar_consulta(p_loja_id, p_inicio, p_fim, p_tipo_entrega, p_so_concluidos)` → `text` | `INVOKER` | Valida forma (`22023`: loja/faixa obrigatória, `p_fim > p_inicio`, teto de 367 dias, `tipo_entrega` em `entrega`/`retirada`), trava de posse (`42501 'vendas: sem posse da loja'`) e devolve o fuso da loja |
+| `vendas_por_dia(...)` | `INVOKER` | Faturamento por dia local da loja: pedidos, bruto, descontos, líquido, frete e `qtd_frete_a_combinar`, somados em `numeric` sobre os valores já gravados |
+| `vendas_itens_por_categoria(...)` | `INVOKER` | Itens por categoria congelada (snapshot); valor da linha espelha `totalDaLinha` (`calcularTotal.ts`) incluindo opcionais. Desconto do pedido não é rateado |
+| `ranking_clientes_da_loja(p_inicio, p_fim, p_ordem = 'pedidos', p_limite = 20)` | `DEFINER`, `search_path = ''`, EXECUTE só `authenticated` | Ranking de clientes fiéis da loja de `auth.uid()`; `p_ordem` em `pedidos`/`total`/`ultimo`, `p_limite` 1..20, `p_fim` obrigatório (`22023`); ordena e corta no banco; `itens_top` (3 itens) só para o corte. Allowlist: `cliente_id, nome, total_pedidos, total_gasto, ultimo_pedido_em, itens_top` (sem telefone/email) |
+| `pedidos_convidados_da_loja(p_inicio, p_fim)` → `integer` | `DEFINER` | Pedidos faturáveis com `cliente_id` NULL (convidado ou anonimizado) no mesmo escopo e período |
+
+As quatro primeiras recebem `p_loja_id` e dependem da trava de posse no corpo (admin entra por `service_role`, escopado por `WHERE loja_id`); as duas de clientes não têm parâmetro de loja. Racional em `seguranca.md` §2.
 
 ### `taxas_entrega_duplicadas_182`
 
@@ -1005,7 +1043,7 @@ Valores válidos:
 - Campos de valor monetário: `numeric(10,2)` — nunca `float` (arredondamento)
 - `ON DELETE CASCADE` em dados filhos da loja — deletar loja limpa tudo
 - `ON DELETE SET NULL` em produto referenciado em pedido — histórico preservado
-- Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado (`itens_pedido.observacao` é da mesma família)
+- Snapshots em `itens_pedido.nome` e `itens_pedido.preco` — pedido não muda se produto for editado (`itens_pedido.observacao`, `preco_original` e `categoria_*_snapshot` são da mesma família; categoria sem FK de propósito)
 - Tipos gerados automaticamente: `npx supabase gen types typescript > src/lib/database.types.ts`
 - **Operações multi-tabela atômicas com trava de concorrência** usam função Postgres `SECURITY INVOKER` + `SET search_path = public` + `REVOKE ALL FROM public, anon, authenticated` + `GRANT EXECUTE TO service_role`. Exemplo: `public.criar_pedido(...)` (migration `20260614003000_rpc_criar_pedido.sql`). Nunca INSERT direto da action quando atomicidade ou trava de linha for necessária.
 - **Escrita em lote com valor diferente por linha** (PostgREST não faz `update-many` heterogêneo) tem duas variantes, não uma regra só — ver `seguranca.md` §2 para o racional completo e as sete travas da segunda:
