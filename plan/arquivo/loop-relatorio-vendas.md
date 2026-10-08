@@ -121,3 +121,10 @@ total: 12 invocações · 9 caras (opus) · ~4h–5h
 corte aplicado: sem `desenhar` (design-system.md §10 basta para tela de tabela/cards; perde mockup), sem `popular` (seed não exige colunas novas: default/nullable) — economiza 2 opus e ~30 min
 degrau abaixo rejeitado: 2–3 agentes sem tdd/auditar — fatia monetária e RPC de checkout republicada exigem RED e auditoria
 lacuna: nenhuma
+
+## Execução (orquestrar-autonomo)
+- P1–P5 conforme plano (P5 interrompido por 429 e retomado; WIP reverificado: tsc, suíte de migrations 1860/1860, mutação de 3 regras — pendente no faturamento, posse, categoria do payload — derrubou 2/7/6 testes, depois restaurado).
+- P6 db push 2026-10-07: 20261007120000..125000 aplicadas; `migration list` Remote preenchido; types regenerados (diff só de formatação).
+- P7 GREEN; auditar 0 MÉDIA+ (2 BAIXA: rate limit → issue 360; paywall da RPC → informativo); revisar 1 CONTRATO (codigoDoErro unificado); acelerar 0 GARGALO (payload do gráfico enxugado; custo RLS + teto 1000 linhas → issue 361); testar +6 casos.
+- verificar: HTTP sem sessão (307), SQL no cloud como dono da "Lanches base" (vendas_por_dia/itens/ranking/convidados respondem; loja alheia → 42501). Tela autenticada fica no checklist de clique.
+- Gates finais: tsc 0 · lint 0 erros · 502 arquivos / 9478 testes · build verde · package.json intocado.
