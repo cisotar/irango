@@ -2089,7 +2089,10 @@ export type Database = {
         }
         Returns: string
       }
-      status_faturamento: { Args: { p_so_concluidos: boolean }; Returns: string[] }
+      status_faturamento: {
+        Args: { p_so_concluidos: boolean }
+        Returns: string[]
+      }
       uso_imagens_loja: {
         Args: { p_ids: string[]; p_loja_id: string }
         Returns: {
