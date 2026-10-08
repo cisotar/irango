@@ -278,6 +278,35 @@ describe("355 vendas_itens_por_categoria — RN-V13..V16 + paridade com calcular
     expect(r.rows[0].itens).toBe(r.rows[0].bruto);
   });
 
+  it("T355-33b invariante com cupom e frete: Σ itens por categoria = Σ bruto; cupom e frete não entram nos itens", async () => {
+    const loja = await novaLoja(t, "loja-33b-355i");
+    const inserir = async (subtotal: number, desconto: number, taxa: number | null): Promise<string> => {
+      const total = Math.max(0, subtotal - desconto) + (taxa ?? 0);
+      const r = await t.db.query<{ id: string }>(
+        `insert into public.pedidos
+           (loja_id, nome_cliente, telefone_cliente, subtotal, desconto, taxa_entrega, total,
+            frete_a_combinar, forma_pagamento, tipo_entrega, status, criado_em)
+         values ($1, 'Cliente Teste', '(11) 90000-0000', $2, $3, $4, $5, $6, 'pix', 'entrega', 'entregue', $7::timestamptz)
+         returning id`,
+        [loja, subtotal, desconto, taxa, total, taxa === null, EM],
+      );
+      return r.rows[0].id;
+    };
+    // Pedido 1: 43 de itens, cupom 10, frete 8. Pedido 2: 12 sem categoria, frete a combinar.
+    await item(t, await inserir(43, 10, 8), X_BURGER);
+    await item(t, await inserir(12, 0, null), { nome: "Brinde", preco: 6, quantidade: 2, cat: null });
+    const r = await t.asService((db) =>
+      db.query<{ itens: number; bruto: number; liquido: number; frete: number }>(
+        `select (select sum(valor_bruto) from public.vendas_itens_por_categoria($1::uuid, $2::timestamptz, $3::timestamptz)) as itens,
+                (select sum(bruto) from public.vendas_por_dia($1::uuid, $2::timestamptz, $3::timestamptz)) as bruto,
+                (select sum(liquido) from public.vendas_por_dia($1::uuid, $2::timestamptz, $3::timestamptz)) as liquido,
+                (select sum(frete) from public.vendas_por_dia($1::uuid, $2::timestamptz, $3::timestamptz)) as frete`,
+        [loja, DIA_INI, DIA_FIM],
+      ),
+    );
+    expect(r.rows[0]).toEqual({ itens: 55, bruto: 55, liquido: 45, frete: 8 });
+  });
+
   it("T355-34 Sem categoria: snapshot NULL → categoria_id e categoria_nome NULL, por último", async () => {
     const loja = await novaLoja(t, "loja-34-355i");
     const ped = await pedido(t, loja, { subtotal: 100 });

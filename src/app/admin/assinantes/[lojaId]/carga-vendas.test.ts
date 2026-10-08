@@ -135,6 +135,7 @@ describe("carregarVendasLojaAdmin — escopo e ordem", () => {
     buscarLojaAdminPorId.mockResolvedValueOnce(null);
     await expect(carregarVendasLojaAdmin(LOJA_ID, FILTROS, AGORA)).rejects.toThrow("NEXT_NOT_FOUND");
     expect(carregarRelatorioVendas).not.toHaveBeenCalled();
+    expect(carregarRankingClientes).not.toHaveBeenCalled();
   });
 
   it("feliz → carregarRelatorioVendas(svc, loja, filtros, agora) com a loja validada; devolve { loja, relatorio }", async () => {

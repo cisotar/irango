@@ -310,6 +310,28 @@ describe("355 status_faturamento + vendas_por_dia — RN-V01..V06/V10/V21 e segu
     expect(await bruto(null)).toEqual([80]);
   });
 
+  it("T355-10b fronteira da faixa: pedido em p_inicio é incluso, em p_fim é excluso (fuso Rio Branco, -05)", async () => {
+    const loja = await novaLoja(t, "loja-v10b-355", { timezone: "America/Rio_Branco" });
+    await pedido(t, loja, { subtotal: 1, em: "2026-10-06T04:59:59Z" }); // dia local 05, antes de p_inicio
+    await pedido(t, loja, { subtotal: 10, em: "2026-10-06T05:00:00Z" }); // == p_inicio
+    await pedido(t, loja, { subtotal: 100, em: "2026-10-07T04:59:59Z" }); // último segundo do dia local 06
+    await pedido(t, loja, { subtotal: 1000, em: "2026-10-07T05:00:00Z" }); // == p_fim
+    const linhas = await porDia(t, "service", loja, "2026-10-06T05:00:00Z", "2026-10-07T05:00:00Z");
+    expect(linhas.map((l) => [l.dia, l.qtd_pedidos, l.bruto])).toEqual([["2026-10-06", 2, 110]]);
+  });
+
+  it("T355-10c tipo 'retirada' + só concluídos: só retirada entregue conta (entrega, retirada confirmada e cancelada fora)", async () => {
+    const loja = await novaLoja(t, "loja-v10c-355");
+    await pedido(t, loja, { subtotal: 5, tipo: "retirada", status: "entregue" });
+    await pedido(t, loja, { subtotal: 50, tipo: "retirada", status: "confirmado" });
+    await pedido(t, loja, { subtotal: 500, tipo: "retirada", status: "cancelado" });
+    await pedido(t, loja, { subtotal: 5000, tipo: "entrega", taxa: 0, status: "entregue" });
+    const so = await porDia(t, "service", loja, DIA_INI, DIA_FIM, "retirada", true);
+    expect(so.map((l) => [l.qtd_pedidos, l.bruto])).toEqual([[1, 5]]);
+    const todos = await porDia(t, "service", loja, DIA_INI, DIA_FIM, "retirada", false);
+    expect(todos.map((l) => [l.qtd_pedidos, l.bruto])).toEqual([[2, 55]]);
+  });
+
   it("T355-11 tipo_entrega inválido → 22023", async () => {
     esperarRecusa(await erroDe(porDia(t, "service", lojaX, DIA_INI, DIA_FIM, "x")), "22023", "tipo_entrega inválido");
   });

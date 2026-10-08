@@ -286,6 +286,31 @@ describe("356 ranking_clientes_da_loja + pedidos_convidados_da_loja (pglite)", (
     expect((await ranking(t, LU, { inicio: "2026-10-01T03:00:00Z" }))[0]?.total_pedidos).toBe(1);
   });
 
+  it("T356-08b empate: nº de pedidos igual → maior total gasto; total igual → menor cliente_id; cancelado/pendente não desempatam (p_inicio NULL)", async () => {
+    const dono = "e3560000-0000-4000-8000-0000000000e2";
+    const c = (n: number) => `f3560000-0000-4000-8000-0000000002${String(n).padStart(2, "0")}`;
+    const [CA, CB, CC, CD, CE] = [1, 2, 3, 4, 5].map(c);
+    for (const id of [dono, CA, CB, CC, CD, CE]) await usuario(t, id);
+    const lojaT = await loja(t, dono, "loja-t-356");
+    // Perfis em ordem inversa à do id, para a ordem de inserção não mascarar o desempate.
+    for (const [id, nome] of [[CE, "E"], [CD, "D"], [CC, "C"], [CB, "B"], [CA, "A"]] as const) {
+      await perfil(t, id, `Cliente T${nome}`);
+    }
+    await pedido(t, lojaT, CC, "entregue", 15, "2020-02-01T12:00:00Z");
+    await pedido(t, lojaT, CC, "entregue", 15, "2026-10-02T12:00:00Z");
+    await pedido(t, lojaT, CB, "entregue", 15, "2026-10-02T13:00:00Z");
+    await pedido(t, lojaT, CB, "confirmado", 15, "2026-10-03T12:00:00Z");
+    await pedido(t, lojaT, CA, "entregue", 25, "2026-10-02T14:00:00Z");
+    await pedido(t, lojaT, CA, "entregue", 25, "2026-10-03T14:00:00Z");
+    await pedido(t, lojaT, CD, "entregue", 5, "2026-10-02T15:00:00Z");
+    await pedido(t, lojaT, CD, "entregue", 5, "2026-10-03T15:00:00Z");
+    await pedido(t, lojaT, CD, "cancelado", 999, "2026-10-04T15:00:00Z");
+    await pedido(t, lojaT, CE, "pendente", 999, "2026-10-04T16:00:00Z");
+    const linhas = await ranking(t, dono, { inicio: null });
+    expect(ids(linhas)).toEqual([CA, CB, CC, CD]);
+    expect(linhas.map((l) => [l.total_pedidos, l.total_gasto])).toEqual([[2, 50], [2, 30], [2, 30], [2, 10]]);
+  });
+
   it("T356-09 RN-V20 allowlist: 6 colunas; resultado sem telefone nem email", async () => {
     const linhas = await ranking(t, LW);
     expect(Object.keys(linhas[0]).sort()).toEqual([

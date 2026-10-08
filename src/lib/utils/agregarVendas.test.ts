@@ -142,6 +142,36 @@ describe("rollups", () => {
     ]);
   });
 
+  it("semana ISO atravessando a virada de ano: 29/dez/2026 e 03/jan/2027 no mesmo balde; 04/jan/2027 no seguinte", async () => {
+    const { agruparPorSemana } = await carregar();
+    const barras = agruparPorSemana([
+      linha("2026-12-29", { pedidos: 1, bruto: 10, liquido: 10 }),
+      linha("2027-01-03", { pedidos: 2, bruto: 20, liquido: 20 }),
+      linha("2027-01-04", { pedidos: 1, bruto: 7, liquido: 7 }),
+    ]);
+    expect(barras.map((b) => [b.chave, b.rotulo, b.pedidos, b.bruto])).toEqual([
+      ["2026-12-28", "28/dez/2026 a 03/jan/2027", 3, 30],
+      ["2027-01-04", "04/jan a 10/jan", 1, 7],
+    ]);
+  });
+
+  it("ciclo dia 28 e fevereiro: 27/fev/2027 fecha o ciclo de 28/jan; 28/fev abre o de 28/fev", async () => {
+    const { agruparPorCiclo } = await carregar();
+    const barras = agruparPorCiclo(
+      [
+        linha("2027-01-28", { pedidos: 1, bruto: 1, liquido: 1 }),
+        linha("2027-02-27", { pedidos: 1, bruto: 2, liquido: 2 }),
+        linha("2027-02-28", { pedidos: 1, bruto: 4, liquido: 4 }),
+        linha("2027-03-27", { pedidos: 1, bruto: 8, liquido: 8 }),
+      ],
+      28,
+    );
+    expect(barras.map((b) => [b.chave, b.rotulo, b.bruto])).toEqual([
+      ["2027-01-28", "28/jan a 27/fev", 3],
+      ["2027-02-28", "28/fev a 27/mar", 12],
+    ]);
+  });
+
   it("RN-V12: Σ diário = Σ semanal = Σ ciclo = somarLinhas(diárias), exato, em todas as métricas", async () => {
     const { somarLinhas, barrasDiarias, agruparPorSemana, agruparPorCiclo } = await carregar();
     const dias = fixture14Dias();
