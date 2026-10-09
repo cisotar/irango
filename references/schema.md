@@ -400,7 +400,7 @@ migration `20261003123000_anonimizar_cliente_pedidos.sql`):
 | `clientes_anonimizar_pedidos` (BEFORE DELETE em `clientes`, função `anonimizar_pedidos_do_cliente`) | Em qualquer caminho de exclusão do perfil: `nome_cliente = 'Cliente removido'`; `telefone_cliente`, `endereco_entrega`, `observacoes` e `cliente_id` = null; `itens_pedido.observacao` = null. Valores, status, itens e `cupom_codigo` ficam |
 | `anonimizar_cliente(p_usuario)` | Recusa `pedido_em_aberto` se há pedido do cliente fora de `entregue`/`cancelado` criado há menos de 7 dias; senão apaga o perfil (o trigger acima anonimiza os pedidos) |
 | `anonimizar_clientes_inativos()` | Idem, pulando quem tem pedido em aberto nos últimos 7 dias (o lote não aborta) |
-| `expurgar_pedidos_antigos()` | Apaga pedido `entregue`/`cancelado` com `criado_em` > 5 anos, de cliente ou convidado (itens e opcionais por cascade); devolve a contagem. Sem agendador |
+| `expurgar_pedidos_antigos()` | Apaga pedido `entregue`/`cancelado` com `criado_em` > 5 anos, de cliente ou convidado (itens e opcionais por cascade); devolve a contagem. Agendada diariamente pelo cron da Vercel em `GET /api/cron/retencao` (issue 349) |
 
 **RPC `criar_pedido`** (`SECURITY INVOKER`, EXECUTE só `service_role`): **uma única versão, 18 argumentos**
 (os 17 anteriores + `p_cliente_id uuid` por último, obrigatório, sem default; null explícito para convidado).
@@ -658,7 +658,7 @@ CREATE TABLE clientes (
 | `adicionar_papel_cliente(p_usuario uuid)` | Acrescenta `cliente` em `papeis_usuario` (`ON CONFLICT DO NOTHING`, mesmo advisory lock de `atribuir_papel_inicial`). Nunca grava `lojista`; nenhuma função remove papel |
 | `criar_perfil_cliente(p_usuario, p_nome, p_telefone, p_data_nascimento, p_aceita_marketing, p_versao_termos, p_endereco jsonb)` | Papel + `clientes` + 1º endereço (`padrao = true`) na mesma transação. Recusa sem versão de termos, sem endereço ou com perfil já existente (`23505`) |
 | `anonimizar_cliente(p_usuario uuid)` | Apaga o perfil (CASCADE nos endereços). Não toca `papeis_usuario`, `lojas` nem `auth.users` |
-| `anonimizar_clientes_inativos()` | Chama `anonimizar_cliente` para cada perfil com `ultimo_acesso_em` há mais de 24 meses; devolve a contagem. Sem agendador: execução manual/futura |
+| `anonimizar_clientes_inativos()` | Chama `anonimizar_cliente` para cada perfil com `ultimo_acesso_em` há mais de 24 meses; devolve a contagem. Agendada diariamente pelo cron da Vercel em `GET /api/cron/retencao` (issue 349) |
 
 ### `clientes_enderecos`
 
