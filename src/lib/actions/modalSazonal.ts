@@ -26,19 +26,19 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
-import { z } from "zod";
 import {
   schemaModalSazonal,
   type DadosModalSazonal,
 } from "@/lib/validacoes/modalSazonal";
 import {
+  ERRO_GENERICO,
+  ERRO_VALIDACAO,
+  idModalValido,
   montarPatchModalSazonal,
   type ResultadoModalSazonal,
 } from "@/lib/actions/patches-modal-sazonal";
 import { verificarRateLimit, extrairIp } from "@/lib/utils/rateLimit";
 
-const ERRO_VALIDACAO = "Dados inválidos. Confira os campos e tente novamente.";
-const ERRO_GENERICO = "Não foi possível salvar. Tente novamente.";
 const ERRO_SEM_LOJA = "Loja não encontrada.";
 const ERRO_RATE_LIMIT = "Muitas tentativas. Aguarde um instante.";
 
@@ -75,11 +75,6 @@ type ClientModal = {
   from(tabela: string): CadeiaModal;
   rpc(nome: string, args: Record<string, unknown>): PromiseLike<RespostaModal>;
 };
-
-/** RN-M10: `id` de rota é uuid ANTES de rate-limit, client e query. */
-function idValido(id: unknown): id is string {
-  return z.guid().safeParse(id).success;
-}
 
 /**
  * Grava linha + mensagem + seleção numa ÚNICA chamada à RPC transacional
@@ -148,7 +143,7 @@ export async function editarModalSazonal(
   id: string,
   payload: unknown,
 ): Promise<ResultadoModalSazonal> {
-  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+  if (!idModalValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
 
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
@@ -170,7 +165,7 @@ export async function editarModalSazonal(
 export async function ativarModalSazonal(
   id: string,
 ): Promise<ResultadoModalSazonal> {
-  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+  if (!idModalValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
 
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
@@ -201,7 +196,7 @@ export async function ativarModalSazonal(
 export async function desativarModalSazonal(
   id: string,
 ): Promise<ResultadoModalSazonal> {
-  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+  if (!idModalValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
 
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
@@ -241,7 +236,7 @@ export async function desativarModalSazonal(
 export async function removerModalSazonal(
   id: string,
 ): Promise<ResultadoModalSazonal> {
-  if (!idValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
+  if (!idModalValido(id)) return { ok: false, erro: ERRO_VALIDACAO };
 
   const rl = await verificarRateLimit("salvarPerfil", extrairIp(await headers()));
   if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
