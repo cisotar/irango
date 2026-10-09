@@ -194,9 +194,11 @@ describe("NavPainel — Cardápios fora do menu (323) e rotasAusentes", () => {
 });
 
 describe("NavPainel — contexto admin", () => {
+  // O array REAL do layout admin (`[lojaId]/layout.tsx`): desde a issue 362 a
+  // sub-rota de Avisos existe, e só "clientes" segue sem rota admin (346).
   const ctxAdmin: ContextoNav = {
     basePath: "/admin/assinantes/L1",
-    rotasAusentes: ["configuracoes/promocoes"],
+    rotasAusentes: ["clientes"],
   };
 
   it("reescreve todos os hrefs para a base admin", () => {
@@ -216,7 +218,7 @@ describe("NavPainel — contexto admin", () => {
     expect(hrefs.every((h) => h.startsWith("/admin/assinantes/L1"))).toBe(true);
   });
 
-  it("renderiza os 6 sub-itens de Configurações sob a base admin, incluindo Assinatura", () => {
+  it("renderiza os 7 sub-itens de Configurações sob a base admin, incluindo Avisos e Assinatura", () => {
     const hrefs = links(render("/admin/assinantes/L1", ctxAdmin)).map(
       (l) => l.href,
     );
@@ -227,11 +229,13 @@ describe("NavPainel — contexto admin", () => {
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/pagamentos");
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/tema");
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/assinatura");
-    // Exatamente 6 sub-itens sob configuracoes/ — promocoes ainda sem rota admin.
+    // [362] Avisos passou a ter rota admin: saiu do `rotasAusentes` do layout.
+    expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/promocoes");
+    // Exatamente 7 sub-itens sob configuracoes/ — os mesmos do lojista.
     expect(
       hrefs.filter((h) => h.startsWith("/admin/assinantes/L1/configuracoes/"))
         .length,
-    ).toBe(6);
+    ).toBe(7);
     // Opcionais continua presente nos dois contextos.
     expect(hrefs).toContain("/admin/assinantes/L1/produtos/opcionais");
   });
@@ -363,7 +367,9 @@ describe("NavPainel — subitens de Configurações em ambos os contextos", () =
     ).toBe(7);
   });
 
-  it("rotasAusentes omite subitem: admin sem promocoes fica com 6", () => {
+  it("MECANISMO: rotasAusentes com 'configuracoes/promocoes' derruba 7 para 6", () => {
+    // O sufixo é DADO DE ENTRADA deste teste, não o array real do layout admin
+    // (que desde a 362 é só ["clientes"]): aqui se prova o mecanismo de omissão.
     const ctx: ContextoNav = {
       basePath: "/admin/assinantes/L1",
       rotasAusentes: ["configuracoes/promocoes"],
@@ -417,7 +423,7 @@ describe("NavPainel — item Galeria (D9)", () => {
   it("o hub admin real (rotasAusentes do layout admin) mantém a Galeria", () => {
     const ctx: ContextoNav = {
       basePath: "/admin/assinantes/L1",
-      rotasAusentes: ["configuracoes/promocoes", "clientes"],
+      rotasAusentes: ["clientes"],
     };
     expect(links(render("/admin/assinantes/L1", ctx)).map((l) => l.href)).toContain(
       "/admin/assinantes/L1/galeria",
@@ -462,7 +468,7 @@ describe("NavPainel — item Vendas (358)", () => {
   it("o hub admin real (rotasAusentes do layout admin) mantém Vendas", () => {
     const ctx: ContextoNav = {
       basePath: "/admin/assinantes/L1",
-      rotasAusentes: ["configuracoes/promocoes", "clientes"],
+      rotasAusentes: ["clientes"],
     };
     const hrefs = links(render("/admin/assinantes/L1", ctx)).map((l) => l.href);
     expect(hrefs).toContain("/admin/assinantes/L1/vendas");

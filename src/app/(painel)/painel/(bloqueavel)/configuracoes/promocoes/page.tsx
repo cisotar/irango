@@ -12,9 +12,8 @@ import {
   desativarModalSazonal,
   removerModalSazonal,
 } from "@/lib/actions/modalSazonal";
-import { estadoDoModalSazonal } from "@/lib/utils/estadoModalSazonal";
-import { lerMensagemModal } from "@/lib/validacoes/mensagemModal";
-import { PromocoesClient, type ModalSazonalLinha } from "./PromocoesClient";
+import { montarLinhasModalSazonal } from "./montarLinhasModalSazonal";
+import { PromocoesClient } from "./PromocoesClient";
 
 /**
  * O estado de cada modal ("Ativo"/"Rascunho"/"Fora da janela") é AO VIVO: muda
@@ -52,24 +51,10 @@ export default async function PromocoesPage(): Promise<ReactElement> {
     buscarCategorias(supabase, loja.id),
   ]);
 
-  const agora = new Date();
-
-  const linhas: ModalSazonalLinha[] = modais.map((modal) => ({
-    id: modal.id,
-    titulo: modal.titulo,
-    ativo: modal.ativo,
-    exibicao_inicio: modal.exibicao_inicio,
-    exibicao_fim: modal.exibicao_fim,
-    mostrar_promocoes_junto: modal.mostrar_promocoes_junto,
-    // RN-M04: o banco é tão hostil quanto um payload (o dono grava direto no
-    // PostgREST). Inválida vira `null` (editor vazio) com log só dos ids.
-    mensagem: lerMensagemModal(modal.mensagem, { lojaId: loja.id, modalId: modal.id }),
-    categorias: modal.categorias,
-    cardapios: modal.cardapios,
-    // Preview de UX recalculado no servidor a cada request (spec §Behaviors):
-    // nenhuma decisão depende dele; o cliente nunca o envia de volta.
-    estado: estadoDoModalSazonal(modal, agora),
-  }));
+  // Um único `agora` para a página inteira, e a MESMA montagem de linha da via
+  // admin (`montarLinhasModalSazonal`): parse fail-closed da mensagem (RN-M04) e
+  // `estado` como preview de UX derivado no SERVIDOR a cada request.
+  const linhas = montarLinhasModalSazonal(modais, loja.id, new Date());
 
   return (
     <PromocoesClient

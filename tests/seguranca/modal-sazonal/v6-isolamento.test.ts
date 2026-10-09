@@ -333,10 +333,45 @@ describe("V6 · banco (pglite)", () => {
       expect(await estado()).toEqual(antes);
     });
 
-    it("asService sem JWT de usuário: raise de S1 (sem sessao) e nada muda", async () => {
+    /**
+     * [362] A via de SERVIÇO passou a ser legítima em `salvar_modal_sazonal` (a
+     * sub-rota admin de Avisos escreve na loja-alvo sob service_role, migration
+     * 20261008120000): `asService` com `p_loja_id` da própria loja GRAVA — é o
+     * contrapeso coberto em `tests/migrations/rpc_modal_sazonal_via_servico.test.ts`.
+     * A trava que importa AQUI (isolamento cross-tenant) não desapareceu, ela
+     * MUDOU DE EIXO: deixou de ser "service_role não escreve" e virou
+     * "service_role não escreve FORA de `p_loja_id`". Os dois casos abaixo são o
+     * mesmo vetor deste describe sob o contrato novo.
+     */
+    it("[362] asService com p_modal_id de A e p_loja_id de B: raise 'modal inexistente' e nada muda", async () => {
       const antes = await estado();
-      const e = await capturarErro(() => t.asService((db) => chamarSalvarModal(db, argsEdicaoValidos(c.a))));
-      esperarRaise(e, "modal_sazonal: sem sessao");
+      const args = { ...argsEdicaoValidos(c.a), p_loja_id: c.b.id };
+      const e = await capturarErro(() => t.asService((db) => chamarSalvarModal(db, args)));
+      esperarRaise(e, "modal_sazonal: modal inexistente");
+      expect(await estado()).toEqual(antes);
+    });
+
+    it("[362] authenticated com claim `role: service_role` FORJADO não vira via de serviço: raise 'sem posse' e nada muda", async () => {
+      // `v_e_servico` exige os DOIS sinais (claim do JWT E role efetivo da
+      // sessão): aqui o claim mente, o role SQL continua `authenticated`, então
+      // a posse volta a ser exigida e o dono B não é dono da loja A.
+      const antes = await estado();
+      const e = await capturarErro(async () => {
+        await t.db.exec("begin");
+        try {
+          await t.db.query("set local role authenticated");
+          await t.db.query(`select set_config('request.jwt.claims', $1, true)`, [
+            JSON.stringify({ sub: c.b.donoId, role: "service_role" }),
+          ]);
+          const r = await chamarSalvarModal(t.db, argsEdicaoValidos(c.a));
+          await t.db.exec("commit");
+          return r;
+        } catch (err) {
+          await t.db.exec("rollback");
+          throw err;
+        }
+      });
+      esperarRaise(e, "modal_sazonal: sem posse");
       expect(await estado()).toEqual(antes);
     });
 

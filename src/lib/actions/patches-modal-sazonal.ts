@@ -11,8 +11,27 @@
 // `buscarLojaDoDono`) e `p_modal_id` (id de rota validado) são acrescentados
 // pela Server Action, nunca por aqui.
 
+import { z } from "zod";
+
 import type { DadosModalSazonal } from "@/lib/validacoes/modalSazonal";
 import type { MensagemModalValidada } from "@/lib/validacoes/mensagemModal";
+
+/**
+ * Mensagens de erro e o guard de `id` COMPARTILHADOS pelas duas vias do modal
+ * sazonal — a do lojista (`@/lib/actions/modalSazonal`) e a do admin
+ * (`admin/assinantes/actions/admin-modal-sazonal`). Vivem aqui pelo mesmo
+ * motivo de `ResultadoModalSazonal`: módulo `'use server'` só exporta funções
+ * async, então constante e helper síncrono moram no módulo NEUTRO (precedente:
+ * `galeria-contrato.ts`). Duplicá-los deixaria as duas telas divergirem na
+ * copy sem nada quebrar.
+ */
+export const ERRO_VALIDACAO = "Dados inválidos. Confira os campos e tente novamente.";
+export const ERRO_GENERICO = "Não foi possível salvar. Tente novamente.";
+
+/** RN-M10: `id` de rota é uuid ANTES de rate-limit, client e query. */
+export function idModalValido(id: unknown): id is string {
+  return z.guid().safeParse(id).success;
+}
 
 /**
  * Contrato de retorno das Server Actions do modal sazonal. Vive aqui (módulo
