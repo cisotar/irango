@@ -562,3 +562,269 @@ describe("[326] schemaFaixasEntrega — incremento ∈ {1, 2} e 0..30 faixas", (
     expect(schemaFaixas().safeParse(payloadFaixas({ faixas: faixa() })).success).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// [328/F3] [325/F3] schemaZonasEntrega — autoridade da action (uma forma por vez)
+// ---------------------------------------------------------------------------
+// Autoridade: plan/tecnico-formas-de-frete.md §4 (regras de valor por forma) e
+// §5 (contrato do zod), §8 itens 46–49.
+//
+// CONTRATO: src/lib/validacoes/entrega.ts
+//   export const schemaZonasEntrega = z.discriminatedUnion("forma", [
+//     { forma:"raio_km",   versao, incremento, faixas }   .strict().superRefine(refinarPrefixo)
+//     { forma:"faixa_cep", versao, faixas:[{cep_inicio,cep_fim,taxa,pedido_minimo_gratis,ativo}] } .strict().superRefine(refinarCep)
+//     { forma:"bairro",    versao, grupos:[{bairros,taxa,pedido_minimo_gratis,ativo}] }             .strict().superRefine(refinarBairros)
+//   ]);  versao = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
+//   Mensagens custom:
+//     invertida  path ["faixas", i, "cep_fim"]   "O CEP final deve ser maior ou igual ao CEP inicial."
+//     sobreposta path ["faixas", j, "cep_inicio"] "A faixa de {a} a {b} cruza com a de {c} a {d}. Ajuste uma delas."
+//     grupo vazio "Adicione pelo menos um bairro a este preço."
+//     repetido    "{bairro} já está em outro preço."  (normalizarBairro, a MESMA da vitrine)
+//   Tetos: 30 faixas km · 50 faixas CEP · 30 grupos · 100 bairros/grupo · 300 bairros no total.
+// Item 49 ([326] schemaFaixasEntrega inalterado após extrair refinarPrefixo) é
+// coberto pelos describes [326] acima, que seguem passando.
+function schemaZonas(): SchemaParse {
+  const s = (validacoesEntrega as unknown as { schemaZonasEntrega?: SchemaParse }).schemaZonasEntrega;
+  if (s == null || typeof s.safeParse !== "function") {
+    throw new Error(
+      "[RED 328] `src/lib/validacoes/entrega.ts` ainda não exporta `schemaZonasEntrega` (§5, P3 do plano).",
+    );
+  }
+  return s;
+}
+
+const zKm = (over: Record<string, unknown> = {}) => ({
+  forma: "raio_km",
+  versao: 0,
+  incremento: 1,
+  faixas: [faixa(), faixa({ taxa: 6, pedido_minimo_gratis: 60 })],
+  ...over,
+});
+const fCep = (ini: number, fim: number, over: Record<string, unknown> = {}) => ({
+  cep_inicio: ini,
+  cep_fim: fim,
+  taxa: 5,
+  pedido_minimo_gratis: null,
+  ativo: true,
+  ...over,
+});
+const zCep = (over: Record<string, unknown> = {}) => ({
+  forma: "faixa_cep",
+  versao: 3,
+  faixas: [fCep(1000000, 1999999), fCep(2000000, 2999999, { taxa: 7 })],
+  ...over,
+});
+const gB = (bairros: unknown[], over: Record<string, unknown> = {}) => ({
+  bairros,
+  taxa: 6,
+  pedido_minimo_gratis: null,
+  ativo: true,
+  ...over,
+});
+const zBairro = (over: Record<string, unknown> = {}) => ({
+  forma: "bairro",
+  versao: 9,
+  grupos: [gB(["Centro", "Vila Nova"]), gB(["Sé"], { taxa: 4 })],
+  ...over,
+});
+const temIssue = (r: ReturnType<SchemaParse["safeParse"]>, path: PropertyKey[], msg: string | RegExp) =>
+  (r.error?.issues ?? []).some(
+    (i) =>
+      JSON.stringify(i.path) === JSON.stringify(path) &&
+      (typeof msg === "string" ? i.message === msg : msg.test(i.message)),
+  );
+
+describe("[328/F3] schemaZonasEntrega — .strict() recusa chave extra em cada forma e em cada item; versao inteiro ≥ 0 obrigatório", () => {
+  it.each([
+    ["raio_km", zKm()],
+    ["faixa_cep", zCep()],
+    ["bairro", zBairro()],
+  ])("%s válido ⇒ aceito e devolvido igual", (_f, payload) => {
+    const r = schemaZonas().safeParse(payload);
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual(payload);
+  });
+
+  it.each([
+    ["raio_km + loja_id", zKm({ loja_id: "22222222-2222-2222-2222-222222222222" })],
+    ["faixa_cep + loja_id", zCep({ loja_id: "22222222-2222-2222-2222-222222222222" })],
+    ["bairro + loja_id", zBairro({ loja_id: "22222222-2222-2222-2222-222222222222" })],
+    ["raio_km + grupos", zKm({ grupos: [] })],
+    ["faixa_cep + incremento", zCep({ incremento: 1 })],
+    ["bairro + faixas", zBairro({ faixas: [] })],
+  ])("raiz %s extra ⇒ recusado", (_n, payload) => {
+    expect(schemaZonas().safeParse(payload).success).toBe(false);
+  });
+
+  it.each([
+    ["faixa km + tipo", zKm({ faixas: [faixa({ tipo: "bairro" })] })],
+    ["faixa km + raio_max_km", zKm({ faixas: [faixa({ raio_max_km: 9 })] })],
+    ["faixa CEP + nome", zCep({ faixas: [fCep(1000000, 1999999, { nome: "x" })] })],
+    ["faixa CEP + tipo", zCep({ faixas: [fCep(1000000, 1999999, { tipo: "faixa_cep" })] })],
+    ["faixa CEP + loja_id", zCep({ faixas: [fCep(1000000, 1999999, { loja_id: "x" })] })],
+    ["grupo + nome", zBairro({ grupos: [gB(["Centro"], { nome: "Centro" })] })],
+    ["grupo + tipo", zBairro({ grupos: [gB(["Centro"], { tipo: "bairro" })] })],
+    ["grupo + id", zBairro({ grupos: [gB(["Centro"], { id: "33333333-3333-3333-3333-333333333333" })] })],
+  ])("item %s extra ⇒ recusado", (_n, payload) => {
+    expect(schemaZonas().safeParse(payload).success).toBe(false);
+  });
+
+  it.each([
+    ["ausente", undefined],
+    ["negativa", -1],
+    ["fracionária", 1.5],
+    ["string", "3"],
+    ["null", null],
+    ["acima de MAX_SAFE_INTEGER", Number.MAX_SAFE_INTEGER + 2],
+  ])("versao %s ⇒ recusado (nas três formas)", (_n, versao) => {
+    for (const p of [zKm({ versao }), zCep({ versao }), zBairro({ versao })]) {
+      expect(schemaZonas().safeParse(p).success).toBe(false);
+    }
+  });
+
+  it("versao 0 é aceita", () => {
+    expect(schemaZonas().safeParse(zCep({ versao: 0 })).success).toBe(true);
+  });
+
+  it.each([["cidade"], [""], [null], [undefined]])("forma %j ⇒ recusado", (forma) => {
+    expect(schemaZonas().safeParse(zCep({ forma })).success).toBe(false);
+  });
+
+  it("raio_km mantém a invariante de prefixo (refinarPrefixo) com a mensagem do contrato", () => {
+    const r = schemaZonas().safeParse(
+      zKm({ faixas: [faixa({ ativo: true }), faixa({ ativo: false }), faixa({ ativo: true })] }),
+    );
+    expect(r.success).toBe(false);
+    expect(temIssue(r, ["faixas", 2, "ativo"], mensagemBuraco())).toBe(true);
+  });
+
+  it("raio_km: 31 faixas ⇒ recusado", () => {
+    expect(schemaZonas().safeParse(zKm({ faixas: Array.from({ length: 31 }, () => faixa()) })).success).toBe(false);
+  });
+});
+
+describe("[325/F3] schemaZonasEntrega — faixa_cep: CEP inteiro 0..99999999, início ≤ fim, sem sobreposição, teto 50", () => {
+  it.each([
+    ["9 dígitos", { cep_inicio: 123456789 }],
+    ["negativo", { cep_inicio: -1 }],
+    ["fracionário", { cep_fim: 1999999.5 }],
+    ["string", { cep_inicio: "01000000" }],
+    ["null", { cep_fim: null }],
+    ["ausente", { cep_inicio: undefined }],
+    ["taxa 4.555", { taxa: 4.555 }],
+    ["taxa negativa", { taxa: -1 }],
+    ["grátis 4.555", { pedido_minimo_gratis: 4.555 }],
+    ["ativo string", { ativo: "true" }],
+  ])("%s ⇒ recusado", (_n, over) => {
+    expect(schemaZonas().safeParse(zCep({ faixas: [fCep(1000000, 1999999, over)] })).success).toBe(false);
+  });
+
+  it("CEP 0 e 99999999 são limites aceitos; início = fim (um CEP só) é aceito", () => {
+    expect(schemaZonas().safeParse(zCep({ faixas: [fCep(0, 0), fCep(99999999, 99999999)] })).success).toBe(true);
+  });
+
+  it("início > fim ⇒ recusado com a mensagem do contrato em faixas[i].cep_fim", () => {
+    const r = schemaZonas().safeParse(zCep({ faixas: [fCep(1000000, 1999999), fCep(3999999, 3000000)] }));
+    expect(r.success).toBe(false);
+    expect(temIssue(r, ["faixas", 1, "cep_fim"], "O CEP final deve ser maior ou igual ao CEP inicial.")).toBe(true);
+  });
+
+  it.each([
+    ["01000000–01999999 e 01500000–02000000", [fCep(1000000, 1999999), fCep(1500000, 2000000)]],
+    ["fim de uma = início da outra", [fCep(1000000, 1999999), fCep(1999999, 2500000)]],
+    ["uma contida na outra", [fCep(1000000, 3000000), fCep(1500000, 1600000)]],
+    ["desligada também conta", [fCep(1000000, 1999999), fCep(1500000, 2000000, { ativo: false })]],
+  ])("sobreposição (%s) ⇒ recusado com a mensagem do contrato em faixas[1].cep_inicio", (_n, faixas) => {
+    const r = schemaZonas().safeParse(zCep({ faixas }));
+    expect(r.success).toBe(false);
+    expect(temIssue(r, ["faixas", 1, "cep_inicio"], /^A faixa de .+ a .+ cruza com a de .+ a .+\. Ajuste uma delas\.$/)).toBe(
+      true,
+    );
+  });
+
+  it("sobreposição fora de ordem também é recusada", () => {
+    const r = schemaZonas().safeParse(zCep({ faixas: [fCep(1500000, 2000000), fCep(1000000, 1999999)] }));
+    expect(r.success).toBe(false);
+    expect((r.error?.issues ?? []).some((i) => /cruza com a de/.test(i.message))).toBe(true);
+  });
+
+  it("faixas encostadas (…01999999 / 02000000…) são aceitas", () => {
+    expect(schemaZonas().safeParse(zCep({ faixas: [fCep(1000000, 1999999), fCep(2000000, 2999999)] })).success).toBe(
+      true,
+    );
+  });
+
+  const cepsSemCruzar = (n: number) =>
+    Array.from({ length: n }, (_v, i) => fCep(1000000 + i * 100000, 1000000 + i * 100000 + 99999));
+
+  it("50 faixas (teto) ⇒ aceito; 51 ⇒ recusado; lista vazia ⇒ aceito", () => {
+    expect(schemaZonas().safeParse(zCep({ faixas: cepsSemCruzar(50) })).success).toBe(true);
+    expect(schemaZonas().safeParse(zCep({ faixas: cepsSemCruzar(51) })).success).toBe(false);
+    expect(schemaZonas().safeParse(zCep({ faixas: [] })).success).toBe(true);
+  });
+});
+
+describe("[325/F3] schemaZonasEntrega — bairro: ≥ 1 bairro por grupo, sem repetição por normalizarBairro, tetos 30/100/300", () => {
+  it("grupo com bairros [] ⇒ recusado com 'Adicione pelo menos um bairro a este preço.'", () => {
+    const r = schemaZonas().safeParse(zBairro({ grupos: [gB(["Centro"]), gB([])] }));
+    expect(r.success).toBe(false);
+    expect((r.error?.issues ?? []).some((i) => i.message === "Adicione pelo menos um bairro a este preço.")).toBe(true);
+  });
+
+  it.each([
+    ["vazio", ""],
+    ["só espaço", "   "],
+    ["não-string", 123],
+    ["null", null],
+    ["121 caracteres", "B".repeat(121)],
+  ])("bairro %s ⇒ recusado", (_n, bairro) => {
+    expect(schemaZonas().safeParse(zBairro({ grupos: [gB(["Centro", bairro])] })).success).toBe(false);
+  });
+
+  it("bairro com 120 caracteres (aparado) ⇒ aceito", () => {
+    expect(schemaZonas().safeParse(zBairro({ grupos: [gB([` ${"B".repeat(120)} `])] })).success).toBe(true);
+  });
+
+  it.each([
+    ["mesmo grupo, acento + espaço: 'Centro' / ' cêntro '", [gB(["Centro", " cêntro "])]],
+    ["grupos diferentes, caixa: 'Vila Nova' / 'VILA NOVA'", [gB(["Vila Nova"]), gB(["VILA NOVA"])]],
+    ["espaço interno: 'Jardim São José' / 'jardim   sao  jose'", [gB(["Jardim São José"]), gB(["jardim   sao  jose"])]],
+    ["repetido em grupo DESLIGADO também conta", [gB(["Centro"]), gB(["centro"], { ativo: false })]],
+  ])("repetido (%s) ⇒ recusado com '{bairro} já está em outro preço.'", (_n, grupos) => {
+    const r = schemaZonas().safeParse(zBairro({ grupos }));
+    expect(r.success).toBe(false);
+    expect((r.error?.issues ?? []).some((i) => / já está em outro preço\.$/.test(i.message))).toBe(true);
+  });
+
+  it("bairros parecidos mas DIFERENTES após normalizar ('Vila Nova' / 'Vila Novo') ⇒ aceito", () => {
+    expect(schemaZonas().safeParse(zBairro({ grupos: [gB(["Vila Nova"]), gB(["Vila Novo"])] })).success).toBe(true);
+  });
+
+  it.each([
+    ["taxa 4.555", { taxa: 4.555 }],
+    ["taxa negativa", { taxa: -1 }],
+    ["taxa string", { taxa: "5" }],
+    ["grátis negativo", { pedido_minimo_gratis: -1 }],
+    ["ativo ausente", { ativo: undefined }],
+  ])("grupo com %s ⇒ recusado", (_n, over) => {
+    expect(schemaZonas().safeParse(zBairro({ grupos: [gB(["Centro"], over)] })).success).toBe(false);
+  });
+
+  const grupos = (n: number, porGrupo = 1) =>
+    Array.from({ length: n }, (_v, g) => gB(Array.from({ length: porGrupo }, (_w, b) => `Bairro ${g}-${b}`)));
+
+  it("30 grupos ⇒ aceito; 31 ⇒ recusado", () => {
+    expect(schemaZonas().safeParse(zBairro({ grupos: grupos(30) })).success).toBe(true);
+    expect(schemaZonas().safeParse(zBairro({ grupos: grupos(31) })).success).toBe(false);
+  });
+
+  it("grupo com 100 bairros ⇒ aceito; 101 ⇒ recusado", () => {
+    expect(schemaZonas().safeParse(zBairro({ grupos: grupos(1, 100) })).success).toBe(true);
+    expect(schemaZonas().safeParse(zBairro({ grupos: grupos(1, 101) })).success).toBe(false);
+  });
+
+  it("300 bairros no total ⇒ aceito; 301 ⇒ recusado (mesmo com ≤ 100 por grupo)", () => {
+    expect(schemaZonas().safeParse(zBairro({ grupos: grupos(3, 100) })).success).toBe(true);
+    expect(schemaZonas().safeParse(zBairro({ grupos: [...grupos(3, 100), gB(["Último"])] })).success).toBe(false);
+  });
+});
