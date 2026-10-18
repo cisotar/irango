@@ -385,3 +385,134 @@ describe("enviarZonas + criarGravadorComVersao — conflito e erro até o toast"
     expect(t.toast.error).not.toHaveBeenCalled();
   });
 });
+
+// ═════════════════════════════════════════════════════ 325 · ativar(forma) no gravador
+// CONTRATO (plan/loop-ativar-forma-frete.md D4): criarGravadorComVersao ganha
+//   acaoAtivar: (payload: { forma, versao }) => Promise<ResultadoZonas>
+// e expõe ativar(forma) na MESMA cauda e na MESMA versão do salvar: o ativar
+// sai com a versão devolvida pelo salvar anterior; ok atualiza a versão;
+// conflito (em qualquer um dos dois) chama aoConflito UMA vez e trava ambos.
+// Resolvido por cast (precedente 326): `ativar` ausente vira falha com mensagem.
+type FormaZ = DadosZonasEntrega["forma"];
+type PayloadAtivar = { forma: FormaZ; versao: number };
+type GravadorComAtivar = {
+  salvar: (d: DadosZonasSemVersao) => Promise<ResultadoZonas>;
+  ativar?: (forma: FormaZ) => Promise<ResultadoZonas>;
+  versaoAtual: () => number;
+};
+
+describe("criarGravadorComVersao — ativar(forma) explícito (325)", () => {
+  function montar(
+    respostasSalvar: Array<ResultadoZonas | Promise<ResultadoZonas>>,
+    respostasAtivar: Array<ResultadoZonas | Promise<ResultadoZonas>>,
+    versaoInicial = 3,
+  ) {
+    const enviados: DadosZonasEntrega[] = [];
+    const ativacoes: PayloadAtivar[] = [];
+    const aoConflito = vi.fn();
+    const acao = vi.fn(async (p: DadosZonasEntrega): Promise<ResultadoZonas> => {
+      enviados.push(p);
+      const r = respostasSalvar.shift();
+      if (r === undefined) throw new Error("resposta de salvar não programada");
+      return r;
+    });
+    const acaoAtivar = vi.fn(async (p: PayloadAtivar): Promise<ResultadoZonas> => {
+      ativacoes.push(p);
+      const r = respostasAtivar.shift();
+      if (r === undefined) throw new Error("resposta de ativar não programada");
+      return r;
+    });
+    const criar = criarGravadorComVersao as unknown as (o: {
+      acao: typeof acao;
+      acaoAtivar: typeof acaoAtivar;
+      versaoInicial: number;
+      aoConflito: () => void;
+    }) => GravadorComAtivar;
+    const gravador = criar({ acao, acaoAtivar, versaoInicial, aoConflito });
+    const ativar = (forma: FormaZ) => {
+      if (typeof gravador.ativar !== "function") {
+        throw new Error("[RED 325/F4] `criarGravadorComVersao` ainda não expõe `ativar(forma)` (D4).");
+      }
+      return gravador.ativar(forma);
+    };
+    return { gravador, ativar, acao, acaoAtivar, enviados, ativacoes, aoConflito };
+  }
+
+  it("ativar depois de um salvar usa a versão devolvida pelo salvar ({ forma, versao })", async () => {
+    const g = montar([{ ok: true, versao: 4 }], [{ ok: true, versao: 5 }]);
+
+    await g.gravador.salvar(DADOS_CEP);
+    const r = await g.ativar("faixa_cep");
+
+    expect(r).toEqual({ ok: true, versao: 5 });
+    expect(g.ativacoes).toEqual([{ forma: "faixa_cep", versao: 4 }]);
+  });
+
+  it("ativar ok atualiza versaoAtual e o próximo salvar sai com ela", async () => {
+    const g = montar([{ ok: true, versao: 6 }], [{ ok: true, versao: 4 }]);
+
+    await g.ativar("bairro");
+    expect(g.gravador.versaoAtual()).toBe(4);
+
+    await g.gravador.salvar(DADOS_KM);
+    expect(g.ativacoes).toEqual([{ forma: "bairro", versao: 3 }]);
+    expect(g.enviados.map((e) => e.versao)).toEqual([4]);
+    expect(g.gravador.versaoAtual()).toBe(6);
+  });
+
+  it("conflito no ativar ⇒ aoConflito 1x; o próximo salvar e o próximo ativar NÃO chamam o servidor", async () => {
+    const g = montar([], [{ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS }]);
+
+    const r = await g.ativar("bairro");
+    const s = await g.gravador.salvar(DADOS_KM);
+    const a = await g.ativar("raio_km");
+
+    expect(r).toEqual({ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS });
+    expect(s).toEqual({ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS });
+    expect(a).toEqual({ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS });
+    expect(g.acao).not.toHaveBeenCalled();
+    expect(g.acaoAtivar).toHaveBeenCalledTimes(1);
+    expect(g.aoConflito).toHaveBeenCalledTimes(1);
+    expect(g.gravador.versaoAtual()).toBe(3);
+  });
+
+  it("conflito num salvar ⇒ o ativar seguinte NÃO chama acaoAtivar", async () => {
+    const g = montar([{ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS }], []);
+
+    await g.gravador.salvar(DADOS_KM);
+    const a = await g.ativar("raio_km");
+
+    expect(a).toEqual({ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS });
+    expect(g.acaoAtivar).not.toHaveBeenCalled();
+    expect(g.aoConflito).toHaveBeenCalledTimes(1);
+  });
+
+  it("erro comum no ativar (forma sem zona) não muda a versão nem chama aoConflito", async () => {
+    const g = montar([{ ok: true, versao: 4 }], [{ ok: false, erro: "Cadastre uma zona" }]);
+
+    const r = await g.ativar("faixa_cep");
+    await g.gravador.salvar(DADOS_CEP);
+
+    expect(r).toEqual({ ok: false, erro: "Cadastre uma zona" });
+    expect(g.aoConflito).not.toHaveBeenCalled();
+    expect(g.enviados.map((e) => e.versao)).toEqual([3]);
+  });
+
+  it("serializado com salvar: ativar disparado durante um salvar espera e sai com a versão devolvida por ele", async () => {
+    const pendente = adiada<ResultadoZonas>();
+    const g = montar([pendente.promessa], [{ ok: true, versao: 5 }]);
+
+    const s = g.gravador.salvar(DADOS_KM);
+    const a = g.ativar("raio_km");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(g.acao).toHaveBeenCalledTimes(1);
+    expect(g.acaoAtivar).not.toHaveBeenCalled();
+
+    pendente.resolver({ ok: true, versao: 4 });
+    expect(await s).toEqual({ ok: true, versao: 4 });
+    expect(await a).toEqual({ ok: true, versao: 5 });
+    expect(g.ativacoes).toEqual([{ forma: "raio_km", versao: 4 }]);
+    expect(g.gravador.versaoAtual()).toBe(5);
+  });
+});

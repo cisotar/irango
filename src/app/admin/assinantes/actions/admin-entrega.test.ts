@@ -384,3 +384,127 @@ describe("[327/F4] remoção dos caminhos de escrita por zona (admin)", () => {
     expect(exportados).toContain("salvarModalidadesEntregaAdmin");
   });
 });
+
+// ═════════════════════════════════════════════════════ 325 · ativação explícita (admin)
+// CONTRATO (plan/loop-ativar-forma-frete.md D3): admin-entrega.ts
+//   definirFormaFreteAdmin(lojaId: string, payload: unknown): Promise<ResultadoZonas>
+//   validarLojaIdAdmin → schemaDefinirFormaFrete (.strict()) → prepararContextoAdmin FORA do try
+//   → svc.rpc("definir_forma_frete", { p_forma, p_versao, p_loja_id: lojaId validado }) (tenant por último)
+//   → resultadoDaRpcFormaFrete → só no ok: registrarAcessoAdmin(svc, { lojaId, acao:"definir_forma_frete", ... })
+//   + revalidarLojaAdmin.
+function definirFormaFreteAdmin(lojaId: unknown, payload: unknown): Promise<ResultadoZonasAdmin> {
+  const fn = (
+    adminEntrega as unknown as {
+      definirFormaFreteAdmin?: (l: unknown, p: unknown) => Promise<ResultadoZonasAdmin>;
+    }
+  ).definirFormaFreteAdmin;
+  if (typeof fn !== "function") {
+    throw new Error("[RED 325/F3] `admin-entrega.ts` ainda não exporta `definirFormaFreteAdmin` (D3).");
+  }
+  return fn(lojaId, payload);
+}
+
+describe("[325/F3] definirFormaFreteAdmin — lojaId e zod ANTES de elevar", () => {
+  it.each([["nao-e-uuid"], [""], [null], [123]])(
+    "[325/F3] lojaId %j não-UUID ⇒ { ok:false } sem prepararContextoAdmin",
+    async (lojaId) => {
+      const r = await definirFormaFreteAdmin(lojaId, { forma: "bairro", versao: 2 });
+
+      expect(r).toEqual({ ok: false, erro: expect.any(String) });
+      expect(prepararContextoAdminSpy).not.toHaveBeenCalled();
+      expect(verificarAdminSaaS).not.toHaveBeenCalled();
+      expect(createServiceClient).not.toHaveBeenCalled();
+      expect(chamadasRpc).toEqual([]);
+    },
+  );
+
+  it.each<[string, unknown]>([
+    ["loja_id forjado na raiz", { forma: "bairro", versao: 2, loja_id: LOJA_OUTRA }],
+    ["forma fora do enum", { forma: "cidade", versao: 2 }],
+    ["versao ausente", { forma: "bairro" }],
+    ["versao negativa", { forma: "bairro", versao: -1 }],
+  ])("[325/F3] payload com %s ⇒ recusa ANTES de elevar", async (_n, payload) => {
+    const r = await definirFormaFreteAdmin(LOJA_ALVO, payload);
+
+    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    expect(prepararContextoAdminSpy).not.toHaveBeenCalled();
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(chamadasRpc).toEqual([]);
+  });
+});
+
+describe("[325/F3] definirFormaFreteAdmin — elevação, escopo, conflito e auditoria", () => {
+  it("[325/F3] admin reprovado ⇒ exceção propaga, ZERO rpc, sem auditoria", async () => {
+    verificarAdminSaaS.mockRejectedValueOnce(new Error("acesso negado"));
+
+    await expect(definirFormaFreteAdmin(LOJA_ALVO, { forma: "bairro", versao: 2 })).rejects.toThrow("acesso negado");
+
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(chamadasRpc).toEqual([]);
+    expect(registrarAcessoAdminSpy).not.toHaveBeenCalled();
+  });
+
+  it("[325/F3] rpc recebe p_loja_id = lojaId da URL e args literais", async () => {
+    respostaRpc = { data: 3, error: null };
+
+    await definirFormaFreteAdmin(LOJA_ALVO, { forma: "faixa_cep", versao: 2 });
+
+    expect(prepararContextoAdminSpy).toHaveBeenCalledWith(LOJA_ALVO);
+    expect(chamadasRpc).toEqual([
+      { nome: "definir_forma_frete", args: { p_forma: "faixa_cep", p_versao: 2, p_loja_id: LOJA_ALVO } },
+    ]);
+  });
+
+  it("[325/F3] sucesso ⇒ { ok:true, versao }, registrarAcessoAdmin('definir_forma_frete') 1x e revalida", async () => {
+    respostaRpc = { data: 3, error: null };
+
+    const r = await definirFormaFreteAdmin(LOJA_ALVO, { forma: "bairro", versao: 2 });
+
+    expect(r).toEqual({ ok: true, versao: 3 });
+    expect(registrarAcessoAdminSpy).toHaveBeenCalledTimes(1);
+    expect(registrarAcessoAdminSpy).toHaveBeenCalledWith(
+      clientServico,
+      expect.objectContaining({ lojaId: LOJA_ALVO, acao: "definir_forma_frete" }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/assinantes/${LOJA_ALVO}`);
+    expect(revalidatePath).toHaveBeenCalledWith("/loja/[slug]", "page");
+  });
+
+  it("[325/F3] conflito ⇒ { ok:false, conflito:true }; sem auditoria nem revalidate", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    respostaRpc = { data: null, error: { code: "P0001", message: "definir_forma_frete: versao desatualizada" } };
+
+    const r = await definirFormaFreteAdmin(LOJA_ALVO, { forma: "bairro", versao: 2 });
+
+    expect(r).toEqual({ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS_ESPERADA });
+    expect(registrarAcessoAdminSpy).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("[325/F3] forma sem zona ⇒ { ok:false, erro: MENSAGEM_FORMA_SEM_ZONA }; sem auditoria", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    respostaRpc = { data: null, error: { code: "P0001", message: "definir_forma_frete: forma sem zona ativa" } };
+    const validacoes = (await import("@/lib/validacoes/entrega")) as unknown as { MENSAGEM_FORMA_SEM_ZONA?: unknown };
+
+    const r = await definirFormaFreteAdmin(LOJA_ALVO, { forma: "faixa_cep", versao: 2 });
+
+    expect(typeof validacoes.MENSAGEM_FORMA_SEM_ZONA).toBe("string");
+    expect(r).toEqual({ ok: false, erro: validacoes.MENSAGEM_FORMA_SEM_ZONA });
+    expect(registrarAcessoAdminSpy).not.toHaveBeenCalled();
+  });
+
+  it("[325/F3] outro erro do banco ⇒ genérico sem conflito, sem texto do banco, sem auditoria", async () => {
+    const spyErro = vi.spyOn(console, "error").mockImplementation(() => {});
+    respostaRpc = { data: null, error: { code: "P0001", message: "definir_forma_frete: sem posse" } };
+
+    const r = await definirFormaFreteAdmin(LOJA_ALVO, { forma: "bairro", versao: 2 });
+
+    expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty("conflito");
+    expect((r as { erro: string }).erro).not.toMatch(/definir_forma_frete|P0001|posse/);
+    expect(registrarAcessoAdminSpy).not.toHaveBeenCalled();
+    spyErro.mockRestore();
+  });
+});

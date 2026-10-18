@@ -36,9 +36,11 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  *  - antes de cada recusa a loja recebe um estado CONHECIDO e não vazio.
  *
  * 325 (mudança de requisito, migration 20261018130000_lojas_forma_frete_ativa):
- * gravar numa forma regrava SÓ as zonas daquela forma e ativa a forma em
- * `lojas.forma_frete`; as zonas das outras formas ficam guardadas. Por isso as
- * asserções de "o que foi gravado" leem `zonasDa(loja, forma)`.
+ * gravar numa forma regrava SÓ as zonas daquela forma; as zonas das outras
+ * formas ficam guardadas. Por isso as asserções de "o que foi gravado" leem
+ * `zonasDa(loja, forma)`. Segunda mudança (20261018140000_definir_forma_frete,
+ * plan/loop-ativar-forma-frete.md D1a): salvar NÃO ativa mais a forma —
+ * `lojas.forma_frete` só muda por `definir_forma_frete`.
  */
 
 const DONO_A = "aaaaaaaa-aaaa-4aaa-8aaa-aa0000000328";
@@ -484,12 +486,14 @@ describe("[328/F1] versão otimista das zonas de entrega", () => {
   });
 });
 
-// ═══════════════════════ F2 · zonas guardadas: salvar ativa a forma, não apaga as outras
-// Mudança de requisito da 325: trocar de forma NÃO apaga a configuração da
-// anterior. A RPC apaga e regrava SÓ as zonas de `p_forma` (DELETE ... and
-// tipo = p_forma) e, no mesmo UPDATE da T4, grava `lojas.forma_frete = p_forma`
-// (D3). Inverte o bloco anterior ("gravar substitui as zonas das outras formas").
-describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa a forma", () => {
+// ═══════════════ F2 · zonas guardadas: salvar NÃO ativa a forma, não apaga as outras
+// Mudança de requisito da 325 (plan/loop-ativar-forma-frete.md D1a, fatia F1):
+// salvar zonas (autosave) só grava as zonas de `p_forma` (DELETE ... and
+// tipo = p_forma) e sobe a versão; NÃO mexe em `lojas.forma_frete`. Ativar uma
+// forma é só por `definir_forma_frete` (tests/migrations/rpc_definir_forma_frete.test.ts).
+// Caso do usuário: loja cobra por km (0–5 km R$ 6), lojista salva bairros →
+// cliente a 3 km continua pagando R$ 6 até clicar "Usar esta forma".
+describe("[325/F1] zonas guardadas: salvar numa forma preserva as outras e NÃO muda a forma ativa", () => {
   async function formaDe(lojaId: string): Promise<string> {
     const r = await t.asService((s) =>
       s.query<{ forma_frete: string }>(`select forma_frete from public.lojas where id = $1`, [lojaId]),
@@ -500,26 +504,31 @@ describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa
     await t.asService((s) => s.query(`update public.lojas set forma_frete = $2 where id = $1`, [lojaId, forma]));
   }
 
-  it("[325/F2] salvar bairro preserva as faixas km da mesma loja e muda forma_frete para bairro", async () => {
-    await semear(lojaA, [MISTA_A[0], MISTA_A[1]]);
+  it("[325/F1] salvar bairro em loja raio_km mantém forma_frete = raio_km, preserva km, grava bairro e sobe a versão", async () => {
+    await semear(lojaA, [{ nome: "0–5 km", tipo: "raio_km", taxa: 6, raio: 5 }, MISTA_A[1]]);
     await definirForma(lojaA, "raio_km");
     const kmAntes = await zonasDa(lojaA, "raio_km");
     expect(kmAntes).toHaveLength(1);
+    const vAntes = await versaoDe(lojaA);
 
-    await salvarAtual("donoA", lojaA, "bairro", BAIRRO_OK);
+    const nova = await salvarAtual("donoA", lojaA, "bairro", BAIRRO_OK);
 
-    // km guardado com os MESMOS ids (não apagado e reinserido), taxa e bairros intactos.
+    expect(nova).toBe(vAntes + 1);
+    expect(await versaoDe(lojaA)).toBe(vAntes + 1);
+    // km guardado com os MESMOS ids (não apagado e reinserido), taxa intacta.
     expect(await zonasDa(lojaA, "raio_km")).toEqual(kmAntes);
     // bairro: a zona antiga ("Centro") sai, entram as do payload.
     expect(semId(await zonasDa(lojaA, "bairro"))).toEqual([
       zonaBairro("Centro e mais 1", ["Centro", "Vila Nova"], 6, null),
       zonaBairro("Sé", ["Sé"], 4, null),
     ]);
-    expect(await formaDe(lojaA)).toBe("bairro");
+    // A forma ativa NÃO muda: o cliente a 3 km continua pagando os R$ 6 do km.
+    expect(await formaDe(lojaA)).toBe("raio_km");
   });
 
-  it("[325/F2] salvar faixa_cep regrava só as faixas de CEP; km e bairro guardados intactos; forma_frete = faixa_cep", async () => {
+  it("[325/F1] salvar faixa_cep em loja bairro regrava só as faixas de CEP; km e bairro intactos; forma_frete continua bairro", async () => {
     await semear(lojaA, MISTA_A);
+    await definirForma(lojaA, "bairro");
     const kmAntes = await zonasDa(lojaA, "raio_km");
     const bairroAntes = await zonasDa(lojaA, "bairro");
 
@@ -531,12 +540,23 @@ describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa
       zonaCep("CEP 01000-000 a 01999-999", 1000000, 1999999, 5, null),
       zonaCep("CEP 02000-000 a 02999-999", 2000000, 2999999, 7, 50),
     ]);
+    expect(await formaDe(lojaA)).toBe("bairro");
+  });
+
+  it("[325/F1] salvar raio_km em loja faixa_cep (via serviço) também não muda forma_frete", async () => {
+    await semear(lojaA, MISTA_A);
+    await definirForma(lojaA, "faixa_cep");
+
+    await salvarAtual("service", lojaA, "raio_km", KM_OK);
+
+    expect(semId(await zonasDa(lojaA, "raio_km"))).toEqual([faixaKm("0–1 km", 1, 4, null), faixaKm("1–2 km", 2, 6, 60)]);
     expect(await formaDe(lojaA)).toBe("faixa_cep");
   });
 
-  it("[325/F2] não toca zonas de outra loja (nem a forma_frete dela)", async () => {
+  it("[325/F1] não toca zonas de outra loja (nem a forma_frete dela); a forma de A também fica onde estava", async () => {
     await semear(lojaA, MISTA_A);
     await semear(lojaB, BASE_B);
+    await definirForma(lojaA, "bairro");
     await definirForma(lojaB, "raio_km");
     const bAntes = await estado(lojaB);
 
@@ -547,10 +567,10 @@ describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa
 
     expect(await estado(lojaB)).toEqual(bAntes);
     expect(await formaDe(lojaB)).toBe("raio_km");
-    expect(await formaDe(lojaA)).toBe("raio_km");
+    expect(await formaDe(lojaA)).toBe("bairro");
   });
 
-  it("[325/F2] versão velha → 'versao desatualizada' e forma_frete inalterada", async () => {
+  it("[325/F1] versão velha → 'versao desatualizada' e forma_frete inalterada", async () => {
     await semear(lojaA, MISTA_A);
     await definirForma(lojaA, "raio_km");
     const lida = await versaoDe(lojaA);
@@ -568,7 +588,7 @@ describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa
     expect(await estado(lojaA)).toEqual(antes);
   });
 
-  it("[325/F2] sem posse → 'sem posse' e forma_frete inalterada", async () => {
+  it("[325/F1] sem posse → 'sem posse' e forma_frete inalterada", async () => {
     await semear(lojaB, BASE_B);
     await definirForma(lojaB, "bairro");
     const bAntes = await estado(lojaB);
@@ -584,7 +604,7 @@ describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa
     expect(await estado(lojaB)).toEqual(bAntes);
   });
 
-  it("[325/F2] payload inválido (T3) → forma_frete inalterada", async () => {
+  it("[325/F1] payload inválido (T3) → forma_frete inalterada", async () => {
     await semear(lojaA, MISTA_A);
     await definirForma(lojaA, "raio_km");
 
@@ -595,27 +615,8 @@ describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa
     );
     expect(await formaDe(lojaA)).toBe("raio_km");
   });
-
-  it("[325/F2] voltar para raio_km reativa e as faixas km guardadas continuam", async () => {
-    await semear(lojaA, []);
-    await definirForma(lojaA, "raio_km");
-    await salvarAtual("donoA", lojaA, "raio_km", KM_OK);
-    const kmGravado = await zonasDa(lojaA, "raio_km");
-    expect(semId(kmGravado)).toEqual([faixaKm("0–1 km", 1, 4, null), faixaKm("1–2 km", 2, 6, 60)]);
-
-    // Vai para bairro: km fica guardado, com os mesmos ids.
-    await salvarAtual("donoA", lojaA, "bairro", BAIRRO_OK);
-    expect(await formaDe(lojaA)).toBe("bairro");
-    expect(await zonasDa(lojaA, "raio_km")).toEqual(kmGravado);
-    const bairroGravado = await zonasDa(lojaA, "bairro");
-
-    // Volta para km salvando as faixas guardadas (Q1 = A: a troca vale ao salvar).
-    await salvarAtual("donoA", lojaA, "raio_km", KM_OK);
-    expect(await formaDe(lojaA)).toBe("raio_km");
-    expect(semId(await zonasDa(lojaA, "raio_km"))).toEqual(semId(kmGravado));
-    // ...e o bairro configurado continua guardado para a próxima troca.
-    expect(await zonasDa(lojaA, "bairro")).toEqual(bairroGravado);
-  });
+  // "voltar para raio_km reativa" saiu daqui: voltar é `definir_forma_frete`
+  // sem regravar zonas (rpc_definir_forma_frete.test.ts).
 });
 
 // ═════════════════════════════════════════════════ F2 · o que é gravado por forma

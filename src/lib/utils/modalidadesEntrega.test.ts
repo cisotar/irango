@@ -68,3 +68,53 @@ describe("modalidadesDaLoja", () => {
     });
   });
 });
+
+// ═════════════════════════════════════════════════════ 325 · temZonaQueCobra
+// CONTRATO (plan/loop-ativar-forma-frete.md D5): modalidadesEntrega.ts
+//   export function temZonaQueCobra(zonas: ZonaResumo[]): boolean
+//     = zonas.some(z => z.ativo && z.taxa !== null) — usado por entregaDisponivel
+//     e pelo bloqueio do botão "Usar esta forma". Resolvido pelo namespace:
+//     export ausente vira falha com mensagem, não import quebrado.
+import * as modalidades from "./modalidadesEntrega";
+
+function temZonaQueCobra(zonas: Array<{ ativo: boolean; taxa: unknown | null }>): boolean {
+  const fn = (modalidades as unknown as { temZonaQueCobra?: (z: typeof zonas) => boolean }).temZonaQueCobra;
+  if (typeof fn !== "function") {
+    throw new Error("[RED 325/F5] `modalidadesEntrega.ts` ainda não exporta `temZonaQueCobra` (D5).");
+  }
+  return fn(zonas);
+}
+
+describe("[325/F5] temZonaQueCobra — botão 'Usar esta forma' só com zona ativa com taxa", () => {
+  it("lista vazia ⇒ false", () => {
+    expect(temZonaQueCobra([])).toBe(false);
+  });
+
+  it("só zona inativa (com taxa) ⇒ false", () => {
+    expect(temZonaQueCobra([ZONA_INATIVA])).toBe(false);
+  });
+
+  it("só zona ativa sem taxa ⇒ false", () => {
+    expect(temZonaQueCobra([ZONA_SEM_TAXA])).toBe(false);
+  });
+
+  it("inativa + sem taxa ⇒ false", () => {
+    expect(temZonaQueCobra([ZONA_INATIVA, ZONA_SEM_TAXA])).toBe(false);
+  });
+
+  it("alguma ativa com taxa no meio de outras ⇒ true", () => {
+    expect(temZonaQueCobra([ZONA_INATIVA, ZONA_SEM_TAXA, ZONA_ATIVA])).toBe(true);
+  });
+
+  it("taxa 0 (entrega grátis) conta como zona que cobra — número e objeto", () => {
+    expect(temZonaQueCobra([{ ativo: true, taxa: 0 }])).toBe(true);
+    expect(temZonaQueCobra([{ ativo: true, taxa: { taxa: 0 } }])).toBe(true);
+  });
+
+  it("entregaDisponivel segue a mesma regra de zona (automático, sem fallback)", () => {
+    const loja = { aceita_entrega: true, modo_frete: "automatico", taxa_entrega_fora_zona: null };
+    for (const zonas of [[], [ZONA_INATIVA], [ZONA_SEM_TAXA], [ZONA_ATIVA], [{ ativo: true, taxa: 0 }]]) {
+      expect(entregaDisponivel(loja, zonas)).toBe(temZonaQueCobra(zonas));
+    }
+  });
+});

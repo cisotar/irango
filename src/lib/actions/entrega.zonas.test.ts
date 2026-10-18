@@ -387,3 +387,108 @@ describe("[327/F4] remoção dos caminhos de escrita por zona", () => {
     expect(exportados).toContain("salvarModalidadesEntrega");
   });
 });
+
+// ═════════════════════════════════════════════════════ 325 · ativação explícita
+// CONTRATO (plan/loop-ativar-forma-frete.md D3): src/lib/actions/entrega.ts
+//   export async function definirFormaFrete(payload: unknown): Promise<ResultadoZonas>
+//   1. schemaDefinirFormaFrete.safeParse ANTES de qualquer I/O (.strict(): loja_id recusado);
+//   2. createClient() AUTENTICADO → buscarLojaDoDono → null ⇒ { ok:false };
+//   3. UMA rpc("definir_forma_frete", { p_forma, p_versao, p_loja_id: loja.id }) (tenant por último);
+//   4. resultadoDaRpcFormaFrete: conflito ⇒ conflito:true; forma sem zona ⇒ MENSAGEM_FORMA_SEM_ZONA;
+//   5. sucesso ⇒ revalidatePath(painel) + revalidatePath("/loja/[slug]", "page"); só no ok.
+function definirFormaFrete(payload: unknown): Promise<ResultadoZonas> {
+  const fn = (entregaActions as unknown as { definirFormaFrete?: (p: unknown) => Promise<ResultadoZonas> })
+    .definirFormaFrete;
+  if (typeof fn !== "function") {
+    throw new Error("[RED 325/F3] `src/lib/actions/entrega.ts` ainda não exporta `definirFormaFrete` (D3).");
+  }
+  return fn(payload);
+}
+
+describe("[325/F3] definirFormaFrete — payload recusado ANTES de qualquer I/O", () => {
+  it.each<[string, unknown]>([
+    ["loja_id na raiz (.strict())", { forma: "bairro", versao: 3, loja_id: LOJA_OUTRA }],
+    ["p_loja_id na raiz", { forma: "bairro", versao: 3, p_loja_id: LOJA_OUTRA }],
+    ["forma 'cidade'", { forma: "cidade", versao: 3 }],
+    ["versao ausente", { forma: "bairro" }],
+    ["versao negativa", { forma: "bairro", versao: -1 }],
+    ["payload null", null],
+  ])("[325/F3] %s ⇒ { ok:false } e createClient/rpc NÃO chamados", async (_n, payload) => {
+    const r = await definirFormaFrete(payload);
+
+    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    esperarSemIO();
+  });
+});
+
+describe("[325/F3] definirFormaFrete — UMA RPC; p_loja_id = loja do dono", () => {
+  it("[325/F3] válido ⇒ UMA rpc('definir_forma_frete', { p_forma, p_versao, p_loja_id: loja do dono }) com args literais", async () => {
+    await definirFormaFrete({ forma: "bairro", versao: 12 });
+
+    expect(chamadasRpc).toEqual([
+      { nome: "definir_forma_frete", args: { p_forma: "bairro", p_versao: 12, p_loja_id: LOJA_DO_DONO } },
+    ]);
+    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(buscarLojaDoDono).toHaveBeenCalledWith(authClient);
+    expect(createServiceClient).not.toHaveBeenCalled();
+  });
+
+  it("[325/F3] sucesso ⇒ { ok:true, versao } e revalida painel de entregas e vitrine", async () => {
+    respostaRpc = () => Promise.resolve({ data: 13, error: null });
+
+    const r = await definirFormaFrete({ forma: "raio_km", versao: 12 });
+
+    expect(r).toEqual({ ok: true, versao: 13 });
+    expect(revalidatePath).toHaveBeenCalledWith("/painel/configuracoes/entregas");
+    expect(revalidatePath).toHaveBeenCalledWith("/loja/[slug]", "page");
+  });
+
+  it("[325/F3] dono sem loja ⇒ { ok:false } e rpc não chamada", async () => {
+    buscarLojaDoDono.mockResolvedValue(null);
+
+    const r = await definirFormaFrete({ forma: "bairro", versao: 1 });
+
+    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    expect(chamadasRpc).toEqual([]);
+  });
+});
+
+describe("[325/F3] definirFormaFrete — conflito, forma sem zona e falhas", () => {
+  it("[325/F3] P0001 'definir_forma_frete: versao desatualizada' ⇒ { ok:false, conflito:true, erro: MENSAGEM_CONFLITO_ZONAS } e sem revalidatePath", async () => {
+    respostaRpc = () =>
+      Promise.resolve({ data: null, error: { code: "P0001", message: "definir_forma_frete: versao desatualizada" } });
+
+    const r = await definirFormaFrete({ forma: "bairro", versao: 3 });
+
+    expect(r).toEqual({ ok: false, conflito: true, erro: MENSAGEM_CONFLITO });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("[325/F3] P0001 'definir_forma_frete: forma sem zona ativa' ⇒ { ok:false, erro: MENSAGEM_FORMA_SEM_ZONA } sem conflito", async () => {
+    respostaRpc = () =>
+      Promise.resolve({ data: null, error: { code: "P0001", message: "definir_forma_frete: forma sem zona ativa" } });
+
+    const r = await definirFormaFrete({ forma: "faixa_cep", versao: 3 });
+
+    const esperada = (validacoesEntrega as unknown as { MENSAGEM_FORMA_SEM_ZONA?: unknown }).MENSAGEM_FORMA_SEM_ZONA;
+    expect(typeof esperada).toBe("string");
+    expect(r).toEqual({ ok: false, erro: esperada });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, () => Promise<{ data: unknown; error: unknown }>]>([
+    ["P0001 'sem posse'", () => Promise.resolve({ data: null, error: { code: "P0001", message: "definir_forma_frete: sem posse" } })],
+    ["RPC que lança", () => Promise.reject(new Error("connection terminated: 10.0.0.3:5432"))],
+    ["data não inteiro", () => Promise.resolve({ data: "4", error: null })],
+  ])("[325/F3] %s ⇒ { ok:false } genérico sem conflito e sem texto do banco", async (_n, resposta) => {
+    respostaRpc = resposta;
+
+    const r = await definirFormaFrete({ forma: "bairro", versao: 3 });
+
+    expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty("conflito");
+    expect((r as { erro: string }).erro).not.toMatch(/definir_forma_frete|P0001|posse|connection|5432/);
+    expect(console.error).toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
