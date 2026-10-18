@@ -20,6 +20,15 @@ type LojaModalidades = {
 export type ZonaResumo = { ativo: boolean; taxa: unknown | null };
 
 /**
+ * A forma tem pelo menos uma zona que cobra: ligada E com taxa (taxa 0 =
+ * entrega grátis, conta). Mesma regra da vitrine e do bloqueio do botão "Usar
+ * esta forma" (325); a RPC `definir_forma_frete` é a autoridade.
+ */
+export function temZonaQueCobra(zonas: readonly ZonaResumo[]): boolean {
+  return zonas.some((z) => z.ativo && z.taxa !== null);
+}
+
+/**
  * Entrega disponível na vitrine = ligada pela loja E (frete a combinar, que
  * dispensa zona, OU zona ativa com taxa OU fallback fora-de-zona). Ligada em
  * modo automático sem zona e sem fallback fica indisponível (D4, RN-C4).
@@ -27,9 +36,7 @@ export type ZonaResumo = { ativo: boolean; taxa: unknown | null };
 export function entregaDisponivel(loja: LojaModalidades, zonas: ZonaResumo[]): boolean {
   if (loja.aceita_entrega === false) return false;
   if (loja.modo_frete === "a_combinar") return true;
-  return (
-    zonas.some((z) => z.ativo && z.taxa !== null) || loja.taxa_entrega_fora_zona != null
-  );
+  return temZonaQueCobra(zonas) || loja.taxa_entrega_fora_zona != null;
 }
 
 export function retiradaDisponivel(loja: LojaModalidades): boolean {

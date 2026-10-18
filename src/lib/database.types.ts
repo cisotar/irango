@@ -1903,6 +1903,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      definir_forma_frete: {
+        Args: { p_forma: string; p_loja_id: string; p_versao: number }
+        Returns: number
+      }
       desconto_vigente: {
         Args: {
           p_agora: string

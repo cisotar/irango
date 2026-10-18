@@ -3,16 +3,19 @@
 //
 //   - enviarZonas            → chama a action injetada e traduz o resultado em toast
 //   - criarFilaGravacao      → serializa o salvamento automático (C6 da 326)
-//   - criarGravadorComVersao → carrega a versão otimista entre gravações e para
-//                              de chamar o servidor depois de um conflito (328)
+//   - criarGravadorComVersao → carrega a versão otimista entre gravações e
+//                              ativações e para de chamar o servidor depois de
+//                              um conflito (328/325)
 //
-// A versão é só transporte: quem compara é a RPC `salvar_zonas_entrega` no
-// banco. O valor do frete do pedido segue recalculado no servidor.
+// A versão é só transporte: quem compara são as RPCs `salvar_zonas_entrega` e
+// `definir_forma_frete` no banco. O valor do frete do pedido segue recalculado no servidor.
 import {
   MENSAGEM_CONFLITO_ZONAS,
   MENSAGEM_ERRO_ZONAS,
+  type DadosDefinirFormaFrete,
   type DadosZonasEntrega,
   type DadosZonasSemVersao,
+  type FormaZonasEntrega,
   type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
 
@@ -101,6 +104,8 @@ export function criarFilaGravacao<P>(
 export type GravadorComVersao = {
   /** Grava `dados` com a versão corrente; a versão vira a devolvida no sucesso. */
   salvar: (dados: DadosZonasSemVersao) => Promise<ResultadoZonas>;
+  /** Ativa `forma` (botão "Usar esta forma") com a versão corrente, na mesma fila do salvar. */
+  ativar: (forma: FormaZonasEntrega) => Promise<ResultadoZonas>;
   versaoAtual: () => number;
 };
 
@@ -113,14 +118,19 @@ export type GravadorComVersao = {
  *  - exceção não altera a versão nem trava a fila (propaga só para quem chamou);
  *  - no primeiro conflito chama `aoConflito` UMA vez e, dali em diante, devolve
  *    o conflito SEM chamar a action — o salvamento automático para de bater no
- *    servidor a cada blur até o lojista recarregar a página.
+ *    servidor a cada blur até o lojista recarregar a página;
+ *  - `ativar(forma)` (325) passa pela MESMA fila e pela MESMA versão: sai com a
+ *    versão devolvida pelo salvar anterior, sobe a versão no ok, e conflito em
+ *    qualquer um dos dois trava ambos.
  */
 export function criarGravadorComVersao({
   acao,
+  acaoAtivar,
   versaoInicial,
   aoConflito,
 }: {
   acao: (payload: DadosZonasEntrega) => Promise<ResultadoZonas>;
+  acaoAtivar: (payload: DadosDefinirFormaFrete) => Promise<ResultadoZonas>;
   versaoInicial: number;
   aoConflito: () => void;
 }): GravadorComVersao {
@@ -128,9 +138,9 @@ export function criarGravadorComVersao({
   let emConflito = false;
   let cauda: Promise<unknown> = Promise.resolve();
 
-  async function executar(dados: DadosZonasSemVersao): Promise<ResultadoZonas> {
+  async function executar(chamar: (versao: number) => Promise<ResultadoZonas>): Promise<ResultadoZonas> {
     if (emConflito) return { ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS };
-    const r = await acao({ ...dados, versao });
+    const r = await chamar(versao);
     if (r.ok) {
       versao = r.versao;
     } else if (r.conflito && !emConflito) {
@@ -140,13 +150,16 @@ export function criarGravadorComVersao({
     return r;
   }
 
+  function enfileirar(chamar: (versao: number) => Promise<ResultadoZonas>): Promise<ResultadoZonas> {
+    // A versão é lida quando a vez chega, não quando o pedido entra na fila.
+    const vez = cauda.then(() => executar(chamar));
+    cauda = vez.catch(() => undefined);
+    return vez;
+  }
+
   return {
     versaoAtual: () => versao,
-    salvar(dados) {
-      // A versão é lida quando a vez chega, não quando o pedido entra na fila.
-      const vez = cauda.then(() => executar(dados));
-      cauda = vez.catch(() => undefined);
-      return vez;
-    },
+    salvar: (dados) => enfileirar((v) => acao({ ...dados, versao: v })),
+    ativar: (forma) => enfileirar((v) => acaoAtivar({ forma, versao: v })),
   };
 }

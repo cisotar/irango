@@ -201,7 +201,10 @@ describe("criarGravadorComVersao — versão otimista entre gravações (328)", 
       if (r instanceof Error) throw r;
       return r;
     });
-    const gravador = criarGravadorComVersao({ acao, versaoInicial, aoConflito });
+    const acaoAtivar = vi.fn(async (): Promise<ResultadoZonas> => {
+      throw new Error("ativar não programado");
+    });
+    const gravador = criarGravadorComVersao({ acao, acaoAtivar, versaoInicial, aoConflito });
     return { gravador, acao, enviados, aoConflito };
   }
 
@@ -318,7 +321,10 @@ describe("enviarZonas + criarGravadorComVersao — conflito e erro até o toast"
       if (r instanceof Error) throw r;
       return r;
     });
-    const gravador = criarGravadorComVersao({ acao, versaoInicial, aoConflito });
+    const acaoAtivar = vi.fn(async (): Promise<ResultadoZonas> => {
+      throw new Error("ativar não programado");
+    });
+    const gravador = criarGravadorComVersao({ acao, acaoAtivar, versaoInicial, aoConflito });
     const gravar = (d: DadosZonasSemVersao) => enviarZonas(d, { salvar: (x) => gravador.salvar(x), toast });
     return { gravar, gravador, acao, enviados, aoConflito, toast };
   }

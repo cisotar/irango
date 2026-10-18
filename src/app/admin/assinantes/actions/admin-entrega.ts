@@ -9,9 +9,10 @@
 // → revalidarLojaAdmin → catch genérico.
 //
 // As zonas só são gravadas pela RPC `salvar_zonas_entrega` (conjunto inteiro,
-// uma forma, versão otimista). Não há escrita por zona (issue 327): RLS não
-// protege sob service_role, e o filtro `loja_id = p_loja_id` da RPC é a única
-// amarra de isolamento entre lojas. `loja_id` é SEMPRE o parâmetro `lojaId`,
+// uma forma, versão otimista) e NÃO ativam a forma; a forma ativa só muda pela
+// RPC `definir_forma_frete` (botão "Usar esta forma", issue 325). Não há
+// escrita por zona (issue 327): RLS não protege sob service_role, e o filtro
+// `loja_id = p_loja_id` das RPCs é a única amarra de isolamento entre lojas. `loja_id` é SEMPRE o parâmetro `lojaId`,
 // NUNCA o do payload. Tipos auxiliares ficam locais ou vêm por `import type`
 // (módulo 'use server' só exporta funções async).
 
@@ -22,10 +23,13 @@ import {
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
 import {
+  MENSAGEM_ERRO_FORMA_FRETE,
   MENSAGEM_ERRO_ZONAS,
   argsSalvarZonas,
   itensDasZonas,
+  resultadoDaRpcFormaFrete,
   resultadoDaRpcZonas,
+  schemaDefinirFormaFrete,
   schemaModalidadesEntrega,
   validarPayloadZonas,
   type ResultadoZonas,
@@ -85,7 +89,8 @@ export async function salvarModalidadesEntregaAdmin(
  * FORA do try (propaga) → UMA RPC `salvar_zonas_entrega` com `p_loja_id`
  * LITERAL do lojaId validado. Sob service_role não há RLS: o escopo é o filtro
  * `loja_id = p_loja_id` dentro da RPC, e a versão vale também para o admin
- * (não atropela uma gravação do lojista). Conflito não registra acesso.
+ * (não atropela uma gravação do lojista). Conflito não registra acesso. Gravar
+ * NÃO ativa a forma: isso é `definirFormaFreteAdmin`.
  */
 export async function salvarZonasEntregaAdmin(
   lojaId: string,
@@ -118,5 +123,48 @@ export async function salvarZonasEntregaAdmin(
   } catch (e) {
     console.error("[salvarZonasEntregaAdmin]", e);
     return { ok: false, erro: MENSAGEM_ERRO_ZONAS };
+  }
+}
+
+/**
+ * Par admin de `definirFormaFrete` (issue 325): ativa a forma de frete da
+ * loja-alvo. Mesma ordem fail-closed: lojaId validado → zod (`.strict()`,
+ * recusado SEM elevar) → prova de admin FORA do try (propaga) → UMA RPC
+ * `definir_forma_frete` com `p_loja_id` LITERAL do lojaId validado (versão
+ * otimista e recusa de forma sem zona valem também para o admin). Auditoria e
+ * revalidate só no ok.
+ */
+export async function definirFormaFreteAdmin(
+  lojaId: string,
+  payload: unknown,
+): Promise<ResultadoZonas> {
+  const loja = validarLojaIdAdmin(lojaId);
+  if (!loja.ok) return { ok: false, erro: "Loja inválida." };
+
+  const parsed = schemaDefinirFormaFrete.safeParse(payload);
+  if (!parsed.success) return { ok: false, erro: MENSAGEM_ERRO_FORMA_FRETE };
+
+  const { svc } = await prepararContextoAdmin(loja.lojaId);
+
+  try {
+    // Tenant por ÚLTIMO: nada sobrescreve o lojaId validado da URL.
+    const resposta = await svc.rpc("definir_forma_frete", {
+      p_forma: parsed.data.forma,
+      p_versao: parsed.data.versao,
+      p_loja_id: loja.lojaId,
+    });
+    const resultado = resultadoDaRpcFormaFrete("definirFormaFreteAdmin", resposta);
+    if (!resultado.ok) return resultado;
+
+    registrarAcessoAdmin(svc, {
+      lojaId: loja.lojaId,
+      acao: "definir_forma_frete",
+      metadados: { forma: parsed.data.forma },
+    });
+    revalidarLojaAdmin(loja.lojaId);
+    return resultado;
+  } catch (e) {
+    console.error("[definirFormaFreteAdmin]", e);
+    return { ok: false, erro: MENSAGEM_ERRO_FORMA_FRETE };
   }
 }

@@ -8,13 +8,18 @@
 //   - loja_id é DERIVADO da loja do dono (buscarLojaDoDono), NUNCA do payload;
 //   - as zonas só são gravadas pela RPC `salvar_zonas_entrega` (conjunto inteiro,
 //     uma forma, versão otimista) — não há escrita por zona (issue 327);
+//   - a forma ativa só muda pela RPC `definir_forma_frete` (botão "Usar esta
+//     forma", mesma versão otimista); salvar zonas não ativa a forma (325);
 //   - erro genérico no catch (sem vazar e.message).
 
 import { revalidatePath } from "next/cache";
 import {
+  MENSAGEM_ERRO_FORMA_FRETE,
   MENSAGEM_ERRO_ZONAS,
   argsSalvarZonas,
+  resultadoDaRpcFormaFrete,
   resultadoDaRpcZonas,
+  schemaDefinirFormaFrete,
   schemaModalidadesEntrega,
   validarPayloadZonas,
   type ResultadoZonas,
@@ -74,8 +79,9 @@ export type { ResultadoZonas };
  * km, faixas de CEP ou bairros. zod ANTES de qualquer I/O (`.strict()` em todo
  * nível); client AUTENTICADO; loja = a do dono logado, nunca do payload. UMA
  * chamada à RPC `salvar_zonas_entrega`, que confere a versão no banco
- * (compare-and-set), apaga só as zonas da forma pedida (`tipo = p_forma`), as
- * regrava e ativa essa forma; as zonas das outras formas ficam guardadas.
+ * (compare-and-set), apaga só as zonas da forma pedida (`tipo = p_forma`) e as
+ * regrava; as zonas das outras formas ficam guardadas. NÃO ativa a forma: isso
+ * é `definirFormaFrete`.
  * Validação e tradução da resposta são as mesmas do admin
  * (`validarPayloadZonas`/`resultadoDaRpcZonas`); aqui fica só o que é do
  * lojista: a loja do dono e o `revalidatePath` (não em conflito nem erro).
@@ -104,5 +110,40 @@ export async function salvarZonasEntrega(payload: unknown): Promise<ResultadoZon
   } catch (e) {
     console.error("[salvarZonasEntrega]", e);
     return { ok: false, erro: MENSAGEM_ERRO_ZONAS };
+  }
+}
+
+/**
+ * Ativa a forma de frete da loja (botão "Usar esta forma", issue 325). zod
+ * ANTES de qualquer I/O (`.strict()`: tenant no payload é recusado); client
+ * AUTENTICADO; loja = a do dono logado. UMA chamada à RPC `definir_forma_frete`,
+ * que confere a versão (compare-and-set), grava `lojas.forma_frete` e recusa
+ * forma sem zona ligada com preço. `revalidatePath` só no ok.
+ */
+export async function definirFormaFrete(payload: unknown): Promise<ResultadoZonas> {
+  const parsed = schemaDefinirFormaFrete.safeParse(payload);
+  if (!parsed.success) return { ok: false, erro: MENSAGEM_ERRO_FORMA_FRETE };
+
+  try {
+    const supabase = await createClient();
+    const loja = await buscarLojaDoDono(supabase);
+    if (loja == null) {
+      return { ok: false, erro: "Loja não encontrada." };
+    }
+    // Tenant por ÚLTIMO: nenhum spread sobrescreve a loja derivada.
+    const resposta = await supabase.rpc("definir_forma_frete", {
+      p_forma: parsed.data.forma,
+      p_versao: parsed.data.versao,
+      p_loja_id: loja.id,
+    });
+    const resultado = resultadoDaRpcFormaFrete("definirFormaFrete", resposta);
+    if (resultado.ok) {
+      revalidatePath(ROTA);
+      revalidatePath("/loja/[slug]", "page");
+    }
+    return resultado;
+  } catch (e) {
+    console.error("[definirFormaFrete]", e);
+    return { ok: false, erro: MENSAGEM_ERRO_FORMA_FRETE };
   }
 }

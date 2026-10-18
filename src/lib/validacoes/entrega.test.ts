@@ -498,7 +498,7 @@ describe("[325/F3] schemaZonasEntrega — bairro: ≥ 1 bairro por grupo, sem re
 //   export function resultadoDaRpcFormaFrete(rotulo, { data, error }): ResultadoZonas
 //     conflito → { ok:false, conflito:true, erro: MENSAGEM_CONFLITO_ZONAS }
 //     P0001 'definir_forma_frete: forma sem zona ativa' → { ok:false, erro: MENSAGEM_FORMA_SEM_ZONA }
-//     outro erro / data não inteiro seguro → { ok:false, erro: MENSAGEM_ERRO_ZONAS }
+//     outro erro / data não inteiro seguro → { ok:false, erro: MENSAGEM_ERRO_FORMA_FRETE }
 //     ok → { ok:true, versao: data }
 type RespostaRpc = { data: unknown; error: { code?: string; message?: string } | null };
 type ResultadoZonasT = { ok: true; versao: number } | { ok: false; erro: string; conflito?: true };
@@ -614,10 +614,10 @@ describe("[325/F3] resultadoDaRpcFormaFrete — resposta da RPC definir_forma_fr
     ["data string", { data: "4", error: null }],
     ["data null sem erro", { data: null, error: null }],
     ["data fracionária", { data: 4.5, error: null }],
-  ])("%s ⇒ { ok:false, erro: MENSAGEM_ERRO_ZONAS } sem conflito e sem texto do banco", (_n, resposta) => {
+  ])("%s ⇒ { ok:false, erro: MENSAGEM_ERRO_FORMA_FRETE } sem conflito e sem texto do banco", (_n, resposta) => {
     const spyE = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = resultadoDaRpcFormaFrete("teste", resposta);
-    expect(r).toEqual({ ok: false, erro: validacoesEntrega.MENSAGEM_ERRO_ZONAS });
+    expect(r).toEqual({ ok: false, erro: validacoesEntrega.MENSAGEM_ERRO_FORMA_FRETE });
     spyE.mockRestore();
   });
 

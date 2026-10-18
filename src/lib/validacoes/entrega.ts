@@ -5,6 +5,8 @@
 //   - schemaFaixasEntrega   → gate da tela de faixas de km (issue 326)
 //   - schemaZonasEntrega    → autoridade das Server Actions que gravam as zonas
 //                             numa forma só, com versão otimista (issues 325/328)
+//   - schemaDefinirFormaFrete → autoridade das Server Actions que ATIVAM a forma
+//                             (botão "Usar esta forma", mesma versão otimista)
 // FORA daqui: cálculo de frete, match de zona por endereço, RLS/unicidade.
 import { z } from "zod";
 import type { Json } from "@/lib/database.types";
@@ -124,6 +126,7 @@ export const MENSAGEM_CONFLITO_ZONAS =
 
 /** Erro genérico da gravação de zonas: actions lojista/admin e tela (detalhe só no log do servidor). */
 export const MENSAGEM_ERRO_ZONAS = "Não foi possível salvar as zonas de entrega. Tente de novo.";
+export const MENSAGEM_ERRO_FORMA_FRETE = "Não foi possível trocar a forma de cobrar a entrega. Tente de novo.";
 
 /** CEP como inteiro de 8 dígitos ("01000-000" → 1000000), como em taxas_entrega.cep_*. */
 const cepInteiro = z.number().int().min(0).max(99999999);
@@ -269,9 +272,33 @@ export function itensDasZonas(d: DadosZonasSemVersao): number {
 
 type ErroRpc = { code?: string; message?: string };
 
-/** P0001 + fragmento 'versao desatualizada': o contrato estável da RPC. */
+/**
+ * Gate das actions de ativação da forma (`definir_forma_frete`), ANTES de I/O.
+ * Só `{ forma, versao }`: o tenant (`p_loja_id`) vem do servidor.
+ */
+export const schemaDefinirFormaFrete = z
+  .object({
+    forma: z.enum(["raio_km", "faixa_cep", "bairro"] as const satisfies readonly FormaZonasEntrega[]),
+    versao: versaoZonas,
+  })
+  .strict();
+
+export type DadosDefinirFormaFrete = z.infer<typeof schemaDefinirFormaFrete>;
+
+/** A forma não tem zona ligada com preço: a RPC recusa a ativação. */
+export const MENSAGEM_FORMA_SEM_ZONA =
+  "Cadastre e salve pelo menos uma zona ligada com preço nesta forma antes de usá-la.";
+
+const PREFIXOS_CONFLITO = [
+  "salvar_zonas_entrega: versao desatualizada",
+  "definir_forma_frete: versao desatualizada",
+] as const;
+
+/** P0001 + 'versao desatualizada' de uma das duas RPCs: o contrato estável. */
 export function ehConflitoDeVersao(error: ErroRpc | null): boolean {
-  return error?.code === "P0001" && (error.message ?? "").includes("salvar_zonas_entrega: versao desatualizada");
+  if (error?.code !== "P0001") return false;
+  const msg = error.message ?? "";
+  return PREFIXOS_CONFLITO.some((p) => msg.includes(p));
 }
 
 /** Resultado das actions de zonas (lojista e admin), consumido pela tela. */
@@ -301,7 +328,16 @@ export function validarPayloadZonas(
  */
 export function resultadoDaRpcZonas(
   rotulo: string,
+  resposta: { data: unknown; error: ErroRpc | null },
+): ResultadoZonas {
+  return traduzirRespostaComVersao(rotulo, resposta, MENSAGEM_ERRO_ZONAS);
+}
+
+/** Conflito → `conflito`; erro ou versão que não é inteiro seguro → `generica`; ok → versão. */
+function traduzirRespostaComVersao(
+  rotulo: string,
   { data, error }: { data: unknown; error: ErroRpc | null },
+  generica: string,
 ): ResultadoZonas {
   if (ehConflitoDeVersao(error)) {
     console.warn(`[${rotulo}] conflito de versão`);
@@ -309,7 +345,25 @@ export function resultadoDaRpcZonas(
   }
   if (error || typeof data !== "number" || !Number.isSafeInteger(data)) {
     console.error(`[${rotulo}]`, error ?? "versão inválida devolvida pela RPC");
-    return { ok: false, erro: MENSAGEM_ERRO_ZONAS };
+    return { ok: false, erro: generica };
   }
   return { ok: true, versao: data };
+}
+
+/**
+ * Resposta da RPC `definir_forma_frete` → `ResultadoZonas`. Conflito de versão
+ * → `conflito`; forma sem zona ligada com preço → `MENSAGEM_FORMA_SEM_ZONA`;
+ * resto → `MENSAGEM_ERRO_FORMA_FRETE`. O texto do banco só vai para o log do
+ * servidor.
+ */
+export function resultadoDaRpcFormaFrete(
+  rotulo: string,
+  resposta: { data: unknown; error: ErroRpc | null },
+): ResultadoZonas {
+  const { error } = resposta;
+  if (error?.code === "P0001" && (error.message ?? "").includes("definir_forma_frete: forma sem zona ativa")) {
+    console.warn(`[${rotulo}] forma sem zona ativa`);
+    return { ok: false, erro: MENSAGEM_FORMA_SEM_ZONA };
+  }
+  return traduzirRespostaComVersao(rotulo, resposta, MENSAGEM_ERRO_FORMA_FRETE);
 }
