@@ -1,15 +1,18 @@
 // Forma de frete ATIVA da loja (issue 325) — módulo PURO, sem React e sem I/O.
 //
-// A forma ativa é a coluna `lojas.forma_frete` (migration 20261018130000),
-// gravada SÓ pela RPC `salvar_zonas_entrega` junto da versão otimista: salvar
-// as zonas de uma forma = ativar essa forma. As zonas das três formas ficam
+// A forma ativa é a coluna `lojas.forma_frete` (migration 20261018130000). O
+// app só a grava pela RPC `salvar_zonas_entrega` (junto da versão otimista) e
+// pela legada `salvar_faixas_entrega`; a RLS de `lojas` ainda permite ao dono
+// gravá-la direto na própria loja (ver issue 363). Salvar as zonas de uma
+// forma = ativar essa forma. As zonas das três formas ficam
 // guardadas lado a lado; só as da forma ativa cobram. O filtro do frete mora em
 // `listarZonasComTaxas(client, lojaId, forma)`; aqui só se estreita o valor do
 // banco para o enum e se separa as zonas por forma para a tela.
 //
 // FORA DAQUI: cálculo do frete, validação de payload, persistência.
 
-import type { FormaZonasEntrega } from "@/lib/validacoes/entrega";
+import type { ZonaResumo } from "@/lib/utils/modalidadesEntrega";
+import type { DadosZonasSemVersao, FormaZonasEntrega } from "@/lib/validacoes/entrega";
 
 /** A forma é a do payload de zonas (`schemaZonasEntrega`): uma fonte só. */
 export type FormaFrete = FormaZonasEntrega;
@@ -54,17 +57,27 @@ export function zonasDaForma<T extends { tipo: string }>(zonas: readonly T[], fo
   return zonas.filter((z) => z.tipo === forma);
 }
 
-/** Forma marcada ao abrir a tela: a ATIVA da loja (não a derivada das zonas guardadas). */
-export function formaInicialDaTela(forma_frete: string | null | undefined): FormaFrete {
-  return formaAtivaDaLoja(forma_frete);
+/**
+ * Zonas que a forma passa a ter depois de gravar `payload`, no formato que
+ * `entregaDisponivel` lê. A RPC regrava as zonas da forma exatamente com as
+ * faixas/grupos do payload, cada uma com a sua taxa: o payload aceito É a lista
+ * efetiva, sem precisar recarregar a página.
+ */
+export function zonasResumoDoPayload(payload: DadosZonasSemVersao): ZonaResumo[] {
+  const itens = payload.forma === "bairro" ? payload.grupos : payload.faixas;
+  return itens.map(({ ativo, taxa }) => ({ ativo, taxa }));
 }
 
 /**
- * A primeira gravação neste editor substitui algo que o lojista não vê como
- * tabela? Só no km com zonas gravadas fora do formato de faixas (legado, D4 da
- * 326). Trocar de forma não pergunta nada: as zonas da forma anterior ficam
- * guardadas (325).
+ * A gravação neste editor substitui algo que o lojista não vê como tabela? Só
+ * no km com zonas gravadas fora do formato de faixas (legado, D4 da 326), na
+ * primeira gravação e enquanto o lojista não confirmou. Trocar de forma não
+ * pergunta nada: as zonas da forma anterior ficam guardadas (325).
  */
-export function precisaConfirmarSubstituicao(formaEditor: FormaFrete, kmForaDoFormato: boolean): boolean {
-  return formaEditor === "raio_km" && kmForaDoFormato;
+export function precisaConfirmarSubstituicao(estado: {
+  kmForaDoFormato: boolean;
+  jaGravou: boolean;
+  confirmou: boolean;
+}): boolean {
+  return estado.kmForaDoFormato && !estado.jaGravou && !estado.confirmou;
 }

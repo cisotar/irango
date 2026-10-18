@@ -74,7 +74,8 @@ export type { ResultadoZonas };
  * km, faixas de CEP ou bairros. zod ANTES de qualquer I/O (`.strict()` em todo
  * nível); client AUTENTICADO; loja = a do dono logado, nunca do payload. UMA
  * chamada à RPC `salvar_zonas_entrega`, que confere a versão no banco
- * (compare-and-set), apaga as zonas de qualquer forma e grava a forma pedida.
+ * (compare-and-set), apaga só as zonas da forma pedida (`tipo = p_forma`), as
+ * regrava e ativa essa forma; as zonas das outras formas ficam guardadas.
  * Validação e tradução da resposta são as mesmas do admin
  * (`validarPayloadZonas`/`resultadoDaRpcZonas`); aqui fica só o que é do
  * lojista: a loja do dono e o `revalidatePath` (não em conflito nem erro).

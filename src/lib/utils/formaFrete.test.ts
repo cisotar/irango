@@ -3,12 +3,12 @@ import { schemaZonasEntrega } from "@/lib/validacoes/entrega";
 import { describe, expect, it } from "vitest";
 
 import {
-  formaInicialDaTela,
   FORMAS_FRETE,
   ROTULO_FORMA,
   ROTULO_FORMA_FRASE,
   rotuloDoTipo,
   precisaConfirmarSubstituicao,
+  zonasResumoDoPayload,
   type FormaFrete,
 } from "./formaFrete";
 // [325 · forma ativa] `formaAtivaDaLoja` e `zonasDaForma` ainda não existem:
@@ -17,34 +17,66 @@ import {
 import * as modulo from "./formaFrete";
 import { entregaDisponivel } from "./modalidadesEntrega";
 
-describe("formaInicialDaTela", () => {
-  it("nenhuma e mista abrem em faixas de km", () => {
-    expect(formaInicialDaTela("nenhuma")).toBe("raio_km");
-    expect(formaInicialDaTela("mista")).toBe("raio_km");
-  });
-
-  it("forma gravada abre nela mesma", () => {
-    expect(formaInicialDaTela("raio_km")).toBe("raio_km");
-    expect(formaInicialDaTela("faixa_cep")).toBe("faixa_cep");
-    expect(formaInicialDaTela("bairro")).toBe("bairro");
-  });
-});
-
 // 325 (forma ativa): trocar de forma não pergunta mais nada — as zonas da forma
 // anterior ficam guardadas. Sobra só a confirmação do km legado fora do formato
 // de faixas (D4 da 326).
 describe("precisaConfirmarSubstituicao — só km legado fora do formato", () => {
-  const casos: Array<[FormaFrete, boolean, boolean]> = [
-    ["raio_km", true, true],
-    ["raio_km", false, false],
-    ["faixa_cep", true, false],
-    ["faixa_cep", false, false],
-    ["bairro", true, false],
-    ["bairro", false, false],
+  const casos: Array<[boolean, boolean, boolean, boolean]> = [
+    // kmForaDoFormato, jaGravou, confirmou ⇒ pergunta?
+    [true, false, false, true],
+    [true, true, false, false],
+    [true, false, true, false],
+    [false, false, false, false],
+    [false, true, true, false],
   ];
 
-  it.each(casos)("editor %s, km fora do formato %s ⇒ %s", (editor, fora, esperado) => {
-    expect(precisaConfirmarSubstituicao(editor, fora)).toBe(esperado);
+  it.each(casos)("km fora do formato %s, já gravou %s, confirmou %s ⇒ %s", (kmForaDoFormato, jaGravou, confirmou, esperado) => {
+    expect(precisaConfirmarSubstituicao({ kmForaDoFormato, jaGravou, confirmou })).toBe(esperado);
+  });
+});
+
+describe("zonasResumoDoPayload — zonas efetivas da forma depois de gravar", () => {
+  it("km, CEP e bairro viram { ativo, taxa } por faixa/grupo, na ordem", () => {
+    expect(
+      zonasResumoDoPayload({
+        forma: "raio_km",
+        incremento: 1,
+        faixas: [
+          { taxa: 5, pedido_minimo_gratis: null, ativo: true },
+          { taxa: 8, pedido_minimo_gratis: 50, ativo: false },
+        ],
+      }),
+    ).toEqual([
+      { ativo: true, taxa: 5 },
+      { ativo: false, taxa: 8 },
+    ]);
+    expect(
+      zonasResumoDoPayload({
+        forma: "faixa_cep",
+        faixas: [{ cep_inicio: 1000000, cep_fim: 1099999, taxa: 7, pedido_minimo_gratis: null, ativo: true }],
+      }),
+    ).toEqual([{ ativo: true, taxa: 7 }]);
+    expect(
+      zonasResumoDoPayload({
+        forma: "bairro",
+        grupos: [{ bairros: ["Centro"], taxa: 0, pedido_minimo_gratis: null, ativo: false }],
+      }),
+    ).toEqual([{ ativo: false, taxa: 0 }]);
+  });
+
+  it("payload vazio ⇒ []", () => {
+    expect(zonasResumoDoPayload({ forma: "bairro", grupos: [] })).toEqual([]);
+  });
+
+  it("loja com km ativo grava CEP pela 1ª vez: a disponibilidade sai do payload, não da carga vazia", () => {
+    const loja = { aceita_entrega: true, modo_frete: "automatico", taxa_entrega_fora_zona: null };
+    const zonasCepDaCarga: { ativo: boolean; taxa: unknown }[] = [];
+    expect(entregaDisponivel(loja, zonasCepDaCarga)).toBe(false);
+    const gravadas = zonasResumoDoPayload({
+      forma: "faixa_cep",
+      faixas: [{ cep_inicio: 1000000, cep_fim: 1099999, taxa: 7, pedido_minimo_gratis: null, ativo: true }],
+    });
+    expect(entregaDisponivel(loja, gravadas)).toBe(true);
   });
 });
 
@@ -80,8 +112,7 @@ describe("rotuloDoTipo e formas", () => {
 //     — valor do enum → ele; null/undefined/fora do enum → "raio_km".
 //   zonasDaForma<T extends { tipo: string }>(zonas: readonly T[], forma: FormaFrete): T[]
 //     — só as zonas daquele tipo, na ordem recebida, mesmos objetos.
-//   formaInicialDaTela(forma_frete: string | null | undefined): FormaFrete
-//     — a tela abre na forma ATIVA da loja, não na forma derivada das zonas.
+//   A tela abre na forma ATIVA (`useState(forma)`, já estreitada no servidor).
 // ═══════════════════════════════════════════════════════════════════════════
 
 type ZonaTipo = { tipo: string; ativo: boolean; taxa: unknown | null };
@@ -102,9 +133,6 @@ function zonasDaForma<T extends { tipo: string }>(zonas: readonly T[], forma: Fo
   return fn(zonas, forma);
 }
 
-/** Assinatura NOVA de `formaInicialDaTela` (recebe `lojas.forma_frete`, não a forma gravada). */
-const formaInicialDaTelaNova = modulo.formaInicialDaTela as unknown as (v: string | null | undefined) => FormaFrete;
-
 describe("[325/F7] formaAtivaDaLoja — lojas.forma_frete estreitado para o enum", () => {
   it.each<[string, FormaFrete]>([
     ["raio_km", "raio_km"],
@@ -121,6 +149,7 @@ describe("[325/F7] formaAtivaDaLoja — lojas.forma_frete estreitado para o enum
     ["string vazia", ""],
     ["caixa diferente 'BAIRRO'", "BAIRRO"],
     ["'mista' (não é forma ativa)", "mista"],
+    ["'nenhuma' (não é forma ativa)", "nenhuma"],
   ])("%s ⇒ raio_km", (_n, valor) => {
     expect(formaAtivaDaLoja(valor)).toBe("raio_km");
   });
@@ -162,23 +191,5 @@ describe("[325/F7] zonasDaForma — só as zonas da forma ativa valem", () => {
     const loja = { aceita_entrega: true, modo_frete: "automatico", taxa_entrega_fora_zona: null, forma_frete: "raio_km" };
     const zonas: ZonaTipo[] = [km1, bairro1];
     expect(entregaDisponivel(loja, zonasDaForma(zonas, formaAtivaDaLoja(loja.forma_frete)))).toBe(true);
-  });
-});
-
-describe("[325/F8] formaInicialDaTela — a tela abre na forma ATIVA (lojas.forma_frete)", () => {
-  it.each<[string, FormaFrete]>([
-    ["raio_km", "raio_km"],
-    ["faixa_cep", "faixa_cep"],
-    ["bairro", "bairro"],
-  ])("forma_frete %s ⇒ abre em %s (independe das zonas guardadas)", (valor, esperado) => {
-    expect(formaInicialDaTelaNova(valor)).toBe(esperado);
-  });
-
-  it.each<[string, string | null | undefined]>([
-    ["null", null],
-    ["undefined", undefined],
-    ["fora do enum 'cidade'", "cidade"],
-  ])("forma_frete %s ⇒ abre em raio_km", (_n, valor) => {
-    expect(formaInicialDaTelaNova(valor)).toBe("raio_km");
   });
 });

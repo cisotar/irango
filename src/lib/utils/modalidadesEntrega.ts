@@ -16,7 +16,8 @@ type LojaModalidades = {
   taxa_entrega_fora_zona?: number | null;
 };
 
-type ZonaResumo = { ativo: boolean; taxa: unknown | null };
+/** O que a regra de disponibilidade lê de cada zona. */
+export type ZonaResumo = { ativo: boolean; taxa: unknown | null };
 
 /**
  * Entrega disponível na vitrine = ligada pela loja E (frete a combinar, que

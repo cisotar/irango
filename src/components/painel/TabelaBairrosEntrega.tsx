@@ -67,9 +67,7 @@ export function TabelaBairrosEntrega({
   const [remocaoPendente, setRemocaoPendente] = useState<number | null>(null);
 
   const gravacao = useGravacaoDoEditor<PayloadBairros>({
-    forma: "bairro",
     kmForaDoFormato: false,
-    zonasParaConfirmacao: [],
     salvar,
     aoGravar,
     bloqueado,

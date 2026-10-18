@@ -42,7 +42,7 @@ alter table public.lojas
   constraint lojas_forma_frete_valida check (forma_frete in ('raio_km', 'faixa_cep', 'bairro'));
 
 comment on column public.lojas.forma_frete is
-  'Forma de frete ATIVA (issue 325): só as zonas_entrega com tipo = forma_frete cobram; as das outras formas ficam guardadas. Gravada SÓ por salvar_zonas_entrega (junto da versão otimista) e pela legada salvar_faixas_entrega. Em CAMPOS_LOJA_SOMENTE_SERVIDOR (patch admin não grava) e fora da allowlist do lojista (patches-loja.ts).';
+  'Forma de frete ATIVA (issue 325): só as zonas_entrega com tipo = forma_frete cobram; as das outras formas ficam guardadas. O app só grava por salvar_zonas_entrega (junto da versão otimista) e pela legada salvar_faixas_entrega; a RLS de lojas ainda permite ao dono gravar direto na própria loja (ver issue 363). Em CAMPOS_LOJA_SOMENTE_SERVIDOR (patch admin não grava) e fora da allowlist do lojista (patches-loja.ts).';
 
 -- ── D2. Backfill ────────────────────────────────────────────────────────────
 with derivada as (

@@ -119,7 +119,6 @@ export function TabelaFaixasEntrega({
   // Fila, "não regravar o mesmo payload" e confirmação de substituição do km
   // legado (D4 da 326). Trocar de forma não pergunta (325: as outras ficam guardadas).
   const gravacao = useGravacaoDoEditor<PayloadKm>({
-    forma: "raio_km",
     kmForaDoFormato,
     zonasParaConfirmacao: zonas,
     salvar,
@@ -252,8 +251,9 @@ export function TabelaFaixasEntrega({
             <p className="flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>
-                Suas zonas de entrega foram cadastradas de um jeito que não vira tabela de faixas.
-                Elas ficam guardadas e cobram o cliente enquanto as faixas de km estiverem em uso, até a primeira faixa da tabela nova ser gravada.
+                Suas zonas de entrega foram cadastradas de um jeito que não vira tabela
+                de faixas. Elas ficam guardadas e cobram o cliente enquanto as faixas de
+                km estiverem em uso, até a primeira faixa da tabela nova ser gravada.
               </span>
             </p>
             <ListaZonasAtuais zonas={zonas} rotulo="Zonas de entrega atuais" />

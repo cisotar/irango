@@ -55,8 +55,11 @@ export type PropsEditorZonas = {
   zonasIniciais: ZonaVitrine[];
   /** `gravador.salvar`: põe a versão otimista e chama a action injetada. */
   salvar: (dados: DadosZonasSemVersao) => Promise<ResultadoZonas>;
-  /** Avisa o pai que esta forma passou a valer: salvar numa forma = ativar essa forma (325). */
-  aoGravar: (forma: FormaFrete) => void;
+  /**
+   * Avisa o pai do payload ACEITO: salvar numa forma = ativar essa forma (325),
+   * e o payload é a lista efetiva das zonas dela (`zonasResumoDoPayload`).
+   */
+  aoGravar: (payload: DadosZonasSemVersao) => void;
   /** Conflito de versão: desliga edição e gravação até recarregar. */
   bloqueado: boolean;
   /** `lojas.taxa_entrega_fora_zona` — só para a copy do rodapé. */
@@ -294,19 +297,17 @@ export type ErroLinha = { indice: number; mensagem: string };
  * linha (`erroLinha`) e "Não salvo"; montagem ok limpa o erro e grava.
  */
 export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
-  forma,
   kmForaDoFormato,
-  zonasParaConfirmacao,
+  zonasParaConfirmacao = [],
   salvar,
   aoGravar,
   bloqueado,
   chaveInicial,
 }: {
-  forma: FormaFrete;
   /** km gravado fora do formato de faixas (legado): a 1ª gravação pede confirmação. */
   kmForaDoFormato: boolean;
-  /** Zonas listadas no diálogo de substituição do km legado. */
-  zonasParaConfirmacao: ZonaVitrine[];
+  /** Zonas listadas no diálogo de substituição do km legado (só o km passa). */
+  zonasParaConfirmacao?: ZonaVitrine[];
   salvar: PropsEditorZonas["salvar"];
   aoGravar: PropsEditorZonas["aoGravar"];
   bloqueado: boolean;
@@ -336,7 +337,7 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
       const r = await enviarZonas(payload, { salvar: (p) => salvarRef.current(p), toast });
       if (r.ok) {
         setJaGravou(true);
-        aoGravarRef.current(forma);
+        aoGravarRef.current(payload);
       } else if (ultimaEnviada.current === JSON.stringify(payload)) {
         // falhou: a próxima tentativa com o mesmo estado grava de novo
         ultimaEnviada.current = null;
@@ -358,7 +359,7 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
       return;
     }
     if (JSON.stringify(payload) === ultimaEnviada.current) return;
-    if (precisaConfirmarSubstituicao(forma, kmForaDoFormato && !jaGravou) && !confirmou.current) {
+    if (precisaConfirmarSubstituicao({ kmForaDoFormato, jaGravou, confirmou: confirmou.current })) {
       setPayloadPendente(payload);
       return;
     }

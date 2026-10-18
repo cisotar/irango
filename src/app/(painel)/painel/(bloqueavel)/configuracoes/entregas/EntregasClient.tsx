@@ -15,7 +15,8 @@ import type {
 } from "@/lib/actions/entrega";
 import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
-import { formaInicialDaTela, zonasDaForma, type FormaFrete } from "@/lib/utils/formaFrete";
+import type { ZonaResumo } from "@/lib/utils/modalidadesEntrega";
+import { zonasDaForma, zonasResumoDoPayload, type FormaFrete } from "@/lib/utils/formaFrete";
 
 export type EntregasClientProps = {
   /** Zonas guardadas das TRÊS formas (`listarZonasParaEdicao`, issue 325). */
@@ -66,10 +67,16 @@ export function EntregasClient({
   taxaForaZona,
   acoes,
 }: EntregasClientProps) {
-  const [formaVisivel, setFormaVisivel] = useState<FormaFrete>(() => formaInicialDaTela(forma));
-  // Forma que a vitrine cobra: a da carga e, depois de cada gravação, a salva
-  // (a RPC grava `forma_frete = p_forma` no mesmo UPDATE da versão).
-  const [formaAtiva, setFormaAtiva] = useState<FormaFrete>(forma);
+  const [formaVisivel, setFormaVisivel] = useState<FormaFrete>(forma);
+  // Forma que a vitrine cobra e as zonas dela: as da carga e, depois de cada
+  // gravação, as do payload aceito (a RPC grava `forma_frete = p_forma` no
+  // mesmo UPDATE da versão e regrava as zonas da forma com o payload). Sem
+  // isso o aviso das modalidades leria as zonas velhas da carga até recarregar.
+  const [ativa, setAtiva] = useState<{ forma: FormaFrete; zonas: ZonaResumo[] }>(() => ({
+    forma,
+    zonas: zonasDaForma(zonas, forma),
+  }));
+  const formaAtiva = ativa.forma;
   const [conflito, setConflito] = useState(false);
 
   const acoesRef = useRef(acoes);
@@ -104,7 +111,7 @@ export function EntregasClient({
 
   const comuns: Omit<PropsEditorZonas, "zonasIniciais"> = {
     salvar: salvarZonas,
-    aoGravar: setFormaAtiva,
+    aoGravar: (payload) => setAtiva({ forma: payload.forma, zonas: zonasResumoDoPayload(payload) }),
     bloqueado: conflito,
     taxaForaZona,
   };
@@ -114,7 +121,7 @@ export function EntregasClient({
       <ModalidadesEntrega
         inicial={modalidades}
         // Só as zonas da forma ATIVA dizem se a entrega está disponível.
-        zonas={zonasPorForma[formaAtiva]}
+        zonas={ativa.zonas}
         taxaForaZona={taxaForaZona}
         salvar={acoes.salvarModalidades}
       />

@@ -61,9 +61,7 @@ export function TabelaFaixasCep({
   const [remocaoPendente, setRemocaoPendente] = useState<number | null>(null);
 
   const gravacao = useGravacaoDoEditor<PayloadCep>({
-    forma: "faixa_cep",
     kmForaDoFormato: false,
-    zonasParaConfirmacao: [],
     salvar,
     aoGravar,
     bloqueado,
