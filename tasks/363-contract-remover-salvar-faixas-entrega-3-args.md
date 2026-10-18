@@ -16,6 +16,11 @@ versão**: não confere nem incrementa `lojas.versao_zonas_entrega`. Qualquer ch
 antigo da Vercel aberto por URL de deployment, script, chamada direta ao PostgREST) reabre a sobrescrita
 silenciosa da 328. O efeito fica restrito à loja do próprio chamador, porque a T2 de posse continua valendo.
 
+Motivo extra (mudança de requisito do 325, migration `20261018130000_lojas_forma_frete_ativa.sql`): as zonas
+das três formas agora ficam guardadas lado a lado e só as de `lojas.forma_frete` cobram. A RPC antiga apaga
+**todas** as zonas da loja, inclusive as guardadas das outras formas, e força `forma_frete = 'raio_km'`.
+Um chamador antigo destrói a configuração de bairro/CEP que o lojista deixou guardada.
+
 ## Pré-condição (não começar antes)
 
 - [ ] PR 325/327/328 mesclado e deploy de produção concluído.
@@ -26,7 +31,9 @@ silenciosa da 328. O efeito fica restrito à loja do próprio chamador, porque a
 
 1. Migration nova `<ts>_drop_salvar_faixas_entrega_3_args.sql`:
    `drop function if exists public.salvar_faixas_entrega(uuid, integer, jsonb);`
-   ROLLBACK: reaplicar o corpo de `20260930120000_rpc_salvar_faixas_entrega_ativo.sql` (sem versão).
+   ROLLBACK: reaplicar o corpo de `salvar_faixas_entrega` de `20261018130000_lojas_forma_frete_ativa.sql`
+   (sem versão, com `update public.lojas set forma_frete = 'raio_km'`). NÃO usar o de `20260930120000`: ele
+   não define a forma ativa e deixaria a loja cobrando por uma forma cujas zonas o DELETE acabou de apagar.
 2. Apagar `tests/migrations/rpc_salvar_faixas_entrega.test.ts`. A cobertura equivalente com versão está em
    `tests/migrations/rpc_salvar_zonas_entrega.test.ts`. Antes, conferir caso a caso que cada teste de posse,
    claim forjado, valor por item e prefixo de ativas tem par na suíte nova.
@@ -42,6 +49,11 @@ A RLS `zonas_escrita_propria` ainda deixa o dono escrever direto em `zonas_entre
 `bairros_zona` pelo PostgREST, também sem versão (efeito só na própria loja; já existia antes do PR).
 Restringir a escrita direta ao caminho da RPC fecha o último desvio do compare-and-set. Confirmar antes que
 nenhum caminho do app (painel, admin, seed) escreve nessas tabelas fora de `salvar_zonas_entrega`.
+
+Avaliar também `lojas.forma_frete`: o app só a grava por `salvar_zonas_entrega` (junto da versão) e pela RPC
+legada, mas confirmar se a RLS/grants de UPDATE em `lojas` deixam o dono gravá-la por PATCH direto no
+PostgREST, sem versão (troca a forma ativa sem passar pelo compare-and-set; efeito só na própria loja).
+Se deixar, restringir por grant de coluna ou trigger no mesmo ciclo.
 
 ## Fora do escopo
 

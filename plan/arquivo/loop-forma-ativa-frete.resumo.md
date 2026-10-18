@@ -1,5 +1,5 @@
 # Trocar a forma de frete sem perder o que já foi configurado
-2026-10-18 16:16 · plano detalhado: plan/loop-forma-ativa-frete.md
+2026-10-18 16:16 · plano detalhado: plan/arquivo/loop-forma-ativa-frete.md
 
 **O que você pediu:** quando o lojista troca a forma de frete (km, CEP ou bairro), a configuração da forma anterior continua guardada. Ao voltar para ela, está tudo lá. Só muda a forma usada para cobrar o cliente.
 

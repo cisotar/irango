@@ -1,5 +1,5 @@
 # Loop · forma ativa de frete com zonas das três formas guardadas
-gerado: orquestrar · 2026-10-18 16:16 · degrau: 3 · resumo humano: plan/loop-forma-ativa-frete.resumo.md
+gerado: orquestrar · 2026-10-18 16:16 · degrau: 3 · resumo humano: plan/arquivo/loop-forma-ativa-frete.resumo.md
 
 ## Pedido
 > Projete o plano mais barato e seguro para uma MUDANÇA DE REQUISITO sobre o trabalho já entregue no PR #188 (branch feat/325-327-328-formas-de-frete, aberto, sem merge; migration 20261018120000 já aplicada no cloud; plano anterior em plan/arquivo/ — procure os 3 planos de formas de frete e plan/loop-formas-de-frete*). Leia o código atual antes de planejar.
