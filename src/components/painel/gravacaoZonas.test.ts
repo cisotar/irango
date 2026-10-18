@@ -304,3 +304,84 @@ describe("criarGravadorComVersao — versão otimista entre gravações (328)", 
     expect(gravador.versaoAtual()).toBe(4);
   });
 });
+
+// Fluxo da tela: enviarZonas em cima do gravador com versão (como o editor faz).
+describe("enviarZonas + criarGravadorComVersao — conflito e erro até o toast", () => {
+  function tela(respostas: Array<ResultadoZonas | Error>, versaoInicial = 7) {
+    const enviados: DadosZonasEntrega[] = [];
+    const aoConflito = vi.fn();
+    const toast = { error: vi.fn() };
+    const acao = vi.fn(async (p: DadosZonasEntrega): Promise<ResultadoZonas> => {
+      enviados.push(p);
+      const r = respostas.shift();
+      if (r === undefined) throw new Error("resposta não programada");
+      if (r instanceof Error) throw r;
+      return r;
+    });
+    const gravador = criarGravadorComVersao({ acao, versaoInicial, aoConflito });
+    const gravar = (d: DadosZonasSemVersao) => enviarZonas(d, { salvar: (x) => gravador.salvar(x), toast });
+    return { gravar, gravador, acao, enviados, aoConflito, toast };
+  }
+
+  it("conflito ⇒ aoConflito 1x, nenhum toast; blurs seguintes não batem na action nem avisam de novo", async () => {
+    const t = tela([{ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS }]);
+
+    expect(await t.gravar(DADOS_KM)).toEqual({ ok: false });
+    expect(await t.gravar(DADOS_CEP)).toEqual({ ok: false });
+    expect(await t.gravar(DADOS_KM)).toEqual({ ok: false });
+
+    expect(t.aoConflito).toHaveBeenCalledTimes(1);
+    expect(t.acao).toHaveBeenCalledTimes(1);
+    expect(t.toast.error).not.toHaveBeenCalled();
+    expect(t.gravador.versaoAtual()).toBe(7);
+  });
+
+  it("erro genérico da action ⇒ toast com MENSAGEM_ERRO_ZONAS, versão intacta, sem aoConflito", async () => {
+    const t = tela([{ ok: false, erro: MENSAGEM_ERRO_ZONAS }]);
+
+    expect(await t.gravar(DADOS_KM)).toEqual({ ok: false });
+
+    expect(t.toast.error).toHaveBeenCalledTimes(1);
+    expect(t.toast.error).toHaveBeenCalledWith(MENSAGEM_ERRO_ZONAS);
+    expect(t.aoConflito).not.toHaveBeenCalled();
+    expect(t.gravador.versaoAtual()).toBe(7);
+  });
+
+  it("exceção da action ⇒ toast genérico, sem aoConflito, e a gravação seguinte ainda sai com a mesma versão", async () => {
+    const t = tela([new Error("ECONNRESET 10.0.0.1"), { ok: true, versao: 8 }]);
+
+    expect(await t.gravar(DADOS_KM)).toEqual({ ok: false });
+    expect(t.toast.error).toHaveBeenCalledWith(MENSAGEM_ERRO_ZONAS);
+    expect(JSON.stringify(t.toast.error.mock.calls)).not.toContain("ECONNRESET");
+
+    expect(await t.gravar(DADOS_KM)).toEqual({ ok: true });
+    expect(t.enviados.map((e) => e.versao)).toEqual([7, 7]);
+    expect(t.gravador.versaoAtual()).toBe(8);
+  });
+
+  it("sucesso atualiza a versão e é silencioso; erro depois dele usa a versão nova", async () => {
+    const t = tela([
+      { ok: true, versao: 8 },
+      { ok: false, erro: MENSAGEM_ERRO_ZONAS },
+    ]);
+
+    await t.gravar(DADOS_KM);
+    await t.gravar(DADOS_CEP);
+
+    expect(t.enviados.map((e) => e.versao)).toEqual([7, 8]);
+    expect(t.toast.error).toHaveBeenCalledTimes(1);
+    expect(t.gravador.versaoAtual()).toBe(8);
+  });
+
+  it("duas gravações simultâneas, a 1ª em conflito ⇒ a 2ª NÃO chama a action e aoConflito é 1x", async () => {
+    const t = tela([{ ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS }]);
+
+    const [a, b] = await Promise.all([t.gravar(DADOS_KM), t.gravar(DADOS_CEP)]);
+
+    expect(a).toEqual({ ok: false });
+    expect(b).toEqual({ ok: false });
+    expect(t.acao).toHaveBeenCalledTimes(1);
+    expect(t.aoConflito).toHaveBeenCalledTimes(1);
+    expect(t.toast.error).not.toHaveBeenCalled();
+  });
+});

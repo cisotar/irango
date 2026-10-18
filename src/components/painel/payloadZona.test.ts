@@ -11,6 +11,13 @@ import { describe, it, expect } from "vitest";
 //
 // FORA DA RESPONSABILIDADE: validação autoritativa (schemaZonasEntrega, na
 // action), persistência (Server Actions), match de zona (calcularFrete).
+import { lerFaixas, rotuloFaixa } from "@/lib/utils/faixasEntrega";
+import {
+  schemaZonasEntrega,
+  TETO_BAIRROS_POR_GRUPO,
+  TETO_BAIRROS_TOTAL,
+  TETO_GRUPOS_BAIRRO,
+} from "@/lib/validacoes/entrega";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 import {
   cepParaInteiro,
@@ -20,6 +27,7 @@ import {
   lerGruposBairro,
   montarPayloadBairros,
   montarPayloadCep,
+  montarPayloadKm,
   type FaixaCepEditavel,
   type GrupoBairroEditavel,
 } from "./payloadZona";
@@ -286,5 +294,225 @@ describe("montarPayloadBairros", () => {
       erro: "cêntro já está em outro preço.",
       indice: 1,
     });
+  });
+});
+
+// ─── Ida e volta: banco → tela → payload aceito pelo zod da action (325) ─────
+// Pega: tela que monta payload que a Server Action recusaria (CEP sem zero à
+// esquerda, moeda "5.1" virando float impuro, grátis 0 virando null, etc.).
+const aceitoPelaAction = (payload: object) => schemaZonasEntrega.safeParse({ ...payload, versao: 0 });
+
+describe("ida e volta zonas gravadas → tela → payload (CEP)", () => {
+  it("CEPs de 7 dígitos, taxa com centavos e grátis 0 sobrevivem e a action aceita", () => {
+    const zonas = [
+      { ...zonaCep("a", 1000000, 1999999, 5.1), ativo: true },
+      { ...zonaCep("b", 0, 999999, 4.35, false) },
+    ];
+    zonas[0].taxa!.pedido_minimo_gratis = 0; // 0 é valor, não "sem grátis"
+
+    const linhas = lerFaixasCep(zonas);
+    expect(linhas[0]).toEqual({ cepInicio: "00000-000", cepFim: "00999-999", taxa: "4.35", gratis: null, ativo: false });
+    expect(linhas[1].gratis).toBe("0");
+
+    const r = montarPayloadCep(linhas);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.payload.faixas).toEqual([
+      { cep_inicio: 0, cep_fim: 999999, taxa: 4.35, pedido_minimo_gratis: null, ativo: false },
+      { cep_inicio: 1000000, cep_fim: 1999999, taxa: 5.1, pedido_minimo_gratis: 0, ativo: true },
+    ]);
+    expect(aceitoPelaAction(r.payload).success).toBe(true);
+  });
+
+  it("faixa inativa lida do banco continua inativa no payload (não é reativada)", () => {
+    const r = montarPayloadCep(lerFaixasCep([zonaCep("a", 1000000, 1999999, 5, false)]));
+    expect(r.ok && r.payload.faixas[0].ativo).toBe(false);
+  });
+
+  it("todo payload ok de CEP é aceito pela action; todo erro de zod tem o índice da linha", () => {
+    const validos = [
+      [],
+      [cep("01000-000", "01000-000")], // início = fim
+      [cep("01000-000", "01999-999"), cep("02000-000", "02000-000", "0", "0")],
+    ];
+    for (const linhas of validos) {
+      const r = montarPayloadCep(linhas);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(aceitoPelaAction(r.payload).success).toBe(true);
+    }
+    // Faixas coladas (fim de uma = início da seguinte) cruzam: o servidor recusa.
+    const colada = montarPayloadCep([cep("01000-000", "01999-999"), cep("01999-999", "02999-999")]);
+    expect(colada).toMatchObject({ ok: false, indice: 1 });
+  });
+
+  it("taxa negativa e grátis negativo são recusados com o índice da linha", () => {
+    expect(montarPayloadCep([cep("01000-000", "01999-999"), cep("02000-000", "02999-999", "-1")])).toMatchObject({
+      ok: false,
+      indice: 1,
+    });
+    const g = montarPayloadCep([cep("01000-000", "01999-999", "5", "-3")]);
+    expect(g).toMatchObject({ ok: false, indice: 0 });
+    if (!g.ok) expect(g.erro).toContain("o frete grátis da faixa de 01000-000 a 01999-999");
+  });
+
+  it("preço não numérico ('abc') cai em 'Informe o preço' e não vira NaN no payload", () => {
+    expect(montarPayloadCep([cep("01000-000", "01999-999", "abc")])).toEqual({
+      ok: false,
+      erro: "Informe o preço da faixa de 01000-000 a 01999-999.",
+      indice: 0,
+    });
+  });
+
+  it("vírgula decimal da máscara BR vira ponto no payload", () => {
+    const r = montarPayloadCep([cep("01000-000", "01999-999", "7,5", "50,00")]);
+    expect(r.ok && r.payload.faixas[0]).toMatchObject({ taxa: 7.5, pedido_minimo_gratis: 50 });
+  });
+
+  it("exatamente no teto de 50 faixas passa; a action concorda", () => {
+    const linhas = Array.from({ length: 50 }, (_, i) =>
+      cep(cepInteiroParaMascara(i * 1000), cepInteiroParaMascara(i * 1000 + 999)),
+    );
+    const r = montarPayloadCep(linhas);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(aceitoPelaAction(r.payload).success).toBe(true);
+  });
+});
+
+describe("ida e volta zonas gravadas → tela → payload (bairros)", () => {
+  it("grupos lidos do banco voltam como payload igual, aceito pela action", () => {
+    const zonas = [
+      zonaBairro("a", ["Centro", "Jardim América"], 6.1, 0),
+      zonaBairro("b", ["Vila Nova"], 8, null),
+    ];
+    zonas[1].ativo = false;
+
+    const r = montarPayloadBairros(lerGruposBairro(zonas));
+    expect(r).toEqual({
+      ok: true,
+      payload: {
+        forma: "bairro",
+        grupos: [
+          { bairros: ["Centro", "Jardim América"], taxa: 6.1, pedido_minimo_gratis: 0, ativo: true },
+          { bairros: ["Vila Nova"], taxa: 8, pedido_minimo_gratis: null, ativo: false },
+        ],
+      },
+    });
+    if (r.ok) expect(aceitoPelaAction(r.payload).success).toBe(true);
+  });
+
+  it("rascunho `novoBairro` nunca vai no payload (a action é .strict())", () => {
+    const g = { ...grupo(["Centro"]), novoBairro: "Digitando..." };
+    const r = montarPayloadBairros([g]);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(JSON.stringify(r.payload)).not.toContain("Digitando");
+      expect(aceitoPelaAction(r.payload).success).toBe(true);
+    }
+  });
+
+  it("taxa negativa / grátis negativo ⇒ mensagem do campo certo com o índice do grupo", () => {
+    const a = montarPayloadBairros([grupo(["A"]), grupo(["B"], "-1")]);
+    expect(a).toEqual({ ok: false, erro: expect.stringContaining("o preço destes bairros"), indice: 1 });
+    const b = montarPayloadBairros([grupo(["A"], "5", "-2")]);
+    expect(b).toEqual({ ok: false, erro: expect.stringContaining("o frete grátis destes bairros"), indice: 0 });
+  });
+
+  it("frete grátis ligado e vazio ⇒ erro no grupo", () => {
+    expect(montarPayloadBairros([grupo(["A"], "5", "")])).toEqual({
+      ok: false,
+      erro: "Informe o valor do frete grátis destes bairros ou desligue a opção.",
+      indice: 0,
+    });
+  });
+
+  it("bairro repetido DENTRO do mesmo grupo também é recusado", () => {
+    const r = montarPayloadBairros([grupo(["Centro", "CENTRO"])]);
+    expect(r).toMatchObject({ ok: false, indice: 0 });
+  });
+
+  it("bairro só com espaços ⇒ recusado no grupo, sem payload", () => {
+    expect(montarPayloadBairros([grupo(["Centro"]), grupo(["   "])])).toMatchObject({ ok: false, indice: 1 });
+  });
+
+  it("101 bairros num grupo ⇒ mensagem do teto por grupo com o índice", () => {
+    const nomes = Array.from({ length: TETO_BAIRROS_POR_GRUPO + 1 }, (_, i) => `Bairro ${i}`);
+    expect(montarPayloadBairros([grupo(nomes)])).toEqual({
+      ok: false,
+      erro: `Cadastre até ${TETO_BAIRROS_POR_GRUPO} bairros por preço, com nomes de até 120 letras.`,
+      indice: 0,
+    });
+  });
+
+  it("nome com mais de 120 letras ⇒ recusado no grupo", () => {
+    expect(montarPayloadBairros([grupo(["x".repeat(121)])])).toMatchObject({ ok: false, indice: 0 });
+  });
+
+  it("31 grupos ⇒ erro de teto sem índice; 30 passam", () => {
+    const mk = (n: number) => Array.from({ length: n }, (_, i) => grupo([`B${i}`]));
+    expect(montarPayloadBairros(mk(TETO_GRUPOS_BAIRRO + 1))).toEqual({
+      ok: false,
+      erro: `Cadastre no máximo ${TETO_GRUPOS_BAIRRO} preços por bairro.`,
+      indice: null,
+    });
+    const ok = montarPayloadBairros(mk(TETO_GRUPOS_BAIRRO));
+    expect(ok.ok).toBe(true);
+  });
+
+  it("301 bairros no total (grupos ≤ teto cada) ⇒ mensagem do teto total, sem índice", () => {
+    const grupos = Array.from({ length: 4 }, (_, g) =>
+      grupo(Array.from({ length: g === 3 ? 76 : 75 }, (_, i) => `B${g}-${i}`)),
+    );
+    expect(grupos.flatMap((g) => g.bairros).length).toBe(TETO_BAIRROS_TOTAL + 1);
+    expect(montarPayloadBairros(grupos)).toEqual({
+      ok: false,
+      erro: `Cadastre no máximo ${TETO_BAIRROS_TOTAL} bairros.`,
+      indice: null,
+    });
+  });
+});
+
+describe("ida e volta zonas gravadas → tela → payload (km)", () => {
+  const zonaKm = (i: number, inc: 1 | 2, taxa: number, ativo = true, gratis: number | null = null): ZonaVitrine => ({
+    id: `k${i}`,
+    nome: rotuloFaixa(i, inc),
+    tipo: "raio_km",
+    ativo,
+    taxa: { taxa, pedido_minimo_gratis: gratis, raio_max_km: (i + 1) * inc, cep_inicio: null, cep_fim: null },
+    bairros: [],
+  });
+
+  it("faixas lidas do formato gravado voltam como payload de km aceito pela action", () => {
+    const leitura = lerFaixas([zonaKm(0, 2, 4), zonaKm(1, 2, 6.5, true, 80), zonaKm(2, 2, 9, false)]);
+    expect(leitura.modo).toBe("faixas");
+
+    const r = montarPayloadKm(
+      leitura.incremento,
+      leitura.faixas.map((f) => ({
+        taxa: String(f.taxa),
+        gratis: f.pedido_minimo_gratis == null ? null : String(f.pedido_minimo_gratis),
+        ativo: f.ativo,
+      })),
+    );
+    expect(r).toEqual({
+      ok: true,
+      payload: {
+        incremento: 2,
+        faixas: [
+          { taxa: 4, pedido_minimo_gratis: null, ativo: true },
+          { taxa: 6.5, pedido_minimo_gratis: 80, ativo: true },
+          { taxa: 9, pedido_minimo_gratis: null, ativo: false },
+        ],
+      },
+    });
+    if (r.ok) expect(aceitoPelaAction({ forma: "raio_km", ...r.payload }).success).toBe(true);
+  });
+
+  it("faixa ativa depois de desligada ⇒ mensagem de prefixo com o índice da faixa", () => {
+    const r = montarPayloadKm(1, [
+      { taxa: "4", gratis: null, ativo: true },
+      { taxa: "5", gratis: null, ativo: false },
+      { taxa: "6", gratis: null, ativo: true },
+    ]);
+    expect(r).toMatchObject({ ok: false, indice: 2 });
   });
 });

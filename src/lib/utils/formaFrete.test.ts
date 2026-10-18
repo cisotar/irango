@@ -1,9 +1,14 @@
 // Issue 325 — forma de frete ativa, derivada do `tipo` das zonas (módulo puro).
+import { schemaZonasEntrega } from "@/lib/validacoes/entrega";
 import { describe, expect, it } from "vitest";
 
 import {
   formaGravadaDasZonas,
   formaInicialDaTela,
+  FORMAS_FRETE,
+  ROTULO_FORMA,
+  ROTULO_FORMA_FRASE,
+  rotuloDoTipo,
   precisaConfirmarSubstituicao,
   type FormaFrete,
   type FormaGravada,
@@ -72,5 +77,38 @@ describe("precisaConfirmarSubstituicao — tabela verdade", () => {
 
   it.each(casos)("editor %s, gravada %s, km fora do formato %s ⇒ %s", (editor, gravada, fora, esperado) => {
     expect(precisaConfirmarSubstituicao(editor, gravada, fora)).toBe(esperado);
+  });
+});
+
+describe("rotuloDoTipo e formas", () => {
+  it("cada tipo do banco tem o rótulo da sua forma; tipo desconhecido aparece cru", () => {
+    expect(rotuloDoTipo("raio_km")).toBe("Faixas de distância (km)");
+    expect(rotuloDoTipo("faixa_cep")).toBe("Faixas de CEP");
+    expect(rotuloDoTipo("bairro")).toBe("Bairros");
+    expect(rotuloDoTipo("legado_x")).toBe("legado_x");
+  });
+
+  it("FORMAS_FRETE cobre exatamente as formas que a action aceita, cada uma com rótulo", () => {
+    const minimo: Record<string, object> = {
+      raio_km: { incremento: 1, faixas: [] },
+      faixa_cep: { faixas: [] },
+      bairro: { grupos: [] },
+    };
+    expect([...FORMAS_FRETE].sort()).toEqual(Object.keys(minimo).sort());
+    for (const forma of FORMAS_FRETE) {
+      expect(schemaZonasEntrega.safeParse({ forma, versao: 0, ...minimo[forma] }).success).toBe(true);
+      expect(ROTULO_FORMA[forma]).toBeTruthy();
+      expect(ROTULO_FORMA_FRASE[forma]).toBeTruthy();
+    }
+  });
+});
+
+describe("formaGravadaDasZonas — bordas", () => {
+  it("uma zona de outro tipo no meio ou no fim torna a loja mista", () => {
+    expect(formaGravadaDasZonas([{ tipo: "bairro" }, { tipo: "bairro" }, { tipo: "raio_km" }])).toBe("mista");
+  });
+
+  it("uma única zona de tipo desconhecido ⇒ mista (pede confirmação)", () => {
+    expect(formaGravadaDasZonas([{ tipo: "legado_x" }])).toBe("mista");
   });
 });

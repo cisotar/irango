@@ -269,6 +269,9 @@ export function montarPayloadBairros(grupos: GrupoBairroEditavel[]): Montagem<Pa
   const itens: PayloadBairros["grupos"] = [];
   for (const [i, g] of grupos.entries()) {
     if (g.bairros.length === 0) return { ok: false, erro: "Adicione pelo menos um bairro a este preço.", indice: i };
+    if (g.bairros.some((b) => b.trim() === "")) {
+      return { ok: false, erro: "Preencha o nome de cada bairro deste preço.", indice: i };
+    }
     const taxa = paraNumero(g.taxa);
     if (taxa == null) return { ok: false, erro: "Informe o preço destes bairros.", indice: i };
     let gratis: number | null = null;
