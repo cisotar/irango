@@ -1,8 +1,9 @@
-// Conversões de input de zona de entrega (issue 183) — módulo PURO, sem React,
-// testável no `environment: node`: moeda BR → número e CEP mascarado ↔
-// inteiro de 8 dígitos (o formato de `taxas_entrega.cep_*`). Desde a issue 325
-// também lê as zonas gravadas e monta o payload das telas de faixas de CEP e de
-// bairros (`lerFaixasCep`/`montarPayloadCep`, `lerGruposBairro`/
+// Estado das telas de zona de entrega ↔ payload — módulo PURO, sem React,
+// testável no `environment: node`. Conversões de input (moeda BR → número, CEP
+// mascarado ↔ inteiro de 8 dígitos, o formato de `taxas_entrega.cep_*`; issue
+// 183) e, por forma de frete (issue 325), a leitura das zonas gravadas e a
+// montagem do payload: faixas de km (`montarPayloadKm`), faixas de CEP
+// (`lerFaixasCep`/`montarPayloadCep`) e bairros (`lerGruposBairro`/
 // `montarPayloadBairros`).
 //
 // O payload montado aqui é só gate de UX: a Server Action revalida com
@@ -14,12 +15,16 @@ import type { ZodError } from "zod";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 import { limparCep } from "@/lib/utils/buscarCep";
 import { normalizarBairro } from "@/lib/utils/calcularFrete";
+import { rotuloFaixa, type IncrementoFaixa } from "@/lib/utils/faixasEntrega";
 import {
+  MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA,
   TETO_BAIRROS_POR_GRUPO,
   TETO_FAIXAS_CEP,
   TETO_GRUPOS_BAIRRO,
   schemaFaixasCep,
+  schemaFaixasEntrega,
   schemaGruposBairro,
+  type DadosFaixasEntrega,
   type DadosZonasSemVersao,
 } from "@/lib/validacoes/entrega";
 
@@ -47,6 +52,84 @@ export function cepInteiroParaMascara(valor: number | null): string {
   return `${digitos.slice(0, 5)}-${digitos.slice(5)}`;
 }
 
+/** Primeira issue do zod → índice da linha (path[1]) e campo (path[2]). */
+function primeiraIssue(erro: ZodError): {
+  issue: ZodError["issues"][number] | undefined;
+  indice: number | null;
+  campo: unknown;
+} {
+  const issue = erro.issues[0];
+  const [, indice, campo] = issue?.path ?? [];
+  return { issue, indice: typeof indice === "number" ? indice : null, campo };
+}
+
+/** Resultado de montagem: payload inteiro ou o primeiro erro, com a linha dele. */
+export type Montagem<P> = { ok: true; payload: P } | { ok: false; erro: string; indice: number | null };
+
+/** Número do banco → valor sem máscara do input de moeda ("4.5"); `paraNumero` desfaz. */
+export function moedaParaTexto(valor: number): string {
+  return String(valor);
+}
+
+/** Chave de "não regravar o mesmo payload": o payload montado, ou null se não monta. */
+export function chaveDaMontagem<P>(montagem: Montagem<P>): string | null {
+  return montagem.ok ? JSON.stringify(montagem.payload) : null;
+}
+
+// ─── Faixas de km (issue 326) ───────────────────────────────────────────────
+
+/**
+ * Faixa de km como a tela a edita. `taxa`/`gratis` são o valor SEM máscara do
+ * `IMaskInput` ("8.5"; vazio = ""); `gratis === null` = sem frete grátis.
+ */
+export type FaixaEditavel = { taxa: string; gratis: string | null; ativo: boolean };
+
+const AJUDA_VALOR = "use valor de R$ 0,00 para cima, com até 2 casas decimais.";
+
+/**
+ * Estado da tela → payload de km (sem `forma`; o editor acrescenta).
+ * `schemaFaixasEntrega` aqui é só gate de UX: a Server Action revalida e a RPC
+ * rederiva teto/nome/tipo. Nunca devolve payload pela metade: a primeira faixa
+ * com preço (ou frete grátis ligado) vazio ou inválido devolve o erro com o
+ * índice dela, para a tela marcar a linha.
+ */
+export function montarPayloadKm(
+  incremento: IncrementoFaixa,
+  faixas: FaixaEditavel[],
+): Montagem<DadosFaixasEntrega> {
+  const itens: DadosFaixasEntrega["faixas"] = [];
+  for (const [i, f] of faixas.entries()) {
+    const rotulo = rotuloFaixa(i, incremento);
+    const taxa = paraNumero(f.taxa);
+    if (taxa == null) return { ok: false, erro: `Informe o preço da faixa de ${rotulo}.`, indice: i };
+    let gratis: number | null = null;
+    if (f.gratis !== null) {
+      gratis = paraNumero(f.gratis);
+      if (gratis == null) {
+        return {
+          ok: false,
+          erro: `Informe o valor do frete grátis da faixa de ${rotulo} ou desligue a opção.`,
+          indice: i,
+        };
+      }
+    }
+    itens.push({ taxa, pedido_minimo_gratis: gratis, ativo: f.ativo });
+  }
+
+  const parsed = schemaFaixasEntrega.safeParse({ incremento, faixas: itens });
+  if (parsed.success) return { ok: true, payload: parsed.data };
+
+  const { indice, campo } = primeiraIssue(parsed.error);
+  if (indice != null) {
+    if (campo === "ativo") {
+      return { ok: false, erro: MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA, indice };
+    }
+    const oQue = campo === "pedido_minimo_gratis" ? "o frete grátis" : "o preço";
+    return { ok: false, erro: `Confira ${oQue} da faixa de ${rotuloFaixa(indice, incremento)}: ${AJUDA_VALOR}`, indice };
+  }
+  return { ok: false, erro: "Confira as faixas de entrega.", indice: null };
+}
+
 // ─── Faixas de CEP (issue 325) ──────────────────────────────────────────────
 
 /**
@@ -64,14 +147,6 @@ export type FaixaCepEditavel = {
 
 export type PayloadCep = Extract<DadosZonasSemVersao, { forma: "faixa_cep" }>;
 export type PayloadBairros = Extract<DadosZonasSemVersao, { forma: "bairro" }>;
-
-/** Resultado de montagem: payload inteiro ou o primeiro erro, com a linha dele. */
-export type Montagem<P> = { ok: true; payload: P } | { ok: false; erro: string; indice: number | null };
-
-/** Número do banco → valor sem máscara do input de moeda ("4.5"); `paraNumero` desfaz. */
-function moedaParaTexto(valor: number): string {
-  return String(valor);
-}
 
 /**
  * Zonas gravadas → linhas da tela de CEP. Só entram zonas `faixa_cep` com taxa
@@ -93,19 +168,6 @@ export function lerFaixasCep(zonas: ZonaVitrine[]): FaixaCepEditavel[] {
     });
   }
   return linhas.sort((a, b) => a.ordem - b.ordem).map(({ ordem: _ordem, ...linha }) => linha);
-}
-
-const AJUDA_VALOR = "use valor de R$ 0,00 para cima, com até 2 casas decimais.";
-
-/** Primeira issue do zod → índice da linha (path[1]) e campo (path[2]). */
-function primeiraIssue(erro: ZodError): {
-  issue: ZodError["issues"][number] | undefined;
-  indice: number | null;
-  campo: unknown;
-} {
-  const issue = erro.issues[0];
-  const [, indice, campo] = issue?.path ?? [];
-  return { issue, indice: typeof indice === "number" ? indice : null, campo };
 }
 
 /**
@@ -171,15 +233,19 @@ export type GrupoBairroEditavel = {
 
 /** Zonas gravadas → grupos da tela: cada zona `bairro` com taxa vira um grupo. */
 export function lerGruposBairro(zonas: ZonaVitrine[]): GrupoBairroEditavel[] {
-  return zonas
-    .filter((z) => z.tipo === "bairro" && z.taxa != null)
-    .map((z) => ({
-      bairros: z.bairros.map((b) => b.nome),
-      novoBairro: "",
-      taxa: moedaParaTexto(z.taxa!.taxa),
-      gratis: z.taxa!.pedido_minimo_gratis == null ? null : moedaParaTexto(z.taxa!.pedido_minimo_gratis),
-      ativo: z.ativo,
-    }));
+  return zonas.flatMap((z) => {
+    if (z.tipo !== "bairro" || z.taxa == null) return [];
+    const { taxa, pedido_minimo_gratis } = z.taxa;
+    return [
+      {
+        bairros: z.bairros.map((b) => b.nome),
+        novoBairro: "",
+        taxa: moedaParaTexto(taxa),
+        gratis: pedido_minimo_gratis == null ? null : moedaParaTexto(pedido_minimo_gratis),
+        ativo: z.ativo,
+      },
+    ];
+  });
 }
 
 /**

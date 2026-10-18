@@ -373,9 +373,16 @@ function valorDoArgumento(args: string, chaves: string[]): string | null {
  */
 const ORIGEM_DERIVADA = /^(loja\.lojaId|lojaId)$/;
 
+/**
+ * Spread DEPOIS do arg de tenant (`{ p_loja_id: lojaId, ...args }`) sobrescreve
+ * o valor derivado se o objeto espalhado trouxer `p_loja_id`: o tenant tem de
+ * vir depois de todo spread (A3 da 325/328).
+ */
+const SPREAD_DEPOIS_DO_TENANT = /\b(p_loja_id|loja_id)\s*:[\s\S]*\.\.\./;
+
 function rpcEscopadaPorLoja(args: string): boolean {
   const valor = valorDoArgumento(args, ["p_loja_id", "loja_id"]);
-  return valor != null && ORIGEM_DERIVADA.test(valor);
+  return valor != null && ORIGEM_DERIVADA.test(valor) && !SPREAD_DEPOIS_DO_TENANT.test(args);
 }
 
 /**
@@ -443,6 +450,10 @@ describe("enforcement CAMADA 4 — escopo de tenant em toda RPC admin", () => {
       },
       { nome: "sem argumento de tenant nenhum", fonte: `await svc.rpc("x", { p_ids: ids });` },
       {
+        nome: "spread depois do tenant (pode sobrescrever p_loja_id)",
+        fonte: `await svc.rpc("x", { p_loja_id: loja.lojaId, ...argsDoPayload(parsed.data) });`,
+      },
+      {
         nome: "escopo por categoria em vez de loja",
         fonte: `await svc.rpc("x", { p_categoria_id: categoria_id, p_ids: ids });`,
       },
@@ -459,6 +470,7 @@ describe("enforcement CAMADA 4 — escopo de tenant em toda RPC admin", () => {
     const legitimas = [
       `await svc.rpc("x", { p_loja_id: loja.lojaId, p_categoria_id: categoria_id, p_ids: ids });`,
       `await svc.rpc("x", { p_ids: ids, p_loja_id: lojaId });`,
+      `await svc.rpc("x", { ...argsSalvarZonas(parsed.data), p_loja_id: loja.lojaId });`,
     ];
     for (const fonte of legitimas) {
       const [chamada] = chamadasRpcDe("fixture.ts", fonte);

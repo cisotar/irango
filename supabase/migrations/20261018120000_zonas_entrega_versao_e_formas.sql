@@ -5,7 +5,9 @@
 -- valor por forma). Teste: tests/migrations/rpc_salvar_zonas_entrega.test.ts
 --
 -- O QUE ENTRA (expand-only):
---   1. `lojas.versao_zonas_entrega bigint not null default 0` + CHECK >= 0.
+--   1. `lojas.versao_zonas_entrega bigint not null default 0` + CHECK entre 0
+--      e 9007199254740991 (Number.MAX_SAFE_INTEGER: a versão trafega como
+--      number no JS e o zod da action recusa acima disso).
 --      Incrementada SÓ por `salvar_zonas_entrega`. Fora do trigger
 --      lojas_protege_billing (não é billing nem PII).
 --   2. `public.salvar_zonas_entrega(p_loja_id, p_versao, p_forma, p_dados)`:
@@ -43,7 +45,7 @@
 -- ── 1. Coluna de versão ─────────────────────────────────────────────────────
 alter table public.lojas
   add column versao_zonas_entrega bigint not null default 0
-  constraint lojas_versao_zonas_entrega_nao_negativa check (versao_zonas_entrega >= 0);
+  constraint lojas_versao_zonas_entrega_nao_negativa check (versao_zonas_entrega >= 0 and versao_zonas_entrega <= 9007199254740991);
 
 comment on column public.lojas.versao_zonas_entrega is
   'Controle otimista das zonas de entrega (issue 328). Incrementada SÓ por salvar_zonas_entrega (compare-and-set). Não é billing nem PII: fora do trigger lojas_protege_billing.';
@@ -250,16 +252,18 @@ begin
     end loop;
   end if;
 
-  -- bairro: sem repetição, normalizado como `normalizarBairro` (trim → NFD →
-  -- sem diacríticos → minúsculas → espaços colapsados), em TODOS os grupos.
+  -- bairro: sem repetição, normalizado como `normalizarBairro` (NFD → sem
+  -- diacríticos → brancos colapsados ANTES do btrim, que só apara ' ' — assim
+  -- 'Centro\t' casa com 'Centro' como no `trim()` do JS → minúsculas), em
+  -- TODOS os grupos.
   if p_forma = 'bairro' then
     if exists (
       select 1
         from jsonb_array_elements(v_lista) as g(grupo)
         cross join lateral jsonb_array_elements_text(g.grupo -> 'bairros') as b(nome)
-       group by lower(regexp_replace(
-                  btrim(regexp_replace(normalize(b.nome, NFD), v_diacriticos, '', 'g')),
-                  '\s+', ' ', 'g'))
+       group by lower(btrim(regexp_replace(
+                  regexp_replace(normalize(b.nome, NFD), v_diacriticos, '', 'g'),
+                  '\s+', ' ', 'g')))
       having count(*) > 1
     ) then
       raise exception 'salvar_zonas_entrega: bairro repetido';

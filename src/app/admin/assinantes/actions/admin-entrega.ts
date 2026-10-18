@@ -22,15 +22,15 @@ import {
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
 import {
-  MENSAGEM_CONFLITO_ZONAS,
+  MENSAGEM_ERRO_ZONAS,
   argsSalvarZonas,
-  ehConflitoDeVersao,
   itensDasZonas,
+  resultadoDaRpcZonas,
   schemaModalidadesEntrega,
-  schemaZonasEntrega,
+  validarPayloadZonas,
+  type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
 import { montarPatchModalidades } from "@/lib/actions/patches-loja";
-import type { ResultadoZonas } from "@/lib/actions/entrega";
 
 type ResultadoEntregaAdmin = { ok: true } | { ok: false; erro: string };
 
@@ -94,37 +94,29 @@ export async function salvarZonasEntregaAdmin(
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 
-  const parsed = schemaZonasEntrega.safeParse(payload);
-  if (!parsed.success) {
-    const regra = parsed.error.issues.find((i) => i.code === "custom");
-    return { ok: false, erro: regra?.message ?? "Dados inválidos." };
-  }
+  const validado = validarPayloadZonas(payload);
+  if (!validado.ok) return validado;
 
   const { svc } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    const { data, error } = await svc.rpc("salvar_zonas_entrega", {
+    // Tenant por ÚLTIMO: nenhum spread sobrescreve o lojaId validado da URL.
+    const resposta = await svc.rpc("salvar_zonas_entrega", {
+      ...argsSalvarZonas(validado.data),
       p_loja_id: loja.lojaId,
-      ...argsSalvarZonas(parsed.data),
     });
-    if (ehConflitoDeVersao(error)) {
-      console.warn("[salvarZonasEntregaAdmin] conflito de versão");
-      return { ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS };
-    }
-    if (error || !Number.isSafeInteger(data)) {
-      console.error("[salvarZonasEntregaAdmin]", error ?? "versão inválida devolvida pela RPC");
-      return { ok: false, erro: ERRO_GENERICO };
-    }
+    const resultado = resultadoDaRpcZonas("salvarZonasEntregaAdmin", resposta);
+    if (!resultado.ok) return resultado;
 
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
       acao: "salvar_zonas_entrega",
-      metadados: { forma: parsed.data.forma, itens: itensDasZonas(parsed.data) },
+      metadados: { forma: validado.data.forma, itens: itensDasZonas(validado.data) },
     });
     revalidarLojaAdmin(loja.lojaId);
-    return { ok: true, versao: data };
+    return resultado;
   } catch (e) {
     console.error("[salvarZonasEntregaAdmin]", e);
-    return { ok: false, erro: ERRO_GENERICO };
+    return { ok: false, erro: MENSAGEM_ERRO_ZONAS };
   }
 }

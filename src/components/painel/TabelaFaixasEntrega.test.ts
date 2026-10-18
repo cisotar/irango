@@ -1,13 +1,13 @@
 // Issue 326, iteração 2 — funções PURAS da tela de faixas de entrega.
 //
 // Ambiente node (sem jsdom): nada é renderizado. Cobre o que a tela usa para
-// montar o payload (`montarPayload`). O envio (`enviarZonas`) e a fila do
+// montar o payload (`montarPayloadKm`, movido para `payloadZona.ts` na 325). O envio (`enviarZonas`) e a fila do
 // salvamento automático (`criarFilaGravacao`, C6) foram extraídos para
 // `gravacaoZonas.ts` na issue 325, com os testes em `gravacaoZonas.test.ts`.
 // O gesto (blur, switch, diálogo) fica no checklist do usuário.
 import { describe, expect, it } from "vitest";
 
-import { montarPayload, type FaixaEditavel } from "./TabelaFaixasEntrega";
+import { montarPayloadKm as montarPayload, type FaixaEditavel } from "./payloadZona";
 import { MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA } from "@/lib/validacoes/entrega";
 
 const linha = (taxa: string, gratis: string | null = null, ativo = true): FaixaEditavel => ({

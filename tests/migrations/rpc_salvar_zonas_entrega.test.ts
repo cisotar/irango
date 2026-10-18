@@ -324,6 +324,26 @@ describe("[328/F1] versão otimista das zonas de entrega", () => {
       "23514",
       "lojas_versao_zonas_entrega_nao_negativa",
     );
+
+    // A1: teto em Number.MAX_SAFE_INTEGER — a versão trafega como number no JS.
+    const cheque = await t.db.query<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def from pg_constraint
+        where conname = 'lojas_versao_zonas_entrega_nao_negativa'`,
+    );
+    expect(cheque.rows).toHaveLength(1);
+    expect(cheque.rows[0].def).toContain("9007199254740991");
+    await t.asService((s) =>
+      s.query(`update public.lojas set versao_zonas_entrega = 9007199254740991 where id = $1`, [nova.rows[0].id]),
+    );
+    esperarErro(
+      await erroDe(
+        t.asService((s) =>
+          s.query(`update public.lojas set versao_zonas_entrega = 9007199254740992 where id = $1`, [nova.rows[0].id]),
+        ),
+      ),
+      "23514",
+      "lojas_versao_zonas_entrega_nao_negativa",
+    );
     await t.asService((s) => s.query(`delete from public.lojas where id = $1`, [nova.rows[0].id]));
   });
 
@@ -613,6 +633,8 @@ describe("[325/F2] valor inválido ⇒ P0001 + mensagem; estado anterior intacto
     ["mesmo grupo: 'Centro' e ' cêntro '", [grupo(["Centro", " cêntro "])]],
     ["grupos diferentes: 'Centro' e ' cêntro '", [grupo(["Centro"]), grupo([" cêntro "], { taxa: 4 })]],
     ["grupos diferentes: 'Jardim São José' e 'jardim   sao jose'", [grupo(["Jardim São José"]), grupo(["jardim   sao jose"])]],
+    // A4: `btrim` só apara ' '; o tab tem de virar espaço ANTES, como no `trim()` de `normalizarBairro`.
+    ["grupos diferentes: 'Centro\\t' e 'Centro'", [grupo(["Centro\t"]), grupo(["Centro"], { taxa: 4 })]],
   ])("[325/F2] bairro repetido normalizado — %s ⇒ 'bairro repetido'; estado anterior intacto", async (_n, grupos) => {
     await recusa("bairro", { grupos }, "bairro repetido");
   });

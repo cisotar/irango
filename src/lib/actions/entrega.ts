@@ -12,11 +12,12 @@
 
 import { revalidatePath } from "next/cache";
 import {
-  MENSAGEM_CONFLITO_ZONAS,
+  MENSAGEM_ERRO_ZONAS,
   argsSalvarZonas,
-  ehConflitoDeVersao,
+  resultadoDaRpcZonas,
   schemaModalidadesEntrega,
-  schemaZonasEntrega,
+  validarPayloadZonas,
+  type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
@@ -66,11 +67,7 @@ export async function salvarModalidadesEntrega(
   }
 }
 
-export type ResultadoZonas =
-  | { ok: true; versao: number }
-  | { ok: false; erro: string; conflito?: true };
-
-const ERRO_ZONAS = "Não foi possível salvar as zonas de entrega.";
+export type { ResultadoZonas };
 
 /**
  * Grava as zonas de entrega da loja numa forma só (issues 325/328): faixas de
@@ -78,15 +75,13 @@ const ERRO_ZONAS = "Não foi possível salvar as zonas de entrega.";
  * nível); client AUTENTICADO; loja = a do dono logado, nunca do payload. UMA
  * chamada à RPC `salvar_zonas_entrega`, que confere a versão no banco
  * (compare-and-set), apaga as zonas de qualquer forma e grava a forma pedida.
- * Versão desatualizada → `conflito` com a mensagem de recarregar, sem
- * revalidar. Outro erro do banco → log + genérica.
+ * Validação e tradução da resposta são as mesmas do admin
+ * (`validarPayloadZonas`/`resultadoDaRpcZonas`); aqui fica só o que é do
+ * lojista: a loja do dono e o `revalidatePath` (não em conflito nem erro).
  */
 export async function salvarZonasEntrega(payload: unknown): Promise<ResultadoZonas> {
-  const parsed = schemaZonasEntrega.safeParse(payload);
-  if (!parsed.success) {
-    const regra = parsed.error.issues.find((i) => i.code === "custom");
-    return { ok: false, erro: regra?.message ?? "Confira as zonas de entrega." };
-  }
+  const validado = validarPayloadZonas(payload);
+  if (!validado.ok) return validado;
 
   try {
     const supabase = await createClient();
@@ -94,23 +89,19 @@ export async function salvarZonasEntrega(payload: unknown): Promise<ResultadoZon
     if (loja == null) {
       return { ok: false, erro: "Loja não encontrada." };
     }
-    const { data, error } = await supabase.rpc("salvar_zonas_entrega", {
+    // Tenant por ÚLTIMO: nenhum spread sobrescreve a loja derivada.
+    const resposta = await supabase.rpc("salvar_zonas_entrega", {
+      ...argsSalvarZonas(validado.data),
       p_loja_id: loja.id,
-      ...argsSalvarZonas(parsed.data),
     });
-    if (ehConflitoDeVersao(error)) {
-      console.warn("[salvarZonasEntrega] conflito de versão");
-      return { ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS };
+    const resultado = resultadoDaRpcZonas("salvarZonasEntrega", resposta);
+    if (resultado.ok) {
+      revalidatePath(ROTA);
+      revalidatePath("/loja/[slug]", "page");
     }
-    if (error || !Number.isSafeInteger(data)) {
-      console.error("[salvarZonasEntrega]", error ?? "versão inválida devolvida pela RPC");
-      return { ok: false, erro: ERRO_ZONAS };
-    }
-    revalidatePath(ROTA);
-    revalidatePath("/loja/[slug]", "page");
-    return { ok: true, versao: data };
+    return resultado;
   } catch (e) {
     console.error("[salvarZonasEntrega]", e);
-    return { ok: false, erro: ERRO_ZONAS };
+    return { ok: false, erro: MENSAGEM_ERRO_ZONAS };
   }
 }

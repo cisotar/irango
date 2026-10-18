@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { IMaskInput } from "react-imask";
-import { toast } from "sonner";
 
 import {
   AlertDialog,
@@ -24,10 +23,12 @@ import {
   CampoMoeda,
   FaixaTrocaDeForma,
   IndicadorGravacao,
+  useFocoPendente,
   useGravacaoDoEditor,
   type PropsEditorZonas,
 } from "@/components/painel/pecasEntrega";
 import {
+  chaveDaMontagem,
   lerFaixasCep,
   montarPayloadCep,
   paraNumero,
@@ -60,7 +61,6 @@ export function TabelaFaixasCep({
 
   const iniciais = useMemo(() => lerFaixasCep(zonasIniciais), [zonasIniciais]);
   const [linhas, setLinhas] = useState<FaixaCepEditavel[]>(iniciais);
-  const [erroLinha, setErroLinha] = useState<{ indice: number; mensagem: string } | null>(null);
   const [remocaoPendente, setRemocaoPendente] = useState<number | null>(null);
 
   const gravacao = useGravacaoDoEditor<PayloadCep>({
@@ -71,18 +71,11 @@ export function TabelaFaixasCep({
     salvar,
     aoGravar,
     bloqueado,
-    chaveInicial: (() => {
-      const m = montarPayloadCep(iniciais);
-      return m.ok ? JSON.stringify(m.payload) : null;
-    })(),
+    chaveInicial: () => chaveDaMontagem(montarPayloadCep(iniciais)),
   });
+  const { erroLinha } = gravacao;
 
-  const focarRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (focarRef.current == null) return;
-    document.getElementById(focarRef.current)?.focus();
-    focarRef.current = null;
-  });
+  const focar = useFocoPendente();
 
   const idInicio = (i: number) => `${idBase}-ini-${i}`;
   const idFim = (i: number) => `${idBase}-fim-${i}`;
@@ -92,16 +85,7 @@ export function TabelaFaixasCep({
 
   /** Tenta gravar o estado dado. Nunca grava linha incompleta (erro na linha). */
   function tentarGravar(estado: FaixaCepEditavel[]) {
-    if (bloqueado) return;
-    const montagem = montarPayloadCep(estado);
-    if (!montagem.ok) {
-      setErroLinha(montagem.indice == null ? null : { indice: montagem.indice, mensagem: montagem.erro });
-      gravacao.marcarNaoSalvo();
-      if (montagem.indice == null) toast.error(montagem.erro);
-      return;
-    }
-    setErroLinha(null);
-    gravacao.gravar(montagem.payload);
+    gravacao.tentarGravar(montarPayloadCep(estado));
   }
 
   function atualizar(i: number, parcial: Partial<FaixaCepEditavel>) {
@@ -119,7 +103,7 @@ export function TabelaFaixasCep({
     setLinhas(novas);
     if (ligado) {
       // grava no blur do valor, não agora (estaria vazio)
-      focarRef.current = idGratis(i);
+      focar(idGratis(i));
       return;
     }
     tentarGravar(novas);
@@ -128,7 +112,7 @@ export function TabelaFaixasCep({
   function adicionar() {
     if (linhas.length >= TETO_FAIXAS_CEP) return;
     setLinhas((atual) => [...atual, { cepInicio: "", cepFim: "", taxa: "", gratis: null, ativo: true }]);
-    focarRef.current = idInicio(linhas.length);
+    focar(idInicio(linhas.length));
   }
 
   function confirmarRemocao() {

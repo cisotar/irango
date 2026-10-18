@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
 import {
   AlertDialog,
@@ -25,10 +24,16 @@ import {
   FaixaTrocaDeForma,
   IndicadorGravacao,
   ListaZonasAtuais,
+  useFocoPendente,
   useGravacaoDoEditor,
   type PropsEditorZonas,
 } from "@/components/painel/pecasEntrega";
-import { paraNumero } from "@/components/painel/payloadZona";
+import {
+  moedaParaTexto,
+  montarPayloadKm,
+  paraNumero,
+  type FaixaEditavel,
+} from "@/components/painel/payloadZona";
 import { lojaTemRaioSemCoords } from "@/lib/utils/freteDegradado";
 import {
   alertaDePreco,
@@ -42,13 +47,7 @@ import {
   zonasJaSaoFaixas,
   type IncrementoFaixa,
 } from "@/lib/utils/faixasEntrega";
-import {
-  MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA,
-  TETO_FAIXAS_ENTREGA,
-  schemaFaixasEntrega,
-  type DadosFaixasEntrega,
-  type DadosZonasSemVersao,
-} from "@/lib/validacoes/entrega";
+import { TETO_FAIXAS_ENTREGA, type DadosZonasSemVersao } from "@/lib/validacoes/entrega";
 
 type PayloadKm = Extract<DadosZonasSemVersao, { forma: "raio_km" }>;
 
@@ -59,69 +58,9 @@ export type TabelaFaixasEntregaProps = PropsEditorZonas & {
   hrefPerfil: string;
 };
 
-/**
- * Faixa como a tela a edita. `taxa`/`gratis` são o valor SEM máscara do
- * `IMaskInput` ("8.5"; vazio = ""); `gratis === null` = sem frete grátis.
- */
-export type FaixaEditavel = { taxa: string; gratis: string | null; ativo: boolean };
-
-/** Número do banco → valor sem máscara do input ("4.5"); `paraNumero` desfaz. */
-function paraTexto(valor: number): string {
-  return String(valor);
-}
-
 /** "0–1 km, 1–2 km e 2–3 km". */
 function listarRotulos(rotulos: string[]): string {
   return new Intl.ListFormat("pt-BR", { style: "long", type: "conjunction" }).format(rotulos);
-}
-
-type Montagem =
-  | { ok: true; payload: DadosFaixasEntrega }
-  | { ok: false; erro: string; indice: number | null };
-
-/**
- * Estado da tela → payload de km da gravação de zonas. `schemaFaixasEntrega` aqui
- * é só gate de UX: a Server Action revalida e a RPC rederiva teto/nome/tipo.
- * Nunca devolve payload pela metade: a primeira faixa com preço (ou frete
- * grátis ligado) vazio ou inválido devolve o erro com o índice dela, para a
- * tela marcar a linha.
- */
-export function montarPayload(incremento: IncrementoFaixa, faixas: FaixaEditavel[]): Montagem {
-  const itens: DadosFaixasEntrega["faixas"] = [];
-  for (const [i, f] of faixas.entries()) {
-    const rotulo = rotuloFaixa(i, incremento);
-    const taxa = paraNumero(f.taxa);
-    if (taxa == null) return { ok: false, erro: `Informe o preço da faixa de ${rotulo}.`, indice: i };
-    let gratis: number | null = null;
-    if (f.gratis !== null) {
-      gratis = paraNumero(f.gratis);
-      if (gratis == null) {
-        return {
-          ok: false,
-          erro: `Informe o valor do frete grátis da faixa de ${rotulo} ou desligue a opção.`,
-          indice: i,
-        };
-      }
-    }
-    itens.push({ taxa, pedido_minimo_gratis: gratis, ativo: f.ativo });
-  }
-
-  const parsed = schemaFaixasEntrega.safeParse({ incremento, faixas: itens });
-  if (parsed.success) return { ok: true, payload: parsed.data };
-
-  const [, indice, campo] = parsed.error.issues[0]?.path ?? [];
-  if (typeof indice === "number") {
-    if (campo === "ativo") {
-      return { ok: false, erro: MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA, indice };
-    }
-    const oQue = campo === "pedido_minimo_gratis" ? "o frete grátis" : "o preço";
-    return {
-      ok: false,
-      erro: `Confira ${oQue} da faixa de ${rotuloFaixa(indice, incremento)}: use valor de R$ 0,00 para cima, com até 2 casas decimais.`,
-      indice,
-    };
-  }
-  return { ok: false, erro: "Confira as faixas de entrega.", indice: null };
 }
 
 /** Ação do switch "Ativa" ou da lixeira, com as faixas afetadas congeladas ao abrir o diálogo. */
@@ -169,8 +108,8 @@ export function TabelaFaixasEntrega({
   const [incremento, setIncremento] = useState<IncrementoFaixa>(leitura.incremento);
   const [faixas, setFaixas] = useState<FaixaEditavel[]>(() =>
     leitura.faixas.map((f) => ({
-      taxa: paraTexto(f.taxa),
-      gratis: f.pedido_minimo_gratis == null ? null : paraTexto(f.pedido_minimo_gratis),
+      taxa: moedaParaTexto(f.taxa),
+      gratis: f.pedido_minimo_gratis == null ? null : moedaParaTexto(f.pedido_minimo_gratis),
       ativo: f.ativo,
     })),
   );
@@ -178,7 +117,6 @@ export function TabelaFaixasEntrega({
   const [incrementoPendente, setIncrementoPendente] = useState<IncrementoFaixa | null>(null);
   const [acaoPendente, setAcaoPendente] = useState<AcaoLinha | null>(null);
   const [acaoAberta, setAcaoAberta] = useState(false);
-  const [erroLinha, setErroLinha] = useState<{ indice: number; mensagem: string } | null>(null);
 
   // Fila, "não regravar o mesmo payload" e confirmação de substituição (D4 da
   // 326, generalizada por forma na 325).
@@ -190,21 +128,14 @@ export function TabelaFaixasEntrega({
     salvar,
     aoGravar,
     bloqueado,
-    chaveInicial:
+    chaveInicial: () =>
       leitura.modo === "faixas"
         ? JSON.stringify({ forma: "raio_km", incremento: leitura.incremento, faixas: leitura.faixas })
         : null,
   });
-  const { estadoGravacao, jaGravou } = gravacao;
+  const { estadoGravacao, jaGravou, erroLinha, setErroLinha } = gravacao;
 
-  // Foco vai para o campo que o lojista precisa preencher em seguida, depois
-  // que a linha/campo novo existe no DOM.
-  const focarRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (focarRef.current == null) return;
-    document.getElementById(focarRef.current)?.focus();
-    focarRef.current = null;
-  });
+  const focar = useFocoPendente();
 
   const idPreco = (i: number) => `${idBase}-preco-${i}`;
   const idGratis = (i: number) => `${idBase}-gratis-${i}`;
@@ -218,16 +149,8 @@ export function TabelaFaixasEntrega({
 
   /** Tenta gravar o estado dado. Nunca grava faixa incompleta (erro na linha). */
   function tentarGravar(inc: IncrementoFaixa, estado: FaixaEditavel[]) {
-    if (bloqueado) return;
-    const montagem = montarPayload(inc, estado);
-    if (!montagem.ok) {
-      setErroLinha(montagem.indice == null ? null : { indice: montagem.indice, mensagem: montagem.erro });
-      gravacao.marcarNaoSalvo();
-      if (montagem.indice == null) toast.error(montagem.erro);
-      return;
-    }
-    setErroLinha(null);
-    gravacao.gravar({ forma: "raio_km", ...montagem.payload });
+    const m = montarPayloadKm(inc, estado);
+    gravacao.tentarGravar(m.ok ? { ok: true, payload: { forma: "raio_km", ...m.payload } } : m);
   }
 
   function trocarIncremento(valor: unknown) {
@@ -259,7 +182,7 @@ export function TabelaFaixasEntrega({
     setFaixas(novas);
     if (ligado) {
       // grava no blur do valor, não agora (estaria vazio)
-      focarRef.current = idGratis(i);
+      focar(idGratis(i));
       return;
     }
     tentarGravar(incremento, novas);
@@ -271,7 +194,7 @@ export function TabelaFaixasEntrega({
     // quebraria o prefixo. Grava no blur do preço (C6).
     const ativo = faixas.length === 0 || faixas[faixas.length - 1].ativo;
     setFaixas((atual) => [...atual, { taxa: "", gratis: null, ativo }]);
-    focarRef.current = idPreco(faixas.length);
+    focar(idPreco(faixas.length));
   }
 
   /** Abre a confirmação do switch/lixeira da faixa `indice` (C2'/C3'). */

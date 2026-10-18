@@ -31,17 +31,25 @@ export type ZonaVitrine = ZonaComTaxa & { nome: string };
 const COLUNAS_ZONA =
   "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km, cep_inicio, cep_fim), bairros:bairros_zona(nome)";
 
+/** Select de edição: versão + zonas no mesmo statement (literal, para o PostgREST tipar o embed). */
+const COLUNAS_EDICAO = `versao_zonas_entrega, zonas:zonas_entrega(${COLUNAS_ZONA})` as const;
+
+/** Linha de `COLUNAS_ZONA` como o PostgREST a devolve (tipos de `database.types`). */
+type ZonaEmbutida = Pick<Tables<"zonas_entrega">, "id" | "nome" | "tipo" | "ativo"> & {
+  taxa: ZonaComTaxa["taxa"] | NonNullable<ZonaComTaxa["taxa"]>[];
+  bairros: ZonaComTaxa["bairros"] | null;
+};
+
 /**
  * PostgREST embute relações filhas como array; normaliza `taxa` (1:1) para
  * objeto/null e `bairros` ausente para `[]`.
  */
-function hidratarZona(zona: unknown): ZonaVitrine {
-  const z = zona as { taxa: unknown; bairros: { nome: string }[] | null };
+function hidratarZona({ taxa, bairros, ...zona }: ZonaEmbutida): ZonaVitrine {
   return {
-    ...(zona as object),
-    taxa: Array.isArray(z.taxa) ? (z.taxa[0] ?? null) : (z.taxa ?? null),
-    bairros: z.bairros ?? [],
-  } as ZonaVitrine;
+    ...zona,
+    taxa: Array.isArray(taxa) ? (taxa[0] ?? null) : taxa,
+    bairros: bairros ?? [],
+  };
 }
 
 /**
@@ -80,15 +88,14 @@ export async function listarZonasParaEdicao(
 ): Promise<ZonasEdicao> {
   const { data, error } = await client
     .from("lojas")
-    .select(`versao_zonas_entrega, zonas:zonas_entrega(${COLUNAS_ZONA})`)
+    .select(COLUNAS_EDICAO)
     .eq("id", lojaId)
     .maybeSingle();
   if (error) throw error;
   if (data == null) throw new Error("loja não encontrada");
-  const linha = data as { versao_zonas_entrega: number; zonas: unknown[] | null };
   return {
-    versao: linha.versao_zonas_entrega,
-    zonas: (linha.zonas ?? []).map(hidratarZona),
+    versao: data.versao_zonas_entrega,
+    zonas: (data.zonas ?? []).map(hidratarZona),
   };
 }
 

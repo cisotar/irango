@@ -13,12 +13,13 @@ import {
   enviarZonas,
   type EstadoGravacao,
 } from "./gravacaoZonas";
-import type { ResultadoZonas } from "@/lib/actions/entrega";
 import {
   MENSAGEM_CONFLITO_ZONAS,
+  MENSAGEM_ERRO_ZONAS,
   type DadosFaixasEntrega,
   type DadosZonasEntrega,
   type DadosZonasSemVersao,
+  type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
 
 const PAYLOAD: DadosFaixasEntrega = {
@@ -230,7 +231,7 @@ describe("criarGravadorComVersao — versão otimista entre gravações (328)", 
 
   it("erro comum (sem conflito) não muda a versão nem chama aoConflito; a seguinte ainda chama a action", async () => {
     const { gravador, acao, enviados, aoConflito } = montar([
-      { ok: false, erro: "Não foi possível salvar as zonas de entrega." },
+      { ok: false, erro: MENSAGEM_ERRO_ZONAS },
       { ok: true, versao: 4 },
     ]);
 
@@ -257,6 +258,39 @@ describe("criarGravadorComVersao — versão otimista entre gravações (328)", 
     expect(acao).toHaveBeenCalledTimes(1);
     expect(aoConflito).toHaveBeenCalledTimes(1);
     expect(gravador.versaoAtual()).toBe(3);
+  });
+
+  it("duas gravações disparadas em sequência sem await usam versões v e v+1, sem conflito", async () => {
+    // Os três editores compartilham o gravador e cada um tem a própria fila:
+    // um blur no km e outro no CEP podem chegar juntos. Sem fila no gravador,
+    // as duas sairiam com a versão 3 e a segunda daria conflito falso.
+    const { gravador, enviados, aoConflito } = montar([
+      { ok: true, versao: 4 },
+      { ok: true, versao: 5 },
+    ]);
+
+    const primeira = gravador.salvar(DADOS_KM);
+    const segunda = gravador.salvar(DADOS_CEP);
+    const resultados = await Promise.all([primeira, segunda]);
+
+    expect(enviados.map((e) => e.versao)).toEqual([3, 4]);
+    expect(resultados).toEqual([
+      { ok: true, versao: 4 },
+      { ok: true, versao: 5 },
+    ]);
+    expect(aoConflito).not.toHaveBeenCalled();
+    expect(gravador.versaoAtual()).toBe(5);
+  });
+
+  it("gravação enfileirada atrás de uma exceção sai com a mesma versão (a fila não trava)", async () => {
+    const { gravador, enviados } = montar([new Error("fetch failed"), { ok: true, versao: 4 }]);
+
+    const primeira = gravador.salvar(DADOS_KM);
+    const segunda = gravador.salvar(DADOS_CEP);
+
+    await expect(primeira).rejects.toThrow("fetch failed");
+    await expect(segunda).resolves.toEqual({ ok: true, versao: 4 });
+    expect(enviados.map((e) => e.versao)).toEqual([3, 3]);
   });
 
   it("exceção propaga e não muda a versão; a próxima gravação sai com a mesma versão", async () => {

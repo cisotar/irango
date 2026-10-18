@@ -31,24 +31,24 @@ import {
   enviarZonas,
   type EstadoGravacao,
 } from "@/components/painel/gravacaoZonas";
-import type { ResultadoZonas } from "@/lib/actions/entrega";
+import type { Montagem } from "@/components/painel/payloadZona";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 import {
   ROTULO_FORMA_FRASE,
   precisaConfirmarSubstituicao,
+  rotuloDoTipo,
   type FormaFrete,
   type FormaGravada,
 } from "@/lib/utils/formaFrete";
-import { MENSAGEM_CONFLITO_ZONAS, type DadosZonasSemVersao } from "@/lib/validacoes/entrega";
+import {
+  MENSAGEM_CONFLITO_ZONAS,
+  itensDasZonas,
+  type DadosZonasSemVersao,
+  type ResultadoZonas,
+} from "@/lib/validacoes/entrega";
 
 /** Alvo de toque literal (design-system §5): a base de fonte é 120%. */
 export const ALVO = "min-h-[44px] min-w-[44px]";
-
-export const ROTULO_TIPO: Record<string, string> = {
-  bairro: "Por bairro",
-  raio_km: "Por raio (km)",
-  faixa_cep: "Por faixa de CEP",
-};
 
 /** Props que o `EntregasClient` passa aos três editores. */
 export type PropsEditorZonas = {
@@ -86,7 +86,7 @@ export function ListaZonasAtuais({
         <li key={z.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
           <span className="font-medium text-foreground">{z.nome}</span>
           <span className="text-xs text-muted-foreground">
-            {ROTULO_TIPO[z.tipo] ?? z.tipo}
+            {rotuloDoTipo(z.tipo)}
             {z.ativo ? "" : " · desativada"}
           </span>
         </li>
@@ -271,9 +271,25 @@ function DialogoSubstituirZonas({
   );
 }
 
-function itensDoPayload(p: DadosZonasSemVersao): number {
-  return p.forma === "bairro" ? p.grupos.length : p.faixas.length;
+/**
+ * Foco no campo que o lojista precisa preencher em seguida, DEPOIS que a linha
+ * ou o campo novo existe no DOM. `focar(id)` só é chamado em handler; o efeito
+ * (sem deps: roda a cada commit) consome o pedido.
+ */
+export function useFocoPendente(): (id: string) => void {
+  const alvo = useRef<string | null>(null);
+  useEffect(() => {
+    if (alvo.current == null) return;
+    document.getElementById(alvo.current)?.focus();
+    alvo.current = null;
+  });
+  return (id: string) => {
+    alvo.current = id;
+  };
 }
+
+/** Erro mostrado numa linha do editor (`indice` = linha/grupo). */
+export type ErroLinha = { indice: number; mensagem: string };
 
 /**
  * Fluxo de gravação de um editor: fila serializada, "não regravar o mesmo
@@ -281,8 +297,10 @@ function itensDoPayload(p: DadosZonasSemVersao): number {
  * vale só para a `formaGravada` que ela substituiu (`confirmadoPara`): gravar em
  * CEP, voltar ao km e editar pergunta de novo.
  *
- * `chaveInicial` é o payload equivalente ao que foi carregado (ou null), para o
- * primeiro blur sem mudança não gravar nada.
+ * `chaveInicial` (lazy, lida só na montagem) é o payload equivalente ao que foi
+ * carregado (ou null), para o primeiro blur sem mudança não gravar nada.
+ * `tentarGravar(montagem)` é a porta dos editores: montagem com erro marca a
+ * linha (`erroLinha`) e "Não salvo"; montagem ok limpa o erro e grava.
  */
 export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
   forma,
@@ -301,14 +319,16 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
   salvar: PropsEditorZonas["salvar"];
   aoGravar: PropsEditorZonas["aoGravar"];
   bloqueado: boolean;
-  chaveInicial: string | null;
+  chaveInicial: () => string | null;
 }) {
   const [estadoGravacao, setEstadoGravacao] = useState<EstadoGravacao>("ocioso");
   const [jaGravou, setJaGravou] = useState(false);
   const [payloadPendente, setPayloadPendente] = useState<P | null>(null);
+  const [erroLinha, setErroLinha] = useState<ErroLinha | null>(null);
+  const [chaveDaCarga] = useState(chaveInicial);
 
   const confirmadoPara = useRef<FormaGravada | null>(null);
-  const ultimaEnviada = useRef<string | null>(chaveInicial);
+  const ultimaEnviada = useRef<string | null>(chaveDaCarga);
 
   const salvarRef = useRef(salvar);
   const aoGravarRef = useRef(aoGravar);
@@ -325,7 +345,7 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
       const r = await enviarZonas(payload, { salvar: (p) => salvarRef.current(p), toast });
       if (r.ok) {
         setJaGravou(true);
-        aoGravarRef.current(forma, itensDoPayload(payload));
+        aoGravarRef.current(forma, itensDasZonas(payload));
       } else if (ultimaEnviada.current === JSON.stringify(payload)) {
         // falhou: a próxima tentativa com o mesmo estado grava de novo
         ultimaEnviada.current = null;
@@ -357,6 +377,19 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
     enfileirar(payload);
   }
 
+  /** Montagem com erro marca a linha (ou dá toast se não há linha) e não grava. */
+  function tentarGravar(montagem: Montagem<P>) {
+    if (bloqueado) return;
+    if (!montagem.ok) {
+      setErroLinha(montagem.indice == null ? null : { indice: montagem.indice, mensagem: montagem.erro });
+      setEstadoGravacao("erro");
+      if (montagem.indice == null) toast.error(montagem.erro);
+      return;
+    }
+    setErroLinha(null);
+    gravar(montagem.payload);
+  }
+
   function confirmar() {
     if (payloadPendente == null) return;
     confirmadoPara.current = formaGravada;
@@ -375,5 +408,5 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
     />
   );
 
-  return { estadoGravacao, marcarNaoSalvo: () => setEstadoGravacao("erro"), jaGravou, gravar, dialogo };
+  return { estadoGravacao, jaGravou, tentarGravar, erroLinha, setErroLinha, dialogo };
 }

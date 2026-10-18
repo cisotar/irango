@@ -122,6 +122,9 @@ export const TETO_BAIRROS_TOTAL = 300;
 export const MENSAGEM_CONFLITO_ZONAS =
   "Recarregue a página para ver as entregas atuais: elas foram alteradas em outra aba ou por outra pessoa, e esta mudança não foi salva.";
 
+/** Erro genérico da gravação de zonas: actions lojista/admin e tela (detalhe só no log do servidor). */
+export const MENSAGEM_ERRO_ZONAS = "Não foi possível salvar as zonas de entrega. Tente de novo.";
+
 /** CEP como inteiro de 8 dígitos ("01000-000" → 1000000), como em taxas_entrega.cep_*. */
 const cepInteiro = z.number().int().min(0).max(99999999);
 
@@ -259,12 +262,54 @@ export function argsSalvarZonas(d: DadosZonasEntrega): {
   }
 }
 
-/** Número de faixas ou grupos gravados (metadado de auditoria do admin). */
-export function itensDasZonas(d: DadosZonasEntrega): number {
+/** Número de faixas ou grupos (auditoria do admin e aviso da tela): aceita payload com ou sem versão. */
+export function itensDasZonas(d: DadosZonasSemVersao): number {
   return d.forma === "bairro" ? d.grupos.length : d.faixas.length;
 }
 
+type ErroRpc = { code?: string; message?: string };
+
 /** P0001 + fragmento 'versao desatualizada': o contrato estável da RPC. */
-export function ehConflitoDeVersao(error: { code?: string; message?: string } | null): boolean {
+export function ehConflitoDeVersao(error: ErroRpc | null): boolean {
   return error?.code === "P0001" && (error.message ?? "").includes("salvar_zonas_entrega: versao desatualizada");
+}
+
+/** Resultado das actions de zonas (lojista e admin), consumido pela tela. */
+export type ResultadoZonas =
+  | { ok: true; versao: number }
+  | { ok: false; erro: string; conflito?: true };
+
+/**
+ * Gate das actions de zonas, ANTES de qualquer I/O: `schemaZonasEntrega`
+ * (`.strict()` em todo nível). Recusa devolve a primeira regra de negócio
+ * (mensagem `custom`) ou uma genérica, nunca o detalhe do zod.
+ */
+export function validarPayloadZonas(
+  payload: unknown,
+): { ok: true; data: DadosZonasEntrega } | { ok: false; erro: string } {
+  const parsed = schemaZonasEntrega.safeParse(payload);
+  if (parsed.success) return { ok: true, data: parsed.data };
+  const regra = parsed.error.issues.find((i) => i.code === "custom");
+  return { ok: false, erro: regra?.message ?? "Confira as zonas de entrega." };
+}
+
+/**
+ * Resposta da RPC `salvar_zonas_entrega` → `ResultadoZonas`. Conflito de versão
+ * → `conflito` com a mensagem de recarregar; outro erro, ou versão que não é
+ * inteiro seguro → genérica. O texto do banco nunca vai para o cliente: só para
+ * o log do servidor, com o `rotulo` da action.
+ */
+export function resultadoDaRpcZonas(
+  rotulo: string,
+  { data, error }: { data: unknown; error: ErroRpc | null },
+): ResultadoZonas {
+  if (ehConflitoDeVersao(error)) {
+    console.warn(`[${rotulo}] conflito de versão`);
+    return { ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS };
+  }
+  if (error || typeof data !== "number" || !Number.isSafeInteger(data)) {
+    console.error(`[${rotulo}]`, error ?? "versão inválida devolvida pela RPC");
+    return { ok: false, erro: MENSAGEM_ERRO_ZONAS };
+  }
+  return { ok: true, versao: data };
 }

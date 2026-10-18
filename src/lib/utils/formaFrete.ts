@@ -9,8 +9,13 @@
 //
 // FORA DAQUI: cálculo do frete, validação de payload, persistência.
 
-export const FORMAS_FRETE = ["raio_km", "faixa_cep", "bairro"] as const;
-export type FormaFrete = (typeof FORMAS_FRETE)[number];
+import type { FormaZonasEntrega } from "@/lib/validacoes/entrega";
+
+/** A forma é a do payload de zonas (`schemaZonasEntrega`): uma fonte só. */
+export type FormaFrete = FormaZonasEntrega;
+
+/** Ordem do seletor. `satisfies` recusa forma fora do payload; `ROTULO_FORMA` (Record) exige rótulo para todas. */
+export const FORMAS_FRETE = ["raio_km", "faixa_cep", "bairro"] as const satisfies readonly FormaFrete[];
 export type FormaGravada = FormaFrete | "nenhuma" | "mista";
 
 /** Rótulo de título (seletor, cartões). */
@@ -29,6 +34,11 @@ export const ROTULO_FORMA_FRASE: Record<FormaFrete, string> = {
 
 function ehFormaFrete(tipo: string): tipo is FormaFrete {
   return (FORMAS_FRETE as readonly string[]).includes(tipo);
+}
+
+/** Rótulo de `zonas_entrega.tipo` (lista de zonas atuais); tipo fora do enum aparece cru. */
+export function rotuloDoTipo(tipo: string): string {
+  return ehFormaFrete(tipo) ? ROTULO_FORMA[tipo] : tipo;
 }
 
 /**

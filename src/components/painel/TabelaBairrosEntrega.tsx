@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
-import { toast } from "sonner";
 
 import {
   AlertDialog,
@@ -24,10 +23,12 @@ import {
   CampoMoeda,
   FaixaTrocaDeForma,
   IndicadorGravacao,
+  useFocoPendente,
   useGravacaoDoEditor,
   type PropsEditorZonas,
 } from "@/components/painel/pecasEntrega";
 import {
+  chaveDaMontagem,
   grupoComBairro,
   lerGruposBairro,
   montarPayloadBairros,
@@ -66,7 +67,6 @@ export function TabelaBairrosEntrega({
 
   const iniciais = useMemo(() => lerGruposBairro(zonasIniciais), [zonasIniciais]);
   const [grupos, setGrupos] = useState<GrupoBairroEditavel[]>(iniciais);
-  const [erroLinha, setErroLinha] = useState<{ indice: number; mensagem: string } | null>(null);
   const [remocaoPendente, setRemocaoPendente] = useState<number | null>(null);
 
   const gravacao = useGravacaoDoEditor<PayloadBairros>({
@@ -77,18 +77,11 @@ export function TabelaBairrosEntrega({
     salvar,
     aoGravar,
     bloqueado,
-    chaveInicial: (() => {
-      const m = montarPayloadBairros(iniciais);
-      return m.ok ? JSON.stringify(m.payload) : null;
-    })(),
+    chaveInicial: () => chaveDaMontagem(montarPayloadBairros(iniciais)),
   });
+  const { erroLinha, setErroLinha } = gravacao;
 
-  const focarRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (focarRef.current == null) return;
-    document.getElementById(focarRef.current)?.focus();
-    focarRef.current = null;
-  });
+  const focar = useFocoPendente();
 
   const idNovo = (i: number) => `${idBase}-novo-${i}`;
   const idPreco = (i: number) => `${idBase}-preco-${i}`;
@@ -99,16 +92,7 @@ export function TabelaBairrosEntrega({
 
   /** Tenta gravar o estado dado. Nunca grava grupo incompleto (erro na linha). */
   function tentarGravar(estado: GrupoBairroEditavel[]) {
-    if (bloqueado) return;
-    const montagem = montarPayloadBairros(estado);
-    if (!montagem.ok) {
-      setErroLinha(montagem.indice == null ? null : { indice: montagem.indice, mensagem: montagem.erro });
-      gravacao.marcarNaoSalvo();
-      if (montagem.indice == null) toast.error(montagem.erro);
-      return;
-    }
-    setErroLinha(null);
-    gravacao.gravar(montagem.payload);
+    gravacao.tentarGravar(montarPayloadBairros(estado));
   }
 
   function atualizar(i: number, parcial: Partial<GrupoBairroEditavel>) {
@@ -164,7 +148,7 @@ export function TabelaBairrosEntrega({
     const novos = grupos.map((g, j) => (j === i ? { ...g, gratis: ligado ? "" : null } : g));
     setGrupos(novos);
     if (ligado) {
-      focarRef.current = idGratis(i);
+      focar(idGratis(i));
       return;
     }
     tentarGravar(novos);
@@ -173,7 +157,7 @@ export function TabelaBairrosEntrega({
   function adicionarGrupo() {
     if (grupos.length >= TETO_GRUPOS_BAIRRO) return;
     setGrupos((atual) => [...atual, { bairros: [], novoBairro: "", taxa: "", gratis: null, ativo: true }]);
-    focarRef.current = idNovo(grupos.length);
+    focar(idNovo(grupos.length));
   }
 
   function confirmarRemocao() {

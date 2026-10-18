@@ -8,14 +8,13 @@
 //
 // A versão é só transporte: quem compara é a RPC `salvar_zonas_entrega` no
 // banco. O valor do frete do pedido segue recalculado no servidor.
-import type { ResultadoZonas } from "@/lib/actions/entrega";
 import {
   MENSAGEM_CONFLITO_ZONAS,
+  MENSAGEM_ERRO_ZONAS,
   type DadosZonasEntrega,
   type DadosZonasSemVersao,
+  type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
-
-const ERRO_GENERICO = "Não foi possível salvar as zonas de entrega. Tente de novo.";
 
 /** O que a tela precisa saber do resultado de uma gravação. */
 export type ResultadoGravacao = { ok: true } | { ok: false; erro: string; conflito?: true };
@@ -49,7 +48,7 @@ export async function enviarZonas<P>(
     }
     return { ok: true };
   } catch {
-    toast.error(ERRO_GENERICO);
+    toast.error(MENSAGEM_ERRO_ZONAS);
     return { ok: false };
   }
 }
@@ -107,9 +106,11 @@ export type GravadorComVersao = {
 
 /**
  * Embrulha a action de zonas com a versão otimista (328):
- *  - cada gravação sai com a versão devolvida pela anterior (a fila serializa,
- *    então não há falso conflito entre dois blurs da mesma aba);
- *  - exceção não altera a versão;
+ *  - gravações são SERIALIZADAS aqui: os três editores compartilham o gravador
+ *    e cada um tem a própria fila, então dois blurs (km e CEP) podem chegar
+ *    juntos. A seguinte só sai quando a anterior volta, com a versão devolvida
+ *    por ela — sem falso conflito dentro da mesma aba;
+ *  - exceção não altera a versão nem trava a fila (propaga só para quem chamou);
  *  - no primeiro conflito chama `aoConflito` UMA vez e, dali em diante, devolve
  *    o conflito SEM chamar a action — o salvamento automático para de bater no
  *    servidor a cada blur até o lojista recarregar a página.
@@ -125,19 +126,27 @@ export function criarGravadorComVersao({
 }): GravadorComVersao {
   let versao = versaoInicial;
   let emConflito = false;
+  let cauda: Promise<unknown> = Promise.resolve();
+
+  async function executar(dados: DadosZonasSemVersao): Promise<ResultadoZonas> {
+    if (emConflito) return { ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS };
+    const r = await acao({ ...dados, versao });
+    if (r.ok) {
+      versao = r.versao;
+    } else if (r.conflito && !emConflito) {
+      emConflito = true;
+      aoConflito();
+    }
+    return r;
+  }
 
   return {
     versaoAtual: () => versao,
-    async salvar(dados) {
-      if (emConflito) return { ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS };
-      const r = await acao({ ...dados, versao });
-      if (r.ok) {
-        versao = r.versao;
-      } else if (r.conflito && !emConflito) {
-        emConflito = true;
-        aoConflito();
-      }
-      return r;
+    salvar(dados) {
+      // A versão é lida quando a vez chega, não quando o pedido entra na fila.
+      const vez = cauda.then(() => executar(dados));
+      cauda = vez.catch(() => undefined);
+      return vez;
     },
   };
 }
