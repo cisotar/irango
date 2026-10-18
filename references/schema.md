@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.7.0 | **Atualizado:** 2026-10-07
+**Versão:** 0.8.0 | **Atualizado:** 2026-10-18
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -78,6 +78,14 @@ CREATE TABLE lojas (
   -- pelo lojista (lojas_update_proprio) e pelo admin (escopo.atualizarLoja).
   -- Fora de vitrine_lojas. Migration: 20261007123000_lojas_dia_inicio_ciclo.sql.
   dia_inicio_ciclo smallint NOT NULL DEFAULT 1 CHECK (dia_inicio_ciclo BETWEEN 1 AND 28),
+
+  -- Controle otimista das zonas de entrega (issues 325/328): incrementada SÓ por
+  -- salvar_zonas_entrega (compare-and-set). Limite = Number.MAX_SAFE_INTEGER (trafega
+  -- como number no JS). NÃO é billing nem PII — fora do trigger lojas_protege_billing;
+  -- o dono pode alterá-la por PATCH direto (risco aceito, só afeta a própria loja).
+  -- Migration: 20261018120000_zonas_entrega_versao_e_formas.sql.
+  versao_zonas_entrega bigint NOT NULL DEFAULT 0
+    CHECK (versao_zonas_entrega >= 0 AND versao_zonas_entrega <= 9007199254740991),
 
   -- Endereço
   endereco_rua     text,
@@ -301,18 +309,27 @@ CREATE TABLE taxas_entrega (
 -- Migration: 20260615011000_taxas_faixa_cep.sql
 ```
 
-Escrita em lote da tela de faixas de km: RPC `public.salvar_faixas_entrega(p_loja_id, p_incremento,
-p_faixas)` (migrations `20260929120000_rpc_salvar_faixas_entrega.sql` e
-`20260930120000_rpc_salvar_faixas_entrega_ativo.sql`, issue 326) — **zonas por
-faixa**: apaga TODAS as zonas da loja (qualquer `tipo`, cascata em `taxas_entrega`/`bairros_zona`) e
-grava uma zona `raio_km` + taxa por faixa, numa só transação. O cliente manda só `incremento` (1 ou 2
-km) e, por faixa, `taxa`/`pedido_minimo_gratis`/`ativo`; o servidor deriva o resto — teto
-`raio_max_km` = posição da faixa × `incremento`, `nome` = `"<de>–<até> km"` (en dash). As faixas
-ativas formam um prefixo: faixa ativa depois de uma desligada é recusada (zod e RPC), então a área de
-entrega nunca tem buraco; o limite é o teto da última ativa. `SECURITY INVOKER`,
-`SET search_path = public, pg_temp`, `GRANT EXECUTE TO authenticated, service_role` — chamada pelos
-dois mundos (lojista e admin), filtro `loja_id = p_loja_id` explícito no corpo — ver `seguranca.md`
-§2, quinta instância do padrão.
+Escrita em lote das zonas: RPC `public.salvar_zonas_entrega(p_loja_id, p_versao, p_forma, p_dados)`
+(migration `20261018120000_zonas_entrega_versao_e_formas.sql`, issues 325/327/328) — **uma forma de
+frete por loja** (`raio_km`, `faixa_cep` ou `bairro`): apaga TODAS as zonas da loja (qualquer `tipo`,
+cascata em `taxas_entrega`/`bairros_zona`) e grava só a forma escolhida, numa só transação, se
+`lojas.versao_zonas_entrega = p_versao` (compare-and-set; devolve a versão nova, `p_versao + 1`;
+divergência = `versao desatualizada`). O servidor deriva `tipo`, `loja_id` e `nome`; chave extra no
+payload é ignorada pela RPC e recusada pelo zod `.strict()` da action. Por forma: `raio_km` manda
+`incremento` (1 ou 2 km) e faixas com `taxa`/`pedido_minimo_gratis`/`ativo` (teto `raio_max_km` =
+posição × `incremento`, `nome` = `"<de>–<até> km"` com en dash; ativas formam um prefixo, sem buraco;
+máx. 30); `faixa_cep` manda `cep_inicio`/`cep_fim` (sem sobreposição, máx. 50); `bairro` manda grupos
+com lista de bairros (sem repetição após normalização, máx. 30 grupos, 100 por grupo, 300 no total).
+`SECURITY INVOKER`, `SET search_path = public, pg_temp`, `GRANT EXECUTE TO authenticated,
+service_role` — chamada pelos dois mundos (lojista e admin), filtro `loja_id = p_loja_id` explícito no
+corpo — ver `seguranca.md` §2, "Instância INVOKER com controle otimista".
+
+**Legado (a remover no contract):** `public.salvar_faixas_entrega(p_loja_id, p_incremento, p_faixas)`
+(migrations `20260929120000_rpc_salvar_faixas_entrega.sql` e
+`20260930120000_rpc_salvar_faixas_entrega_ativo.sql`, issue 326), assinatura de 3 args, só `raio_km`,
+**sem versão** — continua existindo até a issue de contract e não incrementa
+`versao_zonas_entrega`. A escrita direta em `zonas_entrega` pela RLS `zonas_escrita_propria` também
+segue possível para o próprio dono.
 
 ### `bairros_zona`
 
