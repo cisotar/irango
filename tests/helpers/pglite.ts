@@ -106,11 +106,21 @@ function migrationFiles(): string[] {
     .sort();
 }
 
+export type OpcoesTestDb = {
+  /**
+   * Teste de BACKFILL: roda `semear` (como postgres, sem RLS) logo ANTES de
+   * aplicar a migration cujo nome começa com `migration` — o estado que o cloud
+   * tinha quando a migration rodou lá. Se nenhuma migration casar o prefixo,
+   * `createTestDb` LANÇA: um backfill sem a migration nunca vira verde por vácuo.
+   */
+  antesDaMigration?: { migration: string; semear: (db: PGlite) => Promise<void> };
+};
+
 /**
  * Cria um banco pglite efêmero, aplica o bootstrap Supabase e todas as migrations
  * em ordem. Cada teste deve criar o seu (isolamento total entre testes).
  */
-export async function createTestDb(): Promise<TestDb> {
+export async function createTestDb(opcoes: OpcoesTestDb = {}): Promise<TestDb> {
   // Fidelidade ao Supabase/PostgREST: timestamps voltam como STRING ISO (JSON),
   // não como `Date`. Sem isso, duas leituras do mesmo timestamptz produzem
   // objetos `Date` distintos (`toBe`/`Object.is` falha mesmo com valor igual) —
@@ -128,13 +138,24 @@ export async function createTestDb(): Promise<TestDb> {
   });
   await db.exec(BOOTSTRAP_SQL);
 
+  const pausa = opcoes.antesDaMigration;
+  let pausou = false;
   for (const file of migrationFiles()) {
+    if (pausa && !pausou && file.startsWith(pausa.migration)) {
+      pausou = true;
+      await pausa.semear(db);
+    }
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
     try {
       await db.exec(sql);
     } catch (err) {
       throw new Error(`Falha aplicando migration ${file}: ${(err as Error).message}`);
     }
+  }
+
+  if (pausa && !pausou) {
+    await db.close();
+    throw new Error(`antesDaMigration: nenhuma migration começa com '${pausa.migration}' em supabase/migrations/`);
   }
 
   await db.exec(GRANTS_SQL);

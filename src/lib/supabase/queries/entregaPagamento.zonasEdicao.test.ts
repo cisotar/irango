@@ -25,7 +25,7 @@ import * as queries from "./entregaPagamento";
 
 type Client = SupabaseClient<Database>;
 type Terminal = { data: unknown; error: unknown };
-type ZonasEdicao = { versao: number; zonas: unknown[] };
+type ZonasEdicao = { versao: number; forma: string; zonas: unknown[] };
 
 function listarZonasParaEdicao(client: Client, lojaId: string): Promise<ZonasEdicao> {
   const fn = (queries as unknown as {
@@ -80,6 +80,7 @@ describe("[328/F1] listarZonasParaEdicao — versão e zonas no MESMO snapshot",
     const { client, calls } = makeClient({
       data: {
         versao_zonas_entrega: 4,
+        forma_frete: "bairro",
         zonas: [
           {
             id: "z1",
@@ -118,6 +119,8 @@ describe("[328/F1] listarZonasParaEdicao — versão e zonas no MESMO snapshot",
     expect(calls.select).toHaveBeenCalledTimes(1);
     const colunas = String(calls.select.mock.calls[0][0]).replace(/\s+/g, "");
     expect(colunas).toContain("versao_zonas_entrega");
+    // [325/F3] a forma ATIVA vem do MESMO select (mesmo snapshot da versão).
+    expect(colunas).toMatch(/(^|,)forma_frete(,|$)/);
     expect(colunas).toMatch(/zonas:zonas_entrega\(/);
     expect(colunas).toMatch(/taxa:taxas_entrega\(taxa,pedido_minimo_gratis,raio_max_km,cep_inicio,cep_fim\)/);
     expect(colunas).toMatch(/bairros:bairros_zona\(nome\)/);
@@ -127,6 +130,7 @@ describe("[328/F1] listarZonasParaEdicao — versão e zonas no MESMO snapshot",
 
     expect(out).toEqual({
       versao: 4,
+      forma: "bairro",
       zonas: [
         {
           id: "z1",
@@ -150,8 +154,36 @@ describe("[328/F1] listarZonasParaEdicao — versão e zonas no MESMO snapshot",
   });
 
   it("[328/F1] loja sem zonas ⇒ { versao, zonas: [] } (zonas null no embed vira [])", async () => {
-    const { client } = makeClient({ data: { versao_zonas_entrega: 0, zonas: null }, error: null });
-    expect(await listarZonasParaEdicao(client, LOJA)).toEqual({ versao: 0, zonas: [] });
+    const { client } = makeClient({ data: { versao_zonas_entrega: 0, forma_frete: "raio_km", zonas: null }, error: null });
+    expect(await listarZonasParaEdicao(client, LOJA)).toEqual({ versao: 0, forma: "raio_km", zonas: [] });
+  });
+
+  it("[325/F3] listarZonasParaEdicao devolve forma = lojas.forma_frete e TODAS as zonas guardadas (o filtro da tela é zonasDaForma)", async () => {
+    const km = {
+      id: "k1",
+      nome: "0–1 km",
+      tipo: "raio_km",
+      ativo: true,
+      taxa: [{ taxa: 8, pedido_minimo_gratis: null, raio_max_km: 1, cep_inicio: null, cep_fim: null }],
+      bairros: [],
+    };
+    const { client, calls } = makeClient({
+      data: { versao_zonas_entrega: 2, forma_frete: "faixa_cep", zonas: [km] },
+      error: null,
+    });
+
+    const out = await listarZonasParaEdicao(client, LOJA);
+
+    expect(out.forma).toBe("faixa_cep");
+    expect(out.zonas).toHaveLength(1); // km guardado volta para o painel, mesmo com forma CEP ativa
+    expect(calls.eq).not.toHaveBeenCalledWith("zonas.tipo", expect.anything());
+  });
+
+  it("[325/F3] forma_frete fora do enum / ausente ⇒ forma raio_km (formaAtivaDaLoja)", async () => {
+    for (const forma_frete of ["cidade", null, undefined]) {
+      const { client } = makeClient({ data: { versao_zonas_entrega: 1, forma_frete, zonas: [] }, error: null });
+      expect((await listarZonasParaEdicao(client, LOJA)).forma).toBe("raio_km");
+    }
   });
 
   it("[328/F1] listarZonasParaEdicao com erro do PostgREST ⇒ lança", async () => {

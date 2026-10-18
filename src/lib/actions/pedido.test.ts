@@ -2935,3 +2935,103 @@ describe("[331] criarPedido — grupo de opcionais oculto no produto", () => {
     expect(fakeClient.rpc).not.toHaveBeenCalled();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [325/F3] Forma ATIVA de frete (`lojas.forma_frete`) — fase RED.
+//
+// Zonas das três formas ficam GUARDADAS no banco; só as da forma ativa cobram.
+// O filtro mora num ponto só (D6): `listarZonasComTaxas(client, lojaId, forma)`
+// aplica `.eq("tipo", forma)`, e a forma vem da LOJA relida no servidor
+// (`buscarLojaParaPedido`, select *), nunca do payload.
+//
+// O mock EMULA a query real: sem o 3º argumento devolve tudo o que está
+// guardado (é o que a query de hoje faz), com ele filtra por tipo. Assim o RED
+// mede o bug real: sem o filtro, `calcularFrete` deixa o bairro guardado (R$ 5)
+// vencer a faixa de km (R$ 8) pela regra de menor taxa entre tipos — o cliente
+// paga menos do que a forma ativa cobra.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("[325/F3] criarPedido — só as zonas da forma ATIVA cobram", () => {
+  const KM_8 = {
+    id: "zk8",
+    loja_id: LOJA_A,
+    nome: "0–5 km",
+    tipo: "raio_km",
+    ativo: true,
+    taxa: { taxa: 8.0, pedido_minimo_gratis: null, raio_max_km: 5, cep_inicio: null, cep_fim: null },
+    bairros: [],
+  };
+  const BAIRRO_5 = {
+    id: "zb5",
+    loja_id: LOJA_A,
+    nome: "Centro",
+    tipo: "bairro",
+    ativo: true,
+    taxa: { taxa: 5.0, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
+    bairros: [{ nome: "Centro" }],
+  };
+  const GUARDADAS = [KM_8, BAIRRO_5];
+
+  function zonasGuardadasPorForma() {
+    listarZonasComTaxas.mockImplementation(async (_c: unknown, _l: unknown, forma?: string) =>
+      forma === undefined ? GUARDADAS : GUARDADAS.filter((z) => z.tipo === forma),
+    );
+  }
+
+  function argsRpc() {
+    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
+    return fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number | null; p_total: number };
+  }
+
+  it("forma raio_km: bairro guardado mais barato (R$5) não reduz frete da faixa (R$8)", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ forma_frete: "raio_km" }));
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 3, causa: "ok" }); // 3 km cabe na faixa 0–5
+    zonasGuardadasPorForma();
+
+    await criarPedido(payloadBase()); // bairro declarado/canônico: Centro
+
+    expect(listarZonasComTaxas).toHaveBeenCalledWith(fakeClient, LOJA_A, "raio_km");
+    const args = argsRpc();
+    expect(args.p_taxa_entrega).toBe(8);
+    expect(args.p_total).toBe(58); // 50 subtotal + 8 da faixa, nunca 55
+  });
+
+  it("espelho — forma bairro: faixa km guardada não vale; cobra o bairro (R$5)", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ forma_frete: "bairro" }));
+    distanciaDaLojaAoCep.mockResolvedValue({ km: 3, causa: "ok" });
+    zonasGuardadasPorForma();
+
+    await criarPedido(payloadBase());
+
+    expect(listarZonasComTaxas).toHaveBeenCalledWith(fakeClient, LOJA_A, "bairro");
+    expect(argsRpc().p_taxa_entrega).toBe(5);
+  });
+
+  it("loja sem forma_frete legível (null/fora do enum) ⇒ filtra por raio_km (formaAtivaDaLoja)", async () => {
+    for (const forma_frete of [null, "cidade"]) {
+      vi.clearAllMocks();
+      fakeClient.rpc.mockReset();
+      cenarioFeliz();
+      buscarLojaParaPedido.mockResolvedValue(lojaRow({ forma_frete }));
+      distanciaDaLojaAoCep.mockResolvedValue({ km: 3, causa: "ok" });
+      zonasGuardadasPorForma();
+
+      await criarPedido(payloadBase());
+
+      expect(listarZonasComTaxas).toHaveBeenCalledWith(fakeClient, LOJA_A, "raio_km");
+      expect(argsRpc().p_taxa_entrega).toBe(8);
+    }
+  });
+
+  it("forma vem da LOJA, não do payload: campo forma_frete no payload é recusado pelo .strict()", async () => {
+    cenarioFeliz();
+    buscarLojaParaPedido.mockResolvedValue(lojaRow({ forma_frete: "raio_km" }));
+    zonasGuardadasPorForma();
+
+    const r = await criarPedido(payloadBase({ forma_frete: "bairro" }));
+
+    expect("erro" in r).toBe(true);
+    expect(fakeClient.rpc).not.toHaveBeenCalled();
+  });
+});

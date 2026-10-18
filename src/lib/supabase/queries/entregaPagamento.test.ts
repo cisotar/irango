@@ -101,7 +101,7 @@ describe("025 queries entrega/pagamento/cupom — contrato TS (camada 2, mock)",
     ];
     const { client, calls } = makeClient({ data: linhas, error: null });
 
-    const out = await listarZonasComTaxas(client, "loja-1");
+    const out = await listarZonasComTaxas(client, "loja-1", "bairro");
 
     expect(calls.from).toHaveBeenCalledWith("zonas_entrega");
     expect(calls.eq).toHaveBeenCalledWith("loja_id", "loja-1");
@@ -116,15 +116,31 @@ describe("025 queries entrega/pagamento/cupom — contrato TS (camada 2, mock)",
     expect(out[0]).toHaveProperty("bairros");
   });
 
+  // [325/F3] Filtro da forma ATIVA num ponto só (D6): as zonas das outras
+  // formas ficam guardadas no banco e NUNCA chegam a `calcularFrete`.
+  it.each<["raio_km" | "faixa_cep" | "bairro"]>([["raio_km"], ["faixa_cep"], ["bairro"]])(
+    "[325/F3] listarZonasComTaxas(client, lojaId, %s) escopa por loja_id E por tipo = forma",
+    async (forma) => {
+      const { client, calls } = makeClient({ data: [], error: null });
+
+      await listarZonasComTaxas(client, "loja-1", forma);
+
+      expect(calls.from).toHaveBeenCalledWith("zonas_entrega");
+      expect(calls.eq).toHaveBeenCalledWith("loja_id", "loja-1");
+      expect(calls.eq).toHaveBeenCalledWith("tipo", forma);
+      expect(calls.eq).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("listarZonasComTaxas retorna [] quando a loja não tem zonas (sem lançar)", async () => {
     const { client } = makeClient({ data: [], error: null });
-    const out = await listarZonasComTaxas(client, "loja-sem-zona");
+    const out = await listarZonasComTaxas(client, "loja-sem-zona", "raio_km");
     expect(out).toEqual([]);
   });
 
   it("listarZonasComTaxas PROPAGA o error do PostgREST (não mascara como [])", async () => {
     const { client } = makeClient({ data: null, error: { message: "db down" } });
-    await expect(listarZonasComTaxas(client, "loja-1")).rejects.toBeTruthy();
+    await expect(listarZonasComTaxas(client, "loja-1", "raio_km")).rejects.toBeTruthy();
   });
 
   // ───────────────────────── listarFormasPagamento (leitura PÚBLICA)

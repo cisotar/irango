@@ -282,9 +282,9 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
     expect(payload.nome).toBe("ok");
   });
 
-  // Issue 115 + 129 + 328 — completude do filtro: a blocklist tem 16 colunas (espelhando o
+  // Issue 115 + 129 + 328 + 325 — completude do filtro: a blocklist tem 17 colunas (espelhando o
   // trigger lojas_protege_billing_v2 + id + consentimento_* + módulos de impressão +
-  // versao_zonas_entrega, que só a RPC salvar_zonas_entrega incrementa),
+  // versao_zonas_entrega e forma_frete, que só a RPC salvar_zonas_entrega grava),
   // não só `dono_id`. Lista hardcoded AQUI (não importada de admin-loja.ts): se alguém
   // remover uma entrada de CAMPOS_LOJA_SOMENTE_SERVIDOR por engano, este teste pega —
   // importar a mesma constante do módulo sob teste esconderia a regressão (drift entre
@@ -309,6 +309,9 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
       "modulo_impressao_a4",
       "modulo_impressao_termica",
       "versao_zonas_entrega",
+      // [325/F6] forma ativa de frete: só a RPC salvar_zonas_entrega (e a legada
+      // salvar_faixas_entrega) a grava, junto da versão. Patch admin nunca grava.
+      "forma_frete",
     ];
     const payloadHostil = {
       ...Object.fromEntries(colunasBloqueadas.map((c) => [c, `forjado-${c}`])),
@@ -322,6 +325,20 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
     for (const col of colunasBloqueadas) {
       expect(payload, `coluna '${col}' deveria ter sido descartada`).not.toHaveProperty(col);
     }
+    expect(payload.nome).toBe("ok");
+  });
+
+  // [325/F6] `forma_frete` decide QUAIS zonas a vitrine cobra. Um patch admin
+  // (service_role, sem trigger) que a trocasse ativaria zonas guardadas sem
+  // passar pela versão otimista da RPC — o lojista veria uma forma e a vitrine
+  // cobraria outra. O filtro de runtime de `atualizarLoja` descarta a chave.
+  it("[325/F6] atualizarLoja descarta forma_frete sob cast — só a RPC de zonas ativa a forma", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    await escopo.atualizarLoja({ nome: "ok", forma_frete: "bairro" } as never);
+    const op = opsEspia.find((o) => o.tabela === "lojas")!;
+    const payload = op.payload as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("forma_frete");
     expect(payload.nome).toBe("ok");
   });
 

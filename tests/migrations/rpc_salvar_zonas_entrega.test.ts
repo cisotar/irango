@@ -34,6 +34,11 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  *  - "estado intacto" compara zonas + taxas + bairros (com ids) **e**
  *    `lojas.versao_zonas_entrega`, relidos num bloco `asService` separado;
  *  - antes de cada recusa a loja recebe um estado CONHECIDO e não vazio.
+ *
+ * 325 (mudança de requisito, migration 20261018130000_lojas_forma_frete_ativa):
+ * gravar numa forma regrava SÓ as zonas daquela forma e ativa a forma em
+ * `lojas.forma_frete`; as zonas das outras formas ficam guardadas. Por isso as
+ * asserções de "o que foi gravado" leem `zonasDa(loja, forma)`.
  */
 
 const DONO_A = "aaaaaaaa-aaaa-4aaa-8aaa-aa0000000328";
@@ -111,7 +116,8 @@ type ZonaLida = {
   bairros: string[];
 };
 
-async function zonasDa(lojaId: string): Promise<ZonaLida[]> {
+/** Zonas da loja; com `tipo`, só as daquela forma (as outras ficam guardadas — 325). */
+async function zonasDa(lojaId: string, tipo?: Forma): Promise<ZonaLida[]> {
   const r = await t.asService((s) =>
     s.query<ZonaLida>(
       `select z.id, z.nome, z.tipo, z.ativo,
@@ -120,9 +126,9 @@ async function zonasDa(lojaId: string): Promise<ZonaLida[]> {
                          where b.zona_id = z.id), '{}') as bairros
          from public.zonas_entrega z
          left join public.taxas_entrega t on t.zona_id = z.id
-        where z.loja_id = $1
+        where z.loja_id = $1 and ($2::text is null or z.tipo = $2::text)
         order by t.raio_max_km nulls last, t.cep_inicio nulls last, z.nome`,
-      [lojaId],
+      [lojaId, tipo ?? null],
     ),
   );
   return r.rows;
@@ -402,7 +408,7 @@ describe("[328/F1] versão otimista das zonas de entrega", () => {
     const final = await estado(lojaA);
     expect(final).toEqual(depoisDaPrimeira);
     expect(final.versao).toBe(v + 1);
-    expect(semId(final.zonas)).toEqual([
+    expect(semId(final.zonas.filter((z) => z.tipo === "faixa_cep"))).toEqual([
       zonaCep("CEP 01000-000 a 01999-999", 1000000, 1999999, 5, null),
       zonaCep("CEP 02000-000 a 02999-999", 2000000, 2999999, 7, 50),
     ]);
@@ -478,64 +484,137 @@ describe("[328/F1] versão otimista das zonas de entrega", () => {
   });
 });
 
-// ═══════════════════════════════════════ F2 · exclusividade de forma (substitui)
-describe("[325/F2] uma forma por loja: gravar substitui as zonas das outras formas", () => {
-  async function contagemPorTipo(lojaId: string) {
+// ═══════════════════════ F2 · zonas guardadas: salvar ativa a forma, não apaga as outras
+// Mudança de requisito da 325: trocar de forma NÃO apaga a configuração da
+// anterior. A RPC apaga e regrava SÓ as zonas de `p_forma` (DELETE ... and
+// tipo = p_forma) e, no mesmo UPDATE da T4, grava `lojas.forma_frete = p_forma`
+// (D3). Inverte o bloco anterior ("gravar substitui as zonas das outras formas").
+describe("[325/F2] zonas guardadas: salvar numa forma preserva as outras e ativa a forma", () => {
+  async function formaDe(lojaId: string): Promise<string> {
     const r = await t.asService((s) =>
-      s.query<{ tipo: string; n: number }>(
-        `select tipo, count(*)::int as n from public.zonas_entrega where loja_id = $1 group by tipo order by tipo`,
-        [lojaId],
-      ),
+      s.query<{ forma_frete: string }>(`select forma_frete from public.lojas where id = $1`, [lojaId]),
     );
-    return Object.fromEntries(r.rows.map((x) => [x.tipo, x.n]));
+    return r.rows[0].forma_frete;
   }
-  async function orfas(ids: string[]) {
-    const r = await t.asService((s) =>
-      s.query<{ taxas: number; bairros: number }>(
-        `select (select count(*)::int from public.taxas_entrega where zona_id = any($1::uuid[])) as taxas,
-                (select count(*)::int from public.bairros_zona  where zona_id = any($1::uuid[])) as bairros`,
-        [ids],
-      ),
-    );
-    return r.rows[0];
+  async function definirForma(lojaId: string, forma: Forma) {
+    await t.asService((s) => s.query(`update public.lojas set forma_frete = $2 where id = $1`, [lojaId, forma]));
   }
 
-  it("[325/F2] salvar faixa_cep numa loja com zonas raio_km e bairro ⇒ zero zonas raio_km/bairro na loja (count = 0), bairros_zona órfão = 0; B intacta", async () => {
+  it("[325/F2] salvar bairro preserva as faixas km da mesma loja e muda forma_frete para bairro", async () => {
     await semear(lojaA, [MISTA_A[0], MISTA_A[1]]);
-    await semear(lojaB, BASE_B);
-    const bAntes = await estado(lojaB);
-    const idsAntigos = (await zonasDa(lojaA)).map((z) => z.id);
-
-    await salvarAtual("donoA", lojaA, "faixa_cep", CEP_OK);
-
-    expect(await contagemPorTipo(lojaA)).toEqual({ faixa_cep: 2 });
-    expect(await orfas(idsAntigos)).toEqual({ taxas: 0, bairros: 0 });
-    expect(await estado(lojaB)).toEqual(bAntes);
-  });
-
-  it("[325/F2] salvar bairro ⇒ zero zonas raio_km/faixa_cep na loja; B intacta", async () => {
-    await semear(lojaA, MISTA_A);
-    await semear(lojaB, BASE_B);
-    const bAntes = await estado(lojaB);
-    const idsAntigos = (await zonasDa(lojaA)).map((z) => z.id);
+    await definirForma(lojaA, "raio_km");
+    const kmAntes = await zonasDa(lojaA, "raio_km");
+    expect(kmAntes).toHaveLength(1);
 
     await salvarAtual("donoA", lojaA, "bairro", BAIRRO_OK);
 
-    expect(await contagemPorTipo(lojaA)).toEqual({ bairro: 2 });
-    expect(await orfas(idsAntigos)).toEqual({ taxas: 0, bairros: 0 });
+    // km guardado com os MESMOS ids (não apagado e reinserido), taxa e bairros intactos.
+    expect(await zonasDa(lojaA, "raio_km")).toEqual(kmAntes);
+    // bairro: a zona antiga ("Centro") sai, entram as do payload.
+    expect(semId(await zonasDa(lojaA, "bairro"))).toEqual([
+      zonaBairro("Centro e mais 1", ["Centro", "Vila Nova"], 6, null),
+      zonaBairro("Sé", ["Sé"], 4, null),
+    ]);
+    expect(await formaDe(lojaA)).toBe("bairro");
+  });
+
+  it("[325/F2] salvar faixa_cep regrava só as faixas de CEP; km e bairro guardados intactos; forma_frete = faixa_cep", async () => {
+    await semear(lojaA, MISTA_A);
+    const kmAntes = await zonasDa(lojaA, "raio_km");
+    const bairroAntes = await zonasDa(lojaA, "bairro");
+
+    await salvarAtual("donoA", lojaA, "faixa_cep", CEP_OK);
+
+    expect(await zonasDa(lojaA, "raio_km")).toEqual(kmAntes);
+    expect(await zonasDa(lojaA, "bairro")).toEqual(bairroAntes);
+    expect(semId(await zonasDa(lojaA, "faixa_cep"))).toEqual([
+      zonaCep("CEP 01000-000 a 01999-999", 1000000, 1999999, 5, null),
+      zonaCep("CEP 02000-000 a 02999-999", 2000000, 2999999, 7, 50),
+    ]);
+    expect(await formaDe(lojaA)).toBe("faixa_cep");
+  });
+
+  it("[325/F2] não toca zonas de outra loja (nem a forma_frete dela)", async () => {
+    await semear(lojaA, MISTA_A);
+    await semear(lojaB, BASE_B);
+    await definirForma(lojaB, "raio_km");
+    const bAntes = await estado(lojaB);
+
+    for (const forma of ["bairro", "faixa_cep", "raio_km"] as const) {
+      await salvarAtual("donoA", lojaA, forma, PAYLOAD_OK[forma]);
+      await salvarAtual("service", lojaA, forma, PAYLOAD_OK[forma]);
+    }
+
+    expect(await estado(lojaB)).toEqual(bAntes);
+    expect(await formaDe(lojaB)).toBe("raio_km");
+    expect(await formaDe(lojaA)).toBe("raio_km");
+  });
+
+  it("[325/F2] versão velha → 'versao desatualizada' e forma_frete inalterada", async () => {
+    await semear(lojaA, MISTA_A);
+    await definirForma(lojaA, "raio_km");
+    const lida = await versaoDe(lojaA);
+    await salvar("donoA", lojaA, lida, "raio_km", KM_OK); // outra aba grava antes
+    const antes = await estado(lojaA);
+
+    for (const forma of ["bairro", "faixa_cep"] as const) {
+      esperarErro(
+        await erroDe(salvar("donoA", lojaA, lida, forma, PAYLOAD_OK[forma])),
+        "P0001",
+        `${P}versao desatualizada`,
+      );
+      expect(await formaDe(lojaA)).toBe("raio_km");
+    }
+    expect(await estado(lojaA)).toEqual(antes);
+  });
+
+  it("[325/F2] sem posse → 'sem posse' e forma_frete inalterada", async () => {
+    await semear(lojaB, BASE_B);
+    await definirForma(lojaB, "bairro");
+    const bAntes = await estado(lojaB);
+
+    for (const forma of ["raio_km", "faixa_cep"] as const) {
+      esperarErro(
+        await erroDe(salvar("donoA", lojaB, bAntes.versao, forma, PAYLOAD_OK[forma])),
+        "P0001",
+        `${P}sem posse`,
+      );
+      expect(await formaDe(lojaB)).toBe("bairro");
+    }
     expect(await estado(lojaB)).toEqual(bAntes);
   });
 
-  it("[325/F2] salvar raio_km numa loja com faixa_cep e bairro ⇒ zero zonas faixa_cep/bairro; B intacta", async () => {
-    await semear(lojaA, [MISTA_A[1], MISTA_A[2]]);
-    await semear(lojaB, BASE_B);
-    const bAntes = await estado(lojaB);
+  it("[325/F2] payload inválido (T3) → forma_frete inalterada", async () => {
+    await semear(lojaA, MISTA_A);
+    await definirForma(lojaA, "raio_km");
 
+    esperarErro(
+      await erroDe(salvarAtual("donoA", lojaA, "bairro", { grupos: [grupo(["Centro"]), grupo([])] })),
+      "P0001",
+      `${P}grupo sem bairro`,
+    );
+    expect(await formaDe(lojaA)).toBe("raio_km");
+  });
+
+  it("[325/F2] voltar para raio_km reativa e as faixas km guardadas continuam", async () => {
+    await semear(lojaA, []);
+    await definirForma(lojaA, "raio_km");
     await salvarAtual("donoA", lojaA, "raio_km", KM_OK);
+    const kmGravado = await zonasDa(lojaA, "raio_km");
+    expect(semId(kmGravado)).toEqual([faixaKm("0–1 km", 1, 4, null), faixaKm("1–2 km", 2, 6, 60)]);
 
-    expect(await contagemPorTipo(lojaA)).toEqual({ raio_km: 2 });
-    expect(semId(await zonasDa(lojaA))).toEqual([faixaKm("0–1 km", 1, 4, null), faixaKm("1–2 km", 2, 6, 60)]);
-    expect(await estado(lojaB)).toEqual(bAntes);
+    // Vai para bairro: km fica guardado, com os mesmos ids.
+    await salvarAtual("donoA", lojaA, "bairro", BAIRRO_OK);
+    expect(await formaDe(lojaA)).toBe("bairro");
+    expect(await zonasDa(lojaA, "raio_km")).toEqual(kmGravado);
+    const bairroGravado = await zonasDa(lojaA, "bairro");
+
+    // Volta para km salvando as faixas guardadas (Q1 = A: a troca vale ao salvar).
+    await salvarAtual("donoA", lojaA, "raio_km", KM_OK);
+    expect(await formaDe(lojaA)).toBe("raio_km");
+    expect(semId(await zonasDa(lojaA, "raio_km"))).toEqual(semId(kmGravado));
+    // ...e o bairro configurado continua guardado para a próxima troca.
+    expect(await zonasDa(lojaA, "bairro")).toEqual(bairroGravado);
   });
 });
 
@@ -556,7 +635,7 @@ describe("[325/F2] gravação por forma: servidor deriva nome, tipo e loja", () 
       ],
     });
 
-    expect(semId(await zonasDa(lojaA))).toEqual([
+    expect(semId(await zonasDa(lojaA, "faixa_cep"))).toEqual([
       zonaCep("CEP 01000-000 a 01999-999", 1000000, 1999999, 5, null, true),
       zonaCep("CEP 02000-000 a 02999-999", 2000000, 2999999, 7.5, 80, false),
     ]);
@@ -573,7 +652,7 @@ describe("[325/F2] gravação por forma: servidor deriva nome, tipo e loja", () 
       ],
     });
 
-    expect(semId(await zonasDa(lojaA))).toEqual([
+    expect(semId(await zonasDa(lojaA, "bairro"))).toEqual([
       zonaBairro("Centro e mais 1", ["Centro", "Vila Nova"], 6, 80, true),
       zonaBairro("Sé", ["Sé"], 4, null, false),
     ]);
@@ -623,7 +702,7 @@ describe("[325/F2] valor inválido ⇒ P0001 + mensagem; estado anterior intacto
     await semear(lojaA, MISTA_A);
     await salvarAtual("donoA", lojaA, "faixa_cep", { faixas: [cep(1000000, 1999999), cep(2000000, 2000000)] });
 
-    expect(semId(await zonasDa(lojaA))).toEqual([
+    expect(semId(await zonasDa(lojaA, "faixa_cep"))).toEqual([
       zonaCep("CEP 01000-000 a 01999-999", 1000000, 1999999, 5, null),
       zonaCep("CEP 02000-000 a 02000-000", 2000000, 2000000, 5, null),
     ]);
@@ -693,7 +772,7 @@ describe("[325/F2] valor inválido ⇒ P0001 + mensagem; estado anterior intacto
   ])("[325/F2] teto — %s ⇒ aceito", async (_n, forma, dados, zonas) => {
     await semear(lojaA, MISTA_A);
     await salvarAtual("donoA", lojaA, forma, dados);
-    expect(await zonasDa(lojaA)).toHaveLength(zonas);
+    expect(await zonasDa(lojaA, forma)).toHaveLength(zonas);
   });
 
   it.each<[string, string, unknown, string]>([
@@ -781,7 +860,7 @@ describe("[325/F2] escopo por loja e autoridade (T2 antes de qualquer linha)", (
 
     await salvarAtual("service", lojaA, "bairro", BAIRRO_OK);
 
-    expect(semId(await zonasDa(lojaA))).toEqual([
+    expect(semId(await zonasDa(lojaA, "bairro"))).toEqual([
       zonaBairro("Centro e mais 1", ["Centro", "Vila Nova"], 6, null),
       zonaBairro("Sé", ["Sé"], 4, null),
     ]);
