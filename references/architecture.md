@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.7.0 | **Atualizado:** 2026-10-07
+**Versão:** 0.7.1 | **Atualizado:** 2026-10-18
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -333,6 +333,12 @@ A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configur
 // Reutilizado na vitrine (PREVIEW de UX) e na Server Action (valor AUTORITATIVO)
 calcularFrete(zonas: ZonaEntrega[], endereco: Endereco): number
 ```
+
+Zonas das três formas ficam guardadas, mas só cobra a **forma ativa** (`lojas.forma_frete`).
+`listarZonasComTaxas(client, lojaId, forma)` (`queries/entregaPagamento.ts`) filtra `.eq("tipo", forma)` —
+único filtro; os chamadores passam `formaAtivaDaLoja(loja.forma_frete)` (`lib/utils/formaFrete.ts`).
+Preview (`frete.ts`, lê `vitrine_lojas`) e autoritativo (`pedido.ts`, lê `lojas`) leem a mesma forma;
+`calcularFrete` não muda. `listarZonasParaEdicao` devolve `{versao, forma, zonas}` com todas as formas.
 
 ### Entitlement de módulo pago (por feature)
 

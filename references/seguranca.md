@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.11.0 | **Atualizado:** 2026-10-18
+**Versão:** 0.11.1 | **Atualizado:** 2026-10-18
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -526,10 +526,15 @@ alheio recebe `sem posse` e nunca descobre se a versão bate. Mensagens estávei
 `salvarZonasEntregaAdmin`) o `p_loja_id` entra **por último** no objeto de argumentos, depois do
 spread do payload validado: nada do payload sobrescreve a loja derivada (dono logado ou `lojaId`
 validado da URL admin). A versão vale também para o admin: não atropela uma gravação do lojista.
+A forma ativa (`lojas.forma_frete`) é gravada pela RPC no mesmo `UPDATE` que incrementa a versão, então
+a troca de forma também fica coberta pelo compare-and-set; a coluna está em
+`CAMPOS_LOJA_SOMENTE_SERVIDOR` e fora da allowlist do lojista.
 
 **Riscos aceitos:** (1) o dono pode alterar a própria `versao_zonas_entrega` por PATCH direto (RLS
 `lojas_update_proprio`; a coluna não é billing nem PII) — o efeito fica só na própria loja, e o CHECK
-`0..9007199254740991` impede estourar o `number` do JS. (2) Até a issue de contract, a assinatura de 3
+`0..9007199254740991` impede estourar o `number` do JS. O mesmo vale para `forma_frete` (PATCH direto do
+dono; CHECK `lojas_forma_frete_valida` limita aos três valores; só muda qual forma cobra na própria loja;
+issue 363). (2) Até a issue de contract, a assinatura de 3
 args de `salvar_faixas_entrega` continua exposta e grava **sem versão**; e a RLS `zonas_escrita_propria`
 (§2) ainda permite ao dono escrever `zonas_entrega` direto. Ambos contornam o compare-and-set só para
 a própria loja (sem vazamento entre lojas); o controle otimista protege contra perda de edição entre
