@@ -557,7 +557,7 @@ describe("[325/F4] vitrine_lojas expõe forma_frete (SELECT-only)", () => {
 
     const def = await t.db.query<{ d: string }>(`select pg_get_viewdef('public.vitrine_lojas'::regclass) as d`);
     expect(normaliza(def.rows[0].d)).toContain("forma_frete");
-    expect(normaliza(def.rows[0].d)).toMatch(/where \(?lojas\.ativo = true\)?/);
+    expect(normaliza(def.rows[0].d)).toMatch(/where \(?(lojas\.)?ativo = true\)?/); // pg_get_viewdef omite o prefixo em view de tabela única
   });
 
   it("[325/F4] anon sem insert/update na view; update de forma_frete via view ⇒ 42501 e base intacta", async () => {

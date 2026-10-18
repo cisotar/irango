@@ -60,6 +60,7 @@ function lojaFake(overrides: Partial<LojaPublica>): LojaPublica {
     aceita_retirada: true,
     aceita_entrega: true,
     modo_frete: "automatico",
+    forma_frete: "raio_km",
   };
   return { ...base, ...overrides };
 }

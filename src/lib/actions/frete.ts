@@ -33,6 +33,7 @@ import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { listarZonasComTaxas } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarCoordsLoja, buscarLojaPublicaPorId } from "@/lib/supabase/queries/lojas";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
+import { formaAtivaDaLoja } from "@/lib/utils/formaFrete";
 import {
   classificarFrete,
   VEREDITO_A_COMBINAR_LOJA,
@@ -123,11 +124,11 @@ export async function calcularFreteAction(
     // 2) Client ANON — zonas e vitrine_lojas têm RLS pública. Nunca service_role.
     const supabase = await createClient();
 
-    // 3) Busca paralela: zonas hidratadas + loja (para taxa_entrega_fora_zona).
-    const [zonas, loja] = await Promise.all([
-      listarZonasComTaxas(supabase, loja_id),
-      buscarLojaPublicaPorId(supabase, loja_id),
-    ]);
+    // 3) Loja ANTES das zonas (325): a forma ATIVA (`vitrine_lojas.forma_frete`)
+    //    escolhe quais zonas valem — a MESMA forma que `criarPedido` pede, para
+    //    preview e cobrança não divergirem. A loja também traz
+    //    taxa_entrega_fora_zona e modo_frete.
+    const loja = await buscarLojaPublicaPorId(supabase, loja_id);
 
     // 3a) (spec modalidades-entrega-loja, D5) Loja que combina o frete no
     //     WhatsApp: o sistema não calcula. Sai ANTES do ViaCEP e do geocoding —
@@ -136,6 +137,8 @@ export async function calcularFreteAction(
     if (loja?.modo_frete === "a_combinar") {
       return { ok: true, a_combinar: true, veredito: VEREDITO_A_COMBINAR_LOJA };
     }
+
+    const zonas = await listarZonasComTaxas(supabase, loja_id, formaAtivaDaLoja(loja?.forma_frete));
 
     // 3b) (067) Reconciliação CEP↔bairro — MESMA política fail-closed do
     //     autoritativo `criarPedido` (064, pedido.ts ~194-217). O bairro declarado

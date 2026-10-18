@@ -1,9 +1,8 @@
-// Issue 325 — forma de frete ativa, derivada do `tipo` das zonas (módulo puro).
+// Issue 325 — forma de frete ativa (`lojas.forma_frete`) e zonas guardadas por forma (módulo puro).
 import { schemaZonasEntrega } from "@/lib/validacoes/entrega";
 import { describe, expect, it } from "vitest";
 
 import {
-  formaGravadaDasZonas,
   formaInicialDaTela,
   FORMAS_FRETE,
   ROTULO_FORMA,
@@ -11,36 +10,12 @@ import {
   rotuloDoTipo,
   precisaConfirmarSubstituicao,
   type FormaFrete,
-  type FormaGravada,
 } from "./formaFrete";
 // [325 · forma ativa] `formaAtivaDaLoja` e `zonasDaForma` ainda não existem:
 // resolvidas pelo NAMESPACE para o RED ser "export ausente", não import
 // quebrado (precedente 328, entregaPagamento.zonasEdicao.test.ts).
 import * as modulo from "./formaFrete";
 import { entregaDisponivel } from "./modalidadesEntrega";
-
-describe("formaGravadaDasZonas", () => {
-  it("[] ⇒ nenhuma", () => {
-    expect(formaGravadaDasZonas([])).toBe("nenhuma");
-  });
-
-  it("tipos iguais ⇒ o tipo (inclusive zona inativa, que conta)", () => {
-    expect(formaGravadaDasZonas([{ tipo: "raio_km" }, { tipo: "raio_km" }])).toBe("raio_km");
-    expect(formaGravadaDasZonas([{ tipo: "faixa_cep" }])).toBe("faixa_cep");
-    expect(formaGravadaDasZonas([{ tipo: "bairro" }, { tipo: "bairro" }])).toBe("bairro");
-  });
-
-  it("tipos misturados ⇒ mista", () => {
-    expect(formaGravadaDasZonas([{ tipo: "raio_km" }, { tipo: "bairro" }])).toBe("mista");
-    expect(formaGravadaDasZonas([{ tipo: "faixa_cep" }, { tipo: "faixa_cep" }, { tipo: "raio_km" }])).toBe(
-      "mista",
-    );
-  });
-
-  it("tipo fora do enum ⇒ mista (pede confirmação em vez de assumir)", () => {
-    expect(formaGravadaDasZonas([{ tipo: "cidade" }])).toBe("mista");
-  });
-});
 
 describe("formaInicialDaTela", () => {
   it("nenhuma e mista abrem em faixas de km", () => {
@@ -55,33 +30,21 @@ describe("formaInicialDaTela", () => {
   });
 });
 
-describe("precisaConfirmarSubstituicao — tabela verdade", () => {
-  const casos: Array<[FormaFrete, FormaGravada, boolean, boolean]> = [
-    // nenhuma ⇒ nunca pergunta
-    ["raio_km", "nenhuma", false, false],
-    ["raio_km", "nenhuma", true, false],
-    ["faixa_cep", "nenhuma", false, false],
-    ["bairro", "nenhuma", false, false],
-    // mesma forma ⇒ não pergunta
-    ["raio_km", "raio_km", false, false],
-    ["faixa_cep", "faixa_cep", false, false],
-    ["bairro", "bairro", false, false],
-    // km fora do formato só importa no próprio km
-    ["raio_km", "raio_km", true, true],
-    ["faixa_cep", "faixa_cep", true, false],
-    // outra forma ⇒ pergunta
-    ["raio_km", "faixa_cep", false, true],
-    ["faixa_cep", "raio_km", false, true],
-    ["bairro", "raio_km", false, true],
-    ["faixa_cep", "bairro", false, true],
-    // mista ⇒ pergunta em qualquer forma
-    ["raio_km", "mista", false, true],
-    ["faixa_cep", "mista", false, true],
-    ["bairro", "mista", false, true],
+// 325 (forma ativa): trocar de forma não pergunta mais nada — as zonas da forma
+// anterior ficam guardadas. Sobra só a confirmação do km legado fora do formato
+// de faixas (D4 da 326).
+describe("precisaConfirmarSubstituicao — só km legado fora do formato", () => {
+  const casos: Array<[FormaFrete, boolean, boolean]> = [
+    ["raio_km", true, true],
+    ["raio_km", false, false],
+    ["faixa_cep", true, false],
+    ["faixa_cep", false, false],
+    ["bairro", true, false],
+    ["bairro", false, false],
   ];
 
-  it.each(casos)("editor %s, gravada %s, km fora do formato %s ⇒ %s", (editor, gravada, fora, esperado) => {
-    expect(precisaConfirmarSubstituicao(editor, gravada, fora)).toBe(esperado);
+  it.each(casos)("editor %s, km fora do formato %s ⇒ %s", (editor, fora, esperado) => {
+    expect(precisaConfirmarSubstituicao(editor, fora)).toBe(esperado);
   });
 });
 
@@ -105,16 +68,6 @@ describe("rotuloDoTipo e formas", () => {
       expect(ROTULO_FORMA[forma]).toBeTruthy();
       expect(ROTULO_FORMA_FRASE[forma]).toBeTruthy();
     }
-  });
-});
-
-describe("formaGravadaDasZonas — bordas", () => {
-  it("uma zona de outro tipo no meio ou no fim torna a loja mista", () => {
-    expect(formaGravadaDasZonas([{ tipo: "bairro" }, { tipo: "bairro" }, { tipo: "raio_km" }])).toBe("mista");
-  });
-
-  it("uma única zona de tipo desconhecido ⇒ mista (pede confirmação)", () => {
-    expect(formaGravadaDasZonas([{ tipo: "legado_x" }])).toBe("mista");
   });
 });
 

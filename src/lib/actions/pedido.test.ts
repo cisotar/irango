@@ -1842,7 +1842,7 @@ describe("[159] criarPedido — caracterização pré-paralelização", () => {
     await criarPedido(payloadBase());
 
     expect(listarZonasComTaxas).toHaveBeenCalledTimes(1);
-    expect(listarZonasComTaxas).toHaveBeenCalledWith(fakeClient, LOJA_A);
+    expect(listarZonasComTaxas).toHaveBeenCalledWith(fakeClient, LOJA_A, "raio_km");
     const args = fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number };
     expect(args.p_taxa_entrega).toBe(5.0);
   });

@@ -14,6 +14,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
 import type { ZonaComTaxa } from "@/lib/utils/calcularFrete";
+import { formaAtivaDaLoja, type FormaFrete } from "@/lib/utils/formaFrete";
 
 // z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
 // RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda) —
@@ -31,8 +32,8 @@ export type ZonaVitrine = ZonaComTaxa & { nome: string };
 const COLUNAS_ZONA =
   "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km, cep_inicio, cep_fim), bairros:bairros_zona(nome)";
 
-/** Select de edição: versão + zonas no mesmo statement (literal, para o PostgREST tipar o embed). */
-const COLUNAS_EDICAO = `versao_zonas_entrega, zonas:zonas_entrega(${COLUNAS_ZONA})` as const;
+/** Select de edição: versão + forma ativa + zonas no mesmo statement (literal, para o PostgREST tipar o embed). */
+const COLUNAS_EDICAO = `versao_zonas_entrega, forma_frete, zonas:zonas_entrega(${COLUNAS_ZONA})` as const;
 
 /** Linha de `COLUNAS_ZONA` como o PostgREST a devolve (tipos de `database.types`). */
 type ZonaEmbutida = Pick<Tables<"zonas_entrega">, "id" | "nome" | "tipo" | "ativo"> & {
@@ -55,23 +56,34 @@ function hidratarZona({ taxa, bairros, ...zona }: ZonaEmbutida): ZonaVitrine {
 /**
  * Zonas da loja já hidratadas com taxa (1:1) e bairros (1:N), no shape que
  * `calcularFrete` consome (`ZonaComTaxa`). Fonte: TABELA `zonas_entrega`,
- * escopo `eq('loja_id')`. Leitura PÚBLICA (RLS só expõe zonas ativas + filhas).
- * Loja sem zonas → `[]`.
+ * escopo `eq('loja_id')` E `eq('tipo', forma)`. Leitura PÚBLICA (RLS só expõe
+ * zonas ativas + filhas). Loja sem zonas → `[]`.
+ *
+ * `forma` é a forma ATIVA da loja (`formaAtivaDaLoja(loja.forma_frete)`, issue
+ * 325): as zonas das outras formas ficam guardadas no banco e NUNCA chegam a
+ * `calcularFrete` — este é o único ponto do filtro, para preview e autoritativo
+ * não divergirem.
  */
 export async function listarZonasComTaxas(
   client: Client,
   lojaId: string,
+  forma: FormaFrete,
 ): Promise<ZonaVitrine[]> {
   const { data, error } = await client
     .from("zonas_entrega")
     .select(COLUNAS_ZONA)
-    .eq("loja_id", lojaId);
+    .eq("loja_id", lojaId)
+    .eq("tipo", forma);
   if (error) throw error;
   return (data ?? []).map(hidratarZona);
 }
 
-/** Versão otimista + zonas da loja, lidas no MESMO snapshot (issue 328). */
-export type ZonasEdicao = { versao: number; zonas: ZonaVitrine[] };
+/**
+ * Versão otimista + forma ativa + zonas da loja, lidas no MESMO snapshot
+ * (issues 328/325). `zonas` traz as TRÊS formas (as guardadas também): a tela
+ * separa por `zonasDaForma`.
+ */
+export type ZonasEdicao = { versao: number; forma: FormaFrete; zonas: ZonaVitrine[] };
 
 /**
  * Zonas para EDIÇÃO (painel e hub admin) junto da `versao_zonas_entrega`
@@ -95,6 +107,7 @@ export async function listarZonasParaEdicao(
   if (data == null) throw new Error("loja não encontrada");
   return {
     versao: data.versao_zonas_entrega,
+    forma: formaAtivaDaLoja(data.forma_frete),
     zonas: (data.zonas ?? []).map(hidratarZona),
   };
 }

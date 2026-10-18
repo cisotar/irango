@@ -118,6 +118,12 @@ values
   ('00000000-0000-4000-8000-000000000060', '00000000-0000-4000-8000-000000000040', 5.00, 50.00)
 on conflict (id) do nothing;
 
+-- Issue 325: a loja só tem zona `bairro`; com o default `raio_km` da coluna a
+-- zona ficaria guardada sem cobrar. A forma ativa passa a ser bairros.
+-- seed de desenvolvimento, não usar em produção
+update public.lojas set forma_frete = 'bairro'
+ where id = '00000000-0000-4000-8000-000000000010';
+
 -- ── forma de pagamento (pix com chave fictícia) ──────────────────────────────
 -- seed de desenvolvimento, não usar em produção
 -- Chave Pix aleatória (UUID) FICTÍCIA — não corresponde a nenhuma conta real.

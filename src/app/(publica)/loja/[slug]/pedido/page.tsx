@@ -8,6 +8,7 @@ import {
 } from "@/lib/supabase/queries/entregaPagamento";
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
+import { formaAtivaDaLoja } from "@/lib/utils/formaFrete";
 import { CheckoutWizard } from "@/components/vitrine/checkout/CheckoutWizard";
 import { formatarEnderecoLoja } from "@/lib/utils/enderecoLoja";
 import {
@@ -137,7 +138,8 @@ export default async function CheckoutPage({ params }: PageProps) {
   const lojaId = loja.id;
 
   const [zonasComTaxa, formas, cliente] = await Promise.all([
-    listarZonasComTaxas(db, lojaId),
+    // (325) Só as zonas da forma ATIVA — a mesma que criarPedido cobra.
+    listarZonasComTaxas(db, lojaId, formaAtivaDaLoja(loja.forma_frete)),
     listarFormasPagamento(db, lojaId),
     lerClienteCheckout(db),
   ]);

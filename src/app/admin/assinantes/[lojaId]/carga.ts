@@ -16,6 +16,7 @@ import {
   type ZonasEdicao,
   type FormaPagamento,
 } from "@/lib/supabase/queries/entregaPagamento";
+import { formaAtivaDaLoja } from "@/lib/utils/formaFrete";
 import {
   buscarPlanoAtivo,
   listarPlanosAtivos,
@@ -72,7 +73,8 @@ export async function carregarLojaAdmin(lojaId: string): Promise<LojaAdminAgrega
   const [categorias, produtos, zonas, formasPagamento] = await Promise.all([
     buscarCategorias(svc, idValidado),
     buscarProdutosDoLojista(svc, idValidado),
-    listarZonasComTaxas(svc, idValidado),
+    // (325) Só as zonas da forma ATIVA: o agregado mostra o que a vitrine cobra.
+    listarZonasComTaxas(svc, idValidado, formaAtivaDaLoja(loja.forma_frete)),
     listarFormasPagamento(svc, idValidado),
   ]);
 

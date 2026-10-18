@@ -429,14 +429,14 @@ describe("calcularFreteAction (Server Action — preview de frete, issue 072)", 
       "203.0.113.7",
     );
     // ...mas as queries de zonas/loja recebem o client ANON, não o service_role:
-    expect(listarZonasComTaxas).toHaveBeenCalledWith(anonClient, LOJA_ID);
+    expect(listarZonasComTaxas).toHaveBeenCalledWith(anonClient, LOJA_ID, "raio_km");
     expect(buscarLojaPublicaPorId).toHaveBeenCalledWith(anonClient, LOJA_ID);
   });
 
   it("usa o client ANON (createClient do servidor) e o repassa às queries", async () => {
     await calcularFreteAction({ loja_id: LOJA_ID, bairro: "Centro" });
     expect(createClient).toHaveBeenCalledTimes(1);
-    expect(listarZonasComTaxas).toHaveBeenCalledWith(anonClient, LOJA_ID);
+    expect(listarZonasComTaxas).toHaveBeenCalledWith(anonClient, LOJA_ID, "raio_km");
   });
 
   it("erro de banco → { ok:false } genérico, sem vazar e.message", async () => {

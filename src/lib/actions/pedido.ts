@@ -43,6 +43,7 @@ import {
 } from "@/lib/supabase/queries/entregaPagamento";
 import { calcularTotal } from "@/lib/utils/calcularTotal";
 import { calcularFrete, type EnderecoEntrega } from "@/lib/utils/calcularFrete";
+import { formaAtivaDaLoja } from "@/lib/utils/formaFrete";
 import {
   resolverCepServidor,
   type ResolucaoCep,
@@ -194,9 +195,11 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
         buscarProdutosPorIds(svc, ids),
         buscarOpcionaisPorIds(svc, opcionalIds),
         // Modo a combinar: zonas irrelevantes (o sistema não calcula o frete).
+        // (325) Só as zonas da forma ATIVA, lida da loja relida no servidor
+        // (nunca do payload): as das outras formas ficam guardadas e não cobram.
         dados.tipo_entrega === "retirada" || freteACombinarPelaLoja
           ? Promise.resolve<ZonaVitrine[]>([])
-          : listarZonasComTaxas(svc, dados.loja_id),
+          : listarZonasComTaxas(svc, dados.loja_id, formaAtivaDaLoja(loja.forma_frete)),
         // (321) A MESMA query de categorias que a vitrine usa, aqui sob
         // `service_role` (enxerga a categoria OCULTA para poder recusar). A
         // frequência e o `oculta` vêm SEMPRE do banco, nunca do cliente (§10).

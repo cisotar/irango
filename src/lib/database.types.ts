@@ -705,6 +705,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string
           horarios: Json
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
@@ -749,6 +750,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string
           horarios?: Json
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
@@ -793,6 +795,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string
           horarios?: Json
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
@@ -1639,6 +1642,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string | null
           horarios: Json | null
           id: string | null
           logo_url: string | null
@@ -1665,6 +1669,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string | null
           horarios?: Json | null
           id?: string | null
           logo_url?: string | null
@@ -1691,6 +1696,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string | null
           horarios?: Json | null
           id?: string | null
           logo_url?: string | null
@@ -1944,6 +1950,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string
           horarios: Json
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
@@ -1997,6 +2004,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string
           horarios: Json
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null

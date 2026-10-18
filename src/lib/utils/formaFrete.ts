@@ -1,11 +1,11 @@
 // Forma de frete ATIVA da loja (issue 325) — módulo PURO, sem React e sem I/O.
 //
-// A forma é um FATO das zonas gravadas (`zonas_entrega.tipo`), não uma coluna
-// própria: uma segunda fonte de verdade divergiria do `tipo` com qualquer
-// escrita direta ou legado, e a vitrine continua cobrando pelo `tipo`
-// (`calcularFrete`). Aqui só se deriva o que a tela mostra e quando ela pede
-// confirmação. A exclusividade de forma é garantida na RPC
-// `salvar_zonas_entrega` (DELETE de todos os tipos + INSERT só da forma).
+// A forma ativa é a coluna `lojas.forma_frete` (migration 20261018130000),
+// gravada SÓ pela RPC `salvar_zonas_entrega` junto da versão otimista: salvar
+// as zonas de uma forma = ativar essa forma. As zonas das três formas ficam
+// guardadas lado a lado; só as da forma ativa cobram. O filtro do frete mora em
+// `listarZonasComTaxas(client, lojaId, forma)`; aqui só se estreita o valor do
+// banco para o enum e se separa as zonas por forma para a tela.
 //
 // FORA DAQUI: cálculo do frete, validação de payload, persistência.
 
@@ -16,7 +16,6 @@ export type FormaFrete = FormaZonasEntrega;
 
 /** Ordem do seletor. `satisfies` recusa forma fora do payload; `ROTULO_FORMA` (Record) exige rótulo para todas. */
 export const FORMAS_FRETE = ["raio_km", "faixa_cep", "bairro"] as const satisfies readonly FormaFrete[];
-export type FormaGravada = FormaFrete | "nenhuma" | "mista";
 
 /** Rótulo de título (seletor, cartões). */
 export const ROTULO_FORMA: Record<FormaFrete, string> = {
@@ -42,34 +41,30 @@ export function rotuloDoTipo(tipo: string): string {
 }
 
 /**
- * [] → "nenhuma"; todos do mesmo tipo → esse tipo; tipos diferentes → "mista".
- * Conta zonas inativas também: elas saem na próxima gravação. Tipo fora do enum
- * não acontece (CHECK em `zonas_entrega.tipo`); se acontecer, conta como mista
- * para a tela pedir confirmação antes de substituir.
+ * `lojas.forma_frete` estreitado para o enum. null/undefined (coluna fora do
+ * select, banco antes da migration) ou valor fora do enum → "raio_km", a forma
+ * padrão de loja nova.
  */
-export function formaGravadaDasZonas(zonas: ReadonlyArray<{ tipo: string }>): FormaGravada {
-  if (zonas.length === 0) return "nenhuma";
-  const primeiro = zonas[0].tipo;
-  if (!ehFormaFrete(primeiro)) return "mista";
-  return zonas.every((z) => z.tipo === primeiro) ? primeiro : "mista";
+export function formaAtivaDaLoja(valor: string | null | undefined): FormaFrete {
+  return valor != null && ehFormaFrete(valor) ? valor : "raio_km";
 }
 
-/** Forma marcada ao abrir: a gravada; "nenhuma" e "mista" → faixas de km (decisão do Pedido). */
-export function formaInicialDaTela(gravada: FormaGravada): FormaFrete {
-  return gravada === "nenhuma" || gravada === "mista" ? "raio_km" : gravada;
+/** Só as zonas da forma pedida, na ordem recebida, os mesmos objetos (inclusive inativas). */
+export function zonasDaForma<T extends { tipo: string }>(zonas: readonly T[], forma: FormaFrete): T[] {
+  return zonas.filter((z) => z.tipo === forma);
+}
+
+/** Forma marcada ao abrir a tela: a ATIVA da loja (não a derivada das zonas guardadas). */
+export function formaInicialDaTela(forma_frete: string | null | undefined): FormaFrete {
+  return formaAtivaDaLoja(forma_frete);
 }
 
 /**
- * A primeira gravação nesta forma substitui algo que vale hoje na vitrine?
- * Loja sem zonas nunca pergunta; forma diferente da gravada sempre pergunta; km
- * gravado fora do formato de faixas (legado) também pergunta (D4 da 326).
+ * A primeira gravação neste editor substitui algo que o lojista não vê como
+ * tabela? Só no km com zonas gravadas fora do formato de faixas (legado, D4 da
+ * 326). Trocar de forma não pergunta nada: as zonas da forma anterior ficam
+ * guardadas (325).
  */
-export function precisaConfirmarSubstituicao(
-  formaEditor: FormaFrete,
-  gravada: FormaGravada,
-  kmForaDoFormato: boolean,
-): boolean {
-  if (gravada === "nenhuma") return false;
-  if (gravada !== formaEditor) return true;
+export function precisaConfirmarSubstituicao(formaEditor: FormaFrete, kmForaDoFormato: boolean): boolean {
   return formaEditor === "raio_km" && kmForaDoFormato;
 }
