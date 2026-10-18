@@ -28,13 +28,27 @@ export type Cupom = Tables<"cupons">;
 /** Zona hidratada + `nome` (a vitrine rotula a zona; `calcularFrete` não usa nome). */
 export type ZonaVitrine = ZonaComTaxa & { nome: string };
 
+const COLUNAS_ZONA =
+  "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km, cep_inicio, cep_fim), bairros:bairros_zona(nome)";
+
+/**
+ * PostgREST embute relações filhas como array; normaliza `taxa` (1:1) para
+ * objeto/null e `bairros` ausente para `[]`.
+ */
+function hidratarZona(zona: unknown): ZonaVitrine {
+  const z = zona as { taxa: unknown; bairros: { nome: string }[] | null };
+  return {
+    ...(zona as object),
+    taxa: Array.isArray(z.taxa) ? (z.taxa[0] ?? null) : (z.taxa ?? null),
+    bairros: z.bairros ?? [],
+  } as ZonaVitrine;
+}
+
 /**
  * Zonas da loja já hidratadas com taxa (1:1) e bairros (1:N), no shape que
  * `calcularFrete` consome (`ZonaComTaxa`). Fonte: TABELA `zonas_entrega`,
  * escopo `eq('loja_id')`. Leitura PÚBLICA (RLS só expõe zonas ativas + filhas).
- *
- * PostgREST embute relações filhas como array; normalizamos `taxa` (1:1) para
- * objeto/null. Loja sem zonas → `[]`.
+ * Loja sem zonas → `[]`.
  */
 export async function listarZonasComTaxas(
   client: Client,
@@ -42,20 +56,40 @@ export async function listarZonasComTaxas(
 ): Promise<ZonaVitrine[]> {
   const { data, error } = await client
     .from("zonas_entrega")
-    .select(
-      "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km, cep_inicio, cep_fim), bairros:bairros_zona(nome)",
-    )
+    .select(COLUNAS_ZONA)
     .eq("loja_id", lojaId);
   if (error) throw error;
-  return (data ?? []).map((zona) => {
-    const taxa = (zona as { taxa: unknown }).taxa;
-    return {
-      ...zona,
-      // 1:1: PostgREST devolve array embutido — colapsa para objeto/null.
-      taxa: Array.isArray(taxa) ? (taxa[0] ?? null) : (taxa ?? null),
-      bairros: (zona as { bairros: { nome: string }[] }).bairros ?? [],
-    } as ZonaVitrine;
-  });
+  return (data ?? []).map(hidratarZona);
+}
+
+/** Versão otimista + zonas da loja, lidas no MESMO snapshot (issue 328). */
+export type ZonasEdicao = { versao: number; zonas: ZonaVitrine[] };
+
+/**
+ * Zonas para EDIÇÃO (painel e hub admin) junto da `versao_zonas_entrega`
+ * que a gravação vai comparar. UM select em `lojas` com embed das zonas: um
+ * statement SQL é um snapshot, então versão e zonas nunca divergem (zonas
+ * velhas com versão nova deixariam a próxima gravação passar por cima).
+ * Lojista: RLS de leitura própria em `lojas` e `zonas_escrita_propria` nas
+ * zonas (inclui as inativas). Admin: client service_role do loader, que já
+ * validou `lojaId` e provou admin. Erro → lança; loja ausente → lança.
+ */
+export async function listarZonasParaEdicao(
+  client: Client,
+  lojaId: string,
+): Promise<ZonasEdicao> {
+  const { data, error } = await client
+    .from("lojas")
+    .select(`versao_zonas_entrega, zonas:zonas_entrega(${COLUNAS_ZONA})`)
+    .eq("id", lojaId)
+    .maybeSingle();
+  if (error) throw error;
+  if (data == null) throw new Error("loja não encontrada");
+  const linha = data as { versao_zonas_entrega: number; zonas: unknown[] | null };
+  return {
+    versao: linha.versao_zonas_entrega,
+    zonas: (linha.zonas ?? []).map(hidratarZona),
+  };
 }
 
 /**

@@ -282,8 +282,9 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
     expect(payload.nome).toBe("ok");
   });
 
-  // Issue 115 + 129 — completude do filtro: a blocklist tem 15 colunas (espelhando o
-  // trigger lojas_protege_billing_v2 + id + consentimento_* + módulos de impressão),
+  // Issue 115 + 129 + 328 — completude do filtro: a blocklist tem 16 colunas (espelhando o
+  // trigger lojas_protege_billing_v2 + id + consentimento_* + módulos de impressão +
+  // versao_zonas_entrega, que só a RPC salvar_zonas_entrega incrementa),
   // não só `dono_id`. Lista hardcoded AQUI (não importada de admin-loja.ts): se alguém
   // remover uma entrada de CAMPOS_LOJA_SOMENTE_SERVIDOR por engano, este teste pega —
   // importar a mesma constante do módulo sob teste esconderia a regressão (drift entre
@@ -307,6 +308,7 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
       "consentimento_em",
       "modulo_impressao_a4",
       "modulo_impressao_termica",
+      "versao_zonas_entrega",
     ];
     const payloadHostil = {
       ...Object.fromEntries(colunasBloqueadas.map((c) => [c, `forjado-${c}`])),

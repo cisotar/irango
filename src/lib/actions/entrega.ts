@@ -1,22 +1,22 @@
 "use server";
 
-// Server Actions de ENTREGA (zonas + taxa 1:1 + bairros 1:N) — issue 032/046.
+// Server Actions de ENTREGA do lojista: modalidades e zonas de entrega.
 //
 // Contrato (seguranca.md §2/§14):
-//   - valida `schemaZona`/`schemaTaxa`/`schemaBairro` ANTES de qualquer I/O;
-//   - usa o client AUTENTICADO (RLS `zonas_escrita_propria` / `taxas_escrita_propria`),
-//     nunca service_role;
-//   - loja_id é DERIVADO da loja do dono (buscarLojaDoDono), NUNCA do payload —
-//     não dá pra criar/editar zona de outra loja;
-//   - zona_id de taxa/bairro é re-checado contra a loja do dono antes do I/O;
+//   - valida o zod ANTES de qualquer I/O;
+//   - usa o client AUTENTICADO (RLS), nunca service_role;
+//   - loja_id é DERIVADO da loja do dono (buscarLojaDoDono), NUNCA do payload;
+//   - as zonas só são gravadas pela RPC `salvar_zonas_entrega` (conjunto inteiro,
+//     uma forma, versão otimista) — não há escrita por zona (issue 327);
 //   - erro genérico no catch (sem vazar e.message).
 
 import { revalidatePath } from "next/cache";
 import {
-  schemaFaixasEntrega,
+  MENSAGEM_CONFLITO_ZONAS,
+  argsSalvarZonas,
+  ehConflitoDeVersao,
   schemaModalidadesEntrega,
-  schemaZona,
-  schemaZonaCompleta,
+  schemaZonasEntrega,
 } from "@/lib/validacoes/entrega";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
@@ -66,20 +66,26 @@ export async function salvarModalidadesEntrega(
   }
 }
 
+export type ResultadoZonas =
+  | { ok: true; versao: number }
+  | { ok: false; erro: string; conflito?: true };
+
+const ERRO_ZONAS = "Não foi possível salvar as zonas de entrega.";
+
 /**
- * Salva a tabela de faixas de entrega em lote (issue 326, D1/D2). zod ANTES de
- * qualquer I/O (`.strict()`: só incremento e taxa/grátis/ativo por faixa, ativas
- * em prefixo — iteração 2, C2'); client
- * AUTENTICADO; loja = a do dono logado, nunca do payload. UMA chamada à RPC
- * atômica `salvar_faixas_entrega`, que apaga as zonas da loja e grava as
- * faixas derivando teto/nome/tipo no servidor. Erro do banco → log + genérica.
+ * Grava as zonas de entrega da loja numa forma só (issues 325/328): faixas de
+ * km, faixas de CEP ou bairros. zod ANTES de qualquer I/O (`.strict()` em todo
+ * nível); client AUTENTICADO; loja = a do dono logado, nunca do payload. UMA
+ * chamada à RPC `salvar_zonas_entrega`, que confere a versão no banco
+ * (compare-and-set), apaga as zonas de qualquer forma e grava a forma pedida.
+ * Versão desatualizada → `conflito` com a mensagem de recarregar, sem
+ * revalidar. Outro erro do banco → log + genérica.
  */
-export async function salvarFaixasEntrega(
-  payload: unknown,
-): Promise<ResultadoEntrega> {
-  const parsed = schemaFaixasEntrega.safeParse(payload);
+export async function salvarZonasEntrega(payload: unknown): Promise<ResultadoZonas> {
+  const parsed = schemaZonasEntrega.safeParse(payload);
   if (!parsed.success) {
-    return { ok: false, erro: "Confira as faixas de entrega." };
+    const regra = parsed.error.issues.find((i) => i.code === "custom");
+    return { ok: false, erro: regra?.message ?? "Confira as zonas de entrega." };
   }
 
   try {
@@ -88,222 +94,23 @@ export async function salvarFaixasEntrega(
     if (loja == null) {
       return { ok: false, erro: "Loja não encontrada." };
     }
-    const { error } = await supabase.rpc("salvar_faixas_entrega", {
+    const { data, error } = await supabase.rpc("salvar_zonas_entrega", {
       p_loja_id: loja.id,
-      p_incremento: parsed.data.incremento,
-      p_faixas: parsed.data.faixas,
+      ...argsSalvarZonas(parsed.data),
     });
-    if (error) {
-      console.error("[salvarFaixasEntrega]", error);
-      return { ok: false, erro: "Não foi possível salvar as faixas de entrega." };
+    if (ehConflitoDeVersao(error)) {
+      console.warn("[salvarZonasEntrega] conflito de versão");
+      return { ok: false, conflito: true, erro: MENSAGEM_CONFLITO_ZONAS };
+    }
+    if (error || !Number.isSafeInteger(data)) {
+      console.error("[salvarZonasEntrega]", error ?? "versão inválida devolvida pela RPC");
+      return { ok: false, erro: ERRO_ZONAS };
     }
     revalidatePath(ROTA);
     revalidatePath("/loja/[slug]", "page");
-    return { ok: true };
+    return { ok: true, versao: data };
   } catch (e) {
-    console.error("[salvarFaixasEntrega]", e);
-    return { ok: false, erro: "Não foi possível salvar as faixas de entrega." };
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Primitiva de baixo nível (issue 032) — usada pelos testes e reutilizável.
-// salvarZona insere SÓ a zona; taxa entra via criarZona/atualizarZona (1:1).
-
-export async function salvarZona(payload: unknown): Promise<ResultadoEntrega> {
-  const parsed = schemaZona.safeParse(payload);
-  if (!parsed.success) {
-    return { ok: false, erro: "Zona inválida." };
-  }
-  try {
-    const supabase = await createClient();
-    const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) {
-      return { ok: false, erro: "Loja não encontrada." };
-    }
-    const { error } = await supabase
-      .from("zonas_entrega")
-      .insert({ ...parsed.data, loja_id: loja.id });
-    if (error) {
-      console.error("[salvarZona]", error);
-      return { ok: false, erro: "Não foi possível salvar a zona." };
-    }
-    return { ok: true };
-  } catch (e) {
-    console.error("[salvarZona]", e);
-    return { ok: false, erro: "Não foi possível salvar a zona." };
-  }
-}
-
-/**
- * Cria zona + taxa (1:1) + bairros (1:N) numa transação lógica. `loja_id`
- * derivado do dono; `zona_id` da taxa/bairros vem da própria inserção.
- */
-export async function criarZona(payload: unknown): Promise<ResultadoEntrega> {
-  const parsed = schemaZonaCompleta.safeParse(payload);
-  if (!parsed.success) {
-    return { ok: false, erro: "Zona inválida." };
-  }
-
-  try {
-    const supabase = await createClient();
-    const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) {
-      return { ok: false, erro: "Loja não encontrada." };
-    }
-
-    const { data: zona, error: erroZona } = await supabase
-      .from("zonas_entrega")
-      .insert({
-        nome: parsed.data.nome,
-        tipo: parsed.data.tipo,
-        ativo: parsed.data.ativo,
-        loja_id: loja.id,
-      })
-      .select("id")
-      .single();
-    if (erroZona || zona == null) {
-      console.error("[criarZona]", erroZona);
-      return { ok: false, erro: "Não foi possível salvar a zona." };
-    }
-
-    const { error: erroTaxa } = await supabase
-      .from("taxas_entrega")
-      .insert({ ...parsed.data.taxa, zona_id: zona.id });
-    if (erroTaxa) {
-      console.error("[criarZona/taxa]", erroTaxa);
-      return { ok: false, erro: "Não foi possível salvar a taxa." };
-    }
-
-    if (parsed.data.bairros.length > 0) {
-      const { error: erroBairros } = await supabase
-        .from("bairros_zona")
-        .insert(parsed.data.bairros.map((nome) => ({ nome, zona_id: zona.id })));
-      if (erroBairros) {
-        console.error("[criarZona/bairros]", erroBairros);
-        return { ok: false, erro: "Não foi possível salvar os bairros." };
-      }
-    }
-
-    revalidatePath(ROTA);
-    return { ok: true };
-  } catch (e) {
-    console.error("[criarZona]", e);
-    return { ok: false, erro: "Não foi possível salvar a zona." };
-  }
-}
-
-/**
- * Atualiza zona + taxa + bairros. Escopo por `id` da zona; a RLS
- * `zonas_escrita_propria` rejeita zona de outra loja. Bairros são substituídos
- * (delete + insert) para refletir adições/remoções inline.
- */
-export async function atualizarZona(
-  id: string,
-  payload: unknown,
-): Promise<ResultadoEntrega> {
-  const parsed = schemaZonaCompleta.safeParse(payload);
-  if (!parsed.success) {
-    return { ok: false, erro: "Zona inválida." };
-  }
-
-  try {
-    const supabase = await createClient();
-    const loja = await buscarLojaDoDono(supabase);
-    if (loja == null) {
-      return { ok: false, erro: "Loja não encontrada." };
-    }
-
-    // loja_id reafirmado como o do dono — WITH CHECK rejeitaria troca; escopo por id.
-    const { error: erroZona } = await supabase
-      .from("zonas_entrega")
-      .update({
-        nome: parsed.data.nome,
-        tipo: parsed.data.tipo,
-        ativo: parsed.data.ativo,
-        loja_id: loja.id,
-      })
-      .eq("id", id);
-    if (erroZona) {
-      console.error("[atualizarZona]", erroZona);
-      return { ok: false, erro: "Não foi possível salvar a zona." };
-    }
-
-    // Upsert da taxa (1:1 por zona_id).
-    const { error: erroTaxa } = await supabase
-      .from("taxas_entrega")
-      .upsert({ ...parsed.data.taxa, zona_id: id }, { onConflict: "zona_id" });
-    if (erroTaxa) {
-      console.error("[atualizarZona/taxa]", erroTaxa);
-      return { ok: false, erro: "Não foi possível salvar a taxa." };
-    }
-
-    // Bairros: substitui o conjunto (RLS escopa por zona → loja do dono).
-    const { error: erroDel } = await supabase
-      .from("bairros_zona")
-      .delete()
-      .eq("zona_id", id);
-    if (erroDel) {
-      console.error("[atualizarZona/bairros-del]", erroDel);
-      return { ok: false, erro: "Não foi possível salvar os bairros." };
-    }
-    if (parsed.data.bairros.length > 0) {
-      const { error: erroIns } = await supabase
-        .from("bairros_zona")
-        .insert(parsed.data.bairros.map((nome) => ({ nome, zona_id: id })));
-      if (erroIns) {
-        console.error("[atualizarZona/bairros-ins]", erroIns);
-        return { ok: false, erro: "Não foi possível salvar os bairros." };
-      }
-    }
-
-    revalidatePath(ROTA);
-    return { ok: true };
-  } catch (e) {
-    console.error("[atualizarZona]", e);
-    return { ok: false, erro: "Não foi possível salvar a zona." };
-  }
-}
-
-/** Liga/desliga a zona sem reabrir o form. Escopo por `id` (RLS). */
-export async function alternarZonaAtiva(
-  id: string,
-  ativo: boolean,
-): Promise<ResultadoEntrega> {
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("zonas_entrega")
-      .update({ ativo })
-      .eq("id", id);
-    if (error) {
-      console.error("[alternarZonaAtiva]", error);
-      return { ok: false, erro: "Não foi possível atualizar a zona." };
-    }
-    revalidatePath(ROTA);
-    return { ok: true };
-  } catch (e) {
-    console.error("[alternarZonaAtiva]", e);
-    return { ok: false, erro: "Não foi possível atualizar a zona." };
-  }
-}
-
-/** Remove a zona (cascata de taxa/bairros pelo FK). Escopo por `id` (RLS). */
-export async function removerZona(id: string): Promise<ResultadoEntrega> {
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("zonas_entrega")
-      .delete()
-      .eq("id", id);
-    if (error) {
-      console.error("[removerZona]", error);
-      return { ok: false, erro: "Não foi possível remover a zona." };
-    }
-    revalidatePath(ROTA);
-    return { ok: true };
-  } catch (e) {
-    console.error("[removerZona]", e);
-    return { ok: false, erro: "Não foi possível remover a zona." };
+    console.error("[salvarZonasEntrega]", e);
+    return { ok: false, erro: ERRO_ZONAS };
   }
 }

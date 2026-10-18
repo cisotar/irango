@@ -1,51 +1,16 @@
 import { describe, it, expect } from "vitest";
-// RED (issue 183) — o módulo puro de montagem do payload de zona ainda NÃO
-// existe na forma final; há só um STUB TDD em ./payloadZona (lança
-// "TODO: GREEN"), para o type-check compilar e a falha cair por ASSERÇÃO.
-//
-// RESPONSABILIDADE: converter o estado do FormZona (strings de input) no
-// payload que `schemaZonaCompleta` valida. É onde vive a conversão
-// máscara ↔ inteiro de CEP e a disciplina de zerar por tipo de zona.
+// Conversão máscara ↔ inteiro de CEP (issue 183), módulo puro `payloadZona.ts`.
+// A montagem do payload por zona (do form de zona antigo) saiu com a issue
+// 327; as conversões de CEP ficam para os editores de zona.
 //
 // Risco central que este arquivo trava: `Number("01000000") === 1000000`
 // (7 dígitos). A ida funciona porque calcularFrete normaliza o CEP do cliente
 // do mesmo jeito; a VOLTA para a máscara precisa de padStart(8, "0"), senão
-// uma segunda edição da zona reexibe/regrava a faixa errada.
+// uma segunda edição reexibe/regrava a faixa errada.
 //
-// FORA DA RESPONSABILIDADE: validação (schemaZonaCompleta), persistência
+// FORA DA RESPONSABILIDADE: validação (schemaZonasEntrega), persistência
 // (Server Actions), match de zona (calcularFrete).
-import {
-  cepParaInteiro,
-  cepInteiroParaMascara,
-  montarPayloadZona,
-  type EntradaPayloadZona,
-} from "./payloadZona";
-
-function entrada(over: Partial<EntradaPayloadZona> = {}): EntradaPayloadZona {
-  return {
-    nome: "Centro",
-    tipo: "faixa_cep",
-    ativo: true,
-    taxa: "8,00",
-    pedidoMinimoGratis: "",
-    raioMaxKm: "",
-    cepInicio: "01000-000",
-    cepFim: "01099-999",
-    bairros: [],
-    ...over,
-  };
-}
-
-type PayloadComFaixa = {
-  tipo: string;
-  taxa: {
-    taxa: number;
-    cep_inicio: number | null;
-    cep_fim: number | null;
-    raio_max_km: number | null;
-  };
-  bairros: string[];
-};
+import { cepParaInteiro, cepInteiroParaMascara } from "./payloadZona";
 
 describe("cepParaInteiro", () => {
   it("converte máscara com zero à esquerda para inteiro de 7 dígitos", () => {
@@ -90,38 +55,5 @@ describe("cepInteiroParaMascara — round-trip preserva o zero à esquerda", () 
 
   it("devolve string vazia para null (zona sem faixa)", () => {
     expect(cepInteiroParaMascara(null)).toBe("");
-  });
-});
-
-describe("montarPayloadZona — faixa por tipo de zona", () => {
-  it("monta a faixa quando tipo é faixa_cep", () => {
-    const p = montarPayloadZona(entrada()) as PayloadComFaixa;
-    expect(p.taxa.cep_inicio).toBe(1000000);
-    expect(p.taxa.cep_fim).toBe(1099999);
-  });
-
-  it("zera a faixa quando tipo é bairro (troca de tipo na edição)", () => {
-    const p = montarPayloadZona(
-      entrada({ tipo: "bairro", bairros: ["Centro"] }),
-    ) as PayloadComFaixa;
-    expect(p.taxa.cep_inicio).toBeNull();
-    expect(p.taxa.cep_fim).toBeNull();
-  });
-
-  it("zera a faixa quando tipo é raio_km (troca de tipo na edição)", () => {
-    const p = montarPayloadZona(
-      entrada({ tipo: "raio_km", raioMaxKm: "8" }),
-    ) as PayloadComFaixa;
-    expect(p.taxa.cep_inicio).toBeNull();
-    expect(p.taxa.cep_fim).toBeNull();
-    expect(p.taxa.raio_max_km).toBe(8);
-  });
-
-  it("deixa a faixa null quando o CEP está incompleto (schema reprova depois)", () => {
-    const p = montarPayloadZona(
-      entrada({ cepInicio: "0100", cepFim: "" }),
-    ) as PayloadComFaixa;
-    expect(p.taxa.cep_inicio).toBeNull();
-    expect(p.taxa.cep_fim).toBeNull();
   });
 });

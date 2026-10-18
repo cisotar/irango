@@ -66,6 +66,9 @@ const CAMPOS_LOJA_SOMENTE_SERVIDOR = [
   // liga. Espelham as colunas protegidas pelo trigger lojas_protege_billing.
   "modulo_impressao_a4",
   "modulo_impressao_termica",
+  // Versão otimista das zonas de entrega (issue 328): só a RPC
+  // salvar_zonas_entrega incrementa (compare-and-set). Patch admin nunca grava.
+  "versao_zonas_entrega",
 ] as const satisfies readonly (keyof Tabelas["lojas"]["Update"])[];
 
 type PatchLojaAdmin = Omit<

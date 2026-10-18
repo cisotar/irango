@@ -21,7 +21,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { inputMascaraClassName } from "@/components/painel/estiloInputMascara";
 import { paraNumero } from "@/components/painel/payloadZona";
-import type { salvarFaixasEntrega as salvarFaixasLojista } from "@/lib/actions/entrega";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 import {
   alertaDePreco,
@@ -42,6 +41,15 @@ import {
   type DadosFaixasEntrega,
 } from "@/lib/validacoes/entrega";
 
+/**
+ * Gravação das faixas injetada pelo pai. O pai embrulha `salvarZonasEntrega`
+ * (forma `raio_km` + versão otimista, issue 328); a tabela só conhece o payload
+ * de km e o resultado.
+ */
+export type SalvarFaixas = (
+  payload: DadosFaixasEntrega,
+) => Promise<{ ok: true } | { ok: false; erro: string }>;
+
 export type TabelaFaixasEntregaProps = {
   /** Zonas GRAVADAS da loja: abrem como faixas via `lerFaixas` (D4/C4). */
   zonas: ZonaVitrine[];
@@ -51,7 +59,7 @@ export type TabelaFaixasEntregaProps = {
    * Action injetada (issue 160): a do lojista ou a admin escopada por `lojaId`.
    * Sem default — omitir quebra o build em vez de gravar na loja errada.
    */
-  salvar: typeof salvarFaixasLojista;
+  salvar: SalvarFaixas;
 };
 
 /**
@@ -162,7 +170,7 @@ type Montagem =
   | { ok: false; erro: string; indice: number | null };
 
 /**
- * Estado da tela → payload de `salvarFaixasEntrega`. `schemaFaixasEntrega` aqui
+ * Estado da tela → payload de km da gravação de zonas. `schemaFaixasEntrega` aqui
  * é só gate de UX: a Server Action revalida e a RPC rederiva teto/nome/tipo.
  * Nunca devolve payload pela metade: a primeira faixa com preço (ou frete
  * grátis ligado) vazio ou inválido devolve o erro com o índice dela, para a
@@ -212,7 +220,7 @@ export function montarPayload(incremento: IncrementoFaixa, faixas: FaixaEditavel
  * ser testável em `environment: node`, sem jsdom.
  */
 export type DepsEnvioFaixas = {
-  salvar: typeof salvarFaixasLojista;
+  salvar: SalvarFaixas;
   toast: { error: (msg: string) => void };
 };
 

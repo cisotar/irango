@@ -299,11 +299,17 @@ describe("[328/F1] versão otimista das zonas de entrega", () => {
     expect(col.rows).toEqual([{ data_type: "bigint", is_nullable: "NO", column_default: "0" }]);
 
     // Loja criada pelo beforeAll e loja nova agora: as duas em 0.
+    // `lojas_dono_unico`: uma loja por dono — a loja C precisa de um dono próprio.
+    const DONO_C = "cccccccc-cccc-4ccc-8ccc-cc0000000328";
+    await t.db.query(
+      `insert into auth.users (id, email) values ($1, 'dono-c-328@teste.local') on conflict (id) do nothing`,
+      [DONO_C],
+    );
     const nova = await t.asService((s) =>
       s.query<{ id: string; v: number }>(
         `insert into public.lojas (dono_id, slug, nome, ativo) values ($1, 'loja-c-328', 'Loja C 328', true)
          returning id, versao_zonas_entrega::int as v`,
-        [DONO_B],
+        [DONO_C],
       ),
     );
     expect(nova.rows[0].v).toBe(0);

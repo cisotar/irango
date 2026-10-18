@@ -205,23 +205,15 @@ function temEqDaColuna(statement: string, coluna: string): boolean {
 }
 
 /**
- * Inserts/upserts-filho ANCORADOS POR POSSE em `admin-entrega.ts` (lido linha a linha
- * ao escrever este teste): `taxas_entrega`/`bairros_zona` não têm `loja_id`
- * próprio (FK só via `zona_id`), então ficam fora do wrapper `escopo.*` — mas
- * TODA escrita neles, em `criarZonaAdmin`/`atualizarZonaAdmin`, acontece
- * depois de `escopo.buscarPorId("zonas_entrega", id)` (~112, zona alheia
- * bloqueia ANTES de tocar a filha) ou sob a zona recém-criada via
- * `escopo.inserir` (~56-63, a FK só pode apontar para uma zona que acabou de
- * nascer sob a loja-alvo). São os únicos dois casos revisados como seguros.
- *
- * [269 · R1] `taxas_entrega` é escrita por `upsert` (`onConflict: "zona_id"`),
- * não por `insert`. A entrada já estava aqui e passa a valer de fato a partir
- * do momento em que a regex enxerga `upsert` — até então ela era decorativa.
+ * Inserts/upserts-filho ANCORADOS POR POSSE: escrita em tabela sem `loja_id`
+ * próprio que só é segura porque roda sob uma linha-pai cuja posse já foi
+ * provada. HOJE VAZIA: as duas entradas de `admin-entrega.ts`
+ * (`taxas_entrega`/`bairros_zona`, do CRUD por zona) saíram com a issue 327 —
+ * as zonas agora só são gravadas pela RPC `salvar_zonas_entrega`. Allowlist
+ * sem uso é brecha: um insert cru novo nessas tabelas passaria calado. Nova
+ * entrada exige leitura linha a linha da prova de posse.
  */
-const ALLOWLIST_INSERT: { rotulo: string; tabela: string }[] = [
-  { rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts", tabela: "taxas_entrega" },
-  { rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts", tabela: "bairros_zona" },
-];
+const ALLOWLIST_INSERT: { rotulo: string; tabela: string }[] = [];
 
 function eInsertAllowlistado(rotulo: string, tabela: string): boolean {
   return ALLOWLIST_INSERT.some((a) => a.rotulo === rotulo && a.tabela === tabela);
@@ -243,16 +235,6 @@ const ALLOWLIST_ESCOPO: {
   coluna: string;
   motivo: string;
 }[] = [
-  {
-    rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts",
-    tabela: "bairros_zona",
-    verbo: "delete",
-    coluna: "zona_id",
-    motivo:
-      "bairros_zona não tem loja_id próprio (FK só via zona_id). O delete roda " +
-      "depois de escopo.buscarPorId('zonas_entrega', id), que já bloqueia zona " +
-      "de outra loja — mesma posse ancorada dos inserts da ALLOWLIST_INSERT.",
-  },
   {
     rotulo: "src/app/admin/assinantes/actions/admin-modulos-impressao.ts",
     tabela: "lojas",

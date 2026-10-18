@@ -724,6 +724,7 @@ export type Database = {
           telefone: string | null
           tema: Json
           timezone: string
+          versao_zonas_entrega: number
           whatsapp: string | null
           whatsapp_envio_automatico: boolean
         }
@@ -767,6 +768,7 @@ export type Database = {
           telefone?: string | null
           tema?: Json
           timezone?: string
+          versao_zonas_entrega?: number
           whatsapp?: string | null
           whatsapp_envio_automatico?: boolean
         }
@@ -810,6 +812,7 @@ export type Database = {
           telefone?: string | null
           tema?: Json
           timezone?: string
+          versao_zonas_entrega?: number
           whatsapp?: string | null
           whatsapp_envio_automatico?: boolean
         }
@@ -1960,6 +1963,7 @@ export type Database = {
           telefone: string | null
           tema: Json
           timezone: string
+          versao_zonas_entrega: number
           whatsapp: string | null
           whatsapp_envio_automatico: boolean
         }[]
@@ -2012,6 +2016,7 @@ export type Database = {
           telefone: string | null
           tema: Json
           timezone: string
+          versao_zonas_entrega: number
           whatsapp: string | null
           whatsapp_envio_automatico: boolean
         }[]
@@ -2088,6 +2093,15 @@ export type Database = {
           p_titulo: string
         }
         Returns: string
+      }
+      salvar_zonas_entrega: {
+        Args: {
+          p_dados: Json
+          p_forma: string
+          p_loja_id: string
+          p_versao: number
+        }
+        Returns: number
       }
       status_faturamento: {
         Args: { p_so_concluidos: boolean }

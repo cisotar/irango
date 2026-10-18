@@ -1,16 +1,23 @@
 "use client";
 
+import { useRef } from "react";
+
 import { ModalidadesEntrega } from "@/components/painel/ModalidadesEntrega";
-import { TabelaFaixasEntrega } from "@/components/painel/TabelaFaixasEntrega";
+import {
+  TabelaFaixasEntrega,
+  type SalvarFaixas,
+} from "@/components/painel/TabelaFaixasEntrega";
 import type {
-  salvarFaixasEntrega as salvarFaixasLojista,
   salvarModalidadesEntrega as salvarModalidadesLojista,
+  salvarZonasEntrega as salvarZonasLojista,
 } from "@/lib/actions/entrega";
 import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 
 export type EntregasClientProps = {
   zonas: ZonaVitrine[];
+  /** `lojas.versao_zonas_entrega`, lida junto das zonas (issue 328). */
+  versao: number;
   /** Modalidades GRAVADAS da loja (spec modalidades-entrega-loja). */
   modalidades: DadosModalidadesEntrega;
   /** `lojas.taxa_entrega_fora_zona` — aviso D4 das modalidades e copy do limite (326, D7). */
@@ -22,16 +29,27 @@ export type EntregasClientProps = {
    */
   acoes: {
     salvarModalidades: typeof salvarModalidadesLojista;
-    salvarFaixas: typeof salvarFaixasLojista;
+    salvarZonas: typeof salvarZonasLojista;
   };
 };
 
 export function EntregasClient({
   zonas,
+  versao,
   modalidades,
   taxaForaZona,
   acoes,
 }: EntregasClientProps) {
+  // Versão otimista corrente: a fila da tabela serializa as gravações, e cada
+  // uma manda a versão devolvida pela anterior. Conflito devolve a mensagem de
+  // recarregar; a comparação é no banco (RPC), não aqui.
+  const versaoRef = useRef(versao);
+  const salvarFaixas: SalvarFaixas = async (payload) => {
+    const r = await acoes.salvarZonas({ forma: "raio_km", versao: versaoRef.current, ...payload });
+    if (r.ok) versaoRef.current = r.versao;
+    return r;
+  };
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
       <ModalidadesEntrega
@@ -58,7 +76,7 @@ export function EntregasClient({
       <TabelaFaixasEntrega
         zonas={zonas}
         taxaForaZona={taxaForaZona}
-        salvar={acoes.salvarFaixas}
+        salvar={salvarFaixas}
       />
     </main>
   );

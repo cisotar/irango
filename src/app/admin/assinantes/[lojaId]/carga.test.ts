@@ -94,10 +94,13 @@ vi.mock("@/lib/supabase/queries/produtos", () => ({
 
 const zonasFake = [{ id: "zona-1", loja_id: LOJA_ID }];
 const listarZonasComTaxas = vi.fn(async (_c: unknown, _id: string) => zonasFake);
+const zonasEdicaoFake = { versao: 3, zonas: zonasFake };
+const listarZonasParaEdicao = vi.fn(async (_c: unknown, _id: string) => zonasEdicaoFake);
 const formasFake = [{ id: "forma-1", loja_id: LOJA_ID }];
 const listarFormasPagamento = vi.fn(async (_c: unknown, _id: string) => formasFake);
 vi.mock("@/lib/supabase/queries/entregaPagamento", () => ({
   listarZonasComTaxas: (c: unknown, id: string) => listarZonasComTaxas(c, id),
+  listarZonasParaEdicao: (c: unknown, id: string) => listarZonasParaEdicao(c, id),
   listarFormasPagamento: (c: unknown, id: string) => listarFormasPagamento(c, id),
 }));
 
@@ -240,6 +243,7 @@ const queriesOverFetch = [
   buscarCategorias,
   buscarProdutosDoLojista,
   listarZonasComTaxas,
+  listarZonasParaEdicao,
   listarFormasPagamento,
 ];
 
@@ -341,7 +345,7 @@ describe("carregarZonasAdmin — fail-closed + escopo", () => {
     await expect(carregarZonasAdmin(LOJA_ID)).rejects.toThrow("acesso negado");
 
     expect(createServiceClient).not.toHaveBeenCalled();
-    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(listarZonasParaEdicao).not.toHaveBeenCalled();
     expect(notFound).not.toHaveBeenCalled();
   });
 
@@ -352,7 +356,7 @@ describe("carregarZonasAdmin — fail-closed + escopo", () => {
 
     expect(verificarAdminSaaS).not.toHaveBeenCalled();
     expect(createServiceClient).not.toHaveBeenCalled();
-    expect(listarZonasComTaxas).not.toHaveBeenCalled();
+    expect(listarZonasParaEdicao).not.toHaveBeenCalled();
   });
 
   it("sucesso: prova admin ANTES de elevar e escopa pela lojaId validada", async () => {
@@ -361,9 +365,9 @@ describe("carregarZonasAdmin — fail-closed + escopo", () => {
     expect(ordemChamadas.indexOf("verificarAdminSaaS")).toBeLessThan(
       ordemChamadas.indexOf("createServiceClient"),
     );
-    expect(listarZonasComTaxas).toHaveBeenCalledTimes(1);
-    expect(listarZonasComTaxas.mock.calls[0]?.[1]).toBe(LOJA_ID);
-    expect(zonas).toBe(zonasFake);
+    expect(listarZonasParaEdicao).toHaveBeenCalledTimes(1);
+    expect(listarZonasParaEdicao.mock.calls[0]?.[1]).toBe(LOJA_ID);
+    expect(zonas).toBe(zonasEdicaoFake);
   });
 
   it("NÃO faz over-fetch: loja/categorias/produtos/formas nunca são buscadas", async () => {
@@ -372,6 +376,7 @@ describe("carregarZonasAdmin — fail-closed + escopo", () => {
     expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
     expect(buscarCategorias).not.toHaveBeenCalled();
     expect(buscarProdutosDoLojista).not.toHaveBeenCalled();
+    expect(listarZonasComTaxas).not.toHaveBeenCalled();
     expect(listarFormasPagamento).not.toHaveBeenCalled();
   });
 });

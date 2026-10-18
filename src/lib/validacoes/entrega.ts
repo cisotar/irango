@@ -1,24 +1,14 @@
-// Schemas de ENTREGA — validam a FORMA da config de entrega do lojista no
-// cadastro (lojista é cliente não-confiável tanto quanto o comprador):
-//   - schemaZona   → zonas_entrega (nome, tipo enum, ativo)
-//   - schemaTaxa   → taxas_entrega (taxa, pedido_minimo_gratis, raio_max_km,
-//                    cep_inicio, cep_fim — a faixa espelha o CHECK
-//                    `taxas_faixa_cep_coerente` da migration 20260615011000)
-//   - schemaBairro → bairros_zona (nome)
+// Schemas de ENTREGA — validam a FORMA da config de entrega do lojista
+// (lojista é cliente não-confiável tanto quanto o comprador):
+//   - valorFrete            → regra única de valor de frete (≥ 0, centavos)
+//   - schemaModalidadesEntrega / schemaRegistroFreteCombinado
+//   - schemaFaixasEntrega   → gate da tela de faixas de km (issue 326)
+//   - schemaZonasEntrega    → autoridade das Server Actions que gravam as zonas
+//                             numa forma só, com versão otimista (issues 325/328)
 // FORA daqui: cálculo de frete, match de zona por endereço, RLS/unicidade.
 import { z } from "zod";
-
-const nomeObrigatorio = z.string().trim().min(1);
-
-export const schemaZona = z.object({
-  nome: nomeObrigatorio,
-  tipo: z.enum(["bairro", "raio_km", "faixa_cep"]),
-  ativo: z.boolean(),
-});
-
-/** CEP como inteiro de até 8 dígitos ("01000-000" → 1000000). Conversão da
- *  máscara é do form (`payloadZona.ts`), não do schema. */
-const cepInteiro = z.number().int().min(0).max(99999999).nullable().default(null);
+import type { Json } from "@/lib/database.types";
+import { normalizarBairro } from "@/lib/utils/calcularFrete";
 
 /**
  * Valor de frete em reais: não-negativo e com centavos. CRÍTICO: taxa negativa
@@ -27,44 +17,6 @@ const cepInteiro = z.number().int().min(0).max(99999999).nullable().default(null
  * modalidades-entrega-loja), que só acrescenta o próprio teto.
  */
 export const valorFrete = z.number().min(0).multipleOf(0.01);
-
-export const schemaTaxa = z
-  .object({
-    taxa: valorFrete,
-    pedido_minimo_gratis: z.number().min(0).nullable(),
-    raio_max_km: z.number().positive().nullable(),
-    // Faixa de CEP (issue 183). `.nullable().default(null)` mantém compat com
-    // payload legado (zona bairro/raio_km não manda as chaves).
-    cep_inicio: cepInteiro,
-    cep_fim: cepInteiro,
-  })
-  .superRefine((taxa, ctx) => {
-    // Espelho do CHECK `taxas_faixa_cep_coerente`: par tudo-ou-nada.
-    if ((taxa.cep_inicio == null) !== (taxa.cep_fim == null)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["cep_fim"],
-        message: "Informe o CEP inicial e o CEP final da faixa.",
-      });
-      return;
-    }
-    // Faixa inclusiva: cep_inicio === cep_fim é uma faixa de um CEP só.
-    if (
-      taxa.cep_inicio != null &&
-      taxa.cep_fim != null &&
-      taxa.cep_inicio > taxa.cep_fim
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["cep_fim"],
-        message: "O CEP final deve ser maior ou igual ao CEP inicial.",
-      });
-    }
-  });
-
-export const schemaBairro = z.object({
-  nome: nomeObrigatorio,
-});
 
 // ─── Modalidades de entrega da loja (spec modalidades-entrega-loja) ─────────
 // ISOMÓRFICO: gate de UX no form e autoridade na Server Action (lojista e
@@ -132,55 +84,187 @@ export const schemaFaixaEntrega = z
   })
   .strict();
 
-export const schemaFaixasEntrega = z
-  .object({
-    incremento: z.union([z.literal(1), z.literal(2)]),
-    faixas: z.array(schemaFaixaEntrega).max(TETO_FAIXAS_ENTREGA),
-  })
-  .strict()
-  .superRefine(({ faixas }, ctx) => {
-    // C2': ativas formam um prefixo — nenhuma ativa depois de uma desligada.
-    const primeiraDesligada = faixas.findIndex((f) => !f.ativo);
-    if (primeiraDesligada === -1) return;
-    const buraco = faixas.findIndex((f, i) => i > primeiraDesligada && f.ativo);
-    if (buraco === -1) return;
-    ctx.addIssue({
-      code: "custom",
-      path: ["faixas", buraco, "ativo"],
-      message: MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA,
-    });
+type ItemAtivo = { ativo: boolean };
+
+/** C2': ativas formam um prefixo — nenhuma ativa depois de uma desligada. */
+function refinarPrefixo({ faixas }: { faixas: ItemAtivo[] }, ctx: z.RefinementCtx) {
+  const primeiraDesligada = faixas.findIndex((f) => !f.ativo);
+  if (primeiraDesligada === -1) return;
+  const buraco = faixas.findIndex((f, i) => i > primeiraDesligada && f.ativo);
+  if (buraco === -1) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["faixas", buraco, "ativo"],
+    message: MENSAGEM_FAIXA_ATIVA_DEPOIS_DE_DESLIGADA,
   });
+}
+
+const camposKm = {
+  incremento: z.union([z.literal(1), z.literal(2)]),
+  faixas: z.array(schemaFaixaEntrega).max(TETO_FAIXAS_ENTREGA),
+};
+
+export const schemaFaixasEntrega = z.object(camposKm).strict().superRefine(refinarPrefixo);
 
 export type DadosFaixasEntrega = z.infer<typeof schemaFaixasEntrega>;
 
-// Payload completo do form de zona (issue 046): zona + taxa (1:1) + bairros
-// (1:N) num só envio. ISOMÓRFICO — usado no client (gate de UX) e revalidado
-// na Server Action (autoridade). FORA daqui: loja_id/zona_id (derivados no
-// servidor), unicidade/RLS.
-// ATENÇÃO: o `.superRefine` vem DEPOIS do `.extend` — a instância refinada não
-// é mais extensível. Só este nível enxerga `tipo`, então a obrigatoriedade da
-// faixa condicionada ao tipo da zona mora aqui (issue 183).
-export const schemaZonaCompleta = schemaZona
-  .extend({
-    taxa: schemaTaxa,
-    bairros: z.array(nomeObrigatorio).default([]),
+// ─── Zonas de entrega numa forma só, com versão (issues 325/328) ────────────
+// ISOMÓRFICO: autoridade das Server Actions (lojista e admin), antes de
+// qualquer I/O; os gates sem versão servem às telas. Regras de valor
+// espelham a RPC `salvar_zonas_entrega` (20261018120000), que segue sendo a
+// autoridade final. `.strict()` em todo nível: o cliente nunca manda
+// `loja_id`, `tipo`, `nome`, `raio_max_km` nem `id` — o servidor deriva.
+export const TETO_FAIXAS_CEP = 50;
+export const TETO_GRUPOS_BAIRRO = 30;
+export const TETO_BAIRROS_POR_GRUPO = 100;
+export const TETO_BAIRROS_TOTAL = 300;
+
+export const MENSAGEM_CONFLITO_ZONAS =
+  "Recarregue a página para ver as entregas atuais: elas foram alteradas em outra aba ou por outra pessoa, e esta mudança não foi salva.";
+
+/** CEP como inteiro de 8 dígitos ("01000-000" → 1000000), como em taxas_entrega.cep_*. */
+const cepInteiro = z.number().int().min(0).max(99999999);
+
+export const schemaFaixaCep = z
+  .object({
+    cep_inicio: cepInteiro,
+    cep_fim: cepInteiro,
+    taxa: valorFrete,
+    pedido_minimo_gratis: valorFrete.nullable(),
+    ativo: z.boolean(),
   })
-  .superRefine((zona, ctx) => {
-    const temFaixa = zona.taxa.cep_inicio != null && zona.taxa.cep_fim != null;
-    if (zona.tipo === "faixa_cep" && !temFaixa) {
+  .strict();
+
+export const schemaGrupoBairros = z
+  .object({
+    bairros: z
+      .array(z.string().trim().min(1).max(120))
+      .min(1, "Adicione pelo menos um bairro a este preço.")
+      .max(TETO_BAIRROS_POR_GRUPO),
+    taxa: valorFrete,
+    pedido_minimo_gratis: valorFrete.nullable(),
+    ativo: z.boolean(),
+  })
+  .strict();
+
+/** Inteiro (1000000) → "01000-000", só para mensagem de erro. */
+function mascaraCep(valor: number): string {
+  const digitos = String(valor).padStart(8, "0");
+  return `${digitos.slice(0, 5)}-${digitos.slice(5)}`;
+}
+
+type FaixaCepRefino = { cep_inicio: number; cep_fim: number };
+
+/** Início ≤ fim e nenhuma faixa cruzando outra (desligada também conta: pode voltar). */
+function refinarCep({ faixas }: { faixas: FaixaCepRefino[] }, ctx: z.RefinementCtx) {
+  faixas.forEach((f, i) => {
+    if (f.cep_inicio > f.cep_fim) {
       ctx.addIssue({
         code: "custom",
-        path: ["taxa", "cep_inicio"],
-        message: "Zona por faixa de CEP exige o CEP inicial e o final.",
-      });
-      return;
-    }
-    // Faixa órfã: zona de bairro/raio não pode carregar faixa (troca de tipo).
-    if (zona.tipo !== "faixa_cep" && temFaixa) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["taxa", "cep_inicio"],
-        message: "Faixa de CEP só se aplica a zonas do tipo faixa de CEP.",
+        path: ["faixas", i, "cep_fim"],
+        message: "O CEP final deve ser maior ou igual ao CEP inicial.",
       });
     }
   });
+  faixas.forEach((f, j) => {
+    if (f.cep_inicio > f.cep_fim) return;
+    const outra = faixas.find(
+      (g, i) => i < j && g.cep_inicio <= g.cep_fim && f.cep_inicio <= g.cep_fim && g.cep_inicio <= f.cep_fim,
+    );
+    if (outra == null) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["faixas", j, "cep_inicio"],
+      message: `A faixa de ${mascaraCep(f.cep_inicio)} a ${mascaraCep(f.cep_fim)} cruza com a de ${mascaraCep(outra.cep_inicio)} a ${mascaraCep(outra.cep_fim)}. Ajuste uma delas.`,
+    });
+  });
+}
+
+/** Teto total e bairro repetido em qualquer grupo, pela MESMA normalização da vitrine. */
+function refinarBairros({ grupos }: { grupos: { bairros: string[] }[] }, ctx: z.RefinementCtx) {
+  const total = grupos.reduce((n, g) => n + g.bairros.length, 0);
+  if (total > TETO_BAIRROS_TOTAL) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["grupos"],
+      message: `Cadastre no máximo ${TETO_BAIRROS_TOTAL} bairros.`,
+    });
+  }
+  const vistos = new Set<string>();
+  grupos.forEach((g, gi) => {
+    g.bairros.forEach((bairro, bi) => {
+      const chave = normalizarBairro(bairro);
+      if (vistos.has(chave)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["grupos", gi, "bairros", bi],
+          message: `${bairro} já está em outro preço.`,
+        });
+        return;
+      }
+      vistos.add(chave);
+    });
+  });
+}
+
+const camposCep = { faixas: z.array(schemaFaixaCep).max(TETO_FAIXAS_CEP) };
+const camposBairro = { grupos: z.array(schemaGrupoBairros).max(TETO_GRUPOS_BAIRRO) };
+
+/** Gates sem versão, para as telas de CEP e bairro. */
+export const schemaFaixasCep = z.object(camposCep).strict().superRefine(refinarCep);
+export const schemaGruposBairro = z.object(camposBairro).strict().superRefine(refinarBairros);
+
+const versaoZonas = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+
+export const schemaZonasEntrega = z.discriminatedUnion("forma", [
+  z
+    .object({ forma: z.literal("raio_km"), versao: versaoZonas, ...camposKm })
+    .strict()
+    .superRefine(refinarPrefixo),
+  z
+    .object({ forma: z.literal("faixa_cep"), versao: versaoZonas, ...camposCep })
+    .strict()
+    .superRefine(refinarCep),
+  z
+    .object({ forma: z.literal("bairro"), versao: versaoZonas, ...camposBairro })
+    .strict()
+    .superRefine(refinarBairros),
+]);
+
+export type DadosZonasEntrega = z.infer<typeof schemaZonasEntrega>;
+export type FormaZonasEntrega = DadosZonasEntrega["forma"];
+export type DadosZonasSemVersao = DadosZonasEntrega extends infer D
+  ? D extends unknown
+    ? Omit<D, "versao">
+    : never
+  : never;
+
+/** Argumentos da RPC `salvar_zonas_entrega` (sem `p_loja_id`, que a action deriva). */
+export function argsSalvarZonas(d: DadosZonasEntrega): {
+  p_versao: number;
+  p_forma: FormaZonasEntrega;
+  p_dados: Json;
+} {
+  switch (d.forma) {
+    case "raio_km":
+      return {
+        p_versao: d.versao,
+        p_forma: d.forma,
+        p_dados: { incremento: d.incremento, faixas: d.faixas },
+      };
+    case "faixa_cep":
+      return { p_versao: d.versao, p_forma: d.forma, p_dados: { faixas: d.faixas } };
+    case "bairro":
+      return { p_versao: d.versao, p_forma: d.forma, p_dados: { grupos: d.grupos } };
+  }
+}
+
+/** Número de faixas ou grupos gravados (metadado de auditoria do admin). */
+export function itensDasZonas(d: DadosZonasEntrega): number {
+  return d.forma === "bairro" ? d.grupos.length : d.faixas.length;
+}
+
+/** P0001 + fragmento 'versao desatualizada': o contrato estável da RPC. */
+export function ehConflitoDeVersao(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === "P0001" && (error.message ?? "").includes("salvar_zonas_entrega: versao desatualizada");
+}
