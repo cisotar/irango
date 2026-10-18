@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { listarZonasParaEdicao } from "@/lib/supabase/queries/entregaPagamento";
 import {
+  definirFormaFrete,
   salvarModalidadesEntrega,
   salvarZonasEntrega,
 } from "@/lib/actions/entrega";
@@ -19,7 +20,8 @@ import { EntregasClient } from "./EntregasClient";
  * `zonas_escrita_propria`/leitura própria). Sem loja → onboarding. O lojista
  * escolhe uma forma de frete (km, CEP ou bairros, issue 325) e as zonas são
  * gravadas por `salvarZonasEntrega`, que deriva `loja_id` do dono e confere a
- * versão. A forma ativa (`lojas.forma_frete`) vem no mesmo select das zonas.
+ * versão; salvar não ativa a forma. A forma ativa (`lojas.forma_frete`) vem no
+ * mesmo select das zonas e só muda por `definirFormaFrete` ("Usar esta forma").
  * Das coordenadas da loja só sai o boolean `temCoordenadas` (327).
  */
 export default async function EntregasPage(): Promise<ReactElement> {
@@ -47,6 +49,7 @@ export default async function EntregasPage(): Promise<ReactElement> {
       acoes={{
         salvarModalidades: salvarModalidadesEntrega,
         salvarZonas: salvarZonasEntrega,
+        definirForma: definirFormaFrete,
       }}
     />
   );

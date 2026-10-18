@@ -11,7 +11,7 @@
 // `formaFrete.ts`, `payloadZona.ts`); aqui só há React. Nenhum preço desta
 // tela é cobrado: o frete do pedido é recalculado no servidor.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, Check, Info, Loader2 } from "lucide-react";
 import { IMaskInput } from "react-imask";
 import { toast } from "sonner";
@@ -56,8 +56,9 @@ export type PropsEditorZonas = {
   /** `gravador.salvar`: põe a versão otimista e chama a action injetada. */
   salvar: (dados: DadosZonasSemVersao) => Promise<ResultadoZonas>;
   /**
-   * Avisa o pai do payload ACEITO: salvar numa forma = ativar essa forma (325),
-   * e o payload é a lista efetiva das zonas dela (`zonasResumoDoPayload`).
+   * Avisa o pai do payload ACEITO: o payload é a lista efetiva das zonas da
+   * forma dele (`zonasResumoDoPayload`). Gravar NÃO ativa a forma (325): ativar
+   * é só pelo botão "Usar esta forma".
    */
   aoGravar: (payload: DadosZonasSemVersao) => void;
   /** Conflito de versão: desliga edição e gravação até recarregar. */
@@ -198,22 +199,66 @@ export function AvisoConflitoZonas() {
 
 /**
  * Aviso acima do editor quando a forma visível NÃO é a que a vitrine cobra
- * hoje (325): salvar aqui ativa esta forma, e as zonas da forma ativa ficam
- * guardadas. Nada é apagado nem perguntado.
+ * hoje (325). Salvar as zonas aqui só as guarda; a cobrança muda pelo botão
+ * "Usar esta forma" (RPC `definir_forma_frete`, mesma versão otimista). O botão
+ * fica desligado enquanto a forma não tem zona ligada com preço (a RPC também
+ * recusa), durante a ativação e em conflito de versão.
  */
-export function AvisoUsarForma({ forma, formaAtiva }: { forma: FormaFrete; formaAtiva: FormaFrete }) {
+export function AvisoUsarForma({
+  forma,
+  formaAtiva,
+  podeUsar,
+  ativando,
+  aoUsar,
+  bloqueado,
+}: {
+  forma: FormaFrete;
+  formaAtiva: FormaFrete;
+  /** A forma visível tem zona ligada com preço (`temZonaQueCobra`). */
+  podeUsar: boolean;
+  ativando: boolean;
+  aoUsar: () => void;
+  /** Conflito de versão: nada sai para o servidor até recarregar. */
+  bloqueado: boolean;
+}) {
+  const idMotivo = useId();
   if (forma === formaAtiva) return null;
   return (
-    <div role="note" className="mb-4 flex items-start gap-3 rounded-lg border bg-muted/50 p-4 text-sm">
-      <Info className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
-      <p className="text-muted-foreground">
-        <strong className="font-medium text-foreground">
-          Preencha esta tela para cobrar por {ROTULO_FORMA_FRASE[forma]}.
-        </strong>{" "}
-        A troca vale assim que um campo for salvo. Hoje a vitrine cobra por{" "}
-        {ROTULO_FORMA_FRASE[formaAtiva]}, e essa configuração fica guardada para você voltar quando
-        quiser.
-      </p>
+    <div
+      role="note"
+      className="mb-4 flex flex-col gap-3 rounded-lg border bg-muted/50 p-4 text-sm md:flex-row md:items-center md:justify-between"
+    >
+      <div className="flex items-start gap-3">
+        <Info className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
+        <p className="text-muted-foreground">
+          <strong className="block font-medium text-foreground">
+            Hoje a vitrine cobra por {ROTULO_FORMA_FRASE[formaAtiva]}.
+          </strong>
+          Preencha e salve as zonas desta tela: elas ficam guardadas e a cobrança não muda. Clique em
+          “Usar esta forma” para a vitrine passar a cobrar por {ROTULO_FORMA_FRASE[forma]}.
+          {!podeUsar && (
+            <span id={idMotivo} className="mt-1 block font-medium text-foreground">
+              Cadastre pelo menos uma zona ligada com preço para usar esta forma.
+            </span>
+          )}
+        </p>
+      </div>
+      <Button
+        type="button"
+        className={`${ALVO} w-full shrink-0 md:w-auto`}
+        disabled={!podeUsar || ativando || bloqueado}
+        aria-describedby={podeUsar ? undefined : idMotivo}
+        onClick={aoUsar}
+      >
+        {ativando ? (
+          <>
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Ativando…
+          </>
+        ) : (
+          "Usar esta forma"
+        )}
+      </Button>
     </div>
   );
 }
@@ -243,8 +288,8 @@ function DialogoSubstituirZonas({
         <AlertDialogHeader>
           <AlertDialogTitle>Substituir as zonas de distância atuais?</AlertDialogTitle>
           <AlertDialogDescription>
-            As zonas de distância cadastradas hoje saem da loja e a vitrine passa a cobrar pela
-            tabela de {ROTULO_FORMA_FRASE.raio_km}. Esta ação não pode ser desfeita.
+            As zonas de distância cadastradas hoje saem da loja e dão lugar à tabela de{" "}
+            {ROTULO_FORMA_FRASE.raio_km}. Esta ação não pode ser desfeita.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {zonas.length > 0 && (

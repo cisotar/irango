@@ -6,6 +6,7 @@ import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 import type { FormaFrete } from "@/lib/utils/formaFrete";
 
 import {
+  definirFormaFreteAdmin,
   salvarModalidadesEntregaAdmin,
   salvarZonasEntregaAdmin,
 } from "@/app/admin/assinantes/actions/admin-entrega";
@@ -18,7 +19,8 @@ import {
  * A autoridade (geocoding, taxa, escopo cross-loja) é das actions no servidor. A
  * taxa gravada aqui é definição comercial — o valor cobrado ao cliente segue
  * recalculado no checkout (`criar_pedido`); esta rota não introduz recálculo.
- * Mostra a mesma tela do lojista (seletor de forma, issue 325); das coordenadas
+ * Mostra a mesma tela do lojista (seletor de forma e botão "Usar esta forma",
+ * issue 325); das coordenadas
  * da loja recebe só o boolean `temCoordenadas` (327).
  */
 export function EntregasAdminClient({
@@ -52,6 +54,7 @@ export function EntregasAdminClient({
       acoes={{
         salvarModalidades: (payload) => salvarModalidadesEntregaAdmin(lojaId, payload),
         salvarZonas: (payload) => salvarZonasEntregaAdmin(lojaId, payload),
+        definirForma: (payload) => definirFormaFreteAdmin(lojaId, payload),
       }}
     />
   );

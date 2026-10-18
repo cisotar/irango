@@ -1,11 +1,12 @@
 // Forma de frete ATIVA da loja (issue 325) — módulo PURO, sem React e sem I/O.
 //
 // A forma ativa é a coluna `lojas.forma_frete` (migration 20261018130000). O
-// app só a grava pela RPC `salvar_zonas_entrega` (junto da versão otimista) e
-// pela legada `salvar_faixas_entrega`; a RLS de `lojas` ainda permite ao dono
-// gravá-la direto na própria loja (ver issue 363). Salvar as zonas de uma
-// forma = ativar essa forma. As zonas das três formas ficam
-// guardadas lado a lado; só as da forma ativa cobram. O filtro do frete mora em
+// app só a grava pela RPC `definir_forma_frete` (botão "Usar esta forma", junto
+// da versão otimista; migration 20261018140000) e pela legada
+// `salvar_faixas_entrega`; a RLS de `lojas` ainda permite ao dono gravá-la
+// direto na própria loja (ver issue 363). Salvar as zonas de uma forma NÃO a
+// ativa. As zonas das três formas ficam guardadas lado a lado; só as da forma
+// ativa cobram. O filtro do frete mora em
 // `listarZonasComTaxas(client, lojaId, forma)`; aqui só se estreita o valor do
 // banco para o enum e se separa as zonas por forma para a tela.
 //
@@ -59,7 +60,7 @@ export function zonasDaForma<T extends { tipo: string }>(zonas: readonly T[], fo
 
 /**
  * Zonas que a forma passa a ter depois de gravar `payload`, no formato que
- * `entregaDisponivel` lê. A RPC regrava as zonas da forma exatamente com as
+ * `entregaDisponivel`/`temZonaQueCobra` leem. A RPC regrava as zonas da forma exatamente com as
  * faixas/grupos do payload, cada uma com a sua taxa: o payload aceito É a lista
  * efetiva, sem precisar recarregar a página.
  */

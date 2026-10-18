@@ -15,10 +15,10 @@ const DESCRICAO: Record<FormaFrete, string> = {
 };
 
 /**
- * Escolha da forma de cobrar a entrega (issue 325). Trocar de opção NÃO grava
- * nada: só muda o editor visível. A forma passa a valer na vitrine quando o
- * lojista salva no editor dela (a RPC regrava só as zonas dessa forma e a
- * ativa; as das outras formas ficam guardadas).
+ * Escolha da forma visível na tela de entregas (issue 325). Trocar de opção
+ * NÃO grava nada: só muda o editor visível. Salvar no editor também não muda a
+ * cobrança: a forma passa a valer na vitrine só pelo botão "Usar esta forma"
+ * (`AvisoUsarForma`). O selo "Valendo na vitrine" marca a forma ativa.
  */
 export function SeletorFormaFrete({
   valor,

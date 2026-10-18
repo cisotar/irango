@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { ModalidadesEntrega } from "@/components/painel/ModalidadesEntrega";
 import { SeletorFormaFrete } from "@/components/painel/SeletorFormaFrete";
@@ -10,12 +11,13 @@ import { TabelaFaixasEntrega } from "@/components/painel/TabelaFaixasEntrega";
 import { criarGravadorComVersao, type GravadorComVersao } from "@/components/painel/gravacaoZonas";
 import { AvisoConflitoZonas, AvisoUsarForma, type PropsEditorZonas } from "@/components/painel/pecasEntrega";
 import type {
+  definirFormaFrete as definirFormaLojista,
   salvarModalidadesEntrega as salvarModalidadesLojista,
   salvarZonasEntrega as salvarZonasLojista,
 } from "@/lib/actions/entrega";
-import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
+import { MENSAGEM_ERRO_FORMA_FRETE, type DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
-import type { ZonaResumo } from "@/lib/utils/modalidadesEntrega";
+import { temZonaQueCobra, type ZonaResumo } from "@/lib/utils/modalidadesEntrega";
 import { zonasDaForma, zonasResumoDoPayload, type FormaFrete } from "@/lib/utils/formaFrete";
 
 export type EntregasClientProps = {
@@ -44,15 +46,18 @@ export type EntregasClientProps = {
   acoes: {
     salvarModalidades: typeof salvarModalidadesLojista;
     salvarZonas: typeof salvarZonasLojista;
+    /** Ativa a forma (botão "Usar esta forma", RPC `definir_forma_frete`). */
+    definirForma: typeof definirFormaLojista;
   };
 };
 
 /**
  * Tela de entregas (issues 325/327/328). O lojista escolhe UMA forma de cobrar
- * (faixas de km, faixas de CEP ou bairros) e edita só ela. Salvar numa forma
- * ativa essa forma na vitrine; as zonas das outras formas ficam guardadas e
- * voltam intactas quando o lojista volta para elas. Nada é apagado ao abrir,
- * ao trocar de opção nem ao salvar outra forma.
+ * (faixas de km, faixas de CEP ou bairros) e edita só ela. Salvar numa forma só
+ * guarda as zonas dela; a vitrine passa a cobrar por ela quando o lojista
+ * clica "Usar esta forma" (mesma versão otimista). As zonas das outras formas
+ * ficam guardadas e voltar para uma delas é só clicar o botão. Nada é apagado
+ * ao abrir, ao trocar de opção nem ao salvar outra forma.
  *
  * Os três editores ficam MONTADOS (só o visível sem `hidden`): trocar de opção
  * não perde o estado local já gravado nem reabre com zonas velhas da carga.
@@ -68,16 +73,20 @@ export function EntregasClient({
   acoes,
 }: EntregasClientProps) {
   const [formaVisivel, setFormaVisivel] = useState<FormaFrete>(forma);
-  // Forma que a vitrine cobra e as zonas dela: as da carga e, depois de cada
-  // gravação, as do payload aceito (a RPC grava `forma_frete = p_forma` no
-  // mesmo UPDATE da versão e regrava as zonas da forma com o payload). Sem
-  // isso o aviso das modalidades leria as zonas velhas da carga até recarregar.
-  const [ativa, setAtiva] = useState<{ forma: FormaFrete; zonas: ZonaResumo[] }>(() => ({
-    forma,
-    zonas: zonasDaForma(zonas, forma),
+  // Forma que a vitrine cobra: a da carga e, depois, só a que o botão "Usar
+  // esta forma" ativou com sucesso. Gravar zonas NUNCA muda a forma ativa.
+  const [formaAtiva, setFormaAtiva] = useState<FormaFrete>(forma);
+  // Resumo das zonas de CADA forma: o da carga e, depois de cada gravação, o
+  // do payload aceito (a RPC regrava as zonas da forma com ele). Lido pelo
+  // aviso das modalidades (forma ativa) e pelo bloqueio do botão (forma
+  // visível), sem esperar recarregar a página.
+  const [resumoPorForma, setResumoPorForma] = useState<Record<FormaFrete, ZonaResumo[]>>(() => ({
+    raio_km: zonasDaForma(zonas, "raio_km"),
+    faixa_cep: zonasDaForma(zonas, "faixa_cep"),
+    bairro: zonasDaForma(zonas, "bairro"),
   }));
-  const formaAtiva = ativa.forma;
   const [conflito, setConflito] = useState(false);
+  const [ativando, setAtivando] = useState(false);
 
   const acoesRef = useRef(acoes);
   useEffect(() => {
@@ -86,18 +95,38 @@ export function EntregasClient({
 
   // Versão otimista corrente: cada gravação sai com a versão devolvida pela
   // anterior; no conflito o gravador para de chamar o servidor. A comparação é
-  // no banco (RPC), não aqui. Criado na 1ª gravação (sempre num handler, nunca
-  // no render) e reusado pelos três editores: uma versão só para a tela.
+  // no banco (RPC), não aqui. Criado na 1ª gravação ou ativação (sempre num
+  // handler, nunca no render) e reusado pelos três editores e pelo botão "Usar
+  // esta forma": uma versão e uma fila só para a tela.
   const versaoDaCarga = useRef(versao);
   const gravadorRef = useRef<GravadorComVersao | null>(null);
-  const salvarZonas: PropsEditorZonas["salvar"] = (dados) => {
+  function gravador(): GravadorComVersao {
     gravadorRef.current ??= criarGravadorComVersao({
       acao: (p) => acoesRef.current.salvarZonas(p),
+      acaoAtivar: (p) => acoesRef.current.definirForma(p),
       versaoInicial: versaoDaCarga.current,
       aoConflito: () => setConflito(true),
     });
-    return gravadorRef.current.salvar(dados);
-  };
+    return gravadorRef.current;
+  }
+  const salvarZonas: PropsEditorZonas["salvar"] = (dados) => gravador().salvar(dados);
+
+  // Botão "Usar esta forma": conflito é coberto pelo AvisoConflitoZonas; outro
+  // erro (forma sem zona, falha) vira toast com a mensagem da action.
+  async function usarForma() {
+    if (ativando) return;
+    const alvo = formaVisivel;
+    setAtivando(true);
+    try {
+      const resultado = await gravador().ativar(alvo);
+      if (resultado.ok) setFormaAtiva(alvo);
+      else if (!resultado.conflito) toast.error(resultado.erro);
+    } catch {
+      toast.error(MENSAGEM_ERRO_FORMA_FRETE);
+    } finally {
+      setAtivando(false);
+    }
+  }
 
   // Cada editor abre com as zonas guardadas da SUA forma (325).
   const zonasPorForma = useMemo(
@@ -111,7 +140,9 @@ export function EntregasClient({
 
   const comuns: Omit<PropsEditorZonas, "zonasIniciais"> = {
     salvar: salvarZonas,
-    aoGravar: (payload) => setAtiva({ forma: payload.forma, zonas: zonasResumoDoPayload(payload) }),
+    // Atualiza só o resumo da forma do payload; a forma ativa NÃO muda.
+    aoGravar: (payload) =>
+      setResumoPorForma((atual) => ({ ...atual, [payload.forma]: zonasResumoDoPayload(payload) })),
     bloqueado: conflito,
     taxaForaZona,
   };
@@ -121,7 +152,7 @@ export function EntregasClient({
       <ModalidadesEntrega
         inicial={modalidades}
         // Só as zonas da forma ATIVA dizem se a entrega está disponível.
-        zonas={ativa.zonas}
+        zonas={resumoPorForma[formaAtiva]}
         taxaForaZona={taxaForaZona}
         salvar={acoes.salvarModalidades}
       />
@@ -143,7 +174,14 @@ export function EntregasClient({
 
       {conflito && <AvisoConflitoZonas />}
 
-      <AvisoUsarForma forma={formaVisivel} formaAtiva={formaAtiva} />
+      <AvisoUsarForma
+        forma={formaVisivel}
+        formaAtiva={formaAtiva}
+        podeUsar={temZonaQueCobra(resumoPorForma[formaVisivel])}
+        ativando={ativando}
+        aoUsar={() => void usarForma()}
+        bloqueado={conflito}
+      />
 
       <div hidden={formaVisivel !== "raio_km"}>
         <TabelaFaixasEntrega
