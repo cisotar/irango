@@ -32,6 +32,9 @@ export default async function EntregasConfiguracaoAdminPage({
       lojaId={lojaId}
       zonas={zonas}
       versao={versao}
+      // Só o boolean: o par de coordenadas nunca vai ao client (seguranca.md §19).
+      temCoordenadas={loja.latitude != null && loja.longitude != null}
+      hrefPerfil={`/admin/assinantes/${lojaId}/configuracoes/perfil`}
       modalidades={modalidadesDaLoja(loja)}
       taxaForaZona={loja.taxa_entrega_fora_zona}
     />

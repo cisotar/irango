@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, Info, Loader2, Plus, Trash2 } from "lucide-react";
-import { IMaskInput } from "react-imask";
+import Link from "next/link";
+import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -19,9 +19,17 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
-import { inputMascaraClassName } from "@/components/painel/estiloInputMascara";
+import {
+  ALVO,
+  CampoMoeda,
+  FaixaTrocaDeForma,
+  IndicadorGravacao,
+  ListaZonasAtuais,
+  useGravacaoDoEditor,
+  type PropsEditorZonas,
+} from "@/components/painel/pecasEntrega";
 import { paraNumero } from "@/components/painel/payloadZona";
-import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
+import { lojaTemRaioSemCoords } from "@/lib/utils/freteDegradado";
 import {
   alertaDePreco,
   desligarAPartirDe,
@@ -39,27 +47,16 @@ import {
   TETO_FAIXAS_ENTREGA,
   schemaFaixasEntrega,
   type DadosFaixasEntrega,
+  type DadosZonasSemVersao,
 } from "@/lib/validacoes/entrega";
 
-/**
- * Gravação das faixas injetada pelo pai. O pai embrulha `salvarZonasEntrega`
- * (forma `raio_km` + versão otimista, issue 328); a tabela só conhece o payload
- * de km e o resultado.
- */
-export type SalvarFaixas = (
-  payload: DadosFaixasEntrega,
-) => Promise<{ ok: true } | { ok: false; erro: string }>;
+type PayloadKm = Extract<DadosZonasSemVersao, { forma: "raio_km" }>;
 
-export type TabelaFaixasEntregaProps = {
-  /** Zonas GRAVADAS da loja: abrem como faixas via `lerFaixas` (D4/C4). */
-  zonas: ZonaVitrine[];
-  /** `lojas.taxa_entrega_fora_zona` — só para a copy do limite (D7). */
-  taxaForaZona: number | null;
-  /**
-   * Action injetada (issue 160): a do lojista ou a admin escopada por `lojaId`.
-   * Sem default — omitir quebra o build em vez de gravar na loja errada.
-   */
-  salvar: SalvarFaixas;
+export type TabelaFaixasEntregaProps = PropsEditorZonas & {
+  /** Boolean derivado no servidor — nunca as coordenadas cruas (seguranca.md §19). */
+  temCoordenadas: boolean;
+  /** Rota de Perfil da loja (painel ou hub admin), para cadastrar o endereço. */
+  hrefPerfil: string;
 };
 
 /**
@@ -67,17 +64,6 @@ export type TabelaFaixasEntregaProps = {
  * `IMaskInput` ("8.5"; vazio = ""); `gratis === null` = sem frete grátis.
  */
 export type FaixaEditavel = { taxa: string; gratis: string | null; ativo: boolean };
-
-/** Alvo de toque literal (design-system §5): a base de fonte é 120%. */
-const ALVO = "min-h-[44px] min-w-[44px]";
-
-const ROTULO_TIPO: Record<string, string> = {
-  bairro: "Por bairro",
-  raio_km: "Por raio (km)",
-  faixa_cep: "Por faixa de CEP",
-};
-
-const ERRO_GENERICO = "Não foi possível salvar as faixas de entrega. Tente de novo.";
 
 /** Número do banco → valor sem máscara do input ("4.5"); `paraNumero` desfaz. */
 function paraTexto(valor: number): string {
@@ -87,82 +73,6 @@ function paraTexto(valor: number): string {
 /** "0–1 km, 1–2 km e 2–3 km". */
 function listarRotulos(rotulos: string[]): string {
   return new Intl.ListFormat("pt-BR", { style: "long", type: "conjunction" }).format(rotulos);
-}
-
-/** Zonas gravadas hoje (aviso de legado D4 e confirmação de substituição). */
-function ListaZonasAtuais({
-  zonas,
-  rotulo,
-  className = "",
-}: {
-  zonas: ZonaVitrine[];
-  rotulo: string;
-  className?: string;
-}) {
-  return (
-    <ul
-      aria-label={rotulo}
-      className={`divide-y divide-foreground/10 rounded-lg border ${className}`}
-    >
-      {zonas.map((z) => (
-        <li key={z.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-          <span className="font-medium text-foreground">{z.nome}</span>
-          <span className="text-xs text-muted-foreground">
-            {ROTULO_TIPO[z.tipo] ?? z.tipo}
-            {z.ativo ? "" : " · desativada"}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** Campo de moeda da linha (C7): mesma máscara do frete combinado. */
-function CampoMoeda({
-  id,
-  valor,
-  aoMudar,
-  aoSair,
-  rotuloAcessivel,
-  descritoPor,
-  invalido,
-  className = "",
-}: {
-  id: string;
-  valor: string;
-  aoMudar: (valor: string) => void;
-  aoSair: () => void;
-  rotuloAcessivel: string;
-  descritoPor?: string;
-  invalido: boolean;
-  className?: string;
-}) {
-  return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <span className="text-sm text-muted-foreground">R$</span>
-      <IMaskInput
-        id={id}
-        mask={Number}
-        scale={2}
-        padFractionalZeros
-        normalizeZeros
-        radix=","
-        mapToRadix={["."]}
-        thousandsSeparator="."
-        min={0}
-        unmask
-        value={valor}
-        onAccept={(v: string) => aoMudar(v)}
-        onBlur={aoSair}
-        inputMode="decimal"
-        placeholder="0,00"
-        aria-label={rotuloAcessivel}
-        aria-describedby={descritoPor}
-        aria-invalid={invalido || undefined}
-        className={`${inputMascaraClassName} min-h-[44px] aria-invalid:border-destructive`}
-      />
-    </div>
-  );
 }
 
 type Montagem =
@@ -214,84 +124,6 @@ export function montarPayload(incremento: IncrementoFaixa, faixas: FaixaEditavel
   return { ok: false, erro: "Confira as faixas de entrega.", indice: null };
 }
 
-/**
- * Dependências do envio (architecture.md §8): a Server Action e o toast
- * INJETADOS por parâmetro — nunca lidos do módulo direto — para a orquestração
- * ser testável em `environment: node`, sem jsdom.
- */
-export type DepsEnvioFaixas = {
-  salvar: SalvarFaixas;
-  toast: { error: (msg: string) => void };
-};
-
-/**
- * Chama a action. Erro dela (ou exceção de rede) vira `toast.error` com a
- * mensagem genérica; sucesso é silencioso — o indicador "Salvo" do card
- * informa, e a tela NÃO chama `router.refresh`: o estado local é a verdade da
- * tabela e o `revalidatePath` da action já atualiza a vitrine.
- */
-export async function enviarFaixas(
-  payload: DadosFaixasEntrega,
-  { salvar, toast }: DepsEnvioFaixas,
-): Promise<{ ok: true } | { ok: false }> {
-  try {
-    const resultado = await salvar(payload);
-    if (!resultado.ok) {
-      toast.error(resultado.erro);
-      return { ok: false };
-    }
-    return { ok: true };
-  } catch {
-    toast.error(ERRO_GENERICO);
-    return { ok: false };
-  }
-}
-
-export type EstadoGravacao = "ocioso" | "salvando" | "salvo" | "erro";
-
-/**
- * Fila de gravação SERIALIZADA (C6): uma gravação por vez. Pedido que chega
- * durante uma gravação só guarda o payload mais recente, gravado quando a atual
- * termina — os intermediários são descartados. `aoMudar` recebe "salvando" ao
- * começar e, quando a fila esvazia, "salvo"/"erro" conforme a ÚLTIMA gravação.
- * `gravar` devolve a promessa do esvaziamento da fila.
- */
-export function criarFilaGravacao<P>(
-  executar: (payload: P) => Promise<boolean>,
-  aoMudar: (estado: EstadoGravacao) => void,
-): { gravar: (payload: P) => Promise<void> } {
-  let drenando: Promise<void> | null = null;
-  let proximo: { payload: P } | null = null;
-
-  async function drenar(primeiro: P): Promise<void> {
-    aoMudar("salvando");
-    let atual: { payload: P } | null = { payload: primeiro };
-    let ok = false;
-    while (atual !== null) {
-      try {
-        ok = await executar(atual.payload);
-      } catch {
-        ok = false;
-      }
-      atual = proximo;
-      proximo = null;
-    }
-    drenando = null;
-    aoMudar(ok ? "salvo" : "erro");
-  }
-
-  return {
-    gravar(payload: P) {
-      if (drenando !== null) {
-        proximo = { payload };
-        return drenando;
-      }
-      drenando = drenar(payload);
-      return drenando;
-    },
-  };
-}
-
 /** Ação do switch "Ativa" ou da lixeira, com as faixas afetadas congeladas ao abrir o diálogo. */
 type AcaoLinha = { tipo: "desligar" | "ligar" | "remover"; indice: number; rotulos: string[] };
 
@@ -309,12 +141,29 @@ type AcaoLinha = { tipo: "desligar" | "ligar" | "remover"; indice: number; rotul
  * atinge a faixa e todas as abaixo, ligar religa da primeira desligada até ela
  * — as ativas formam um prefixo, como exigem zod e RPC. O aviso de preço fora
  * de ordem (C1) compara só ativas e não bloqueia.
+ *
+ * Issue 325: é um dos três editores da forma de frete. Fila, confirmação de
+ * substituição e bloqueio por conflito vêm de `useGravacaoDoEditor`
+ * (`pecasEntrega.tsx`); o aviso de loja sem coordenadas (327) recebe só o
+ * boolean `temCoordenadas`, nunca as coordenadas cruas.
  */
-export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixasEntregaProps) {
+export function TabelaFaixasEntrega({
+  zonasIniciais: zonas,
+  formaGravada,
+  zonasParaConfirmacao,
+  salvar,
+  aoGravar,
+  bloqueado,
+  taxaForaZona,
+  temCoordenadas,
+  hrefPerfil,
+}: TabelaFaixasEntregaProps) {
   const idBase = useId();
 
   const leitura = useMemo(() => lerFaixas(zonas), [zonas]);
-  const substituiZonas = useMemo(() => !zonasJaSaoFaixas(zonas), [zonas]);
+  const kmForaDoFormato = useMemo(() => !zonasJaSaoFaixas(zonas), [zonas]);
+  // 327: a vitrine já está degradada (`indisponivel_loja`) ou o aviso é preventivo.
+  const raioSemCoords = useMemo(() => lojaTemRaioSemCoords(zonas, temCoordenadas), [zonas, temCoordenadas]);
 
   const [emLegado, setEmLegado] = useState(leitura.modo === "legado");
   const [incremento, setIncremento] = useState<IncrementoFaixa>(leitura.incremento);
@@ -329,44 +178,24 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
   const [incrementoPendente, setIncrementoPendente] = useState<IncrementoFaixa | null>(null);
   const [acaoPendente, setAcaoPendente] = useState<AcaoLinha | null>(null);
   const [acaoAberta, setAcaoAberta] = useState(false);
-  const [payloadPendente, setPayloadPendente] = useState<DadosFaixasEntrega | null>(null);
   const [erroLinha, setErroLinha] = useState<{ indice: number; mensagem: string } | null>(null);
-  const [estadoGravacao, setEstadoGravacao] = useState<EstadoGravacao>("ocioso");
-  const [jaGravou, setJaGravou] = useState(false);
 
-  // D4: depois de confirmar a substituição uma vez, as gravações seguintes vão
-  // direto. `ultimaEnviada` evita regravar o MESMO payload a cada blur.
-  const substituicaoConfirmada = useRef(false);
-  const ultimaEnviada = useRef<string | null>(
-    leitura.modo === "faixas"
-      ? JSON.stringify({ incremento: leitura.incremento, faixas: leitura.faixas })
-      : null,
-  );
-
-  const salvarRef = useRef(salvar);
-  useEffect(() => {
-    salvarRef.current = salvar;
-  }, [salvar]);
-
-  // Criada na 1ª gravação (sempre num handler, nunca no render) e reusada:
-  // é ela que serializa as gravações da tela inteira.
-  const filaRef = useRef<ReturnType<typeof criarFilaGravacao<DadosFaixasEntrega>> | null>(null);
-  function fila() {
-    filaRef.current ??= criarFilaGravacao<DadosFaixasEntrega>(async (payload) => {
-      const r = await enviarFaixas(payload, {
-        salvar: (p) => salvarRef.current(p),
-        toast,
-      });
-      if (r.ok) {
-        setJaGravou(true);
-      } else if (ultimaEnviada.current === JSON.stringify(payload)) {
-        // falhou: a próxima tentativa com o mesmo estado grava de novo
-        ultimaEnviada.current = null;
-      }
-      return r.ok;
-    }, setEstadoGravacao);
-    return filaRef.current;
-  }
+  // Fila, "não regravar o mesmo payload" e confirmação de substituição (D4 da
+  // 326, generalizada por forma na 325).
+  const gravacao = useGravacaoDoEditor<PayloadKm>({
+    forma: "raio_km",
+    formaGravada,
+    kmForaDoFormato,
+    zonasParaConfirmacao,
+    salvar,
+    aoGravar,
+    bloqueado,
+    chaveInicial:
+      leitura.modo === "faixas"
+        ? JSON.stringify({ forma: "raio_km", incremento: leitura.incremento, faixas: leitura.faixas })
+        : null,
+  });
+  const { estadoGravacao, jaGravou } = gravacao;
 
   // Foco vai para o campo que o lojista precisa preencher em seguida, depois
   // que a linha/campo novo existe no DOM.
@@ -389,30 +218,16 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
 
   /** Tenta gravar o estado dado. Nunca grava faixa incompleta (erro na linha). */
   function tentarGravar(inc: IncrementoFaixa, estado: FaixaEditavel[]) {
+    if (bloqueado) return;
     const montagem = montarPayload(inc, estado);
     if (!montagem.ok) {
       setErroLinha(montagem.indice == null ? null : { indice: montagem.indice, mensagem: montagem.erro });
-      setEstadoGravacao("erro");
+      gravacao.marcarNaoSalvo();
       if (montagem.indice == null) toast.error(montagem.erro);
       return;
     }
     setErroLinha(null);
-    const chave = JSON.stringify(montagem.payload);
-    if (chave === ultimaEnviada.current) return;
-    if (substituiZonas && !substituicaoConfirmada.current) {
-      setPayloadPendente(montagem.payload);
-      return;
-    }
-    ultimaEnviada.current = chave;
-    void fila().gravar(montagem.payload);
-  }
-
-  function confirmarSubstituicao() {
-    if (payloadPendente == null) return;
-    substituicaoConfirmada.current = true;
-    ultimaEnviada.current = JSON.stringify(payloadPendente);
-    void fila().gravar(payloadPendente);
-    setPayloadPendente(null);
+    gravacao.gravar({ forma: "raio_km", ...montagem.payload });
   }
 
   function trocarIncremento(valor: unknown) {
@@ -493,26 +308,25 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
 
   return (
     <>
-      <div
-        role="note"
-        className="mb-5 flex items-start gap-3 rounded-lg border bg-muted/50 p-4 text-sm"
-      >
-        <Info className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
-        <div className="space-y-1">
-          <p className="font-medium text-foreground">
-            Cobre sua área por distância, não por CEP ou bairro
-          </p>
-          <p className="text-muted-foreground">
-            Com faixas de km você define{" "}
-            <strong className="font-medium text-foreground">
-              só até onde entrega e o preço de cada faixa
-            </strong>{" "}
-            — o sistema calcula a distância de cada pedido sozinho. Por CEP ou por bairro, cada
-            CEP e cada bairro precisa ser cadastrado um por um, e o que ficar de fora vira pedido
-            perdido.
-          </p>
-        </div>
-      </div>
+      <FaixaTrocaDeForma forma="raio_km" formaGravada={formaGravada} />
+
+      {!temCoordenadas && (
+        <p
+          role="note"
+          className="mb-4 flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            Cadastre o endereço da loja em{" "}
+            <Link href={hrefPerfil} className="font-medium underline underline-offset-2">
+              Perfil
+            </Link>
+            {raioSemCoords
+              ? ": a vitrine precisa dele para calcular a distância, e a entrega por faixas de km está indisponível para os clientes agora."
+              : " antes de usar faixas de km: a vitrine precisa dele para calcular a distância até o cliente."}
+          </span>
+        </p>
+      )}
 
       {emLegado ? (
         <Card className="gap-0 py-0">
@@ -525,7 +339,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
               </span>
             </p>
             <ListaZonasAtuais zonas={zonas} rotulo="Zonas de entrega atuais" />
-            <Button type="button" variant="outline" className={`${ALVO} w-full md:w-auto`} onClick={comecarDoZero}>
+            <Button type="button" variant="outline" className={`${ALVO} w-full md:w-auto`} onClick={comecarDoZero} disabled={bloqueado}>
               Começar a tabela do zero
             </Button>
           </div>
@@ -542,26 +356,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
                 salvo sozinho ao sair de cada campo.
               </p>
             </div>
-            <p
-              aria-live="polite"
-              className="flex min-h-[44px] shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
-            >
-              {estadoGravacao === "salvando" && (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                  Salvando…
-                </>
-              )}
-              {estadoGravacao === "salvo" && (
-                <>
-                  <Check className="size-4 text-foreground" aria-hidden />
-                  Salvo
-                </>
-              )}
-              {estadoGravacao === "erro" && (
-                <span className="font-medium text-destructive">Não salvo</span>
-              )}
-            </p>
+            <IndicadorGravacao estado={estadoGravacao} />
           </div>
 
           <fieldset className="border-b px-4 py-3">
@@ -653,6 +448,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
                         <span className="text-xs text-muted-foreground md:sr-only">Ativa</span>
                         <Switch
                           checked={f.ativo}
+                          disabled={bloqueado}
                           onCheckedChange={(v) => abrirAcao(v === true ? "ligar" : "desligar", i)}
                           aria-label={`Faixa de ${rotulo} ativa`}
                         />
@@ -661,6 +457,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
                         type="button"
                         variant="ghost"
                         className={ALVO}
+                        disabled={bloqueado}
                         aria-label={`Remover a faixa de ${rotulo} e as abaixo`}
                         onClick={() => abrirAcao("remover", i)}
                       >
@@ -678,6 +475,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
                         aoMudar={(v) => atualizar(i, { taxa: v })}
                         aoSair={() => tentarGravar(incremento, faixas)}
                         rotuloAcessivel={`Preço do frete da faixa de ${rotulo}`}
+                        desabilitado={bloqueado}
                         descritoPor={descricaoPreco}
                         invalido={erro != null && paraNumero(f.taxa) == null}
                       />
@@ -687,6 +485,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
                       <Label className={`${ALVO} cursor-pointer gap-2`}>
                         <Switch
                           checked={f.gratis !== null}
+                          disabled={bloqueado}
                           onCheckedChange={(v) => alternarGratis(i, v === true)}
                           aria-label={`Frete grátis na faixa de ${rotulo}`}
                         />
@@ -703,6 +502,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
                             aoMudar={(v) => atualizar(i, { gratis: v })}
                             aoSair={() => tentarGravar(incremento, faixas)}
                             rotuloAcessivel={`Frete grátis a partir de, na faixa de ${rotulo}`}
+                            desabilitado={bloqueado}
                             descritoPor={erro ? idErro(i) : undefined}
                             invalido={erro != null && paraNumero(f.gratis) == null}
                             className="max-w-[10rem]"
@@ -742,7 +542,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
               variant="outline"
               className={`${ALVO} w-full md:w-auto`}
               onClick={adicionar}
-              disabled={faixas.length >= TETO_FAIXAS_ENTREGA}
+              disabled={bloqueado || faixas.length >= TETO_FAIXAS_ENTREGA}
             >
               <Plus className="size-4" aria-hidden />
               {faixas.length >= TETO_FAIXAS_ENTREGA
@@ -841,42 +641,7 @@ export function TabelaFaixasEntrega({ zonas, taxaForaZona, salvar }: TabelaFaixa
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
-        open={payloadPendente !== null}
-        onOpenChange={(aberto) => {
-          // Cancelar mantém as edições locais sem gravar; a próxima tentativa
-          // pergunta de novo (D4).
-          if (!aberto) setPayloadPendente(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Substituir as zonas atuais?</AlertDialogTitle>
-            <AlertDialogDescription>
-              As zonas de entrega cadastradas hoje saem da loja e a vitrine passa a cobrar por
-              estas faixas. Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {zonas.length > 0 && (
-            <ListaZonasAtuais
-              zonas={zonas}
-              rotulo="Zonas que serão substituídas"
-              className="max-h-48 overflow-y-auto text-sm"
-            />
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel className={ALVO}>Cancelar</AlertDialogCancel>
-            <Button
-              type="button"
-              variant="destructive"
-              className={ALVO}
-              onClick={confirmarSubstituicao}
-            >
-              Substituir e salvar
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {gravacao.dialogo}
     </>
   );
 }

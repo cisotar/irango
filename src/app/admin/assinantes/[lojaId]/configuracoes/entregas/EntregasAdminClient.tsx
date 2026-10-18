@@ -17,17 +17,23 @@ import {
  * A autoridade (geocoding, taxa, escopo cross-loja) é das actions no servidor. A
  * taxa gravada aqui é definição comercial — o valor cobrado ao cliente segue
  * recalculado no checkout (`criar_pedido`); esta rota não introduz recálculo.
+ * Mostra a mesma tela do lojista (seletor de forma, issue 325); das coordenadas
+ * da loja recebe só o boolean `temCoordenadas` (327).
  */
 export function EntregasAdminClient({
   lojaId,
   zonas,
   versao,
+  temCoordenadas,
+  hrefPerfil,
   modalidades,
   taxaForaZona,
 }: {
   lojaId: string;
   zonas: ZonaVitrine[];
   versao: number;
+  temCoordenadas: boolean;
+  hrefPerfil: string;
   modalidades: DadosModalidadesEntrega;
   taxaForaZona: number | null;
 }) {
@@ -35,6 +41,8 @@ export function EntregasAdminClient({
     <EntregasClient
       zonas={zonas}
       versao={versao}
+      temCoordenadas={temCoordenadas}
+      hrefPerfil={hrefPerfil}
       modalidades={modalidades}
       taxaForaZona={taxaForaZona}
       acoes={{

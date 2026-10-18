@@ -1,0 +1,76 @@
+// Issue 325 — forma de frete ativa, derivada do `tipo` das zonas (módulo puro).
+import { describe, expect, it } from "vitest";
+
+import {
+  formaGravadaDasZonas,
+  formaInicialDaTela,
+  precisaConfirmarSubstituicao,
+  type FormaFrete,
+  type FormaGravada,
+} from "./formaFrete";
+
+describe("formaGravadaDasZonas", () => {
+  it("[] ⇒ nenhuma", () => {
+    expect(formaGravadaDasZonas([])).toBe("nenhuma");
+  });
+
+  it("tipos iguais ⇒ o tipo (inclusive zona inativa, que conta)", () => {
+    expect(formaGravadaDasZonas([{ tipo: "raio_km" }, { tipo: "raio_km" }])).toBe("raio_km");
+    expect(formaGravadaDasZonas([{ tipo: "faixa_cep" }])).toBe("faixa_cep");
+    expect(formaGravadaDasZonas([{ tipo: "bairro" }, { tipo: "bairro" }])).toBe("bairro");
+  });
+
+  it("tipos misturados ⇒ mista", () => {
+    expect(formaGravadaDasZonas([{ tipo: "raio_km" }, { tipo: "bairro" }])).toBe("mista");
+    expect(formaGravadaDasZonas([{ tipo: "faixa_cep" }, { tipo: "faixa_cep" }, { tipo: "raio_km" }])).toBe(
+      "mista",
+    );
+  });
+
+  it("tipo fora do enum ⇒ mista (pede confirmação em vez de assumir)", () => {
+    expect(formaGravadaDasZonas([{ tipo: "cidade" }])).toBe("mista");
+  });
+});
+
+describe("formaInicialDaTela", () => {
+  it("nenhuma e mista abrem em faixas de km", () => {
+    expect(formaInicialDaTela("nenhuma")).toBe("raio_km");
+    expect(formaInicialDaTela("mista")).toBe("raio_km");
+  });
+
+  it("forma gravada abre nela mesma", () => {
+    expect(formaInicialDaTela("raio_km")).toBe("raio_km");
+    expect(formaInicialDaTela("faixa_cep")).toBe("faixa_cep");
+    expect(formaInicialDaTela("bairro")).toBe("bairro");
+  });
+});
+
+describe("precisaConfirmarSubstituicao — tabela verdade", () => {
+  const casos: Array<[FormaFrete, FormaGravada, boolean, boolean]> = [
+    // nenhuma ⇒ nunca pergunta
+    ["raio_km", "nenhuma", false, false],
+    ["raio_km", "nenhuma", true, false],
+    ["faixa_cep", "nenhuma", false, false],
+    ["bairro", "nenhuma", false, false],
+    // mesma forma ⇒ não pergunta
+    ["raio_km", "raio_km", false, false],
+    ["faixa_cep", "faixa_cep", false, false],
+    ["bairro", "bairro", false, false],
+    // km fora do formato só importa no próprio km
+    ["raio_km", "raio_km", true, true],
+    ["faixa_cep", "faixa_cep", true, false],
+    // outra forma ⇒ pergunta
+    ["raio_km", "faixa_cep", false, true],
+    ["faixa_cep", "raio_km", false, true],
+    ["bairro", "raio_km", false, true],
+    ["faixa_cep", "bairro", false, true],
+    // mista ⇒ pergunta em qualquer forma
+    ["raio_km", "mista", false, true],
+    ["faixa_cep", "mista", false, true],
+    ["bairro", "mista", false, true],
+  ];
+
+  it.each(casos)("editor %s, gravada %s, km fora do formato %s ⇒ %s", (editor, gravada, fora, esperado) => {
+    expect(precisaConfirmarSubstituicao(editor, gravada, fora)).toBe(esperado);
+  });
+});
