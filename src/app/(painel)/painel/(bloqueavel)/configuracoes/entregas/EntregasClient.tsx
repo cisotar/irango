@@ -8,22 +8,20 @@ import { TabelaBairrosEntrega } from "@/components/painel/TabelaBairrosEntrega";
 import { TabelaFaixasCep } from "@/components/painel/TabelaFaixasCep";
 import { TabelaFaixasEntrega } from "@/components/painel/TabelaFaixasEntrega";
 import { criarGravadorComVersao, type GravadorComVersao } from "@/components/painel/gravacaoZonas";
-import { AvisoConflitoZonas, type PropsEditorZonas } from "@/components/painel/pecasEntrega";
+import { AvisoConflitoZonas, AvisoUsarForma, type PropsEditorZonas } from "@/components/painel/pecasEntrega";
 import type {
   salvarModalidadesEntrega as salvarModalidadesLojista,
   salvarZonasEntrega as salvarZonasLojista,
 } from "@/lib/actions/entrega";
 import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
-import {
-  formaGravadaDasZonas,
-  formaInicialDaTela,
-  type FormaFrete,
-  type FormaGravada,
-} from "@/lib/utils/formaFrete";
+import { formaInicialDaTela, zonasDaForma, type FormaFrete } from "@/lib/utils/formaFrete";
 
 export type EntregasClientProps = {
+  /** Zonas guardadas das TRÊS formas (`listarZonasParaEdicao`, issue 325). */
   zonas: ZonaVitrine[];
+  /** `lojas.forma_frete`: a forma que a vitrine cobra hoje, lida junto das zonas. */
+  forma: FormaFrete;
   /** `lojas.versao_zonas_entrega`, lida junto das zonas (issue 328). */
   versao: number;
   /**
@@ -50,15 +48,17 @@ export type EntregasClientProps = {
 
 /**
  * Tela de entregas (issues 325/327/328). O lojista escolhe UMA forma de cobrar
- * (faixas de km, faixas de CEP ou bairros) e edita só ela; a primeira gravação
- * numa forma diferente da que vale hoje pede confirmação e a RPC substitui todas
- * as zonas da loja. Nada é apagado ao abrir nem ao trocar de opção.
+ * (faixas de km, faixas de CEP ou bairros) e edita só ela. Salvar numa forma
+ * ativa essa forma na vitrine; as zonas das outras formas ficam guardadas e
+ * voltam intactas quando o lojista volta para elas. Nada é apagado ao abrir,
+ * ao trocar de opção nem ao salvar outra forma.
  *
  * Os três editores ficam MONTADOS (só o visível sem `hidden`): trocar de opção
  * não perde o estado local já gravado nem reabre com zonas velhas da carga.
  */
 export function EntregasClient({
   zonas,
+  forma,
   versao,
   temCoordenadas,
   hrefPerfil,
@@ -66,11 +66,10 @@ export function EntregasClient({
   taxaForaZona,
   acoes,
 }: EntregasClientProps) {
-  const gravadaNaCarga = useMemo(() => formaGravadaDasZonas(zonas), [zonas]);
-
-  const [formaVisivel, setFormaVisivel] = useState<FormaFrete>(() => formaInicialDaTela(gravadaNaCarga));
-  const [formaGravada, setFormaGravada] = useState<FormaGravada>(gravadaNaCarga);
-  const [gravouNestaSessao, setGravouNestaSessao] = useState(false);
+  const [formaVisivel, setFormaVisivel] = useState<FormaFrete>(() => formaInicialDaTela(forma));
+  // Forma que a vitrine cobra: a da carga e, depois de cada gravação, a salva
+  // (a RPC grava `forma_frete = p_forma` no mesmo UPDATE da versão).
+  const [formaAtiva, setFormaAtiva] = useState<FormaFrete>(forma);
   const [conflito, setConflito] = useState(false);
 
   const acoesRef = useRef(acoes);
@@ -93,26 +92,19 @@ export function EntregasClient({
     return gravadorRef.current.salvar(dados);
   };
 
-  const zonasDaForma = useMemo(
+  // Cada editor abre com as zonas guardadas da SUA forma (325).
+  const zonasPorForma = useMemo(
     () => ({
-      raio_km: gravadaNaCarga === "raio_km" || gravadaNaCarga === "mista" ? zonas : [],
-      faixa_cep: gravadaNaCarga === "faixa_cep" ? zonas : [],
-      bairro: gravadaNaCarga === "bairro" ? zonas : [],
+      raio_km: zonasDaForma(zonas, "raio_km"),
+      faixa_cep: zonasDaForma(zonas, "faixa_cep"),
+      bairro: zonasDaForma(zonas, "bairro"),
     }),
-    [gravadaNaCarga, zonas],
+    [zonas],
   );
-  const zonasParaConfirmacao = useMemo(() => (gravouNestaSessao ? [] : zonas), [gravouNestaSessao, zonas]);
-
-  function aoGravar(forma: FormaFrete, itens: number) {
-    setFormaGravada(itens === 0 ? "nenhuma" : forma);
-    setGravouNestaSessao(true);
-  }
 
   const comuns: Omit<PropsEditorZonas, "zonasIniciais"> = {
-    formaGravada,
-    zonasParaConfirmacao,
     salvar: salvarZonas,
-    aoGravar,
+    aoGravar: setFormaAtiva,
     bloqueado: conflito,
     taxaForaZona,
   };
@@ -121,7 +113,8 @@ export function EntregasClient({
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
       <ModalidadesEntrega
         inicial={modalidades}
-        zonas={zonas}
+        // Só as zonas da forma ATIVA dizem se a entrega está disponível.
+        zonas={zonasPorForma[formaAtiva]}
         taxaForaZona={taxaForaZona}
         salvar={acoes.salvarModalidades}
       />
@@ -139,23 +132,25 @@ export function EntregasClient({
             : "O frete de cada pedido é calculado por estas zonas."}
       </p>
 
-      <SeletorFormaFrete valor={formaVisivel} gravada={formaGravada} aoMudar={setFormaVisivel} />
+      <SeletorFormaFrete valor={formaVisivel} ativa={formaAtiva} aoMudar={setFormaVisivel} />
 
       {conflito && <AvisoConflitoZonas />}
+
+      <AvisoUsarForma forma={formaVisivel} formaAtiva={formaAtiva} />
 
       <div hidden={formaVisivel !== "raio_km"}>
         <TabelaFaixasEntrega
           {...comuns}
-          zonasIniciais={zonasDaForma.raio_km}
+          zonasIniciais={zonasPorForma.raio_km}
           temCoordenadas={temCoordenadas}
           hrefPerfil={hrefPerfil}
         />
       </div>
       <div hidden={formaVisivel !== "faixa_cep"}>
-        <TabelaFaixasCep {...comuns} zonasIniciais={zonasDaForma.faixa_cep} />
+        <TabelaFaixasCep {...comuns} zonasIniciais={zonasPorForma.faixa_cep} />
       </div>
       <div hidden={formaVisivel !== "bairro"}>
-        <TabelaBairrosEntrega {...comuns} zonasIniciais={zonasDaForma.bairro} />
+        <TabelaBairrosEntrega {...comuns} zonasIniciais={zonasPorForma.bairro} />
       </div>
     </main>
   );

@@ -3,8 +3,9 @@
 // Peças comuns dos editores de zona de entrega (issue 325): km
 // (`TabelaFaixasEntrega`), CEP (`TabelaFaixasCep`) e bairros
 // (`TabelaBairrosEntrega`). Extraídas de `TabelaFaixasEntrega.tsx` para os três
-// editores não repetirem campo de moeda, indicador, diálogo de substituição,
-// aviso de conflito e o fluxo de gravação (fila + confirmação).
+// editores não repetirem campo de moeda, indicador, diálogo de substituição
+// do km legado, aviso de conflito, aviso de troca de forma e o fluxo de
+// gravação (fila + confirmação).
 //
 // A lógica testável fica nos módulos puros (`gravacaoZonas.ts`,
 // `formaFrete.ts`, `payloadZona.ts`); aqui só há React. Nenhum preço desta
@@ -38,11 +39,9 @@ import {
   precisaConfirmarSubstituicao,
   rotuloDoTipo,
   type FormaFrete,
-  type FormaGravada,
 } from "@/lib/utils/formaFrete";
 import {
   MENSAGEM_CONFLITO_ZONAS,
-  itensDasZonas,
   type DadosZonasSemVersao,
   type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
@@ -52,15 +51,12 @@ export const ALVO = "min-h-[44px] min-w-[44px]";
 
 /** Props que o `EntregasClient` passa aos três editores. */
 export type PropsEditorZonas = {
-  /** Zonas da carga SE a forma gravada é a deste editor (km: também "mista"); senão []. */
+  /** Zonas guardadas DESTA forma na carga (`zonasDaForma`), ativas ou não (325). */
   zonasIniciais: ZonaVitrine[];
-  formaGravada: FormaGravada;
-  /** Zonas da carga enquanto nada foi gravado na sessão; [] depois (a lista ficou velha). */
-  zonasParaConfirmacao: ZonaVitrine[];
   /** `gravador.salvar`: põe a versão otimista e chama a action injetada. */
   salvar: (dados: DadosZonasSemVersao) => Promise<ResultadoZonas>;
-  /** Avisa o pai que esta forma passou a valer (itens = 0 ⇒ loja sem zonas). */
-  aoGravar: (forma: FormaFrete, itens: number) => void;
+  /** Avisa o pai que esta forma passou a valer: salvar numa forma = ativar essa forma (325). */
+  aoGravar: (forma: FormaFrete) => void;
   /** Conflito de versão: desliga edição e gravação até recarregar. */
   bloqueado: boolean;
   /** `lojas.taxa_entrega_fora_zona` — só para a copy do rodapé. */
@@ -198,44 +194,39 @@ export function AvisoConflitoZonas() {
 }
 
 /**
- * Faixa no topo do editor quando a vitrine cobra hoje por OUTRA forma: nada
- * muda até a primeira gravação aqui.
+ * Aviso acima do editor quando a forma visível NÃO é a que a vitrine cobra
+ * hoje (325): salvar aqui ativa esta forma, e as zonas da forma ativa ficam
+ * guardadas. Nada é apagado nem perguntado.
  */
-export function FaixaTrocaDeForma({ forma, formaGravada }: { forma: FormaFrete; formaGravada: FormaGravada }) {
-  if (formaGravada === "nenhuma" || formaGravada === forma) return null;
-  const hoje = formaGravada === "mista" ? "zonas de tipos diferentes" : ROTULO_FORMA_FRASE[formaGravada];
+export function AvisoUsarForma({ forma, formaAtiva }: { forma: FormaFrete; formaAtiva: FormaFrete }) {
+  if (forma === formaAtiva) return null;
   return (
     <div role="note" className="mb-4 flex items-start gap-3 rounded-lg border bg-muted/50 p-4 text-sm">
       <Info className="mt-0.5 size-5 shrink-0 text-foreground" aria-hidden />
       <p className="text-muted-foreground">
-        Preencha esta tela para trocar a forma de cobrança. Hoje a vitrine cobra por{" "}
-        <strong className="font-medium text-foreground">{hoje}</strong>, e isso só muda quando você
-        salvar aqui.
+        <strong className="font-medium text-foreground">
+          Preencha esta tela para cobrar por {ROTULO_FORMA_FRASE[forma]}.
+        </strong>{" "}
+        A troca vale assim que um campo for salvo. Hoje a vitrine cobra por{" "}
+        {ROTULO_FORMA_FRASE[formaAtiva]}, e essa configuração fica guardada para você voltar quando
+        quiser.
       </p>
     </div>
   );
 }
 
-/** Confirmação da 1ª gravação numa forma diferente da que vale hoje. */
+/** Confirmação da 1ª gravação do km sobre zonas de km fora do formato de faixas (legado, D4 da 326). */
 function DialogoSubstituirZonas({
   aberto,
-  forma,
-  formaGravada,
   zonas,
   aoCancelar,
   aoConfirmar,
 }: {
   aberto: boolean;
-  forma: FormaFrete;
-  formaGravada: FormaGravada;
   zonas: ZonaVitrine[];
   aoCancelar: () => void;
   aoConfirmar: () => void;
 }) {
-  const deHoje =
-    formaGravada === "nenhuma" || formaGravada === "mista"
-      ? "entrega cadastradas hoje"
-      : ROTULO_FORMA_FRASE[formaGravada];
   return (
     <AlertDialog
       open={aberto}
@@ -247,10 +238,10 @@ function DialogoSubstituirZonas({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Substituir as zonas atuais?</AlertDialogTitle>
+          <AlertDialogTitle>Substituir as zonas de distância atuais?</AlertDialogTitle>
           <AlertDialogDescription>
-            As zonas de {deHoje} saem da loja e a vitrine passa a cobrar por{" "}
-            {ROTULO_FORMA_FRASE[forma]}. Esta ação não pode ser desfeita.
+            As zonas de distância cadastradas hoje saem da loja e a vitrine passa a cobrar pela
+            tabela de {ROTULO_FORMA_FRASE.raio_km}. Esta ação não pode ser desfeita.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {zonas.length > 0 && (
@@ -293,9 +284,9 @@ export type ErroLinha = { indice: number; mensagem: string };
 
 /**
  * Fluxo de gravação de um editor: fila serializada, "não regravar o mesmo
- * payload", confirmação de substituição e bloqueio por conflito. A confirmação
- * vale só para a `formaGravada` que ela substituiu (`confirmadoPara`): gravar em
- * CEP, voltar ao km e editar pergunta de novo.
+ * payload", confirmação de substituição do km legado e bloqueio por conflito.
+ * Trocar de forma não pede confirmação (325): a RPC só regrava as zonas desta
+ * forma e as outras ficam guardadas.
  *
  * `chaveInicial` (lazy, lida só na montagem) é o payload equivalente ao que foi
  * carregado (ou null), para o primeiro blur sem mudança não gravar nada.
@@ -304,7 +295,6 @@ export type ErroLinha = { indice: number; mensagem: string };
  */
 export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
   forma,
-  formaGravada,
   kmForaDoFormato,
   zonasParaConfirmacao,
   salvar,
@@ -313,8 +303,9 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
   chaveInicial,
 }: {
   forma: FormaFrete;
-  formaGravada: FormaGravada;
+  /** km gravado fora do formato de faixas (legado): a 1ª gravação pede confirmação. */
   kmForaDoFormato: boolean;
+  /** Zonas listadas no diálogo de substituição do km legado. */
   zonasParaConfirmacao: ZonaVitrine[];
   salvar: PropsEditorZonas["salvar"];
   aoGravar: PropsEditorZonas["aoGravar"];
@@ -327,7 +318,7 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
   const [erroLinha, setErroLinha] = useState<ErroLinha | null>(null);
   const [chaveDaCarga] = useState(chaveInicial);
 
-  const confirmadoPara = useRef<FormaGravada | null>(null);
+  const confirmou = useRef(false);
   const ultimaEnviada = useRef<string | null>(chaveDaCarga);
 
   const salvarRef = useRef(salvar);
@@ -345,7 +336,7 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
       const r = await enviarZonas(payload, { salvar: (p) => salvarRef.current(p), toast });
       if (r.ok) {
         setJaGravou(true);
-        aoGravarRef.current(forma, itensDasZonas(payload));
+        aoGravarRef.current(forma);
       } else if (ultimaEnviada.current === JSON.stringify(payload)) {
         // falhou: a próxima tentativa com o mesmo estado grava de novo
         ultimaEnviada.current = null;
@@ -367,10 +358,7 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
       return;
     }
     if (JSON.stringify(payload) === ultimaEnviada.current) return;
-    if (
-      precisaConfirmarSubstituicao(forma, formaGravada, kmForaDoFormato && !jaGravou) &&
-      confirmadoPara.current !== formaGravada
-    ) {
+    if (precisaConfirmarSubstituicao(forma, kmForaDoFormato && !jaGravou) && !confirmou.current) {
       setPayloadPendente(payload);
       return;
     }
@@ -392,7 +380,7 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
 
   function confirmar() {
     if (payloadPendente == null) return;
-    confirmadoPara.current = formaGravada;
+    confirmou.current = true;
     enfileirar(payloadPendente);
     setPayloadPendente(null);
   }
@@ -400,8 +388,6 @@ export function useGravacaoDoEditor<P extends DadosZonasSemVersao>({
   const dialogo = (
     <DialogoSubstituirZonas
       aberto={payloadPendente !== null}
-      forma={forma}
-      formaGravada={formaGravada}
       zonas={zonasParaConfirmacao}
       aoCancelar={() => setPayloadPendente(null)}
       aoConfirmar={confirmar}

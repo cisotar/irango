@@ -5,7 +5,7 @@ import { useId } from "react";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ALVO } from "@/components/painel/pecasEntrega";
-import { FORMAS_FRETE, ROTULO_FORMA, type FormaFrete, type FormaGravada } from "@/lib/utils/formaFrete";
+import { FORMAS_FRETE, ROTULO_FORMA, type FormaFrete } from "@/lib/utils/formaFrete";
 
 const DESCRICAO: Record<FormaFrete, string> = {
   raio_km:
@@ -17,15 +17,17 @@ const DESCRICAO: Record<FormaFrete, string> = {
 /**
  * Escolha da forma de cobrar a entrega (issue 325). Trocar de opção NÃO grava
  * nada: só muda o editor visível. A forma passa a valer na vitrine quando o
- * lojista salva no editor dela (a RPC substitui todas as zonas da loja).
+ * lojista salva no editor dela (a RPC regrava só as zonas dessa forma e a
+ * ativa; as das outras formas ficam guardadas).
  */
 export function SeletorFormaFrete({
   valor,
-  gravada,
+  ativa,
   aoMudar,
 }: {
   valor: FormaFrete;
-  gravada: FormaGravada;
+  /** `lojas.forma_frete`: a forma que a vitrine cobra hoje. */
+  ativa: FormaFrete;
   aoMudar: (forma: FormaFrete) => void;
 }) {
   const idBase = useId();
@@ -60,7 +62,7 @@ export function SeletorFormaFrete({
                       Recomendado
                     </span>
                   )}
-                  {forma === gravada && (
+                  {forma === ativa && (
                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
                       Valendo na vitrine
                     </span>

@@ -19,7 +19,7 @@ import { EntregasClient } from "./EntregasClient";
  * `zonas_escrita_propria`/leitura própria). Sem loja → onboarding. O lojista
  * escolhe uma forma de frete (km, CEP ou bairros, issue 325) e as zonas são
  * gravadas por `salvarZonasEntrega`, que deriva `loja_id` do dono e confere a
- * versão. Das coordenadas da loja só sai o boolean `temCoordenadas` (327).
+ * versão. A forma ativa (`lojas.forma_frete`) vem no mesmo select das zonas. Das coordenadas da loja só sai o boolean `temCoordenadas` (327).
  */
 export default async function EntregasPage(): Promise<ReactElement> {
   const supabase = await createClient();
@@ -29,11 +29,12 @@ export default async function EntregasPage(): Promise<ReactElement> {
     redirect("/painel");
   }
 
-  const { versao, zonas } = await listarZonasParaEdicao(supabase, loja.id);
+  const { versao, forma, zonas } = await listarZonasParaEdicao(supabase, loja.id);
 
   return (
     <EntregasClient
       zonas={zonas}
+      forma={forma}
       versao={versao}
       // Só o boolean: o par de coordenadas nunca vai ao client (seguranca.md §19).
       temCoordenadas={loja.latitude != null && loja.longitude != null}

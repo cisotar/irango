@@ -21,7 +21,6 @@ import { inputMascaraClassName } from "@/components/painel/estiloInputMascara";
 import {
   ALVO,
   CampoMoeda,
-  FaixaTrocaDeForma,
   IndicadorGravacao,
   useFocoPendente,
   useGravacaoDoEditor,
@@ -50,8 +49,6 @@ import { TETO_FAIXAS_CEP } from "@/lib/validacoes/entrega";
  */
 export function TabelaFaixasCep({
   zonasIniciais,
-  formaGravada,
-  zonasParaConfirmacao,
   salvar,
   aoGravar,
   bloqueado,
@@ -65,9 +62,8 @@ export function TabelaFaixasCep({
 
   const gravacao = useGravacaoDoEditor<PayloadCep>({
     forma: "faixa_cep",
-    formaGravada,
     kmForaDoFormato: false,
-    zonasParaConfirmacao,
+    zonasParaConfirmacao: [],
     salvar,
     aoGravar,
     bloqueado,
@@ -127,8 +123,6 @@ export function TabelaFaixasCep({
 
   return (
     <>
-      <FaixaTrocaDeForma forma="faixa_cep" formaGravada={formaGravada} />
-
       <Card className="gap-0 py-0">
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
           <div>

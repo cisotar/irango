@@ -21,7 +21,6 @@ import { Switch } from "@/components/ui/switch";
 import {
   ALVO,
   CampoMoeda,
-  FaixaTrocaDeForma,
   IndicadorGravacao,
   useFocoPendente,
   useGravacaoDoEditor,
@@ -56,8 +55,6 @@ import {
  */
 export function TabelaBairrosEntrega({
   zonasIniciais,
-  formaGravada,
-  zonasParaConfirmacao,
   salvar,
   aoGravar,
   bloqueado,
@@ -71,9 +68,8 @@ export function TabelaBairrosEntrega({
 
   const gravacao = useGravacaoDoEditor<PayloadBairros>({
     forma: "bairro",
-    formaGravada,
     kmForaDoFormato: false,
-    zonasParaConfirmacao,
+    zonasParaConfirmacao: [],
     salvar,
     aoGravar,
     bloqueado,
@@ -172,8 +168,6 @@ export function TabelaBairrosEntrega({
 
   return (
     <>
-      <FaixaTrocaDeForma forma="bairro" formaGravada={formaGravada} />
-
       <Card className="gap-0 py-0">
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
           <div>

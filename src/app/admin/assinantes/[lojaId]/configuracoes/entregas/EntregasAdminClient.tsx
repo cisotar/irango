@@ -3,6 +3,7 @@
 import { EntregasClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/entregas/EntregasClient";
 import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
 import type { DadosModalidadesEntrega } from "@/lib/validacoes/entrega";
+import type { FormaFrete } from "@/lib/utils/formaFrete";
 
 import {
   salvarModalidadesEntregaAdmin,
@@ -23,6 +24,7 @@ import {
 export function EntregasAdminClient({
   lojaId,
   zonas,
+  forma,
   versao,
   temCoordenadas,
   hrefPerfil,
@@ -31,6 +33,7 @@ export function EntregasAdminClient({
 }: {
   lojaId: string;
   zonas: ZonaVitrine[];
+  forma: FormaFrete;
   versao: number;
   temCoordenadas: boolean;
   hrefPerfil: string;
@@ -40,6 +43,7 @@ export function EntregasAdminClient({
   return (
     <EntregasClient
       zonas={zonas}
+      forma={forma}
       versao={versao}
       temCoordenadas={temCoordenadas}
       hrefPerfil={hrefPerfil}

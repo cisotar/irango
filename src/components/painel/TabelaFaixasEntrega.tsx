@@ -21,7 +21,6 @@ import { Switch } from "@/components/ui/switch";
 import {
   ALVO,
   CampoMoeda,
-  FaixaTrocaDeForma,
   IndicadorGravacao,
   ListaZonasAtuais,
   useFocoPendente,
@@ -81,15 +80,14 @@ type AcaoLinha = { tipo: "desligar" | "ligar" | "remover"; indice: number; rotul
  * — as ativas formam um prefixo, como exigem zod e RPC. O aviso de preço fora
  * de ordem (C1) compara só ativas e não bloqueia.
  *
- * Issue 325: é um dos três editores da forma de frete. Fila, confirmação de
- * substituição e bloqueio por conflito vêm de `useGravacaoDoEditor`
+ * Issue 325: é um dos três editores da forma de frete; recebe só as zonas de
+ * km guardadas. Fila, confirmação do km legado e bloqueio por conflito vêm de
+ * `useGravacaoDoEditor`
  * (`pecasEntrega.tsx`); o aviso de loja sem coordenadas (327) recebe só o
  * boolean `temCoordenadas`, nunca as coordenadas cruas.
  */
 export function TabelaFaixasEntrega({
   zonasIniciais: zonas,
-  formaGravada,
-  zonasParaConfirmacao,
   salvar,
   aoGravar,
   bloqueado,
@@ -118,13 +116,12 @@ export function TabelaFaixasEntrega({
   const [acaoPendente, setAcaoPendente] = useState<AcaoLinha | null>(null);
   const [acaoAberta, setAcaoAberta] = useState(false);
 
-  // Fila, "não regravar o mesmo payload" e confirmação de substituição (D4 da
-  // 326, generalizada por forma na 325).
+  // Fila, "não regravar o mesmo payload" e confirmação de substituição do km
+  // legado (D4 da 326). Trocar de forma não pergunta (325: as outras ficam guardadas).
   const gravacao = useGravacaoDoEditor<PayloadKm>({
     forma: "raio_km",
-    formaGravada,
     kmForaDoFormato,
-    zonasParaConfirmacao,
+    zonasParaConfirmacao: zonas,
     salvar,
     aoGravar,
     bloqueado,
@@ -231,8 +228,6 @@ export function TabelaFaixasEntrega({
 
   return (
     <>
-      <FaixaTrocaDeForma forma="raio_km" formaGravada={formaGravada} />
-
       {!temCoordenadas && (
         <p
           role="note"
@@ -258,7 +253,7 @@ export function TabelaFaixasEntrega({
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>
                 Suas zonas de entrega foram cadastradas de um jeito que não vira tabela de faixas.
-                Elas continuam valendo na vitrine até a primeira faixa da tabela nova ser gravada.
+                Elas ficam guardadas e cobram o cliente enquanto as faixas de km estiverem em uso, até a primeira faixa da tabela nova ser gravada.
               </span>
             </p>
             <ListaZonasAtuais zonas={zonas} rotulo="Zonas de entrega atuais" />
