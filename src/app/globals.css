@@ -332,30 +332,54 @@ body {
     display: none !important;
   }
 
-  /* --- Variante A4 (comum) ------------------------------------------------
-     `.print-a4` (conteúdo de tela) imprime naturalmente; só ocultamos as vias
-     térmicas (já ocultas pela base `.print-only` — explícito por clareza). */
-  html[data-print-variant="a4"] .print-cozinha,
-  html[data-print-variant="a4"] .print-recibo {
+  /* ISOLAMENTO por estrutura, não por marcação: tudo que não é a via ativa,
+     não está dentro dela nem a contém, some. Depender de `.no-print` em cada
+     layout vazou o topbar, a sidebar, a faixa "editando a loja de outro
+     lojista" do admin e o popup do seletor (portal no <body>, ainda aberto no
+     instante do `window.print()`). Layout novo nasce isolado sem marcar nada. */
+  html[data-print-variant="a4"] body *:not(.print-a4, .print-a4 *, :has(.print-a4)),
+  html[data-print-variant="cozinha"]
+    body
+    *:not(.print-cozinha, .print-cozinha *, :has(.print-cozinha)),
+  html[data-print-variant="recibo"]
+    body
+    *:not(.print-recibo, .print-recibo *, :has(.print-recibo)) {
     display: none !important;
   }
 
-  /* --- Variante COZINHA --------------------------------------------------- */
-  html[data-print-variant="cozinha"] .print-a4,
-  html[data-print-variant="cozinha"] .print-recibo {
-    display: none !important;
-  }
-  html[data-print-variant="cozinha"] .print-cozinha {
+  /* Ancestrais da via ativa viram blocos neutros: o `flex h-svh` dos layouts
+     e o `overflow` da coluna de conteúdo cortariam a impressão na altura da
+     tela, e o padding/coluna da sidebar deslocaria a via no papel. */
+  html[data-print-variant="a4"] :has(.print-a4),
+  html[data-print-variant="cozinha"] :has(.print-cozinha),
+  html[data-print-variant="recibo"] :has(.print-recibo) {
     display: block !important;
+    position: static !important;
+    width: auto !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: visible !important;
   }
 
-  /* --- Variante RECIBO ---------------------------------------------------- */
-  html[data-print-variant="recibo"] .print-a4,
-  html[data-print-variant="recibo"] .print-cozinha {
-    display: none !important;
-  }
+  /* --- Vias térmicas (cozinha/recibo) -------------------------------------
+     A via ocupa a largura do papel que o driver da impressora informa, com
+     teto nos 72mm imprimíveis da bobina de 80mm (576 pontos a 203dpi). Assim a
+     mesma regra serve à bobina de 58mm (~48mm imprimíveis) sem configuração, e
+     no A4/PDF a via não estica pela folha. Largura fixa cortaria a de 58mm.
+     Página nomeada `termica` zera a margem — os 8mm do A4 dos dois lados não
+     cabem na bobina. */
+  html[data-print-variant="cozinha"] .print-cozinha,
   html[data-print-variant="recibo"] .print-recibo {
     display: block !important;
+    page: termica;
+    width: 100% !important;
+    max-width: 72mm !important;
+    margin: 0 !important;
+    padding: 2mm !important;
   }
 
   /* Contraste térmico (WCAG AA / papel térmico P&B): `--muted-foreground`
@@ -368,10 +392,19 @@ body {
     color: #000 !important;
   }
 
-  /* Margem neutra. NÃO fixar `size` (A4 × 80mm é escolhido no diálogo do
-     navegador); a térmica cabe por width:auto + coluna única já nos
-     componentes, sem hardcodar largura em px de tela. */
+  /* Papel é branco: o creme `--cor-fundo` do body sai impresso quando o
+     diálogo tem "gráficos de fundo" ligado, e na térmica vira pontilhado. */
+  html[data-print-variant],
+  html[data-print-variant] body {
+    background: #fff !important;
+  }
+
+  /* NÃO fixar `size`: o papel (A4 × bobina) é escolhido no diálogo do
+     navegador. A via térmica cabe pela largura física acima. */
   @page {
     margin: 8mm;
+  }
+  @page termica {
+    margin: 0;
   }
 }
