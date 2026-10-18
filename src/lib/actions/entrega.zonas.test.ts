@@ -2,7 +2,7 @@
 // LOJISTA que grava as zonas de entrega de UMA forma, com versão otimista; e
 // F4 (327): o módulo deixa de exportar os caminhos de escrita por zona.
 //
-// Autoridade: plan/tecnico-formas-de-frete.md §1 (RPC `salvar_zonas_entrega`,
+// Autoridade: plan/arquivo/tecnico-formas-de-frete.md §1 (RPC `salvar_zonas_entrega`,
 // mensagens estáveis), §4 (regras de valor por forma), §5 (contrato da action,
 // zod `schemaZonasEntrega`, `MENSAGEM_CONFLITO_ZONAS`), §8 itens 30–39 e 50 ·
 // seguranca.md §14 (mensagem de banco não vaza).

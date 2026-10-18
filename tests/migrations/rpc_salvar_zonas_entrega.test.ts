@@ -11,7 +11,7 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  * e da coluna `lojas.versao_zonas_entrega bigint not null default 0` com CHECK
  * `lojas_versao_zonas_entrega_nao_negativa`.
  *
- * Autoridade: plan/tecnico-formas-de-frete.md §1 (assinatura, shape de p_dados,
+ * Autoridade: plan/arquivo/tecnico-formas-de-frete.md §1 (assinatura, shape de p_dados,
  * ordem T1 forma → T2 posse → T3 valor → T4 versão compare-and-set → escrita,
  * mensagens estáveis), §2 (coluna), §4 (regras de valor por forma), §8 itens
  * 1–9 e 12–29.

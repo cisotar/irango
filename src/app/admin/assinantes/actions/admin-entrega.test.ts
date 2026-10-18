@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * `salvarZonasEntregaAdmin` — blocos [328] abaixo. A ausência dos exports
  * antigos é travada pelo bloco [327/F4].
  *
- * Invariantes provadas (plan/tecnico-formas-de-frete.md §5, §8 itens 40–45, 51):
+ * Invariantes provadas (plan/arquivo/tecnico-formas-de-frete.md §5, §8 itens 40–45, 51):
  *  - lojaId não-UUID e payload inválido (zod `.strict()`) recusados ANTES de
  *    elevar privilégio (prepararContextoAdmin nunca chamado);
  *  - admin NÃO provado → exceção PROPAGA, service nunca criado, ZERO rpc;
@@ -164,7 +164,7 @@ beforeEach(() => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// [328/F3] salvarZonasEntregaAdmin — RED (plan/tecnico-formas-de-frete.md §5, §8 itens 40–45)
+// [328/F3] salvarZonasEntregaAdmin — RED (plan/arquivo/tecnico-formas-de-frete.md §5, §8 itens 40–45)
 //
 // CONTRATO (src/app/admin/assinantes/actions/admin-entrega.ts, 'use server'):
 //   salvarZonasEntregaAdmin(lojaId: string, payload: unknown): Promise<ResultadoZonas>

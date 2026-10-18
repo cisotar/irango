@@ -223,7 +223,7 @@ describe("[326] schemaFaixasEntrega — incremento ∈ {1, 2} e 0..30 faixas", (
 // ---------------------------------------------------------------------------
 // [328/F3] [325/F3] schemaZonasEntrega — autoridade da action (uma forma por vez)
 // ---------------------------------------------------------------------------
-// Autoridade: plan/tecnico-formas-de-frete.md §4 (regras de valor por forma) e
+// Autoridade: plan/arquivo/tecnico-formas-de-frete.md §4 (regras de valor por forma) e
 // §5 (contrato do zod), §8 itens 46–49.
 //
 // CONTRATO: src/lib/validacoes/entrega.ts

@@ -9,7 +9,7 @@ import * as queries from "./entregaPagamento";
 /**
  * Fase RED (TDD) da issue 328 — fatia F1: leitura ATÔMICA de versão + zonas.
  *
- * Autoridade: plan/tecnico-formas-de-frete.md §2 ("Leitura atômica de versão +
+ * Autoridade: plan/arquivo/tecnico-formas-de-frete.md §2 ("Leitura atômica de versão +
  * zonas") e §8 itens 10–11.
  *
  * CONTRATO (src/lib/supabase/queries/entregaPagamento.ts):
