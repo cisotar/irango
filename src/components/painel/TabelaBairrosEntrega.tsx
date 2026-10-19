@@ -170,7 +170,7 @@ export function TabelaBairrosEntrega({
       <Card className="gap-0 py-0">
         <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
           <div>
-            <h2 className="font-heading text-base font-medium text-foreground">Preços por bairro</h2>
+            <h2 className="font-heading text-base font-medium text-foreground">Bairros por preço</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Junte no mesmo preço os bairros que pagam o mesmo frete. Tudo é salvo sozinho ao sair de
               cada campo.

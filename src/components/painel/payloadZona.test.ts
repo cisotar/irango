@@ -24,8 +24,12 @@ import {
   cepInteiroParaMascara,
   grupoComBairro,
   lerFaixasCep,
+  lerBairrosIndividuais,
   lerGruposBairro,
   montarPayloadBairros,
+  montarPayloadPorBairro,
+  zonasDoPayloadBairros,
+  type BairroEditavel,
   montarPayloadCep,
   montarPayloadKm,
   type FaixaCepEditavel,
@@ -514,5 +518,107 @@ describe("ida e volta zonas gravadas → tela → payload (km)", () => {
       { taxa: "6", gratis: null, ativo: true },
     ]);
     expect(r).toMatchObject({ ok: false, indice: 2 });
+  });
+});
+
+describe("frete por bairro (uma linha por bairro) → mesmo payload de grupos", () => {
+  const linha = (nome: string, taxa = "6", gratis: string | null = null, ativo = true): BairroEditavel => ({
+    nome,
+    taxa,
+    gratis,
+    ativo,
+  });
+
+  it("lê uma linha por bairro com o preço do grupo dele", () => {
+    const zonas = [zonaBairro("a", ["Centro", "Jardim"], 6, 50), zonaBairro("b", ["Vila Nova"], 8)];
+    zonas[1].ativo = false;
+    expect(lerBairrosIndividuais(zonas)).toEqual([
+      linha("Centro", "6", "50"),
+      linha("Jardim", "6", "50"),
+      linha("Vila Nova", "8", null, false),
+    ]);
+  });
+
+  it("junta bairros de preço, grátis e ativo iguais num grupo, na ordem da 1ª linha", () => {
+    const r = montarPayloadPorBairro([
+      linha("Centro", "6"),
+      linha("Vila Nova", "8"),
+      linha("Jardim", "6"),
+      linha("Bela Vista", "6", "50"),
+      linha("Morro", "6", null, false),
+    ]);
+    expect(r).toEqual({
+      ok: true,
+      payload: {
+        forma: "bairro",
+        grupos: [
+          { bairros: ["Centro", "Jardim"], taxa: 6, pedido_minimo_gratis: null, ativo: true },
+          { bairros: ["Vila Nova"], taxa: 8, pedido_minimo_gratis: null, ativo: true },
+          { bairros: ["Bela Vista"], taxa: 6, pedido_minimo_gratis: 50, ativo: true },
+          { bairros: ["Morro"], taxa: 6, pedido_minimo_gratis: null, ativo: false },
+        ],
+      },
+    });
+    if (r.ok) expect(aceitoPelaAction(r.payload).success).toBe(true);
+  });
+
+  it("ida e volta: zonas → linhas → payload igual ao da aba por preço", () => {
+    const zonas = [zonaBairro("a", ["Centro", "Jardim"], 6.1, 0), zonaBairro("b", ["Vila Nova"], 8)];
+    expect(montarPayloadPorBairro(lerBairrosIndividuais(zonas))).toEqual(
+      montarPayloadBairros(lerGruposBairro(zonas)),
+    );
+  });
+
+  it("payload salvo → zonas → a outra aba abre com os mesmos bairros e preços", () => {
+    const r = montarPayloadPorBairro([linha("Centro", "6"), linha("Vila Nova", "8", "40", false)]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const zonas = zonasDoPayloadBairros(r.payload);
+    expect(montarPayloadBairros(lerGruposBairro(zonas))).toEqual(r);
+    expect(montarPayloadPorBairro(lerBairrosIndividuais(zonas))).toEqual(r);
+  });
+
+  it("bairro repetido (caixa e acento não contam) aponta a linha e cita a primeira", () => {
+    const r = montarPayloadPorBairro([linha("São José"), linha("Centro"), linha("sao  jose")]);
+    expect(r).toEqual({ ok: false, erro: "sao jose já está na linha 1.", indice: 2 });
+  });
+
+  it("nome vazio, frete vazio e grátis ligado vazio apontam a linha", () => {
+    expect(montarPayloadPorBairro([linha("A"), linha("  ")])).toMatchObject({ ok: false, indice: 1 });
+    expect(montarPayloadPorBairro([linha("A", "")])).toEqual({
+      ok: false,
+      erro: "Informe o frete deste bairro.",
+      indice: 0,
+    });
+    expect(montarPayloadPorBairro([linha("A", "5", "")])).toMatchObject({ ok: false, indice: 0 });
+  });
+
+  it("frete negativo aponta a linha do bairro, não o grupo", () => {
+    const r = montarPayloadPorBairro([linha("A", "5"), linha("B", "-1"), linha("C", "-1")]);
+    expect(r).toEqual({ ok: false, erro: expect.stringContaining("o frete deste bairro"), indice: 1 });
+  });
+
+  it("mais de 100 bairros com o mesmo preço abrem outro grupo com o mesmo preço", () => {
+    const linhas = Array.from({ length: TETO_BAIRROS_POR_GRUPO + 1 }, (_, i) => linha(`Bairro ${i}`));
+    const r = montarPayloadPorBairro(linhas);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.payload.grupos.map((g) => g.bairros.length)).toEqual([TETO_BAIRROS_POR_GRUPO, 1]);
+      expect(aceitoPelaAction(r.payload).success).toBe(true);
+    }
+  });
+
+  it("mais preços diferentes que o teto ⇒ erro sem linha", () => {
+    const linhas = Array.from({ length: TETO_GRUPOS_BAIRRO + 1 }, (_, i) => linha(`Bairro ${i}`, String(i + 1)));
+    expect(montarPayloadPorBairro(linhas)).toEqual({
+      ok: false,
+      erro: `Use no máximo ${TETO_GRUPOS_BAIRRO} preços diferentes.`,
+      indice: null,
+    });
+  });
+
+  it("mais bairros que o teto total ⇒ erro sem linha", () => {
+    const linhas = Array.from({ length: TETO_BAIRROS_TOTAL + 1 }, (_, i) => linha(`Bairro ${i}`));
+    expect(montarPayloadPorBairro(linhas)).toMatchObject({ ok: false, indice: null });
   });
 });
