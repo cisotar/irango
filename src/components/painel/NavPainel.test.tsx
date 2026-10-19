@@ -218,7 +218,7 @@ describe("NavPainel — contexto admin", () => {
     expect(hrefs.every((h) => h.startsWith("/admin/assinantes/L1"))).toBe(true);
   });
 
-  it("renderiza os 7 sub-itens de Configurações sob a base admin, incluindo Avisos e Assinatura", () => {
+  it("renderiza os 7 sub-itens de Configurações + link Entregas top-level sob a base admin", () => {
     const hrefs = links(render("/admin/assinantes/L1", ctxAdmin)).map(
       (l) => l.href,
     );
@@ -231,11 +231,11 @@ describe("NavPainel — contexto admin", () => {
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/assinatura");
     // [362] Avisos passou a ter rota admin: saiu do `rotasAusentes` do layout.
     expect(hrefs).toContain("/admin/assinantes/L1/configuracoes/promocoes");
-    // Exatamente 7 sub-itens sob configuracoes/ — os mesmos do lojista.
+    // 7 sub-itens de Configurações + 1 link Entregas top-level = 8 hrefs sob configuracoes/.
     expect(
       hrefs.filter((h) => h.startsWith("/admin/assinantes/L1/configuracoes/"))
         .length,
-    ).toBe(7);
+    ).toBe(8);
     // Opcionais continua presente nos dois contextos.
     expect(hrefs).toContain("/admin/assinantes/L1/produtos/opcionais");
   });
@@ -360,14 +360,14 @@ describe("NavPainel — F3/F4: ícone em cada subitem de Configurações", () =>
 });
 
 describe("NavPainel — subitens de Configurações em ambos os contextos", () => {
-  it("exatamente 7 sub-itens sob configuracoes/ no contexto default (lojista)", () => {
+  it("7 sub-itens de Configurações + Entregas top-level = 8 hrefs sob configuracoes/ (lojista)", () => {
     const hrefs = links(render("/painel")).map((l) => l.href);
     expect(
       hrefs.filter((h) => h.startsWith("/painel/configuracoes/")).length,
-    ).toBe(7);
+    ).toBe(8);
   });
 
-  it("MECANISMO: rotasAusentes com 'configuracoes/promocoes' derruba 7 para 6", () => {
+  it("MECANISMO: rotasAusentes com 'configuracoes/promocoes' derruba 8 para 7", () => {
     // O sufixo é DADO DE ENTRADA deste teste, não o array real do layout admin
     // (que desde a 362 é só ["clientes"]): aqui se prova o mecanismo de omissão.
     const ctx: ContextoNav = {
@@ -380,7 +380,7 @@ describe("NavPainel — subitens de Configurações em ambos os contextos", () =
     const configuracoes = hrefs.filter((h) =>
       h.startsWith("/admin/assinantes/L1/configuracoes/"),
     );
-    expect(configuracoes).toHaveLength(6);
+    expect(configuracoes).toHaveLength(7);
     expect(configuracoes).not.toContain(
       "/admin/assinantes/L1/configuracoes/promocoes",
     );
@@ -395,13 +395,15 @@ describe("NavPainel — subitens de Configurações em ambos os contextos", () =
 describe("NavPainel — item Galeria (D9)", () => {
   const BASES = ["/painel", "/admin/assinantes/L1"] as const;
 
-  it.each(BASES)("em %s, Galeria vem logo depois de Produtos/Opcionais e antes de Cupons", (base) => {
+  it.each(BASES)("em %s, Galeria vem depois de Entregas (top-level) e antes de Cupons", (base) => {
     const ctx: ContextoNav | undefined = base === "/painel" ? undefined : { basePath: base };
     const hrefs = links(render(base, ctx)).map((l) => l.href);
     const iGaleria = hrefs.indexOf(`${base}/galeria`);
     expect(iGaleria).toBeGreaterThan(-1);
-    expect(hrefs[iGaleria - 1]).toBe(`${base}/produtos/opcionais`);
-    expect(hrefs[iGaleria - 2]).toBe(`${base}/produtos`);
+    // Entregas top-level fica entre Produtos/Opcionais e Galeria.
+    expect(hrefs[iGaleria - 1]).toBe(`${base}/configuracoes/entregas`);
+    expect(hrefs[iGaleria - 2]).toBe(`${base}/produtos/opcionais`);
+    expect(hrefs[iGaleria - 3]).toBe(`${base}/produtos`);
     expect(hrefs[iGaleria + 1]).toBe(`${base}/cupons`);
   });
 
@@ -436,28 +438,34 @@ describe("NavPainel — item Galeria (D9)", () => {
 });
 
 /**
- * [358] "Vendas" é item de primeiro nível LOGO DEPOIS de Dashboard, nos dois
- * mundos, com `href` derivado do `basePath`. A rota admin existe: o
- * `rotasAusentes` real do layout admin não a omite.
+ * [358] O relatório de vendas é item de primeiro nível, rotulado "Balanço",
+ * na ordem Dashboard → Pedidos → Balanço, nos dois mundos, com `href`
+ * (`/vendas`) derivado do `basePath`. A rota admin existe: o `rotasAusentes`
+ * real do layout admin não a omite.
  */
-describe("NavPainel — item Vendas (358)", () => {
+describe("NavPainel — item Balanço (358)", () => {
   const BASES = ["/painel", "/admin/assinantes/L1"] as const;
   const ctxDe = (base: string): ContextoNav | undefined =>
     base === "/painel" ? undefined : { basePath: base };
 
-  it.each(BASES)("em %s, Vendas vem logo depois de Dashboard", (base) => {
+  it.each(BASES)("em %s, a ordem é Dashboard → Pedidos → Balanço", (base) => {
     const hrefs = links(render(base, ctxDe(base))).map((l) => l.href);
     const iDashboard = hrefs.indexOf(base);
     expect(iDashboard).toBeGreaterThan(-1);
-    expect(hrefs[iDashboard + 1]).toBe(`${base}/vendas`);
+    expect(hrefs[iDashboard + 1]).toBe(`${base}/pedidos`);
+    expect(hrefs[iDashboard + 2]).toBe(`${base}/vendas`);
   });
 
-  it.each(BASES)("em %s, o rótulo é 'Vendas' com ícone de gráfico", (base) => {
+  it.each(BASES)("em %s, o rótulo é 'Balanço' com ícone de gráfico", (base) => {
     const html = render(base, ctxDe(base));
     const escapado = `${base}/vendas`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     expect(html).toMatch(
-      new RegExp(`<a[^>]*href="${escapado}"[^>]*>\\s*<svg[^>]*lucide-chart-column[\\s\\S]*?Vendas</a>`),
+      new RegExp(`<a[^>]*href="${escapado}"[^>]*>\\s*<svg[^>]*lucide-chart-column[\\s\\S]*?Balanço</a>`),
     );
+  });
+
+  it.each(BASES)("em %s, não existe mais nenhum rótulo 'Vendas' no menu", (base) => {
+    expect(render(base, ctxDe(base))).not.toContain(">Vendas<");
   });
 
   it.each(BASES)("em %s, acende em /vendas e só ele", (base) => {
@@ -465,7 +473,7 @@ describe("NavPainel — item Vendas (358)", () => {
     expect(ativos.map((l) => l.href)).toEqual([`${base}/vendas`]);
   });
 
-  it("o hub admin real (rotasAusentes do layout admin) mantém Vendas", () => {
+  it("o hub admin real (rotasAusentes do layout admin) mantém Balanço", () => {
     const ctx: ContextoNav = {
       basePath: "/admin/assinantes/L1",
       rotasAusentes: ["clientes"],
@@ -477,5 +485,50 @@ describe("NavPainel — item Vendas (358)", () => {
 
   it("aparece também no mobile (Sheet)", () => {
     expect(renderMobile("/painel")).toContain('href="/painel/vendas"');
+  });
+});
+
+/**
+ * Atalho "Entregas" de primeiro nível, logo depois de Produtos/Opcionais, nos
+ * dois mundos. É um SEGUNDO ponto de entrada para `configuracoes/entregas`: o
+ * subitem dentro de Configurações continua existindo e aponta para a MESMA
+ * rota — não há rota nova, só um atalho a menos de um clique.
+ */
+describe("NavPainel — atalho Entregas de primeiro nível", () => {
+  const BASES = ["/painel", "/admin/assinantes/L1"] as const;
+  const ctxDe = (base: string): ContextoNav | undefined =>
+    base === "/painel" ? undefined : { basePath: base };
+
+  it.each(BASES)("em %s, vem logo depois de Produtos/Opcionais", (base) => {
+    const hrefs = links(render(base, ctxDe(base))).map((l) => l.href);
+    const iEntregas = hrefs.indexOf(`${base}/configuracoes/entregas`);
+    expect(iEntregas).toBeGreaterThan(-1);
+    expect(hrefs[iEntregas - 1]).toBe(`${base}/produtos/opcionais`);
+  });
+
+  it.each(BASES)("em %s, o atalho E o subitem apontam para a mesma rota", (base) => {
+    const hrefs = links(render(base, ctxDe(base))).map((l) => l.href);
+    // DOIS <a> com o mesmo href: o atalho top-level e o subitem de Configurações.
+    expect(
+      hrefs.filter((h) => h === `${base}/configuracoes/entregas`),
+    ).toHaveLength(2);
+  });
+
+  it.each(BASES)("em %s, o atalho tem rótulo 'Entregas' e ícone de caminhão", (base) => {
+    const html = render(base, ctxDe(base));
+    const escapado = `${base}/configuracoes/entregas`.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
+    expect(html).toMatch(
+      new RegExp(`<a[^>]*href="${escapado}"[^>]*>\\s*<svg[^>]*lucide-truck[\\s\\S]*?Entregas</a>`),
+    );
+  });
+
+  it("aparece também no mobile (Sheet)", () => {
+    const html = renderMobile("/painel");
+    expect(
+      links(html).filter((l) => l.href === "/painel/configuracoes/entregas"),
+    ).toHaveLength(2);
   });
 });

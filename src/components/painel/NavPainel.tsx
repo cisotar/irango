@@ -160,10 +160,10 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
 
   const itens: ItemNav[] = [
     { href: base, rotulo: "Dashboard", icone: LayoutDashboard },
-    // [358] Relatório de vendas: logo depois do Dashboard, nos dois mundos. A
-    // rota admin existe, então não entra em `rotasAusentes`.
-    { href: `${base}/vendas`, rotulo: "Vendas", icone: ChartColumn },
     { href: `${base}/pedidos`, rotulo: "Pedidos", icone: ClipboardList },
+    // [358] Relatório de vendas (Balanço): logo depois de Pedidos, nos dois mundos. A
+    // rota admin existe, então não entra em `rotasAusentes`.
+    { href: `${base}/vendas`, rotulo: "Balanço", icone: ChartColumn },
     { href: `${base}/clientes`, rotulo: "Clientes", icone: Users },
     {
       href: `${base}/produtos`,
@@ -179,6 +179,7 @@ function construirItens(contexto: ContextoNav = {}): ItemNav[] {
         },
       ],
     },
+    { href: `${base}/configuracoes/entregas`, rotulo: "Entregas", icone: Truck },
     // D9 (specs/galeria-imagens-loja.md): "Galeria" é item de primeiro nível
     // logo depois de Produtos, nos dois mundos. A rota admin existe, então
     // não entra em `rotasAusentes`.
