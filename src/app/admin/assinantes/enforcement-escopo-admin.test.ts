@@ -205,23 +205,15 @@ function temEqDaColuna(statement: string, coluna: string): boolean {
 }
 
 /**
- * Inserts/upserts-filho ANCORADOS POR POSSE em `admin-entrega.ts` (lido linha a linha
- * ao escrever este teste): `taxas_entrega`/`bairros_zona` não têm `loja_id`
- * próprio (FK só via `zona_id`), então ficam fora do wrapper `escopo.*` — mas
- * TODA escrita neles, em `criarZonaAdmin`/`atualizarZonaAdmin`, acontece
- * depois de `escopo.buscarPorId("zonas_entrega", id)` (~112, zona alheia
- * bloqueia ANTES de tocar a filha) ou sob a zona recém-criada via
- * `escopo.inserir` (~56-63, a FK só pode apontar para uma zona que acabou de
- * nascer sob a loja-alvo). São os únicos dois casos revisados como seguros.
- *
- * [269 · R1] `taxas_entrega` é escrita por `upsert` (`onConflict: "zona_id"`),
- * não por `insert`. A entrada já estava aqui e passa a valer de fato a partir
- * do momento em que a regex enxerga `upsert` — até então ela era decorativa.
+ * Inserts/upserts-filho ANCORADOS POR POSSE: escrita em tabela sem `loja_id`
+ * próprio que só é segura porque roda sob uma linha-pai cuja posse já foi
+ * provada. HOJE VAZIA: as duas entradas de `admin-entrega.ts`
+ * (`taxas_entrega`/`bairros_zona`, do CRUD por zona) saíram com a issue 327 —
+ * as zonas agora só são gravadas pela RPC `salvar_zonas_entrega`. Allowlist
+ * sem uso é brecha: um insert cru novo nessas tabelas passaria calado. Nova
+ * entrada exige leitura linha a linha da prova de posse.
  */
-const ALLOWLIST_INSERT: { rotulo: string; tabela: string }[] = [
-  { rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts", tabela: "taxas_entrega" },
-  { rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts", tabela: "bairros_zona" },
-];
+const ALLOWLIST_INSERT: { rotulo: string; tabela: string }[] = [];
 
 function eInsertAllowlistado(rotulo: string, tabela: string): boolean {
   return ALLOWLIST_INSERT.some((a) => a.rotulo === rotulo && a.tabela === tabela);
@@ -243,16 +235,6 @@ const ALLOWLIST_ESCOPO: {
   coluna: string;
   motivo: string;
 }[] = [
-  {
-    rotulo: "src/app/admin/assinantes/actions/admin-entrega.ts",
-    tabela: "bairros_zona",
-    verbo: "delete",
-    coluna: "zona_id",
-    motivo:
-      "bairros_zona não tem loja_id próprio (FK só via zona_id). O delete roda " +
-      "depois de escopo.buscarPorId('zonas_entrega', id), que já bloqueia zona " +
-      "de outra loja — mesma posse ancorada dos inserts da ALLOWLIST_INSERT.",
-  },
   {
     rotulo: "src/app/admin/assinantes/actions/admin-modulos-impressao.ts",
     tabela: "lojas",
@@ -391,9 +373,16 @@ function valorDoArgumento(args: string, chaves: string[]): string | null {
  */
 const ORIGEM_DERIVADA = /^(loja\.lojaId|lojaId)$/;
 
+/**
+ * Spread DEPOIS do arg de tenant (`{ p_loja_id: lojaId, ...args }`) sobrescreve
+ * o valor derivado se o objeto espalhado trouxer `p_loja_id`: o tenant tem de
+ * vir depois de todo spread (A3 da 325/328).
+ */
+const SPREAD_DEPOIS_DO_TENANT = /\b(p_loja_id|loja_id)\s*:[\s\S]*\.\.\./;
+
 function rpcEscopadaPorLoja(args: string): boolean {
   const valor = valorDoArgumento(args, ["p_loja_id", "loja_id"]);
-  return valor != null && ORIGEM_DERIVADA.test(valor);
+  return valor != null && ORIGEM_DERIVADA.test(valor) && !SPREAD_DEPOIS_DO_TENANT.test(args);
 }
 
 /**
@@ -461,6 +450,10 @@ describe("enforcement CAMADA 4 — escopo de tenant em toda RPC admin", () => {
       },
       { nome: "sem argumento de tenant nenhum", fonte: `await svc.rpc("x", { p_ids: ids });` },
       {
+        nome: "spread depois do tenant (pode sobrescrever p_loja_id)",
+        fonte: `await svc.rpc("x", { p_loja_id: loja.lojaId, ...argsDoPayload(parsed.data) });`,
+      },
+      {
         nome: "escopo por categoria em vez de loja",
         fonte: `await svc.rpc("x", { p_categoria_id: categoria_id, p_ids: ids });`,
       },
@@ -477,6 +470,7 @@ describe("enforcement CAMADA 4 — escopo de tenant em toda RPC admin", () => {
     const legitimas = [
       `await svc.rpc("x", { p_loja_id: loja.lojaId, p_categoria_id: categoria_id, p_ids: ids });`,
       `await svc.rpc("x", { p_ids: ids, p_loja_id: lojaId });`,
+      `await svc.rpc("x", { ...argsSalvarZonas(parsed.data), p_loja_id: loja.lojaId });`,
     ];
     for (const fonte of legitimas) {
       const [chamada] = chamadasRpcDe("fixture.ts", fonte);

@@ -24,13 +24,12 @@ import {
   type DadosModalidadesEntrega,
   type ModoFrete,
 } from "@/lib/validacoes/entrega";
-import type { ZonaVitrine } from "@/lib/supabase/queries/entregaPagamento";
-import { entregaDisponivel } from "@/lib/utils/modalidadesEntrega";
+import { entregaDisponivel, type ZonaResumo } from "@/lib/utils/modalidadesEntrega";
 
 export type ModalidadesEntregaProps = {
   inicial: DadosModalidadesEntrega;
-  /** Zonas da loja — só para o aviso D4 (entrega sem zona nem fallback). */
-  zonas: ZonaVitrine[];
+  /** Zonas da forma ativa — só para o aviso D4 (entrega sem zona nem fallback). */
+  zonas: ZonaResumo[];
   /** `lojas.taxa_entrega_fora_zona` — só para o aviso D4. */
   taxaForaZona: number | null;
   salvar: (payload: DadosModalidadesEntrega) => Promise<{ ok: true } | { ok: false; erro: string }>;

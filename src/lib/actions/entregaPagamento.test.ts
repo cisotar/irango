@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
 
 /**
- * Fase RED (TDD) da issue 032 — Server Actions de ENTREGA (salvarZona) e
- * PAGAMENTO (salvarFormaPagamento). As actions são STUBs (`throw 'TODO:
- * GREEN'`), então TODA expectativa abaixo FALHA hoje — RED.
+ * Issue 032 — Server Action de PAGAMENTO (salvarFormaPagamento). A metade de
+ * ENTREGA (escrita por zona) saiu com a issue 327: as zonas só são gravadas
+ * por `salvarZonasEntrega` (coberta em entrega.zonas.test.ts).
  *
  * Foco de segurança (issue 032 + seguranca.md §2/§14):
  *  - valida o schema respectivo ANTES de qualquer I/O;
@@ -83,7 +83,6 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { salvarZona } from "./entrega";
 import { salvarFormaPagamento } from "./pagamento";
 
 function lojaDoDono(): Partial<Tables<"lojas">> {
@@ -95,47 +94,6 @@ beforeEach(() => {
   captura = { filtros: [] };
   respostaBanco = { data: { id: "linha-nova" }, error: null };
   buscarLojaDoDono.mockResolvedValue(lojaDoDono());
-});
-
-describe("salvarZona (Server Action — entrega)", () => {
-  const zonaOk = { nome: "Centro", tipo: "bairro", ativo: true };
-
-  it("caminho feliz: valida + persiste em zonas_entrega via client autenticado", async () => {
-    const r = await salvarZona(zonaOk);
-    expect(r).toEqual({ ok: true });
-    expect(createClient).toHaveBeenCalledTimes(1);
-    expect(captura.tabela).toBe("zonas_entrega");
-    expect(captura.insert).toBeDefined();
-  });
-
-  it("loja_id é DERIVADO da loja do dono, nunca do payload", async () => {
-    await salvarZona(zonaOk);
-    expect(buscarLojaDoDono).toHaveBeenCalledWith(authClient);
-    expect(captura.insert?.loja_id).toBe(LOJA_DONO);
-  });
-
-  it("ATAQUE: payload com loja_id de OUTRA loja é IGNORADO", async () => {
-    await salvarZona({ ...zonaOk, loja_id: LOJA_OUTRA });
-    expect(captura.insert?.loja_id).toBe(LOJA_DONO);
-    expect(captura.insert?.loja_id).not.toBe(LOJA_OUTRA);
-  });
-
-  it("NÃO usa service_role (escrita do lojista passa pela RLS autenticada)", async () => {
-    await salvarZona(zonaOk);
-    expect(createServiceClient).not.toHaveBeenCalled();
-  });
-
-  it("ATAQUE: tipo inválido rejeitado SEM tocar no banco (schemaZona)", async () => {
-    const r = await salvarZona({ nome: "X", tipo: "lua", ativo: true });
-    expect(r.ok).toBe(false);
-    expect(captura.insert).toBeUndefined();
-  });
-
-  it("ATAQUE: nome vazio rejeitado SEM tocar no banco", async () => {
-    const r = await salvarZona({ nome: "   ", tipo: "bairro", ativo: true });
-    expect(r.ok).toBe(false);
-    expect(captura.insert).toBeUndefined();
-  });
 });
 
 describe("salvarFormaPagamento (Server Action — pagamento)", () => {

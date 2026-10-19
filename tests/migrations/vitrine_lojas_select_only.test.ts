@@ -478,3 +478,107 @@ describe("114 grants residuais (revoke all + defaults select-only)", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue 325 (escrito na fase RED do TDD), fatia F4. A vitrine lê a forma ATIVA de frete
+// (`lojas.forma_frete`) pela view pública. Contrato da migration
+// `20261018130000_lojas_forma_frete_ativa.sql` (D5): drop + create da view com a
+// lista de colunas da 20260925120000 (a última que recriou a view) + `forma_frete`
+// no FIM, mesmas opções (security_invoker = false, security_barrier = true),
+// mesmo `where ativo = true` e o mesmo revoke all + grant select.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Colunas de `vitrine_lojas` antes da 325 (20260925120000), na ordem. */
+const COLUNAS_VITRINE_ANTES_325 = [
+  "id",
+  "slug",
+  "nome",
+  "telefone",
+  "whatsapp",
+  "ativo",
+  "endereco_rua",
+  "endereco_numero",
+  "endereco_bairro",
+  "endereco_cidade",
+  "endereco_estado",
+  "endereco_cep",
+  "tema",
+  "horarios",
+  "timezone",
+  "assinatura_status",
+  "assinatura_fim_periodo",
+  "taxa_entrega_fora_zona",
+  "logo_url",
+  "whatsapp_envio_automatico",
+  "modal_promocoes",
+  "aceita_retirada",
+  "aceita_entrega",
+  "modo_frete",
+];
+
+describe("[325/F4] vitrine_lojas expõe forma_frete (SELECT-only)", () => {
+  let t: TestDb;
+
+  beforeAll(async () => {
+    t = await createTestDb();
+    await t.db.query(
+      `insert into auth.users (id, email) values ($1, $2) on conflict (id) do nothing`,
+      [DONO_A, EMAIL_A],
+    );
+    await semearLojaA(t);
+  }, 60_000);
+  afterAll(async () => {
+    await t.close();
+  });
+
+  it("[325/F4] anon lê forma_frete da loja ativa pela view", async () => {
+    await t.asService((db) => db.query(`update public.lojas set forma_frete = 'bairro' where id = $1`, [LOJA_A]));
+
+    const r = await t.asAnon((db) =>
+      db.query<{ forma_frete: string }>(`select forma_frete from public.vitrine_lojas where slug = $1`, [SLUG_A]),
+    );
+    expect(r.rows).toEqual([{ forma_frete: "bairro" }]);
+  });
+
+  it("[325/F4] lista de colunas = a anterior + forma_frete no fim", async () => {
+    const r = await t.db.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'vitrine_lojas'
+        order by ordinal_position`,
+    );
+    expect(r.rows.map((x) => x.column_name)).toEqual([...COLUNAS_VITRINE_ANTES_325, "forma_frete"]);
+  });
+
+  it("[325/F4] mesmas opções: security_invoker=false, security_barrier=true, filtra ativo", async () => {
+    const r = await t.db.query<{ reloptions: string[] | null }>(
+      `select reloptions from pg_class where oid = 'public.vitrine_lojas'::regclass`,
+    );
+    expect([...(r.rows[0].reloptions ?? [])].sort()).toEqual(["security_barrier=true", "security_invoker=false"]);
+
+    const def = await t.db.query<{ d: string }>(`select pg_get_viewdef('public.vitrine_lojas'::regclass) as d`);
+    expect(normaliza(def.rows[0].d)).toContain("forma_frete");
+    expect(normaliza(def.rows[0].d)).toMatch(/where \(?(lojas\.)?ativo = true\)?/); // pg_get_viewdef omite o prefixo em view de tabela única
+  });
+
+  it("[325/F4] anon sem insert/update na view; update de forma_frete via view ⇒ 42501 e base intacta", async () => {
+    for (const role of ["anon", "authenticated"]) {
+      const r = await t.db.query<{ sel: boolean; ins: boolean; upd: boolean }>(
+        `select has_table_privilege($1, 'public.vitrine_lojas', 'SELECT') as sel,
+                has_table_privilege($1, 'public.vitrine_lojas', 'INSERT') as ins,
+                has_table_privilege($1, 'public.vitrine_lojas', 'UPDATE') as upd`,
+        [role],
+      );
+      expect({ role, ...r.rows[0] }).toEqual({ role, sel: true, ins: false, upd: false });
+    }
+
+    await t.asService((db) => db.query(`update public.lojas set forma_frete = 'raio_km' where id = $1`, [LOJA_A]));
+    await expect(
+      t.asAnon((db) => db.query(`update public.vitrine_lojas set forma_frete = 'bairro' where slug = $1`, [SLUG_A])),
+    ).rejects.toMatchObject({ code: "42501" });
+
+    const base = await t.asService((db) =>
+      db.query<{ forma_frete: string }>(`select forma_frete from public.lojas where id = $1`, [LOJA_A]),
+    );
+    expect(base.rows[0].forma_frete).toBe("raio_km");
+  });
+});

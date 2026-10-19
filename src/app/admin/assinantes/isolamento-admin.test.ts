@@ -180,12 +180,6 @@ import {
   atualizarCategoriaAdmin,
   removerCategoriaAdmin,
 } from "./actions/admin-categorias";
-import {
-  criarZonaAdmin,
-  atualizarZonaAdmin,
-  removerZonaAdmin,
-  alternarZonaAtivaAdmin,
-} from "./actions/admin-entrega";
 import { salvarHorariosAdmin, salvarTemaAdmin } from "./actions/admin-horarios-tema";
 import {
   removerFormaPagamentoAdmin,
@@ -196,13 +190,6 @@ import { publicarLojaAdmin } from "./actions/admin-publicar";
 // ── Payloads mínimos válidos ─────────────────────────────────────────────────
 const PAYLOAD_NOVA_LOJA = { email: EMAIL, nome: "Loja Teste", slug: "loja-teste" };
 const PAYLOAD_CATEGORIA = { nome: "Bebidas", ordem: 0 };
-const PAYLOAD_ZONA = {
-  nome: "Centro",
-  tipo: "bairro" as const,
-  ativo: true,
-  taxa: { taxa: 5.0, pedido_minimo_gratis: null, raio_max_km: null },
-  bairros: ["Centro"],
-};
 const HORARIOS_OK = {
   seg: { abre: "09:00", fecha: "18:00", ativo: true },
   ter: { abre: "09:00", fecha: "18:00", ativo: true },
@@ -285,23 +272,8 @@ describe("§1 Gate de admin (RN-1): admin reprovado propaga em TODAS as actions"
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
-  it("[089] criarZonaAdmin — admin reprovado → rejeita, ZERO escrita", async () => {
-    verificarAdminSaaS.mockRejectedValueOnce(new Error(ERRO_ADMIN));
-    await expect(criarZonaAdmin(LOJA_A, PAYLOAD_ZONA)).rejects.toThrow();
-    expect(createServiceClient).not.toHaveBeenCalled();
-  });
-
-  it("[089] atualizarZonaAdmin — admin reprovado → rejeita", async () => {
-    verificarAdminSaaS.mockRejectedValueOnce(new Error(ERRO_ADMIN));
-    await expect(atualizarZonaAdmin(LOJA_A, RECURSO_ID, PAYLOAD_ZONA)).rejects.toThrow();
-    expect(createServiceClient).not.toHaveBeenCalled();
-  });
-
-  it("[089] removerZonaAdmin — admin reprovado → rejeita, zero DELETE", async () => {
-    verificarAdminSaaS.mockRejectedValueOnce(new Error(ERRO_ADMIN));
-    await expect(removerZonaAdmin(LOJA_A, RECURSO_ID)).rejects.toThrow();
-    expect(createServiceClient).not.toHaveBeenCalled();
-  });
+  // [089] zonas de entrega: o CRUD por zona saiu (issue 327). "Admin reprovado ⇒
+  // zero RPC" de salvarZonasEntregaAdmin vive em actions/admin-entrega.test.ts [328/F3].
 
   it("[091] salvarHorariosAdmin — admin reprovado → rejeita, ZERO update", async () => {
     verificarAdminSaaS.mockRejectedValueOnce(new Error(ERRO_ADMIN));
@@ -452,40 +424,8 @@ describe("§2 Escopo cross-loja (RN-2/3): eq(loja_id) é a única amarra sob ser
     }
   });
 
-  it("[093] criarZonaAdmin → INSERT em zonas_entrega inclui loja_id=LOJA_A do parâmetro", async () => {
-    await criarZonaAdmin(LOJA_A, PAYLOAD_ZONA);
-
-    const zonaInsert = ops.find((o) => o.tipo === "insert" && o.tabela === "zonas_entrega");
-    expect(zonaInsert, "esperava INSERT em zonas_entrega").toBeDefined();
-    expect((zonaInsert!.payload as Record<string, unknown>).loja_id).toBe(LOJA_A);
-  });
-
-  it("[093] removerZonaAdmin com recurso de LOJA_B → DELETE tem eq(loja_id, LOJA_A) → zona de B inalterada", async () => {
-    // terminalPadrao padrão = count:1 (1 linha afetada)
-    // O ponto de prova aqui é o eq() no DELETE, não count=0.
-    // Se eq(loja_id) fosse removido, o DELETE afetaria qualquer zona (cross-loja).
-    await removerZonaAdmin(LOJA_A, RECURSO_ID);
-
-    const del = ops.find((o) => o.tipo === "delete" && o.tabela === "zonas_entrega");
-    expect(del, "esperava DELETE em zonas_entrega").toBeDefined();
-    expect(del!.eqs).toContainEqual({ coluna: "loja_id", valor: LOJA_A });
-    expect(del!.eqs).toContainEqual({ coluna: "id", valor: RECURSO_ID });
-  });
-
-  it("[160] alternarZonaAtivaAdmin com recurso de LOJA_B → UPDATE tem eq(loja_id, LOJA_A) → zona de B inalterada", async () => {
-    // terminalPadrao padrão = count:1 (1 linha afetada). O ponto de prova aqui é
-    // o eq(loja_id) no UPDATE, não count=0 — igual a removerZonaAdmin acima,
-    // alternarZonaAtivaAdmin não tem checagem de posse prévia (buscarPorId):
-    // eq("loja_id", lojaId) é a ÚNICA amarra sob service_role. Se removido, o
-    // UPDATE alcançaria uma zona de LOJA_B ao operar sob LOJA_A.
-    await alternarZonaAtivaAdmin(LOJA_A, RECURSO_ID, false);
-
-    const update = ops.find((o) => o.tipo === "update" && o.tabela === "zonas_entrega");
-    expect(update, "esperava UPDATE em zonas_entrega").toBeDefined();
-    expect(update!.eqs).toContainEqual({ coluna: "loja_id", valor: LOJA_A });
-    expect(update!.eqs).toContainEqual({ coluna: "id", valor: RECURSO_ID });
-    expect(update!.eqs).not.toContainEqual({ coluna: "loja_id", valor: LOJA_B });
-  });
+  // [093]/[160] zonas de entrega: o CRUD por zona saiu (issue 327). "p_loja_id = lojaId
+  // do parâmetro" de salvarZonasEntregaAdmin vive em actions/admin-entrega.test.ts [328/F3].
 
   it("[094] removerFormaPagamentoAdmin → DELETE inclui eq(loja_id, LOJA_A) E eq(id, RECURSO_ID)", async () => {
     await removerFormaPagamentoAdmin(LOJA_A, RECURSO_ID);

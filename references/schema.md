@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.7.0 | **Atualizado:** 2026-10-07
+**Versão:** 0.8.1 | **Atualizado:** 2026-10-18
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -78,6 +78,23 @@ CREATE TABLE lojas (
   -- pelo lojista (lojas_update_proprio) e pelo admin (escopo.atualizarLoja).
   -- Fora de vitrine_lojas. Migration: 20261007123000_lojas_dia_inicio_ciclo.sql.
   dia_inicio_ciclo smallint NOT NULL DEFAULT 1 CHECK (dia_inicio_ciclo BETWEEN 1 AND 28),
+
+  -- Controle otimista das zonas de entrega (issues 325/328): incrementada SÓ por
+  -- salvar_zonas_entrega e definir_forma_frete (compare-and-set). Limite =
+  -- Number.MAX_SAFE_INTEGER (trafega como number no JS). NÃO é billing nem PII — fora do
+  -- trigger lojas_protege_billing; o dono pode alterá-la por PATCH direto (risco aceito,
+  -- só afeta a própria loja). Migration: 20261018120000_zonas_entrega_versao_e_formas.sql.
+  versao_zonas_entrega bigint NOT NULL DEFAULT 0
+    CHECK (versao_zonas_entrega >= 0 AND versao_zonas_entrega <= 9007199254740991),
+
+  -- Forma de frete ATIVA (issues 325/327/328): as zonas das três formas ficam guardadas;
+  -- só as de tipo = forma_frete cobram. Gravada por definir_forma_frete (botão "Usar esta
+  -- forma", junto da versão; 20261018140000) e pela legada salvar_faixas_entrega (força
+  -- raio_km); salvar_zonas_entrega não grava. NÃO é billing nem PII. Exposta em
+  -- vitrine_lojas; fora da allowlist do lojista e em CAMPOS_LOJA_SOMENTE_SERVIDOR (admin).
+  -- Migration: 20261018130000_lojas_forma_frete_ativa.sql.
+  forma_frete text NOT NULL DEFAULT 'raio_km'
+    CONSTRAINT lojas_forma_frete_valida CHECK (forma_frete IN ('raio_km','faixa_cep','bairro')),
 
   -- Endereço
   endereco_rua     text,
@@ -301,18 +318,39 @@ CREATE TABLE taxas_entrega (
 -- Migration: 20260615011000_taxas_faixa_cep.sql
 ```
 
-Escrita em lote da tela de faixas de km: RPC `public.salvar_faixas_entrega(p_loja_id, p_incremento,
-p_faixas)` (migrations `20260929120000_rpc_salvar_faixas_entrega.sql` e
-`20260930120000_rpc_salvar_faixas_entrega_ativo.sql`, issue 326) — **zonas por
-faixa**: apaga TODAS as zonas da loja (qualquer `tipo`, cascata em `taxas_entrega`/`bairros_zona`) e
-grava uma zona `raio_km` + taxa por faixa, numa só transação. O cliente manda só `incremento` (1 ou 2
-km) e, por faixa, `taxa`/`pedido_minimo_gratis`/`ativo`; o servidor deriva o resto — teto
-`raio_max_km` = posição da faixa × `incremento`, `nome` = `"<de>–<até> km"` (en dash). As faixas
-ativas formam um prefixo: faixa ativa depois de uma desligada é recusada (zod e RPC), então a área de
-entrega nunca tem buraco; o limite é o teto da última ativa. `SECURITY INVOKER`,
-`SET search_path = public, pg_temp`, `GRANT EXECUTE TO authenticated, service_role` — chamada pelos
-dois mundos (lojista e admin), filtro `loja_id = p_loja_id` explícito no corpo — ver `seguranca.md`
-§2, quinta instância do padrão.
+Escrita em lote das zonas: RPC `public.salvar_zonas_entrega(p_loja_id, p_versao, p_forma, p_dados)`
+(migration `20261018120000_zonas_entrega_versao_e_formas.sql`, corpo atual em
+`20261018140000_definir_forma_frete.sql`, issues 325/327/328) — **uma forma de frete ATIVA por loja**
+(`lojas.forma_frete`: `raio_km`, `faixa_cep` ou `bairro`; zonas das três formas ficam guardadas e só as
+da forma ativa cobram): apaga só as zonas com `tipo = p_forma` (cascata em `taxas_entrega`/`bairros_zona`),
+grava as zonas da forma enviada e incrementa a versão, numa só transação, se
+`lojas.versao_zonas_entrega = p_versao` (compare-and-set; devolve a versão nova, `p_versao + 1`;
+divergência = `versao desatualizada`). **Não muda `forma_frete`**: salvar zonas de uma forma guardada
+não muda a cobrança.
+
+Ativação da forma: RPC `public.definir_forma_frete(p_loja_id, p_forma, p_versao) returns bigint`
+(migration `20261018140000_definir_forma_frete.sql`, botão "Usar esta forma") — grava
+`forma_frete = p_forma` no mesmo `UPDATE` que incrementa `versao_zonas_entrega` (mesma versão otimista;
+divergência = `definir_forma_frete: versao desatualizada`) e recusa com `definir_forma_frete: forma sem
+zona ativa` se a loja não tem ≥ 1 zona ativa daquele tipo com linha em `taxas_entrega` (nada muda).
+Mesmas travas de posse/via de serviço e mesmo ACL da `salvar_zonas_entrega`.
+
+Na `salvar_zonas_entrega`, o servidor deriva `tipo`, `loja_id` e `nome`; chave extra no
+payload é ignorada pela RPC e recusada pelo zod `.strict()` da action. Por forma: `raio_km` manda
+`incremento` (1 ou 2 km) e faixas com `taxa`/`pedido_minimo_gratis`/`ativo` (teto `raio_max_km` =
+posição × `incremento`, `nome` = `"<de>–<até> km"` com en dash; ativas formam um prefixo, sem buraco;
+máx. 30); `faixa_cep` manda `cep_inicio`/`cep_fim` (sem sobreposição, máx. 50); `bairro` manda grupos
+com lista de bairros (sem repetição após normalização, máx. 30 grupos, 100 por grupo, 300 no total).
+As duas RPCs: `SECURITY INVOKER`, `SET search_path = public, pg_temp`, `GRANT EXECUTE TO authenticated,
+service_role` — chamadas pelos dois mundos (lojista e admin), filtro `loja_id = p_loja_id` explícito no
+corpo — ver `seguranca.md` §2, "Instância INVOKER com controle otimista".
+
+**Legado (a remover no contract):** `public.salvar_faixas_entrega(p_loja_id, p_incremento, p_faixas)`
+(migrations `20260929120000_rpc_salvar_faixas_entrega.sql` e
+`20260930120000_rpc_salvar_faixas_entrega_ativo.sql`, issue 326), assinatura de 3 args, só `raio_km`,
+**sem versão** — continua existindo até a issue de contract (apaga TODAS as zonas, define
+`forma_frete = 'raio_km'`) e não incrementa `versao_zonas_entrega`. A escrita direta em `zonas_entrega` pela RLS `zonas_escrita_propria` também
+segue possível para o próprio dono.
 
 ### `bairros_zona`
 

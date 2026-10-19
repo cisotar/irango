@@ -82,7 +82,9 @@ const COLUNA_NOVA = "modal_promocoes";
  * tests/migrations/lojas_modalidades_entrega.test.ts [5a]; aqui elas só entram
  * no conjunto esperado para não serem lidas como "coluna extra".
  */
-const COLUNAS_POSTERIORES = ["aceita_retirada", "aceita_entrega", "modo_frete"] as const;
+// + `forma_frete` (issue 325, 20261018130000_lojas_forma_frete_ativa.sql;
+// contrato exato em vitrine_lojas_select_only.test.ts [325/F4]).
+const COLUNAS_POSTERIORES = ["aceita_retirada", "aceita_entrega", "modo_frete", "forma_frete"] as const;
 
 const COLUNAS_ESPERADAS = [...COLUNAS_ANTERIORES, COLUNA_NOVA, ...COLUNAS_POSTERIORES];
 

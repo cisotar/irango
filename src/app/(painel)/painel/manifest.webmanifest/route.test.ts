@@ -78,6 +78,8 @@ function lojaFake(overrides: Partial<LojaCompleta>): LojaCompleta {
     aceita_retirada: true,
     aceita_entrega: true,
     modo_frete: "automatico",
+    forma_frete: "raio_km",
+    versao_zonas_entrega: 0,
   };
   return { ...base, ...overrides };
 }

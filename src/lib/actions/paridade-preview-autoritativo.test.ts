@@ -615,3 +615,65 @@ describe("[331] preview e autoritativo concordam sobre o grupo oculto por produt
     expect(args.p_subtotal).toBe(preview.subtotal);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [325/F3] Caso-espelho da forma ATIVA de frete (escrito na fase RED). O MESMO banco
+// (loja `forma_frete = 'raio_km'`, faixa 0–5 km R$ 8 E bairro Centro R$ 5
+// guardado) nas duas pontas: preview e autoritativo cobram R$ 8. O mock de
+// `listarZonasComTaxas` emula a query real: sem o 3º argumento (forma) devolve
+// tudo o que está guardado — é o drift que este teste existe para pegar.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("[325/F3] preview e autoritativo filtram pela MESMA forma ativa", () => {
+  const KM_8 = {
+    id: "zk8",
+    loja_id: LOJA_A,
+    nome: "0–5 km",
+    tipo: "raio_km",
+    ativo: true,
+    taxa: { taxa: 8.0, pedido_minimo_gratis: null, raio_max_km: 5, cep_inicio: null, cep_fim: null },
+    bairros: [],
+  };
+  const BAIRRO_5 = {
+    id: "zb5",
+    loja_id: LOJA_A,
+    nome: "Centro",
+    tipo: "bairro",
+    ativo: true,
+    taxa: { taxa: 5.0, pedido_minimo_gratis: null, raio_max_km: null, cep_inicio: null, cep_fim: null },
+    bairros: [{ nome: "Centro" }],
+  };
+  const GUARDADAS = [KM_8, BAIRRO_5];
+
+  it("forma raio_km: bairro guardado mais barato (R$5) não reduz frete da faixa (R$8) — preview = autoritativo", async () => {
+    mesmaLojaModalidades({ forma_frete: "raio_km" });
+    listarZonasComTaxas.mockImplementation(async (_c: unknown, _l: unknown, forma?: string) =>
+      forma === undefined ? GUARDADAS : GUARDADAS.filter((z) => z.tipo === forma),
+    );
+    // CEP resolve para o bairro declarado e a distância cabe na faixa: as DUAS
+    // zonas guardadas casariam o endereço; só a forma decide.
+    vi.mocked(resolverCepServidor).mockResolvedValue({
+      endereco: { bairro: "Centro", logradouro: "Praça da Sé", cidade: "São Paulo", uf: "SP" },
+    } as never);
+    vi.mocked(distanciaDaLojaAoCep).mockResolvedValue({ km: 3, causa: "ok" } as never);
+
+    try {
+      const preview = await previewDoFrete();
+      const gravado = await gravacaoDoFrete();
+
+      expect(preview).toMatchObject({ ok: true, taxa_preview: 8 });
+      expect(gravado.p_frete_a_combinar).toBe(false);
+      expect(gravado.p_taxa_entrega).toBe(8);
+      expect(gravado.p_total).toBe(58);
+      expect("taxa_preview" in preview ? preview.taxa_preview : null).toBe(gravado.p_taxa_entrega);
+      // as duas pontas pediram a MESMA forma à query
+      for (const chamada of listarZonasComTaxas.mock.calls) {
+        expect(chamada[1]).toBe(LOJA_A);
+        expect(chamada[2]).toBe("raio_km");
+      }
+      expect(listarZonasComTaxas).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.mocked(resolverCepServidor).mockResolvedValue({ endereco: null, motivo: "transitorio" } as never);
+      vi.mocked(distanciaDaLojaAoCep).mockResolvedValue({ km: undefined, causa: "sem_cep" } as never);
+    }
+  });
+});

@@ -10,10 +10,13 @@ import { buscarCategorias, type Categoria } from "@/lib/supabase/queries/categor
 import { buscarProdutosDoLojista, type Produto } from "@/lib/supabase/queries/produtos";
 import {
   listarZonasComTaxas,
+  listarZonasParaEdicao,
   listarFormasPagamento,
   type ZonaVitrine,
+  type ZonasEdicao,
   type FormaPagamento,
 } from "@/lib/supabase/queries/entregaPagamento";
+import { formaAtivaDaLoja } from "@/lib/utils/formaFrete";
 import {
   buscarPlanoAtivo,
   listarPlanosAtivos,
@@ -70,7 +73,8 @@ export async function carregarLojaAdmin(lojaId: string): Promise<LojaAdminAgrega
   const [categorias, produtos, zonas, formasPagamento] = await Promise.all([
     buscarCategorias(svc, idValidado),
     buscarProdutosDoLojista(svc, idValidado),
-    listarZonasComTaxas(svc, idValidado),
+    // (325) Só as zonas da forma ATIVA: o agregado mostra o que a vitrine cobra.
+    listarZonasComTaxas(svc, idValidado, formaAtivaDaLoja(loja.forma_frete)),
     listarFormasPagamento(svc, idValidado),
   ]);
 
@@ -126,12 +130,13 @@ export async function carregarLojaAdminBase(lojaId: string): Promise<LojaComplet
  *     ANTES de qualquer leitura.
  *  2. `verificarAdminSaaS()` FORA do try, ANTES de `createServiceClient()` — a
  *     falha PROPAGA (RN-1, D-4): nenhuma elevação a service_role nem leitura.
- *  3. `listarZonasComTaxas(svc, id)` escopada pela `lojaId` validada.
+ *  3. `listarZonasParaEdicao(svc, id)` escopada pela `lojaId` validada: versão
+ *     otimista + zonas num select só (issue 328), para a gravação comparar.
  *
  * A elevação a service_role fica AQUI, nunca em `page.tsx` (decisão b, issue
  * 150) — a página recebe só o dado materializado. Ver `enforcement-escopo-admin.test.ts`.
  */
-export async function carregarZonasAdmin(lojaId: string): Promise<ZonaVitrine[]> {
+export async function carregarZonasAdmin(lojaId: string): Promise<ZonasEdicao> {
   const validacao = validarLojaIdAdmin(lojaId);
   if (!validacao.ok) {
     notFound();
@@ -143,7 +148,7 @@ export async function carregarZonasAdmin(lojaId: string): Promise<ZonaVitrine[]>
 
   const svc = createServiceClient();
 
-  return listarZonasComTaxas(svc, idValidado);
+  return listarZonasParaEdicao(svc, idValidado);
 }
 
 /**

@@ -41,7 +41,7 @@ import ts from "typescript";
  *
  *   PLANA     `onSalvar={…}` `onDefinirPublicacao={…}` `onSalvarLogo={…}`
  *             → PerfilClient, HorariosClient, TemaClient
- *   ANINHADA  `acoes={{ criarZona: …, … }}`  ou  `acoes={objetoDeUseMemo}`
+ *   ANINHADA  `acoes={{ salvarZonas: …, … }}`  ou  `acoes={objetoDeUseMemo}`
  *             → EntregasClient, PagamentosClient, CuponsClient, ProdutosClient,
  *               OpcionaisClient, GerenciarAssinaturaClient
  *

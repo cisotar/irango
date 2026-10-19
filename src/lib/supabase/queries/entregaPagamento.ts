@@ -14,6 +14,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Tables } from "@/lib/database.types";
 import type { ZonaComTaxa } from "@/lib/utils/calcularFrete";
+import { formaAtivaDaLoja, type FormaFrete } from "@/lib/utils/formaFrete";
 
 // z.guid() valida o FORMATO uuid sem exigir os nibbles de versão/variante
 // RFC-4122 (z.uuid() rejeitaria ids válidos do Postgres em casos de borda) —
@@ -28,34 +29,87 @@ export type Cupom = Tables<"cupons">;
 /** Zona hidratada + `nome` (a vitrine rotula a zona; `calcularFrete` não usa nome). */
 export type ZonaVitrine = ZonaComTaxa & { nome: string };
 
+const COLUNAS_ZONA =
+  "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km, cep_inicio, cep_fim), bairros:bairros_zona(nome)";
+
+/** Select de edição: versão + forma ativa + zonas no mesmo statement (literal, para o PostgREST tipar o embed). */
+const COLUNAS_EDICAO = `versao_zonas_entrega, forma_frete, zonas:zonas_entrega(${COLUNAS_ZONA})` as const;
+
+/** Linha de `COLUNAS_ZONA` como o PostgREST a devolve (tipos de `database.types`). */
+type ZonaEmbutida = Pick<Tables<"zonas_entrega">, "id" | "nome" | "tipo" | "ativo"> & {
+  taxa: ZonaComTaxa["taxa"] | NonNullable<ZonaComTaxa["taxa"]>[];
+  bairros: ZonaComTaxa["bairros"] | null;
+};
+
+/**
+ * PostgREST embute relações filhas como array; normaliza `taxa` (1:1) para
+ * objeto/null e `bairros` ausente para `[]`.
+ */
+function hidratarZona({ taxa, bairros, ...zona }: ZonaEmbutida): ZonaVitrine {
+  return {
+    ...zona,
+    taxa: Array.isArray(taxa) ? (taxa[0] ?? null) : taxa,
+    bairros: bairros ?? [],
+  };
+}
+
 /**
  * Zonas da loja já hidratadas com taxa (1:1) e bairros (1:N), no shape que
  * `calcularFrete` consome (`ZonaComTaxa`). Fonte: TABELA `zonas_entrega`,
- * escopo `eq('loja_id')`. Leitura PÚBLICA (RLS só expõe zonas ativas + filhas).
+ * escopo `eq('loja_id')` E `eq('tipo', forma)`. Leitura PÚBLICA (RLS só expõe
+ * zonas ativas + filhas). Loja sem zonas → `[]`.
  *
- * PostgREST embute relações filhas como array; normalizamos `taxa` (1:1) para
- * objeto/null. Loja sem zonas → `[]`.
+ * `forma` é a forma ATIVA da loja (`formaAtivaDaLoja(loja.forma_frete)`, issue
+ * 325): as zonas das outras formas ficam guardadas no banco e NUNCA chegam a
+ * `calcularFrete` — este é o único ponto do filtro, para preview e autoritativo
+ * não divergirem.
  */
 export async function listarZonasComTaxas(
   client: Client,
   lojaId: string,
+  forma: FormaFrete,
 ): Promise<ZonaVitrine[]> {
   const { data, error } = await client
     .from("zonas_entrega")
-    .select(
-      "id, nome, tipo, ativo, taxa:taxas_entrega(taxa, pedido_minimo_gratis, raio_max_km, cep_inicio, cep_fim), bairros:bairros_zona(nome)",
-    )
-    .eq("loja_id", lojaId);
+    .select(COLUNAS_ZONA)
+    .eq("loja_id", lojaId)
+    .eq("tipo", forma);
   if (error) throw error;
-  return (data ?? []).map((zona) => {
-    const taxa = (zona as { taxa: unknown }).taxa;
-    return {
-      ...zona,
-      // 1:1: PostgREST devolve array embutido — colapsa para objeto/null.
-      taxa: Array.isArray(taxa) ? (taxa[0] ?? null) : (taxa ?? null),
-      bairros: (zona as { bairros: { nome: string }[] }).bairros ?? [],
-    } as ZonaVitrine;
-  });
+  return (data ?? []).map(hidratarZona);
+}
+
+/**
+ * Versão otimista + forma ativa + zonas da loja, lidas no MESMO snapshot
+ * (issues 328/325). `zonas` traz as TRÊS formas (as guardadas também): a tela
+ * separa por `zonasDaForma`.
+ */
+export type ZonasEdicao = { versao: number; forma: FormaFrete; zonas: ZonaVitrine[] };
+
+/**
+ * Zonas para EDIÇÃO (painel e hub admin) junto da `versao_zonas_entrega`
+ * que a gravação vai comparar. UM select em `lojas` com embed das zonas: um
+ * statement SQL é um snapshot, então versão e zonas nunca divergem (zonas
+ * velhas com versão nova deixariam a próxima gravação passar por cima).
+ * Lojista: RLS de leitura própria em `lojas` e `zonas_escrita_propria` nas
+ * zonas (inclui as inativas). Admin: client service_role do loader, que já
+ * validou `lojaId` e provou admin. Erro → lança; loja ausente → lança.
+ */
+export async function listarZonasParaEdicao(
+  client: Client,
+  lojaId: string,
+): Promise<ZonasEdicao> {
+  const { data, error } = await client
+    .from("lojas")
+    .select(COLUNAS_EDICAO)
+    .eq("id", lojaId)
+    .maybeSingle();
+  if (error) throw error;
+  if (data == null) throw new Error("loja não encontrada");
+  return {
+    versao: data.versao_zonas_entrega,
+    forma: formaAtivaDaLoja(data.forma_frete),
+    zonas: (data.zonas ?? []).map(hidratarZona),
+  };
 }
 
 /**

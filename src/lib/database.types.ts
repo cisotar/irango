@@ -705,6 +705,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string
           horarios: Json
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
@@ -724,6 +725,7 @@ export type Database = {
           telefone: string | null
           tema: Json
           timezone: string
+          versao_zonas_entrega: number
           whatsapp: string | null
           whatsapp_envio_automatico: boolean
         }
@@ -748,6 +750,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string
           horarios?: Json
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
@@ -767,6 +770,7 @@ export type Database = {
           telefone?: string | null
           tema?: Json
           timezone?: string
+          versao_zonas_entrega?: number
           whatsapp?: string | null
           whatsapp_envio_automatico?: boolean
         }
@@ -791,6 +795,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string
           horarios?: Json
           hotmart_plano?: string | null
           hotmart_subscriber_code?: string | null
@@ -810,6 +815,7 @@ export type Database = {
           telefone?: string | null
           tema?: Json
           timezone?: string
+          versao_zonas_entrega?: number
           whatsapp?: string | null
           whatsapp_envio_automatico?: boolean
         }
@@ -1636,6 +1642,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string | null
           horarios: Json | null
           id: string | null
           logo_url: string | null
@@ -1662,6 +1669,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string | null
           horarios?: Json | null
           id?: string | null
           logo_url?: string | null
@@ -1688,6 +1696,7 @@ export type Database = {
           endereco_estado?: string | null
           endereco_numero?: string | null
           endereco_rua?: string | null
+          forma_frete?: string | null
           horarios?: Json | null
           id?: string | null
           logo_url?: string | null
@@ -1894,6 +1903,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      definir_forma_frete: {
+        Args: { p_forma: string; p_loja_id: string; p_versao: number }
+        Returns: number
+      }
       desconto_vigente: {
         Args: {
           p_agora: string
@@ -1941,6 +1954,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string
           horarios: Json
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
@@ -1960,6 +1974,7 @@ export type Database = {
           telefone: string | null
           tema: Json
           timezone: string
+          versao_zonas_entrega: number
           whatsapp: string | null
           whatsapp_envio_automatico: boolean
         }[]
@@ -1993,6 +2008,7 @@ export type Database = {
           endereco_estado: string | null
           endereco_numero: string | null
           endereco_rua: string | null
+          forma_frete: string
           horarios: Json
           hotmart_plano: string | null
           hotmart_subscriber_code: string | null
@@ -2012,6 +2028,7 @@ export type Database = {
           telefone: string | null
           tema: Json
           timezone: string
+          versao_zonas_entrega: number
           whatsapp: string | null
           whatsapp_envio_automatico: boolean
         }[]
@@ -2088,6 +2105,15 @@ export type Database = {
           p_titulo: string
         }
         Returns: string
+      }
+      salvar_zonas_entrega: {
+        Args: {
+          p_dados: Json
+          p_forma: string
+          p_loja_id: string
+          p_versao: number
+        }
+        Returns: number
       }
       status_faturamento: {
         Args: { p_so_concluidos: boolean }

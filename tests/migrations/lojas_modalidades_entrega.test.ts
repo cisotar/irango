@@ -77,7 +77,10 @@ const COLUNAS_ANTERIORES = [
 
 const COLUNAS_NOVAS = ["aceita_retirada", "aceita_entrega", "modo_frete"] as const;
 
-const COLUNAS_ESPERADAS = [...COLUNAS_ANTERIORES, ...COLUNAS_NOVAS];
+/** Recriações POSTERIORES da view: `forma_frete` (issue 325, 20261018130000). */
+const COLUNAS_POSTERIORES = ["forma_frete"] as const;
+
+const COLUNAS_ESPERADAS = [...COLUNAS_ANTERIORES, ...COLUNAS_NOVAS, ...COLUNAS_POSTERIORES];
 
 let t: TestDb;
 let lojaA: string;

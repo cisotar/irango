@@ -20,7 +20,9 @@ export default async function EntregasConfiguracaoAdminPage({
   const { lojaId } = await params;
   // Loja (modalidades + fallback fora-de-zona) e zonas: loaders de seção
   // independentes, cada um com o próprio guard admin — em paralelo.
-  const [loja, zonas] = await Promise.all([
+  // A versão otimista vem no MESMO select das zonas (issue 328): o paralelismo
+  // com a loja não quebra a atomicidade versão × zonas.
+  const [loja, { versao, forma, zonas }] = await Promise.all([
     carregarLojaAdminBase(lojaId),
     carregarZonasAdmin(lojaId),
   ]);
@@ -29,6 +31,11 @@ export default async function EntregasConfiguracaoAdminPage({
     <EntregasAdminClient
       lojaId={lojaId}
       zonas={zonas}
+      forma={forma}
+      versao={versao}
+      // Só o boolean: o par de coordenadas nunca vai ao client (seguranca.md §19).
+      temCoordenadas={loja.latitude != null && loja.longitude != null}
+      hrefPerfil={`/admin/assinantes/${lojaId}/configuracoes/perfil`}
       modalidades={modalidadesDaLoja(loja)}
       taxaForaZona={loja.taxa_entrega_fora_zona}
     />
