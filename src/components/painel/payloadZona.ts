@@ -3,8 +3,10 @@
 // mascarado ↔ inteiro de 8 dígitos, o formato de `taxas_entrega.cep_*`), lê as
 // zonas gravadas de cada forma para o estado editável e monta o payload da
 // forma: faixas de km (`montarPayloadKm`), faixas de CEP
-// (`lerFaixasCep`/`montarPayloadCep`) e bairros (`lerGruposBairro`/
-// `montarPayloadBairros`). Cada montagem devolve o payload inteiro ou o
+// (`lerFaixasCep`/`montarPayloadCep`) e bairros, agrupados por preço
+// (`lerGruposBairro`/`montarPayloadBairros`) ou uma linha por bairro
+// (`lerBairrosIndividuais`/`montarPayloadPorBairro`, mesmo payload de grupos;
+// `zonasDoPayloadBairros` reabre uma vista com o que a outra salvou). Cada montagem devolve o payload inteiro ou o
 // primeiro erro com a linha dele (`Montagem`); `chaveDaMontagem` dá a chave
 // usada para não regravar o mesmo payload.
 //
@@ -258,6 +260,92 @@ export function grupoComBairro(grupos: ReadonlyArray<{ bairros: string[] }>, bai
   const alvo = normalizarBairro(bairro);
   const i = grupos.findIndex((g) => g.bairros.some((b) => normalizarBairro(b) === alvo));
   return i === -1 ? null : i;
+}
+
+// ─── Frete por bairro, uma linha por bairro (issue 325) ─────────────────────
+
+/** Bairro como a aba "Frete por bairro" o edita: uma linha, um preço. */
+export type BairroEditavel = { nome: string; taxa: string; gratis: string | null; ativo: boolean };
+
+/** Zonas gravadas → uma linha por bairro, com o preço do grupo dele. */
+export function lerBairrosIndividuais(zonas: ZonaVitrine[]): BairroEditavel[] {
+  return lerGruposBairro(zonas).flatMap((g) =>
+    g.bairros.map((nome) => ({ nome, taxa: g.taxa, gratis: g.gratis, ativo: g.ativo })),
+  );
+}
+
+/**
+ * Linhas por bairro → o MESMO payload `{ forma: "bairro", grupos }` da aba por
+ * preço: bairros com preço, frete grátis e "Ativo" iguais viram um grupo, na
+ * ordem da primeira linha de cada um (grupo cheio abre outro com o mesmo preço).
+ * O erro aponta a linha do bairro; teto de preços diferentes não tem linha.
+ */
+export function montarPayloadPorBairro(linhas: BairroEditavel[]): Montagem<PayloadBairros> {
+  const vistos = new Map<string, number>();
+  const grupos: { item: PayloadBairros["grupos"][number]; linhas: number[] }[] = [];
+  const grupoAberto = new Map<string, number>();
+
+  for (const [i, l] of linhas.entries()) {
+    const nome = l.nome.trim().replace(/\s+/g, " ");
+    if (nome === "") return { ok: false, erro: "Preencha o nome do bairro.", indice: i };
+    const chaveNome = normalizarBairro(nome);
+    const repetido = vistos.get(chaveNome);
+    if (repetido != null) return { ok: false, erro: `${nome} já está na linha ${repetido + 1}.`, indice: i };
+    vistos.set(chaveNome, i);
+
+    const taxa = paraNumero(l.taxa);
+    if (taxa == null) return { ok: false, erro: "Informe o frete deste bairro.", indice: i };
+    let gratis: number | null = null;
+    if (l.gratis !== null) {
+      gratis = paraNumero(l.gratis);
+      if (gratis == null) {
+        return { ok: false, erro: "Informe o valor do frete grátis deste bairro ou desligue a opção.", indice: i };
+      }
+    }
+
+    const chave = `${taxa}|${gratis}|${l.ativo}`;
+    const aberto = grupoAberto.get(chave);
+    if (aberto != null && grupos[aberto].linhas.length < TETO_BAIRROS_POR_GRUPO) {
+      grupos[aberto].item.bairros.push(nome);
+      grupos[aberto].linhas.push(i);
+    } else {
+      grupoAberto.set(chave, grupos.length);
+      grupos.push({ item: { bairros: [nome], taxa, pedido_minimo_gratis: gratis, ativo: l.ativo }, linhas: [i] });
+    }
+  }
+
+  if (grupos.length > TETO_GRUPOS_BAIRRO) {
+    return { ok: false, erro: `Use no máximo ${TETO_GRUPOS_BAIRRO} preços diferentes.`, indice: null };
+  }
+
+  const parsed = schemaGruposBairro.safeParse({ grupos: grupos.map((g) => g.item) });
+  if (parsed.success) return { ok: true, payload: { forma: "bairro", ...parsed.data } };
+
+  const { issue, indice: grupo, campo } = primeiraIssue(parsed.error);
+  if (issue?.code === "custom") return { ok: false, erro: issue.message, indice: null };
+  const posicao = typeof issue?.path[3] === "number" ? issue.path[3] : 0;
+  const linha = grupo == null ? null : (grupos[grupo]?.linhas[campo === "bairros" ? posicao : 0] ?? null);
+  if (campo === "taxa" || campo === "pedido_minimo_gratis") {
+    const oQue = campo === "pedido_minimo_gratis" ? "o frete grátis" : "o frete";
+    return { ok: false, erro: `Confira ${oQue} deste bairro: ${AJUDA_VALOR}`, indice: linha };
+  }
+  if (campo === "bairros") return { ok: false, erro: "Use até 120 letras no nome do bairro.", indice: linha };
+  return { ok: false, erro: "Confira o frete por bairro.", indice: linha };
+}
+
+/**
+ * Payload de bairros aceito → zonas no formato da carga, para a outra aba abrir
+ * com o que acabou de ser salvo (ids locais: só a tela usa).
+ */
+export function zonasDoPayloadBairros(payload: PayloadBairros): ZonaVitrine[] {
+  return payload.grupos.map((g, i) => ({
+    id: `local-${i}`,
+    nome: g.bairros[0] ?? "",
+    tipo: "bairro",
+    ativo: g.ativo,
+    taxa: { taxa: g.taxa, pedido_minimo_gratis: g.pedido_minimo_gratis, raio_max_km: null, cep_inicio: null, cep_fim: null },
+    bairros: g.bairros.map((nome) => ({ nome })),
+  }));
 }
 
 /**
