@@ -33,6 +33,8 @@ export type ModalidadesEntregaProps = {
   /** `lojas.taxa_entrega_fora_zona` — só para o aviso D4. */
   taxaForaZona: number | null;
   salvar: (payload: DadosModalidadesEntrega) => Promise<{ ok: true } | { ok: false; erro: string }>;
+  /** Cada escolha, antes de salvar: a tela mostra ou oculta as zonas na hora. */
+  aoMudar?: (valores: DadosModalidadesEntrega) => void;
 };
 
 const LINHA = "flex min-h-11 items-center justify-between gap-3";
@@ -42,9 +44,15 @@ export function ModalidadesEntrega({
   zonas,
   taxaForaZona,
   salvar,
+  aoMudar,
 }: ModalidadesEntregaProps) {
   const router = useRouter();
   const [valores, setValores] = useState<DadosModalidadesEntrega>(inicial);
+  function mudar(parcial: Partial<DadosModalidadesEntrega>) {
+    const novos = { ...valores, ...parcial };
+    setValores(novos);
+    aoMudar?.(novos);
+  }
   const [salvando, startSalvar] = useTransition();
 
   const validacao = schemaModalidadesEntrega.safeParse(valores);
@@ -99,7 +107,7 @@ export function ModalidadesEntrega({
           <Switch
             checked={valores.aceita_retirada}
             disabled={salvando}
-            onCheckedChange={(v) => setValores((s) => ({ ...s, aceita_retirada: v === true }))}
+            onCheckedChange={(v) => mudar({ aceita_retirada: v === true })}
           />
         </Label>
 
@@ -113,7 +121,7 @@ export function ModalidadesEntrega({
           <Switch
             checked={valores.aceita_entrega}
             disabled={salvando}
-            onCheckedChange={(v) => setValores((s) => ({ ...s, aceita_entrega: v === true }))}
+            onCheckedChange={(v) => mudar({ aceita_entrega: v === true })}
           />
         </Label>
 
@@ -122,7 +130,7 @@ export function ModalidadesEntrega({
             <p className="text-sm font-medium text-foreground">Frete da entrega</p>
             <RadioGroup
               value={valores.modo_frete}
-              onValueChange={(v) => setValores((s) => ({ ...s, modo_frete: v as ModoFrete }))}
+              onValueChange={(v) => mudar({ modo_frete: v as ModoFrete })}
               className="gap-2"
             >
               <Label
