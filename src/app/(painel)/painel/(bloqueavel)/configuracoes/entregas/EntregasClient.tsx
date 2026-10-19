@@ -87,6 +87,8 @@ export function EntregasClient({
     faixa_cep: zonasDaForma(zonas, "faixa_cep"),
     bairro: zonasDaForma(zonas, "bairro"),
   }));
+  // Escolha de entrega/frete na tela (salva ou não): decide se as zonas aparecem.
+  const [escolha, setEscolha] = useState(modalidades);
   const [conflito, setConflito] = useState(false);
   const [ativando, setAtivando] = useState(false);
 
@@ -157,56 +159,56 @@ export function EntregasClient({
         zonas={resumoPorForma[formaAtiva]}
         taxaForaZona={taxaForaZona}
         salvar={acoes.salvarModalidades}
+        aoMudar={setEscolha}
       />
 
-      <h1 className="mb-2 font-heading text-xl font-semibold text-foreground">
-        Zonas de entrega
-      </h1>
-      {/* As zonas ficam guardadas mesmo quando não são usadas: religar a
-          entrega ou voltar ao frete calculado não exige recadastrar nada. */}
-      <p className="mb-6 text-sm text-muted-foreground">
-        {!modalidades.aceita_entrega
-          ? "A entrega está desligada. As zonas ficam guardadas para quando você religar."
-          : modalidades.modo_frete === "a_combinar"
-            ? "O frete está sendo combinado no WhatsApp. As zonas ficam guardadas para quando você voltar ao frete calculado."
-            : "O frete de cada pedido é calculado por estas zonas."}
-      </p>
+      {/* Sem entrega ou com frete a combinar, as zonas não são usadas: a
+          configuração some da tela assim que o lojista escolhe, mas continua
+          montada e guardada; religar não exige recadastrar nada. */}
+      <div hidden={!escolha.aceita_entrega || escolha.modo_frete === "a_combinar"}>
+        <h1 className="mb-2 font-heading text-xl font-semibold text-foreground">
+          Zonas de entrega
+        </h1>
+        <p className="mb-6 text-sm text-muted-foreground">
+          O frete de cada pedido é calculado por estas zonas.
+        </p>
 
-      <SeletorFormaFrete valor={formaVisivel} ativa={formaAtiva} aoMudar={setFormaVisivel} />
+        <SeletorFormaFrete valor={formaVisivel} ativa={formaAtiva} aoMudar={setFormaVisivel} />
 
-      {conflito && <AvisoConflitoZonas />}
+        {conflito && <AvisoConflitoZonas />}
 
-      <AvisoUsarForma
-        forma={formaVisivel}
-        formaAtiva={formaAtiva}
-        podeUsar={temZonaQueCobra(resumoPorForma[formaVisivel])}
-        ativando={ativando}
-        aoUsar={() => void usarForma()}
-        bloqueado={conflito}
-      />
-
-      <div hidden={formaVisivel !== "raio_km"}>
-        <TabelaFaixasEntrega
-          {...comuns}
-          zonasIniciais={zonasPorForma.raio_km}
-          ehAtiva={formaAtiva === "raio_km"}
-          temCoordenadas={temCoordenadas}
-          hrefPerfil={hrefPerfil}
+        <AvisoUsarForma
+          forma={formaVisivel}
+          formaAtiva={formaAtiva}
+          podeUsar={temZonaQueCobra(resumoPorForma[formaVisivel])}
+          ativando={ativando}
+          aoUsar={() => void usarForma()}
+          bloqueado={conflito}
         />
-      </div>
-      <div hidden={formaVisivel !== "faixa_cep"}>
-        <TabelaFaixasCep
-          {...comuns}
-          zonasIniciais={zonasPorForma.faixa_cep}
-          ehAtiva={formaAtiva === "faixa_cep"}
-        />
-      </div>
-      <div hidden={formaVisivel !== "bairro"}>
-        <EditorBairros
-          {...comuns}
-          zonasIniciais={zonasPorForma.bairro}
-          ehAtiva={formaAtiva === "bairro"}
-        />
+
+        <div hidden={formaVisivel !== "raio_km"}>
+          <TabelaFaixasEntrega
+            {...comuns}
+            zonasIniciais={zonasPorForma.raio_km}
+            ehAtiva={formaAtiva === "raio_km"}
+            temCoordenadas={temCoordenadas}
+            hrefPerfil={hrefPerfil}
+          />
+        </div>
+        <div hidden={formaVisivel !== "faixa_cep"}>
+          <TabelaFaixasCep
+            {...comuns}
+            zonasIniciais={zonasPorForma.faixa_cep}
+            ehAtiva={formaAtiva === "faixa_cep"}
+          />
+        </div>
+        <div hidden={formaVisivel !== "bairro"}>
+          <EditorBairros
+            {...comuns}
+            zonasIniciais={zonasPorForma.bairro}
+            ehAtiva={formaAtiva === "bairro"}
+          />
+        </div>
       </div>
     </main>
   );
