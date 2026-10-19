@@ -22,8 +22,8 @@
 //   7. sucesso ⇒ revalidatePath(painel) + revalidatePath("/loja/[slug]", "page");
 //      { ok:true, versao: data }; 8. catch ⇒ genérica.
 //
-// A action ainda não existe: resolvida por NAMESPACE (precedente 326,
-// entrega.faixas.test.ts) para o RED ser "export ausente". Args da RPC LITERAIS.
+// Escrito na fase RED, quando a action não existia: resolvida por NAMESPACE
+// (precedente 326) para o RED ser "export ausente". Args da RPC LITERAIS.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 

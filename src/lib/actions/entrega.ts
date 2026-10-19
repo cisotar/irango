@@ -22,6 +22,7 @@ import {
   schemaDefinirFormaFrete,
   schemaModalidadesEntrega,
   validarPayloadZonas,
+  type ResultadoFormaFrete,
   type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
 import { createClient } from "@/lib/supabase/server";
@@ -120,7 +121,7 @@ export async function salvarZonasEntrega(payload: unknown): Promise<ResultadoZon
  * que confere a versão (compare-and-set), grava `lojas.forma_frete` e recusa
  * forma sem zona ligada com preço. `revalidatePath` só no ok.
  */
-export async function definirFormaFrete(payload: unknown): Promise<ResultadoZonas> {
+export async function definirFormaFrete(payload: unknown): Promise<ResultadoFormaFrete> {
   const parsed = schemaDefinirFormaFrete.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: MENSAGEM_ERRO_FORMA_FRETE };
 

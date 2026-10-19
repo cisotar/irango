@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-// [328/F1] `listarZonasParaEdicao` ainda não existe: resolvida pelo NAMESPACE
-// para o RED ser "export ausente", não import quebrado (precedente 326,
-// src/lib/actions/entrega.faixas.test.ts).
+// [328/F1] Escrito na fase RED, quando `listarZonasParaEdicao` não existia:
+// resolvida pelo NAMESPACE para o RED ser "export ausente", não import
+// quebrado (precedente 326).
 import * as queries from "./entregaPagamento";
 
 /**
- * Fase RED (TDD) da issue 328 — fatia F1: leitura ATÔMICA de versão + zonas.
+ * Issue 328 (escrito na fase RED do TDD) — fatia F1: leitura ATÔMICA de versão + zonas.
  *
  * Autoridade: plan/arquivo/tecnico-formas-de-frete.md §2 ("Leitura atômica de versão +
  * zonas") e §8 itens 10–11.

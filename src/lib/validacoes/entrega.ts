@@ -113,7 +113,7 @@ export type DadosFaixasEntrega = z.infer<typeof schemaFaixasEntrega>;
 // ─── Zonas de entrega numa forma só, com versão (issues 325/328) ────────────
 // ISOMÓRFICO: autoridade das Server Actions (lojista e admin), antes de
 // qualquer I/O; os gates sem versão servem às telas. Regras de valor
-// espelham a RPC `salvar_zonas_entrega` (20261018120000), que segue sendo a
+// espelham a RPC `salvar_zonas_entrega` (corpo atual em 20261018140000), que é a
 // autoridade final. `.strict()` em todo nível: o cliente nunca manda
 // `loja_id`, `tipo`, `nome`, `raio_max_km` nem `id` — o servidor deriva.
 export const TETO_FAIXAS_CEP = 50;
@@ -126,6 +126,7 @@ export const MENSAGEM_CONFLITO_ZONAS =
 
 /** Erro genérico da gravação de zonas: actions lojista/admin e tela (detalhe só no log do servidor). */
 export const MENSAGEM_ERRO_ZONAS = "Não foi possível salvar as zonas de entrega. Tente de novo.";
+/** Erro genérico da ativação da forma (`definir_forma_frete`): actions lojista/admin e tela (detalhe só no log do servidor). */
 export const MENSAGEM_ERRO_FORMA_FRETE = "Não foi possível trocar a forma de cobrar a entrega. Tente de novo.";
 
 /** CEP como inteiro de 8 dígitos ("01000-000" → 1000000), como em taxas_entrega.cep_*. */
@@ -306,6 +307,9 @@ export type ResultadoZonas =
   | { ok: true; versao: number }
   | { ok: false; erro: string; conflito?: true };
 
+/** Resultado das actions de ativação da forma (lojista e admin): mesmo formato, com a versão nova. */
+export type ResultadoFormaFrete = ResultadoZonas;
+
 /**
  * Gate das actions de zonas, ANTES de qualquer I/O: `schemaZonasEntrega`
  * (`.strict()` em todo nível). Recusa devolve a primeira regra de negócio
@@ -351,7 +355,7 @@ function traduzirRespostaComVersao(
 }
 
 /**
- * Resposta da RPC `definir_forma_frete` → `ResultadoZonas`. Conflito de versão
+ * Resposta da RPC `definir_forma_frete` → `ResultadoFormaFrete`. Conflito de versão
  * → `conflito`; forma sem zona ligada com preço → `MENSAGEM_FORMA_SEM_ZONA`;
  * resto → `MENSAGEM_ERRO_FORMA_FRETE`. O texto do banco só vai para o log do
  * servidor.
@@ -359,7 +363,7 @@ function traduzirRespostaComVersao(
 export function resultadoDaRpcFormaFrete(
   rotulo: string,
   resposta: { data: unknown; error: ErroRpc | null },
-): ResultadoZonas {
+): ResultadoFormaFrete {
   const { error } = resposta;
   if (error?.code === "P0001" && (error.message ?? "").includes("definir_forma_frete: forma sem zona ativa")) {
     console.warn(`[${rotulo}] forma sem zona ativa`);

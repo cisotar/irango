@@ -12,9 +12,10 @@
 // uma forma, versão otimista) e NÃO ativam a forma; a forma ativa só muda pela
 // RPC `definir_forma_frete` (botão "Usar esta forma", issue 325). Não há
 // escrita por zona (issue 327): RLS não protege sob service_role, e o filtro
-// `loja_id = p_loja_id` das RPCs é a única amarra de isolamento entre lojas. `loja_id` é SEMPRE o parâmetro `lojaId`,
-// NUNCA o do payload. Tipos auxiliares ficam locais ou vêm por `import type`
-// (módulo 'use server' só exporta funções async).
+// `loja_id = p_loja_id` das RPCs é a única amarra de isolamento entre lojas.
+// `loja_id` é SEMPRE o parâmetro `lojaId`, NUNCA o do payload. Tipos auxiliares
+// ficam locais ou vêm por `import type` (módulo 'use server' só exporta funções
+// async).
 
 import {
   validarLojaIdAdmin,
@@ -32,6 +33,7 @@ import {
   schemaDefinirFormaFrete,
   schemaModalidadesEntrega,
   validarPayloadZonas,
+  type ResultadoFormaFrete,
   type ResultadoZonas,
 } from "@/lib/validacoes/entrega";
 import { montarPatchModalidades } from "@/lib/actions/patches-loja";
@@ -137,7 +139,7 @@ export async function salvarZonasEntregaAdmin(
 export async function definirFormaFreteAdmin(
   lojaId: string,
   payload: unknown,
-): Promise<ResultadoZonas> {
+): Promise<ResultadoFormaFrete> {
   const loja = validarLojaIdAdmin(lojaId);
   if (!loja.ok) return { ok: false, erro: "Loja inválida." };
 

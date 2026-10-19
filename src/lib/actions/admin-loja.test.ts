@@ -330,9 +330,9 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
 
   // [325/F6] `forma_frete` decide QUAIS zonas a vitrine cobra. Um patch admin
   // (service_role, sem trigger) que a trocasse ativaria zonas guardadas sem
-  // passar pela versão otimista da RPC — o lojista veria uma forma e a vitrine
+  // passar pela versão otimista de `definir_forma_frete` — o lojista veria uma forma e a vitrine
   // cobraria outra. O filtro de runtime de `atualizarLoja` descarta a chave.
-  it("[325/F6] atualizarLoja descarta forma_frete sob cast — só a RPC de zonas ativa a forma", async () => {
+  it("[325/F6] atualizarLoja descarta forma_frete sob cast — só a RPC definir_forma_frete ativa a forma", async () => {
     opsEspia = [];
     const { escopo } = await prepararContextoAdmin(LOJA_ID);
     await escopo.atualizarLoja({ nome: "ok", forma_frete: "bairro" } as never);

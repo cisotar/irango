@@ -3,7 +3,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
- * Fase RED (TDD) da issue 325 — forma de frete ATIVA como coluna, com as zonas
+ * Issue 325 (escrito na fase RED do TDD) — forma de frete ATIVA como coluna, com as zonas
  * das três formas guardadas lado a lado. Prova de BANCO (pglite) de:
  *
  *   F1. `lojas.forma_frete text not null default 'raio_km'
@@ -12,7 +12,7 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  *   F5. `salvar_faixas_entrega(uuid, integer, jsonb)` (legado) passa a marcar
  *       `forma_frete = 'raio_km'` (D4).
  *
- * Migration alvo (fase GREEN): supabase/migrations/20261018130000_lojas_forma_frete_ativa.sql
+ * Migration: supabase/migrations/20261018130000_lojas_forma_frete_ativa.sql
  *
  * BACKFILL — escolha do harness: `createTestDb({ antesDaMigration })` aplica as
  * migrations até a 20261018130000 (exclusive), roda `semear` como postgres e

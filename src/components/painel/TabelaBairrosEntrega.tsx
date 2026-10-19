@@ -55,6 +55,7 @@ import {
  */
 export function TabelaBairrosEntrega({
   zonasIniciais,
+  ehAtiva,
   salvar,
   aoGravar,
   bloqueado,
@@ -366,7 +367,9 @@ export function TabelaBairrosEntrega({
             <AlertDialogTitle>Remover este preço?</AlertDialogTitle>
             <AlertDialogDescription>
               {grupoRemovido && grupoRemovido.bairros.length > 0
-                ? `Estes bairros deixam de valer na vitrine: ${grupoRemovido.bairros.join(", ")}.`
+                ? ehAtiva
+                  ? `Estes bairros deixam de valer na vitrine: ${grupoRemovido.bairros.join(", ")}.`
+                  : `Estes bairros saem da tabela: ${grupoRemovido.bairros.join(", ")}. Os outros preços ficam guardados.`
                 : "A linha sai da tabela."}
             </AlertDialogDescription>
           </AlertDialogHeader>

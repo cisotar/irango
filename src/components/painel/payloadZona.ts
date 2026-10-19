@@ -1,10 +1,12 @@
 // Estado das telas de zona de entrega ↔ payload — módulo PURO, sem React,
-// testável no `environment: node`. Conversões de input (moeda BR → número, CEP
-// mascarado ↔ inteiro de 8 dígitos, o formato de `taxas_entrega.cep_*`; issue
-// 183) e, por forma de frete (issue 325), a leitura das zonas gravadas e a
-// montagem do payload: faixas de km (`montarPayloadKm`), faixas de CEP
+// testável no `environment: node`. Converte input (moeda BR → número, CEP
+// mascarado ↔ inteiro de 8 dígitos, o formato de `taxas_entrega.cep_*`), lê as
+// zonas gravadas de cada forma para o estado editável e monta o payload da
+// forma: faixas de km (`montarPayloadKm`), faixas de CEP
 // (`lerFaixasCep`/`montarPayloadCep`) e bairros (`lerGruposBairro`/
-// `montarPayloadBairros`).
+// `montarPayloadBairros`). Cada montagem devolve o payload inteiro ou o
+// primeiro erro com a linha dele (`Montagem`); `chaveDaMontagem` dá a chave
+// usada para não regravar o mesmo payload.
 //
 // O payload montado aqui é só gate de UX: a Server Action revalida com
 // `schemaZonasEntrega` e a RPC `salvar_zonas_entrega` é a autoridade final

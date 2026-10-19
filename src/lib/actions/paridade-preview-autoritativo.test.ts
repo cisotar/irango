@@ -617,7 +617,7 @@ describe("[331] preview e autoritativo concordam sobre o grupo oculto por produt
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// [325/F3] Caso-espelho da forma ATIVA de frete — fase RED. O MESMO banco
+// [325/F3] Caso-espelho da forma ATIVA de frete (escrito na fase RED). O MESMO banco
 // (loja `forma_frete = 'raio_km'`, faixa 0–5 km R$ 8 E bairro Centro R$ 5
 // guardado) nas duas pontas: preview e autoritativo cobram R$ 8. O mock de
 // `listarZonasComTaxas` emula a query real: sem o 3º argumento (forma) devolve

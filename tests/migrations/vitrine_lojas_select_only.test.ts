@@ -480,7 +480,7 @@ describe("114 grants residuais (revoke all + defaults select-only)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fase RED (TDD) — issue 325, fatia F4. A vitrine lê a forma ATIVA de frete
+// Issue 325 (escrito na fase RED do TDD), fatia F4. A vitrine lê a forma ATIVA de frete
 // (`lojas.forma_frete`) pela view pública. Contrato da migration
 // `20261018130000_lojas_forma_frete_ativa.sql` (D5): drop + create da view com a
 // lista de colunas da 20260925120000 (a última que recriou a view) + `forma_frete`

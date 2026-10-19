@@ -1,7 +1,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Issues 325 + 328 — uma forma de frete por loja e gravação das zonas com
 -- versão otimista (compare-and-set).
--- Plano: plan/tecnico-formas-de-frete.md §1 (RPC), §2 (coluna), §4 (regras de
+-- Plano: plan/arquivo/tecnico-formas-de-frete.md §1 (RPC), §2 (coluna), §4 (regras de
 -- valor por forma). Teste: tests/migrations/rpc_salvar_zonas_entrega.test.ts
 --
 -- O QUE ENTRA (expand-only):

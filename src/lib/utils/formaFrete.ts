@@ -18,7 +18,10 @@ import type { DadosZonasSemVersao, FormaZonasEntrega } from "@/lib/validacoes/en
 /** A forma é a do payload de zonas (`schemaZonasEntrega`): uma fonte só. */
 export type FormaFrete = FormaZonasEntrega;
 
-/** Ordem do seletor. `satisfies` recusa forma fora do payload; `ROTULO_FORMA` (Record) exige rótulo para todas. */
+/**
+ * Ordem do seletor. `satisfies` recusa forma fora do payload; `ROTULO_FORMA`
+ * (Record) exige rótulo para todas.
+ */
 export const FORMAS_FRETE = ["raio_km", "faixa_cep", "bairro"] as const satisfies readonly FormaFrete[];
 
 /** Rótulo de título (seletor, cartões). */
@@ -60,9 +63,9 @@ export function zonasDaForma<T extends { tipo: string }>(zonas: readonly T[], fo
 
 /**
  * Zonas que a forma passa a ter depois de gravar `payload`, no formato que
- * `entregaDisponivel`/`temZonaQueCobra` leem. A RPC regrava as zonas da forma exatamente com as
- * faixas/grupos do payload, cada uma com a sua taxa: o payload aceito É a lista
- * efetiva, sem precisar recarregar a página.
+ * `entregaDisponivel`/`temZonaQueCobra` leem. A RPC regrava as zonas da forma
+ * exatamente com as faixas/grupos do payload, cada uma com a sua taxa: o
+ * payload aceito É a lista efetiva, sem precisar recarregar a página.
  */
 export function zonasResumoDoPayload(payload: DadosZonasSemVersao): ZonaResumo[] {
   const itens = payload.forma === "bairro" ? payload.grupos : payload.faixas;

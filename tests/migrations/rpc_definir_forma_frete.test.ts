@@ -2,26 +2,23 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
- * Fase RED (TDD) da issue 325 — ativação EXPLÍCITA da forma de frete
- * (plan/loop-ativar-forma-frete.md D1b, fatia F2). Prova de BANCO da RPC
+ * Issue 325 — ativação EXPLÍCITA da forma de frete (plan/loop-ativar-forma-frete.md
+ * D1b, fatia F2). Prova de BANCO da RPC
  *
  *   public.definir_forma_frete(p_loja_id uuid, p_forma text, p_versao bigint)
  *     returns bigint  -- a versão NOVA (p_versao + 1)
  *
- * criada pela migration futura `20261018140000_definir_forma_frete.sql`
+ * criada pela migration `20261018140000_definir_forma_frete.sql`
  * (`createTestDb` aplica todas as migrations de supabase/migrations/).
  *
  * Ordem do contrato: T1 forma no enum → versão null/<0 → T2 posse (via de
  * serviço fail-closed OU dono_id = auth.uid()) → T4 UPDATE compare-and-set
  * (versão + 1, forma_frete = p_forma) → exige zona ativa do tipo p_forma COM
- * linha em taxas_entrega (senão raise, que desfaz o UPDATE).
+ * linha em taxas_entrega, da própria loja (senão raise, que desfaz o UPDATE).
  *
  * CONTRATO DE MENSAGENS (P0001, prefixo 'definir_forma_frete: '):
  *   forma invalida · versao invalida · sem posse · versao desatualizada ·
  *   forma sem zona ativa
- *
- * RED esperado: a função ainda não existe ⇒ 42883 ("function ... does not
- * exist") nas chamadas e erro de regprocedure no catálogo.
  *
  * Anti-falso-verde (memória do projeto: SQLSTATE sozinho não basta): toda
  * recusa afirma SQLSTATE **e** fragmento da mensagem; "nada muda" relê
@@ -298,6 +295,25 @@ describe("[325/F2] definir_forma_frete — forma sem zona ativa com taxa é recu
     esperarErro(await erroDe(definir("service", lojaA, "bairro", antes.loja.versao)), "P0001", `${P}forma sem zona ativa`);
 
     expect(await estado(lojaA)).toEqual(antes);
+  });
+  it.each<[string, Papel]>([
+    ["asUser", "donoA"],
+    ["asService", "service"],
+  ])("[325/F2] zona ativa de faixa_cep só na loja B não libera A (%s)", async (_n, papel) => {
+    await semear(lojaA, "raio_km", [KM_0_5]);
+    await semear(lojaB, "raio_km", [KM_0_5, CEP_09]);
+    const antes = await estado(lojaA);
+    const bAntes = await estado(lojaB);
+
+    esperarErro(
+      await erroDe(definir(papel, lojaA, "faixa_cep", antes.loja.versao)),
+      "P0001",
+      `${P}forma sem zona ativa`,
+    );
+
+    expect(await estado(lojaA)).toEqual(antes);
+    expect(antes.loja.forma).toBe("raio_km");
+    expect(await estado(lojaB)).toEqual(bAntes);
   });
 });
 

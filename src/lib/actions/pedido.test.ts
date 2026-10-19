@@ -2937,7 +2937,7 @@ describe("[331] criarPedido — grupo de opcionais oculto no produto", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// [325/F3] Forma ATIVA de frete (`lojas.forma_frete`) — fase RED.
+// [325/F3] Forma ATIVA de frete (`lojas.forma_frete`), escrito na fase RED.
 //
 // Zonas das três formas ficam GUARDADAS no banco; só as da forma ativa cobram.
 // O filtro mora num ponto só (D6): `listarZonasComTaxas(client, lojaId, forma)`

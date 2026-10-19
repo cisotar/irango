@@ -53,6 +53,11 @@ export const ALVO = "min-h-[44px] min-w-[44px]";
 export type PropsEditorZonas = {
   /** Zonas guardadas DESTA forma na carga (`zonasDaForma`), ativas ou não (325). */
   zonasIniciais: ZonaVitrine[];
+  /**
+   * A forma deste editor é a que a vitrine cobra hoje (`lojas.forma_frete`)?
+   * Decide a copy: só a forma ativa pode dizer que algo muda na vitrine.
+   */
+  ehAtiva: boolean;
   /** `gravador.salvar`: põe a versão otimista e chama a action injetada. */
   salvar: (dados: DadosZonasSemVersao) => Promise<ResultadoZonas>;
   /**
@@ -222,7 +227,11 @@ export function AvisoUsarForma({
   bloqueado: boolean;
 }) {
   const idMotivo = useId();
+  const idConflito = useId();
   if (forma === formaAtiva) return null;
+  const descritoPor =
+    [podeUsar ? null : idMotivo, bloqueado ? idConflito : null].filter(Boolean).join(" ") ||
+    undefined;
   return (
     <div
       role="note"
@@ -241,13 +250,19 @@ export function AvisoUsarForma({
               Cadastre pelo menos uma zona ligada com preço para usar esta forma.
             </span>
           )}
+          {bloqueado && (
+            <span id={idConflito} className="mt-1 block font-medium text-foreground">
+              Recarregue a página para usar esta forma.
+            </span>
+          )}
         </p>
       </div>
       <Button
         type="button"
         className={`${ALVO} w-full shrink-0 md:w-auto`}
         disabled={!podeUsar || ativando || bloqueado}
-        aria-describedby={podeUsar ? undefined : idMotivo}
+        aria-describedby={descritoPor}
+        aria-busy={ativando}
         onClick={aoUsar}
       >
         {ativando ? (

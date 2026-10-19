@@ -49,6 +49,7 @@ import { TETO_FAIXAS_CEP } from "@/lib/validacoes/entrega";
  */
 export function TabelaFaixasCep({
   zonasIniciais,
+  ehAtiva,
   salvar,
   aoGravar,
   bloqueado,
@@ -150,7 +151,9 @@ export function TabelaFaixasCep({
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-muted-foreground">Nenhuma faixa de CEP cadastrada ainda.</p>
             <p className="mx-auto mt-1 max-w-xs text-xs text-muted-foreground">
-              Adicione a primeira faixa para começar a cobrar por CEP.
+              {ehAtiva
+                ? "Adicione a primeira faixa para começar a cobrar por CEP."
+                : "Adicione a primeira faixa e clique em “Usar esta forma” para cobrar por CEP."}
             </p>
           </div>
         ) : (
@@ -319,7 +322,9 @@ export function TabelaFaixasCep({
             <AlertDialogTitle>Remover esta faixa de CEP?</AlertDialogTitle>
             <AlertDialogDescription>
               {linhaRemovida && linhaRemovida.cepInicio !== "" && linhaRemovida.cepFim !== ""
-                ? `A faixa de ${linhaRemovida.cepInicio} a ${linhaRemovida.cepFim} deixa de valer na vitrine.`
+                ? ehAtiva
+                  ? `A faixa de ${linhaRemovida.cepInicio} a ${linhaRemovida.cepFim} deixa de valer na vitrine.`
+                  : `A faixa de ${linhaRemovida.cepInicio} a ${linhaRemovida.cepFim} sai da tabela. As outras faixas ficam guardadas.`
                 : "A linha sai da tabela."}
             </AlertDialogDescription>
           </AlertDialogHeader>

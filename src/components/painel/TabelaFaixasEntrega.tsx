@@ -88,6 +88,7 @@ type AcaoLinha = { tipo: "desligar" | "ligar" | "remover"; indice: number; rotul
  */
 export function TabelaFaixasEntrega({
   zonasIniciais: zonas,
+  ehAtiva,
   salvar,
   aoGravar,
   bloqueado,
@@ -99,7 +100,8 @@ export function TabelaFaixasEntrega({
 
   const leitura = useMemo(() => lerFaixas(zonas), [zonas]);
   const kmForaDoFormato = useMemo(() => !zonasJaSaoFaixas(zonas), [zonas]);
-  // 327: a vitrine já está degradada (`indisponivel_loja`) ou o aviso é preventivo.
+  // 327: com o km ativo e faixa ligada, a vitrine já está degradada
+  // (`indisponivel_loja`); senão o aviso é preventivo.
   const raioSemCoords = useMemo(() => lojaTemRaioSemCoords(zonas, temCoordenadas), [zonas, temCoordenadas]);
 
   const [emLegado, setEmLegado] = useState(leitura.modo === "legado");
@@ -238,7 +240,7 @@ export function TabelaFaixasEntrega({
             <Link href={hrefPerfil} className="font-medium underline underline-offset-2">
               Perfil
             </Link>
-            {raioSemCoords
+            {raioSemCoords && ehAtiva
               ? ": a vitrine precisa dele para calcular a distância, e a entrega por faixas de km está indisponível para os clientes agora."
               : " antes de usar faixas de km: a vitrine precisa dele para calcular a distância até o cliente."}
           </span>
@@ -330,7 +332,9 @@ export function TabelaFaixasEntrega({
               {/* D7: o que a vitrine faz sem faixa vem do estado real, no rodapé
                   (`textoLimiteEntrega`), para não repetir nem divergir aqui. */}
               <p className="mx-auto mt-1 max-w-xs text-xs text-muted-foreground">
-                Adicione a primeira faixa para começar a cobrar por distância.
+                {ehAtiva
+                  ? "Adicione a primeira faixa para começar a cobrar por distância."
+                  : "Adicione a primeira faixa e clique em “Usar esta forma” para cobrar por distância."}
               </p>
             </div>
           ) : (
@@ -494,8 +498,9 @@ export function TabelaFaixasEntrega({
           <AlertDialogHeader>
             <AlertDialogTitle>Trocar o tamanho das faixas?</AlertDialogTitle>
             <AlertDialogDescription>
-              Isso apaga as faixas desta tela. A vitrine continua com as faixas atuais até você
-              preencher o preço da primeira faixa nova.
+              {ehAtiva
+                ? "Isso apaga as faixas desta tela. A vitrine continua com as faixas atuais até você preencher o preço da primeira faixa nova."
+                : "Isso apaga as faixas desta tela. As faixas atuais ficam guardadas até você preencher o preço da primeira faixa nova."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -529,7 +534,9 @@ export function TabelaFaixasEntrega({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {acaoPendente?.tipo === "ligar"
-                ? `Para a entrega não pular distância, estas faixas voltam a valer na vitrine: ${listarRotulos(rotulosAfetados)}.`
+                ? ehAtiva
+                  ? `Para a entrega não pular distância, estas faixas voltam a valer na vitrine: ${listarRotulos(rotulosAfetados)}.`
+                  : `Para a entrega não pular distância, estas faixas também são ligadas: ${listarRotulos(rotulosAfetados)}.`
                 : acaoPendente?.tipo === "remover"
                   ? "ATENÇÃO, esta faixa e todas as faixas abaixo serão deletadas."
                   : "ATENÇÃO, esta faixa e todas as faixas abaixo serão desligadas."}
@@ -537,7 +544,12 @@ export function TabelaFaixasEntrega({
           </AlertDialogHeader>
           {acaoPendente?.tipo !== "ligar" && rotulosAfetados.length > 0 && (
             <p className="text-sm text-muted-foreground">
-              {acaoPendente?.tipo === "remover" ? "Saem da tabela" : "Deixam de valer na vitrine"}:{" "}
+              {acaoPendente?.tipo === "remover"
+                ? "Saem da tabela"
+                : ehAtiva
+                  ? "Deixam de valer na vitrine"
+                  : "Ficam desligadas e guardadas"}
+              :{" "}
               {listarRotulos(rotulosAfetados)}.
             </p>
           )}

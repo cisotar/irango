@@ -138,7 +138,7 @@ export function EntregasClient({
     [zonas],
   );
 
-  const comuns: Omit<PropsEditorZonas, "zonasIniciais"> = {
+  const comuns: Omit<PropsEditorZonas, "zonasIniciais" | "ehAtiva"> = {
     salvar: salvarZonas,
     // Atualiza só o resumo da forma do payload; a forma ativa NÃO muda.
     aoGravar: (payload) =>
@@ -187,15 +187,24 @@ export function EntregasClient({
         <TabelaFaixasEntrega
           {...comuns}
           zonasIniciais={zonasPorForma.raio_km}
+          ehAtiva={formaAtiva === "raio_km"}
           temCoordenadas={temCoordenadas}
           hrefPerfil={hrefPerfil}
         />
       </div>
       <div hidden={formaVisivel !== "faixa_cep"}>
-        <TabelaFaixasCep {...comuns} zonasIniciais={zonasPorForma.faixa_cep} />
+        <TabelaFaixasCep
+          {...comuns}
+          zonasIniciais={zonasPorForma.faixa_cep}
+          ehAtiva={formaAtiva === "faixa_cep"}
+        />
       </div>
       <div hidden={formaVisivel !== "bairro"}>
-        <TabelaBairrosEntrega {...comuns} zonasIniciais={zonasPorForma.bairro} />
+        <TabelaBairrosEntrega
+          {...comuns}
+          zonasIniciais={zonasPorForma.bairro}
+          ehAtiva={formaAtiva === "bairro"}
+        />
       </div>
     </main>
   );

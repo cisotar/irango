@@ -1,7 +1,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Issue 325 (mudança de requisito) — forma ATIVA de frete como coluna, com as
 -- zonas das três formas guardadas lado a lado.
--- Plano: plan/loop-forma-ativa-frete.md (D1–D5). Testes:
+-- Plano: plan/arquivo/loop-forma-ativa-frete.md (D1–D5). Testes:
 --   tests/migrations/lojas_forma_frete_ativa.test.ts
 --   tests/migrations/rpc_salvar_zonas_entrega.test.ts
 --   tests/migrations/vitrine_lojas_select_only.test.ts
@@ -19,6 +19,7 @@
 --       o DELETE apaga só `tipo = p_forma` e o UPDATE da T4 grava
 --       `forma_frete = p_forma` (salvar numa forma = ativar essa forma; a troca
 --       fica coberta pela versão otimista porque só acontece por esta RPC).
+--       (substituído por 20261018140000: salvar não ativa mais; ver definir_forma_frete)
 --   D4. `salvar_faixas_entrega` (legado, produção antiga entre db push e
 --       deploy): mesmo corpo de 20260930120000 + `forma_frete = 'raio_km'`.
 --   D5. `vitrine_lojas` recriada com as colunas da 20260925120000 + forma_frete
@@ -72,6 +73,7 @@ update public.lojas l
    and f.forma_frete <> 'raio_km';
 
 -- ── D3. salvar_zonas_entrega grava só a forma e a ativa ─────────────────────
+-- (substituído por 20261018140000: salvar não ativa mais; ver definir_forma_frete)
 create or replace function public.salvar_zonas_entrega(
   p_loja_id uuid,    -- da Server Action (buscarLojaDoDono / lojaId admin validado), NUNCA do payload
   p_versao  bigint,  -- versão lida junto das zonas; compare-and-set
@@ -294,6 +296,7 @@ begin
   -- ── T4: versão (compare-and-set), a primeira escrita ──────────────────────
   -- O UPDATE trava a linha da loja: uma segunda transação com a mesma
   -- p_versao espera, reavalia o WHERE na linha nova e não acha nada.
+  -- (substituído por 20261018140000: salvar não ativa mais; ver definir_forma_frete)
   update public.lojas
      set versao_zonas_entrega = versao_zonas_entrega + 1,
          forma_frete          = p_forma   -- 325: salvar numa forma = ativar essa forma

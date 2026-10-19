@@ -11,9 +11,10 @@ import {
   zonasResumoDoPayload,
   type FormaFrete,
 } from "./formaFrete";
-// [325 · forma ativa] `formaAtivaDaLoja` e `zonasDaForma` ainda não existem:
-// resolvidas pelo NAMESPACE para o RED ser "export ausente", não import
-// quebrado (precedente 328, entregaPagamento.zonasEdicao.test.ts).
+// [325 · forma ativa] Escrito na fase RED, quando `formaAtivaDaLoja` e
+// `zonasDaForma` não existiam: resolvidas pelo NAMESPACE para o RED ser
+// "export ausente", não import quebrado (precedente 328,
+// entregaPagamento.zonasEdicao.test.ts).
 import * as modulo from "./formaFrete";
 import { entregaDisponivel } from "./modalidadesEntrega";
 
@@ -104,7 +105,7 @@ describe("rotuloDoTipo e formas", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Fase RED — 325, forma ATIVA como coluna (`lojas.forma_frete`, D1/D6).
+// 325 (escrito na fase RED), forma ATIVA como coluna (`lojas.forma_frete`, D1/D6).
 // Zonas das três formas ficam guardadas; só as da forma ativa valem.
 //
 // CONTRATO (src/lib/utils/formaFrete.ts):

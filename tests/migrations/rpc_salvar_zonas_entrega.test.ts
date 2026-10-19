@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
- * Fase RED (TDD) das issues 325 + 328 — fatias F1 (versão otimista) e F2 (RPC
+ * Issues 325 + 328 (escrito na fase RED do TDD) — fatias F1 (versão otimista) e F2 (RPC
  * CEP e bairro): prova de BANCO da RPC única de gravação das zonas de entrega
  *
  *   public.salvar_zonas_entrega(p_loja_id uuid, p_versao bigint, p_forma text, p_dados jsonb)
@@ -16,10 +16,10 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  * mensagens estáveis), §2 (coluna), §4 (regras de valor por forma), §8 itens
  * 1–9 e 12–29.
  *
- * RED esperado: a migration `20261018120000_zonas_entrega_versao_e_formas.sql`
- * ainda não existe ⇒ a função dá 42883 ("function ... does not exist") e a
- * coluna dá 42703 ("column ... does not exist"). O item 9 (assinatura antiga
- * continua existindo) é TRAVA de expand-only e já nasce verde.
+ * Na fase RED, antes da migration `20261018120000_zonas_entrega_versao_e_formas.sql`,
+ * a função dava 42883 ("function ... does not exist") e a coluna 42703
+ * ("column ... does not exist"). O item 9 (assinatura antiga continua
+ * existindo) é TRAVA de expand-only e nasceu verde.
  *
  * CONTRATO DE MENSAGENS (P0001, prefixo 'salvar_zonas_entrega: '):
  *   forma invalida · versao invalida · dados invalidos · incremento invalido ·
