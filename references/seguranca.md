@@ -508,7 +508,7 @@ nenhuma faixa ativa depois de uma desligada) roda depois de T2 e antes da escrit
 sobre TODOS os itens do array antes do primeiro `INSERT` — qualquer item inválido derruba a transação
 inteira, estado anterior intacto. Ver `schema.md` §2 para a regra "zonas por faixa" que a RPC deriva.
 
-### Instância INVOKER com controle otimista — `salvar_zonas_entrega` (issues 325/327/328)
+### Instância INVOKER com controle otimista — `salvar_zonas_entrega` e `definir_forma_frete` (issues 325/327/328)
 
 `public.salvar_zonas_entrega(p_loja_id, p_versao, p_forma, p_dados)` (migration
 `20261018120000_zonas_entrega_versao_e_formas.sql`) substitui `salvar_faixas_entrega` na escrita das
@@ -526,15 +526,28 @@ alheio recebe `sem posse` e nunca descobre se a versão bate. Mensagens estávei
 `salvarZonasEntregaAdmin`) o `p_loja_id` entra **por último** no objeto de argumentos, depois do
 spread do payload validado: nada do payload sobrescreve a loja derivada (dono logado ou `lojaId`
 validado da URL admin). A versão vale também para o admin: não atropela uma gravação do lojista.
-A forma ativa (`lojas.forma_frete`) é gravada pela RPC no mesmo `UPDATE` que incrementa a versão, então
-a troca de forma também fica coberta pelo compare-and-set; a coluna está em
+`salvar_zonas_entrega` grava só as zonas de `p_forma` e **não muda a forma ativa**. A forma ativa
+(`lojas.forma_frete`) só muda por `public.definir_forma_frete(p_loja_id, p_forma, p_versao)` (migration
+`20261018140000_definir_forma_frete.sql`, botão "Usar esta forma"), irmã com o mesmo desenho: `SECURITY
+INVOKER`, `SET search_path = public, pg_temp`, `REVOKE ALL FROM public, anon` + `GRANT EXECUTE TO
+authenticated, service_role`, travas **forma** (`p_forma` ∈ três valores, `p_versao` ≥ 0) → **posse**
+(mesma via do dono ou de serviço fail-closed) → **versão** (`UPDATE lojas SET versao_zonas_entrega =
+versao + 1, forma_frete = p_forma WHERE id = p_loja_id AND versao_zonas_entrega = p_versao`: a troca de
+forma fica coberta pelo mesmo compare-and-set das zonas) → **cobrança** (≥ 1 zona ativa do tipo, com
+`loja_id = p_loja_id` explícito e linha em `taxas_entrega`; senão `definir_forma_frete: forma sem zona
+ativa` e o `raise` desfaz o `UPDATE`). Mensagens `P0001` com prefixo `definir_forma_frete: `. Nas actions
+(`definirFormaFrete`, `definirFormaFreteAdmin`) o `p_loja_id` também entra por último. A coluna está em
 `CAMPOS_LOJA_SOMENTE_SERVIDOR` e fora da allowlist do lojista.
 
 **Riscos aceitos:** (1) o dono pode alterar a própria `versao_zonas_entrega` por PATCH direto (RLS
 `lojas_update_proprio`; a coluna não é billing nem PII) — o efeito fica só na própria loja, e o CHECK
 `0..9007199254740991` impede estourar o `number` do JS. O mesmo vale para `forma_frete` (PATCH direto do
 dono; CHECK `lojas_forma_frete_valida` limita aos três valores; só muda qual forma cobra na própria loja;
-issue 363). (2) Até a issue de contract, a assinatura de 3
+issue 363). A regra "≥ 1 zona ativa na forma ativa" é garantida pela tela e pela `definir_forma_frete`,
+mas PATCH direto e `salvar_zonas_entrega` com todas as zonas da forma ativa em `ativo = false` passam por
+cima; o frete falha fechado: sem zona ativa da forma ativa, o endereço cai fora de área em
+`calcularFrete` (entrega indisponível, ou a `taxa_entrega_fora_zona` que a loja configurou), nunca
+numa zona de outra forma. (2) Até a issue de contract, a assinatura de 3
 args de `salvar_faixas_entrega` continua exposta e grava **sem versão**; e a RLS `zonas_escrita_propria`
 (§2) ainda permite ao dono escrever `zonas_entrega` direto. Ambos contornam o compare-and-set só para
 a própria loja (sem vazamento entre lojas); o controle otimista protege contra perda de edição entre
