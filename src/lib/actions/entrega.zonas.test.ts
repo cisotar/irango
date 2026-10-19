@@ -389,7 +389,7 @@ describe("[327/F4] remoção dos caminhos de escrita por zona", () => {
 });
 
 // ═════════════════════════════════════════════════════ 325 · ativação explícita
-// CONTRATO (plan/loop-ativar-forma-frete.md D3): src/lib/actions/entrega.ts
+// CONTRATO (plan/arquivo/loop-ativar-forma-frete.md D3): src/lib/actions/entrega.ts
 //   export async function definirFormaFrete(payload: unknown): Promise<ResultadoZonas>
 //   1. schemaDefinirFormaFrete.safeParse ANTES de qualquer I/O (.strict(): loja_id recusado);
 //   2. createClient() AUTENTICADO → buscarLojaDoDono → null ⇒ { ok:false };

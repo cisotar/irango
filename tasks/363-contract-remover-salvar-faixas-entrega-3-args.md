@@ -8,7 +8,7 @@ Expand/contract do PR das issues 325/327/328 (migration
 `20261018120000_zonas_entrega_versao_e_formas.sql`, commits 853884e e c63e87b). Achado BAIXA 2 do
 `auditar` no mesmo PR. Ver `plan/arquivo/tecnico-formas-de-frete.md` §1 e §9. Ativação explícita da
 forma (`definir_forma_frete`, migration `20261018140000_definir_forma_frete.sql`): commits 2427cd5 e
-1b0c73d, plano `plan/loop-ativar-forma-frete.md`.
+1b0c73d, plano `plan/arquivo/loop-ativar-forma-frete.md`.
 
 ## Problema
 

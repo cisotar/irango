@@ -1,7 +1,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Issue 325 (segunda mudança de requisito) — ativar a forma de frete só por
 -- ação EXPLÍCITA do lojista ("Usar esta forma"), nunca por salvar zonas.
--- Plano: plan/loop-ativar-forma-frete.md (D1). Testes:
+-- Plano: plan/arquivo/loop-ativar-forma-frete.md (D1). Testes:
 --   tests/migrations/rpc_definir_forma_frete.test.ts
 --   tests/migrations/rpc_salvar_zonas_entrega.test.ts
 --

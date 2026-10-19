@@ -70,7 +70,7 @@ describe("modalidadesDaLoja", () => {
 });
 
 // ═════════════════════════════════════════════════════ 325 · temZonaQueCobra
-// CONTRATO (plan/loop-ativar-forma-frete.md D5): modalidadesEntrega.ts
+// CONTRATO (plan/arquivo/loop-ativar-forma-frete.md D5): modalidadesEntrega.ts
 //   export function temZonaQueCobra(zonas: ZonaResumo[]): boolean
 //     = zonas.some(z => z.ativo && z.taxa !== null) — usado por entregaDisponivel
 //     e pelo bloqueio do botão "Usar esta forma". Resolvido pelo namespace:

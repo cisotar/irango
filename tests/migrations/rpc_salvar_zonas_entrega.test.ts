@@ -39,7 +39,7 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  * gravar numa forma regrava SÓ as zonas daquela forma; as zonas das outras
  * formas ficam guardadas. Por isso as asserções de "o que foi gravado" leem
  * `zonasDa(loja, forma)`. Segunda mudança (20261018140000_definir_forma_frete,
- * plan/loop-ativar-forma-frete.md D1a): salvar NÃO ativa mais a forma —
+ * plan/arquivo/loop-ativar-forma-frete.md D1a): salvar NÃO ativa mais a forma —
  * `lojas.forma_frete` só muda por `definir_forma_frete`.
  */
 
@@ -487,7 +487,7 @@ describe("[328/F1] versão otimista das zonas de entrega", () => {
 });
 
 // ═══════════════ F2 · zonas guardadas: salvar NÃO ativa a forma, não apaga as outras
-// Mudança de requisito da 325 (plan/loop-ativar-forma-frete.md D1a, fatia F1):
+// Mudança de requisito da 325 (plan/arquivo/loop-ativar-forma-frete.md D1a, fatia F1):
 // salvar zonas (autosave) só grava as zonas de `p_forma` (DELETE ... and
 // tipo = p_forma) e sobe a versão; NÃO mexe em `lojas.forma_frete`. Ativar uma
 // forma é só por `definir_forma_frete` (tests/migrations/rpc_definir_forma_frete.test.ts).

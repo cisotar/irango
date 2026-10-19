@@ -393,7 +393,7 @@ describe("enviarZonas + criarGravadorComVersao — conflito e erro até o toast"
 });
 
 // ═════════════════════════════════════════════════════ 325 · ativar(forma) no gravador
-// CONTRATO (plan/loop-ativar-forma-frete.md D4): criarGravadorComVersao ganha
+// CONTRATO (plan/arquivo/loop-ativar-forma-frete.md D4): criarGravadorComVersao ganha
 //   acaoAtivar: (payload: { forma, versao }) => Promise<ResultadoZonas>
 // e expõe ativar(forma) na MESMA cauda e na MESMA versão do salvar: o ativar
 // sai com a versão devolvida pelo salvar anterior; ok atualiza a versão;

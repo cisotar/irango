@@ -1,5 +1,5 @@
 # Loop · ativar a forma de frete só por botão explícito
-gerado: orquestrar-autonomo · 2026-10-18 18:09 · degrau: 3 · resumo humano: plan/loop-ativar-forma-frete.resumo.md
+gerado: orquestrar-autonomo · 2026-10-18 18:09 · degrau: 3 · resumo humano: plan/arquivo/loop-ativar-forma-frete.resumo.md
 
 ## Pedido
 > Planeje E execute de ponta a ponta, no PR #188 do iRango (branch feat/325-327-328-formas-de-frete, HEAD b123465 em dia com o remoto, sem merge), uma MUDANÇA DE REQUISITO sobre a forma ativa de frete.

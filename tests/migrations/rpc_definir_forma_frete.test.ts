@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
- * Issue 325 — ativação EXPLÍCITA da forma de frete (plan/loop-ativar-forma-frete.md
+ * Issue 325 — ativação EXPLÍCITA da forma de frete (plan/arquivo/loop-ativar-forma-frete.md
  * D1b, fatia F2). Prova de BANCO da RPC
  *
  *   public.definir_forma_frete(p_loja_id uuid, p_forma text, p_versao bigint)

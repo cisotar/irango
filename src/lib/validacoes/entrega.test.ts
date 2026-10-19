@@ -487,7 +487,7 @@ describe("[325/F3] schemaZonasEntrega — bairro: ≥ 1 bairro por grupo, sem re
 });
 
 // ---------------------------------------------------------------------------
-// [325/F3] Ativação explícita da forma de frete (plan/loop-ativar-forma-frete.md D2)
+// [325/F3] Ativação explícita da forma de frete (plan/arquivo/loop-ativar-forma-frete.md D2)
 // ---------------------------------------------------------------------------
 // CONTRATO: src/lib/validacoes/entrega.ts
 //   export const schemaDefinirFormaFrete = z.object({ forma, versao }).strict()

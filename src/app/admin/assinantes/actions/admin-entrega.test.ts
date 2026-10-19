@@ -386,7 +386,7 @@ describe("[327/F4] remoção dos caminhos de escrita por zona (admin)", () => {
 });
 
 // ═════════════════════════════════════════════════════ 325 · ativação explícita (admin)
-// CONTRATO (plan/loop-ativar-forma-frete.md D3): admin-entrega.ts
+// CONTRATO (plan/arquivo/loop-ativar-forma-frete.md D3): admin-entrega.ts
 //   definirFormaFreteAdmin(lojaId: string, payload: unknown): Promise<ResultadoZonas>
 //   validarLojaIdAdmin → schemaDefinirFormaFrete (.strict()) → prepararContextoAdmin FORA do try
 //   → svc.rpc("definir_forma_frete", { p_forma, p_versao, p_loja_id: lojaId validado }) (tenant por último)

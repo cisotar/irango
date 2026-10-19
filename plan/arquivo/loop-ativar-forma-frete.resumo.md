@@ -1,5 +1,5 @@
 # Trocar a forma de cobrar a entrega só com um botão
-2026-10-18 18:09 · plano detalhado: plan/loop-ativar-forma-frete.md
+2026-10-18 18:09 · plano detalhado: plan/arquivo/loop-ativar-forma-frete.md
 
 **O que você pediu:** salvar zonas de outra forma de cobrança não muda mais o frete; só o botão "Usar esta forma" muda.
 
