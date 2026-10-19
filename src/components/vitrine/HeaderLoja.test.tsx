@@ -188,7 +188,7 @@ describe("menu da conta", () => {
     const html = render({ menuCliente: <MenuCliente lojaSlug="lanches-base" logado={logado} /> });
     expect(html).toContain('aria-label="Abrir menu da conta"');
     expect(html).toContain("absolute top-2 left-2");
-    expect(html).toContain("px-14");
+    expect(html).toContain("pl-14 pr-4");
     // Gaveta fechada no SSR: nenhum conteúdo da conta no HTML inicial.
     expect(html).not.toContain("Sua conta");
     expect(html).not.toContain("/minha-conta");

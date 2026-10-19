@@ -3,7 +3,7 @@ import { ESCADA_LARGURA_VITRINE, CLASSES_MAIN_VITRINE } from "@/components/vitri
 /**
  * Skeleton da vitrine (achado acelerar 2026-09-16, F2). Sem Suspense boundary
  * o App Router segurava a transição inteira no servidor e a volta de /pedido
- * parecia travada. Dimensões espelham `HeaderLoja` (logo 80px) e o grid de
+ * parecia travada. Dimensões espelham `HeaderLoja` (logo 64px) e o grid de
  * `SecaoCatalogo`/`CardProduto` (aspect 4/3) para CLS zero quando o conteúdo
  * real chega. Cores vêm dos defaults de `globals.css`: o `<style>` do tema da
  * loja é emitido pela page e ainda não existe aqui.
@@ -15,13 +15,13 @@ export default function LoadingVitrine() {
       role="status"
       aria-label="Carregando cardápio"
     >
-      <header className="bg-[var(--cor-primaria)] px-4 py-2.5">
-        <div className={`${ESCADA_LARGURA_VITRINE} flex items-center justify-center gap-4`}>
-          <div className="size-[80px] shrink-0 rounded-full bg-white/20" />
-          <div className="flex flex-col gap-2">
-            <div className="h-7 w-40 rounded bg-white/25" />
-            <div className="h-4 w-28 rounded bg-white/15" />
-            <div className="h-4 w-32 rounded bg-white/15" />
+      <header className="bg-[var(--cor-primaria)] py-2.5 pl-14 pr-4">
+        <div className={`${ESCADA_LARGURA_VITRINE} flex items-center justify-start gap-3 sm:justify-center sm:gap-4`}>
+          <div className="size-16 shrink-0 rounded-full bg-white/20" />
+          <div className="flex flex-col gap-1.5">
+            <div className="h-6 w-40 rounded bg-white/25" />
+            <div className="h-6 w-28 rounded-full bg-white/15" />
+            <div className="h-5 w-32 rounded bg-white/15" />
           </div>
         </div>
       </header>
