@@ -76,6 +76,17 @@ const CAMPOS_LOJA_SOMENTE_SERVIDOR = [
   "forma_frete",
 ] as const satisfies readonly (keyof Tabelas["lojas"]["Update"])[];
 
+/** Strip em runtime: o `Omit` do tipo é derrotável por cast e `svc` é service_role
+ *  (BYPASSRLS) — este filtro é o backstop real. Devolve objeto NOVO (não muta o caller). */
+function semChaves(patch: object, bloqueadas: ReadonlySet<string>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(patch).filter(([k]) => !bloqueadas.has(k)));
+}
+
+// Chaves de escopo que nenhum patch de UPDATE pode gravar (re-parentear/re-chavear).
+const CHAVES_DE_ESCOPO: ReadonlySet<string> = new Set(["loja_id", "id"]);
+// Filtro de runtime de `atualizarLoja`, derivado da mesma fonte do guard de tipo.
+const CAMPOS_LOJA_BLOQUEADOS: ReadonlySet<string> = new Set(CAMPOS_LOJA_SOMENTE_SERVIDOR);
+
 type PatchLojaAdmin = Omit<
   Tabelas["lojas"]["Update"],
   (typeof CAMPOS_LOJA_SOMENTE_SERVIDOR)[number]
@@ -155,13 +166,18 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
     /** UPDATE de linha da loja, escopo duplo `loja_id`+`id`, `count:"exact"`.
      * `patch` é `Omit<Update,"loja_id"|"id">`: o `.eq` escopa QUAL linha, não O QUE
      * se grava — então o wrapper barra POR TIPO re-parentear (loja_id) ou re-chavear
-     * (id) a linha por um patch hostil. Simetria com `inserir` (loja_id por último). */
+     * (id) a linha por um patch hostil. Simetria com `inserir` (loja_id por último).
+     * O tipo é a 1ª defesa; o strip em runtime de `loja_id`/`id` (`semChaves`) é o
+     * backstop contra cast (issue 282). */
     atualizar<T extends TabelaComLojaId>(
       tabela: T,
       id: string,
       patch: Omit<Tabelas[T]["Update"], "loja_id" | "id">,
     ) {
-      return from(tabela).update(patch, { count: "exact" }).eq("loja_id", lojaId).eq("id", id);
+      return from(tabela)
+        .update(semChaves(patch, CHAVES_DE_ESCOPO), { count: "exact" })
+        .eq("loja_id", lojaId)
+        .eq("id", id);
     },
     /**
      * [274 · D4] UPDATE por CHAVE NATURAL: escopo = `loja_id` + TODAS as
@@ -176,7 +192,8 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
      * `patch` é `Omit<Update, "loja_id" | "id" | K>`: o `.eq` escopa QUAL linha,
      * nunca O QUE se grava — o wrapper barra POR TIPO re-parentear (`loja_id`),
      * re-chavear (`id`) ou mover a linha pelas colunas da chave. Mesma simetria
-     * de `inserir`/`atualizar`.
+     * de `inserir`/`atualizar`. O tipo é a 1ª defesa; o strip em runtime de
+     * `loja_id`, `id` e de cada coluna de `chave` é o backstop contra cast (issue 282).
      */
     atualizarPorChave<
       T extends TabelaComLojaId,
@@ -191,7 +208,10 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
       // (BYPASSRLS). Lança — não é `{ ok: false }` amigável, é bug de
       // programação, e fail-closed é a regra desta via.
       if (colunas.length === 0) throw new Error("atualizarPorChave: chave vazia");
-      let q = from(tabela).update(patch, { count: "exact" }).eq("loja_id", lojaId);
+      const bloqueadas = new Set([...CHAVES_DE_ESCOPO, ...colunas.map(([c]) => c)]);
+      let q = from(tabela)
+        .update(semChaves(patch, bloqueadas), { count: "exact" })
+        .eq("loja_id", lojaId);
       for (const [coluna, valor] of colunas) q = q.eq(coluna, valor);
       return q;
     },
@@ -207,16 +227,11 @@ function criarEscopoLoja(svc: Svc, lojaId: string) {
      * `patch` é `PatchLojaAdmin` (Omit das colunas somente-servidor) — barra POR TIPO
      * chamador que passe object-literal com billing/dono/id. Filtro de runtime é o
      * backstop real: `svc` roda como service_role, que BYPASSA o trigger
-     * lojas_protege_billing (v3, issue 128), e o guard de tipo é derrotado por `as`/width-subtyping
+     * lojas_protege_billing (v4, issue 128), e o guard de tipo é derrotado por `as`/width-subtyping
      * (ex.: admin-perfil casta p/ TablesUpdate). Descarta as chaves somente-servidor da
      * MESMA constante antes do UPDATE. lat/long ficam de fora (coords derivadas no servidor). */
     atualizarLoja(patch: PatchLojaAdmin) {
-      const bloqueadas = CAMPOS_LOJA_SOMENTE_SERVIDOR as readonly string[];
-      const seguro = Object.fromEntries(
-        Object.entries(patch as Record<string, unknown>).filter(
-          ([k]) => !bloqueadas.includes(k),
-        ),
-      );
+      const seguro = semChaves(patch, CAMPOS_LOJA_BLOQUEADOS);
       return from("lojas").update(seguro, { count: "exact" }).eq("id", lojaId);
     },
   };
