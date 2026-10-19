@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { ModalidadesEntrega } from "@/components/painel/ModalidadesEntrega";
 import { SeletorFormaFrete } from "@/components/painel/SeletorFormaFrete";
-import { TabelaBairrosEntrega } from "@/components/painel/TabelaBairrosEntrega";
+import { EditorBairros } from "@/components/painel/EditorBairros";
 import { TabelaFaixasCep } from "@/components/painel/TabelaFaixasCep";
 import { TabelaFaixasEntrega } from "@/components/painel/TabelaFaixasEntrega";
 import { criarGravadorComVersao, type GravadorComVersao } from "@/components/painel/gravacaoZonas";
@@ -60,7 +60,9 @@ export type EntregasClientProps = {
  * ao abrir, ao trocar de opção nem ao salvar outra forma.
  *
  * Os três editores ficam MONTADOS (só o visível sem `hidden`): trocar de opção
- * não perde o estado local já gravado nem reabre com zonas velhas da carga.
+ * não perde o estado local já gravado nem reabre com zonas velhas da carga. O
+ * de bairros (`EditorBairros`) tem duas vistas e remonta a escolhida com as
+ * zonas já salvas.
  */
 export function EntregasClient({
   zonas,
@@ -200,7 +202,7 @@ export function EntregasClient({
         />
       </div>
       <div hidden={formaVisivel !== "bairro"}>
-        <TabelaBairrosEntrega
+        <EditorBairros
           {...comuns}
           zonasIniciais={zonasPorForma.bairro}
           ehAtiva={formaAtiva === "bairro"}

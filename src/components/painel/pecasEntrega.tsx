@@ -1,9 +1,9 @@
 "use client";
 
 // Peças comuns dos editores de zona de entrega (issue 325): km
-// (`TabelaFaixasEntrega`), CEP (`TabelaFaixasCep`) e bairros
-// (`TabelaBairrosEntrega`). Extraídas de `TabelaFaixasEntrega.tsx` para os três
-// editores não repetirem campo de moeda, indicador, diálogo de substituição
+// (`TabelaFaixasEntrega`), CEP (`TabelaFaixasCep`) e bairros (`EditorBairros`,
+// com as vistas `TabelaFretePorBairro` e `TabelaBairrosEntrega`). Extraídas de
+// `TabelaFaixasEntrega.tsx` para os editores não repetirem campo de moeda, indicador, diálogo de substituição
 // do km legado, aviso de conflito, aviso de troca de forma e o fluxo de
 // gravação (fila + confirmação).
 //
@@ -49,7 +49,7 @@ import {
 /** Alvo de toque literal (design-system §5): a base de fonte é 120%. */
 export const ALVO = "min-h-[44px] min-w-[44px]";
 
-/** Props que o `EntregasClient` passa aos três editores. */
+/** Props que o `EntregasClient` passa aos editores de cada forma. */
 export type PropsEditorZonas = {
   /** Zonas guardadas DESTA forma na carga (`zonasDaForma`), ativas ou não (325). */
   zonasIniciais: ZonaVitrine[];
