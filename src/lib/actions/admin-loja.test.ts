@@ -175,6 +175,21 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
     expect(op.eqs).toContainEqual({ c: "id", v: ID_RECURSO });
   });
 
+  // [282 · R1] O `Omit` do tipo cai com um cast, e `svc` é service_role
+  // (BYPASSRLS): o strip em runtime é o backstop. `categoria_id` fica — trava um
+  // strip de "todo `*_id`". O objeto do caller não pode ser mutado (`delete`).
+  it("[282 · R1] atualizar descarta loja_id e id do patch sob cast, sem mutar o objeto do caller", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+    const patch = { nome: "y", categoria_id: "c1", loja_id: "hostil", id: "outro" };
+
+    await escopo.atualizar("produtos", ID_RECURSO, patch as never);
+
+    const op = opsEspia.find((o) => o.tipo === "update")!;
+    expect(op.payload).toEqual({ nome: "y", categoria_id: "c1" });
+    expect(patch).toEqual({ nome: "y", categoria_id: "c1", loja_id: "hostil", id: "outro" });
+  });
+
   it("remover escopa por loja_id E id", async () => {
     opsEspia = [];
     const { escopo } = await prepararContextoAdmin(LOJA_ID);
@@ -528,7 +543,7 @@ describe("registrarAcessoAdmin — INSERT best-effort fire-and-forget", () => {
 
 // ══════════════ [274 · C] `EscopoLoja.atualizarPorChave` — UPDATE por CHAVE ══
 //
-// Fase RED da issue 274 (D4). O método ainda não existe: o `escopo` de hoje só
+// Issue 274 (D4), RED escrito antes do método existir. `atualizar` só
 // sabe atualizar por `id`, e o cliente de `cardapio_produtos` conhece o par
 // `(cardapio_id, produto_id)`, não o `id` da junção. Resolver o `id` por SELECT
 // prévio seria um round trip a mais, uma janela TOCTOU e um oráculo de
@@ -540,13 +555,10 @@ describe("registrarAcessoAdmin — INSERT best-effort fire-and-forget", () => {
 // afirmada por fragmento — um `TypeError` de método inexistente também "lança",
 // e passaria vacuamente. Por isso todo caso começa exigindo a função.
 //
-// E4 (tipo, fora do runtime — verificado por `npx tsc --noEmit`): o `patch` é
-// `Omit<Update, "loja_id" | "id" | K>`, então `atualizarPorChave("cardapio_produtos",
-// { cardapio_id, produto_id }, { loja_id: X })` e `{ cardapio_id: Y }` NÃO
-// COMPILAM. O `.eq` escopa QUAL linha; nunca O QUE se grava. Não há caso de
-// runtime para isso de propósito: um `as never` aqui provaria o contrário do
-// que se quer (que o compilador barra), e a barreira de runtime dessa classe já
-// é o `.strict()` do zod na fronteira.
+// E4: o `patch` é `Omit<Update, "loja_id" | "id" | K>`, então `{ loja_id: X }` ou
+// `{ cardapio_id: Y }` no patch NÃO COMPILAM — 1ª defesa, verificada por
+// `npx tsc --noEmit`. Um cast derrota o tipo, e `svc` é service_role: o strip em
+// runtime é o backstop, provado de propósito com `as never` em [282] R1–R3.
 
 type EscopoComChave = {
   atualizarPorChave(
@@ -615,17 +627,64 @@ describe("[274] escopo.atualizarPorChave — escopo duplo `loja_id` + chave natu
     ).toHaveLength(0);
   });
 
-  it("o `loja_id` do wrapper NÃO é substituível por uma coluna homônima na chave", async () => {
+  // [282 · R2] Vetor exato da PoC da auditoria: `loja_id` + colunas da chave
+  // alheias no patch moviam a linha para outra loja (a FK composta não segura
+  // quando tudo muda junto). Saem `loja_id`, `id` e cada coluna de `chave`.
+  it("[282 · R2] atualizarPorChave descarta loja_id, id e as colunas da chave do patch sob cast, sem mutar o caller", async () => {
     opsEspia = [];
     const escopo = await escopoPorChave();
+    const patch = {
+      dias_semana: [1],
+      loja_id: "hostil",
+      id: "x",
+      cardapio_id: "outro-c",
+      produto_id: "outro-p",
+    };
+
     await escopo.atualizarPorChave(
       "cardapio_produtos",
       { cardapio_id: CARDAPIO, produto_id: PRODUTO },
-      { dias_semana: [0] },
+      patch as never,
     );
+
     const op = opsEspia.find((o) => o.tipo === "update")!;
-    const lojas = op.eqs.filter((e) => e.c === "loja_id");
-    expect(lojas).toEqual([{ c: "loja_id", v: LOJA_ID }]);
-    expect(JSON.stringify(op.payload)).not.toContain("loja_id");
+    expect(op.payload).toEqual({ dias_semana: [1] });
+    expect(patch).toEqual({
+      dias_semana: [1],
+      loja_id: "hostil",
+      id: "x",
+      cardapio_id: "outro-c",
+      produto_id: "outro-p",
+    });
+  });
+
+  // [282 · R3] Paridade com `atualizarLoja` (patch só de bloqueadas → UPDATE
+  // vazio, não lança): nenhuma regra nova só para estes dois métodos.
+  it("[282 · R3] patch SÓ de chaves bloqueadas → UPDATE vazio, não lança (atualizar e atualizarPorChave)", async () => {
+    opsEspia = [];
+    const { escopo } = await prepararContextoAdmin(LOJA_ID);
+
+    const rAtualizar = await escopo.atualizar(
+      "produtos",
+      PRODUTO,
+      { loja_id: "hostil", id: "outro" } as never,
+    );
+    const rPorChave = await escopo.atualizarPorChave(
+      "cardapio_produtos",
+      { cardapio_id: CARDAPIO, produto_id: PRODUTO },
+      { loja_id: "hostil", id: "x", cardapio_id: "outro-c", produto_id: "outro-p" } as never,
+    );
+
+    expect(opsEspia).toHaveLength(2);
+    const [opAtualizar, opPorChave] = opsEspia;
+    expect(opAtualizar.tabela).toBe("produtos");
+    expect(opAtualizar.tipo).toBe("update");
+    expect(opAtualizar.payload).toEqual({});
+    expect(rAtualizar.error).toBeNull();
+
+    expect(opPorChave.tabela).toBe("cardapio_produtos");
+    expect(opPorChave.tipo).toBe("update");
+    expect(opPorChave.payload).toEqual({});
+    expect(rPorChave.error).toBeNull();
   });
 });
