@@ -1084,8 +1084,9 @@ Endpoints sensíveis precisam de trava por IP — sem isso, brute force em login
 | `calcularFreteAction` | 20/min por IP | anti abuso de lookup externo (ViaCEP + cálculo) |
 | `consultarStatusPedido` | 30/min por IP | anti brute force do par `(id, token_acesso)` — polling da confirmação (issue 128) |
 | `carregarMaisClientes` / `carregarMaisPedidosDoCliente` (`clientesDaLoja`) | 30/min por lojista (`dono_id`, não IP) | action só existe autenticada; contém loop de paginação contra `clientes_da_loja`/`pedidos` (issue 350) |
+| `salvarCicloVendas` / `salvarModalidadesEntrega` / `salvarHorarios` / `salvarTema` (`preferenciasPainel`) | 30/min por lojista (`dono_id`, não IP), um balde para as quatro | contém custo de UPDATE na própria loja; as actions admin equivalentes ficam fora (já passam por `verificarAdminSaaS`) (issue 360) |
 
-Implementado em `src/lib/utils/rateLimit.ts` via **`@upstash/ratelimit`** + **`@upstash/redis`** (issue 052). Sliding window por IP/minuto. Supabase Auth tem rate limit interno de login, mas a camada própria cobre todas as Server Actions sensíveis.
+Implementado em `src/lib/utils/rateLimit.ts` via **`@upstash/ratelimit`** + **`@upstash/redis`** (issue 052). Sliding window por minuto; o identificador é o IP ou, nas actions só autenticadas, o `dono_id` do lojista. Supabase Auth tem rate limit interno de login, mas a camada própria cobre todas as Server Actions sensíveis.
 
 **Extração de IP (anti-bypass):** ordem de preferência: `x-real-ip` (Vercel injeta, não forjável pelo cliente) → **último** elemento de `x-forwarded-for` (appendado pelo proxy de borda). Nunca usar o **primeiro** elemento de `x-forwarded-for` — o cliente controla esse valor e pode criar baldes Upstash arbitrários, contornando o limite.
 

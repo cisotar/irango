@@ -18,6 +18,7 @@ import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { montarPatchCiclo } from "@/lib/actions/patches-loja";
 import { MSG_CICLO_INVALIDO, schemaCicloVendas } from "@/lib/validacoes/vendas";
 import { codigoDoErro } from "@/lib/utils/codigoDoErro";
+import { verificarRateLimit } from "@/lib/utils/rateLimit";
 import type { ResultadoCiclo } from "@/lib/vendas/tipos";
 
 const ERRO_GENERICO = "Não foi possível salvar o ciclo. Tente de novo.";
@@ -30,6 +31,9 @@ export async function salvarCicloVendas(payload: unknown): Promise<ResultadoCicl
     const supabase = await createClient();
     const loja = await buscarLojaDoDono(supabase);
     if (loja == null) return { ok: false, erro: ERRO_GENERICO };
+    if (!(await verificarRateLimit("preferenciasPainel", loja.dono_id)).permitido) {
+      return { ok: false, erro: ERRO_GENERICO };
+    }
 
     const { error, count } = await supabase
       .from("lojas")

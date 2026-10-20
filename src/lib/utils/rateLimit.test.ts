@@ -105,6 +105,7 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "recuperacaoCliente",
         "reenvioCliente",
         "removerImagensGaleria",
+        "preferenciasPainel",
         "revisarCarrinho",
         "salvarLogoLoja",
         "salvarPerfil",
@@ -122,6 +123,11 @@ describe("LIMITES — chaves de rate limit por action", () => {
     expect(limites.recorteImagem).toEqual({ limite: 20, janela: "1 m" });
     expect(limites.removerImagensGaleria).toEqual({ limite: 10, janela: "1 m" });
     expect(limites.listarImagensGaleria).toEqual({ limite: 30, janela: "1 m" });
+  });
+
+  // Preferências do painel (issue 360): um balde por lojista para as quatro actions.
+  it("preferenciasPainel: 30/min", () => {
+    expect(LIMITES.preferenciasPainel).toEqual({ limite: 30, janela: "1 m" });
   });
 
   // Achado do `auditar`: a revisão automática do carrinho não pode gastar a

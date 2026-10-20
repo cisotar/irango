@@ -5,10 +5,12 @@ vi.mock("next/headers", () => ({
   headers: () => Promise.resolve(new Headers({ "x-real-ip": "127.0.0.1" })),
 }));
 
-// Rate limit: fail-open (permitido: true) em todos os testes unitários.
+// Rate limit: fail-open (permitido: true) por padrão nos testes unitários; os
+// casos da issue 360 sobrescrevem por teste.
+const verificarRateLimit = vi.fn();
 vi.mock("@/lib/utils/rateLimit", () => ({
   extrairIp: (_headers: Headers) => "127.0.0.1",
-  verificarRateLimit: () => Promise.resolve({ permitido: true }),
+  verificarRateLimit: (...a: unknown[]) => verificarRateLimit(...a),
 }));
 
 // Geocoding (issue 008): I/O externo (Nominatim) — MOCKADO. Controlável por
@@ -190,6 +192,7 @@ const TEMA_OK = { primaria: "#ff0000", fundo: "#ffffff", destaque: "#00ff00" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  verificarRateLimit.mockReset().mockResolvedValue({ permitido: true });
   // Reseta a fila de erros injetados no eq do authedClient.
   _eqErros.length = 0;
   // Caminho feliz: já existe loja do dono, slug livre.
@@ -706,6 +709,24 @@ describe("salvarHorarios", () => {
     expect(r).toMatchObject({ ok: false });
     expect(updatePatch).not.toHaveBeenCalled();
   });
+
+  it("rate limit (360): balde `preferenciasPainel` chaveado pelo dono da loja da sessão", async () => {
+    await salvarHorarios(HORARIOS_OK);
+    expect(verificarRateLimit).toHaveBeenCalledWith("preferenciasPainel", USER_ID);
+  });
+
+  it("rate limit (360): estourou → erro genérico, nenhum update", async () => {
+    verificarRateLimit.mockResolvedValueOnce({ permitido: false });
+    const r = await salvarHorarios(HORARIOS_OK);
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar. Tente novamente." });
+    expect(JSON.stringify(r)).not.toMatch(/limite|rate|redis/i);
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("rate limit (360): payload inválido não gasta cota", async () => {
+    await salvarHorarios({ ...HORARIOS_OK, seg: { abre: "18:00", fecha: "08:00", ativo: true } });
+    expect(verificarRateLimit).not.toHaveBeenCalled();
+  });
 });
 
 // ────────────────────────────── salvarTema ───────────────────────────────────
@@ -730,6 +751,24 @@ describe("salvarTema", () => {
     for (const proibida of COLUNAS_PROIBIDAS) {
       expect(patch).not.toHaveProperty(proibida);
     }
+  });
+
+  it("rate limit (360): balde `preferenciasPainel` chaveado pelo dono da loja da sessão", async () => {
+    await salvarTema(TEMA_OK);
+    expect(verificarRateLimit).toHaveBeenCalledWith("preferenciasPainel", USER_ID);
+  });
+
+  it("rate limit (360): estourou → erro genérico, nenhum update", async () => {
+    verificarRateLimit.mockResolvedValueOnce({ permitido: false });
+    const r = await salvarTema(TEMA_OK);
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar. Tente novamente." });
+    expect(JSON.stringify(r)).not.toMatch(/limite|rate|redis/i);
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("rate limit (360): payload inválido não gasta cota", async () => {
+    await salvarTema({ ...TEMA_OK, primaria: "red;}body{display:none" });
+    expect(verificarRateLimit).not.toHaveBeenCalled();
   });
 });
 

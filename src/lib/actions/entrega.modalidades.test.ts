@@ -192,6 +192,11 @@ vi.mock("@/lib/auth/admin", () => ({
   obterAdminUserId: () => ADMIN_ID,
 }));
 
+const verificarRateLimit = vi.fn();
+vi.mock("@/lib/utils/rateLimit", () => ({
+  verificarRateLimit: (...a: unknown[]) => verificarRateLimit(...a),
+}));
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 
 const COLUNAS_MODALIDADE = ["aceita_entrega", "aceita_retirada", "modo_frete"];
@@ -229,6 +234,7 @@ const A_COMBINAR = { aceita_retirada: true, aceita_entrega: true, modo_frete: "a
 
 beforeEach(() => {
   vi.clearAllMocks();
+  verificarRateLimit.mockReset().mockResolvedValue({ permitido: true });
   vi.spyOn(console, "error").mockImplementation(() => {});
   autenticado = criarBanco({ dono: DONO_A });
   servico = criarBanco({ dono: null });
@@ -323,6 +329,36 @@ describe("salvarModalidadesEntrega (lojista)", () => {
     const r = await salvarModalidadesEntrega(SO_RETIRADA);
     expect(r).toEqual({ ok: false, erro: expect.any(String) });
     expect(updatesEmLojas(autenticado).every((u) => u.afetadas === 0)).toBe(true);
+  });
+});
+
+// ═════════════════════════════════════════════ rate limit (issue 360)
+describe("salvarModalidadesEntrega — rate limit por lojista (360)", () => {
+  it("balde `preferenciasPainel` chaveado pelo dono da loja da sessão", async () => {
+    await salvarModalidadesEntrega(SO_RETIRADA);
+    expect(verificarRateLimit).toHaveBeenCalledWith("preferenciasPainel", DONO_A);
+  });
+
+  it("estourou → erro genérico, nenhum update", async () => {
+    verificarRateLimit.mockResolvedValueOnce({ permitido: false });
+    const r = await salvarModalidadesEntrega(SO_RETIRADA);
+    expect(r).toEqual({ ok: false, erro: "Não foi possível salvar as modalidades de entrega." });
+    expect(JSON.stringify(r)).not.toMatch(/limite|rate|redis/i);
+    expect(updatesEmLojas(autenticado)).toHaveLength(0);
+  });
+
+  it("payload inválido não gasta cota", async () => {
+    await salvarModalidadesEntrega({
+      aceita_retirada: false,
+      aceita_entrega: false,
+      modo_frete: "automatico",
+    });
+    expect(verificarRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("a action admin fica fora do balde do lojista", async () => {
+    await salvarModalidadesEntregaAdmin(LOJA_A, SO_RETIRADA);
+    expect(verificarRateLimit).not.toHaveBeenCalled();
   });
 });
 

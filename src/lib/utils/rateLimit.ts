@@ -17,7 +17,8 @@ import "server-only";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
-// Config central por chave de action. Sliding window por IP/minuto.
+// Config central por chave de action. Sliding window por minuto; o identificador
+// é o IP ou, nas actions só autenticadas, o `dono_id` do lojista (conforme a chave).
 // Os valores espelham seguranca.md §12 e o escopo da issue 052:
 //   login ~5/min · criarPedido ~10/min · validarCupom ~20/min · fretePreview ~20/min.
 export const LIMITES = {
@@ -51,6 +52,10 @@ export const LIMITES = {
   // página; 30 páginas/min fica acima de qualquer uso humano e fecha o loop
   // automatizado contra `clientes_da_loja`/`pedidos`.
   carregarMaisClientes: { limite: 30, janela: "1 m" },
+  // Preferências do painel (issue 360): UM balde por LOJISTA (`dono_id`) para
+  // salvarCicloVendas/salvarModalidadesEntrega/salvarHorarios/salvarTema. Cada
+  // uma é um "Salvar" explícito; 30/min é acima de qualquer uso humano. Admin fora.
+  preferenciasPainel: { limite: 30, janela: "1 m" },
   // Galeria de imagens (specs/galeria-imagens-loja.md, RN-G13): baldes por LOJA
   // da sessão (identificador = loja.id). Contenção de custo, fail-open.
   enviarImagemGaleria: { limite: 30, janela: "1 m" },
@@ -125,7 +130,8 @@ function obterLimitador(chave: ChaveRateLimit): Ratelimit {
 }
 
 /**
- * Verifica a trava de rate limit para `identificador` (IP) na `chave` da action.
+ * Verifica a trava de rate limit para `identificador` na `chave` da action
+ * (IP ou `dono_id` do lojista, conforme a chave).
  *   - dentro do limite (Upstash success:true)  → { permitido: true }
  *   - excedeu (Upstash success:false)           → { permitido: false }
  *   - sem credenciais / Redis indisponível/erro → { permitido: true } (FAIL-OPEN)
