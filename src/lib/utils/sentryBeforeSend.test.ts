@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ErrorEvent } from "@sentry/nextjs";
-import { sentryBeforeSend } from "./sentryBeforeSend";
+import {
+  sentryBeforeSend,
+  sentryBeforeSendTransaction,
+  type TransactionEvent,
+} from "./sentryBeforeSend";
 
 // Helper: serializa o evento sanitizado para varrer recursivamente por valores.
 function contemValor(obj: unknown, alvo: string): boolean {
@@ -226,5 +230,66 @@ describe("sentryBeforeSend — observação de pedido é PII", () => {
     } as unknown as ErrorEvent;
 
     expect(JSON.stringify(sentryBeforeSend(event))).not.toContain("casa da esquina");
+  });
+});
+
+// Issue 289: `tracesSampleRate` liga transações de pageload, e a página de
+// confirmação carrega `?pedido=<id>&token=<token_acesso>` em request.url. O
+// token dá leitura do pedido; precisa ser redigido também dentro de string.
+describe("sentryBeforeSendTransaction — token de pedido na URL", () => {
+  const TOKEN = "tok_9f8e7d6c5b4a39281706";
+  const PEDIDO = "b7c1e2d4-1111-4222-8333-444455556666";
+  const url = `https://irango.app/loja/lanches/confirmacao?pedido=${PEDIDO}&token=${TOKEN}`;
+
+  it("redige token e pedido de request.url, preservando o caminho", () => {
+    const event = {
+      type: "transaction",
+      transaction: "/loja/[slug]/confirmacao",
+      request: { url },
+    } as unknown as TransactionEvent;
+
+    const out = sentryBeforeSendTransaction(event);
+
+    expect(out).not.toBeNull();
+    expect(contemValor(out, TOKEN)).toBe(false);
+    expect(contemValor(out, PEDIDO)).toBe(false);
+    expect(out!.request!.url).toContain("/loja/lanches/confirmacao");
+  });
+
+  it("redige token em spans, breadcrumbs e contexts.trace.data", () => {
+    const event = {
+      type: "transaction",
+      contexts: { trace: { data: { "url.full": url } } },
+      spans: [{ description: `GET ${url}`, data: { "http.url": url } }],
+      breadcrumbs: [{ category: "navigation", data: { to: `/x?foo=1&token=${TOKEN}#a` } }],
+    } as unknown as TransactionEvent;
+
+    const out = sentryBeforeSendTransaction(event);
+
+    expect(contemValor(out, TOKEN)).toBe(false);
+    expect(contemValor(out, PEDIDO)).toBe(false);
+    expect(contemValor(out, "foo=1")).toBe(true);
+  });
+
+  it("retorna null (fail-closed) se a sanitização lançar", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const armadilha = new Proxy({}, { ownKeys() { throw new Error("boom"); } });
+    const event = { request: armadilha } as unknown as TransactionEvent;
+
+    expect(sentryBeforeSendTransaction(event)).toBeNull();
+    spy.mockRestore();
+  });
+});
+
+describe("sentryBeforeSend — token de pedido em URL de evento de erro", () => {
+  it("redige ?token= dentro de string de URL", () => {
+    const event = {
+      request: { url: "https://irango.app/loja/x/confirmacao?pedido=abc&token=segredo123" },
+      message: "falha em /loja/x/confirmacao?pedido=abc&token=segredo123",
+    } as unknown as ErrorEvent;
+
+    const out = sentryBeforeSend(event);
+
+    expect(contemValor(out, "segredo123")).toBe(false);
   });
 });

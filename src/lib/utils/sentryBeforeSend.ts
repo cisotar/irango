@@ -1,4 +1,7 @@
-import type { ErrorEvent, EventHint } from "@sentry/nextjs";
+import type { BrowserOptions, ErrorEvent, Event, EventHint } from "@sentry/nextjs";
+
+// `@sentry/nextjs` não reexporta TransactionEvent (só `@sentry/core`, transitivo).
+export type TransactionEvent = Parameters<NonNullable<BrowserOptions["beforeSendTransaction"]>>[0];
 
 /**
  * Scrubber de PII e segredos para eventos do Sentry (§seguranca.md — scrubbing
@@ -55,9 +58,13 @@ const PADROES_VALOR: RegExp[] = [
   /\beyJ[A-Za-z0-9._-]{10,}/g,
 ];
 
+// Parâmetros de querystring que dão acesso a um pedido (página de confirmação:
+// `?pedido=<id>&token=<token_acesso>`). Mascara só o valor, preservando a rota.
+const PARAMETRO_URL_SENSIVEL = /([?&](?:token|token_acesso|pedido)=)[^&#\s"']*/gi;
+
 /** Redige PII/segredo embutido em uma string, substituindo por MASCARA. */
 function redigirString(s: string): string {
-  let resultado = s;
+  let resultado = s.replace(PARAMETRO_URL_SENSIVEL, `$1${MASCARA}`);
   for (const padrao of PADROES_VALOR) {
     resultado = resultado.replace(padrao, MASCARA);
   }
@@ -97,16 +104,13 @@ function sanitizar(valor: unknown, seen: WeakSet<object>): unknown {
 }
 
 /**
- * `beforeSend` do Sentry. Aplica o scrubber a todo o payload (extra, contexts,
- * tags, request, user, breadcrumbs). Retorna `null` para descartar o evento se
- * a sanitização falhar — fail-closed para não vazar PII.
+ * Aplica o scrubber a todo o payload (extra, contexts, tags, request, user,
+ * breadcrumbs, spans). Retorna `null` para descartar o evento se a sanitização
+ * falhar — fail-closed para não vazar PII.
  */
-export function sentryBeforeSend(
-  event: ErrorEvent,
-  _hint?: EventHint,
-): ErrorEvent | null {
+function sanitizarEvento<T extends Event>(event: T): T | null {
   try {
-    const sanitizado = sanitizar(event, new WeakSet()) as ErrorEvent;
+    const sanitizado = sanitizar(event, new WeakSet()) as T;
     // `sendDefaultPii: false` já evita captura de IP/cookies, mas garantimos.
     if (sanitizado.user) {
       delete sanitizado.user.ip_address;
@@ -122,7 +126,18 @@ export function sentryBeforeSend(
     return sanitizado;
   } catch (erro) {
     // Não confiamos no payload parcialmente sanitizado: descartamos.
-    console.error("[sentry] beforeSend falhou ao sanitizar evento", erro);
+    console.error("[sentry] falha ao sanitizar evento", erro);
     return null;
   }
+}
+
+export function sentryBeforeSend(event: ErrorEvent, _hint?: EventHint): ErrorEvent | null {
+  return sanitizarEvento(event);
+}
+
+export function sentryBeforeSendTransaction(
+  event: TransactionEvent,
+  _hint?: EventHint,
+): TransactionEvent | null {
+  return sanitizarEvento(event);
 }
