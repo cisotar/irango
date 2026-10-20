@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
 
@@ -59,11 +65,13 @@ type VitrineClientProps = {
   clienteLogado: boolean;
 };
 
+const semInscricao = () => () => {};
+
 /**
  * Camada client da vitrine: dona do estado `open` do `Carrinho` (Sheet) e do FAB
  * fixo. O contador/total do FAB vêm de `useCarrinho` — preview de UX (o servidor
- * recalcula no checkout, seguranca.md §10). O Sheet só abre por clique explícito
- * em "Ver carrinho" — adicionar item nunca abre sozinho.
+ * recalcula no checkout, seguranca.md §10). O Sheet abre pelo "Ver carrinho" e
+ * também sozinho a cada item adicionado.
  */
 export function VitrineClient({
   lojaSlug,
@@ -78,6 +86,16 @@ export function VitrineClient({
   const [open, setOpen] = useState(false);
   const { totalItens, subtotal } = useCarrinho();
   const router = useRouter();
+
+  // Só conta como adição o que muda depois da hidratação: o carrinho nasce
+  // vazio no SSR e salta para o do sessionStorage ao hidratar — sem a trava,
+  // recarregar a página com itens abriria o Sheet.
+  const noCliente = useSyncExternalStore(semInscricao, () => true, () => false);
+  const [totalVisto, setTotalVisto] = useState<number | null>(null);
+  if (noCliente && totalVisto !== totalItens) {
+    if (totalVisto !== null && totalItens > totalVisto) setOpen(true);
+    setTotalVisto(totalItens);
+  }
 
   // Sem login, o "Finalizar pedido" abre a gaveta "Sua conta" (a mesma do ☰).
   // Decidido no clique, não na montagem: a dispensa pode ter sido gravada

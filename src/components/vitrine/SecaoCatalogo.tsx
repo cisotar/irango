@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, type CSSProperties } from "react";
-import { toast } from "sonner";
 
 import { CardProduto } from "@/components/vitrine/CardProduto";
 import { ItemProdutoLista } from "@/components/vitrine/ItemProdutoLista";
@@ -202,11 +201,6 @@ export function SecaoCatalogo({
         ...(observacao ? { observacao } : {}),
       },
       quantidade,
-    );
-    toast.success(
-      quantidade > 1
-        ? `${quantidade}x ${produtoSelecionado.nome} adicionado ao carrinho.`
-        : `${produtoSelecionado.nome} adicionado ao carrinho.`,
     );
   };
 

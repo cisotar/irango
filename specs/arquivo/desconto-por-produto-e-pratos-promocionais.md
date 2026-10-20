@@ -1398,7 +1398,8 @@ onde ainda é o mesmo dia.
 
 **RN-17 — O modal não rouba o gesto de navegação.** O PR #139 corrigiu exatamente esse erro no
 carrinho, que passou a abrir **só por clique explícito** em "Ver carrinho"
-(`VitrineClient.tsx`). As travas, todas verificáveis:
+(`VitrineClient.tsx`). Em 2026-10-20 o carrinho voltou a abrir sozinho a cada item adicionado,
+por decisão de produto; a regra deste modal não muda. As travas, todas verificáveis:
 - **decisão única, na montagem.** Um `useEffect` com deps `[]`. O modal **não** reabre por mudança
   de estado, por busca, por adição ao carrinho, por rolagem ou por voltar para a aba;
 - **sem `setTimeout`.** Modal que aparece depois de N segundos é exatamente o que intercepta o
