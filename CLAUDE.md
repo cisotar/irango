@@ -62,6 +62,10 @@ explícito, maior risco; use `orquestrar`/`/orquestrar` por padrão. Antes de di
 
 Specs em `specs/` (concluídas em `specs/arquivo/`), issues em `tasks/`, planos em `plan/`, auditorias de performance em `performance/`.
 
+## Issues no GitHub
+
+Repo **público**: issue vive só em `tasks/`, nunca é criada no GitHub (achado de segurança ou plano interno viraria público e indexável, sem como desfazer). Para fechar uma issue antiga que exista lá, use `.claude/scripts/issue-github.sh fechar NNN <hash>` — nunca `gh issue close` direto: o número local não é o do GitHub.
+
 ## Três mandatos
 
 1. **Nunca confiar no cliente.** Valor monetário é recalculado no servidor a partir do banco (`seguranca.md` §10). Permissão é RLS, não UI oculta. Cupom validado em Server Action escopada por `loja_id`.

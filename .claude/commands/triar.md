@@ -65,7 +65,7 @@ Sinais de RESOLVIDO que costumam passar despercebidos neste repo:
 
 Aplique **só** RESOLVIDO e OBSOLETO com evidência. PARCIAL só recebe `[x]` nos critérios provados. Nunca delete issue ABERTA.
 
-- **Issue em `tasks/` RESOLVIDA:** se existe no GitHub, `gh issue close NNN --comment "Resolvido em <commit/arquivo:linha>"`; `git rm tasks/NNN-*.md`. Se a issue tem `Spec:`, marque `[x]` nos behaviors correspondentes; se o spec ficar 100% `[x]`, `git mv` para `specs/arquivo/`.
+- **Issue em `tasks/` RESOLVIDA:** se existe no GitHub, `.claude/scripts/issue-github.sh fechar NNN <hash>` (o número NNN é o do arquivo local, que NÃO é o número da issue no GitHub — nunca use `gh issue close NNN` direto: fecharia a issue errada); `git rm tasks/NNN-*.md`. Se a issue tem `Spec:`, marque `[x]` nos behaviors correspondentes; se o spec ficar 100% `[x]`, `git mv` para `specs/arquivo/`.
 - **Débito do §10 pago:** edite a linha da tabela para o padrão já usado ali ("implementado (issue NNN): …" na coluna Decisão, `—` em Quando revisar). Bump de versão patch + data no header do `architecture.md`, como o `escriba` faria.
 - **OBSOLETO:** mova a issue para `tasks/arquivo/` (crie a pasta se não existir) com uma linha `**Arquivada em AAAA-MM-DD:** motivo` no topo. Não delete: o histórico da decisão vale.
 - **DUPLICADO:** adicione `**Duplica:** NNN` na issue mais nova e mova-a para `tasks/arquivo/`.

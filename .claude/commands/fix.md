@@ -140,6 +140,8 @@ git add tasks/NNN-*.md
 git commit -m "chore(tasks): fecha NNN"
 ```
 
+Se existe issue `[NNN]` no GitHub, depois do push: `.claude/scripts/issue-github.sh fechar NNN <hash-do-fix>` (nunca `gh issue close NNN` direto: o número local não é o do GitHub).
+
 Se a issue tinha campo `Spec: specs/<arquivo>.md`:
 - Marque `[x]` o(s) behavior(s) correspondente(s) no spec de origem.
 - Se **todos** os behaviors do spec estiverem `[x]`, mova o spec para `specs/arquivo/<arquivo>.md` (mesma convenção do `/fluxo`).

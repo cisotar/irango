@@ -199,7 +199,7 @@ Use o agente `especificar` passando a descrição (ajustada para o delta, se apl
 
 ## Etapa 2 — Quebrar em Issues
 
-Use o agente `quebrar` passando o caminho do spec. Não peça confirmação da lista — gere e salve em `tasks/NNN-<slug>.md`. Se o repo tem remote e `gh`, crie também no GitHub. Registre o grafo de dependências e os selos `crítica: SIM/NÃO` para definir a ordem da próxima etapa.
+Use o agente `quebrar` passando o caminho do spec. Não peça confirmação da lista — gere e salve em `tasks/NNN-<slug>.md`. NÃO crie issue no GitHub: o repo é público e a issue vive só em `tasks/`. Registre o grafo de dependências e os selos `crítica: SIM/NÃO` para definir a ordem da próxima etapa.
 
 ---
 
@@ -238,7 +238,7 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
    - 6e. `escriba` — sempre. Se "nenhuma atualização necessária", seguir adiante.
 7. **Verificar critérios `[x]`:** se algum ficar `[ ]`, NÃO feche a issue — complete, ou registre débito explícito como nova issue.
 8. **Fechar a issue:** sem bloqueios pendentes:
-   - Se criada no GitHub: `gh issue close <número> --comment "Implementado, testado, auditado e verificado."`
+   - Se há issue `[NNN]` no GitHub: depois do push do commit que resolveu, `.claude/scripts/issue-github.sh fechar NNN <hash>` (recusa se o commit não está em `origin/main` ou se não há exatamente 1 issue aberta com esse número; comentário é fixo).
    - Delete o arquivo local: `rm tasks/NNN-*.md`
 9. **Retroalimentar o spec:** marque `[x]` os behaviors correspondentes no spec de origem em `specs/`. Se todos os behaviors do spec estiverem `[x]`, arquive/encerre o spec.
 10. Avance para a próxima issue sem parar.
