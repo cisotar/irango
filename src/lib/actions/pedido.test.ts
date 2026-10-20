@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Tables } from "@/lib/database.types";
-import type { PedidoComItens } from "@/lib/supabase/queries/pedidos";
 
 // Rate limit (issue 052): a action chama verificarRateLimit no topo via
 // `await headers()`. rateLimit.ts é server-only (quebra no vitest) → mockamos
@@ -107,15 +106,6 @@ const buscarOcultosPorProdutos = vi.fn(async (..._a: unknown[]) => [] as unknown
 vi.mock("@/lib/supabase/queries/opcionais", async (orig) => ({
   ...((await orig()) as Record<string, unknown>),
   buscarOcultosPorProdutos: (...a: unknown[]) => buscarOcultosPorProdutos(...a),
-}));
-
-// [125] Releitura AUTORITATIVA do pedido recém-gravado. A action deve montar o
-// whatsappHref a partir da LINHA GRAVADA (buscarPedidoPorToken), nunca do
-// snapshot em memória — a RPC pode divergir (trava de cupom perdida na corrida,
-// replay idempotente). Mock de orquestração: o banco é rpc_criar_pedido.test.ts.
-const buscarPedidoPorToken = vi.fn();
-vi.mock("@/lib/supabase/queries/pedidos", () => ({
-  buscarPedidoPorToken: (...a: unknown[]) => buscarPedidoPorToken(...a),
 }));
 
 const listarZonasComTaxas = vi.fn();
@@ -314,47 +304,6 @@ function formasComPix() {
   return [{ id: "f1", loja_id: LOJA_A, tipo: "pix", config: {} }];
 }
 
-/**
- * [125] Linha REALMENTE GRAVADA do pedido, como `buscarPedidoPorToken` a devolve
- * (pedido + itens + opcionais aninhados). Note `total: 55` e `desconto: 0`: em
- * T1b isso DIVERGE do que a action calculou em memória (total 50 com cupom) —
- * é a prova de que o href descreve o gravado, não o recalculado.
- */
-function pedidoGravadoRow(over: Record<string, unknown> = {}): PedidoComItens {
-  return {
-    id: PEDIDO_ID,
-    token_acesso: TOKEN,
-    loja_id: LOJA_A,
-    nome_cliente: "Fulano",
-    telefone_cliente: null,
-    subtotal: 50,
-    desconto: 0,
-    taxa_entrega: 5,
-    total: 55,
-    tipo_entrega: "entrega",
-    forma_pagamento: "pix",
-    cupom_codigo: null,
-    observacoes: null,
-    troco_para: null,
-    idempotency_key: null,
-    status: "pendente",
-    criado_em: "2026-01-01T00:00:00.000Z",
-    endereco_entrega: { rua: "Rua X", numero: "10", bairro: "Centro", cep: "01000-000" },
-    itens_pedido: [
-      {
-        id: "aaaa1111-0000-0000-0000-00000000000a",
-        pedido_id: PEDIDO_ID,
-        produto_id: PROD_1,
-        nome: "Pizza",
-        preco: 25,
-        quantidade: 2,
-        itens_pedido_opcionais: [],
-      },
-    ],
-    ...over,
-  } as unknown as PedidoComItens;
-}
-
 /** Payload limpo (só intenção) — base dos testes; o cliente NÃO manda valores.
  * [069] tipo_entrega='entrega' é obrigatório no schema; endereco_entrega obrigatório
  * para entrega (refine condicional). Builder default usa entrega c/ endereço. */
@@ -392,9 +341,6 @@ function cenarioFeliz() {
   buscarOpcionaisPorCategoria.mockResolvedValue({});
   // [331] nenhum grupo oculto por produto.
   buscarOcultosPorProdutos.mockResolvedValue([]);
-  // [125] default: releitura não encontra linha → whatsappHref null. Mantém todo
-  // teste pré-existente inalterado além do campo novo.
-  buscarPedidoPorToken.mockResolvedValue(null);
   fakeClient.rpc.mockResolvedValue({
     data: [{ pedido_id: PEDIDO_ID, token_acesso: TOKEN }],
     error: null,
@@ -433,7 +379,7 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
   it("sucesso: retorna { pedidoId, token_acesso } vindos da RPC", async () => {
     cenarioFeliz();
     const r = await criarPedido(payloadBase());
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN });
   });
 
   // ─────────────────────── ATAQUE DE VALOR (§10) — núcleo crítico
@@ -535,7 +481,7 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
   it("[087] produto disponivel=true, oculto=false da loja correta → cria pedido normalmente", async () => {
     cenarioFeliz(); // produtoRow() já é oculto:false, disponivel:true
     const r = await criarPedido(payloadBase());
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN });
   });
 
   // Borda: produto oculto E indisponível ao mesmo tempo — a guarda tem cláusulas
@@ -615,7 +561,7 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     fakeClient.rpc.mockResolvedValue({ data: [{ pedido_id: PEDIDO_ID, token_acesso: TOKEN }], error: null });
 
     const r = await criarPedido(payloadBase({ codigo_cupom: "PROMO5" }));
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null }); // pedido NÃO rejeitado
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN }); // pedido NÃO rejeitado
     const args = fakeClient.rpc.mock.calls[0][1] as { p_desconto: number; p_total: number; p_cupom_id: string | null };
     expect(args.p_desconto).toBe(0); // sem desconto
     expect(args.p_total).toBe(55.0); // 50 subtotal + 5 frete, sem desconto
@@ -716,7 +662,7 @@ describe("criarPedido (Server Action — recálculo autoritativo §10)", () => {
     });
 
     const r = await criarPedido(payloadBase());
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN });
     const args = fakeClient.rpc.mock.calls[0][1] as { p_taxa_entrega: number; p_total: number };
     expect(args.p_taxa_entrega).toBe(8.0);
     expect(args.p_total).toBe(58.0); // 50 subtotal + 8 fallback
@@ -1268,219 +1214,6 @@ describe("criarPedido — rate limit bloqueado (issue 052)", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// [125] whatsappHref AUTORITATIVO no retorno de criarPedido (RN-A2 / A4 / A6)
-//
-// Contrato esperado da fase GREEN:
-//   ResultadoCriarPedido sucesso = { pedidoId, token_acesso, whatsappHref: string | null }
-//
-//  - RN-A2: a DECISÃO de emitir é do SERVIDOR — `loja.whatsapp_envio_automatico
-//    === true` (estrito) E `loja.whatsapp` truthy. Nada do payload influencia.
-//  - D1: o CONTEÚDO vem da LINHA GRAVADA, relida por buscarPedidoPorToken(svc,
-//    pedidoId, token) — nunca de itensSnapshot/total em memória.
-//  - RN-A4: bloco best-effort — falha na releitura NÃO derruba um pedido já
-//    persistido; retorna sucesso com whatsappHref null.
-//  - RN-A6 / invariante 037: o href NUNCA carrega o token_acesso.
-//
-// Hoje a action nem devolve o campo (`{ pedidoId, token_acesso }`) e nunca chama
-// buscarPedidoPorToken. Todos os casos abaixo FALHAM — esse é o RED.
-// ═══════════════════════════════════════════════════════════════════════════
-type SucessoPedido = { pedidoId: string; token_acesso: string; whatsappHref: string | null };
-
-describe("criarPedido — whatsappHref autoritativo (125 / RN-A2·A4·A6)", () => {
-  /** Loja com WhatsApp e envio automático LIGADO + releitura devolvendo o gravado. */
-  function cenarioWhatsappLigado(overPedido: Record<string, unknown> = {}) {
-    cenarioFeliz();
-    buscarLojaParaPedido.mockResolvedValue(
-      lojaRow({ whatsapp: "5511999990000", whatsapp_envio_automatico: true }),
-    );
-    buscarPedidoPorToken.mockResolvedValue(pedidoGravadoRow(overPedido));
-  }
-
-  // T1 — caminho feliz: href montado a partir do pedido GRAVADO
-  it("[125-T1] flag true + loja com WhatsApp → whatsappHref é o link do pedido GRAVADO (lido por buscarPedidoPorToken)", async () => {
-    cenarioWhatsappLigado();
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(typeof r.whatsappHref).toBe("string");
-    // [287] Host novo: `wa.me` pula a intersticial "Continue to chat". Só o
-    // host mudou — o corpo da mensagem (RN-A6) segue o mesmo.
-    expect(r.whatsappHref!).toMatch(/^https:\/\/wa\.me\/5511999990000\?text=/);
-    const texto = decodeURIComponent(r.whatsappHref!);
-    expect(texto).toContain("Novo pedido iRango");
-    expect(texto).toContain("Pizza");
-    // total do pedido GRAVADO (55,00) — formatarMoeda usa NBSP entre R$ e valor.
-    expect(texto).toMatch(/Total: R\$\s55,00/);
-
-    // prova de que o objeto veio do BANCO, com os ids devolvidos pela RPC
-    expect(buscarPedidoPorToken).toHaveBeenCalledTimes(1);
-    expect(buscarPedidoPorToken).toHaveBeenCalledWith(fakeClient, PEDIDO_ID, TOKEN);
-
-    // contrato preservado
-    expect(r.pedidoId).toBe(PEDIDO_ID);
-    expect(r.token_acesso).toBe(TOKEN);
-  });
-
-  // T1b — a prova da causa raiz: gravado (55) ≠ recalculado em memória (50)
-  it("[125-T1b] href descreve o GRAVADO, não o recalculado: cupom aplicado em memória (total 50) mas linha gravada tem total 55 → mensagem diz 55,00", async () => {
-    cenarioWhatsappLigado({ desconto: 0, total: 55, cupom_codigo: null });
-    // Em memória a action aplica PROMO5 (-5): subtotal 50 + frete 5 − 5 = 50.
-    // A RPC, porém, perdeu a trava do cupom (migration 20260614009500, passo 2):
-    // zerou o desconto e gravou total 55. A mensagem tem que dizer o GRAVADO.
-    buscarCupomPorCodigo.mockResolvedValue(cupomRow());
-
-    const r = (await criarPedido(payloadBase({ codigo_cupom: "PROMO5" }))) as SucessoPedido;
-
-    const texto = decodeURIComponent(r.whatsappHref!);
-    expect(texto).toMatch(/Total: R\$\s55,00/); // linha gravada
-    expect(texto).not.toMatch(/Total: R\$\s50,00/); // total calculado em memória
-    expect(texto).not.toContain("PROMO5"); // gravado tem cupom_codigo null
-  });
-
-  // T2 — flag desligada: decisão do servidor, e SEM leitura extra (guarda barata D3)
-  it("[125-T2] flag whatsapp_envio_automatico=false → whatsappHref null e NENHUMA releitura do pedido", async () => {
-    cenarioFeliz();
-    buscarLojaParaPedido.mockResolvedValue(
-      lojaRow({ whatsapp: "5511999990000", whatsapp_envio_automatico: false }),
-    );
-    buscarPedidoPorToken.mockResolvedValue(pedidoGravadoRow());
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(r.whatsappHref).toBeNull();
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
-    expect(r.pedidoId).toBe(PEDIDO_ID); // pedido criado normalmente
-  });
-
-  // T3 — loja sem WhatsApp, flag ligada
-  it("[125-T3] loja sem WhatsApp (flag true) → whatsappHref null, sem releitura, pedido criado", async () => {
-    cenarioFeliz();
-    buscarLojaParaPedido.mockResolvedValue(
-      lojaRow({ whatsapp: null, whatsapp_envio_automatico: true }),
-    );
-    buscarPedidoPorToken.mockResolvedValue(pedidoGravadoRow());
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(r.whatsappHref).toBeNull();
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
-    expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
-  });
-
-  // T3b — fail-closed: flag ausente na row não pode ligar o envio
-  it("[125-T3b] flag ausente/undefined na row da loja → whatsappHref null (=== true estrito, fail-closed)", async () => {
-    cenarioFeliz();
-    buscarLojaParaPedido.mockResolvedValue(lojaRow({ whatsapp: "5511999990000" }));
-    buscarPedidoPorToken.mockResolvedValue(pedidoGravadoRow());
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(r.whatsappHref).toBeNull();
-  });
-
-  // T3c — mutação `=== true` → truthiness seria capturada aqui: o valor é
-  // truthy (1) mas não é o booleano estrito `true`. Se a guarda virasse
-  // `if (loja.whatsapp_envio_automatico && loja.whatsapp)`, este teste passaria
-  // a falhar (buscarPedidoPorToken seria chamado e o href deixaria de ser null).
-  it("[125-T3c] whatsapp_envio_automatico truthy mas != true estrito (ex.: 1) → whatsappHref null (trava === true, não truthiness)", async () => {
-    cenarioFeliz();
-    buscarLojaParaPedido.mockResolvedValue(
-      lojaRow({ whatsapp: "5511999990000", whatsapp_envio_automatico: 1 as unknown as boolean }),
-    );
-    buscarPedidoPorToken.mockResolvedValue(pedidoGravadoRow());
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(r.whatsappHref).toBeNull();
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
-  });
-
-  // T3d — whatsapp presente mas inválido após normalização (sem dígito, D3): a
-  // guarda em pedido.ts só checa truthy (não reimplementa a normalização de
-  // montarLinkWhatsappPedido), então PAGA a releitura mesmo neste caso
-  // patológico — mas o resultado final é null e o pedido segue sucesso.
-  it("[125-T3d] whatsapp presente mas sem dígitos (ex.: 'abc') → whatsappHref null, MAS a releitura acontece (guarda só checa truthy, D3)", async () => {
-    cenarioFeliz();
-    buscarLojaParaPedido.mockResolvedValue(
-      lojaRow({ whatsapp: "abc", whatsapp_envio_automatico: true }),
-    );
-    buscarPedidoPorToken.mockResolvedValue(pedidoGravadoRow());
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(r.whatsappHref).toBeNull();
-    expect(buscarPedidoPorToken).toHaveBeenCalledTimes(1); // caso patológico aceito (D3)
-    expect(r).not.toHaveProperty("erro");
-  });
-
-  // T4 — o token do pedido NUNCA vaza no href (RN-A6 / invariante 037)
-  it("[125-T4] whatsappHref NUNCA contém o token_acesso — cru, percent-encoded ou rotulado", async () => {
-    cenarioWhatsappLigado(); // a row do banco CARREGA o token — é por isso que o teste vale
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(typeof r.whatsappHref).toBe("string"); // sem link, o teste não provaria nada
-    expect(r.whatsappHref!).not.toContain(TOKEN); // string crua
-    const texto = decodeURIComponent(r.whatsappHref!);
-    expect(texto).not.toContain(TOKEN); // percent-encoded
-    expect(texto).not.toMatch(/token/i); // rótulo ("Token: ...")
-  });
-
-  // T5 — best-effort: releitura explode, pedido JÁ GRAVADO não pode virar erro
-  it("[125-T5] buscarPedidoPorToken lança → pedido continua sucesso com whatsappHref null (RN-A4, try/catch próprio)", async () => {
-    cenarioWhatsappLigado();
-    buscarPedidoPorToken.mockRejectedValue(new Error("PostgREST 500"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(r).not.toHaveProperty("erro");
-    expect(r.pedidoId).toBe(PEDIDO_ID);
-    expect(r.token_acesso).toBe(TOKEN);
-    expect(r.whatsappHref).toBeNull();
-    spy.mockRestore();
-  });
-
-  // T5b — row invisível (replicação atrasada) → null, sem derrubar o pedido
-  it("[125-T5b] releitura devolve null → sucesso com whatsappHref null", async () => {
-    cenarioWhatsappLigado();
-    buscarPedidoPorToken.mockResolvedValue(null);
-
-    const r = (await criarPedido(payloadBase())) as SucessoPedido;
-
-    expect(r).not.toHaveProperty("erro");
-    expect(r.pedidoId).toBe(PEDIDO_ID);
-    expect(r.whatsappHref).toBeNull();
-  });
-
-  // T6 — replay idempotente monta o MESMO href (D5)
-  it("[125-T6] replay idempotente (mesma idempotency_key) → whatsappHref idêntico ao da 1ª chamada", async () => {
-    const KEY = "88888888-8888-4888-8888-888888888888";
-    cenarioWhatsappLigado();
-
-    const r1 = (await criarPedido(payloadBase({ idempotency_key: KEY }))) as SucessoPedido;
-    const r2 = (await criarPedido(payloadBase({ idempotency_key: KEY }))) as SucessoPedido;
-
-    expect(typeof r1.whatsappHref).toBe("string");
-    expect(typeof r2.whatsappHref).toBe("string");
-    expect(r1.whatsappHref).toBe(r2.whatsappHref);
-    expect(r1.pedidoId).toBe(r2.pedidoId);
-  });
-
-  // T7 — não-regressão: ramo de ERRO não ganha o campo nem faz releitura
-  it("[125-T7] RPC falha → { erro } sem whatsappHref e sem releitura do pedido", async () => {
-    cenarioWhatsappLigado();
-    fakeClient.rpc.mockResolvedValue({ data: null, error: { message: "x" } });
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const r = await criarPedido(payloadBase());
-
-    expect(r).toEqual({ erro: expect.any(String) });
-    expect(buscarPedidoPorToken).not.toHaveBeenCalled();
-    spy.mockRestore();
-  });
-});
 
 // ===========================================================================
 // [167] Observação por item — orquestração da Server Action.
@@ -1646,7 +1379,7 @@ describe("[167] criarPedido — observação por item", () => {
       payloadBase({ itens: [{ produto_id: PROD_1, quantidade: 2, observacao: obs }] }),
     );
 
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN });
     expect(argsDaChamada().p_itens[0].observacao).toBe(obs);
   });
 
@@ -1729,7 +1462,7 @@ describe("[167] criarPedido — observação por item", () => {
       };
     });
     const r = await criarPedido(payloadBase({ itens }));
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN });
     const pItens = argsDaChamada().p_itens;
     expect(pItens).toHaveLength(50);
     for (let i = 0; i < 50; i++) {
@@ -1758,7 +1491,6 @@ describe("[167] criarPedido — observação por item", () => {
     });
     buscarOpcionaisPorIds.mockResolvedValue([]);
     buscarOpcionaisPorCategoria.mockResolvedValue({});
-    buscarPedidoPorToken.mockResolvedValue(null);
     const PROD_2 = "aaaaaaaa-0000-0000-0000-000000000099";
     buscarProdutosPorIds.mockResolvedValue([
       produtoRow(), // PROD_1 disponível
@@ -1822,7 +1554,7 @@ describe("[159] criarPedido — caracterização pré-paralelização", () => {
     );
 
     expect(listarZonasComTaxas).not.toHaveBeenCalled();
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN });
     const args = fakeClient.rpc.mock.calls[0][1] as {
       p_taxa_entrega: number;
       p_total: number;
@@ -2030,7 +1762,7 @@ describe("[159] criarPedido — caracterização pré-paralelização", () => {
       }),
     );
 
-    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN, whatsappHref: null });
+    expect(r).toEqual({ pedidoId: PEDIDO_ID, token_acesso: TOKEN });
     expect(fakeClient.rpc).toHaveBeenCalledTimes(1);
     const [fn, args] = fakeClient.rpc.mock.calls[0] as [string, Record<string, unknown>];
     expect(fn).toBe("criar_pedido");

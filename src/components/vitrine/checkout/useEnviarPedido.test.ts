@@ -61,8 +61,6 @@ const { useEnviarPedido, precarregarSchemaPedido } = await import("./useEnviarPe
 const LOJA_ID = "0d1e2f30-0000-4000-8000-000000000001";
 const PRODUTO_ID = "0d1e2f30-0000-4000-8000-000000000002";
 
-/** Destino fictício (sem PII, sem número real) só para o mock da action. */
-const HREF_DO_SERVIDOR = "https://wa.me/5500000000000?text=Novo%20pedido";
 
 // ---------------------------------------------------------------------------
 // Janela falsa — detector de pré-abertura/navegação feita pelo checkout.
@@ -144,7 +142,6 @@ describe("[287] useEnviarPedido — envio sem nenhuma pré-abertura de aba", () 
       return {
         pedidoId: "p1",
         token_acesso: "t1",
-        whatsappHref: HREF_DO_SERVIDOR,
       };
     });
 
@@ -157,11 +154,10 @@ describe("[287] useEnviarPedido — envio sem nenhuma pré-abertura de aba", () 
     expect(janela.open).not.toHaveBeenCalled();
   });
 
-  it("o checkout não navega para o WhatsApp: o `whatsappHref` do servidor não vira location de aba nenhuma", async () => {
+  it("o checkout não navega para o WhatsApp: sucesso não vira location de aba nenhuma", async () => {
     criarPedidoMock.mockResolvedValue({
       pedidoId: "p1",
       token_acesso: "t1",
-      whatsappHref: HREF_DO_SERVIDOR,
     });
 
     const { enviar } = useMontarHook();
@@ -216,18 +212,4 @@ describe("[287] useEnviarPedido — envio sem nenhuma pré-abertura de aba", () 
     consoleError.mockRestore();
   });
 
-  it("sucesso com `whatsappHref: null` (loja sem WhatsApp): push normal, nenhuma janela", async () => {
-    criarPedidoMock.mockResolvedValue({
-      pedidoId: "p1",
-      token_acesso: "t1",
-      whatsappHref: null,
-    });
-
-    const { enviar } = useMontarHook();
-    enviar();
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(routerPush).toHaveBeenCalledTimes(1);
-    expect(janela.open).not.toHaveBeenCalled();
-  });
 });

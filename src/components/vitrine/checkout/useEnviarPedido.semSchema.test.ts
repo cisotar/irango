@@ -65,9 +65,6 @@ const { useEnviarPedido } = await import("./useEnviarPedido");
 const LOJA_ID = "0d1e2f30-0000-4000-8000-000000000001";
 const PRODUTO_ID = "0d1e2f30-0000-4000-8000-000000000002";
 
-/** Destino fictício (sem PII, sem número real) só para o mock da action. */
-const HREF_DO_SERVIDOR = "https://wa.me/5500000000000?text=Novo%20pedido";
-
 /** Detector de pré-abertura: qualquer `window.open` do checkout registra aqui. */
 function instalarJanelaFalsa() {
   const aba = {
@@ -129,7 +126,6 @@ describe("useEnviarPedido — schema de preview AINDA NÃO carregado (163)", () 
     criarPedidoMock.mockResolvedValue({
       pedidoId: "p1",
       token_acesso: "t1",
-      whatsappHref: null,
     });
 
     const { enviar } = useMontarHook({ ...estadoValido(), nome: "" });
@@ -151,7 +147,6 @@ describe("useEnviarPedido — schema de preview AINDA NÃO carregado (163)", () 
     criarPedidoMock.mockResolvedValue({
       pedidoId: "p1",
       token_acesso: "t1",
-      whatsappHref: null,
     });
 
     const { enviar } = useMontarHook({ ...estadoValido(), nome: "" });
@@ -181,7 +176,6 @@ describe("useEnviarPedido — schema de preview AINDA NÃO carregado (163)", () 
     criarPedidoMock.mockResolvedValue({
       pedidoId: "p1",
       token_acesso: "t1",
-      whatsappHref: HREF_DO_SERVIDOR,
     });
 
     const { enviar } = useMontarHook();

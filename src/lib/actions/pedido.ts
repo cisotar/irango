@@ -18,13 +18,9 @@ import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { createServiceClient } from "@/lib/supabase/service";
 import { buscarLojaParaPedido } from "@/lib/supabase/queries/lojas";
-import {
-  buscarPedidoPorToken,
-  contarUsosCupomDoCliente,
-} from "@/lib/supabase/queries/pedidos";
+import { contarUsosCupomDoCliente } from "@/lib/supabase/queries/pedidos";
 import { resolverClienteDaSessao } from "@/lib/auth/clienteDaSessao";
 import { avaliarCupomPorCliente } from "@/lib/utils/cupomPorCliente";
-import { montarLinkWhatsappPedido } from "@/lib/utils/whatsappPedido";
 import {
   buscarProdutosPorIds,
   buscarOpcionaisPorIds,
@@ -69,7 +65,6 @@ export type ResultadoCriarPedido =
   | {
       pedidoId: string;
       token_acesso: string;
-      whatsappHref: string | null;
       // (342) Cupom com limite por cliente recusado (convidado ou limite
       // atingido): o pedido SAI sem desconto e o checkout mostra este aviso.
       avisoCupom?: string;
@@ -633,32 +628,9 @@ export async function criarPedido(payload: unknown): Promise<ResultadoCriarPedid
     const pedidoId = data[0].pedido_id;
     const tokenAcesso = data[0].token_acesso;
 
-    // (9) whatsappHref (125, RN-A2/A4/A6). A DECISÃO de emitir é do servidor:
-    //     flag da loja + WhatsApp cadastrado, avaliados ANTES de qualquer I/O
-    //     extra (`=== true` estrito = fail-closed). O CONTEÚDO vem da linha
-    //     GRAVADA, relida por buscarPedidoPorToken — nunca de itensSnapshot/
-    //     total em memória: a RPC pode divergir do que recebeu (trava de cupom
-    //     perdida na corrida zera o desconto e recompõe o total; replay
-    //     idempotente devolve outro pedido). Best-effort (RN-A4): try/catch
-    //     próprio, pois o pedido JÁ está gravado — falha aqui vira href null,
-    //     nunca erro ao cliente.
-    let whatsappHref: string | null = null;
-    if (loja.whatsapp_envio_automatico === true && loja.whatsapp) {
-      try {
-        const gravado = await buscarPedidoPorToken(svc, pedidoId, tokenAcesso);
-        whatsappHref = gravado
-          ? montarLinkWhatsappPedido(gravado, loja)?.href ?? null
-          : null;
-      } catch (e) {
-        // §14: log server-side com prefixo próprio, nada vaza ao cliente.
-        console.error("[criarPedido:whatsapp]", e);
-      }
-    }
-
     return {
       pedidoId,
       token_acesso: tokenAcesso,
-      whatsappHref,
       ...(avisoCupom ? { avisoCupom } : {}),
     };
   } catch (e) {
