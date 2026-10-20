@@ -81,6 +81,10 @@ Repo **público**: issue vive só em `tasks/`, nunca é criada no GitHub (achado
   que não toca código — remover issue entregue de `tasks/`, arquivar issue engavetada,
   atualizar `references/`, `plan/` (**exceto** `seguranca-auditoria-*.md` — nunca, ver regra acima),
   `performance/` — commita direto no `main` e dá push.
+- **Push direto no `main` por ordem explícita.** Se o usuário mandar explicitamente empurrar
+  direto (ex.: "pode empurrar na main"), commita e dá push no `main` sem PR, mesmo sendo
+  código — sem perguntar de novo. Os gates locais (tsc → lint → test → build) continuam
+  valendo antes do push. Sem a ordem explícita, vale a regra do PR acima.
 - `main` local e remoto andam juntos: **dê push antes de abrir branch de trabalho.**
   `main` à frente do `origin/main` faz o squash do PR engolir o commit local (aconteceu
   no PR #126, que absorveu um `docs(188)` não relacionado).
