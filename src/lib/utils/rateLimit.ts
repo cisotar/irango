@@ -130,7 +130,8 @@ function obterLimitador(chave: ChaveRateLimit): Ratelimit {
 }
 
 /**
- * Verifica a trava de rate limit para `identificador` (IP ou `dono_id`, conforme a chave) na `chave` da action.
+ * Verifica a trava de rate limit para `identificador` na `chave` da action
+ * (IP ou `dono_id` do lojista, conforme a chave).
  *   - dentro do limite (Upstash success:true)  → { permitido: true }
  *   - excedeu (Upstash success:false)           → { permitido: false }
  *   - sem credenciais / Redis indisponível/erro → { permitido: true } (FAIL-OPEN)
