@@ -1104,15 +1104,21 @@ describe("[274] definirDiasDoVinculoAdmin — escopo pela TRIPLA e recusa por co
     spy.mockRestore();
   });
 
-  it("R4: `count` ausente (`null`/`undefined`) NÃO recusa — a recusa é em `0` estrito", async () => {
+  it("R4 [283]: `count` diferente de 1 (`null`/`undefined`/`NaN`) recusa, sem log nem revalidate", async () => {
     const definir = await definirDias();
-    for (const count of [null, undefined]) {
+    const { revalidatePath } = await import("next/cache");
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const count of [null, undefined, Number.NaN]) {
       ops = [];
+      vi.mocked(revalidatePath).mockClear();
       vinculoResponde(count);
-      expect(await definir(LOJA_ALVO, diasDo()), `count: ${count} não pode recusar`).toEqual({
-        ok: true,
+      expect(await definir(LOJA_ALVO, diasDo()), `count: ${count} deve recusar`).toMatchObject({
+        ok: false,
       });
+      expect(revalidatePath).not.toHaveBeenCalled();
     }
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it("A15 (D9): o sucesso revalida o DETALHE concreto do cardápio na loja-alvo", async () => {

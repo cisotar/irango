@@ -631,7 +631,7 @@ export async function converterExclusivosParaMenu(
  *
  * A posse é provada PELA PRÓPRIA ESCRITA (D6): o UPDATE é
  * `where loja_id ∧ cardapio_id ∧ produto_id` com `count: "exact"`, e
- * `count === 0` É a recusa. Isso é estritamente mais forte que o gate
+ * `count !== 1` É a recusa. Isso é estritamente mais forte que o gate
  * `cardapioPertenceALoja` das actions de lote — que existe lá porque
  * `ON CONFLICT DO NOTHING` descarta a linha antes da FK e porque um DELETE de
  * zero linhas termina mudo — e custa um round trip a MENOS, sem a janela
@@ -674,9 +674,10 @@ export async function definirDiasDoVinculo(
       console.error("[definirDiasDoVinculo]", error);
       return { ok: false, erro: MSG_DIAS_DO_VINCULO };
     }
-    // Sem log: `count === 0` não é erro de servidor, é um id que não existe
-    // NESTA loja. `count` ausente não recusa (R4).
-    if (count === 0) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+    // Sem log: `count !== 1` não é erro de servidor, é um id que não existe
+    // NESTA loja. `unique (cardapio_id, produto_id)` garante ≤ 1 linha; `null`
+    // e `NaN` (header `Content-Range` ausente/`*/*`) recusam — fail-closed.
+    if (count !== 1) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
 
     revalidarCaminhosDoCardapio(loja.slug, cardapio_id);
     return { ok: true };

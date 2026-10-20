@@ -653,7 +653,7 @@ export async function preverLoteAdmin(
  *  3. as FKs compostas `(cardapio_id, loja_id)` / `(produto_id, loja_id)`, que
  *     valem sob qualquer role: a linha da loja A só referencia cardápio e
  *     produto da loja A;
- *  4. `count === 0` ⇒ recusa, ANTES do log e de qualquer `revalidatePath` — um
+ *  4. `count !== 1` ⇒ recusa, ANTES do log e de qualquer `revalidatePath` — um
  *     id-probe de outro tenant não vira linha em `admin_acessos` nem oráculo
  *     de existência (a frase de alheio é a de inexistente, byte a byte).
  *
@@ -685,8 +685,9 @@ export async function definirDiasDoVinculoAdmin(
       return { ok: false, erro: MSG_DIAS_DO_VINCULO };
     }
     // Sem `console.error`: o servidor não aprendeu nada que valha registro.
-    // `count` ausente NÃO recusa (R4).
-    if (count === 0) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
+    // `count !== 1`: `unique (cardapio_id, produto_id)` garante ≤ 1 linha; `null`
+    // e `NaN` recusam — fail-closed.
+    if (count !== 1) return { ok: false, erro: MSG_DIAS_DO_VINCULO };
 
     registrarAcessoAdmin(svc, {
       lojaId: loja.lojaId,
