@@ -7,9 +7,9 @@
  * Tailwind v4 varre `.ts` e as classes aparecem literalmente aqui, então a
  * geração de CSS não muda.
  *
- * `VitrineClient.tsx` fica de fora: a barra do carrinho é `fixed` e usa a
- * escada sem `px-4`/`py-*`; unificar exigiria mexer no rodapé do carrinho, que
- * não é desta issue (follow-up).
+ * A barra fixa do carrinho (`VitrineClient.tsx`) também usa a escada, num
+ * `<div>` interno com `px-4`: o fundo vai de ponta a ponta, como o header, e o
+ * conteúdo alinha com a coluna do `<main>`.
  */
 
 /** Centralização + escada de largura responsiva do conteúdo da vitrine. */
