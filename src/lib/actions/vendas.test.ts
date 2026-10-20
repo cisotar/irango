@@ -52,6 +52,11 @@ vi.mock("@/lib/supabase/queries/lojas", async (orig) => ({
   buscarLojaDoDono: (...a: unknown[]) => buscarLojaDoDono(...a),
 }));
 
+const verificarRateLimit = vi.fn();
+vi.mock("@/lib/utils/rateLimit", () => ({
+  verificarRateLimit: (...a: unknown[]) => verificarRateLimit(...a),
+}));
+
 const revalidatePath = vi.fn();
 vi.mock("next/cache", () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a), revalidateTag: vi.fn() }));
 
@@ -67,6 +72,7 @@ let consoleError: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  verificarRateLimit.mockReset().mockResolvedValue({ permitido: true });
   ops = [];
   resposta = { data: null, error: null, count: 1 };
   buscarLojaDoDono.mockResolvedValue({ id: LOJA_DA_SESSAO, dono_id: "dono", dia_inicio_ciclo: 1 });
@@ -127,5 +133,29 @@ describe("salvarCicloVendas (lojista)", () => {
     expect(r).toEqual({ ok: false, erro: ERRO_GENERICO });
     expect(JSON.stringify(r)).not.toContain("detalhe interno");
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("salvarCicloVendas — rate limit por lojista (360)", () => {
+  it("balde `preferenciasPainel` chaveado pelo dono da loja da sessão", async () => {
+    const { salvarCicloVendas } = await carregar();
+    await salvarCicloVendas({ dia_inicio_ciclo: 5 });
+    expect(verificarRateLimit).toHaveBeenCalledWith("preferenciasPainel", "dono");
+  });
+
+  it("estourou → erro genérico, nenhum update", async () => {
+    const { salvarCicloVendas } = await carregar();
+    verificarRateLimit.mockResolvedValueOnce({ permitido: false });
+    const r = await salvarCicloVendas({ dia_inicio_ciclo: 5 });
+    expect(r).toEqual({ ok: false, erro: ERRO_GENERICO });
+    expect(JSON.stringify(r)).not.toMatch(/limite|rate|redis/i);
+    expect(updates()).toHaveLength(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("payload inválido não gasta cota", async () => {
+    const { salvarCicloVendas } = await carregar();
+    await salvarCicloVendas({ dia_inicio_ciclo: 29 });
+    expect(verificarRateLimit).not.toHaveBeenCalled();
   });
 });

@@ -213,6 +213,9 @@ export async function salvarHorarios(payload: unknown): Promise<ResultadoSalvar>
 
     const loja = await buscarLojaDoDono(supabase);
     if (!loja) return { ok: false, erro: ERRO_SEM_LOJA };
+    if (!(await verificarRateLimit("preferenciasPainel", loja.dono_id)).permitido) {
+      return { ok: false, erro: ERRO_GENERICO };
+    }
 
     const patch = { horarios } satisfies Record<string, unknown>;
     // .eq("id") obrigatório: PostgREST recusa UPDATE sem WHERE (21000).
@@ -238,6 +241,9 @@ export async function salvarTema(payload: unknown): Promise<ResultadoSalvar> {
 
     const loja = await buscarLojaDoDono(supabase);
     if (!loja) return { ok: false, erro: ERRO_SEM_LOJA };
+    if (!(await verificarRateLimit("preferenciasPainel", loja.dono_id)).permitido) {
+      return { ok: false, erro: ERRO_GENERICO };
+    }
 
     const patch = { tema } satisfies Record<string, unknown>;
     // .eq("id") obrigatório: PostgREST recusa UPDATE sem WHERE (21000).

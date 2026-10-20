@@ -28,10 +28,12 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { montarPatchModalidades } from "@/lib/actions/patches-loja";
+import { verificarRateLimit } from "@/lib/utils/rateLimit";
 
 export type ResultadoEntrega = { ok: true } | { ok: false; erro: string };
 
 const ROTA = "/painel/configuracoes/entregas";
+const ERRO_MODALIDADES = "Não foi possível salvar as modalidades de entrega.";
 
 /**
  * Liga/desliga retirada e entrega e escolhe o modo do frete (spec
@@ -56,20 +58,23 @@ export async function salvarModalidadesEntrega(
     if (loja == null) {
       return { ok: false, erro: "Loja não encontrada." };
     }
+    if (!(await verificarRateLimit("preferenciasPainel", loja.dono_id)).permitido) {
+      return { ok: false, erro: ERRO_MODALIDADES };
+    }
     const { error } = await supabase
       .from("lojas")
       .update(montarPatchModalidades(parsed.data))
       .eq("id", loja.id);
     if (error) {
       console.error("[salvarModalidadesEntrega]", error);
-      return { ok: false, erro: "Não foi possível salvar as modalidades de entrega." };
+      return { ok: false, erro: ERRO_MODALIDADES };
     }
     revalidatePath(ROTA);
     revalidatePath("/loja/[slug]", "page");
     return { ok: true };
   } catch (e) {
     console.error("[salvarModalidadesEntrega]", e);
-    return { ok: false, erro: "Não foi possível salvar as modalidades de entrega." };
+    return { ok: false, erro: ERRO_MODALIDADES };
   }
 }
 
