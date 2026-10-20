@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { sentryBeforeSend } from "@/lib/utils/sentryBeforeSend";
+import { sentryBeforeSend, sentryBeforeSendTransaction } from "@/lib/utils/sentryBeforeSend";
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -7,4 +7,5 @@ Sentry.init({
   tracesSampleRate: 0.1,
   sendDefaultPii: false,
   beforeSend: sentryBeforeSend,
+  beforeSendTransaction: sentryBeforeSendTransaction,
 });

@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { sentryBeforeSend } from "@/lib/utils/sentryBeforeSend";
+import { sentryBeforeSend, sentryBeforeSendTransaction } from "@/lib/utils/sentryBeforeSend";
 
 // DSN ausente (dev local sem conta Sentry) → `init` vira no-op silencioso.
 // O app NUNCA quebra por falta da var (issue 061).
@@ -10,4 +10,5 @@ Sentry.init({
   // Nunca capturar IP/cookies/headers automaticamente. Scrubbing reforçado no beforeSend.
   sendDefaultPii: false,
   beforeSend: sentryBeforeSend,
+  beforeSendTransaction: sentryBeforeSendTransaction,
 });
