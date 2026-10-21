@@ -39,7 +39,7 @@ export function LinkMapsLoja({ loja, className }: LinkMapsLojaProps) {
       target="_blank"
       rel="noopener noreferrer"
       className={[
-        "mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-destaque underline underline-offset-2",
+        "mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-primaria underline underline-offset-2",
         className ?? "",
       ].join(" ")}
     >

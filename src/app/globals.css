@@ -12,9 +12,9 @@
    ============================================================ */
 :root {
   /* Tema por loja (customizável) — defaults */
-  --cor-primaria: #332616; /* banda header/rodapé (marrom espresso) */
+  --cor-primaria: #332616; /* header, CTA, barra do carrinho, botão +, foco (marrom espresso) */
   --cor-fundo: #f5f0e6; /* fundo da página (creme) */
-  --cor-destaque: #2d3a27; /* preço, CTA, barra carrinho (verde militar) */
+  --cor-destaque: #2d3a27; /* legado, sem uso na vitrine nem no painel (ver specs/vitrine-cor-unica-primaria.md RN-8) */
 
   /* Sistema (fixo, não depende do tema da loja) */
   --marrom-cafe: #2e2610; /* título de seção, linha gradiente */
@@ -83,11 +83,12 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* Mapeia os tokens pras utilities do Tailwind (bg-primaria, text-destaque, etc.) */
+/* Mapeia os tokens pras utilities do Tailwind (bg-primaria, text-preto, etc.) */
 @theme inline {
   --color-primaria: var(--cor-primaria);
   --color-fundo: var(--cor-fundo);
   --color-destaque: var(--cor-destaque);
+  --color-preto: var(--preto);
   --color-marrom-cafe: var(--marrom-cafe);
   --color-texto: var(--texto);
   --color-texto-muted: var(--texto-muted);

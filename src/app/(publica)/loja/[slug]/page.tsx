@@ -339,6 +339,7 @@ export default async function VitrinePage({ params }: PageProps) {
     <>
       {/* Tema da loja injetado via CSS custom properties no SSR (design-system §4).
           Valores validados como #RRGGBB na escrita — sem risco de injeção. */}
+      {/* --cor-destaque é legado, sem consumidor na vitrine (specs/vitrine-cor-unica-primaria.md RN-8). */}
       <style>{`:root{--cor-primaria:${tema.primaria};--cor-fundo:${tema.fundo};--cor-destaque:${tema.destaque};}`}</style>
 
       <div className="min-h-screen bg-[var(--cor-fundo)]">

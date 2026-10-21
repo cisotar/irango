@@ -5,7 +5,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { OUTRO_ENDERECO, type EnderecoClienteCheckout } from "./clienteCheckout";
 
 const CLASSE_OPCAO =
-  "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5";
+  "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-primaria)] has-[[data-checked]]:bg-[var(--cor-primaria)]/5";
 
 /**
  * (343) Escolha entre os ≤3 endereços salvos do cliente ou "Usar outro

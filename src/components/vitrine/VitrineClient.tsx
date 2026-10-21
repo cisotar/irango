@@ -123,13 +123,13 @@ export function VitrineClient({
   return (
     <>
       {/* Barra de carrinho fixa no rodapé (design-claude/vitrine/barra-carrinho.html):
-          cor de destaque, qtd + total à esquerda, "Ver carrinho" à direita. Fundo
+          cor primária, qtd + total à esquerda, "Ver carrinho" à direita. Fundo
           de ponta a ponta como o header; o conteúdo segue a coluna do <main>. O
           total é preview de UX — o servidor recalcula no checkout (seguranca §10). */}
       {totalItens > 0 && (
         <nav
           aria-label="Resumo do carrinho"
-          className="fixed inset-x-0 bottom-0 z-40 flex min-h-16 items-center bg-[var(--cor-destaque)] py-3 text-[#f5f0e6] shadow-[0_-4px_16px_rgba(0,0,0,0.2)]"
+          className="fixed inset-x-0 bottom-0 z-40 flex min-h-16 items-center bg-[var(--cor-primaria)] py-3 text-[#f5f0e6] shadow-[0_-4px_16px_rgba(0,0,0,0.2)]"
         >
           <div
             className={`${ESCADA_LARGURA_VITRINE} flex items-center justify-between gap-3 px-4`}

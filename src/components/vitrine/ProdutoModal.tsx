@@ -338,7 +338,7 @@ export function ProdutoModal({
                 <button
                   type="button"
                   onClick={() => setDescricaoExpandida((v) => !v)}
-                  className="mt-1 text-xs font-semibold text-[var(--cor-destaque)]"
+                  className="mt-1 text-xs font-semibold text-[var(--cor-primaria)]"
                 >
                   {descricaoExpandida ? "ver menos" : "ver mais"}
                 </button>
@@ -427,7 +427,7 @@ export function ProdutoModal({
                       // real 44px via pseudo-elemento (design-system §5), sem
                       // inflar o visual do controle. `rounded-l` acompanha o
                       // raio do grupo (sem overflow-hidden, que cortaria o alvo).
-                      className="relative rounded-l-[8.5px] rounded-r-none text-[var(--cor-destaque)] after:absolute after:-inset-1.5 after:content-['']"
+                      className="relative rounded-l-[8.5px] rounded-r-none text-[var(--cor-primaria)] after:absolute after:-inset-1.5 after:content-['']"
                     >
                       <Minus aria-hidden />
                     </Button>
@@ -446,7 +446,7 @@ export function ProdutoModal({
                       aria-label="Aumentar quantidade"
                       disabled={!disponivel}
                       onClick={() => setQuantidade((q) => q + 1)}
-                      className="relative rounded-r-[8.5px] rounded-l-none text-[var(--cor-destaque)] after:absolute after:-inset-1.5 after:content-['']"
+                      className="relative rounded-r-[8.5px] rounded-l-none text-[var(--cor-primaria)] after:absolute after:-inset-1.5 after:content-['']"
                     >
                       <Plus aria-hidden />
                     </Button>
@@ -480,7 +480,7 @@ export function ProdutoModal({
                     onFocus={aoFocarObservacao}
                     placeholder="Ex: sem cebola, ponto da carne…"
                     aria-describedby="observacao-produto-ajuda observacao-produto-contador"
-                    className="min-h-[76px] resize-none border-[var(--borda-nav)] bg-white text-sm text-[var(--texto)] placeholder:text-[var(--texto-muted)] focus-visible:border-[var(--cor-destaque)] focus-visible:ring-[var(--cor-destaque)]/30"
+                    className="min-h-[76px] resize-none border-[var(--borda-nav)] bg-white text-sm text-[var(--texto)] placeholder:text-[var(--texto-muted)] focus-visible:border-[var(--cor-primaria)] focus-visible:ring-[var(--cor-primaria)]/30"
                   />
                   <div className="mt-1.5 flex items-start justify-between gap-3">
                     <p
@@ -525,7 +525,7 @@ export function ProdutoModal({
                     type="button"
                     disabled
                     aria-label={`Carrinho cheio — o pedido aceita no máximo ${MAX_ITENS_PEDIDO} itens diferentes`}
-                    className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white disabled:bg-[#9a9a9a]"
+                    className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-primaria)] px-5 text-base font-black text-white disabled:bg-[#9a9a9a]"
                   >
                     Carrinho cheio
                   </Button>
@@ -541,7 +541,7 @@ export function ProdutoModal({
                   type="button"
                   onClick={confirmar}
                   aria-label={`Adicionar ${quantidade} ${produto.nome} ao carrinho por ${formatarMoeda(subtotal)}`}
-                  className="flex min-h-[52px] w-full items-center justify-between gap-2 rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white hover:bg-[var(--cor-destaque)]/90"
+                  className="flex min-h-[52px] w-full items-center justify-between gap-2 rounded-xl bg-[var(--cor-primaria)] px-5 text-base font-black text-white hover:bg-[var(--cor-primaria)]/90"
                 >
                   <span>Adicionar ao carrinho</span>
                   <span>{formatarMoeda(subtotal)}</span>
@@ -556,7 +556,7 @@ export function ProdutoModal({
                     produto.motivoNaoCompravel,
                     produto.rotuloIndisponivel,
                   )} — não é possível adicionar ao carrinho`}
-                  className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-destaque)] px-5 text-base font-black text-white disabled:bg-[#9a9a9a]"
+                  className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[var(--cor-primaria)] px-5 text-base font-black text-white disabled:bg-[#9a9a9a]"
                 >
                   {/* Rótulo CURTO: a frase de vigência inteira mora no selo
                       central e no `aria-label` — nunca num botão. */}
@@ -567,7 +567,7 @@ export function ProdutoModal({
                 type="button"
                 variant="ghost"
                 onClick={() => onOpenChange(false)}
-                className="min-h-11 w-full text-sm font-bold uppercase tracking-wide text-[var(--cor-destaque)] hover:bg-[var(--cor-destaque)]/5"
+                className="min-h-11 w-full text-sm font-bold uppercase tracking-wide text-[var(--cor-primaria)] hover:bg-[var(--cor-primaria)]/5"
               >
                 Mais itens
               </Button>

@@ -136,7 +136,7 @@ export function ModalFreteIndisponivel({
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-[var(--cor-destaque)] px-4 text-sm font-bold text-white hover:bg-[var(--cor-destaque)]/90"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-[var(--cor-primaria)] px-4 text-sm font-bold text-white hover:bg-[var(--cor-primaria)]/90"
             >
               Falar com a loja no WhatsApp
             </a>

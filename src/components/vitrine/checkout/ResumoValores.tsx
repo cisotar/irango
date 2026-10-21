@@ -97,7 +97,7 @@ export function ResumoValores({
 
       <div className="flex justify-between">
         <span className="text-texto-muted">Subtotal</span>
-        <span className="text-texto">{formatarMoeda(subtotal)}</span>
+        <span className="text-preto">{formatarMoeda(subtotal)}</span>
       </div>
 
       {economiaProdutos != null && economiaProdutos > 0 && (
@@ -143,7 +143,7 @@ export function ResumoValores({
                 onClick={() => setDetalhesAbertos((v) => !v)}
                 aria-expanded={detalhesAbertos}
                 aria-controls={idDetalhes}
-                className="inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-texto-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cor-destaque)]"
+                className="inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-texto-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cor-primaria)]"
               >
                 <ChevronRight
                   aria-hidden
@@ -158,7 +158,7 @@ export function ResumoValores({
                   {detalhamento.map((linha) => (
                     <div key={linha.rotulo} className="flex justify-between gap-3">
                       <dt className="text-texto-muted">{linha.rotulo}</dt>
-                      <dd className="shrink-0 tabular-nums text-texto">
+                      <dd className="shrink-0 tabular-nums text-preto">
                         {linha.valor}
                       </dd>
                     </div>
@@ -173,7 +173,7 @@ export function ResumoValores({
       {mostrarFrete && (
         <div className="flex justify-between">
           <span className="text-texto-muted">Entrega</span>
-          <span className="text-texto">
+          <span className="text-preto">
             {frete === "a_combinar"
               ? ROTULO_FRETE_A_COMBINAR_CURTO
               : formatarMoeda(frete)}
@@ -187,7 +187,7 @@ export function ResumoValores({
         <span className="text-base font-extrabold text-marrom-cafe">
           Total estimado
         </span>
-        <span className="text-base font-black text-[var(--cor-destaque)]">
+        <span className="text-base font-black text-preto">
           {formatarMoeda(total)}
         </span>
       </div>

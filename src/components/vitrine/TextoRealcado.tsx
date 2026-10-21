@@ -19,7 +19,7 @@ type TextoRealcadoProps = {
  * `truncate` (lista) continuam funcionando.
  */
 const ESTILO_MARCA =
-  "rounded-[3px] bg-cinza-medio px-0.5 text-inherit underline decoration-2 underline-offset-2 decoration-[var(--cor-destaque)]";
+  "rounded-[3px] bg-cinza-medio px-0.5 text-inherit underline decoration-2 underline-offset-2 decoration-[var(--cor-primaria)]";
 
 /**
  * Projeta o casamento de `partirPorTermo` (199) em nós React, envolvendo o

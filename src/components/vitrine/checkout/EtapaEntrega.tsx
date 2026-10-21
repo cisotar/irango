@@ -345,7 +345,7 @@ export function EtapaEntrega({
                   href={hrefWhatsappLoja}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-h-11 items-center font-bold text-[var(--cor-destaque)] underline underline-offset-2"
+                  className="inline-flex min-h-11 items-center font-bold text-[var(--cor-primaria)] underline underline-offset-2"
                 >
                   Falar com a loja no WhatsApp
                 </a>
@@ -361,7 +361,7 @@ export function EtapaEntrega({
             {aceitaEntrega && (
               <Label
                 htmlFor="tipo-entrega"
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-primaria)] has-[[data-checked]]:bg-[var(--cor-primaria)]/5"
               >
                 <RadioGroupItem value="entrega" id="tipo-entrega" />
                 <span className="flex-1">
@@ -377,7 +377,7 @@ export function EtapaEntrega({
             {aceitaRetirada && (
               <Label
                 htmlFor="tipo-retirada"
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-primaria)] has-[[data-checked]]:bg-[var(--cor-primaria)]/5"
               >
                 <RadioGroupItem value="retirada" id="tipo-retirada" />
                 <span className="flex-1">
@@ -449,7 +449,7 @@ export function EtapaEntrega({
             {frete.status === "ok" && (
               <p className="text-xs text-texto-muted">
                 Frete estimado para <strong>{frete.zonaNome}</strong>:{" "}
-                {formatarMoeda(frete.taxa)}
+                <span className="text-preto">{formatarMoeda(frete.taxa)}</span>
               </p>
             )}
             {frete.status === "a_combinar" &&
@@ -473,7 +473,7 @@ export function EtapaEntrega({
                     href={hrefWhatsappLoja}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center text-xs font-bold text-[var(--cor-destaque)] underline underline-offset-2"
+                    className="inline-flex min-h-11 items-center text-xs font-bold text-[var(--cor-primaria)] underline underline-offset-2"
                   >
                     Falar com a loja no WhatsApp
                   </a>
@@ -520,7 +520,7 @@ export function EtapaEntrega({
             <Button
               type="button"
               size="lg"
-              className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+              className="h-14 w-full rounded-xl bg-[var(--cor-primaria)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-primaria)]/90"
               disabled={!podeAvancar}
               onClick={onContinuar}
             >
@@ -530,7 +530,7 @@ export function EtapaEntrega({
               type="button"
               variant="outline"
               size="lg"
-              className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+              className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-primaria)] hover:text-[var(--cor-primaria)]"
               onClick={onVoltar}
             >
               Voltar para itens

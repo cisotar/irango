@@ -73,7 +73,7 @@ const ESTILO_CHIP_ATIVO: CSSProperties = {
 };
 
 const CLASSES_CHIP =
-  "inline-flex min-h-[44px] flex-none items-center justify-center rounded-full border-[1.5px] px-[0.95rem] text-[0.78rem] font-bold tracking-[0.04em] whitespace-nowrap uppercase transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-destaque";
+  "inline-flex min-h-[44px] flex-none items-center justify-center rounded-full border-[1.5px] px-[0.95rem] text-[0.78rem] font-bold tracking-[0.04em] whitespace-nowrap uppercase transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primaria";
 
 // Ativo = cor da loja com TEXTO BRANCO FIXO (RN-7 / design-system §4: nunca
 // derivar do tema, que pode ter fundo escuro).

@@ -73,9 +73,9 @@ Cada loja personaliza **três cores** da vitrine, salvas em `lojas.tema` (JSONB)
 ```jsonc
 // lojas.tema
 {
-  "primaria": "#RRGGBB",  // cor de marca: CTA, links, destaque de ação
+  "primaria": "#RRGGBB",  // cor de marca: CTA, links, header, barra do carrinho, controles, foco
   "fundo":    "#RRGGBB",  // cor de fundo da vitrine
-  "destaque": "#RRGGBB"   // cor de ênfase secundária (badges de marca, realces)
+  "destaque": "#RRGGBB"   // legado: sem efeito na vitrine e oculta no painel (specs/vitrine-cor-unica-primaria.md RN-8)
 }
 ```
 
@@ -91,9 +91,9 @@ Nomenclatura das variáveis (**proposta** — padronizar antes de implementar):
 
 | Variável CSS | Origem (`lojas.tema`) | Uso |
 |--------------|-----------------------|-----|
-| `--cor-primaria` | `primaria` | CTA, links, realce de ação na vitrine |
+| `--cor-primaria` | `primaria` | CTA, links, header, barra do carrinho, controles e foco na vitrine |
 | `--cor-fundo` | `fundo` | fundo da vitrine |
-| `--cor-destaque` | `destaque` | ênfase secundária (badge de marca, realce) |
+| `--cor-destaque` | `destaque` | legado, sem efeito (dado mantido em `lojas.tema`, campo oculto no painel) |
 
 Consumo em componente de vitrine (**proposta** de padrão):
 
@@ -120,7 +120,8 @@ O lojista escolhe as cores; elas **podem falhar contraste**. Caso clássico: `pr
 
 - **Não** confiar só na cor escolhida para legibilidade de texto.
 - Texto sobre `--cor-primaria` deve usar uma cor de texto de alto contraste fixada pelo componente (ex.: branco), não derivada do tema.
-- **Proposta:** na tela de tema, avisar o lojista quando a combinação `primaria`×`fundo` ficar abaixo do mínimo AA (aviso de UX, não bloqueio), e/ou aplicar uma cor de texto automática (preto/branco) conforme a luminância da cor de fundo do botão. Decidir na revisão.
+- **Decisão (D-1):** a tela de tema avisa o lojista, sem bloquear o salvamento, quando o texto branco sobre `primaria` fica abaixo de 4.5:1 (`razaoContraste`). A vitrine não calcula luminância.
+- **Valor monetário:** sempre `--preto` (`text-preto`), não tematizável. Exceções: preço antigo riscado, economia/desconto/cupom (`promo-texto`), item indisponível riscado e valor dentro de botão colorido.
 
 ---
 

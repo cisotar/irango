@@ -191,6 +191,7 @@ describe("262 ItemProdutoLista — a mesma pílula, inline, na variante textual"
     expect(html).toContain("bg-indisponivel-fundo");
     expect(html).toContain("text-indisponivel-texto");
     expect(html).not.toContain("var(--cor-destaque)");
+    expect(html).not.toContain("cor-primaria");
   });
 
   it("imprime a frase do servidor e a anuncia uma vez só, no texto acessível", () => {

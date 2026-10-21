@@ -27,7 +27,7 @@ import { textoResumoBusca } from "@/components/vitrine/resumoBusca";
 // Foco visível único dos três controles (critério de aceite): 3px da cor de
 // destaque com 2px de folga, mesmo precedente dos chips de `NavCategorias`.
 const FOCO_VISIVEL =
-  "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-destaque";
+  "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primaria";
 
 // 44px LITERAL, nunca `min-h-11`: a base do projeto é 120%, onde `min-h-11`
 // vira 52,8px — mais folgado que a régua, e portanto não é a régua.
@@ -170,7 +170,7 @@ export function EstadoVazioBusca({ termo, aoLimpar }: EstadoVazioBuscaProps) {
       <button
         type="button"
         onClick={aoLimpar}
-        className={`mt-1 inline-flex ${ALVO_44} items-center rounded-xl bg-destaque px-5 text-sm font-bold tracking-wide uppercase text-white ${FOCO_VISIVEL}`}
+        className={`mt-1 inline-flex ${ALVO_44} items-center rounded-xl bg-primaria px-5 text-sm font-bold tracking-wide uppercase text-white ${FOCO_VISIVEL}`}
       >
         Ver cardápio completo
       </button>

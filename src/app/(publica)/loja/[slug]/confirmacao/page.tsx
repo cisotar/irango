@@ -177,7 +177,7 @@ export default async function ConfirmacaoPage({
       <Card>
         <CardHeader className="items-center text-center">
           <CheckCircle
-            className="mx-auto size-12 text-destaque"
+            className="mx-auto size-12 text-primaria"
             aria-hidden="true"
           />
           <CardTitle className="mt-2 text-xl">Pedido confirmado!</CardTitle>
@@ -215,7 +215,7 @@ export default async function ConfirmacaoPage({
                     <span>
                       {item.quantidade}× {item.nome}
                     </span>
-                    <span>{formatarMoeda(totalItem)}</span>
+                    <span className="text-preto">{formatarMoeda(totalItem)}</span>
                   </div>
                   {dePor && (
                     <p className="text-xs text-muted-foreground">{dePor}</p>
@@ -235,12 +235,12 @@ export default async function ConfirmacaoPage({
           <dl className="flex flex-col gap-1 text-sm">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Subtotal</dt>
-              <dd>{formatarMoeda(ped.subtotal)}</dd>
+              <dd className="text-preto">{formatarMoeda(ped.subtotal)}</dd>
             </div>
             {ped.desconto > 0 && (
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Desconto</dt>
-                <dd>-{formatarMoeda(ped.desconto)}</dd>
+                <dd className="text-preto">-{formatarMoeda(ped.desconto)}</dd>
               </div>
             )}
             <div className="flex justify-between">
@@ -249,7 +249,7 @@ export default async function ConfirmacaoPage({
                   ? "Taxa de entrega"
                   : "Entrega"}
               </dt>
-              <dd>
+              <dd className="text-preto">
                 {/* [180-B] "a combinar" é distinguível de frete GRÁTIS: a
                     etiqueta vem de `frete_a_combinar`, nunca de taxa === 0. */}
                 {!freteConhecido(ped)
@@ -261,7 +261,7 @@ export default async function ConfirmacaoPage({
             </div>
             <div className="flex justify-between text-base font-semibold">
               <dt>Total</dt>
-              <dd>{formatarMoeda(ped.total)}</dd>
+              <dd className="text-preto">{formatarMoeda(ped.total)}</dd>
             </div>
           </dl>
           {/* (spec modalidades-entrega-loja) Pedido gravado com frete a

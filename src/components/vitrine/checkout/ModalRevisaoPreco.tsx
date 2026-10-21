@@ -81,7 +81,7 @@ export function ModalRevisaoPreco({
               <span className="sr-only">{descricaoMudanca(item)}</span>
               <span aria-hidden className="text-texto-muted">
                 de <s>{formatarMoeda(item.de)}</s>{" "}
-                <span className="font-bold text-texto">
+                <span className="font-bold text-preto">
                   → {formatarMoeda(item.para)}
                 </span>
               </span>
@@ -93,7 +93,7 @@ export function ModalRevisaoPreco({
           <span className="text-sm font-extrabold text-texto">
             {ROTULO_NOVO_TOTAL}
           </span>
-          <span className="text-base font-black text-[var(--cor-destaque)]">
+          <span className="text-base font-black text-preto">
             {formatarMoeda(novoTotal)}
           </span>
         </div>
@@ -101,7 +101,7 @@ export function ModalRevisaoPreco({
         <DialogFooter className="flex-col gap-2 sm:flex-col">
           <Button
             type="button"
-            className="h-13 min-h-13 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-bold text-white hover:bg-[var(--cor-destaque)]/90"
+            className="h-13 min-h-13 w-full rounded-xl bg-[var(--cor-primaria)] text-base font-bold text-white hover:bg-[var(--cor-primaria)]/90"
             disabled={enviando}
             onClick={onConfirmar}
           >

@@ -71,7 +71,7 @@ export function SecaoOpcionais({
                 // (#eeeeee sobre #f9f9f9) tem o MESMO peso do filete entre itens
                 // dentro do grupo, e a hierarquia some com 2+ grupos abertos.
                 // `data-open` (item aberto) marca a cor e o trilho de acento.
-                className="relative overflow-hidden rounded-xl border-[1.5px] border-[#e5ddc9] bg-white not-last:border-b-0 before:absolute before:inset-y-0 before:left-0 before:w-0 before:bg-[var(--cor-destaque)] data-open:border-[var(--cor-destaque)] data-open:shadow-[0_2px_8px_rgba(45,58,39,0.12)] data-open:before:w-1"
+                className="relative overflow-hidden rounded-xl border-[1.5px] border-[#e5ddc9] bg-white not-last:border-b-0 before:absolute before:inset-y-0 before:left-0 before:w-0 before:bg-[var(--cor-primaria)] data-open:border-[var(--cor-primaria)] data-open:shadow-[0_2px_8px_rgba(45,58,39,0.12)] data-open:before:w-1"
               >
                 <AccordionTrigger
                   aria-label={rotuloGrupoOpcional(
@@ -89,7 +89,7 @@ export function SecaoOpcionais({
                   {escolhidos > 0 ? (
                     <Badge
                       aria-hidden
-                      className="bg-[var(--cor-destaque)] text-white tabular-nums"
+                      className="bg-[var(--cor-primaria)] text-white tabular-nums"
                     >
                       {escolhidos} {escolhidos > 1 ? "escolhidos" : "escolhido"}
                     </Badge>
@@ -148,7 +148,7 @@ function LinhaOpcional({
     <div className="flex items-center justify-between gap-3 border-b border-[#eeeeee] py-2.5 last:border-b-0">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-[var(--texto)]">{opcional.nome}</p>
-        <p className="mt-0.5 text-xs font-bold text-[var(--cor-destaque)]">
+        <p className="mt-0.5 text-xs font-bold text-preto">
           + {formatarMoeda(opcional.preco)}
         </p>
       </div>
@@ -168,7 +168,7 @@ function LinhaOpcional({
           // via pseudo-elemento — hoje `size-7` dava 33,6px, abaixo do alvo
           // mínimo do design-system §5. Sem overflow-hidden no grupo (cortaria
           // o alvo estendido); os cantos externos ganham o raio do grupo.
-          className="relative rounded-l-[8.5px] rounded-r-none text-[var(--cor-destaque)] after:absolute after:-inset-1.5 after:content-['']"
+          className="relative rounded-l-[8.5px] rounded-r-none text-[var(--cor-primaria)] after:absolute after:-inset-1.5 after:content-['']"
         >
           <Minus aria-hidden />
         </Button>
@@ -186,7 +186,7 @@ function LinhaOpcional({
           size="icon"
           aria-label={`Adicionar ${opcional.nome}`}
           onClick={() => onAjustar(opcional.id, 1)}
-          className="relative rounded-r-[8.5px] rounded-l-none text-[var(--cor-destaque)] after:absolute after:-inset-1.5 after:content-['']"
+          className="relative rounded-r-[8.5px] rounded-l-none text-[var(--cor-primaria)] after:absolute after:-inset-1.5 after:content-['']"
         >
           <Plus aria-hidden />
         </Button>

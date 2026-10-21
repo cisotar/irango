@@ -44,6 +44,7 @@ export function PreviewVitrine({
   const variaveis = {
     "--cor-primaria": tema.primaria,
     "--cor-fundo": tema.fundo,
+    // Legado, sem efeito na vitrine (specs/vitrine-cor-unica-primaria.md RN-8).
     "--cor-destaque": tema.destaque,
   } as CSSProperties;
 
@@ -114,13 +115,13 @@ export function PreviewVitrine({
               <div className="mt-1 flex items-center justify-between">
                 <span
                   className="text-xs font-bold"
-                  style={{ color: "var(--cor-destaque)" }}
+                  style={{ color: "var(--preto)" }}
                 >
                   {prod.preco}
                 </span>
                 <span
                   className="flex size-6 items-center justify-center rounded text-xs font-bold text-white"
-                  style={{ backgroundColor: "var(--cor-destaque)" }}
+                  style={{ backgroundColor: "var(--cor-primaria)" }}
                   aria-hidden="true"
                 >
                   +
@@ -134,7 +135,7 @@ export function PreviewVitrine({
       {/* Barra de carrinho */}
       <div
         className="flex items-center justify-between px-3 py-2.5 text-white"
-        style={{ backgroundColor: "var(--cor-destaque)" }}
+        style={{ backgroundColor: "var(--cor-primaria)" }}
       >
         <span className="text-[10px] font-medium uppercase tracking-wide opacity-85">
           1 item

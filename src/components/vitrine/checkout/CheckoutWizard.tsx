@@ -653,7 +653,7 @@ export function CheckoutWizard({
                 <Button
                   type="button"
                   size="lg"
-                  className="mt-4 h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+                  className="mt-4 h-14 w-full rounded-xl bg-[var(--cor-primaria)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-primaria)]/90"
                   disabled={!confirmarHabilitado}
                   onClick={() => enviar()}
                 >

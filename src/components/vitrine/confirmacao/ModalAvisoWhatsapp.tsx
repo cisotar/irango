@@ -227,7 +227,7 @@ export function ModalAvisoWhatsapp({
               aria-live="polite"
             >
               <Loader2
-                className="size-10 animate-spin text-[var(--cor-destaque)]"
+                className="size-10 animate-spin text-[var(--cor-primaria)]"
                 aria-hidden
               />
               <p className="text-sm text-muted-foreground">

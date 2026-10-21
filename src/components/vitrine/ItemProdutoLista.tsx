@@ -139,7 +139,7 @@ export function ItemProdutoLista({
       aria-label={`Ver detalhes de ${nome}, ${rotuloPrecoAcessivel(produto)}`}
       onClick={onSelecionar}
       onKeyDown={aoTeclar}
-      className="flex min-h-[44px] cursor-pointer flex-col justify-center border-b border-cinza-medio px-4 py-3 last:border-b-0 hover:bg-cinza-claro focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-destaque"
+      className="flex min-h-[44px] cursor-pointer flex-col justify-center border-b border-cinza-medio px-4 py-3 last:border-b-0 hover:bg-cinza-claro focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-primaria"
     >
       <div className="flex items-baseline gap-2">
         <span className="max-w-[60%] flex-shrink-0 truncate text-sm font-semibold text-texto">
