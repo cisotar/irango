@@ -32,6 +32,7 @@ import { ObservacaoItem } from "@/components/vitrine/ObservacaoItem";
 import { LinkMapsLoja } from "@/components/vitrine/confirmacao/LinkMapsLoja";
 import { StatusPedidoLive } from "@/components/vitrine/confirmacao/StatusPedidoLive";
 import { ModalAvisoWhatsapp } from "@/components/vitrine/confirmacao/ModalAvisoWhatsapp";
+import { TemaLojaStyle } from "@/components/vitrine/TemaLojaStyle";
 import { textoAvisoCupom } from "@/components/vitrine/checkout/avisoCupom";
 import type { StatusPedido } from "@/lib/utils/transicaoStatus";
 
@@ -147,6 +148,8 @@ export default async function ConfirmacaoPage({
   const enderecoLoja = loja ? formatarEnderecoLoja(loja) : null;
 
   return (
+    <>
+    <TemaLojaStyle tema={loja?.tema} />
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col gap-6 px-4 py-10 md:max-w-2xl">
       {/* token! é seguro: `acao.pedido` só existe se buscarPedidoPorToken achou
           o par (pedidoId, token) — logo `token` é truthy aqui. */}
@@ -366,5 +369,6 @@ export default async function ConfirmacaoPage({
         render={<Link href={`/loja/${slug}`}>Voltar à loja</Link>}
       />
     </main>
+    </>
   );
 }
