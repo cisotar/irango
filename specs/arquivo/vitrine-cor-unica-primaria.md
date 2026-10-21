@@ -67,15 +67,15 @@ que reusa `TemaClient`/`PreviewVitrine`).
 - `HeaderLoja`: **sem mudança** (já usa a primária e é a referência)
 
 **Behaviors:**
-- [ ] Ver a barra do carrinho na cor primária, com o mesmo texto claro de hoje. Garantido em: cliente (UX).
-- [ ] Ver o botão "+" do card de produto na cor primária, com "+" branco. Garantido em: cliente (UX).
-- [ ] Ver o preço do produto (card, lista textual e modal) em preto, com e sem desconto. Garantido em: cliente (UX). É só exibição: o valor autoritativo continua recalculado em `criarPedido` (`seguranca.md` §10).
-- [ ] Ver o preço riscado e o selo de desconto com as cores de hoje, distinguíveis do efetivo preto. Garantido em: cliente (UX).
-- [ ] No modal do produto, ver "Ver mais", "−"/"+", Adicionar, Carrinho cheio, Indisponível e "Continuar comprando" na primária. Os estados `disabled` continuam em `#9a9a9a`. Garantido em: cliente (UX).
-- [ ] Abrir um grupo de opcionais e ver borda, trilho e contador na primária, com o preço do opcional em preto. Garantido em: cliente (UX).
-- [ ] Buscar um termo e ver o sublinhado do realce e o botão de limpar na primária. Garantido em: cliente (UX).
-- [ ] Navegar por teclado e ver os anéis de foco de chips, busca e itens da lista na primária. Garantido em: cliente (UX).
-- [ ] Abrir a gaveta do carrinho e ver o preço de cada linha e o subtotal em preto. "Você economizou" continua em `promo-texto`. Garantido em: cliente (UX).
+- [x] Ver a barra do carrinho na cor primária, com o mesmo texto claro de hoje. Garantido em: cliente (UX).
+- [x] Ver o botão "+" do card de produto na cor primária, com "+" branco. Garantido em: cliente (UX).
+- [x] Ver o preço do produto (card, lista textual e modal) em preto, com e sem desconto. Garantido em: cliente (UX). É só exibição: o valor autoritativo continua recalculado em `criarPedido` (`seguranca.md` §10).
+- [x] Ver o preço riscado e o selo de desconto com as cores de hoje, distinguíveis do efetivo preto. Garantido em: cliente (UX).
+- [x] No modal do produto, ver "Ver mais", "−"/"+", Adicionar, Carrinho cheio, Indisponível e "Continuar comprando" na primária. Os estados `disabled` continuam em `#9a9a9a`. Garantido em: cliente (UX).
+- [x] Abrir um grupo de opcionais e ver borda, trilho e contador na primária, com o preço do opcional em preto. Garantido em: cliente (UX).
+- [x] Buscar um termo e ver o sublinhado do realce e o botão de limpar na primária. Garantido em: cliente (UX).
+- [x] Navegar por teclado e ver os anéis de foco de chips, busca e itens da lista na primária. Garantido em: cliente (UX).
+- [x] Abrir a gaveta do carrinho e ver o preço de cada linha e o subtotal em preto. "Você economizou" continua em `promo-texto`. Garantido em: cliente (UX).
 
 ---
 
@@ -98,11 +98,11 @@ que reusa `TemaClient`/`PreviewVitrine`).
 - `ModalFreteIndisponivel`: CTA (`:139`)
 
 **Behaviors:**
-- [ ] Ver o indicador de etapas (etapa atual, concluídas e trilho) na primária. Garantido em: cliente (UX).
-- [ ] Ver todos os CTAs de avançar ("Continuar", "Confirmar pedido" e os dos modais) na primária. Garantido em: cliente (UX).
-- [ ] Ver as opções selecionadas (modalidade, endereço, forma de pagamento) com borda e fundo `/5` na primária. Garantido em: cliente (UX).
-- [ ] Ver em preto: preço unitário, subtotal do item, taxa de frete, subtotal, linhas do detalhamento, entrega, total estimado, "→ para" e novo total do modal de revisão. Garantido em: cliente (UX). Tudo isso é **preview**: o total cobrado continua recalculado em `criarPedido` a partir do banco.
-- [ ] Ver o item indisponível (subtotal riscado), o "de" riscado do modal de revisão, a economia e o cupom com as cores de hoje. Garantido em: cliente (UX).
+- [x] Ver o indicador de etapas (etapa atual, concluídas e trilho) na primária. Garantido em: cliente (UX).
+- [x] Ver todos os CTAs de avançar ("Continuar", "Confirmar pedido" e os dos modais) na primária. Garantido em: cliente (UX).
+- [x] Ver as opções selecionadas (modalidade, endereço, forma de pagamento) com borda e fundo `/5` na primária. Garantido em: cliente (UX).
+- [x] Ver em preto: preço unitário, subtotal do item, taxa de frete, subtotal, linhas do detalhamento, entrega, total estimado, "→ para" e novo total do modal de revisão. Garantido em: cliente (UX). Tudo isso é **preview**: o total cobrado continua recalculado em `criarPedido` a partir do banco.
+- [x] Ver o item indisponível (subtotal riscado), o "de" riscado do modal de revisão, a economia e o cupom com as cores de hoje. Garantido em: cliente (UX).
 
 ---
 
@@ -113,8 +113,8 @@ que reusa `TemaClient`/`PreviewVitrine`).
 `confirmacao/LinkMapsLoja.tsx:42`, `confirmacao/ModalAvisoWhatsapp.tsx:230`.
 
 **Behaviors:**
-- [ ] Ver o ícone de confirmação, o link do Maps e o spinner do aviso de WhatsApp na primária. Garantido em: cliente (UX).
-- [ ] Ver os valores do pedido (itens, subtotal, desconto, frete e total) em preto. Os rótulos continuam muted. Garantido em: cliente (UX). Os valores vêm do pedido gravado, sem recálculo nesta tela.
+- [x] Ver o ícone de confirmação, o link do Maps e o spinner do aviso de WhatsApp na primária. Garantido em: cliente (UX).
+- [x] Ver os valores do pedido (itens, subtotal, desconto, frete e total) em preto. Os rótulos continuam muted. Garantido em: cliente (UX). Os valores vêm do pedido gravado, sem recálculo nesta tela.
 
 ---
 
@@ -125,13 +125,13 @@ que reusa `TemaClient`/`PreviewVitrine`).
 `:123`, `:137`). Reuso: `razaoContraste` (`src/lib/utils/contrasteWcag.ts:24`).
 
 **Behaviors (issue A):**
-- [ ] Mudar a cor primária e ver, na pré-visualização, header, botão "+" e barra do carrinho mudando juntos. Garantido em: cliente (UX).
-- [ ] Ver o preço na pré-visualização sempre em preto, independente do tema. Garantido em: cliente (UX).
+- [x] Mudar a cor primária e ver, na pré-visualização, header, botão "+" e barra do carrinho mudando juntos. Garantido em: cliente (UX).
+- [x] Ver o preço na pré-visualização sempre em preto, independente do tema. Garantido em: cliente (UX).
 
 **Behaviors (issue B):**
-- [ ] Escolher uma primária clara (ex.: `#ffe066`) e ver, perto do seletor, um aviso de que o texto branco dos botões, da barra e do header pode ficar ilegível. O aviso **não bloqueia** o salvamento. Garantido em: cliente (UX). É só um aviso: a vitrine renderiza qualquer hex que o zod aceite.
-- [ ] Escolher uma primária escura (ex.: `#f2052c`, `#332616`) e não ver o aviso. Garantido em: cliente (UX).
-- [ ] Abrir a tela de tema e **não** ver o campo "Cor de destaque". Salvar preserva sem mudança o `destaque` já gravado em `lojas.tema`. Garantido em: cliente (UX). A gravação continua na Server Action existente (allowlist + zod de `lojas.tema`), sem mudança.
+- [x] Escolher uma primária clara (ex.: `#ffe066`) e ver, perto do seletor, um aviso de que o texto branco dos botões, da barra e do header pode ficar ilegível. O aviso **não bloqueia** o salvamento. Garantido em: cliente (UX). É só um aviso: a vitrine renderiza qualquer hex que o zod aceite.
+- [x] Escolher uma primária escura (ex.: `#f2052c`, `#332616`) e não ver o aviso. Garantido em: cliente (UX).
+- [x] Abrir a tela de tema e **não** ver o campo "Cor de destaque". Salvar preserva sem mudança o `destaque` já gravado em `lojas.tema`. Garantido em: cliente (UX). A gravação continua na Server Action existente (allowlist + zod de `lojas.tema`), sem mudança.
 
 ---
 
@@ -181,7 +181,7 @@ ser um token sem consumidor na vitrine. Removê-lo é opcional. Se ficar, leva o
   desconto e total autoritativos continuam recalculados em `criarPedido` a partir do banco
   (`seguranca.md` §10). **Camada:** Server Action, sem mudança.
 - **RN-7 — Aviso de contraste no painel (issue B).** O `TemaClient` mostra um aviso quando
-  `razaoContraste("#ffffff", primaria) < 4.5` (WCAG AA, texto normal). O aviso:
+  `razaoContraste("#ffffff", primaria) < 3` (WCAG AA texto grande/negrito; 4,5 avisaria no vermelho da Izza, 4,34:1, que lê bem). O aviso:
   - recalcula a cada mudança do seletor e só aparece com um hex válido;
   - não bloqueia o salvamento nem desabilita o botão;
   - explica que botões, barra do carrinho e header usam texto branco, e sugere uma cor mais escura;
@@ -189,7 +189,7 @@ ser um token sem consumidor na vitrine. Removê-lo é opcional. Se ficar, leva o
   - é anunciado a leitor de tela (`role="status"` ou `aria-live="polite"`).
 
   O limiar e a comparação ficam num helper puro (ex.: `primariaTemContrasteBaixo(hex): boolean`)
-  ao lado de `contrasteWcag.ts`, com teste unitário: um caso claro, um escuro e um no limiar.
+  ao lado de `contrasteWcag.ts`, com teste unitário: um caso claro, um escuro e um no limiar (3:1).
   **Camada:** cliente (UX).
 - **RN-8 — Campo "Cor de destaque" oculto (issue B).** O campo sai da UI do `TemaClient`, mas a chave
   `destaque` continua no estado do formulário e no payload enviado. O valor atual é reenviado sem

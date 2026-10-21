@@ -27,3 +27,14 @@ export function razaoContraste(hexA: string, hexB: string): number {
   const [clara, escura] = a >= b ? [a, b] : [b, a];
   return (clara + 0.05) / (escura + 0.05);
 }
+
+// 3:1 (WCAG AA para texto grande/negrito): botões, barra do carrinho e header
+// usam texto branco em font-black. 4,5:1 avisaria no vermelho da Izza (#f2052c,
+// 4,34:1), que lê bem.
+const LIMIAR_PRIMARIA = 3;
+
+/** Aviso do tema: hex incompleto ou inválido não avisa (o campo já mostra o erro). */
+export function primariaTemContrasteBaixo(hex: string): boolean {
+  if (!RE_HEX.test(hex)) return false;
+  return razaoContraste("#ffffff", hex) < LIMIAR_PRIMARIA;
+}
