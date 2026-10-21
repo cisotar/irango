@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * memória: guarda a linha do pedido e aplica os filtros encadeados, então a
  * decisão "grava ou não" vem do predicado que a action MANDA ao banco — não de
  * uma resposta fixa. `visivelParaUsuario = false` simula a RLS
- * `pedidos_acesso_lojista` de outra loja (a linha existe, o USING não casa).
+ * `pedidos_update_lojista` de outra loja (a linha existe, o USING não casa).
  * O caminho antigo (SELECT + UPDATE sem condição) também é suportado pelo
  * avaliador, para que a implementação atual falhe por ASSERÇÃO, não por
  * TypeError.

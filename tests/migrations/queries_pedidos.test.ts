@@ -16,7 +16,7 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  *  - a leitura do cliente é por id + token_acesso via SERVICE_ROLE (a função
  *    `buscarPedidoPorToken` recebe um client service_role injetado pelo caller —
  *    seguranca.md §2 linhas 260-263); token errado → 0 linhas;
- *  - o lojista lê os pedidos da PRÓPRIA loja + itens (RLS pedidos_acesso_lojista
+ *  - o lojista lê os pedidos da PRÓPRIA loja + itens (RLS pedidos_select_lojista
  *    e itens_pedido_lojista);
  *  - o lojista NÃO lê pedidos de OUTRA loja (isolamento entre tenants).
  *
@@ -182,7 +182,7 @@ describe("026 queries de pedidos — contrato SQL/RLS (camada 1)", () => {
   });
 
   // ───────────────────────── listarPedidosDoDono / buscarPedidoDoDono → RLS lojista
-  it("[7] listarPedidosDoDono: dono A lista o PRÓPRIO pedido (RLS pedidos_acesso_lojista) → 1 linha", async () => {
+  it("[7] listarPedidosDoDono: dono A lista o PRÓPRIO pedido (RLS pedidos_select_lojista) → 1 linha", async () => {
     const r = await t.asUser(DONO_A, (db) =>
       db.query<{ id: string }>(`select * from public.pedidos order by criado_em desc`),
     );

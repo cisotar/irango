@@ -9,8 +9,8 @@ import {
 /**
  * Fase RED (TDD) — issue 299 (`tasks/299-pedidos-maquina-de-status-no-banco.md`).
  *
- * A policy `pedidos_acesso_lojista` (FOR ALL, `lojas.dono_id = auth.uid()`)
- * filtra LINHA, não COLUNA: com o próprio JWT o lojista faz PATCH direto na
+ * A policy `pedidos_acesso_lojista` (FOR ALL, `lojas.dono_id = auth.uid()`;
+ * trocada na issue 330, ver abaixo) filtra LINHA, não COLUNA: com o próprio JWT o lojista faz PATCH direto na
  * REST API e reescreve `status` e `tipo_entrega` livremente. A máquina de
  * estados (RN-08, `transicaoPermitida`) só existe na Server Action. Isso abre a
  * sequência de 3 PATCHes que descancela, registra frete e recancela, violando
@@ -42,6 +42,14 @@ import {
  *    o `pedidos_protege_valor_trg` também recusam UPDATEs em `pedidos`.
  *  - toda recusa é reconferida via asService (linha intacta); toda permissão
  *    por affectedRows === 1 + leitura via asService.
+ *
+ * Issue 330 (`20261021120000_pedidos_lojista_so_status_e_frete.sql`): o dono só
+ * tem grant de UPDATE em status, taxa_entrega, total e frete_a_combinar, e a
+ * policy FOR ALL virou `pedidos_select_lojista` + `pedidos_update_lojista`.
+ * UPDATE de `tipo_entrega` pelo dono é recusado pelo PRIVILÉGIO (42501
+ * `permission denied for table pedidos`) antes do trigger. O ramo de
+ * `tipo_entrega` do trigger segue exercitado com grant temporário (defesa em
+ * profundidade caso o grant de coluna regrida).
  */
 
 const DONO = "29929929-9299-4299-8299-299299299299";
@@ -50,6 +58,8 @@ const DONO = "29929929-9299-4299-8299-299299299299";
 //    exatamente estes fragmentos; o texto completo pode ter contexto em volta).
 const FRAG_TRANSICAO = "transição de status não permitida";
 const FRAG_TIPO_IMUTAVEL = "tipo de entrega do pedido é imutável";
+// Recusa por privilégio de coluna (issue 330), não pelo trigger.
+const FRAG_PRIVILEGIO = "permission denied for table pedidos";
 
 type Linha = {
   status: string;
@@ -124,15 +134,16 @@ async function lerLinha(id: string): Promise<Linha> {
   return r.rows[0];
 }
 
-type Tentativa = { affected: number | null; erro: string | null };
+type Tentativa = { affected: number | null; erro: string | null; code: string | null };
 
 /** UPDATE direto como o dono autenticado — o equivalente ao PATCH no PostgREST. */
 async function updateComoDono(sql: string, params: unknown[]): Promise<Tentativa> {
   try {
     const r = await t.asUser(DONO, (db) => db.query(sql, params));
-    return { affected: r.affectedRows ?? null, erro: null };
+    return { affected: r.affectedRows ?? null, erro: null, code: null };
   } catch (e) {
-    return { affected: null, erro: (e as Error).message };
+    const err = e as Error & { code?: string };
+    return { affected: null, erro: err.message, code: err.code ?? null };
   }
 }
 
@@ -149,6 +160,35 @@ async function esperarRecusa(
     r.erro ?? `UPDATE PASSOU sem erro (affectedRows=${r.affected}) — nada recusou`,
   ).toContain(fragmento);
   expect(await lerLinha(id)).toEqual(antes);
+}
+
+/**
+ * Exige recusa pelo PRIVILÉGIO de coluna (issue 330): SQLSTATE 42501 + fragmento
+ * `permission denied for table pedidos` (o trigger também usa 42501, só o
+ * fragmento distingue) e linha intacta via asService.
+ */
+async function esperarRecusaPrivilegio(id: string, sql: string, params: unknown[]): Promise<void> {
+  const antes = await lerLinha(id);
+  const r = await updateComoDono(sql, params);
+  expect(
+    r.erro ?? `UPDATE PASSOU sem erro (affectedRows=${r.affected}) — nada recusou`,
+  ).toContain(FRAG_PRIVILEGIO);
+  expect(r.code).toBe("42501");
+  expect(await lerLinha(id)).toEqual(antes);
+}
+
+/**
+ * Concede UPDATE(tipo_entrega) a authenticated só durante `fn`, para exercitar o
+ * ramo de tipo_entrega do trigger (que o privilégio de coluna hoje esconde).
+ * Sempre revoga no fim; o ACL volta ao da migration 330.
+ */
+async function comGrantTemporarioTipoEntrega(fn: () => Promise<void>): Promise<void> {
+  await t.db.query(`grant update (tipo_entrega) on public.pedidos to authenticated`);
+  try {
+    await fn();
+  } finally {
+    await t.db.query(`revoke update (tipo_entrega) on public.pedidos from authenticated`);
+  }
 }
 
 /** Exige que o dono consiga (1 linha afetada, sem erro). */
@@ -243,32 +283,79 @@ describe("pedidos_transicao_status — critério de pronto (issue 299)", () => {
 
 // ═════════════════════════════════════════════ tipo_entrega imutável
 describe("pedidos_transicao_status — tipo_entrega é imutável para o dono", () => {
-  it("entrega → retirada (UPDATE só de tipo_entrega) → recusado", async () => {
+  // Issue 330: tipo_entrega não tem grant de UPDATE para o dono — a recusa vem
+  // do privilégio, antes do trigger. Inclusive com o MESMO valor: o privilégio
+  // de coluna olha a presença no SET, não o valor.
+  it("entrega → retirada (UPDATE só de tipo_entrega) → recusado por privilégio", async () => {
     const id = await novoPedido({ tipo: "entrega" });
-    await esperarRecusa(
+    await esperarRecusaPrivilegio(
       id,
       `update public.pedidos set tipo_entrega = 'retirada' where id = $1`,
       [id],
-      FRAG_TIPO_IMUTAVEL,
     );
     expect((await lerLinha(id)).tipo_entrega).toBe("entrega");
   });
 
-  it("retirada → entrega (UPDATE só de tipo_entrega) → recusado", async () => {
+  it("retirada → entrega (UPDATE só de tipo_entrega) → recusado por privilégio", async () => {
     const id = await novoPedido({ tipo: "retirada", taxa: 0 });
-    await esperarRecusa(
+    await esperarRecusaPrivilegio(
       id,
       `update public.pedidos set tipo_entrega = 'entrega' where id = $1`,
       [id],
-      FRAG_TIPO_IMUTAVEL,
     );
     expect((await lerLinha(id)).tipo_entrega).toBe("retirada");
   });
 
-  it("controle: tipo_entrega reescrito com o MESMO valor (no-op) passa", async () => {
+  it("tipo_entrega reescrito com o MESMO valor → recusado por privilégio (sem grant de coluna)", async () => {
     const id = await novoPedido({ tipo: "retirada", taxa: 0 });
-    await esperarPermitido(`update public.pedidos set tipo_entrega = 'retirada' where id = $1`, [id]);
+    await esperarRecusaPrivilegio(
+      id,
+      `update public.pedidos set tipo_entrega = 'retirada' where id = $1`,
+      [id],
+    );
     expect((await lerLinha(id)).tipo_entrega).toBe("retirada");
+  });
+
+  // Defesa em profundidade: se o grant de coluna regredir, o trigger ainda barra.
+  it("trigger (grant temporário de tipo_entrega): entrega → retirada → recusado pelo trigger", async () => {
+    const id = await novoPedido({ tipo: "entrega" });
+    await comGrantTemporarioTipoEntrega(async () => {
+      await esperarRecusa(
+        id,
+        `update public.pedidos set tipo_entrega = 'retirada' where id = $1`,
+        [id],
+        FRAG_TIPO_IMUTAVEL,
+      );
+    });
+    expect((await lerLinha(id)).tipo_entrega).toBe("entrega");
+  });
+
+  it("trigger (grant temporário de tipo_entrega): retirada → entrega → recusado pelo trigger", async () => {
+    const id = await novoPedido({ tipo: "retirada", taxa: 0 });
+    await comGrantTemporarioTipoEntrega(async () => {
+      await esperarRecusa(
+        id,
+        `update public.pedidos set tipo_entrega = 'entrega' where id = $1`,
+        [id],
+        FRAG_TIPO_IMUTAVEL,
+      );
+    });
+    expect((await lerLinha(id)).tipo_entrega).toBe("retirada");
+  });
+
+  it("controle do trigger (grant temporário de tipo_entrega): MESMO valor (no-op) passa", async () => {
+    const id = await novoPedido({ tipo: "retirada", taxa: 0 });
+    await comGrantTemporarioTipoEntrega(async () => {
+      await esperarPermitido(`update public.pedidos set tipo_entrega = 'retirada' where id = $1`, [id]);
+    });
+    expect((await lerLinha(id)).tipo_entrega).toBe("retirada");
+  });
+
+  it("o grant temporário não vaza: authenticated segue sem UPDATE em tipo_entrega", async () => {
+    const r = await t.db.query<{ ok: boolean }>(
+      `select has_column_privilege('authenticated', 'public.pedidos', 'tipo_entrega', 'UPDATE') as ok`,
+    );
+    expect(r.rows[0].ok).toBe(false);
   });
 });
 

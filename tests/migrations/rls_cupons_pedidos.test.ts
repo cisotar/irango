@@ -139,6 +139,22 @@ async function statusAtual(t: TestDb, id: string): Promise<string | null> {
   return r.rows[0]?.status ?? null;
 }
 
+/**
+ * Executa como `fn` e devolve o erro (message + SQLSTATE) ou null. Usado onde a
+ * recusa é por privilégio de tabela/coluna (issue 330), não por filtro de RLS.
+ */
+async function capturarErro(
+  fn: () => Promise<unknown>,
+): Promise<{ message: string; code: string | null } | null> {
+  try {
+    await fn();
+    return null;
+  } catch (e) {
+    const err = e as Error & { code?: string };
+    return { message: err.message, code: err.code ?? null };
+  }
+}
+
 async function codigoExiste(t: TestDb, codigo: string): Promise<boolean> {
   const r = await t.asService((db) =>
     db.query(`select 1 from public.cupons where codigo = $1`, [codigo]),
@@ -365,16 +381,18 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
     expect(await existeId(t, "pedidos", ids.pedidoA)).toBe(true);
   });
 
-  it("[16] dono A NÃO troca loja_id de um pedido próprio para a loja de B (WITH CHECK; loja_id intacto)", async () => {
+  it("[16] dono A NÃO troca loja_id de um pedido próprio para a loja de B (sem grant de coluna + WITH CHECK; loja_id intacto)", async () => {
     let rejeitouOuZero = false;
     try {
       const r = await t.asUser(DONO_A, (db) =>
         db.query(`update public.pedidos set loja_id = $1 where id = $2`, [ids.lojaB, ids.pedidoA]),
       );
-      // se não lançar, deve ter afetado 0 (USING/WITH CHECK barra) — nunca reescrever para B
+      // se não lançar, deve ter afetado 0 — nunca reescrever para B
       rejeitouOuZero = r.affectedRows === 0;
     } catch {
-      rejeitouOuZero = true; // WITH CHECK rejeita com erro
+      // desde a issue 330 loja_id não tem grant de UPDATE (42501 por privilégio);
+      // o WITH CHECK de pedidos_update_lojista segue como segunda camada
+      rejeitouOuZero = true;
     }
     expect(rejeitouOuZero).toBe(true);
     // o pedido continua pertencendo à loja A
@@ -386,28 +404,39 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
     expect(conf.rows[0].loja_id).toBe(ids.lojaA);
   });
 
-  it("[17] dono B NÃO atualiza nem deleta pedido de A (0 afetadas; intacto)", async () => {
+  it("[17] dono B NÃO atualiza (0 afetadas, RLS) nem deleta (42501, sem grant) pedido de A; intacto", async () => {
+    // UPDATE de status: authenticated tem grant na coluna, a RLS
+    // (pedidos_update_lojista) filtra a linha alheia → 0 afetadas.
     const upd = await t.asUser(DONO_B, (db) =>
       db.query(`update public.pedidos set status = 'cancelado' where id = $1`, [ids.pedidoA]),
     );
     expect(upd.affectedRows).toBe(0);
-    const del = await t.asUser(DONO_B, (db) =>
-      db.query(`delete from public.pedidos where id = $1`, [ids.pedidoA]),
+    // DELETE: revogado de authenticated (issue 330) → recusa por privilégio.
+    const del = await capturarErro(() =>
+      t.asUser(DONO_B, (db) =>
+        db.query(`delete from public.pedidos where id = $1`, [ids.pedidoA]),
+      ),
     );
-    expect(del.affectedRows).toBe(0);
+    expect(del?.message ?? "DELETE PASSOU sem erro").toContain("permission denied for table pedidos");
+    expect(del?.code).toBe("42501");
     expect(await statusAtual(t, ids.pedidoA)).not.toBe("cancelado");
     expect(await existeId(t, "pedidos", ids.pedidoA)).toBe(true);
   });
 
-  it("[18] anon NÃO atualiza nem deleta pedido (0 afetadas; intacto)", async () => {
-    const upd = await t.asAnon((db) =>
-      db.query(`update public.pedidos set status = 'entregue' where id = $1`, [ids.pedidoA]),
+  it("[18] anon NÃO atualiza nem deleta pedido (42501, sem grant de UPDATE/DELETE; intacto)", async () => {
+    // Issue 330: UPDATE e DELETE revogados de anon → recusa por privilégio.
+    const upd = await capturarErro(() =>
+      t.asAnon((db) =>
+        db.query(`update public.pedidos set status = 'entregue' where id = $1`, [ids.pedidoA]),
+      ),
     );
-    expect(upd.affectedRows).toBe(0);
-    const del = await t.asAnon((db) =>
-      db.query(`delete from public.pedidos where id = $1`, [ids.pedidoA]),
+    expect(upd?.message ?? "UPDATE PASSOU sem erro").toContain("permission denied for table pedidos");
+    expect(upd?.code).toBe("42501");
+    const del = await capturarErro(() =>
+      t.asAnon((db) => db.query(`delete from public.pedidos where id = $1`, [ids.pedidoA])),
     );
-    expect(del.affectedRows).toBe(0);
+    expect(del?.message ?? "DELETE PASSOU sem erro").toContain("permission denied for table pedidos");
+    expect(del?.code).toBe("42501");
     expect(await statusAtual(t, ids.pedidoA)).not.toBe("entregue");
     expect(await existeId(t, "pedidos", ids.pedidoA)).toBe(true);
   });
@@ -567,7 +596,13 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
  *                                       INSERT de anon/authenticated: INSERT só via
  *                                       RPC criar_pedido (service_role).
  *   pedidos_acesso_lojista       ALL    USING/WITH CHECK (EXISTS loja do dono)
- *                                       — NENHUMA policy de SELECT para anon
+ *                                       — NENHUMA policy de SELECT para anon.
+ *                                       Trocada pela migration
+ *                                       20261021120000_pedidos_lojista_so_status_e_frete
+ *                                       (issue 330) por pedidos_select_lojista (SELECT) +
+ *                                       pedidos_update_lojista (UPDATE), to authenticated;
+ *                                       UPDATE só em status/taxa_entrega/total/
+ *                                       frete_a_combinar; DELETE revogado.
  *   itens_pedido_insert_publico  INSERT — endurecida na auditoria 006 para
  *                                       WITH CHECK (public.pedido_aceita_itens(pedido_id))
  *                                       e depois REMOVIDA pelo achado de pentest #3A
@@ -586,6 +621,7 @@ describe("006 RLS de cupons, pedidos e itens_pedido", () => {
  *  - [19] anon NÃO insere item: itens_pedido_insert_publico foi REMOVIDA (pentest
  *    #3A); a única escrita de item é a RPC criar_pedido (service_role), fora de RLS.
  *  - [7] cupom forjado e [16] troca de loja_id rejeitados pelo WITH CHECK.
+ *  - [17][18]: DELETE (e UPDATE de anon) recusados por privilégio desde a issue 330.
  *  - [2][3][11][15][18][20][22] (negações) já passam por deny-all hoje — o GREEN
  *    NÃO pode regredi-los criando SELECT anon em cupons/pedidos/itens.
  *  - [12] leitura por token é service_role (mecanismo, fora de policy) — passa sempre.

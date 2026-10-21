@@ -30,7 +30,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  *    `status <> 'cancelado'` — os três como FILTRO DO UPDATE (TOCTOU: a leitura
  *    não basta), linha não atualizada = recusa.
  *  - D1: segundo registro no mesmo pedido é recusado.
- *  - client AUTENTICADO (RLS `pedidos_acesso_lojista`), nunca service_role.
+ *  - client AUTENTICADO (RLS `pedidos_update_lojista`), nunca service_role.
  *
  * O fake de banco abaixo é um avaliador em memória: aplica RLS por dono e os
  * filtros que a action encadear (`eq`/`neq`/`in`/`is`/`not`/`match`/`filter`)

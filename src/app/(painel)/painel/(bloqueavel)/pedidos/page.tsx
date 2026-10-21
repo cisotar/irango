@@ -10,7 +10,7 @@ import { PedidosClient } from "./PedidosClient";
 /**
  * Gestão de pedidos do lojista (issue 049). Server Component.
  *
- * Lê os pedidos via client AUTENTICADO — a RLS `pedidos_acesso_lojista` isola
+ * Lê os pedidos via client AUTENTICADO — a RLS `pedidos_select_lojista` isola
  * por loja (RN-02). O filtro por status é client-side (PedidosClient): a lista
  * completa já está escopada pela RLS, então filtrar no cliente não vaza dado.
  * Sem loja → onboarding.

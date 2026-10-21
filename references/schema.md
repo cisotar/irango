@@ -427,8 +427,14 @@ CREATE TABLE pedidos (
 
 **Trigger `pedidos_cliente_id_imutavel_trg`** (BEFORE UPDATE, `SECURITY INVOKER`): recusa
 (`42501`) troca de `cliente_id` para autor que não é `service_role`/`postgres`/`supabase_admin`.
-Fecha o lojista reescrevendo o vínculo (`pedidos_acesso_lojista` é `FOR ALL`) e o cliente se
-apropriando de pedido de convidado. Mesmo molde de `pedidos_transicao_status_trg`.
+Fecha o cliente se apropriando de pedido de convidado e, como defesa em profundidade, o lojista
+reescrevendo o vínculo — desde a issue 330 o lojista já não tem grant de UPDATE em `cliente_id`.
+
+**Privilégios do lojista em `pedidos`** (migration `20261021120000_pedidos_lojista_so_status_e_frete.sql`,
+issue 330): policies `pedidos_select_lojista` (SELECT) e `pedidos_update_lojista` (UPDATE), `to
+authenticated`, predicado de dono; sem policy de INSERT/DELETE. `UPDATE` concedido a `authenticated` só
+nas colunas `status`, `taxa_entrega`, `total`, `frete_a_combinar`; `UPDATE`/`DELETE`/`TRUNCATE`/`TRIGGER`/
+`REFERENCES` de tabela revogados de `anon`/`authenticated`. Coluna nova nasce não editável pelo lojista. Mesmo molde de `pedidos_transicao_status_trg`.
 
 **Funções de pedido e cliente** (`SECURITY DEFINER`, `search_path = ''`, EXECUTE só `service_role`;
 migration `20261003123000_anonimizar_cliente_pedidos.sql`):

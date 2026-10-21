@@ -11,7 +11,7 @@ import { registrarFreteCombinado } from "@/lib/actions/freteCombinado";
 /**
  * Detalhe do pedido (issue 049) — casca fina (issue 125).
  *
- * Lê o pedido via client AUTENTICADO — a RLS `pedidos_acesso_lojista` garante
+ * Lê o pedido via client AUTENTICADO — a RLS `pedidos_select_lojista` garante
  * que o lojista só vê pedido da própria loja (RN-02). Pedido de outra loja ou
  * inexistente → `null` → `notFound()`. Toda a apresentação vive no componente
  * compartilhado `DetalhePedido`, consumido também pela page admin (140).

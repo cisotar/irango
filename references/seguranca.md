@@ -324,22 +324,39 @@ ALTER TABLE pedidos ADD COLUMN token_acesso uuid NOT NULL DEFAULT gen_random_uui
 > `anon`/`authenticated` (segunda camada — se uma policy permissiva voltar por engano, o grant continua
 > fechado). INSERT em `pedidos` é exclusivo da RPC `public.criar_pedido(...)` sob `service_role`
 > (`SECURITY INVOKER`, com `service_role` tendo BYPASSRLS). Efeito colateral aceito: o lojista perde o
-> INSERT direto em `pedidos` da própria loja via PostgREST — `pedidos_acesso_lojista` é `FOR ALL` e
-> cobriria INSERT do dono por policy, mas o grant torna isso inalcançável. Nenhum código do painel usava
-> esse caminho.
+> INSERT direto em `pedidos` da própria loja via PostgREST. Nenhum código do painel usava esse caminho.
+> Desde a issue 330 também não há policy de INSERT para o dono (ver abaixo).
 
-Policy restante:
+**Lojista: só lê e só muda status/frete** (migration `20261021120000_pedidos_lojista_so_status_e_frete.sql`,
+issue 330, achado da auditoria da 299). A RLS filtra linha, não coluna: com a antiga
+`pedidos_acesso_lojista` (por comando, todos) e o GRANT ALL herdado de `20260614008500`, o dono apagava
+pedido e reescrevia `token_acesso`, PII do cliente, `criado_em` e `loja_id` via PostgREST direto. Estado
+atual, em duas camadas:
+
+- **Privilégio por coluna (allowlist).** `UPDATE`, `DELETE`, `TRUNCATE`, `TRIGGER` e `REFERENCES` revogados
+  de `anon`/`authenticated`; `authenticated` recebe `UPDATE` **só** em `status`, `taxa_entrega`, `total` e
+  `frete_a_combinar` — exatamente o que `atualizarStatusPedido` e `registrarFreteCombinado` gravam. Coluna nova
+  em `pedidos` nasce **não editável** pelo lojista; liberar exige `grant update (coluna)` explícito em
+  migration. Recusa = `42501 permission denied for table pedidos`, antes de qualquer trigger.
+- **Policies separadas por comando**, `to authenticated`, mesmo predicado de dono:
 
 ```sql
--- Lojista vê e gerencia pedidos da própria loja
--- WITH CHECK anti-troca de loja_id: impede UPDATE que mova pedido para outra loja
-CREATE POLICY "pedidos_acesso_lojista"
-  ON pedidos FOR ALL
-  USING  (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()))
+CREATE POLICY "pedidos_select_lojista" ON pedidos FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()));
+
+-- WITH CHECK anti-troca de loja_id: defesa em profundidade (loja_id já não tem grant de UPDATE)
+CREATE POLICY "pedidos_update_lojista" ON pedidos FOR UPDATE TO authenticated
+  USING      (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()))
   WITH CHECK (EXISTS (SELECT 1 FROM lojas WHERE lojas.id = pedidos.loja_id AND lojas.dono_id = auth.uid()));
 ```
 
-**Leitura pelo cliente com conta (Marco C, migration `20261003120000_pedidos_cliente_id.sql`):** três policies **só de SELECT**, `to authenticated`: `pedidos_select_cliente` (`cliente_id = (select auth.uid())`), `itens_pedido_select_cliente` e `itens_pedido_opcionais_select_cliente` (`EXISTS` até `pedidos` com o mesmo critério). Nenhuma policy de escrita para o cliente e `pedidos_acesso_lojista` não muda; por serem permissivas (somam por `OR`), quem é lojista e cliente lê os pedidos da própria loja e os próprios em outras lojas, sem ganhar escrita sobre pedido alheio. `cliente_id` é imutável para quem não é sistema (`pedidos_cliente_id_imutavel_trg`, `42501`): sem ele o lojista (policy `FOR ALL`) reescreveria o vínculo e o cliente se apropriaria de pedido de convidado. O histórico (`/minha-conta/pedidos`) lê com o client da sessão, nunca `service_role`. `anon` segue sem SELECT.
+Sem policy de INSERT nem de DELETE para o dono. Os triggers de valor (`pedidos_protege_valor_trg`),
+status (`pedidos_transicao_status_trg`) e vínculo (`pedidos_cliente_id_imutavel_trg`) seguem como
+terceira camada sobre as colunas que ainda têm grant. Caminhos de sistema não dependem do grant de
+`authenticated`: `anonimizar_pedidos_do_cliente()` e `expurgar_pedidos_antigos()` são `SECURITY DEFINER`
+com owner `postgres`; checkout e confirmação rodam sob `service_role`.
+
+**Leitura pelo cliente com conta (Marco C, migration `20261003120000_pedidos_cliente_id.sql`):** três policies **só de SELECT**, `to authenticated`: `pedidos_select_cliente` (`cliente_id = (select auth.uid())`), `itens_pedido_select_cliente` e `itens_pedido_opcionais_select_cliente` (`EXISTS` até `pedidos` com o mesmo critério). Nenhuma policy de escrita para o cliente; por serem permissivas (somam por `OR` com `pedidos_select_lojista`), quem é lojista e cliente lê os pedidos da própria loja e os próprios em outras lojas, sem ganhar escrita sobre pedido alheio. `cliente_id` é imutável para quem não é sistema (`pedidos_cliente_id_imutavel_trg`, `42501`): criado quando a policy do lojista cobria UPDATE da linha inteira, impede que o lojista reescreva o vínculo e o cliente se aproprie de pedido de convidado. Desde a issue 330 `cliente_id` também não tem grant de UPDATE para `authenticated`; o trigger fica como defesa em profundidade. O histórico (`/minha-conta/pedidos`) lê com o client da sessão, nunca `service_role`. `anon` segue sem SELECT.
 
 **Leitura pela confirmação = Server Component escopado por token**, nunca SELECT público:
 
@@ -356,8 +373,11 @@ id corretos, ninguém lê o pedido. Não criar policy de SELECT público em `ped
 
 **Regra para devs e agentes:**
 - INSERT em `pedidos` é exclusivo da RPC `public.criar_pedido(...)` (service_role). `anon`: sem policy e
-  sem grant. `authenticated`: sem grant (a policy `pedidos_acesso_lojista` é `FOR ALL` e cobriria INSERT
-  do dono, mas o grant a torna inalcançável — não reintroduzir grant de INSERT para reabrir isso).
+  sem grant. `authenticated`: sem grant e sem policy de INSERT — não reintroduzir nenhum dos dois.
+- UPDATE do lojista em `pedidos` é por coluna: só `status`, `taxa_entrega`, `total`, `frete_a_combinar`.
+  Coluna nova nasce não editável; Server Action que precise gravar outra coluna pede `grant update (coluna)`
+  em migration própria, com justificativa. DELETE/TRUNCATE/TRIGGER/REFERENCES ficam revogados de
+  `anon`/`authenticated` (issue 330).
 - A Server Action lê o token do pedido **depois** via `service_role` (`WHERE id = $1 AND token_acesso = $2`), nunca via anon.
 - Toda leitura de pedido pelo cliente final (confirmação, status) usa `service_role` com o token como segundo fator — nunca SELECT anon.
 - O harness pglite (`tests/helpers/pglite.ts`) não reconcede INSERT/UPDATE/DELETE em tabela base depois
@@ -567,7 +587,7 @@ Migration `20261006121000_rpc_galeria.sql`. As três RPCs são `SECURITY INVOKER
 
 ### Sétima instância do INVOKER — relatório de vendas: `vendas_por_dia`, `vendas_itens_por_categoria` (spec `relatorio-vendas`)
 
-Migration `20261007124000_relatorio_vendas_funcoes.sql`. Lojista **e** admin (`service_role`) chamam as mesmas funções, `SECURITY INVOKER`, com `p_loja_id` explícito. Agregam dinheiro, então a **posse da loja é conferida no corpo antes de qualquer leitura** (`vendas_preparar_consulta`, `42501 'vendas: sem posse da loja'`), e a RLS sozinha não basta: `pedidos` soma `pedidos_acesso_lojista` e `pedidos_select_cliente` por **OR**, então um lojista que também é cliente de outra loja passaria a agregar as próprias compras nela se a função confiasse só na RLS. A mesma mensagem vale para loja alheia e inexistente (não vira oráculo de existência). Admin passa pelo ramo de serviço e fica escopado pelo `WHERE loja_id = p_loja_id`.
+Migration `20261007124000_relatorio_vendas_funcoes.sql`. Lojista **e** admin (`service_role`) chamam as mesmas funções, `SECURITY INVOKER`, com `p_loja_id` explícito. Agregam dinheiro, então a **posse da loja é conferida no corpo antes de qualquer leitura** (`vendas_preparar_consulta`, `42501 'vendas: sem posse da loja'`), e a RLS sozinha não basta: `pedidos` soma `pedidos_select_lojista` e `pedidos_select_cliente` por **OR**, então um lojista que também é cliente de outra loja passaria a agregar as próprias compras nela se a função confiasse só na RLS. A mesma mensagem vale para loja alheia e inexistente (não vira oráculo de existência). Admin passa pelo ramo de serviço e fica escopado pelo `WHERE loja_id = p_loja_id`.
 
 - **Detecção de `service_role` fail-closed:** `coalesce(auth.role(), '') = 'service_role'` **e** `current_setting('role')` fora de `authenticated`/`anon`. Sem JWT, a função nega.
 - **Forma antes de tudo:** faixa obrigatória, `p_fim > p_inicio`, teto de 367 dias, `tipo_entrega` em allowlist; violação é `22023`.
