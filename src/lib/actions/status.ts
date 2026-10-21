@@ -36,7 +36,7 @@ export type AcaoStatus = typeof atualizarStatusPedido;
  *
  * O PREDICADO do UPDATE impõe a transição — sem SELECT prévio, então não há
  * janela TOCTOU entre ler e gravar (dois cliques ou dois aparelhos). Via RLS
- * `pedidos_acesso_lojista` (cliente AUTENTICADO), só toca pedido da loja do
+ * `pedidos_update_lojista` (cliente AUTENTICADO), só toca pedido da loja do
  * `auth.uid()` (RN-02). Zero linhas = outra loja, inexistente, status atual
  * fora das origens ou corrida: indistinguíveis, mesma recusa genérica.
  */
@@ -58,7 +58,7 @@ export async function atualizarStatusPedido(
     return { ok: false, erro: ERRO_GENERICO };
   }
 
-  // Cliente AUTENTICADO: a RLS pedidos_acesso_lojista escopa por auth.uid().
+  // Cliente AUTENTICADO: a RLS pedidos_update_lojista escopa por auth.uid().
   // NUNCA service_role aqui — bypass de RLS deixaria lojista alterar pedido alheio.
   const supabase = await createClient();
 

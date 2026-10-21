@@ -19,7 +19,8 @@ export type ResultadoRegistroFrete = { ok: true } | { ok: false; erro: string };
  *    `tipo_entrega = 'entrega'`, `status <> 'cancelado'`) são FILTRO DO UPDATE,
  *    não só da leitura — um segundo registro concorrente não casa nenhuma linha
  *    (TOCTOU). Zero linhas atualizadas = recusa.
- *  - Client AUTENTICADO: a RLS `pedidos_acesso_lojista` escopa pela loja do
+ *  - Client AUTENTICADO: as RLS `pedidos_select_lojista` (leitura) e
+ *    `pedidos_update_lojista` (gravação) escopam pela loja do
  *    `auth.uid()`. NUNCA service_role aqui.
  */
 export async function registrarFreteCombinado(

@@ -6,8 +6,9 @@ import { createTestDb, type TestDb } from "../helpers/pglite";
  * real (spec `specs/status-pedido-clicavel-e-latencia.md`, Segurança →
  * "Edição de pedido de outra loja"; RN-SC2 + RN-SC4).
  *
- * TRAVA — verde esperado desde já: a v1 não tem migration, a RLS
- * `pedidos_acesso_lojista` não muda. O teste prova que o predicado que a action
+ * TRAVA — verde esperado desde já: a v1 não tem migration e não muda a RLS do
+ * lojista (na época `pedidos_acesso_lojista`; desde a issue 330
+ * `pedidos_update_lojista`, mesmo predicado de dono). O teste prova que o predicado que a action
  * nova manda ao banco em UMA ida —
  *
  *   update pedidos set status = 'saiu_entrega'

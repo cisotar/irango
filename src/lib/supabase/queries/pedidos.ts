@@ -88,7 +88,7 @@ export async function buscarStatusPedidoPorToken(
   return data;
 }
 
-/** Lojista lista pedidos da própria loja (RLS pedidos_acesso_lojista), com itens. Filtro por status opcional. */
+/** Lojista lista pedidos da própria loja (RLS pedidos_select_lojista), com itens. Filtro por status opcional. */
 export async function listarPedidosDoDono(
   client: Client,
   filtros?: FiltrosPedidos,
@@ -236,7 +236,7 @@ export type PedidoDoClienteNaLoja = Pick<
 
 /**
  * Pedidos (todos os status, cancelados inclusos — D9) de um cliente NA loja do
- * dono, mais recente primeiro. Client da SESSÃO: a RLS `pedidos_acesso_lojista`
+ * dono, mais recente primeiro. Client da SESSÃO: a RLS `pedidos_select_lojista`
  * escopa pela loja. O `.eq("loja_id")` é explícito porque as policies somam por
  * OR: um lojista que é o próprio cliente leria, por `pedidos_select_cliente`,
  * os pedidos dele em OUTRAS lojas. `lojaId` vem de `buscarLojaDoDono` (sessão),

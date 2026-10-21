@@ -129,14 +129,28 @@ async function clienteIdDe(t: TestDb, pedido: string): Promise<string | null> {
   return r.rows[0].cliente_id;
 }
 
-type Tentativa = { affected: number | null; erro: string | null };
+type Tentativa = { affected: number | null; erro: string | null; code: string | null };
 async function tentar(t: TestDb, quem: string, sql: string, params: unknown[]): Promise<Tentativa> {
   try {
     const r = await t.asUser(quem, (db) => db.query(sql, params));
-    return { affected: r.affectedRows ?? null, erro: null };
+    return { affected: r.affectedRows ?? null, erro: null, code: null };
   } catch (e) {
-    return { affected: null, erro: (e as Error).message };
+    const err = e as Error & { code?: string };
+    return { affected: null, erro: err.message, code: err.code ?? null };
   }
+}
+
+/**
+ * Recusa por privilégio de coluna/tabela (issue 330): `authenticated` só tem
+ * UPDATE em status/taxa_entrega/total/frete_a_combinar e nenhum DELETE em
+ * pedidos. SQLSTATE 42501 sozinho não basta (o trigger de cliente_id também usa
+ * 42501); o fragmento prova que foi o grant.
+ */
+function esperarRecusaPorPrivilegio(r: Tentativa): void {
+  expect(r.erro ?? `PASSOU sem erro (affected=${r.affected})`).toContain(
+    "permission denied for table pedidos",
+  );
+  expect(r.code).toBe("42501");
 }
 
 let t: TestDb;
@@ -236,17 +250,17 @@ describe("341 [C1-3] lojista continua só na própria loja; lojista+cliente soma
 
 // ===========================================================================
 describe("341 [C1-4] cliente_id imutável para usuário (RN-C03/C04)", () => {
-  it("[4a] CA tenta se apropriar do pedido de convidado (UPDATE cliente_id) → 0 linhas/erro, cliente_id segue null", async () => {
+  it("[4a] CA tenta se apropriar do pedido de convidado (UPDATE cliente_id) → recusado por privilégio (sem grant de cliente_id), cliente_id segue null", async () => {
     const r = await tentar(t, CA, `update public.pedidos set cliente_id = $1 where id = $2`, [CA, PG.pedido]);
-    expect(r.erro !== null || r.affected === 0).toBe(true);
+    esperarRecusaPorPrivilegio(r);
     expect(await clienteIdDe(t, PG.pedido)).toBeNull();
   });
 
-  it("[4b] CA não escreve no próprio pedido (sem policy de UPDATE/DELETE para o cliente)", async () => {
+  it("[4b] CA não escreve no próprio pedido (sem grant de UPDATE em nome_cliente nem de DELETE; sem policy de escrita para o cliente)", async () => {
     const up = await tentar(t, CA, `update public.pedidos set nome_cliente = 'X' where id = $1`, [PA.pedido]);
-    expect(up.erro !== null || up.affected === 0).toBe(true);
+    esperarRecusaPorPrivilegio(up);
     const del = await tentar(t, CA, `delete from public.pedidos where id = $1`, [PA.pedido]);
-    expect(del.erro !== null || del.affected === 0).toBe(true);
+    esperarRecusaPorPrivilegio(del);
     const r = await t.db.query<{ n: number }>(
       `select count(*)::int as n from public.pedidos where id = $1 and nome_cliente = 'Cliente Pedido'`,
       [PA.pedido],
@@ -254,26 +268,28 @@ describe("341 [C1-4] cliente_id imutável para usuário (RN-C03/C04)", () => {
     expect(r.rows[0].n).toBe(1);
   });
 
-  it("[4c] LOJ1 reescreve cliente_id de pedido da própria loja (CA → CB) → recusado pelo TRIGGER", async () => {
+  it("[4c] LOJ1 reescreve cliente_id de pedido da própria loja (CA → CB) → recusado por privilégio (sem grant de cliente_id)", async () => {
     const r = await tentar(t, LOJ1, `update public.pedidos set cliente_id = $1 where id = $2`, [CB, PA.pedido]);
-    // Recusa por exceção (trigger), não por 0 linhas: a policy FOR ALL do lojista ALCANÇA a linha.
-    expect(r.erro).not.toBeNull();
+    // Recusa por exceção, não por 0 linhas: pedidos_update_lojista ALCANÇA a linha,
+    // mas cliente_id não tem grant de UPDATE para authenticated (issue 330). O
+    // trigger pedidos_cliente_id_imutavel_trg fica como defesa em profundidade.
+    esperarRecusaPorPrivilegio(r);
     expect(await clienteIdDe(t, PA.pedido)).toBe(CA);
   });
 
-  it("[4d] LOJ1 vincula pedido de convidado a um cliente (null → CA) → recusado pelo TRIGGER", async () => {
+  it("[4d] LOJ1 vincula pedido de convidado a um cliente (null → CA) → recusado por privilégio (sem grant de cliente_id)", async () => {
     const r = await tentar(t, LOJ1, `update public.pedidos set cliente_id = $1 where id = $2`, [CA, PG.pedido]);
-    expect(r.erro).not.toBeNull();
+    esperarRecusaPorPrivilegio(r);
     expect(await clienteIdDe(t, PG.pedido)).toBeNull();
   });
 
-  it("[4e] LOJ1 zera cliente_id (CA → null) → recusado pelo TRIGGER", async () => {
+  it("[4e] LOJ1 zera cliente_id (CA → null) → recusado por privilégio (sem grant de cliente_id)", async () => {
     const r = await tentar(t, LOJ1, `update public.pedidos set cliente_id = null where id = $1`, [PA.pedido]);
-    expect(r.erro).not.toBeNull();
+    esperarRecusaPorPrivilegio(r);
     expect(await clienteIdDe(t, PA.pedido)).toBe(CA);
   });
 
-  it("[4f] controle positivo: LOJ1 ainda atualiza outra coluna permitida (trigger não bloqueia demais)", async () => {
+  it("[4f] controle positivo: LOJ1 ainda atualiza outra coluna permitida (nem grant nem trigger bloqueiam demais)", async () => {
     const r = await tentar(t, LOJ1, `update public.pedidos set status = 'confirmado' where id = $1`, [PC.pedido]);
     expect(r.erro).toBeNull();
     expect(r.affected).toBe(1);
@@ -283,6 +299,70 @@ describe("341 [C1-4] cliente_id imutável para usuário (RN-C03/C04)", () => {
   it("[4g] service_role (anonimização) PODE zerar cliente_id", async () => {
     await t.asService((db) => db.query(`update public.pedidos set cliente_id = null where id = $1`, [PB.pedido]));
     expect(await clienteIdDe(t, PB.pedido)).toBeNull();
+  });
+});
+
+// ===========================================================================
+// Defesa em profundidade: desde a issue 330 o grant de coluna recusa antes do
+// trigger (ver [4c]–[4e]). Para o trigger continuar exercitado caso o grant
+// regrida, os casos abaixo concedem UPDATE(cliente_id) só durante o teste.
+const FRAG_TRIGGER_CLIENTE_ID = "cliente_id do pedido é imutável";
+
+/** Fonte da verdade via service_role (BYPASSRLS). */
+async function clienteIdViaService(t: TestDb, pedido: string): Promise<string | null> {
+  const r = await t.asService((db) =>
+    db.query<{ cliente_id: string | null }>(`select cliente_id from public.pedidos where id = $1`, [pedido]),
+  );
+  return r.rows[0].cliente_id;
+}
+
+/**
+ * Concede UPDATE(cliente_id) a authenticated só durante `fn`, para exercitar
+ * pedidos_cliente_id_imutavel_trg (que o privilégio de coluna hoje esconde).
+ * Sempre revoga no fim; o ACL volta ao da migration 330.
+ */
+async function comGrantTemporarioClienteId(t: TestDb, fn: () => Promise<void>): Promise<void> {
+  await t.db.query(`grant update (cliente_id) on public.pedidos to authenticated`);
+  try {
+    await fn();
+  } finally {
+    await t.db.query(`revoke update (cliente_id) on public.pedidos from authenticated`);
+  }
+}
+
+describe("341/330 [C1-4b] trigger pedidos_cliente_id_imutavel_trg (grant temporário de cliente_id)", () => {
+  it("[4h] LOJ1 troca cliente_id (CA → CB) com grant temporário → recusado pelo TRIGGER, cliente_id intacto", async () => {
+    await comGrantTemporarioClienteId(t, async () => {
+      const r = await tentar(t, LOJ1, `update public.pedidos set cliente_id = $1 where id = $2`, [CB, PA.pedido]);
+      expect(r.erro ?? `PASSOU sem erro (affected=${r.affected})`).toContain(FRAG_TRIGGER_CLIENTE_ID);
+      expect(r.code).toBe("42501");
+    });
+    expect(await clienteIdViaService(t, PA.pedido)).toBe(CA);
+  });
+
+  it("[4i] LOJ1 zera cliente_id (CA → null) com grant temporário → recusado pelo TRIGGER, cliente_id intacto", async () => {
+    await comGrantTemporarioClienteId(t, async () => {
+      const r = await tentar(t, LOJ1, `update public.pedidos set cliente_id = null where id = $1`, [PA.pedido]);
+      expect(r.erro ?? `PASSOU sem erro (affected=${r.affected})`).toContain(FRAG_TRIGGER_CLIENTE_ID);
+      expect(r.code).toBe("42501");
+    });
+    expect(await clienteIdViaService(t, PA.pedido)).toBe(CA);
+  });
+
+  it("[4j] controle do trigger: cliente_id reescrito com o MESMO valor (no-op) passa com grant temporário", async () => {
+    await comGrantTemporarioClienteId(t, async () => {
+      const r = await tentar(t, LOJ1, `update public.pedidos set cliente_id = $1 where id = $2`, [CA, PA.pedido]);
+      expect(r.erro).toBeNull();
+      expect(r.affected).toBe(1);
+    });
+    expect(await clienteIdViaService(t, PA.pedido)).toBe(CA);
+  });
+
+  it("[4k] o grant temporário não vaza: authenticated segue sem UPDATE em cliente_id", async () => {
+    const r = await t.db.query<{ ok: boolean }>(
+      `select has_column_privilege('authenticated', 'public.pedidos', 'cliente_id', 'UPDATE') as ok`,
+    );
+    expect(r.rows[0].ok).toBe(false);
   });
 });
 

@@ -20,7 +20,7 @@ import { PedidosDoCliente } from "./PedidosDoCliente";
  *  - `cliente_da_loja` (escopo pela loja de auth.uid(), client da SESSÃO) com
  *    0 linhas → 404: id inexistente e cliente de outra loja dão a MESMA resposta
  *    (anti-IDOR).
- *  - Pedidos: RLS `pedidos_acesso_lojista` + `.eq(loja_id da sessão, cliente_id)`.
+ *  - Pedidos: RLS `pedidos_select_lojista` + `.eq(loja_id da sessão, cliente_id)`.
  *  - Erro de consulta propaga ao error boundary do Next (D6).
  */
 export default async function DetalheClientePage({

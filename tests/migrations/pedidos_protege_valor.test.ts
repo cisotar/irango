@@ -7,7 +7,8 @@ import { TETO_FRETE_COMBINADO } from "@/lib/validacoes/entrega";
  * Fase RED (TDD). Achado MÉDIO da auditoria de segurança da branch
  * feat/modalidades-entrega-loja (pré-existente, corrigido nesta branch).
  *
- * A policy `pedidos_acesso_lojista` (FOR ALL, `lojas.dono_id = auth.uid()`)
+ * A policy `pedidos_acesso_lojista` (FOR ALL, `lojas.dono_id = auth.uid()`;
+ * desde a issue 330 trocada por `pedidos_select_lojista` + `pedidos_update_lojista`)
  * filtra LINHA, não COLUNA. Com o próprio JWT, o lojista faz
  * `PATCH /rest/v1/pedidos?id=eq.<proprio>` e reescreve `total`, `subtotal`,
  * `desconto`, `taxa_entrega` e reabre `frete_a_combinar`, contornando D1/D2/D3
@@ -37,6 +38,13 @@ import { TETO_FRETE_COMBINADO } from "@/lib/validacoes/entrega";
  *  - toda recusa é reconferida via asService: os valores do pedido não mudaram.
  *  - toda permissão é conferida por affectedRows === 1 + leitura via asService.
  *  - nunca aceita "relation/function does not exist" como negação.
+ *
+ * Issue 330 (`20261021120000_pedidos_lojista_so_status_e_frete.sql`): o dono só
+ * tem grant de UPDATE em status, taxa_entrega, total e frete_a_combinar. UPDATE
+ * que cita subtotal, desconto ou tipo_entrega é recusado pelo PRIVILÉGIO
+ * (42501 `permission denied for table pedidos`) antes de o trigger rodar — esses
+ * casos usam `esperarRecusaPrivilegio`. Os casos que exercitam o trigger usam só
+ * colunas liberadas, para que a mensagem do trigger continue provando a regra.
  */
 
 const DONO = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -48,6 +56,8 @@ const FRAG_SO_ENTREGA = "frete combinado só vale para entrega";
 const FRAG_CANCELADO = "frete combinado não vale para pedido cancelado";
 const FRAG_INTERVALO = "frete combinado fora do intervalo";
 const FRAG_TOTAL = "total do pedido não confere";
+// Recusa por privilégio de coluna (issue 330), não pelo trigger.
+const FRAG_PRIVILEGIO = "permission denied for table pedidos";
 
 type Valores = {
   subtotal: number;
@@ -128,15 +138,16 @@ async function lerValores(id: string): Promise<Valores> {
   return r.rows[0];
 }
 
-type Tentativa = { affected: number | null; erro: string | null };
+type Tentativa = { affected: number | null; erro: string | null; code: string | null };
 
 /** UPDATE direto como o dono autenticado — o equivalente ao PATCH no PostgREST. */
 async function updateComoDono(sql: string, params: unknown[]): Promise<Tentativa> {
   try {
     const r = await t.asUser(DONO, (db) => db.query(sql, params));
-    return { affected: r.affectedRows ?? null, erro: null };
+    return { affected: r.affectedRows ?? null, erro: null, code: null };
   } catch (e) {
-    return { affected: null, erro: (e as Error).message };
+    const err = e as Error & { code?: string };
+    return { affected: null, erro: err.message, code: err.code ?? null };
   }
 }
 
@@ -155,6 +166,21 @@ async function esperarRecusa(
   expect(
     r.erro ?? `UPDATE PASSOU sem erro (affectedRows=${r.affected}) — nada recusou`,
   ).toContain(fragmento);
+  expect(await lerValores(id)).toEqual(antes);
+}
+
+/**
+ * Exige recusa pelo PRIVILÉGIO de coluna (issue 330): SQLSTATE 42501 + fragmento
+ * `permission denied for table pedidos` (o trigger também usa 42501, só o
+ * fragmento distingue) e valores intactos via asService.
+ */
+async function esperarRecusaPrivilegio(id: string, sql: string, params: unknown[]): Promise<void> {
+  const antes = await lerValores(id);
+  const r = await updateComoDono(sql, params);
+  expect(
+    r.erro ?? `UPDATE PASSOU sem erro (affectedRows=${r.affected}) — nada recusou`,
+  ).toContain(FRAG_PRIVILEGIO);
+  expect(r.code).toBe("42501");
   expect(await lerValores(id)).toEqual(antes);
 }
 
@@ -255,15 +281,17 @@ describe("pedidos_protege_valor — dono NÃO reescreve valor via UPDATE direto"
     );
   });
 
-  it("[3b] bypass: trocar tipo_entrega para 'entrega' NO MESMO UPDATE do registro não libera (vale o OLD) → recusado", async () => {
+  it("[3b] bypass: trocar tipo_entrega para 'entrega' NO MESMO UPDATE do registro → recusado por privilégio (tipo_entrega sem grant)", async () => {
+    // Antes da 330 quem barrava era o trigger (vale o OLD, FRAG_SO_ENTREGA).
+    // Hoje tipo_entrega não tem grant de UPDATE para o dono: o bypass nem chega
+    // ao trigger. A regra D2 do trigger segue coberta por [3] e [3c].
     const id = await novoPedido({ tipo: "retirada" });
-    await esperarRecusa(
+    await esperarRecusaPrivilegio(
       id,
       `update public.pedidos
           set tipo_entrega = 'entrega', taxa_entrega = 5, total = 55, frete_a_combinar = false
         where id = $1`,
       [id],
-      FRAG_SO_ENTREGA,
     );
   });
 
@@ -333,35 +361,35 @@ describe("pedidos_protege_valor — dono NÃO reescreve valor via UPDATE direto"
     );
   });
 
-  it("[6] dono grava subtotal diferente → recusado", async () => {
+  // [6]/[6b]/[6c]: subtotal e desconto não têm grant de UPDATE para o dono
+  // (issue 330) — a recusa vem do privilégio, antes do trigger. A regra
+  // "valores somente-servidor" do trigger segue coberta por [1], [1b], [2], [2c].
+  it("[6] dono grava subtotal diferente → recusado por privilégio", async () => {
     const id = await novoPedido({ aCombinar: false, taxa: 10 });
-    await esperarRecusa(
+    await esperarRecusaPrivilegio(
       id,
       `update public.pedidos set subtotal = 1, total = 11 where id = $1`,
       [id],
-      FRAG_SOMENTE_SERVIDOR,
     );
   });
 
-  it("[6b] dono grava desconto diferente → recusado", async () => {
+  it("[6b] dono grava desconto diferente → recusado por privilégio", async () => {
     const id = await novoPedido({ aCombinar: false, taxa: 10 }); // 50 − 0 + 10
-    await esperarRecusa(
+    await esperarRecusaPrivilegio(
       id,
       `update public.pedidos set desconto = 49, total = 11 where id = $1`,
       [id],
-      FRAG_SOMENTE_SERVIDOR,
     );
   });
 
-  it("[6c] transição legítima CONTRABANDEANDO desconto no mesmo UPDATE → recusado", async () => {
+  it("[6c] transição legítima CONTRABANDEANDO desconto no mesmo UPDATE → recusado por privilégio", async () => {
     const id = await novoPedido(); // a combinar, 50 − 0
-    await esperarRecusa(
+    await esperarRecusaPrivilegio(
       id,
       `update public.pedidos
           set desconto = 50, taxa_entrega = 5, total = 5, frete_a_combinar = false
         where id = $1`,
       [id],
-      FRAG_SOMENTE_SERVIDOR,
     );
   });
 });
@@ -426,22 +454,34 @@ describe("pedidos_protege_valor — caminhos legítimos continuam passando", () 
     expect((await lerValores(id)).status).toBe("cancelado");
   });
 
-  it("[8c] UPDATE que reescreve colunas protegidas com o MESMO valor (no-op) não é bloqueado", async () => {
-    // Trava contra um GREEN que compare "coluna presente no SET" em vez de
-    // `is distinct from`: um PATCH com a linha inteira inalterada é inofensivo.
+  it("[8c] UPDATE que reescreve as colunas de valor LIBERADAS com o MESMO valor (no-op) não é bloqueado", async () => {
+    // Trava contra um trigger que compare "coluna presente no SET" em vez de
+    // `is distinct from`: reescrever taxa_entrega/total/frete_a_combinar sem
+    // mudar nada é inofensivo. Só colunas com grant de UPDATE (issue 330) —
+    // subtotal/desconto no SET são recusados por privilégio, ver [8d].
     // Nasce `confirmado`: `confirmado → em_preparo` é aresta do grafo RN-08
     // (issue 299 — `pendente → em_preparo` é salto que o banco passa a recusar).
     const id = await novoPedido({ status: "confirmado", aCombinar: false, taxa: 10 }); // total 60
     await esperarPermitido(
       `update public.pedidos
-          set status = 'em_preparo', subtotal = 50, desconto = 0, taxa_entrega = 10,
-              total = 60, frete_a_combinar = false
+          set status = 'em_preparo', taxa_entrega = 10, total = 60, frete_a_combinar = false
         where id = $1`,
       [id],
     );
     const v = await lerValores(id);
     expect(v.status).toBe("em_preparo");
     expect(v.total).toBe(60);
+  });
+
+  it("[8d] reescrever subtotal/desconto com o MESMO valor → recusado por privilégio (sem grant, issue 330)", async () => {
+    // O privilégio de coluna é checado pela presença no SET, não pelo valor:
+    // o no-op de [8c] só vale para as colunas liberadas.
+    const id = await novoPedido({ status: "confirmado", aCombinar: false, taxa: 10 }); // total 60
+    await esperarRecusaPrivilegio(
+      id,
+      `update public.pedidos set subtotal = 50, desconto = 0 where id = $1`,
+      [id],
+    );
   });
 });
 
@@ -526,7 +566,9 @@ describe("pedidos_protege_valor — service_role e postgres continuam escrevendo
  *          senão                                 → return new
  *     5. qualquer outra mudança de total/taxa_entrega/frete_a_combinar
  *                                                → raise FRAG_SOMENTE_SERVIDOR
- *   Regras de D2 leem OLD (tipo_entrega/status), nunca NEW — casos [3b]/[4b].
+ *   Regras de D2 leem OLD (tipo_entrega/status), nunca NEW — caso [4b]. ([3b]
+ *   cobria o mesmo para tipo_entrega; desde a issue 330 a coluna não tem grant
+ *   de UPDATE e o caso afirma a recusa por privilégio.)
  *   A fórmula do total espelha `calcularTotal` (clamp em 0 antes do frete).
  *
  *   create trigger pedidos_protege_valor_trg before update on public.pedidos
@@ -541,4 +583,6 @@ describe("pedidos_protege_valor — service_role e postgres continuam escrevendo
  *
  * Casos que precisam passar: [0]..[9d]. [7]..[9d] já passam hoje (trava
  * contra bloquear demais); [0]..[6c] são o RED.
+ * (Issue 330: [3b], [6], [6b], [6c] e o novo [8d] passaram a afirmar recusa por
+ * privilégio de coluna; [8c] usa só colunas com grant.)
  */
