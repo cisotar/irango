@@ -32,9 +32,9 @@ export function IndicadorEtapas({
           <a
             key={rotulo}
             href={ANCORAS[indice]}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-cinza-medio px-3 py-1.5 text-[0.8rem] font-bold text-texto-muted transition-colors hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-cinza-medio px-3 py-1.5 text-[0.8rem] font-bold text-texto-muted transition-colors hover:border-[var(--cor-primaria)] hover:text-[var(--cor-primaria)]"
           >
-            <span className="flex size-5 items-center justify-center rounded-full bg-[var(--cor-destaque)] text-[0.68rem] font-black text-white">
+            <span className="flex size-5 items-center justify-center rounded-full bg-[var(--cor-primaria)] text-[0.68rem] font-black text-white">
               {indice + 1}
             </span>
             {rotulo}
@@ -63,7 +63,7 @@ export function IndicadorEtapas({
               className={[
                 "flex size-[26px] shrink-0 items-center justify-center rounded-full border-2 text-xs font-black transition-colors",
                 concluida || ativa
-                  ? "border-[var(--cor-destaque)] bg-[var(--cor-destaque)] text-white"
+                  ? "border-[var(--cor-primaria)] bg-[var(--cor-primaria)] text-white"
                   : "border-cinza-medio bg-cinza-medio text-texto-muted",
               ].join(" ")}
             >
@@ -73,7 +73,7 @@ export function IndicadorEtapas({
               className={[
                 "text-xs font-bold",
                 ativa
-                  ? "inline text-[var(--cor-destaque)]"
+                  ? "inline text-[var(--cor-primaria)]"
                   : "hidden text-texto-muted md:inline",
               ].join(" ")}
             >
@@ -83,7 +83,7 @@ export function IndicadorEtapas({
               <span
                 className={[
                   "mx-1.5 h-0.5 w-4 min-w-[16px] max-w-[48px] flex-1 rounded transition-colors sm:w-12",
-                  concluida ? "bg-[var(--cor-destaque)]" : "bg-cinza-medio",
+                  concluida ? "bg-[var(--cor-primaria)]" : "bg-cinza-medio",
                 ].join(" ")}
                 aria-hidden
               />

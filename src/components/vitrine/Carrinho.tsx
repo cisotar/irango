@@ -106,7 +106,7 @@ export function Carrinho({
                     <li key={linhaId} className="flex gap-3 py-3">
                       <div className="flex flex-1 flex-col gap-1">
                         <span className="text-sm font-medium">{item.nome}</span>
-                        <span className="text-sm text-muted-foreground">
+                        <span className="text-sm text-preto">
                           {formatarMoeda(subtotalItem)}
                         </span>
                         <ListaOpcionaisItem
@@ -166,7 +166,7 @@ export function Carrinho({
               <Separator />
               <div className="flex justify-between text-sm font-semibold">
                 <span>Subtotal</span>
-                <span>{formatarMoeda(subtotal)}</span>
+                <span className="text-preto">{formatarMoeda(subtotal)}</span>
               </div>
               {/* Sem o número do servidor, a linha simplesmente não existe —
                   nunca é calculada aqui (237). */}

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { HexColorPicker } from "react-colorful";
-import { Loader2 } from "lucide-react";
+import { Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import { PreviewVitrine } from "@/components/painel/PreviewVitrine";
@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { primariaTemContrasteBaixo } from "@/lib/utils/contrasteWcag";
 import { schemaTema } from "@/lib/validacoes/loja";
 import type { salvarTema as salvarTemaLojista } from "@/lib/actions/loja";
 
@@ -31,10 +32,12 @@ export type Tema = {
 
 const reHex = /^#[0-9a-fA-F]{6}$/;
 
+// A cor de destaque está oculta de propósito e não tem efeito na vitrine. O dado
+// segue em `lojas.tema` (sem migration) e é reenviado sem mudança no payload.
+// Ref.: specs/vitrine-cor-unica-primaria.md (RN-8).
 const CAMPOS: { chave: keyof Tema; rotulo: string }[] = [
   { chave: "primaria", rotulo: "Cor primária" },
   { chave: "fundo", rotulo: "Cor de fundo" },
-  { chave: "destaque", rotulo: "Cor de destaque" },
 ];
 
 /**
@@ -64,7 +67,9 @@ export function TemaClient({
     setTema((atual) => ({ ...atual, [chave]: normalizado.toLowerCase() }));
   }
 
-  const todasValidas = CAMPOS.every(({ chave }) => reHex.test(tema[chave]));
+  const todasValidas =
+    CAMPOS.every(({ chave }) => reHex.test(tema[chave])) &&
+    reHex.test(tema.destaque);
 
   function salvar() {
     const parsed = schemaTema.safeParse(tema);
@@ -122,6 +127,18 @@ export function TemaClient({
                     <p className="text-xs text-destructive">
                       Use o formato #RRGGBB.
                     </p>
+                  )}
+                  {chave === "primaria" && (
+                    <div role="status">
+                      {primariaTemContrasteBaixo(valor) && (
+                        <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                          <span>
+                            Essa cor é clara: o texto branco dos botões, da barra do carrinho e do cabeçalho pode ficar difícil de ler. Considere uma cor mais escura. Você ainda pode salvar.
+                          </span>
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               );

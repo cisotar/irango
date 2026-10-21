@@ -9,6 +9,7 @@ import {
 import { buscarLojaPorSlug, type LojaPublica } from "@/lib/supabase/queries/lojas";
 import { lojaAberta, type Horarios } from "@/lib/utils/lojaAberta";
 import { formaAtivaDaLoja } from "@/lib/utils/formaFrete";
+import { TemaLojaStyle } from "@/components/vitrine/TemaLojaStyle";
 import { CheckoutWizard } from "@/components/vitrine/checkout/CheckoutWizard";
 import { formatarEnderecoLoja } from "@/lib/utils/enderecoLoja";
 import {
@@ -183,6 +184,8 @@ export default async function CheckoutPage({ params }: PageProps) {
   const enderecoLoja = formatarEnderecoLoja(loja);
 
   return (
+    <>
+    <TemaLojaStyle tema={loja.tema} />
     <CheckoutWizard
       lojaId={lojaId}
       lojaSlug={slug}
@@ -198,5 +201,6 @@ export default async function CheckoutPage({ params }: PageProps) {
       mostrarEntrar={cliente.mostrarEntrar}
       mostrarCompletarPerfil={cliente.mostrarCompletarPerfil}
     />
+    </>
   );
 }

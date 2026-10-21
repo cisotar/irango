@@ -253,7 +253,7 @@ export function EtapaPagamento({
               <Label
                 key={f.id}
                 htmlFor={`pagamento-${f.id}`}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-destaque)] has-[[data-checked]]:bg-[var(--cor-destaque)]/5"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-cinza-medio p-3 has-[[data-checked]]:border-[var(--cor-primaria)] has-[[data-checked]]:bg-[var(--cor-primaria)]/5"
               >
                 <RadioGroupItem value={f.tipo} id={`pagamento-${f.id}`} />
                 <span className="flex-1">
@@ -364,7 +364,7 @@ export function EtapaPagamento({
               <Button
                 type="button"
                 size="lg"
-                className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+                className="h-14 w-full rounded-xl bg-[var(--cor-primaria)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-primaria)]/90"
                 disabled={!podeEnviar}
                 onClick={() => enviar()}
               >
@@ -376,7 +376,7 @@ export function EtapaPagamento({
               type="button"
               variant="outline"
               size="lg"
-              className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-destaque)] hover:text-[var(--cor-destaque)]"
+              className="h-12 w-full rounded-xl border-cinza-medio font-bold text-texto-muted hover:border-[var(--cor-primaria)] hover:text-[var(--cor-primaria)]"
               onClick={onVoltar}
               disabled={enviando}
             >

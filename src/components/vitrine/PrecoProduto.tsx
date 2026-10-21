@@ -58,7 +58,7 @@ const CONTAINER: Record<Tamanho, string> = {
 export function PrecoProduto({ produto, tamanho }: PrecoProdutoProps) {
   if (!produto.temDesconto) {
     return (
-      <span className={`${CONTAINER[tamanho]} ${PRECO[tamanho]} text-destaque`}>
+      <span className={`${CONTAINER[tamanho]} ${PRECO[tamanho]} text-preto`}>
         {formatarMoeda(produto.precoEfetivo)}
       </span>
     );
@@ -70,7 +70,7 @@ export function PrecoProduto({ produto, tamanho }: PrecoProdutoProps) {
       <s aria-hidden className={`${RISCADO[tamanho]} text-texto-muted`}>
         {formatarMoeda(produto.preco)}
       </s>
-      <span aria-hidden className={`${PRECO[tamanho]} text-destaque`}>
+      <span aria-hidden className={`${PRECO[tamanho]} text-preto`}>
         {formatarMoeda(produto.precoEfetivo)}
       </span>
     </span>

@@ -30,9 +30,10 @@ import {
   projetarCatalogoVitrine,
   type SecaoVitrine,
 } from "@/lib/utils/catalogoVitrine";
+import { TemaLojaStyle } from "@/components/vitrine/TemaLojaStyle";
 import { schemaTema } from "@/lib/validacoes/loja";
 import { lerMensagemModal } from "@/lib/validacoes/mensagemModal";
-import { THEME_PADRAO, FUNDO_PADRAO, DESTAQUE_PADRAO } from "@/lib/utils/manifest";
+import { THEME_PADRAO } from "@/lib/utils/manifest";
 import { diaNoFuso } from "@/lib/utils/fusoLoja";
 import type { Horarios } from "@/lib/utils/lojaAberta";
 import {
@@ -55,24 +56,6 @@ const carregarLoja = cache(async (slug: string) => {
   const db = await createClient();
   return buscarLojaPorSlug(db, slug);
 });
-
-type Tema = { primaria: string; fundo: string; destaque: string };
-
-const TEMA_PADRAO: Tema = {
-  primaria: THEME_PADRAO,
-  fundo: FUNDO_PADRAO,
-  destaque: DESTAQUE_PADRAO,
-};
-
-/**
- * Extrai o tema da loja validando com o mesmo schema da Server Action de config
- * (`#RRGGBB`). Tema ausente/malformado → defaults. Os valores já são validados
- * na escrita, então a injeção SSR via `<style>` não tem risco de injeção.
- */
-function resolverTema(tema: LojaPublica["tema"]): Tema {
-  const parsed = schemaTema.safeParse(tema);
-  return parsed.success ? parsed.data : TEMA_PADRAO;
-}
 
 /** Horários do JSONB → shape esperado por HeaderLoja/useLojaAberta (fail-safe). */
 function resolverHorarios(horarios: LojaPublica["horarios"]): Horarios {
@@ -250,8 +233,6 @@ export default async function VitrinePage({ params }: PageProps) {
     ocultos.filter((o) => idsPublicados.has(o.produto_id)),
   );
 
-  const tema = resolverTema(loja.tema);
-
   // [263] `SecaoVitrine`, não mais `CategoriaComProdutos`: um campo a mais
   // (`tipo`), que é o que permite ao despachante `ancoraSecao` pedir a âncora
   // certa sem que ninguém precise adivinhar a espécie da seção.
@@ -339,7 +320,7 @@ export default async function VitrinePage({ params }: PageProps) {
     <>
       {/* Tema da loja injetado via CSS custom properties no SSR (design-system §4).
           Valores validados como #RRGGBB na escrita — sem risco de injeção. */}
-      <style>{`:root{--cor-primaria:${tema.primaria};--cor-fundo:${tema.fundo};--cor-destaque:${tema.destaque};}`}</style>
+      <TemaLojaStyle tema={loja.tema} />
 
       <div className="min-h-screen bg-[var(--cor-fundo)]">
         <HeaderLoja

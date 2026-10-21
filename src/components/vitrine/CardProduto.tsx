@@ -55,8 +55,8 @@ type CardProdutoProps = {
 
 /**
  * Card de produto da vitrine — espelha design-claude/vitrine/card-produto.html:
- * foto 4:3, nome em 2 linhas, preço na cor de DESTAQUE da loja e botão "+"
- * quadrado (44×44) também na cor de destaque com texto branco fixo (contraste
+ * foto 4:3, nome em 2 linhas, preço em preto fixo e botão "+"
+ * quadrado (44×44) na cor primária da loja com texto branco fixo (contraste
  * seguro, design-system §4). Não comprável → a MESMA pílula no rodapé da imagem
  * + overlay cinza + botão desabilitado; o TEXTO da pílula vem do motivo
  * ("Esgotado" ou a frase de "quando volta" do servidor, 262). Apresentação
@@ -177,7 +177,7 @@ export function CardProduto({
             // então sem ela o dedo que cai sobre o "+" morre ali e a tela
             // parece travada. Com ela o toque ATRAVESSA até o card, que abre o
             // modal. O botão continua no DOM e continua `disabled`.
-            className={`${compravel ? "" : "pointer-events-none "}flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--cor-destaque)] text-base font-black leading-none text-white focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-[#9a9a9a] lg:h-7 lg:w-7 lg:text-sm`}
+            className={`${compravel ? "" : "pointer-events-none "}flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--cor-primaria)] text-base font-black leading-none text-white focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-[#9a9a9a] lg:h-7 lg:w-7 lg:text-sm`}
           >
             +
           </button>

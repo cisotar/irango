@@ -243,7 +243,7 @@ export function EtapaItens({
                       </p>
                     ) : (
                       <p className="text-[0.75rem] text-texto-muted">
-                        {formatarMoeda(item.preco)} / unidade
+                        <span className="text-preto">{formatarMoeda(item.preco)}</span> / unidade
                       </p>
                     )}
                   </div>
@@ -261,7 +261,7 @@ export function EtapaItens({
                       </s>
                     ) : (
                       <span
-                        className="text-[0.92rem] font-black text-[var(--cor-destaque)]"
+                        className="text-[0.92rem] font-black text-preto"
                         aria-label={`Preço total deste item: ${formatarMoeda(subtotalItem)}`}
                       >
                         {formatarMoeda(subtotalItem)}
@@ -289,7 +289,7 @@ export function EtapaItens({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="size-8 rounded-r-none border-borda-nav bg-cinza-claro text-destructive hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                          className="size-8 rounded-r-none border-borda-nav bg-cinza-claro text-destructive hover:border-[var(--cor-primaria)] hover:bg-cinza-medio"
                           aria-label={`Diminuir ${item.nome}`}
                           onClick={() => onDecrementar(linhaId)}
                         >
@@ -306,7 +306,7 @@ export function EtapaItens({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="size-8 rounded-l-none border-borda-nav bg-cinza-claro hover:border-[var(--cor-destaque)] hover:bg-cinza-medio"
+                          className="size-8 rounded-l-none border-borda-nav bg-cinza-claro hover:border-[var(--cor-primaria)] hover:bg-cinza-medio"
                           aria-label={`Aumentar ${item.nome}`}
                           onClick={() => onIncrementar(linhaId)}
                         >
@@ -421,7 +421,7 @@ export function EtapaItens({
           <Button
             type="button"
             size="lg"
-            className="h-14 w-full rounded-xl bg-[var(--cor-destaque)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-destaque)]/90"
+            className="h-14 w-full rounded-xl bg-[var(--cor-primaria)] text-base font-black uppercase tracking-wide text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:bg-[var(--cor-primaria)]/90"
             // [262] Item bloqueado trava o AVANÇO, não só o submit final: o
             // cliente não monta endereço e pagamento para ser recusado no fim.
             disabled={itens.length === 0 || bloqueados.length > 0}
