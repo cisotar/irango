@@ -15,6 +15,13 @@ Hoje não há vetor explorável: as duas tabelas só têm policy de SELECT, ent�
 `TRUNCATE` ignora a RLS, mas o PostgREST não o expõe e nenhuma função `SECURITY INVOKER` o executa. É defesa em profundidade:
 um `CREATE POLICY` futuro mal escrito abriria a escrita sem que o grant segurasse.
 
+## Achado extra do dump do cloud (pós-deploy da 330)
+O dump real mostra `GRANT SELECT,MAINTAIN ON TABLE public.pedidos TO anon` e `TO authenticated`. `MAINTAIN` é privilégio
+do Postgres 17 (VACUUM, ANALYZE, CLUSTER, REINDEX, REFRESH MATERIALIZED VIEW, LOCK TABLE). O pglite dos testes não o conhece, por
+isso nenhum teste o viu, e a 330 não o revogou. O PostgREST não executa esses comandos, então o risco é baixo, mas a revogação
+deve entrar aqui para `pedidos` e para as tabelas varridas: `revoke maintain on ... from anon, authenticated`. A prova é o dump
+do cloud depois do `db push`, não o teste pglite.
+
 ## O que fazer
 - Migration nova: `revoke update, delete, truncate, trigger, references` de `anon` e `authenticated` nas duas tabelas, deixando só `SELECT`
   (mesmo molde de `20261021120000_pedidos_lojista_so_status_e_frete.sql`).
