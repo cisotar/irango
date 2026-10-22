@@ -21,6 +21,13 @@ Pré-condição obrigatória: se a issue criou/alterou migration, o passo 6c do 
 
 Vitrine pública: `/loja/<slug>`. Painel: `/painel/*` (exige login). Use dados de `supabase/seed.sql` (fictícios, já aplicados no cloud via seed ou migration).
 
+## Browser (issue 176)
+
+- **Ver a tela:** `.mcp.json` registra o Playwright MCP. Se as ferramentas `mcp__playwright__*` existirem na sessão, use-as para clicar, tirar screenshot e inspecionar o DOM em vez de inferir do código. Se não existirem (servidor ainda não aprovado, sessão não-interativa), diga isso no relatório e caia para `npx playwright` ad-hoc ou Lighthouse.
+- **Regressão repetível:** `npm run test:e2e` roda `e2e/*.spec.ts` (Chromium com toque emulado). Precisa de `.env.local`, do dev server e de `E2E_EMAIL`/`E2E_SENHA` da loja de teste; sem elas os specs são pulados — reporte "pulado", nunca "passou".
+- **Login:** o Google bloqueia browser automatizado. Use e-mail e senha, ou um Chrome comum com `--remote-debugging-port` que o usuário loga e você conecta por CDP.
+- **Limite honesto:** emulação de toque não é aparelho real (sem Safari iOS, inércia de dedo, multitoque). Não escreva "validado em mobile" com base só nela; mudança de interação por toque ainda pede o checklist em aparelho.
+
 ## O que verificar por tipo de mudança
 
 ### Fluxo de pedido (o mais crítico)
