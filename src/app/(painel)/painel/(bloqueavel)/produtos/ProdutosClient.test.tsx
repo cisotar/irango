@@ -12,10 +12,12 @@
  * clique em "Ocultar/Exibir" invoca `alternarOculto` e o clique em
  * "Marcar esgotado/Disponibilizar" invoca `alternarDisponibilidade` — isso
  * exigiria simular eventos DOM reais (jsdom/happy-dom + @testing-library/react),
- * infraestrutura que o projeto não usa em nenhum teste hoje (confirmado: nem
- * jsdom nem @testing-library/react estão instalados). Essa invocação correta é
- * o ponto mais arriscado da issue 089 ("os dois handlers não se cruzam") e deve
- * ser verificada manualmente (`verificar`) até essa infra existir. A garantia
+ * infraestrutura que o projeto não usa em nenhum teste de unidade (confirmado:
+ * nem jsdom nem @testing-library/react estão instalados). Essa invocação correta
+ * é o ponto mais arriscado da issue 089 ("os dois handlers não se cruzam") e
+ * deve ser verificada por `verificar`. Interação de browser (clique, toque,
+ * arrasto) tem runner próprio desde a issue 176: Playwright em `e2e/`, rodado
+ * com `npm run test:e2e` — ver `references/architecture.md` §7. A garantia
  * equivalente do lado do SERVIDOR já existe em
  * src/lib/actions/produto.test.ts ("alternarDisponibilidade NÃO escreve
  * oculto"), que cobre a metade que dinheiro/RLS de fato protege.

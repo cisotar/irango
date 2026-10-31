@@ -24,9 +24,9 @@ import type { reordenarItensDoGrupoOpcional as reordenarItensDoGrupoOpcionalLoji
  * ─────────────────────────────────────────── Sem arrasto, e não é preguiça
  * Esta lista vive DENTRO da lista de grupos, que já é arrastável: uma alça aqui
  * seria `DndContext` dentro de `DndContext`, com o `pointerdown` da alça interna
- * borbulhando para o sensor externo. Além disso não há Playwright nem MCP de
- * browser nesta máquina (issue 176), então gesto de toque não é testável por
- * agente nenhum — setas e teclado são. `semArrasto` faz o `ModoReordenar` não
+ * borbulhando para o sensor externo. Além disso o teste de toque em `e2e/` (issue
+ * 176) cobre só a alça das categorias; aqui setas e teclado são o que se testa.
+ * `semArrasto` faz o `ModoReordenar` não
  * montar o contexto, o que também elimina as instruções de arrasto do dnd-kit
  * (que descreveriam uma alça inexistente) e a terceira `aria-live` da tela.
  *
