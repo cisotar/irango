@@ -6,8 +6,16 @@ import type { User } from "@supabase/supabase-js";
 const fakeUser = { id: "uid-papel", email: "t@exemplo.com", email_confirmed_at: "2026-06-15T10:00:00.000Z" } as User;
 
 const exchangeCodeForSession = vi.fn();
+// Issue 366: sessão comum de login por senha (amr password) lida via getClaims(access_token).
+const getClaims = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: () => Promise.resolve({ auth: { exchangeCodeForSession: (...a: unknown[]) => exchangeCodeForSession(...a) } }),
+  createClient: () =>
+    Promise.resolve({
+      auth: {
+        exchangeCodeForSession: (...a: unknown[]) => exchangeCodeForSession(...a),
+        getClaims: (...a: unknown[]) => getClaims(...a),
+      },
+    }),
 }));
 const rpc = vi.fn();
 vi.mock("@/lib/supabase/service", () => ({
@@ -27,8 +35,9 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.stubEnv("SAAS_ADMIN_USER_ID", "outro-id");
   reconciliar.mockResolvedValue(undefined);
-  exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser }, error: null });
+  exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser, session: { access_token: "jwt-teste" } }, error: null });
   rpc.mockResolvedValue({ data: ["lojista"], error: null });
+  getClaims.mockResolvedValue({ data: { claims: { amr: [{ method: "password" }] } }, error: null });
 });
 afterEach(() => vi.unstubAllEnvs());
 

@@ -31,9 +31,13 @@ const fakeUser: User = {
 // ── mock: @/lib/supabase/server ───────────────────────────────────────────────
 // createClient é async no callback → retorna Promise.resolve(...)
 const exchangeCodeForSession = vi.fn();
+// Issue 366: a porta lojista lê o `amr` da sessão trocada via getClaims(access_token).
+// Fixture: sessão comum de login por senha (não é recuperação).
+const getClaims = vi.fn();
 const serverClient = {
   auth: {
     exchangeCodeForSession: (...a: unknown[]) => exchangeCodeForSession(...a),
+    getClaims: (...a: unknown[]) => getClaims(...a),
   },
 };
 vi.mock("@/lib/supabase/server", () => ({
@@ -68,6 +72,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   reconciliarPosConfirmacao.mockResolvedValue(undefined);
   rpc.mockResolvedValue({ data: ["lojista"], error: null });
+  getClaims.mockResolvedValue({ data: { claims: { amr: [{ method: "password" }] } }, error: null });
 });
 
 // Casos de identidade (issue 148) manipulam SAAS_ADMIN_USER_ID por caso.
@@ -104,7 +109,7 @@ describe("GET /auth/callback", () => {
   // ── CAMINHO FELIZ ─────────────────────────────────────────────────────────────
   it("code válido → chama exchangeCodeForSession, reconciliar e redireciona /painel", async () => {
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -122,7 +127,7 @@ describe("GET /auth/callback", () => {
   // ── NEXT VÁLIDO ───────────────────────────────────────────────────────────────
   it("code válido + next=/vitrine → redireciona /vitrine", async () => {
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -135,7 +140,7 @@ describe("GET /auth/callback", () => {
   // ── ANTI OPEN-REDIRECT ────────────────────────────────────────────────────────
   it("code válido + next=//evil.com → sanitizarNext bloqueia; redireciona /painel", async () => {
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -177,7 +182,7 @@ describe("GET /auth/callback", () => {
   // ── NEXT INTERNO LONGO ────────────────────────────────────────────────────────
   it("code válido + next=/painel/pedidos → redireciona /painel/pedidos", async () => {
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -208,7 +213,7 @@ describe("GET /auth/callback — destino padrão por identidade (issue 148)", ()
   it("dono do SaaS sem next → redireciona /admin", async () => {
     vi.stubEnv("SAAS_ADMIN_USER_ID", fakeUser.id); // env casa o user autoritativo
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -221,7 +226,7 @@ describe("GET /auth/callback — destino padrão por identidade (issue 148)", ()
   it("lojista comum sem next → redireciona /painel (sem regressão)", async () => {
     vi.stubEnv("SAAS_ADMIN_USER_ID", "outro-uid-do-dono"); // env ≠ user do mock
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -234,7 +239,7 @@ describe("GET /auth/callback — destino padrão por identidade (issue 148)", ()
   it("dono do SaaS com next=/vitrine → next vence sobre /admin", async () => {
     vi.stubEnv("SAAS_ADMIN_USER_ID", fakeUser.id);
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -247,7 +252,7 @@ describe("GET /auth/callback — destino padrão por identidade (issue 148)", ()
   it("SAAS_ADMIN_USER_ID ausente → dono degrada para /painel, login não quebra", async () => {
     vi.stubEnv("SAAS_ADMIN_USER_ID", undefined); // fail-safe: env vazia
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser }, // seria o dono, mas sem env não há como saber
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } }, // seria o dono, mas sem env não há como saber
       error: null,
     });
 
@@ -261,7 +266,7 @@ describe("GET /auth/callback — destino padrão por identidade (issue 148)", ()
   it("dono do SaaS com next=//evil.com → sanitiza e cai no destino padrão /admin, sem vazar evil.com", async () => {
     vi.stubEnv("SAAS_ADMIN_USER_ID", fakeUser.id);
     exchangeCodeForSession.mockResolvedValue({
-      data: { user: fakeUser },
+      data: { user: fakeUser, session: { access_token: "jwt-teste" } },
       error: null,
     });
 
@@ -284,7 +289,7 @@ describe("GET /auth/callback — destino padrão por identidade (issue 148)", ()
  */
 describe("GET /auth/callback — papel da conta (issue 332)", () => {
   beforeEach(() => {
-    exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser }, error: null });
+    exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser, session: { access_token: "jwt-teste" } }, error: null });
   });
 
   it("[332-25] rpc → ['cliente'], sem next → '/minha-conta' (Marco B, ≠ /painel); reconciliar NÃO chamado", async () => {
