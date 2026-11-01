@@ -1,5 +1,5 @@
 // /login — Server Component wrapper. Lê `searchParams` (Promise no Next 16) e
-// passa `erroOAuth` e `senhaRedefinida` (issue 366) para o form cliente. Sem `useSearchParams`/`Suspense`: o
+// passa `erroOAuth` e `senhaRedefinida` para o form cliente. Sem `useSearchParams`/`Suspense`: o
 // servidor já tem o param, evita o gotcha de prerender (003).
 import { LoginForm } from "./LoginForm";
 

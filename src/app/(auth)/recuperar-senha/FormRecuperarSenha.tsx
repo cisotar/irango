@@ -1,6 +1,6 @@
 "use client";
 
-// Pedido do link (issue 366). A resposta é sempre a mesma (anti-enumeração) e
+// Pedido do link. A resposta é sempre a mesma (anti-enumeração) e
 // aparece numa caixa neutra. Autoridade: `solicitarRedefinicaoSenha`.
 import { useState } from "react";
 import { useForm } from "react-hook-form";

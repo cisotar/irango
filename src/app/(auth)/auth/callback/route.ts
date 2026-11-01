@@ -12,7 +12,7 @@ import { reconciliarPosConfirmacao } from "@/lib/auth/reconciliarPosConfirmacao"
 import { ehAdminSaaS } from "@/lib/auth/admin";
 import { ehSessaoDeRecuperacao } from "@/lib/utils/sessaoRecuperacao";
 
-/** Issue 366 (RN-07): destino fixo da recuperação da porta lojista. */
+/** RN-07: destino fixo da recuperação da porta lojista. */
 const CAMINHO_NOVA_SENHA = "/nova-senha";
 
 /**
@@ -31,7 +31,7 @@ const CAMINHO_NOVA_SENHA = "/nova-senha";
  * via service_role e `next` ou `/minha-conta`. A etapa 2 da recuperação por
  * link (`/conta/recuperar…`) sempre respeita o `next`.
  *
- * Recuperação da porta lojista (issue 366, D5): o ramo é decidido pelo `amr`
+ * Recuperação da porta lojista (D5): o ramo é decidido pelo `amr`
  * da sessão trocada (`getClaims(access_token)`), nunca pela URL. `recovery` →
  * `/nova-senha` fixo, sem `atribuirPapelInicial` (RN-09). Sem sessão ou sem
  * claims legíveis → `/login?erro=auth` (fail-closed). Erros com marca de

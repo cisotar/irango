@@ -1,4 +1,4 @@
-// /recuperar-senha — pedido do link da porta lojista (issue 366). Funciona igual
+// /recuperar-senha — pedido do link da porta lojista. Funciona igual
 // com ou sem sessão. `?erro=link` vem do callback (link inválido/expirado).
 import { FormRecuperarSenha } from "./FormRecuperarSenha";
 

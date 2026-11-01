@@ -1,6 +1,6 @@
 "use server";
 
-// Recuperação de senha da porta lojista (issue 366, specs/recuperacao-senha-self-service.md).
+// Recuperação de senha da porta lojista (specs/recuperacao-senha-self-service.md).
 // Padrão de `clienteAuth.ts`: rate limit por IP → safeParse `.strict()` antes de
 // qualquer I/O → try/catch → detalhe só no console.error (status/code/name),
 // mensagem genérica ao usuário (seguranca.md §14). Sem PII em log: nunca e-mail/senha.

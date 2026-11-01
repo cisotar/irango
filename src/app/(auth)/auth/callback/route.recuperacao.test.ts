@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import type { User } from "@supabase/supabase-js";
 
 /**
- * Fase RED (TDD) — issue 366, fatia F3: ramo de recuperação da porta lojista
+ * Contrato: ramo de recuperação da porta lojista
  * no callback. Spec: specs/recuperacao-senha-self-service.md §"Callback" (D5,
  * RN-07, RN-09).
  *

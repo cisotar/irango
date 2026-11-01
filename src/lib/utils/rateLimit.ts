@@ -36,7 +36,7 @@ export const LIMITES = {
   reenvioCliente: { limite: 1, janela: "1 m" },
   // Troca de senha na sessão de recuperação (achado P18).
   novaSenhaCliente: { limite: 5, janela: "1 m" },
-  // Porta lojista (issue 366, RN-03): mesma régua do cliente, baldes próprios.
+  // Porta lojista (RN-03): mesma régua do cliente, baldes próprios.
   recuperacaoLojista: { limite: 5, janela: "1 m" },
   novaSenhaLojista: { limite: 5, janela: "1 m" },
   criarPedido: { limite: 10, janela: "1 m" },

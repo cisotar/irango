@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * Fase RED (TDD) — issue 366, fatia F2b: `confirmarNovaSenha` (porta lojista).
+ * Contrato de `confirmarNovaSenha` (porta lojista).
  * Spec: specs/recuperacao-senha-self-service.md (D1, D2, RN-03, RN-04, RN-05,
  * RN-07, RN-08, RN-11).
  *

@@ -1,4 +1,4 @@
-// /nova-senha — troca de senha da porta lojista (issue 366). O form só aparece
+// /nova-senha — troca de senha da porta lojista. O form só aparece
 // com sessão aberta pelo link de recuperação; a autoridade é `confirmarNovaSenha`.
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
