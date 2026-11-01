@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.7.1 | **Atualizado:** 2026-10-18
+**Versão:** 0.7.2 | **Atualizado:** 2026-11-01
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -251,6 +251,16 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 ```
 
 O callback OAuth (`app/(auth)/auth/callback/route.ts`) bifurca o destino pós-login pela identidade: sem `next` explícito, dono do SaaS (`user.id === SAAS_ADMIN_USER_ID`, via `ehAdminSaaS()`) → `/admin` (hub de seleção); lojista → `/painel`; demais papéis → `/` (`destinoPadraoPorPapel`, `src/lib/utils/papeis.ts`). O callback é a porta `(auth)`: atribui `lojista` à conta que ainda não tem papel (`atribuirPapelInicial`, RPC `atribuir_papel_inicial`); papel existente nunca muda. `next` explícito sanitizado sempre tem prioridade sobre esse destino padrão (o guard do painel barra quem não é lojista).
+
+Recuperação de senha do lojista (issue 366), na mesma porta `(auth)`:
+
+```
+/login ("Esqueci minha senha?") → /recuperar-senha → solicitarRedefinicaoSenha (mesma resposta e piso de 1,5 s para qualquer e-mail)
+    → link no e-mail → /auth/callback → /nova-senha → confirmarNovaSenha (exige sessão de recuperação)
+    → signOut({ scope: 'global' }) → /login?redefinida=1
+```
+
+O ramo de recuperação do callback decide por `amr` lido de `getClaims(access_token)`, com destino fixo `/nova-senha`; não atribui papel e falha fechado (`/login?erro=auth`); link com erro ou expirado → `/recuperar-senha?erro=link`. Actions em `src/lib/actions/recuperacaoSenha.ts`. Peças compartilhadas com a porta cliente: `origemDaRequisicao` (`src/lib/utils/origemDaRequisicao.ts`), `aguardarPisoDeLatencia` (`src/lib/utils/latenciaMinima.ts`), `temSessaoDeRecuperacao` (`src/lib/auth/temSessaoDeRecuperacao.ts`) e `schemaBaseNovaSenha` (`src/lib/validacoes/auth.ts`). Segurança: `seguranca.md` §17.
 
 ### Fluxo da conta do cliente
 
