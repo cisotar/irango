@@ -10,6 +10,10 @@ import { destinoPadraoPorPapel, type Papel } from "@/lib/utils/papeis";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
 import { reconciliarPosConfirmacao } from "@/lib/auth/reconciliarPosConfirmacao";
 import { ehAdminSaaS } from "@/lib/auth/admin";
+import { ehSessaoDeRecuperacao } from "@/lib/utils/sessaoRecuperacao";
+
+/** Issue 366 (RN-07): destino fixo da recuperação da porta lojista. */
+const CAMINHO_NOVA_SENHA = "/nova-senha";
 
 /**
  * Callback OAuth / confirmação de email (padrão `@supabase/ssr`).
@@ -26,6 +30,12 @@ import { ehAdminSaaS } from "@/lib/auth/admin";
  * `/conta/completar` (preservando `next`); com perfil → `ultimo_acesso_em`
  * via service_role e `next` ou `/minha-conta`. A etapa 2 da recuperação por
  * link (`/conta/recuperar…`) sempre respeita o `next`.
+ *
+ * Recuperação da porta lojista (issue 366, D5): o ramo é decidido pelo `amr`
+ * da sessão trocada (`getClaims(access_token)`), nunca pela URL. `recovery` →
+ * `/nova-senha` fixo, sem `atribuirPapelInicial` (RN-09). Sem sessão ou sem
+ * claims legíveis → `/login?erro=auth` (fail-closed). Erros com marca de
+ * recuperação (`next=/nova-senha` ou `otp_expired`) → `/recuperar-senha?erro=link`.
  */
 export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams, origin } = new URL(request.url);
@@ -42,6 +52,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   // reconhecida por `error_code=otp_expired` ou pelo `next=/conta/recuperar…`
   // (o único fluxo que o gera); demais erros OAuth seguem como login Google.
   const linkInvalidoCliente = `${origin}/conta/recuperar?erro=link`;
+  // Só escolhe a tela de erro: nunca abre sessão nem decide papel.
+  const marcaRecuperacaoLojista =
+    !portaCliente && (next === CAMINHO_NOVA_SENHA || searchParams.get("error_code") === "otp_expired");
+  const erroLojista = (padrao: string) =>
+    marcaRecuperacaoLojista ? `${origin}/recuperar-senha?erro=link` : `${origin}${padrao}`;
   const erroOAuth = searchParams.get("error");
   if (erroOAuth) {
     console.error("[authCallback] oauth", erroOAuth);
@@ -50,11 +65,11 @@ export async function GET(request: NextRequest): Promise<Response> {
         searchParams.get("error_code") === "otp_expired" || next?.startsWith("/conta/recuperar") === true;
       return NextResponse.redirect(ehRecuperacao ? linkInvalidoCliente : `${origin}/conta/entrar?erro=google`);
     }
-    return NextResponse.redirect(`${origin}/login?erro=google`);
+    return NextResponse.redirect(erroLojista("/login?erro=google"));
   }
 
   if (!code) {
-    return NextResponse.redirect(portaCliente ? linkInvalidoCliente : `${origin}/login?erro=auth`);
+    return NextResponse.redirect(portaCliente ? linkInvalidoCliente : erroLojista("/login?erro=auth"));
   }
 
   const supabase = await createClient();
@@ -62,11 +77,23 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   if (error) {
     console.error("[authCallback]", error.status ?? "", error.code ?? "", error.name);
-    return NextResponse.redirect(portaCliente ? linkInvalidoCliente : `${origin}/login?erro=auth`);
+    return NextResponse.redirect(portaCliente ? linkInvalidoCliente : erroLojista("/login?erro=auth"));
   }
 
   if (!data.user) {
     return NextResponse.redirect(`${origin}${next ?? "/painel"}`);
+  }
+
+  if (!portaCliente) {
+    const recuperacao = await ehRecuperacaoLojista(supabase, data.session?.access_token);
+    if (recuperacao === null) {
+      return NextResponse.redirect(`${origin}/login?erro=auth`);
+    }
+    if (recuperacao) {
+      // Link de recuperação também prova posse do e-mail; no-op para conta sem loja.
+      await reconciliarPosConfirmacao(data.user);
+      return NextResponse.redirect(`${origin}${CAMINHO_NOVA_SENHA}`);
+    }
   }
 
   let papeis: Papel[];
@@ -95,6 +122,28 @@ export async function GET(request: NextRequest): Promise<Response> {
   // Um `next` explícito já sanitizado tem prioridade (o gate do painel barra).
   const destinoPadrao = destinoPadraoPorPapel({ ehAdmin: ehAdminSaaS(data.user.id), papeis });
   return NextResponse.redirect(`${origin}${next ?? destinoPadrao}`);
+}
+
+/**
+ * `amr` da sessão recém-trocada: `true` se recuperação, `false` se outra,
+ * `null` se não há sessão ou os claims não são legíveis (fail-closed).
+ */
+async function ehRecuperacaoLojista(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  accessToken: string | undefined,
+): Promise<boolean | null> {
+  if (!accessToken) return null;
+  try {
+    const { data, error } = await supabase.auth.getClaims(accessToken);
+    if (error || !data) {
+      console.error("[authCallback] claims", error?.status ?? "", error?.name ?? "");
+      return null;
+    }
+    return ehSessaoDeRecuperacao(data.claims.amr);
+  } catch (e) {
+    console.error("[authCallback] claims", e instanceof Error ? e.name : "erro");
+    return null;
+  }
 }
 
 /**
