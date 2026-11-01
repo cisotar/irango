@@ -198,7 +198,7 @@ seu contrato com o checkout, o rótulo fica num `Input` irmão — não alterar 
 ### Recuperar senha por link — `/conta/recuperar`
 **Mundo:** cliente · entrada (sem sessão para a etapa 1; etapa 2 exige sessão de recuperação)
 **[aprovado pelo usuário, 2026-10-02 — decisão 10 alterada]** Recuperação por **link** do Auth nativo, mesmo
-padrão de `specs/recuperacao-senha-self-service.md` (lojista): `resetPasswordForEmail(email, { redirectTo })` → o
+padrão de `specs/arquivo/recuperacao-senha-self-service.md` (lojista): `resetPasswordForEmail(email, { redirectTo })` → o
 GoTrue envia o template padrão "Reset Password" (`{{ .ConfirmationURL }}`, **sem mudança** de template e sem mudança
 no fluxo do lojista) → o link passa pelo callback, que troca o `code` por sessão de recuperação
 (`exchangeCodeForSession`, cookies HttpOnly, PKCE) e redireciona para o `next` sanitizado → `updateUser({ password })`.

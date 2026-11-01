@@ -45,12 +45,12 @@ O "mesmo navegador" é exigência do PKCE: o `code_verifier` fica em cookie do n
 - `page.tsx` (Server Component) — renderiza o form dentro do `(auth)/layout.tsx`; lê `?erro=link`.
 
 **Behaviors:**
-- [ ] Digitar o e-mail e validar o formato no cliente. Garantido em: cliente (UX) — a autoridade é a Server Action.
-- [ ] Pedir o link. Garantido em: **Server Action `solicitarRedefinicaoSenha`** — rate limit por IP → `safeParse` `.strict()` → `resetPasswordForEmail` sempre chamado → latência mínima.
-- [ ] Receber a mesma mensagem, no mesmo tempo aproximado, para e-mail existente, inexistente, só-Google, de cliente e com falha do GoTrue. Garantido em: **Server Action** (RN-01, RN-02, RN-03).
-- [ ] Ser barrado ao exceder o limite de pedidos. Garantido em: **Server Action + `rateLimit.ts`** (chave `recuperacaoLojista`).
-- [ ] Ver o aviso de link inválido quando chega com `?erro=link`. Garantido em: Server Component (leitura do query param, cosmético).
-- [ ] Voltar para `/login` pelo link "Voltar para o login". Garantido em: cliente (navegação).
+- [x] Digitar o e-mail e validar o formato no cliente. Garantido em: cliente (UX) — a autoridade é a Server Action.
+- [x] Pedir o link. Garantido em: **Server Action `solicitarRedefinicaoSenha`** — rate limit por IP → `safeParse` `.strict()` → `resetPasswordForEmail` sempre chamado → latência mínima.
+- [x] Receber a mesma mensagem, no mesmo tempo aproximado, para e-mail existente, inexistente, só-Google, de cliente e com falha do GoTrue. Garantido em: **Server Action** (RN-01, RN-02, RN-03).
+- [x] Ser barrado ao exceder o limite de pedidos. Garantido em: **Server Action + `rateLimit.ts`** (chave `recuperacaoLojista`).
+- [x] Ver o aviso de link inválido quando chega com `?erro=link`. Garantido em: Server Component (leitura do query param, cosmético).
+- [x] Voltar para `/login` pelo link "Voltar para o login". Garantido em: cliente (navegação).
 
 ---
 
@@ -65,12 +65,12 @@ Na porta lojista, depois da troca:
 Erros antes ou durante a troca (`?error=`, sem `code`, troca falha) com `next=/nova-senha` ou `error_code=otp_expired` → `/recuperar-senha?erro=link`. Demais erros seguem para `/login?erro=…` como hoje. Esse `next` só escolhe a **tela de erro**; nunca abre sessão nem decide papel.
 
 **Behaviors:**
-- [ ] Clicar o link do e-mail e chegar em `/nova-senha` com sessão de recuperação. Garantido em: **Route Handler** (`exchangeCodeForSession` + ramo por `amr`).
-- [ ] O ramo de recuperação não atribui papel a nenhuma conta (com ou sem papel prévio). Garantido em: **Route Handler** (teste: `atribuirPapelInicial` não é chamado). **crítico (TDD red-first).**
-- [ ] O destino da recuperação é sempre `/nova-senha`, mesmo com `next` adulterado (`//evil.com`, URL absoluta, outro path interno). Garantido em: **Route Handler** (destino fixo; `sanitizarNext` continua nos demais ramos). **crítico (TDD red-first).**
-- [ ] Sessão que **não** é de recuperação, chegando com `next=/nova-senha`, segue o fluxo normal (papel + destino por papel), sem desvio. Garantido em: **Route Handler** (ramo decidido pela sessão, não pela URL).
-- [ ] Link expirado/usado/aberto em outro navegador → `/recuperar-senha?erro=link`. Garantido em: **Route Handler**.
-- [ ] Porta cliente inalterada (os testes `route.cliente*.test.ts` continuam verdes sem edição). Garantido em: suíte existente.
+- [x] Clicar o link do e-mail e chegar em `/nova-senha` com sessão de recuperação. Garantido em: **Route Handler** (`exchangeCodeForSession` + ramo por `amr`).
+- [x] O ramo de recuperação não atribui papel a nenhuma conta (com ou sem papel prévio). Garantido em: **Route Handler** (teste: `atribuirPapelInicial` não é chamado). **crítico (TDD red-first).**
+- [x] O destino da recuperação é sempre `/nova-senha`, mesmo com `next` adulterado (`//evil.com`, URL absoluta, outro path interno). Garantido em: **Route Handler** (destino fixo; `sanitizarNext` continua nos demais ramos). **crítico (TDD red-first).**
+- [x] Sessão que **não** é de recuperação, chegando com `next=/nova-senha`, segue o fluxo normal (papel + destino por papel), sem desvio. Garantido em: **Route Handler** (ramo decidido pela sessão, não pela URL).
+- [x] Link expirado/usado/aberto em outro navegador → `/recuperar-senha?erro=link`. Garantido em: **Route Handler**.
+- [x] Porta cliente inalterada (os testes `route.cliente*.test.ts` continuam verdes sem edição). Garantido em: suíte existente.
 
 ---
 
@@ -83,14 +83,14 @@ Erros antes ou durante a troca (`?error=`, sem `code`, troca falha) com `next=/n
 - `page.tsx` (Server Component) — usa o helper compartilhado de "tem sessão de recuperação" (ver Reuso).
 
 **Behaviors:**
-- [ ] Ver o form só com sessão de recuperação; sem sessão ou com sessão comum, ver o estado de erro. Garantido em: Server Component (UX — a autoridade é a action).
-- [ ] Digitar nova senha + confirmação, com validação de força e igualdade no cliente. Garantido em: cliente (UX).
-- [ ] Trocar a senha. Garantido em: **Server Action `confirmarNovaSenha`** — rate limit por IP → `safeParse` `.strict()` (senha 8–72 + igualdade) → `getUser()` → `amr` com `recovery` → `updateUser({ password })` → `signOut({ scope: 'global' })`. **crítico (TDD red-first).**
-- [ ] Sessão comum de login (senha ou Google) **não** troca a senha, mesmo chamando a action direto. Garantido em: **Server Action** (D1). **crítico (TDD red-first).**
-- [ ] Depois da troca, todas as sessões da conta caem, inclusive em outros dispositivos e a de recuperação. Garantido em: **Server Action** (`signOut({ scope: 'global' })` chamado **só depois** de `updateUser` ok — teste trava a ordem) + guard do painel (usa `getUser()`, que consulta o GoTrue, então a sessão revogada cai na próxima requisição). **crítico (TDD red-first).**
-- [ ] Ser barrado ao exceder o limite de tentativas. Garantido em: **Server Action + `rateLimit.ts`** (chave `novaSenhaLojista`).
-- [ ] Após sucesso, ir para `/login?redefinida=1`. Garantido em: **Server Action** (destino fixo devolvido pelo servidor, sem `next`).
-- [ ] Não conseguir usar o mesmo link duas vezes. Garantido em: **Supabase Auth** (uso único) + sessão de recuperação já revogada pela 1ª troca.
+- [x] Ver o form só com sessão de recuperação; sem sessão ou com sessão comum, ver o estado de erro. Garantido em: Server Component (UX — a autoridade é a action).
+- [x] Digitar nova senha + confirmação, com validação de força e igualdade no cliente. Garantido em: cliente (UX).
+- [x] Trocar a senha. Garantido em: **Server Action `confirmarNovaSenha`** — rate limit por IP → `safeParse` `.strict()` (senha 8–72 + igualdade) → `getUser()` → `amr` com `recovery` → `updateUser({ password })` → `signOut({ scope: 'global' })`. **crítico (TDD red-first).**
+- [x] Sessão comum de login (senha ou Google) **não** troca a senha, mesmo chamando a action direto. Garantido em: **Server Action** (D1). **crítico (TDD red-first).**
+- [x] Depois da troca, todas as sessões da conta caem, inclusive em outros dispositivos e a de recuperação. Garantido em: **Server Action** (`signOut({ scope: 'global' })` chamado **só depois** de `updateUser` ok — teste trava a ordem) + guard do painel (usa `getUser()`, que consulta o GoTrue, então a sessão revogada cai na próxima requisição). **crítico (TDD red-first).**
+- [x] Ser barrado ao exceder o limite de tentativas. Garantido em: **Server Action + `rateLimit.ts`** (chave `novaSenhaLojista`).
+- [x] Após sucesso, ir para `/login?redefinida=1`. Garantido em: **Server Action** (destino fixo devolvido pelo servidor, sem `next`).
+- [x] Não conseguir usar o mesmo link duas vezes. Garantido em: **Supabase Auth** (uso único) + sessão de recuperação já revogada pela 1ª troca.
 
 ---
 
@@ -101,8 +101,8 @@ Erros antes ou durante a troca (`?error=`, sem `code`, troca falha) com `next=/n
 **Componentes:** `LoginForm.tsx` (existente) — `<Link href="/recuperar-senha">` e banner condicional.
 
 **Behaviors:**
-- [ ] Clicar em "Esqueci minha senha?" e ir para `/recuperar-senha`. Garantido em: cliente (navegação).
-- [ ] Ver "Senha redefinida. Entre com a nova senha." quando `?redefinida=1`. Garantido em: cliente (query param, cosmético).
+- [x] Clicar em "Esqueci minha senha?" e ir para `/recuperar-senha`. Garantido em: cliente (navegação).
+- [x] Ver "Senha redefinida. Entre com a nova senha." quando `?redefinida=1`. Garantido em: cliente (query param, cosmético).
 
 ---
 
