@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.11.1 | **Atualizado:** 2026-10-18
+**Versão:** 0.11.2 | **Atualizado:** 2026-11-01
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -1307,6 +1307,7 @@ Porta própria (`app/(cliente)`, `src/lib/actions/clienteAuth.ts`), mesma conta 
 - **Recuperação por LINK (não OTP):** `solicitarRecuperacaoCliente` chama `resetPasswordForEmail` sempre, com `redirectTo = /auth/callback?contexto=cliente&next=/conta/recuperar?etapa=nova-senha`, e responde a mesma mensagem para e-mail existente, inexistente, conta só-Google ou falha do GoTrue, com latência mínima constante (~1,5 s). O callback troca o código (`exchangeCodeForSession`) e abre uma **sessão de recuperação**; a recuperação não atribui papel novo, não registra `ultimo_acesso_em` e nunca é desviada para `/conta/completar`.
 - **Nova senha só com sessão de recuperação:** `redefinirSenhaCliente` exige `getUser()` e, em seguida, o claim `amr` do JWT (`getClaims()`) contendo `recovery` (`ehSessaoDeRecuperacao`, `src/lib/utils/sessaoRecuperacao.ts`). Sessão aberta por senha ou OAuth não troca senha sem a atual por esta action. A página `/conta/recuperar?etapa=nova-senha` aplica o mesmo critério (UX); a autoridade é a action.
 - **Redirect Allow List:** a URL do callback precisa estar na allowlist de Redirect URLs do Supabase; é ela a barreira contra host forjado em `origin`/`x-forwarded-host`, usados para montar os links.
+- **Recuperação de senha do lojista (issue 366):** `solicitarRedefinicaoSenha` (`src/lib/actions/recuperacaoSenha.ts`) responde igual e no mesmo tempo (piso de 1,5 s) para qualquer e-mail (RN-01, RN-02). `confirmarNovaSenha` só troca a senha com sessão `amr=recovery` (D1), lida da sessão (`getClaims`), nunca da URL, e encerra todas as sessões com `signOut({ scope: 'global' })` depois do `updateUser` (D2). Rate limit por IP nas duas etapas (chaves `recuperacaoLojista` e `novaSenhaLojista`). O ramo de recuperação do callback não atribui papel e falha fechado (`/login?erro=auth`). A conta é compartilhada lojista/cliente e a senha é a mesma (D6). **Pendências de ambiente (não são código):** a Redirect Allow List do Supabase deve ter só origens exatas do iRango, sem curinga de terceiros (ex.: `*.vercel.app`); SMTP próprio; o piso de 1,5 s só protege se o envio de e-mail ficar abaixo dele. **Divergência (issue 367):** a porta cliente ainda não encerra sessões após trocar a senha e o callback `contexto=cliente` atribui papel na recuperação, contrariando a frase "a recuperação não atribui papel novo" acima; a correção é da 367.
 
 ---
 

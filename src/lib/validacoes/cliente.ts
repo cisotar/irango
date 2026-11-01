@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { schemaCadastro } from "@/lib/validacoes/auth";
+import {
+  ERRO_SENHAS_NAO_CONFEREM,
+  schemaBaseNovaSenha,
+  schemaCadastro,
+  senhasConferem,
+} from "@/lib/validacoes/auth";
 import { schemaEnderecoCheckout } from "@/lib/validacoes/checkout";
 import { campoTelefoneComDdd } from "@/lib/validacoes/telefone";
 
@@ -46,13 +51,10 @@ export const schemaRecuperacaoCliente = z.object({ email: z.email(), next: campo
 /** Reenvio do link de confirmação (D4): mesmo formato da recuperação. */
 export const schemaReenvioConfirmacaoCliente = schemaRecuperacaoCliente;
 
-export const schemaNovaSenhaCliente = z
-  .object({ senha: campoSenha, confirmacao: z.string(), next: campoNext })
+export const schemaNovaSenhaCliente = schemaBaseNovaSenha
+  .extend({ next: campoNext })
   .strict()
-  .refine((d) => d.senha === d.confirmacao, {
-    message: "As senhas não conferem.",
-    path: ["confirmacao"],
-  });
+  .refine(senhasConferem, ERRO_SENHAS_NAO_CONFEREM);
 
 // ── perfil ────────────────────────────────────────────────────────────────────
 

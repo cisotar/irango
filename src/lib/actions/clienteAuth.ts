@@ -22,7 +22,9 @@ import {
 } from "@/lib/validacoes/cliente";
 import { extrairIp, verificarRateLimit } from "@/lib/utils/rateLimit";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
-import { ehSessaoDeRecuperacao } from "@/lib/utils/sessaoRecuperacao";
+import { origemDaRequisicao } from "@/lib/utils/origemDaRequisicao";
+import { aguardarPisoDeLatencia } from "@/lib/utils/latenciaMinima";
+import { temSessaoDeRecuperacao } from "@/lib/auth/temSessaoDeRecuperacao";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { atribuirPapelInicial } from "@/lib/supabase/queries/papeis";
@@ -44,34 +46,12 @@ const MSG_RECUPERACAO =
 const MSG_NOVA_SENHA_LINK = "Link inválido ou expirado. Peça um novo link.";
 const MSG_NOVA_SENHA_FALHOU = "Não foi possível redefinir a senha. Tente novamente.";
 
-/** B2: tempo mínimo da recuperação, para não revelar existência pela latência. */
-const TEMPO_MINIMO_RECUPERACAO_MS = 1500;
-
 const DESTINO_PADRAO_CLIENTE = "/minha-conta";
 /** Etapa 2 da recuperação, preservando o `next` de origem (já sanitizado). */
 function rotaNovaSenha(next: string | undefined): string {
   const params = new URLSearchParams({ etapa: "nova-senha" });
   if (next) params.set("next", next);
   return `/conta/recuperar?${params.toString()}`;
-}
-
-/**
- * Origem absoluta do app para os links do GoTrue. Vem dos headers da própria
- * requisição (a Redirect Allow List do Supabase é a barreira contra host
- * forjado); nunca do payload.
- */
-function origemDaRequisicao(h: Headers): string {
-  const origin = h.get("origin");
-  if (origin) {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      // cai no host abaixo
-    }
-  }
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  return `${proto}://${host}`;
 }
 
 /** `/auth/callback?contexto=cliente[&next=…]` — `next` já sanitizado. */
@@ -203,8 +183,7 @@ export async function solicitarRecuperacaoCliente(
     console.error("[solicitarRecuperacaoCliente]", e instanceof Error ? e.name : "erro");
   }
   // B2: latência constante — existir ou não a conta não muda o tempo de resposta.
-  const restante = TEMPO_MINIMO_RECUPERACAO_MS - (Date.now() - inicio);
-  if (restante > 0) await new Promise((r) => setTimeout(r, restante));
+  await aguardarPisoDeLatencia(inicio);
   return { ok: true, mensagem: MSG_RECUPERACAO };
 }
 
@@ -249,15 +228,8 @@ export async function redefinirSenhaCliente(payload: unknown): Promise<Resultado
 
   try {
     const supabase = await createClient();
-    // Sessão de recuperação aberta pelo callback (cookies HttpOnly). Sem ela, falha.
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) {
-      return { ok: false, erro: MSG_NOVA_SENHA_LINK };
-    }
-    // Só sessão de recuperação troca senha sem a atual (achado P18): login por
-    // senha/OAuth não passa daqui.
-    const { data: dadosClaims, error: erroClaims } = await supabase.auth.getClaims();
-    if (erroClaims || !dadosClaims || !ehSessaoDeRecuperacao(dadosClaims.claims.amr)) {
+    // Só a sessão aberta pelo link (cookies HttpOnly) troca senha sem a atual (P18).
+    if (!(await temSessaoDeRecuperacao(supabase))) {
       return { ok: false, erro: MSG_NOVA_SENHA_LINK };
     }
     const { error: erroUpdate } = await supabase.auth.updateUser({ password: parsed.data.senha });

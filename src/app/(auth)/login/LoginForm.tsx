@@ -13,6 +13,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { entrar } from "@/lib/actions/auth";
 import { schemaLogin, type EntradaLogin } from "@/lib/validacoes/auth";
 import { BotaoGoogle } from "@/app/(auth)/BotaoGoogle";
+import { AvisoNeutro } from "@/components/cliente/Alerta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +25,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export function LoginForm({ erroOAuth = false }: { erroOAuth?: boolean }) {
+export function LoginForm({
+  erroOAuth = false,
+  senhaRedefinida = false,
+}: {
+  erroOAuth?: boolean;
+  senhaRedefinida?: boolean;
+}) {
   const router = useRouter();
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erroCredencial, setErroCredencial] = useState<string | null>(null);
@@ -66,6 +73,12 @@ export function LoginForm({ erroOAuth = false }: { erroOAuth?: boolean }) {
         <CardTitle className="text-center text-xl">Entrar na sua conta</CardTitle>
       </CardHeader>
       <CardContent>
+        {senhaRedefinida && (
+          <div className="mb-4">
+            <AvisoNeutro>Senha redefinida. Entre com a nova senha.</AvisoNeutro>
+          </div>
+        )}
+
         {erroOAuth && (
           <div
             role="alert"
@@ -123,6 +136,14 @@ export function LoginForm({ erroOAuth = false }: { erroOAuth?: boolean }) {
             {errors.senha && (
               <p className="text-sm text-destructive">{errors.senha.message}</p>
             )}
+            <div className="flex justify-end">
+              <Link
+                href="/recuperar-senha"
+                className="inline-flex min-h-11 items-center text-sm font-medium text-primaria underline"
+              >
+                Esqueci minha senha?
+              </Link>
+            </div>
           </div>
 
           <Button type="submit" className="min-h-11 w-full" disabled={isSubmitting}>

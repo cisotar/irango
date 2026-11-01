@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizarNext } from "@/lib/utils/sanitizarNext";
-import { ehSessaoDeRecuperacao } from "@/lib/utils/sessaoRecuperacao";
+import { temSessaoDeRecuperacao } from "@/lib/auth/temSessaoDeRecuperacao";
 import { TopoConta } from "@/components/cliente/TopoConta";
 import { AlertaErro } from "@/components/cliente/Alerta";
 import { comNext } from "@/components/cliente/rotas";
@@ -18,13 +18,9 @@ import { FormNovaSenhaCliente } from "./FormNovaSenhaCliente";
 const MSG_LINK = "Link inválido ou expirado. Peça um novo link.";
 
 /** UX: a action repete a checagem; aqui só decide se o formulário aparece. */
-async function temSessaoDeRecuperacao(): Promise<boolean> {
+async function podeTrocarSenha(): Promise<boolean> {
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) return false;
-    const { data: claims, error: erroClaims } = await supabase.auth.getClaims();
-    return !erroClaims && !!claims && ehSessaoDeRecuperacao(claims.claims.amr);
+    return await temSessaoDeRecuperacao(await createClient());
   } catch (e) {
     console.error("[recuperarCliente] sessao", e instanceof Error ? e.name : "erro");
     return false;
@@ -40,7 +36,7 @@ export default async function RecuperarClientePage({
   const next = sanitizarNext(primeiro(params.next));
   const etapaNovaSenha = primeiro(params.etapa) === "nova-senha";
   const linkInvalido =
-    primeiro(params.erro) === "link" || (etapaNovaSenha && !(await temSessaoDeRecuperacao()));
+    primeiro(params.erro) === "link" || (etapaNovaSenha && !(await podeTrocarSenha()));
 
   if (linkInvalido) {
     return (

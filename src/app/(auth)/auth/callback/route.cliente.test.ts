@@ -66,7 +66,10 @@ const exchangeCodeForSession = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () =>
     Promise.resolve({
-      auth: { exchangeCodeForSession: (...a: unknown[]) => exchangeCodeForSession(...a) },
+      auth: {
+        exchangeCodeForSession: (...a: unknown[]) => exchangeCodeForSession(...a),
+        getClaims: () => Promise.resolve({ data: { claims: { amr: [{ method: "password" }] } }, error: null }),
+      },
       from: (t: string) => dbSessao.from(t),
     }),
 }));
@@ -91,7 +94,7 @@ beforeEach(() => {
   dbSessao = criarFakeDb();
   dbServico = criarFakeDb();
   reconciliar.mockResolvedValue(undefined);
-  exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser }, error: null });
+  exchangeCodeForSession.mockResolvedValue({ data: { user: fakeUser, session: { access_token: "jwt-teste" } }, error: null });
   rpc.mockResolvedValue({ data: ["cliente"], error: null });
   temPerfil(false);
 });
