@@ -609,3 +609,113 @@ Casos existentes que só ganham endereço no payload (asserção intacta; os de 
 - [ ] Nenhuma coordenada vai ao cliente; nenhum secret no cliente; nenhum dado pessoal em código, teste ou log
 - [ ] Mensagens D10 com verbo no imperativo; (b) não manda corrigir endereço
 - [ ] Checklist de clique (critério de aceite 3) entregue ao usuário
+
+## UX
+
+> Gravado pelo P4 (`desenhar`, 2026-11-16). Mockup: `mockups/primeiros-passos-da-loja.html` + `.md` (layout, classes e o porquê de cada decisão). Textos abaixo são finais: o P7 copia, não decide. Textos já fixados no plano técnico e afirmados pelo P3 (D10, `ROTULO_LOCALIZAR_DE_NOVO`, rótulos de `ETAPAS_ASSISTENTE`) estão repetidos aqui sem alteração. Nenhum token nem componente shadcn novo.
+
+### Chrome mínimo (`ChromeAssistente`)
+
+- Header `h-14 border-b bg-card`: logo da loja 32 px (sem logo: inicial do nome em círculo `bg-muted`, `aria-hidden`) · nome da loja (`truncate font-heading font-semibold`) · linha abaixo do nome: **"Primeiros passos"** (`text-xs text-muted-foreground`) · `<BotaoLogout className="min-h-[44px] w-auto" />` com o texto atual **"Sair"** (ícone + texto, nunca só ícone).
+
+### Progresso (`ProgressoAssistente`)
+
+- `<nav aria-label="Etapas da configuração">` dentro de `Card`.
+- Linha de estado: **"Etapa {n} de 7 · {rotulo}"** (rótulos de `ETAPAS_ASSISTENTE`: Perfil, Horários, Entregas, Pagamentos, Produtos, Opcionais, Revisar e publicar). Abaixo, barra de 7 segmentos `aria-hidden`.
+- Abaixo de `lg`: `<details>` com `<summary>` **"Ver todas as etapas"** (≥44 px). A partir de `lg`: lista sempre visível em coluna esquerda (`lg:grid-cols-[15rem_1fr]`, `lg:sticky lg:top-6`), linha de estado vira só **"Etapa {n} de 7"**.
+- Lista `<ol>` com 7 links (≥44 px, `focus-visible:ring-2`), número + rótulo. Etapa atual: `aria-current="step"`, `bg-muted font-medium border-l-4 border-primary`, texto auxiliar **"você está aqui"** (só abaixo de `lg`).
+- Etapa em `pendentes`: selo **"Falta"** (`Badge variant="outline"` + `border-amber-300 bg-amber-50 text-amber-800` + ícone `CircleAlert`). Etapa sem pendência não ganha check nem "concluída" (horários, entregas e opcionais nunca têm pendência; marcar como feito seria falso).
+- Opcionais: texto auxiliar **"pode pular"** (`text-xs text-muted-foreground`).
+
+### Navegação (`NavegacaoEtapas`)
+
+- `Card` no fim da etapa. Texto fixo acima dos botões: **"Salve as alterações antes de seguir."** (os botões só navegam; cada tela salva pelo próprio botão).
+- Na etapa opcionais o texto fixo é outro: **"Adicione opcionais agora ou depois, pelo painel."**
+- Botões (`min-h-[44px]`; em 360 px `grid grid-cols-2 gap-2`): **"Voltar"** (`variant="ghost"`, ícone `ChevronLeft`; ausente em perfil) · **"Próximo: {rótulo da etapa seguinte}"** (`variant="outline"`, ícone `ChevronRight`), ex.: "Próximo: Horários". Na etapa opcionais: **"Pular para revisar"**. Nunca `variant="default"`: o primário da etapa é o "Salvar" da tela reusada.
+- Revisar não tem `NavegacaoEtapas` (como no plano).
+
+### Etapa perfil (`PerfilClient`, vale também para painel e admin)
+
+- Rótulo **"Logradouro"** vira **"Rua"** (casa com "rua" de `ROTULOS_CAMPOS_ENDERECO` e da mensagem D10 a). Placeholder segue "Rua, avenida…".
+- Os 6 rótulos ganham ` *` em `<span aria-hidden="true">`: **"CEP *"**, **"Rua *"**, **"Número *"**, **"Bairro *"**, **"Cidade *"**, **"UF *"**; inputs com `required` (DD7). Complemento não existe.
+- Subtítulo da seção (troca "Usado para calcular zonas de entrega por raio."): **"Obrigatório para publicar a loja. Usado para calcular as zonas de entrega por raio. Campos com * são obrigatórios."**
+- Erro de campo vazio: mensagem nativa do navegador (atributo `required`). Nenhum texto novo; nenhum modal de geocoding para quem não preencheu (D13). Demais textos do form (toast "Perfil salvo!", "Confira os dados do perfil.") não mudam.
+
+### Etapa revisar
+
+- Cabeçalho (`Card`): h1 **"Revisar e publicar"**. Subtítulo:
+  - 1 pendência: **"Resolva o item marcado para publicar a loja."**
+  - 2+ pendências: **"Resolva os {n} itens marcados para publicar a loja."**
+  - nenhuma: **"Tudo pronto. Publique para a vitrine aparecer para os clientes."**
+- Checklist: `<ul aria-label="O que a loja precisa para ir ao ar">` em `Card`, **5 linhas fixas** nesta ordem, derivadas de `pendenciasPublicacao(estado)`:
+
+| Linha (título) | Pronto | Pendente (texto = `mensagemPendencia(p)`) | Ação na linha |
+|---|---|---|---|
+| **Nome e WhatsApp** | "Pronto" | (c) `ERRO_PERFIL_INCOMPLETO` | link **"Ir para Perfil"** |
+| **Endereço** | "Pronto" | (a) `mensagemEnderecoIncompleto(faltando)` | link **"Ir para Perfil"** |
+| **Localização no mapa** | "Pronto" | (b) `ERRO_SEM_LOCALIZACAO` | `<BotaoLocalizarEndereco>` |
+| **Forma de pagamento** | "Pronto" | (e) `ERRO_SEM_PAGAMENTO` | link **"Ir para Pagamentos"** |
+| **Produto disponível** | "Pronto" | (d) `ERRO_SEM_PRODUTO` | link **"Ir para Produtos"** |
+
+  - Terceiro estado só da linha "Localização no mapa": com pendência `endereco`, a linha mostra **"Complete o endereço para localizar a loja no mapa."**, ícone `Circle` tracejado `text-muted-foreground`, sem botão.
+  - Ícones: pronto `CheckCircle2` (`text-foreground`), pendente `CircleAlert` (`text-amber-800`). Leitor de tela: `<span className="sr-only">(pendente)</span>` / `(aguardando)` após o título.
+  - Links das linhas: `Button variant="outline"` como link, `min-h-[44px]`, destino `rotaDaEtapa(etapaDaPendencia(p))`.
+- `CartaoPublicacao` **depois** do checklist (último bloco da página).
+
+### Textos D10 (sem alteração; afirmados pelo P3)
+
+- (a) `mensagemEnderecoIncompleto(faltando)`: **"Preencha {campos} do endereço da loja antes de publicar."**, campos por `ROTULOS_CAMPOS_ENDERECO` (CEP, rua, número, bairro, cidade, UF), vírgulas e " e " antes do último. Ex.: "Preencha CEP e número do endereço da loja antes de publicar."
+- (b) `ERRO_SEM_LOCALIZACAO`: **"Toque em “Localizar meu endereço de novo” e tente publicar de novo em instantes."**
+- (c) `ERRO_PERFIL_INCOMPLETO`: **"Complete nome e WhatsApp antes de publicar a loja."**
+- (d) `ERRO_SEM_PRODUTO`: **"Cadastre ao menos um produto disponível antes de publicar a loja."**
+- (e) `ERRO_SEM_PAGAMENTO`: **"Cadastre ao menos uma forma de pagamento antes de publicar a loja."**
+
+### `CartaoPublicacao` (revisar, perfil do painel, perfil do admin)
+
+- Título **"Status da vitrine"** + selo **"No ar"** (`Badge variant="secondary"`) ou **"Rascunho"** (`variant="outline"`) — textos atuais.
+- Texto (`text-sm text-muted-foreground`, com `id` referenciado por `aria-describedby` do botão):
+  - publicado: **"Sua vitrine está visível e aceitando pedidos."** (atual)
+  - rascunho com `bloqueio`: o próprio `bloqueio` (texto D10 da 1ª pendência)
+  - rascunho sem bloqueio: **"Sua vitrine está oculta. Publique para receber pedidos."** (atual)
+- Só quando `destinoAposPublicar !== null` e rascunho sem bloqueio, linha extra: **"Depois de publicar, você vai para o painel da loja."**
+- Botão: **"Publicar loja"** (`variant="default"`) / **"Despublicar"** (`variant="outline"`), `min-h-[44px]`, `w-full sm:w-auto`; `Loader2` girando durante a transição; desabilitado em rascunho com bloqueio (o texto continua visível ao lado, nunca só tooltip).
+- Toasts (atuais): sucesso **"Loja publicada!"** / **"Loja despublicada."**; falha: `toast.error(r.erro)` com o texto que o servidor devolver (D10 ou genérico).
+
+### Botão D14 (`BotaoLocalizarEndereco`)
+
+- Rótulo: **"Localizar meu endereço de novo"** (`ROTULO_LOCALIZAR_DE_NOVO`), `Button variant="outline"`, ícone `MapPin`, `min-h-[44px] w-full sm:w-auto`.
+- Carregando: rótulo **"Localizando…"**, `Loader2 animate-spin`, `disabled`, `aria-busy="true"`.
+- Sucesso (`{ ok: true }`): `toast.success` **"Endereço localizado no mapa."** + `router.refresh()`; nenhum texto inline.
+- Falha (`{ ok: false, erro }`): `toast.error(erro)` **e** o mesmo `erro` fica em `<p aria-live="polite" className="text-sm text-foreground">` logo abaixo do botão até a próxima tentativa (o toast some; a instrução precisa ficar). A próxima tentativa limpa a linha.
+- Textos de falha que chegam em `erro` (todos com verbo no imperativo, nenhum diz "salvar", só `endereco` manda conferir):
+  - `avisoGeocodingPerfil(motivo, "localizar")` — mantidos como no plano (DD9), sem polimento:
+    - `transitorio` → **"Tente de novo em instantes: o mapa não respondeu agora."**
+    - `throttle_interno` → **"Tente de novo em instantes: muitas consultas ao mapa ao mesmo tempo por aqui."**
+    - `indisponivel_config` → **"Tente de novo mais tarde: nosso serviço de mapas está com um problema de configuração e nossa equipe já foi avisada."**
+    - `esgotado_global`, `esgotado_ip` → **"Tente de novo mais tarde: o serviço de mapas está indisponível no momento."**
+    - `nao_encontrado`, `cep_inexistente` → **"Confira rua, número e CEP no perfil: o mapa não encontrou esse endereço."**
+  - rate limit da action → **"Muitas tentativas. Aguarde um instante."** (fixado no plano)
+  - endereço incompleto na action → `mensagemEnderecoIncompleto(faltando)` (D10 a)
+  - sem loja / erro interno → `ERRO_SEM_LOJA` / `ERRO_GENERICO` de `loja.ts` (atuais)
+- `avisoGeocodingPerfil(motivo, "salvar")` e o modal do perfil não mudam de texto.
+
+### Aviso persistente D15 (`AvisoEnderecoLoja`)
+
+- Lugar: topo do `<main>` do painel, antes de `children`, em toda página. Sem botão de fechar.
+- Visual: `Card` branco (`§10.2` regra 4) com `CardContent className="flex gap-3"`, ícone `MapPin` (`aria-hidden`), título `font-medium`, corpo `text-sm text-muted-foreground`; `role="status"`. **Não** usa `destructive` nem o fundo de `AvisoEstadoBloqueado`: a loja está no ar, vermelho diria o contrário.
+- (a) `"completar-endereco"`:
+  - título **"Complete o endereço da loja"**
+  - corpo **"Sua loja segue no ar. Preencha o endereço completo no perfil para ativar as zonas de entrega por raio."**
+  - ação: `Link` com estilo `Button variant="outline"`, `min-h-[44px] w-full sm:w-auto`, texto **"Completar endereço"** → `hrefPerfil`
+- (b) `"localizar-de-novo"`:
+  - título **"Localize sua loja no mapa"**
+  - corpo **"Sua loja segue no ar. Toque em “Localizar meu endereço de novo” para ativar as zonas de entrega por raio."**
+  - ação: `<BotaoLocalizarEndereco>` (estados acima)
+- Nenhum texto do aviso fala de pedido, cancelamento ou endereço errado.
+
+### Acessibilidade (checar no P7/P9)
+
+- Alvos interativos `min-h-[44px]` literal (base de 120%, `design-system.md` §5).
+- Foco visível em links da lista, `<summary>`, botões e links-botão.
+- Contraste sobre branco: `muted-foreground` 4,74:1; `text-amber-800` sobre `bg-amber-50` 6,8:1.
+- Estado nunca só por cor: "Falta", "Pronto", "(pendente)", "(aguardando)" por extenso.
