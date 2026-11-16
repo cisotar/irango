@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.11.2 | **Atualizado:** 2026-11-01
+**Versão:** 0.11.3 | **Atualizado:** 2026-11-16
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -633,6 +633,7 @@ Faltando qualquer uma das três, volte para RPC `security definer` (T1–T7, aci
 - Sessão via cookies HttpOnly gerenciados por `@supabase/ssr`
 - `middleware.ts` refresha token em toda request — sem sessão expirada silenciosa; não participa de authz (não bloqueia rota, não propaga header de pathname)
 - Painel: guard duplo em camadas de layout, posicional — `(painel)/painel/layout.tsx` decide sessão/email/loja (`decidirAcessoBase`); o route group aninhado `(painel)/painel/(bloqueavel)/layout.tsx` decide só a assinatura (`decidirAssinatura`) sobre as rotas que estão dentro dele
+- Assistente de primeiros passos (issue 368): o gate `decidirPrimeirosPassos` (só `lojas.primeira_publicacao_em`, nunca `ativo`) vive em `(bloqueavel)/layout.tsx`, antes do paywall, e o assistente `primeiros-passos/` fica FORA do grupo — isenção posicional, sem leitura de pathname/header. `layout.tsx` e cada page do assistente chamam `exigirAssistente()` (`guard.ts`), fail-closed: sessão, loja ou leitura ausente/com erro → `/login?erro=sessao`; loja já publicada alguma vez → `/painel`. O assistente não aplica `decidirAssinatura`. O marcador é gravado só pelo trigger, write-once (nenhum papel de aplicação o altera; ver `schema.md` `lojas`)
 - Vitrine: sem auth — acesso público lido via anon key + RLS
 
 > **Gate de assinatura virou posicional, não por header de rota** (achado #3B do pentest 2026-07-08, issue 142): até aqui, a isenção do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) era decidida por `decidirAcessoPainel(user, loja, rota, agora)` comparando um prefixo de pathname — lido de um header `x-pathname` que `middleware.ts` escrevia a partir do request — contra a lista `ROTAS_EXCECAO_ASSINATURA`. Header de request é dado de transporte, potencialmente forjável pelo client (classe **CVE-2025-29927** — bypass de authz em middleware do Next.js via header manipulado). Fix: `decidirAcessoPainel` e `ROTAS_EXCECAO_ASSINATURA` foram **deletados** de `lib/utils/acessoPainel.ts` — reintrodução travada por `acessoPainel.deprecacao.test.ts` — e substituídos por duas funções puras sem input de transporte: `decidirAcessoBase(user, loja)` (sessão/email/loja) e `decidirAssinatura(loja, agora)` (só assinatura). A isenção do paywall virou estrutura de filesystem: as telas isentas ficam FORA do route group `src/app/(painel)/painel/(bloqueavel)/`, que tem `layout.tsx` próprio aplicando `decidirAssinatura` só às rotas posicionalmente dentro dele — imune a header forjado por construção, não por validação. Anti-loop (uma tela isenta movida por engano para dentro do grupo causaria deadlock de redirect) travado por `route-group.guard.test.ts`. `middleware.ts`/`updateSession` pararam de escrever `x-pathname` — hoje só refrescam a sessão, travado por `middleware.test.ts`. Nenhuma URL mudou; sem impacto em schema/RLS.
@@ -1243,7 +1244,7 @@ Sequência executada inteiramente no servidor (nunca no cliente):
 
 1. `supabase.auth.signUp(email, senha)` via cliente anon — retorna `user.id`.
 2. `atribuir_papel_inicial(userId, 'lojista')` via `service_role`; se a conta já existia com outro papel, recusa com a mesma mensagem de e-mail já cadastrado. Depois cria a loja direto com `criarLoja` sob `service_role` (`src/lib/actions/auth.ts`) — `cadastrar` não usa a RPC `garantir_loja_do_dono`.
-3. Loja nasce com `ativo = false`. Só vai à vitrine após confirmar email + completar perfil (guard na issue 016).
+3. Loja nasce com `ativo = false`. Só vai à vitrine após confirmar email + completar perfil (guard na issue 016). **Gate único de publicação (issue 368):** `podePublicarLoja` (`lib/utils/publicacao.ts`) exige nome, WhatsApp, os 6 campos de endereço (obrigatórios em `schemaPerfil`, recusados antes do geocoding), o par `latitude`/`longitude` já gravado, ≥1 produto disponível e ≥1 forma de pagamento. É revalidado no servidor a partir do banco (`carregarProntidaoPublicacao`, contagens com `eq("loja_id")` explícito) em `definirPublicacao` e em `publicarLojaAdmin`; o preview do cliente só antecipa. O admin não força: nenhum parâmetro pula o gate, e despublicar nunca passa por ele. A coordenada é derivada só no servidor (`salvarPerfil*`, `localizarEnderecoDeNovo`, rate limit `localizarEndereco` por loja, compare-and-set); o cliente recebe só variante/booleano. **Lacuna aberta:** PATCH direto em `ativo` pelo dono não passa pelo gate (débito 140, `architecture.md` §10).
 4. `consentimento_em` e `consentimento_versao` são gravados dentro da função SQL — nunca enviados pelo cliente como campo livre.
 5. `assinatura_status = 'trial'` e `assinatura_fim_periodo = now() + interval '14 days'` gravados SERVER-SIDE pela função SQL.
 

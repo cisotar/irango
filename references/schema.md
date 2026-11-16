@@ -1,6 +1,6 @@
 # Schema — iRango
 
-**Versão:** 0.8.1 | **Atualizado:** 2026-10-18
+**Versão:** 0.8.2 | **Atualizado:** 2026-11-16
 
 > Schema Postgres completo. Todo campo novo passa por migration em `supabase/migrations/`. Nunca alterar banco manualmente.
 
@@ -177,6 +177,19 @@ CREATE TABLE lojas (
   modo_frete       text    NOT NULL DEFAULT 'automatico'
                    CHECK (modo_frete IN ('automatico', 'a_combinar')),
   CONSTRAINT lojas_ao_menos_uma_modalidade CHECK (aceita_retirada OR aceita_entrega),
+
+  -- Marcador "já publicada ao menos uma vez" (issue 368, D1/D3). Roteia o painel:
+  -- NULL → assistente /painel/primeiros-passos; preenchido → painel completo, mesmo
+  -- despublicada. Nullable, sem default, sem índice (lido por linha da própria loja).
+  -- Gravada SÓ pelo trigger lojas_marca_primeira_publicacao_trg (BEFORE INSERT OR UPDATE,
+  -- SECURITY INVOKER, search_path vazio): now() quando `ativo` nasce/vira true; write-once
+  -- — coalesce(old, ...) ignora o valor enviado por qualquer papel (inclusive service_role),
+  -- sem lançar, então UPDATE que reenvie a linha inteira segue válido. Nunca volta a NULL.
+  -- Backfill (D2, antes do trigger): preenchida com now() em toda loja com `ativo = true`
+  -- OU com ≥1 linha em `pedidos`; as demais caem no assistente no próximo acesso.
+  -- Sem validação de prontidão em SQL: o gate é `podePublicarLoja` no servidor (débito 140).
+  -- Migration: 20261116120000_lojas_primeira_publicacao.sql
+  primeira_publicacao_em timestamptz,
 
   criado_em        timestamptz NOT NULL DEFAULT now(),
   atualizado_em    timestamptz NOT NULL DEFAULT now()
