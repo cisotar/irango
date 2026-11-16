@@ -109,9 +109,22 @@ const slugExiste = vi.fn<(...a: unknown[]) => Promise<boolean>>(async () => fals
 const criarLoja = vi.fn<(...a: unknown[]) => Promise<{ id: string }>>(
   async () => ({ id: LOJA_A }),
 );
-const buscarLojaAdminPorId = vi.fn<
-  (...a: unknown[]) => Promise<{ id: string; nome: string; whatsapp: string; ativo: boolean }>
->(async () => ({ id: LOJA_A, nome: "Loja A", whatsapp: "5511999999999", ativo: false }));
+// Issue 368 (D7): a loja-alvo é COMPLETA (endereço + par) para passar no gate
+// único de publicação; as contagens vêm do builder (count: 1 por padrão).
+const ENDERECO_COMPLETO = {
+  endereco_cep: "01310-100",
+  endereco_rua: "Avenida Paulista",
+  endereco_numero: "1000",
+  endereco_bairro: "Bela Vista",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
+  latitude: -23.56,
+  longitude: -46.65,
+};
+type LojaAdminFake = { id: string; nome: string; whatsapp: string; ativo: boolean } & typeof ENDERECO_COMPLETO;
+const buscarLojaAdminPorId = vi.fn<(...a: unknown[]) => Promise<LojaAdminFake>>(
+  async () => ({ id: LOJA_A, nome: "Loja A", whatsapp: "5511999999999", ativo: false, ...ENDERECO_COMPLETO }),
+);
 vi.mock("@/lib/supabase/queries/lojas", () => ({
   resolverDonoPorEmail: (...a: unknown[]) => resolverDonoPorEmail(...a),
   slugExiste: (...a: unknown[]) => slugExiste(...a),
@@ -235,6 +248,7 @@ beforeEach(() => {
     nome: "Loja A",
     whatsapp: "5511999999999",
     ativo: false,
+    ...ENDERECO_COMPLETO,
   });
 });
 

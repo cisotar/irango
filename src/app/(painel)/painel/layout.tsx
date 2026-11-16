@@ -10,7 +10,12 @@ import {
   type LojaCompleta,
 } from "@/lib/supabase/queries/lojas";
 import { buscarPapeisDoUsuario } from "@/lib/supabase/queries/papeis";
-import { decidirAcessoBase } from "@/lib/utils/acessoPainel";
+import {
+  decidirAcessoBase,
+  decidirPrimeirosPassos,
+} from "@/lib/utils/acessoPainel";
+import { varianteAvisoEndereco } from "@/lib/utils/publicacao";
+import { localizarEnderecoDeNovo } from "@/lib/actions/loja";
 import { destinoPadraoPorPapel, type Papel } from "@/lib/utils/papeis";
 import { ehAdminSaaS } from "@/lib/auth/admin";
 import { VERSAO_TERMOS } from "@/lib/constants/termos";
@@ -20,6 +25,8 @@ import {
   TopbarPainel,
   type ContextoNav,
 } from "@/components/painel/NavPainel";
+import { ChromeAssistente } from "@/components/painel/ChromeAssistente";
+import { AvisoEnderecoLoja } from "@/components/painel/AvisoEnderecoLoja";
 import type { Horarios } from "@/lib/utils/lojaAberta";
 
 export const metadata: Metadata = {
@@ -105,6 +112,18 @@ export default async function PainelLayout({
       // Mesma conta pode ser dono de loja E dono do SaaS (`SAAS_ADMIN_USER_ID`).
       // `ehAdminSaaS` é fail-safe (nunca lança) — link a mais nunca bloqueia o
       // painel; é só atalho de UX, a barreira real segue em `verificarAdminSaaS`.
+      // Loja que nunca foi ao ar (issue 368, D4): chrome mínimo, sem Sidebar.
+      // O gate de ROTA é do `(bloqueavel)/layout.tsx`; aqui só se escolhe o chrome.
+      if (decidirPrimeirosPassos(loja!) === "primeiros-passos") {
+        return (
+          <ChromeAssistente nomeLoja={loja!.nome} logoUrl={loja!.logo_url}>
+            {children}
+          </ChromeAssistente>
+        );
+      }
+      // Aviso persistente D15: loja já publicada sem endereço completo ou sem o
+      // par. Só a variante vai ao cliente — nunca as coordenadas (§19).
+      const variante = varianteAvisoEndereco(loja!);
       const contexto: ContextoNav = {
         nomeLoja: loja!.nome,
         logoUrl: loja!.logo_url,
@@ -122,6 +141,13 @@ export default async function PainelLayout({
           <div className="flex min-w-0 flex-1 flex-col">
             <TopbarPainel contexto={contexto} />
             <main className="superficie-painel flex-1 overflow-y-auto p-4 lg:p-6">
+              {variante && (
+                <AvisoEnderecoLoja
+                  variante={variante}
+                  hrefPerfil="/painel/configuracoes/perfil"
+                  onLocalizar={localizarEnderecoDeNovo}
+                />
+              )}
               {children}
             </main>
           </div>

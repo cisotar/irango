@@ -34,11 +34,14 @@ import {
   temCoordenadas,
 } from "@/lib/actions/patches-loja";
 import { geocodificarLojaComRetry } from "@/lib/actions/geocodificarComRetry";
+import type { MotivoGeocoding } from "@/lib/utils/geocodificarEndereco";
 
 // Tipo LOCAL (não exportado): 'use server' só pode exportar funções async. O
 // caller infere o retorno; este alias serve só de documentação interna.
+// `motivo` (issue 368, DD8): paridade com `salvarPerfil` — sem ele o cliente
+// cairia num texto que culpa o dado do lojista por falha nossa.
 type ResultadoPerfilAdmin =
-  | { ok: true; geocodificado: boolean }
+  | { ok: true; geocodificado: boolean; motivo?: MotivoGeocoding }
   | { ok: false; erro: string };
 
 // Chaves do perfil aceitas no allowlist-pick ANTES do parse `.strict()`, que
@@ -115,6 +118,7 @@ export async function salvarPerfilAdmin(
     // save que sequer tocou o endereço. Pulado, o par gravado é preservado.
     const regeocodificar = deveRegeocodificar(dados, lojaAtual);
     let geocodificado = temCoordenadas(lojaAtual);
+    let motivo: MotivoGeocoding | undefined;
 
     if (regeocodificar) {
       // 2º UPDATE: par de coords derivado no servidor (RN-1/RN-2), best-effort.
@@ -127,10 +131,12 @@ export async function salvarPerfilAdmin(
       // par NULL acima apagava as coordenadas — inclusive de lojistas salvando
       // ao mesmo tempo (cross-tenant).
       const consulta = montarConsultaGeocoding(dados);
-      const coords =
-        consulta === null
-          ? null
-          : (await geocodificarLojaComRetry(consulta, validacao.lojaId)).coords;
+      let coords: { latitude: number; longitude: number } | null = null;
+      if (consulta !== null) {
+        const geo = await geocodificarLojaComRetry(consulta, validacao.lojaId);
+        coords = geo.coords;
+        if (geo.coords === null) motivo = geo.motivo;
+      }
       const coordsPatch =
         coords === null
           ? { latitude: null, longitude: null }
@@ -151,7 +157,9 @@ export async function salvarPerfilAdmin(
       metadados: { campos: Object.keys(patch) },
     });
 
-    return { ok: true, geocodificado };
+    return motivo
+      ? { ok: true, geocodificado: false, motivo }
+      : { ok: true, geocodificado };
   } catch (e) {
     console.error("salvarPerfilAdmin:", e);
     return { ok: false, erro: ERRO_GENERICO };

@@ -39,8 +39,10 @@ export type CamposPerfil = {
 /**
  * Monta o payload enviado à Server Action de perfil.
  *
- * Campos de texto vazios são OMITIDOS (spread condicional): o schema os trata
- * como `.optional()` e a action preserva o valor gravado.
+ * Campos de texto vazios são OMITIDOS (spread condicional): o `schemaPerfil`
+ * decide se faltam. Telefone e WhatsApp são opcionais no schema; os 6 campos de
+ * endereço são obrigatórios desde a issue 368/193 (D12), então endereço vazio
+ * reprova no `safeParse` antes de qualquer I/O.
  */
 export function montarPayloadPerfil(campos: CamposPerfil) {
   const whatsappDigitos = apenasDigitos(campos.whatsapp);

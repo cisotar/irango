@@ -112,3 +112,18 @@ export function decidirAssinatura(
 ): DecisaoAssinatura {
   return assinaturaLibera(loja, agora) ? "ok" : "assinatura-bloqueada";
 }
+
+// ---------------------------------------------------------------------------
+// Primeiros passos (issue 368, D1/D4). Loja que nunca foi ao ar vai para o
+// assistente; o critério é o marcador write-once `primeira_publicacao_em`
+// (gravado só pelo trigger do banco), NUNCA `ativo` atual: despublicar não
+// devolve ao assistente. `undefined` (coluna ausente na row) conta como nulo.
+// ---------------------------------------------------------------------------
+
+export type DecisaoPrimeirosPassos = "primeiros-passos" | "concluido";
+
+export function decidirPrimeirosPassos(
+  loja: Pick<LojaCompleta, "primeira_publicacao_em">,
+): DecisaoPrimeirosPassos {
+  return loja.primeira_publicacao_em == null ? "primeiros-passos" : "concluido";
+}

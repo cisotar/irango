@@ -41,7 +41,25 @@ const capturado = vi.hoisted(() => ({
   // seletor da logo listaria/gravaria na galeria do ADMIN logado.
   onListarGaleria: undefined as ((cursor?: unknown) => unknown) | undefined,
   onEnviarParaGaleria: undefined as ((formData: FormData) => unknown) | undefined,
+  // Issue 368: todas as props, para o slot `topo` e para renderizar o
+  // PerfilClient REAL com a mesma fiação (markup dos `required`).
+  props: undefined as Record<string, unknown> | undefined,
 }));
+
+// Issue 368 (DD6): `CartaoPublicacao` — identidade estável
+// para reconhecer o elemento no slot `topo` sem renderizá-lo.
+const cartao = vi.hoisted(() => ({
+  CartaoPublicacao: (_p: Record<string, unknown>) => null,
+}));
+vi.mock("@/components/painel/CartaoPublicacao", () => ({
+  CartaoPublicacao: cartao.CartaoPublicacao,
+  default: cartao.CartaoPublicacao,
+}));
+// Para o PerfilClient REAL (caso dos `required`): sem App Router nem cropper.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+}));
+vi.mock("@/components/painel/UploadLogoLoja", () => ({ UploadLogoLoja: () => null }));
 
 // --- child client do painel: stub que captura as props e não renderiza árvore real ---
 vi.mock(
@@ -59,6 +77,7 @@ vi.mock(
       capturado.onSalvarLogo = props.onSalvarLogo;
       capturado.onRemoverLogo = props.onRemoverLogo;
       capturado.onSalvar = props.onSalvar;
+      capturado.props = props as Record<string, unknown>;
       return null;
     },
   }),
@@ -116,7 +135,8 @@ import {
 } from "@/app/admin/assinantes/actions/admin-galeria";
 import { enviarImagemGaleria, listarImagensGaleria } from "@/lib/actions/galeria";
 import { salvarPerfilAdmin } from "@/app/admin/assinantes/actions/admin-perfil";
-import { salvarPerfil } from "@/lib/actions/loja";
+import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
+import { publicarLojaAdmin } from "@/app/admin/assinantes/actions/admin-publicar";
 
 function renderizar(lojaId = LOJA_ALVO) {
   // Como o `PerfilClient` é stub, os dados de perfil são irrelevantes ao wiring —
@@ -126,7 +146,7 @@ function renderizar(lojaId = LOJA_ALVO) {
       lojaId={lojaId}
       inicial={{} as never}
       publicado={false}
-      podePublicar
+      bloqueio={null}
       logoUrlInicial={null}
     />,
   );
@@ -239,6 +259,13 @@ const PAYLOAD_MIN = {
   nome: "Pizzaria Alvo",
   slug: "pizzaria-alvo",
   whatsapp: "5511999998888",
+  // Issue 368 (D12): perfil válido leva o endereço completo.
+  endereco_cep: "01310-100",
+  endereco_rua: "Avenida Paulista",
+  endereco_numero: "1000",
+  endereco_bairro: "Bela Vista",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
 };
 const LOJA_HOSTIL = "99999999-9999-4999-8999-999999999999";
 
@@ -285,5 +312,79 @@ describe("PerfilAdminClient — fiação de onSalvar (issue 124)", () => {
     // admin-loja.binding.test.ts); aqui provamos só que o wrapper não lê tenant
     // do payload.
     expect(salvarPerfil).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue 368 — DD6: o cartão de publicação sai do PerfilClient e entra pelo
+// slot `topo`; no admin, `onDefinirPublicacao` aponta para `publicarLojaAdmin`
+// com o `lojaId` da URL (o gate D7 é revalidado lá). DD7: os 6 `required`.
+
+describe("PerfilAdminClient — slot topo com CartaoPublicacao (issue 368)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturado.props = undefined;
+  });
+
+  it("topo é um CartaoPublicacao cujo onDefinirPublicacao chama publicarLojaAdmin(lojaId, publicar)", async () => {
+    renderToStaticMarkup(
+      <PerfilAdminClient
+        lojaId={LOJA_ALVO}
+        inicial={{} as never}
+        publicado={false}
+        bloqueio="Cadastre ao menos um produto disponível antes de publicar a loja."
+        logoUrlInicial={null}
+      />,
+    );
+    const topo = capturado.props?.topo as { type?: unknown; props?: Record<string, unknown> } | undefined;
+    expect(topo?.type).toBe(cartao.CartaoPublicacao);
+    expect(topo?.props?.publicado).toBe(false);
+    expect(topo?.props?.bloqueio).toBe("Cadastre ao menos um produto disponível antes de publicar a loja.");
+    expect(topo?.props?.destinoAposPublicar).toBeNull();
+    // O PerfilClient não recebe mais o cartão por props soltas (DD6).
+    expect(capturado.props).not.toHaveProperty("onDefinirPublicacao");
+    expect(capturado.props).not.toHaveProperty("podePublicar");
+
+    const onDefinir = topo?.props?.onDefinirPublicacao as (p: boolean) => Promise<unknown>;
+    await onDefinir(true);
+    expect(publicarLojaAdmin).toHaveBeenCalledWith(LOJA_ALVO, true);
+    expect(definirPublicacao).not.toHaveBeenCalled();
+  });
+
+  it("markup do wrapper admin traz os 6 required", async () => {
+    renderizar();
+    expect(capturado.props).toBeDefined();
+    const { PerfilClient: Real } = await vi.importActual<
+      typeof import("@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient")
+    >("@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient");
+    const inicial = {
+      nome: "Loja Alvo",
+      slug: "loja-alvo",
+      telefone: null,
+      whatsapp: null,
+      whatsapp_envio_automatico: true,
+      modal_promocoes: true,
+      endereco_cep: null,
+      endereco_rua: null,
+      endereco_numero: null,
+      endereco_bairro: null,
+      endereco_cidade: null,
+      endereco_estado: null,
+    };
+    const props = { ...(capturado.props as Record<string, unknown>), inicial } as unknown as Parameters<typeof Real>[0];
+    const markup = renderToStaticMarkup(<Real {...props} />);
+    for (const id of [
+      "perfil-endereco-cep",
+      "perfil-endereco-rua",
+      "perfil-endereco-numero",
+      "perfil-endereco-bairro",
+      "perfil-endereco-cidade",
+      "perfil-endereco-estado",
+    ]) {
+      const i = markup.indexOf(`id="${id}"`);
+      expect(i, id).toBeGreaterThan(-1);
+      const tag = markup.slice(markup.lastIndexOf("<input", i), markup.indexOf(">", i) + 1);
+      expect(tag, id).toMatch(/\srequired(=""|\s|>|\/)/);
+    }
   });
 });

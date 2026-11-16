@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import type { MotivoGeocoding } from "@/lib/utils/geocodificarEndereco";
 
-import { avisoGeocodingPerfil } from "./avisoGeocoding";
+import { avisoGeocodingPerfil } from "@/lib/utils/avisoGeocoding";
 
 // (180-B) O mapa de textos que existia aqui saiu: com os motivos novos da
 // re-auditoria (`throttle_interno`, `indisponivel_config`, `esgotado_*`,

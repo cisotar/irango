@@ -17,6 +17,8 @@ import {
   type FormaPagamento,
 } from "@/lib/supabase/queries/entregaPagamento";
 import { formaAtivaDaLoja } from "@/lib/utils/formaFrete";
+import { carregarProntidaoPublicacao } from "@/lib/supabase/queries/publicacao";
+import type { EstadoProntidao } from "@/lib/utils/publicacao";
 import {
   buscarPlanoAtivo,
   listarPlanosAtivos,
@@ -118,6 +120,38 @@ export async function carregarLojaAdminBase(lojaId: string): Promise<LojaComplet
   }
 
   return loja;
+}
+
+/**
+ * Loader server-only do PREVIEW do gate de publicação (issue 368, D7) na sub-rota
+ * admin de Perfil: estado da loja-alvo + contagens de produto disponível e forma
+ * de pagamento, para o botão "Publicar loja" mostrar a 1ª pendência. Preview
+ * apenas — `publicarLojaAdmin` relê tudo do banco e decide.
+ *
+ * MESMA ordem inegociável (fail-closed) de `carregarLojaAdminBase`:
+ *  1. `validarLojaIdAdmin(lojaId)` — não-UUID → `notFound()` antes de ler.
+ *  2. `verificarAdminSaaS()` ANTES de `createServiceClient()` — falha PROPAGA.
+ *  3. `buscarLojaAdminPorId(svc, id)`; `null` → `notFound()`.
+ *  4. `carregarProntidaoPublicacao(svc, loja)` — contagens com `eq("loja_id")`
+ *     explícito (o svc não tem RLS).
+ */
+export async function carregarProntidaoAdmin(lojaId: string): Promise<EstadoProntidao> {
+  const validacao = validarLojaIdAdmin(lojaId);
+  if (!validacao.ok) {
+    notFound();
+  }
+  const idValidado = validacao.lojaId;
+
+  await verificarAdminSaaS();
+
+  const svc = createServiceClient();
+
+  const loja = await buscarLojaAdminPorId(svc, idValidado);
+  if (!loja) {
+    notFound();
+  }
+
+  return carregarProntidaoPublicacao(svc, loja);
 }
 
 /**

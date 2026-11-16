@@ -38,6 +38,18 @@ import {
 // Helpers: usamos schema.safeParse(x).success como booleano de "passou".
 // ---------------------------------------------------------------------------
 
+// Issue 368/193 (D12): os 6 campos de endereço são OBRIGATÓRIOS no schemaPerfil.
+// Todo payload de perfil que deve ser aceito — ou recusado por OUTRO motivo — leva
+// o endereço completo, para a asserção seguir provando a regra do próprio caso.
+const enderecoValido = {
+  endereco_cep: "01310-100",
+  endereco_rua: "Av Paulista",
+  endereco_numero: "1000",
+  endereco_bairro: "Bela Vista",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
+};
+
 const temaValido = {
   primaria: "#e63946",
   fundo: "#ffffff",
@@ -57,67 +69,67 @@ const horariosValidos = {
 
 describe("schemaPerfil — slug (seguranca.md §6, defesa server-side)", () => {
   it("aceita slug minúsculo com hífen e dígitos", () => {
-    const r = schemaPerfil.safeParse({ nome: "Burger do Zé", slug: "burger-do-ze" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Burger do Zé", slug: "burger-do-ze" });
     expect(r.success).toBe(true);
   });
 
   it("rejeita slug com espaço e maiúsculas ('Burger Do Zé')", () => {
-    const r = schemaPerfil.safeParse({ nome: "Burger", slug: "Burger Do Zé" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Burger", slug: "Burger Do Zé" });
     expect(r.success).toBe(false);
   });
 
   it("rejeita slug com maiúscula ('Loja')", () => {
-    expect(schemaPerfil.safeParse({ nome: "x", slug: "Loja" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug: "Loja" }).success).toBe(false);
   });
 
   it("rejeita slug com espaço ('a b')", () => {
-    expect(schemaPerfil.safeParse({ nome: "x", slug: "a b" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug: "a b" }).success).toBe(false);
   });
 
   it("rejeita path traversal ('loja/../admin')", () => {
-    expect(schemaPerfil.safeParse({ nome: "x", slug: "loja/../admin" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug: "loja/../admin" }).success).toBe(false);
   });
 
   it("rejeita caractere especial ('loja_zé!')", () => {
-    expect(schemaPerfil.safeParse({ nome: "x", slug: "loja_zé!" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug: "loja_zé!" }).success).toBe(false);
   });
 
   it("rejeita slug curto demais (< 3)", () => {
-    expect(schemaPerfil.safeParse({ nome: "x", slug: "ab" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug: "ab" }).success).toBe(false);
   });
 
   it("rejeita slug longo demais (> 60)", () => {
-    expect(schemaPerfil.safeParse({ nome: "x", slug: "a".repeat(61) }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug: "a".repeat(61) }).success).toBe(false);
   });
 });
 
 describe("schemaPerfil — nome", () => {
   it("rejeita nome vazio", () => {
-    expect(schemaPerfil.safeParse({ nome: "", slug: "loja-ok" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "", slug: "loja-ok" }).success).toBe(false);
   });
 
   it("rejeita nome só de espaços (trim)", () => {
-    expect(schemaPerfil.safeParse({ nome: "   ", slug: "loja-ok" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "   ", slug: "loja-ok" }).success).toBe(false);
   });
 });
 
 describe("schemaPerfil — whatsapp (formato BR 55 + DDD + número)", () => {
   it("aceita whatsapp ausente (opcional)", () => {
-    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok" }).success).toBe(true);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "Loja", slug: "loja-ok" }).success).toBe(true);
   });
 
   it("aceita whatsapp BR válido (5511999998888)", () => {
-    const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", whatsapp: "5511999998888" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Loja", slug: "loja-ok", whatsapp: "5511999998888" });
     expect(r.success).toBe(true);
   });
 
   it("rejeita whatsapp com máscara/caracteres ('(11) 99999-8888')", () => {
-    const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", whatsapp: "(11) 99999-8888" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Loja", slug: "loja-ok", whatsapp: "(11) 99999-8888" });
     expect(r.success).toBe(false);
   });
 
   it("rejeita whatsapp sem prefixo 55 ('11999998888')", () => {
-    const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", whatsapp: "11999998888" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Loja", slug: "loja-ok", whatsapp: "11999998888" });
     expect(r.success).toBe(false);
   });
 });
@@ -145,16 +157,9 @@ describe("schemaPerfil — whatsapp (formato BR 55 + DDD + número)", () => {
 //    (chave desconhecida), não pela regra de CEP/UF. Passam a verde pelo motivo
 //    CERTO só após a GREEN. Os casos que PROVAM o RED são os "válido passa".
 // ---------------------------------------------------------------------------
-const enderecoValido = {
-  endereco_cep: "01310-100",
-  endereco_rua: "Av Paulista",
-  endereco_numero: "1000",
-  endereco_bairro: "Bela Vista",
-  endereco_cidade: "São Paulo",
-  endereco_estado: "SP",
-};
+// (issue 368: `enderecoValido` subiu para o topo do arquivo — D12 o exige em todo perfil válido.)
 
-describe("schemaPerfil — endereço (6 campos opcionais + strict rejeita coords)", () => {
+describe("schemaPerfil — endereço (6 campos obrigatórios + strict rejeita coords)", () => {
   // --- Passam (após GREEN) ---
   it("aceita payload base + os 6 campos de endereço válidos", () => {
     const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", ...enderecoValido });
@@ -171,9 +176,9 @@ describe("schemaPerfil — endereço (6 campos opcionais + strict rejeita coords
     expect(r.success).toBe(true);
   });
 
-  it("aceita payload SEM nenhum campo de endereço (todos opcionais)", () => {
+  it("rejeita payload sem endereço (D12: 6 campos obrigatórios)", () => {
     const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok" });
-    expect(r.success).toBe(true);
+    expect(r.success).toBe(false);
   });
 
   it("aceita UF minúscula ('sp') — regex [A-Za-z]", () => {
@@ -186,13 +191,28 @@ describe("schemaPerfil — endereço (6 campos opcionais + strict rejeita coords
     expect(r.success).toBe(true);
   });
 
-  it("aceita cada campo de endereço individualmente, demais ausentes", () => {
-    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_cep: "01310-100" }).success).toBe(true);
-    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_rua: "Av Paulista" }).success).toBe(true);
-    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_numero: "1000" }).success).toBe(true);
-    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_bairro: "Bela Vista" }).success).toBe(true);
-    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_cidade: "São Paulo" }).success).toBe(true);
-    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_estado: "SP" }).success).toBe(true);
+  it.each([
+    "endereco_cep",
+    "endereco_rua",
+    "endereco_numero",
+    "endereco_bairro",
+    "endereco_cidade",
+    "endereco_estado",
+  ] as const)("rejeita payload sem %s (D12)", (campo) => {
+    const payload: Record<string, unknown> = { nome: "Loja", slug: "loja-ok", ...enderecoValido };
+    delete payload[campo];
+    expect(schemaPerfil.safeParse(payload).success).toBe(false);
+    // Vazio também não vale: o campo existe mas não preenche o endereço.
+    expect(schemaPerfil.safeParse({ ...payload, [campo]: "" }).success).toBe(false);
+  });
+
+  it("rejeita cada campo de endereço sozinho, demais ausentes (D12)", () => {
+    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_cep: "01310-100" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_rua: "Av Paulista" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_numero: "1000" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_bairro: "Bela Vista" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_cidade: "São Paulo" }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", endereco_estado: "SP" }).success).toBe(false);
   });
 
   // --- Reprovam: coords nunca aceitas do cliente (.strict(), RN-1) ---
@@ -292,14 +312,14 @@ describe("schemaPerfil — endereço (6 campos opcionais + strict rejeita coords
     // mas a regex exige \d{10,11} DEPOIS do 55. '551199998888' tem 12 chars total,
     // 10 após '55' → deveria aceitar. Verificamos o caso 9 chars após DDD+55 (11 total).
     // '5511999988' → só 10 chars total → 8 após 55 → rejeita (\d{10,11} não casa com 8).
-    const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok", whatsapp: "5511999988" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Loja", slug: "loja-ok", whatsapp: "5511999988" });
     expect(r.success).toBe(false);
   });
 
   it("slug só de dígitos ('123') é aceito pelo schema (padrão [a-z0-9-])", () => {
     // reSlug = /^[a-z0-9-]{3,60}$/ — dígitos são permitidos.
     // Documenta a decisão: slug "123" é sintaticamente válido (unicidade garante semântica).
-    const r = schemaPerfil.safeParse({ nome: "Loja", slug: "123" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Loja", slug: "123" });
     expect(r.success).toBe(true);
   });
 });
@@ -372,7 +392,7 @@ describe("sanitizarSlug — sugestão UX a partir do nome", () => {
 
   it("a saída SEMPRE passa pelo schema de slug (paridade UX↔validação)", () => {
     const slug = sanitizarSlug("Lanchonete da Esquina!!!");
-    expect(schemaPerfil.safeParse({ nome: "Lanchonete", slug }).success).toBe(true);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "Lanchonete", slug }).success).toBe(true);
   });
 
   // issue 071: slug descongelado — bordas que podem aparecer com nomes reais
@@ -395,20 +415,20 @@ describe("sanitizarSlug — sugestão UX a partir do nome", () => {
     // A saída é string vazia — schema rejeita (< 3 chars). O campo fica inválido,
     // botão Salvar fica desabilitado. Esse é o comportamento correto.
     expect(slug).toBe("");
-    expect(schemaPerfil.safeParse({ nome: "x", slug }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug }).success).toBe(false);
   });
 
   it("nome vazio '' → slug vazio (campo inválido, submit bloqueado)", () => {
     const slug = sanitizarSlug("");
     expect(slug).toBe("");
-    expect(schemaPerfil.safeParse({ nome: "x", slug }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "x", slug }).success).toBe(false);
   });
 
   it("nome muito curto que gera < 3 chars → schema rejeita (submit bloqueado)", () => {
     // Ex.: nome "AB" → slug "ab" (2 chars) — abaixo do mínimo de 3
     const slug = sanitizarSlug("AB");
     expect(slug).toBe("ab");
-    expect(schemaPerfil.safeParse({ nome: "AB", slug }).success).toBe(false);
+    expect(schemaPerfil.safeParse({ ...enderecoValido, nome: "AB", slug }).success).toBe(false);
   });
 
   it("nome com dígitos → dígitos preservados no slug", () => {
@@ -479,6 +499,7 @@ describe("schemaNovaLojaAdmin (issue 086, validação isomórfica)", () => {
 describe("schemaPerfil — whatsapp_envio_automatico (issue 122)", () => {
   it("aceita a flag em true", () => {
     const r = schemaPerfil.safeParse({
+      ...enderecoValido,
       nome: "Loja",
       slug: "loja-ok",
       whatsapp_envio_automatico: true,
@@ -489,6 +510,7 @@ describe("schemaPerfil — whatsapp_envio_automatico (issue 122)", () => {
 
   it("aceita a flag em false (valor preservado, sem coerção para true)", () => {
     const r = schemaPerfil.safeParse({
+      ...enderecoValido,
       nome: "Loja",
       slug: "loja-ok",
       whatsapp_envio_automatico: false,
@@ -498,7 +520,7 @@ describe("schemaPerfil — whatsapp_envio_automatico (issue 122)", () => {
   });
 
   it("aceita payload SEM a flag e NÃO aplica default (chave ausente do data)", () => {
-    const r = schemaPerfil.safeParse({ nome: "Loja", slug: "loja-ok" });
+    const r = schemaPerfil.safeParse({ ...enderecoValido, nome: "Loja", slug: "loja-ok" });
     expect(r.success).toBe(true);
     expect(r.success && r.data.whatsapp_envio_automatico).toBeUndefined();
     expect(r.success && "whatsapp_envio_automatico" in r.data).toBe(false);
@@ -507,6 +529,7 @@ describe("schemaPerfil — whatsapp_envio_automatico (issue 122)", () => {
   it("rejeita valor não-booleano (sem coerção): 'true', 1, 0, null, 'false'", () => {
     for (const valor of ["true", "false", 1, 0, null, "sim", {}]) {
       const r = schemaPerfil.safeParse({
+      ...enderecoValido,
         nome: "Loja",
         slug: "loja-ok",
         whatsapp_envio_automatico: valor,

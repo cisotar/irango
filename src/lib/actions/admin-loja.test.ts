@@ -327,6 +327,8 @@ describe("prepararContextoAdmin → escopo — injeta o tenant em TODA escrita",
       // [325/F6] forma ativa de frete: só a RPC salvar_zonas_entrega (e a legada
       // salvar_faixas_entrega) a grava, junto da versão. Patch admin nunca grava.
       "forma_frete",
+      // [368/D3] marcador da 1ª publicação: só o trigger do banco grava (write-once).
+      "primeira_publicacao_em",
     ];
     const payloadHostil = {
       ...Object.fromEntries(colunasBloqueadas.map((c) => [c, `forjado-${c}`])),

@@ -65,6 +65,10 @@ export const LIMITES = {
   recorteImagem: { limite: 20, janela: "1 m" },
   removerImagensGaleria: { limite: 10, janela: "1 m" },
   listarImagensGaleria: { limite: 30, janela: "1 m" },
+  // Botão "Localizar meu endereço de novo" (issue 368, D14/DD12): balde por LOJA
+  // (identificador = loja.id). Cada chamada pode consultar o geocoder externo
+  // (cobrado por chamada); o teto diário global do geocoder segue valendo.
+  localizarEndereco: { limite: 5, janela: "1 m" },
 } as const satisfies Record<string, { limite: number; janela: `${number} m` }>;
 
 export type ChaveRateLimit = keyof typeof LIMITES;

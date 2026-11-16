@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Primeiros passos da loja</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+  // Tokens do painel (globals.css) — o painel não usa o tema da loja.
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          creme: "#f5f0e6",
+          foreground: "#171717",
+          muted: "#f5f5f5",
+          "muted-foreground": "#737373",
+          primary: "#171717",
+          "primary-foreground": "#fafafa",
+          borda: "#8a8a8a",
+          ring: "#a1a1a1",
+          destructive: "#e7000b",
+        },
+      },
+    },
+  };
+</script>
+<style>
+  html { font-size: 120%; } /* base real do projeto (§9) */
+  body { background: #e9e4da; color: #171717; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* shadcn recriado */
+  .card { background: #fff; border-radius: .75rem; box-shadow: 0 0 0 1px #8a8a8a; } /* .superficie-painel [data-slot=card] */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; min-height:44px; padding:0 .9rem; border-radius:.5rem; font-size:.8rem; font-weight:500; white-space:nowrap; transition:background .15s; }
+  .btn:focus-visible, .lnk:focus-visible, summary:focus-visible { outline:none; box-shadow:0 0 0 2px #fff, 0 0 0 4px #a1a1a1; }
+  .btn-primary { background:#171717; color:#fafafa; }
+  .btn-primary:hover { background:#333; }
+  .btn-outline { background:#fff; border:1px solid #8a8a8a; color:#171717; }
+  .btn-outline:hover { background:#f5f5f5; }
+  .btn-ghost { color:#171717; }
+  .btn-ghost:hover { background:#f5f5f5; }
+  .btn[disabled] { opacity:.5; pointer-events:none; }
+  .input { height:2.1rem; min-height:44px; width:100%; border:1px solid #8a8a8a; border-radius:.5rem; padding:0 .6rem; font-size:.8rem; background:#fff; }
+  .input:focus-visible { outline:none; box-shadow:0 0 0 3px #d4d4d4; border-color:#737373; }
+  .input[aria-invalid="true"] { border-color:#e7000b; }
+  .badge { display:inline-flex; align-items:center; gap:.25rem; border-radius:999px; padding:.05rem .5rem; font-size:.65rem; font-weight:500; border:1px solid; }
+  .badge-falta { background:#fffbeb; border-color:#fcd34d; color:#92400e; }
+  .badge-outline { border-color:#8a8a8a; color:#171717; }
+  .badge-secondary { background:#f5f5f5; border-color:transparent; color:#171717; }
+  .frame { width:360px; flex:none; background:#f5f0e6; border-radius:1.25rem; overflow:hidden; box-shadow:0 10px 30px -12px rgba(0,0,0,.35); border:6px solid #1f1f1f; }
+  .frame-desk { width:1024px; border-radius:.75rem; }
+  .ico { width:1rem; height:1rem; flex:none; }
+  summary { list-style:none; cursor:pointer; }
+  summary::-webkit-details-marker { display:none; }
+  details[open] .chev { transform:rotate(90deg); }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .spin { animation:spin 1s linear infinite; }
+  .toast { background:#fff; border:1px solid #e5e5e5; border-radius:.5rem; box-shadow:0 6px 18px -8px rgba(0,0,0,.3); padding:.6rem .8rem; font-size:.75rem; display:flex; gap:.5rem; align-items:flex-start; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Ícones (lucide) -->
+<svg width="0" height="0" class="absolute">
+  <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3"><circle cx="12" cy="12" r="10"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/></symbol>
+</svg>
+
+<header class="mx-auto max-w-6xl px-4 pt-6 pb-2">
+  <p class="text-xs uppercase tracking-wide text-neutral-600">Mockup · issue 368 · dados fictícios</p>
+  <h1 class="text-lg font-semibold">Primeiros passos da loja</h1>
+  <p class="mt-1 max-w-2xl text-sm text-neutral-700">Quadros de 360 px (mobile-first). Painel usa tokens neutros do <code>globals.css</code> e a superfície <code>.superficie-painel</code>; não usa o tema da loja. Textos finais na seção <code>## UX</code> da issue.</p>
+</header>
+
+<main class="mx-auto max-w-6xl px-4 pb-16">
+<div class="flex flex-wrap justify-center gap-8 py-4 lg:justify-start">
+
+<!-- ================= Quadro 1: Perfil ================= -->
+<section aria-labelledby="q1" class="space-y-2">
+  <h2 id="q1" class="text-sm font-semibold">1 · Etapa Perfil (endereço obrigatório)</h2>
+  <div class="frame">
+    <!-- ChromeAssistente -->
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <span aria-hidden="true" class="grid size-8 place-items-center rounded-full bg-neutral-200 text-sm font-semibold">L</span>
+      <div class="min-w-0 flex-1 leading-tight">
+        <p class="truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p>
+        <p class="text-[.65rem] text-muted-foreground">Primeiros passos</p>
+      </div>
+      <button class="btn btn-ghost px-3"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sair</button>
+    </header>
+    <div class="space-y-4 p-4">
+      <!-- ProgressoAssistente -->
+      <nav aria-label="Etapas da configuração" class="card p-4">
+        <p class="text-[.75rem] font-medium">Etapa 1 de 7 · Perfil</p>
+        <div aria-hidden="true" class="mt-2 grid grid-cols-7 gap-1">
+          <span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span>
+        </div>
+        <details class="mt-1">
+          <summary class="flex min-h-[44px] items-center gap-1 rounded-md text-[.75rem] underline"><svg class="ico chev transition-transform" aria-hidden="true"><use href="#i-right"/></svg>Ver todas as etapas</summary>
+        </details>
+      </nav>
+
+      <!-- PerfilClient (reusado) — topo={null} -->
+      <div>
+        <h1 class="mb-3 text-[1.1rem] font-semibold">Perfil da loja</h1>
+        <div class="card p-4">
+          <form class="space-y-3" onsubmit="return false">
+            <div class="space-y-1">
+              <label for="p-nome" class="text-[.75rem] font-medium">Nome da loja</label>
+              <input id="p-nome" class="input" value="Lanchonete Exemplo">
+            </div>
+            <div class="space-y-1">
+              <label for="p-wa" class="text-[.75rem] font-medium">WhatsApp</label>
+              <input id="p-wa" class="input" placeholder="(00) 00000-0000">
+            </div>
+            <hr class="border-neutral-200">
+            <div class="space-y-1">
+              <p class="text-[.8rem] font-medium">Endereço da loja</p>
+              <p class="text-[.7rem] text-muted-foreground">Obrigatório para publicar a loja. Usado para calcular as zonas de entrega por raio. Campos com <span aria-hidden="true">*</span><span class="sr-only">asterisco</span> são obrigatórios.</p>
+            </div>
+            <div class="space-y-1">
+              <label for="p-cep" class="text-[.75rem] font-medium">CEP <span aria-hidden="true">*</span></label>
+              <div class="flex gap-2">
+                <input id="p-cep" class="input" required inputmode="numeric" placeholder="00000-000" value="99999-999">
+                <button type="button" class="btn btn-outline"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>Buscar</button>
+              </div>
+            </div>
+            <div class="space-y-1">
+              <label for="p-rua" class="text-[.75rem] font-medium">Rua <span aria-hidden="true">*</span></label>
+              <input id="p-rua" class="input" required placeholder="Rua, avenida…" value="Rua Fictícia das Acácias">
+            </div>
+            <div class="grid grid-cols-1 gap-2">
+              <div class="space-y-1">
+                <label for="p-num" class="text-[.75rem] font-medium">Número <span aria-hidden="true">*</span></label>
+                <input id="p-num" class="input" required inputmode="numeric" aria-invalid="true" aria-describedby="p-num-erro">
+                <p id="p-num-erro" class="text-[.7rem] text-destructive">Preencha este campo.</p>
+              </div>
+              <div class="space-y-1">
+                <label for="p-bai" class="text-[.75rem] font-medium">Bairro <span aria-hidden="true">*</span></label>
+                <input id="p-bai" class="input" required value="Bairro Exemplo">
+              </div>
+            </div>
+            <div class="grid grid-cols-[1fr_4.5rem] gap-2">
+              <div class="space-y-1">
+                <label for="p-cid" class="text-[.75rem] font-medium">Cidade <span aria-hidden="true">*</span></label>
+                <input id="p-cid" class="input" required value="Cidade Modelo">
+              </div>
+              <div class="space-y-1">
+                <label for="p-uf" class="text-[.75rem] font-medium">UF <span aria-hidden="true">*</span></label>
+                <input id="p-uf" class="input" required maxlength="2" value="SP">
+              </div>
+            </div>
+            <hr class="border-neutral-200">
+            <button class="btn btn-primary w-full">Salvar</button>
+          </form>
+        </div>
+        <p class="mt-1 text-[.65rem] text-neutral-600">Mensagem "Preencha este campo." = validação nativa do navegador (atributo <code>required</code>); nenhum modal de geocoding.</p>
+      </div>
+
+      <!-- NavegacaoEtapas -->
+      <div class="card space-y-2 p-4">
+        <p class="text-[.7rem] text-muted-foreground">Salve as alterações antes de seguir.</p>
+        <div class="flex justify-end">
+          <a href="#" class="lnk btn btn-outline">Próximo: Horários<svg class="ico" aria-hidden="true"><use href="#i-right"/></svg></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quadro 2: progresso aberto ================= -->
+<section aria-labelledby="q2" class="space-y-2">
+  <h2 id="q2" class="text-sm font-semibold">2 · Etapa Horários, lista de etapas aberta</h2>
+  <div class="frame">
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <span aria-hidden="true" class="grid size-8 place-items-center rounded-full bg-neutral-200 text-sm font-semibold">L</span>
+      <div class="min-w-0 flex-1 leading-tight">
+        <p class="truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p>
+        <p class="text-[.65rem] text-muted-foreground">Primeiros passos</p>
+      </div>
+      <button class="btn btn-ghost px-3"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sair</button>
+    </header>
+    <div class="space-y-4 p-4">
+      <nav aria-label="Etapas da configuração" class="card p-4">
+        <p class="text-[.75rem] font-medium">Etapa 2 de 7 · Horários</p>
+        <div aria-hidden="true" class="mt-2 grid grid-cols-7 gap-1">
+          <span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span><span class="h-1.5 rounded-full bg-neutral-200"></span>
+        </div>
+        <details class="mt-1" open>
+          <summary class="flex min-h-[44px] items-center gap-1 rounded-md text-[.75rem] underline"><svg class="ico chev transition-transform" aria-hidden="true"><use href="#i-right"/></svg>Ver todas as etapas</summary>
+          <ol class="mt-1 space-y-0.5 text-[.75rem]">
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">1</span><span class="flex-1">Perfil</span><span class="badge badge-falta"><svg class="size-3" aria-hidden="true"><use href="#i-alert"/></svg>Falta</span></a></li>
+            <li><a href="#" aria-current="step" class="lnk flex min-h-[44px] items-center gap-2 rounded-md border-l-4 border-primary bg-muted px-2 font-medium"><span class="w-4 text-muted-foreground">2</span><span class="flex-1">Horários</span><span class="text-[.65rem] text-muted-foreground">você está aqui</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">3</span><span class="flex-1">Entregas</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">4</span><span class="flex-1">Pagamentos</span><span class="badge badge-falta"><svg class="size-3" aria-hidden="true"><use href="#i-alert"/></svg>Falta</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">5</span><span class="flex-1">Produtos</span><span class="badge badge-falta"><svg class="size-3" aria-hidden="true"><use href="#i-alert"/></svg>Falta</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">6</span><span class="flex-1">Opcionais</span><span class="text-[.65rem] text-muted-foreground">pode pular</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">7</span><span class="flex-1">Revisar e publicar</span></a></li>
+          </ol>
+        </details>
+      </nav>
+      <div>
+        <h1 class="mb-3 text-[1.1rem] font-semibold">Horários de funcionamento</h1>
+        <div class="card grid h-40 place-items-center p-4 text-center text-[.75rem] text-muted-foreground">HorariosClient reusado como está (DD5), com o próprio botão Salvar.</div>
+      </div>
+      <div class="card space-y-2 p-4">
+        <p class="text-[.7rem] text-muted-foreground">Salve as alterações antes de seguir.</p>
+        <div class="grid grid-cols-2 gap-2">
+          <a href="#" class="lnk btn btn-ghost"><svg class="ico" aria-hidden="true"><use href="#i-left"/></svg>Voltar</a>
+          <a href="#" class="lnk btn btn-outline">Próximo: Entregas<svg class="ico" aria-hidden="true"><use href="#i-right"/></svg></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quadro 3: Opcionais ================= -->
+<section aria-labelledby="q3" class="space-y-2">
+  <h2 id="q3" class="text-sm font-semibold">3 · Etapa Opcionais (pode pular)</h2>
+  <div class="frame">
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <span aria-hidden="true" class="grid size-8 place-items-center rounded-full bg-neutral-200 text-sm font-semibold">L</span>
+      <div class="min-w-0 flex-1 leading-tight">
+        <p class="truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p>
+        <p class="text-[.65rem] text-muted-foreground">Primeiros passos</p>
+      </div>
+      <button class="btn btn-ghost px-3"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sair</button>
+    </header>
+    <div class="space-y-4 p-4">
+      <nav aria-label="Etapas da configuração" class="card p-4">
+        <p class="text-[.75rem] font-medium">Etapa 6 de 7 · Opcionais</p>
+        <div aria-hidden="true" class="mt-2 grid grid-cols-7 gap-1">
+          <span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-neutral-200"></span>
+        </div>
+        <details class="mt-1"><summary class="flex min-h-[44px] items-center gap-1 rounded-md text-[.75rem] underline"><svg class="ico chev" aria-hidden="true"><use href="#i-right"/></svg>Ver todas as etapas</summary></details>
+      </nav>
+      <div>
+        <h1 class="mb-3 text-[1.1rem] font-semibold">Opcionais</h1>
+        <div class="card grid h-40 place-items-center p-4 text-center text-[.75rem] text-muted-foreground">OpcionaisClient reusado: grupos como "Adicionais do X-Burguer" (Bacon R$ 4,00, Ovo R$ 2,50).</div>
+      </div>
+      <div class="card space-y-2 p-4">
+        <p class="text-[.7rem] text-muted-foreground">Adicione opcionais agora ou depois, pelo painel.</p>
+        <div class="grid grid-cols-2 gap-2">
+          <a href="#" class="lnk btn btn-ghost"><svg class="ico" aria-hidden="true"><use href="#i-left"/></svg>Voltar</a>
+          <a href="#" class="lnk btn btn-outline">Pular para revisar<svg class="ico" aria-hidden="true"><use href="#i-right"/></svg></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quadro 4: Revisar — endereço incompleto ================= -->
+<section aria-labelledby="q4" class="space-y-2">
+  <h2 id="q4" class="text-sm font-semibold">4 · Revisar: endereço e produto pendentes</h2>
+  <div class="frame">
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <span aria-hidden="true" class="grid size-8 place-items-center rounded-full bg-neutral-200 text-sm font-semibold">L</span>
+      <div class="min-w-0 flex-1 leading-tight"><p class="truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p><p class="text-[.65rem] text-muted-foreground">Primeiros passos</p></div>
+      <button class="btn btn-ghost px-3"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sair</button>
+    </header>
+    <div class="space-y-4 p-4">
+      <nav aria-label="Etapas da configuração" class="card p-4">
+        <p class="text-[.75rem] font-medium">Etapa 7 de 7 · Revisar e publicar</p>
+        <div aria-hidden="true" class="mt-2 grid grid-cols-7 gap-1"><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span><span class="h-1.5 rounded-full bg-primary"></span></div>
+        <details class="mt-1"><summary class="flex min-h-[44px] items-center gap-1 rounded-md text-[.75rem] underline"><svg class="ico chev" aria-hidden="true"><use href="#i-right"/></svg>Ver todas as etapas</summary></details>
+      </nav>
+      <div class="card p-4">
+        <h1 class="text-[1.1rem] font-semibold">Revisar e publicar</h1>
+        <p class="mt-1 text-[.75rem] text-muted-foreground">Resolva os 2 itens marcados para publicar a loja.</p>
+      </div>
+      <ul class="card divide-y divide-neutral-200 text-[.75rem]" aria-label="O que a loja precisa para ir ao ar">
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Nome e WhatsApp</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5 text-amber-800" aria-hidden="true"><use href="#i-alert"/></svg><div class="flex-1 space-y-2"><p class="font-medium">Endereço <span class="sr-only">(pendente)</span></p><p class="text-muted-foreground">Preencha CEP e número do endereço da loja antes de publicar.</p><a href="#" class="lnk btn btn-outline">Ir para Perfil</a></div></li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5 text-muted-foreground" aria-hidden="true"><use href="#i-circle"/></svg><div class="flex-1"><p class="font-medium">Localização no mapa <span class="sr-only">(aguardando)</span></p><p class="text-muted-foreground">Complete o endereço para localizar a loja no mapa.</p></div></li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Forma de pagamento</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5 text-amber-800" aria-hidden="true"><use href="#i-alert"/></svg><div class="flex-1 space-y-2"><p class="font-medium">Produto disponível <span class="sr-only">(pendente)</span></p><p class="text-muted-foreground">Cadastre ao menos um produto disponível antes de publicar a loja.</p><a href="#" class="lnk btn btn-outline">Ir para Produtos</a></div></li>
+      </ul>
+      <!-- CartaoPublicacao -->
+      <div class="card space-y-3 p-4">
+        <div class="flex items-center gap-2"><span class="text-[.8rem] font-medium">Status da vitrine</span><span class="badge badge-outline">Rascunho</span></div>
+        <p id="bloq4" class="text-[.75rem] text-muted-foreground">Preencha CEP e número do endereço da loja antes de publicar.</p>
+        <button class="btn btn-primary w-full" disabled aria-describedby="bloq4">Publicar loja</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quadro 5: Revisar — falta só o par ================= -->
+<section aria-labelledby="q5" class="space-y-2">
+  <h2 id="q5" class="text-sm font-semibold">5 · Revisar: falta só localizar (D14)</h2>
+  <div class="frame">
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <span aria-hidden="true" class="grid size-8 place-items-center rounded-full bg-neutral-200 text-sm font-semibold">L</span>
+      <div class="min-w-0 flex-1 leading-tight"><p class="truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p><p class="text-[.65rem] text-muted-foreground">Primeiros passos</p></div>
+      <button class="btn btn-ghost px-3"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sair</button>
+    </header>
+    <div class="space-y-4 p-4">
+      <div class="card p-4">
+        <h1 class="text-[1.1rem] font-semibold">Revisar e publicar</h1>
+        <p class="mt-1 text-[.75rem] text-muted-foreground">Resolva o item marcado para publicar a loja.</p>
+      </div>
+      <ul class="card divide-y divide-neutral-200 text-[.75rem]" aria-label="O que a loja precisa para ir ao ar">
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Nome e WhatsApp</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Endereço</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5 text-amber-800" aria-hidden="true"><use href="#i-alert"/></svg>
+          <div class="flex-1 space-y-2">
+            <p class="font-medium">Localização no mapa <span class="sr-only">(pendente)</span></p>
+            <p class="text-muted-foreground">Toque em “Localizar meu endereço de novo” e tente publicar de novo em instantes.</p>
+            <!-- estado: ocioso -->
+            <button class="btn btn-outline w-full"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>Localizar meu endereço de novo</button>
+            <p class="pt-1 text-[.65rem] uppercase tracking-wide text-neutral-500">estado: carregando</p>
+            <button class="btn btn-outline w-full" disabled aria-busy="true"><svg class="ico spin" aria-hidden="true"><use href="#i-loader"/></svg>Localizando…</button>
+            <p class="pt-1 text-[.65rem] uppercase tracking-wide text-neutral-500">estado: falhou (motivo transitorio)</p>
+            <button class="btn btn-outline w-full"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>Localizar meu endereço de novo</button>
+            <p aria-live="polite" class="text-foreground">Tente de novo em instantes: o mapa não respondeu agora.</p>
+          </div>
+        </li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Forma de pagamento</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex items-start gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Produto disponível</p><p class="text-muted-foreground">Pronto</p></div></li>
+      </ul>
+      <div class="card space-y-3 p-4">
+        <div class="flex items-center gap-2"><span class="text-[.8rem] font-medium">Status da vitrine</span><span class="badge badge-outline">Rascunho</span></div>
+        <p id="bloq5" class="text-[.75rem] text-muted-foreground">Toque em “Localizar meu endereço de novo” e tente publicar de novo em instantes.</p>
+        <button class="btn btn-primary w-full" disabled aria-describedby="bloq5">Publicar loja</button>
+      </div>
+      <div class="toast"><svg class="ico text-foreground" aria-hidden="true"><use href="#i-check"/></svg><span>Endereço localizado no mapa.</span></div>
+      <p class="text-[.65rem] text-neutral-600">Toast de sucesso; em seguida <code>router.refresh()</code> marca a linha como Pronto e habilita "Publicar loja".</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quadro 6: Revisar — tudo pronto ================= -->
+<section aria-labelledby="q6" class="space-y-2">
+  <h2 id="q6" class="text-sm font-semibold">6 · Revisar: tudo pronto</h2>
+  <div class="frame">
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <span aria-hidden="true" class="grid size-8 place-items-center rounded-full bg-neutral-200 text-sm font-semibold">L</span>
+      <div class="min-w-0 flex-1 leading-tight"><p class="truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p><p class="text-[.65rem] text-muted-foreground">Primeiros passos</p></div>
+      <button class="btn btn-ghost px-3"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sair</button>
+    </header>
+    <div class="space-y-4 p-4">
+      <div class="card p-4">
+        <h1 class="text-[1.1rem] font-semibold">Revisar e publicar</h1>
+        <p class="mt-1 text-[.75rem] text-muted-foreground">Tudo pronto. Publique para a vitrine aparecer para os clientes.</p>
+      </div>
+      <ul class="card divide-y divide-neutral-200 text-[.75rem]" aria-label="O que a loja precisa para ir ao ar">
+        <li class="flex gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Nome e WhatsApp</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Endereço</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Localização no mapa</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Forma de pagamento</p><p class="text-muted-foreground">Pronto</p></div></li>
+        <li class="flex gap-3 p-4"><svg class="ico mt-0.5" aria-hidden="true"><use href="#i-check"/></svg><div class="flex-1"><p class="font-medium">Produto disponível</p><p class="text-muted-foreground">Pronto</p></div></li>
+      </ul>
+      <div class="card space-y-3 p-4">
+        <div class="flex items-center gap-2"><span class="text-[.8rem] font-medium">Status da vitrine</span><span class="badge badge-outline">Rascunho</span></div>
+        <p id="bloq6" class="text-[.75rem] text-muted-foreground">Sua vitrine está oculta. Publique para receber pedidos.</p>
+        <button class="btn btn-primary w-full" aria-describedby="bloq6">Publicar loja</button>
+        <p class="text-[.7rem] text-muted-foreground">Depois de publicar, você vai para o painel da loja.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quadro 7: Painel, aviso D15 (a) ================= -->
+<section aria-labelledby="q7" class="space-y-2">
+  <h2 id="q7" class="text-sm font-semibold">7 · Painel: aviso D15 (a) completar endereço</h2>
+  <div class="frame">
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <button class="btn btn-ghost px-3" aria-label="Abrir menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <p class="min-w-0 flex-1 truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p>
+      <span class="badge badge-secondary">Aberto agora</span>
+    </header>
+    <div class="space-y-4 p-4">
+      <div role="status" class="card flex gap-3 p-4">
+        <svg class="ico mt-0.5" aria-hidden="true"><use href="#i-pin"/></svg>
+        <div class="flex-1 space-y-2 text-[.75rem]">
+          <p class="font-medium">Complete o endereço da loja</p>
+          <p class="text-muted-foreground">Sua loja segue no ar. Preencha o endereço completo no perfil para ativar as zonas de entrega por raio.</p>
+          <a href="#" class="lnk btn btn-outline w-full">Completar endereço</a>
+        </div>
+      </div>
+      <div class="card p-4"><h1 class="text-[1.1rem] font-semibold">Pedidos</h1><p class="mt-1 text-[.75rem] text-muted-foreground">Página atual do painel (children).</p></div>
+      <div class="card grid h-48 place-items-center text-[.75rem] text-muted-foreground">#1042 · X-Burguer + Refri · R$ 38,90</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Quadro 8: Painel, aviso D15 (b) ================= -->
+<section aria-labelledby="q8" class="space-y-2">
+  <h2 id="q8" class="text-sm font-semibold">8 · Painel: aviso D15 (b) localizar de novo</h2>
+  <div class="frame">
+    <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-4">
+      <button class="btn btn-ghost px-3" aria-label="Abrir menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <p class="min-w-0 flex-1 truncate text-[.85rem] font-semibold">Lanchonete Exemplo</p>
+      <span class="badge badge-secondary">Aberto agora</span>
+    </header>
+    <div class="space-y-4 p-4">
+      <div role="status" class="card flex gap-3 p-4">
+        <svg class="ico mt-0.5" aria-hidden="true"><use href="#i-pin"/></svg>
+        <div class="flex-1 space-y-2 text-[.75rem]">
+          <p class="font-medium">Localize sua loja no mapa</p>
+          <p class="text-muted-foreground">Sua loja segue no ar. Toque no botão abaixo para ativar as zonas de entrega por raio.</p>
+          <button class="btn btn-outline w-full"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>Localizar meu endereço de novo</button>
+          <p aria-live="polite" class="text-foreground">Confira rua, número e CEP no perfil: o mapa não encontrou esse endereço.</p>
+          <p class="text-[.65rem] text-neutral-500">(última linha só aparece depois de uma falha; exemplo com motivo nao_encontrado)</p>
+        </div>
+      </div>
+      <div class="card p-4"><h1 class="text-[1.1rem] font-semibold">Início</h1><p class="mt-1 text-[.75rem] text-muted-foreground">Página atual do painel (children).</p></div>
+      <div class="card grid h-48 place-items-center text-[.75rem] text-muted-foreground">Pedidos de hoje: 7 · R$ 312,40</div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<!-- ================= Quadro 9: desktop ================= -->
+<section aria-labelledby="q9" class="mt-6 space-y-2">
+  <h2 id="q9" class="text-sm font-semibold">9 · Desktop (≥ lg): progresso em coluna fixa</h2>
+  <div class="overflow-x-auto pb-2">
+    <div class="frame frame-desk">
+      <header class="flex h-14 items-center gap-3 border-b border-neutral-200 bg-white px-6">
+        <span aria-hidden="true" class="grid size-8 place-items-center rounded-full bg-neutral-200 text-sm font-semibold">L</span>
+        <p class="flex-1 text-[.85rem] font-semibold">Lanchonete Exemplo <span class="ml-2 text-[.7rem] font-normal text-muted-foreground">Primeiros passos</span></p>
+        <button class="btn btn-ghost"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sair</button>
+      </header>
+      <div class="grid grid-cols-[15rem_1fr] gap-6 p-6">
+        <nav aria-label="Etapas da configuração" class="card h-fit p-4">
+          <p class="mb-2 text-[.75rem] font-medium">Etapa 5 de 7</p>
+          <ol class="space-y-0.5 text-[.75rem]">
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">1</span><span class="flex-1">Perfil</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">2</span><span class="flex-1">Horários</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">3</span><span class="flex-1">Entregas</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">4</span><span class="flex-1">Pagamentos</span></a></li>
+            <li><a href="#" aria-current="step" class="lnk flex min-h-[44px] items-center gap-2 rounded-md border-l-4 border-primary bg-muted px-2 font-medium"><span class="w-4 text-muted-foreground">5</span><span class="flex-1">Produtos</span><span class="badge badge-falta"><svg class="size-3" aria-hidden="true"><use href="#i-alert"/></svg>Falta</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">6</span><span class="flex-1">Opcionais</span><span class="text-[.65rem] text-muted-foreground">pode pular</span></a></li>
+            <li><a href="#" class="lnk flex min-h-[44px] items-center gap-2 rounded-md px-2"><span class="w-4 text-muted-foreground">7</span><span class="flex-1">Revisar e publicar</span></a></li>
+          </ol>
+        </nav>
+        <div class="max-w-2xl space-y-4">
+          <div><h1 class="mb-3 text-[1.1rem] font-semibold">Produtos</h1>
+            <div class="card grid h-56 place-items-center text-[.75rem] text-muted-foreground">ProdutosClient reusado: "X-Burguer · R$ 24,90", "Batata média · R$ 14,00"…</div></div>
+          <div class="card flex items-center justify-between gap-3 p-4">
+            <p class="text-[.7rem] text-muted-foreground">Salve as alterações antes de seguir.</p>
+            <div class="flex gap-2">
+              <a href="#" class="lnk btn btn-ghost"><svg class="ico" aria-hidden="true"><use href="#i-left"/></svg>Voltar</a>
+              <a href="#" class="lnk btn btn-outline">Próximo: Opcionais<svg class="ico" aria-hidden="true"><use href="#i-right"/></svg></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+</body>
+</html>
