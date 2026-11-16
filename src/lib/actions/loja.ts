@@ -32,6 +32,14 @@ import {
   deveRegeocodificar,
   temCoordenadas,
 } from "@/lib/actions/patches-loja";
+import { carregarProntidaoPublicacao } from "@/lib/supabase/queries/publicacao";
+import {
+  camposEnderecoFaltando,
+  mensagemEnderecoIncompleto,
+  mensagemPendencia,
+  podePublicarLoja,
+} from "@/lib/utils/publicacao";
+import { avisoGeocodingPerfil } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/avisoGeocoding";
 
 export type ResultadoSalvar = { ok: true } | { ok: false; erro: string };
 
@@ -55,6 +63,19 @@ function revalidarVitrine(...slugs: string[]): void {
     } catch (e) {
       console.error("revalidarVitrine:", e);
     }
+  }
+}
+
+/**
+ * Revalida o layout do painel best-effort (issue 368, D9/D14): depois de
+ * publicar ou de localizar o endereço, o layout pai precisa re-renderizar
+ * (chrome completo, aviso D15 some). Layout não re-renderiza em navegação.
+ */
+function revalidarPainel(): void {
+  try {
+    revalidatePath("/painel", "layout");
+  } catch (e) {
+    console.error("revalidarPainel:", e);
   }
 }
 
@@ -152,19 +173,18 @@ export async function salvarPerfil(payload: unknown): Promise<ResultadoPerfil> {
   }
 }
 
-const ERRO_PERFIL_INCOMPLETO =
-  "Complete nome e WhatsApp antes de publicar a loja.";
-
 /**
  * Publica (ativo=true) ou despublica (ativo=false) a vitrine da loja do dono.
  *
- * Gate de publicação (não confiar no cliente): exige perfil mínimo (nome +
- * whatsapp) verificado no servidor a partir do banco, nunca do payload. É uma
- * regra de NEGÓCIO reforçada aqui — NÃO há trigger de banco protegendo `ativo`
- * (o trigger anti-billing 057/074/128 nunca cobriu essa coluna). Logo o gate é
- * best-effort: o dono poderia, via PATCH direto na PRÓPRIA linha (RLS
- * `lojas_update_proprio` permite), publicar a loja incompleta. É auto-dano, sem
- * cross-tenant/dinheiro/escalonamento — aceito como BAIXA (débito 140).
+ * Gate ÚNICO de publicação (issue 368/193, D7): ao publicar — inclusive
+ * republicar depois de pausar — relê do banco o estado da loja e as contagens
+ * (`carregarProntidaoPublicacao`, client AUTENTICADO, `eq("loja_id")` explícito)
+ * e decide com `podePublicarLoja`, a mesma regra do admin e dos previews. Nada
+ * vem do payload além do booleano. Despublicar nunca passa pelo gate.
+ *
+ * Limite conhecido (débito 140, D17): NÃO há trigger de prontidão em `ativo`;
+ * o dono poderia, via PATCH direto na PRÓPRIA linha (RLS `lojas_update_proprio`
+ * permite), publicar a loja incompleta. É auto-dano, sem cross-tenant.
  *
  * O flip roda no service_role (escrita uniforme com o resto do painel). Como o
  * service_role ignora RLS, o escopo é reafirmado À MÃO por `id` + `dono_id` da
@@ -180,13 +200,18 @@ export async function definirPublicacao(
     const loja = await buscarLojaDoDono(supabase);
     if (!loja) return { ok: false, erro: ERRO_SEM_LOJA };
 
-    // Perfil mínimo para ir ao ar: nome preenchido + whatsapp cadastrado.
-    if (publicar && (!loja.nome?.trim() || !loja.whatsapp)) {
-      return { ok: false, erro: ERRO_PERFIL_INCOMPLETO };
+    if (publicar) {
+      const prontidao = podePublicarLoja(
+        await carregarProntidaoPublicacao(supabase, loja),
+      );
+      if (!prontidao.ok) {
+        return { ok: false, erro: mensagemPendencia(prontidao.pendencia) };
+      }
     }
 
     // service_role para escrita uniforme; escopo reafirmado por id + dono_id
-    // (BYPASSRLS não tem RLS para conter). NÃO há proteção de trigger em `ativo`.
+    // (BYPASSRLS não tem RLS para conter). O marcador `primeira_publicacao_em`
+    // é gravado pelo trigger do banco, nunca por aqui.
     const { error } = await createServiceClient()
       .from("lojas")
       .update({ ativo: publicar })
@@ -195,9 +220,87 @@ export async function definirPublicacao(
     if (error) throw error;
 
     revalidarVitrine(loja.slug);
+    revalidarPainel();
     return { ok: true };
   } catch (e) {
     console.error("definirPublicacao:", e);
+    return { ok: false, erro: ERRO_GENERICO };
+  }
+}
+
+export type ResultadoLocalizar =
+  | { ok: true }
+  | { ok: false; erro: string; motivo?: MotivoGeocoding };
+
+/**
+ * Botão "Localizar meu endereço de novo" (issue 368/193, D14). Sem argumento:
+ * nada vem do cliente. Só age com endereço completo e sem o par; grava SÓ
+ * `{ latitude, longitude }` no client autenticado, com compare-and-set (DD13):
+ * se o endereço mudou ou outro save já gravou o par durante o geocoding, o
+ * UPDATE atinge 0 linhas e nada muda. Falha do geocoder → nada gravado e o
+ * `motivo` volta com o texto de `avisoGeocodingPerfil(motivo, "localizar")`.
+ * Nunca grava `ativo` nem par nulo.
+ */
+export async function localizarEnderecoDeNovo(): Promise<ResultadoLocalizar> {
+  try {
+    const supabase = await createClient();
+
+    const loja = await buscarLojaDoDono(supabase);
+    if (!loja) return { ok: false, erro: ERRO_SEM_LOJA };
+
+    // Balde por LOJA (DD12): contém o custo do geocoder externo.
+    const rl = await verificarRateLimit("localizarEndereco", loja.id);
+    if (!rl.permitido) {
+      return { ok: false, erro: "Muitas tentativas. Aguarde um instante." };
+    }
+
+    const faltando = camposEnderecoFaltando(loja);
+    if (faltando.length > 0) {
+      return { ok: false, erro: mensagemEnderecoIncompleto(faltando) };
+    }
+
+    if (temCoordenadas(loja)) {
+      revalidarPainel();
+      return { ok: true };
+    }
+
+    const consulta = montarConsultaGeocoding(loja);
+    // Endereço completo ⇒ consulta não nula (paridade travada por teste); o
+    // ramo existe só como defesa.
+    if (consulta === null) {
+      return { ok: false, erro: mensagemEnderecoIncompleto(faltando) };
+    }
+
+    const geo = await geocodificarLojaComRetry(consulta, loja.id);
+    if (geo.coords === null) {
+      return {
+        ok: false,
+        motivo: geo.motivo,
+        erro: avisoGeocodingPerfil(geo.motivo, "localizar"),
+      };
+    }
+
+    // Compare-and-set (DD13): só grava se o par segue ausente e o endereço da
+    // consulta (os 5 campos; o CEP não entra, issue 186) não mudou.
+    const { error } = await supabase
+      .from("lojas")
+      .update(
+        { latitude: geo.coords.latitude, longitude: geo.coords.longitude },
+        { count: "exact" },
+      )
+      .eq("id", loja.id)
+      .is("latitude", null)
+      .eq("endereco_rua", loja.endereco_rua ?? "")
+      .eq("endereco_numero", loja.endereco_numero ?? "")
+      .eq("endereco_bairro", loja.endereco_bairro ?? "")
+      .eq("endereco_cidade", loja.endereco_cidade ?? "")
+      .eq("endereco_estado", loja.endereco_estado ?? "");
+    if (error) throw error;
+
+    revalidarPainel();
+    return { ok: true };
+  } catch (e) {
+    console.error("localizarEnderecoDeNovo:", e);
     return { ok: false, erro: ERRO_GENERICO };
   }
 }

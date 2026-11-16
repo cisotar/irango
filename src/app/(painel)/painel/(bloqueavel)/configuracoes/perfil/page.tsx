@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
+import { carregarProntidaoPublicacao } from "@/lib/supabase/queries/publicacao";
 import { podePublicarLoja } from "@/lib/utils/publicacao";
 import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
 import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
@@ -24,6 +25,10 @@ export default async function PerfilPage(): Promise<ReactElement> {
     redirect("/painel");
   }
 
+  // Preview do gate único de publicação (issue 368, D7); `definirPublicacao`
+  // relê tudo do banco e decide.
+  const prontidao = await carregarProntidaoPublicacao(supabase, loja);
+
   return (
     <PerfilClient
       inicial={{
@@ -41,8 +46,8 @@ export default async function PerfilPage(): Promise<ReactElement> {
         endereco_estado: loja.endereco_estado,
       }}
       publicado={loja.ativo}
-      // Perfil mínimo para publicar (mesma regra do servidor em definirPublicacao).
-      podePublicar={podePublicarLoja(loja.nome, loja.whatsapp)}
+      // Gate único (mesma regra do servidor em definirPublicacao), só preview.
+      podePublicar={podePublicarLoja(prontidao).ok}
       logoUrlInicial={loja.logo_url}
       // Actions do LOJISTA passadas explicitamente (issue 160): as props do
       // `PerfilClient` são obrigatórias, sem default — a via admin injeta as

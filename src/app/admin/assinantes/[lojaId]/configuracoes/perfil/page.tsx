@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 
-import { podePublicarLoja } from "@/lib/utils/publicacao";
-import { carregarLojaAdminBase } from "../../carga";
+import { mensagemPendencia, podePublicarLoja } from "@/lib/utils/publicacao";
+import { carregarLojaAdminBase, carregarProntidaoAdmin } from "../../carga";
 import { PerfilAdminClient } from "./PerfilAdminClient";
 
 /**
@@ -10,8 +10,8 @@ import { PerfilAdminClient } from "./PerfilAdminClient";
  * A elevação a service_role fica no loader (`carregarLojaAdminBase`, com o guard
  * admin dentro dele), nunca na page (mantém `enforcement-escopo-admin.test.ts`
  * verde). Repassa os dados já escopados por `lojaId` ao wrapper admin, que injeta
- * as actions admin (091). `podePublicar` (nome + WhatsApp) é preview; o gate real
- * é revalidado em `publicarLojaAdmin`.
+ * as actions admin (091). `bloqueio` (texto D10 da 1ª pendência do gate único,
+ * issue 368) é preview; o gate real é revalidado em `publicarLojaAdmin`.
  */
 export default async function PerfilConfiguracaoAdminPage({
   params,
@@ -19,7 +19,12 @@ export default async function PerfilConfiguracaoAdminPage({
   params: Promise<{ lojaId: string }>;
 }): Promise<ReactElement> {
   const { lojaId } = await params;
-  const loja = await carregarLojaAdminBase(lojaId);
+  const [loja, prontidao] = await Promise.all([
+    carregarLojaAdminBase(lojaId),
+    carregarProntidaoAdmin(lojaId),
+  ]);
+  const gate = podePublicarLoja(prontidao);
+  const bloqueio = gate.ok ? null : mensagemPendencia(gate.pendencia);
 
   return (
     <PerfilAdminClient
@@ -39,8 +44,8 @@ export default async function PerfilConfiguracaoAdminPage({
         endereco_estado: loja.endereco_estado,
       }}
       publicado={loja.ativo}
-      // Perfil mínimo para publicar (mesma regra do servidor em publicarLojaAdmin).
-      podePublicar={podePublicarLoja(loja.nome, loja.whatsapp)}
+      // Gate único (mesma regra do servidor em publicarLojaAdmin), só preview.
+      bloqueio={bloqueio}
       logoUrlInicial={loja.logo_url}
     />
   );

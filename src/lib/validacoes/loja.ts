@@ -21,19 +21,21 @@ export const schemaPerfil = z
     slug: z.string().regex(reSlug),
     telefone: z.string().optional(),
     whatsapp: z.string().regex(reWhatsapp).optional(),
-    // Endereço da loja (issue 004): opcionais; latitude/longitude NÃO entram —
-    // derivados no servidor (issue 008). .strict() rejeita coords do cliente (RN-1).
-    endereco_cep: z.string().trim().regex(reCep).optional(),
-    endereco_rua: z.string().trim().min(1).optional(),
-    endereco_numero: z.string().trim().min(1).optional(),
-    endereco_bairro: z.string().trim().min(1).optional(),
-    endereco_cidade: z.string().trim().min(1).optional(),
+    // Endereço da loja (issue 004; obrigatório desde a 368/193, D12): os 6 campos
+    // são exigidos em todo save de perfil (painel, assistente e hub admin). A
+    // lista é a mesma de `CAMPOS_ENDERECO_LOJA` (paridade travada por teste).
+    // latitude/longitude NÃO entram — derivados no servidor (issue 008).
+    // .strict() rejeita coords do cliente (RN-1).
+    endereco_cep: z.string().trim().regex(reCep),
+    endereco_rua: z.string().trim().min(1),
+    endereco_numero: z.string().trim().min(1),
+    endereco_bairro: z.string().trim().min(1),
+    endereco_cidade: z.string().trim().min(1),
     endereco_estado: z
       .string()
       .trim()
       .regex(reUf)
-      .transform((v) => v.toUpperCase())
-      .optional(),
+      .transform((v) => v.toUpperCase()),
     // Preferência operacional (issue 122 / spec 5): opcional e SEM `.default`.
     // Payload sem a chave PRESERVA o valor no banco — `montarPatchPerfil` só
     // grava quando `!== undefined` e o DEFAULT vive na coluna (migration 121).

@@ -709,7 +709,7 @@ Casos existentes que só ganham endereço no payload (asserção intacta; os de 
   - ação: `Link` com estilo `Button variant="outline"`, `min-h-[44px] w-full sm:w-auto`, texto **"Completar endereço"** → `hrefPerfil`
 - (b) `"localizar-de-novo"`:
   - título **"Localize sua loja no mapa"**
-  - corpo **"Sua loja segue no ar. Toque em “Localizar meu endereço de novo” para ativar as zonas de entrega por raio."**
+  - corpo **"Sua loja segue no ar. Toque no botão abaixo para ativar as zonas de entrega por raio."**
   - ação: `<BotaoLocalizarEndereco>` (estados acima)
 - Nenhum texto do aviso fala de pedido, cancelamento ou endereço errado.
 

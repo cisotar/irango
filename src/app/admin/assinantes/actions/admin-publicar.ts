@@ -14,9 +14,11 @@
  *  1. validarLojaIdAdmin(lojaId) (z.guid) ANTES de qualquer efeito → inválido =
  *     { ok:false } sem tocar admin/service/update.
  *  2. verificarAdminSaaS() FORA do try → exceção PROPAGA, service só depois.
- *  3. Ao PUBLICAR: gate de perfil mínimo (nome + WhatsApp) revalidado no servidor
- *     (`podePublicarLoja`), paridade com o lojista — o preview do cliente não é
- *     autoridade. Despublicar não passa pelo gate.
+ *  3. Ao PUBLICAR: gate ÚNICO de publicação (issue 368/193, D7) revalidado no
+ *     servidor a partir do banco — `carregarProntidaoPublicacao(svc, alvo)` (contagens
+ *     com `eq("loja_id")` explícito: o svc não tem RLS) + `podePublicarLoja`, a mesma
+ *     regra do lojista. Nenhum parâmetro do admin pula o gate; o preview do cliente
+ *     não é autoridade. Despublicar não passa pelo gate.
  *  4. escopo.atualizarLoja({ ativo: publicar }) — patch EXATAMENTE { ativo }
  *     (RN-8/§9), escopo por id só a loja-alvo (RN-3).
  *  4. revalidatePath admin + vitrine; registrarAcessoAdmin (best-effort: INSERT em admin_acessos); catch genérico.
@@ -31,9 +33,10 @@ import {
   revalidarLojaAdmin,
 } from "@/lib/actions/admin-loja";
 import { buscarLojaAdminPorId } from "@/lib/supabase/queries/lojas";
+import { carregarProntidaoPublicacao } from "@/lib/supabase/queries/publicacao";
 import {
   podePublicarLoja,
-  ERRO_PERFIL_INCOMPLETO,
+  mensagemPendencia,
 } from "@/lib/utils/publicacao";
 
 type Resultado = { ok: true } | { ok: false; erro: string };
@@ -49,14 +52,17 @@ export async function publicarLojaAdmin(
   const { svc, escopo } = await prepararContextoAdmin(loja.lojaId);
 
   try {
-    // Gate de perfil mínimo (RN-8), revalidado no SERVIDOR — paridade com o
-    // lojista (`definirPublicacao`). O `podePublicar` do cliente é só preview;
-    // a autoridade é aqui. Só barra ao PUBLICAR (despublicar sempre pode).
+    // Gate único (D7), revalidado no SERVIDOR — paridade com o lojista
+    // (`definirPublicacao`). O preview do cliente não é autoridade. Só barra ao
+    // PUBLICAR (despublicar sempre pode).
     if (publicar) {
       const alvo = await buscarLojaAdminPorId(svc, loja.lojaId);
       if (alvo == null) return { ok: false, erro: "Loja não encontrada." };
-      if (!podePublicarLoja(alvo.nome, alvo.whatsapp)) {
-        return { ok: false, erro: ERRO_PERFIL_INCOMPLETO };
+      const prontidao = podePublicarLoja(
+        await carregarProntidaoPublicacao(svc, alvo),
+      );
+      if (!prontidao.ok) {
+        return { ok: false, erro: mensagemPendencia(prontidao.pendencia) };
       }
     }
 

@@ -44,10 +44,10 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-// D3 (plano 124): zero rede no CI. O payload dos cenários já omite
-// cidade/estado (gate de `montarConsultaGeocoding` → null), e este mock é o
-// cinto de segurança caso o gate mude: `salvarPerfilAdmin` sempre grava o par
-// de coords NULL no 2º UPDATE, mantendo `capturado.updates` determinístico.
+// D3 (plano 124): zero rede no CI. Desde a 368/193 (D12) o payload traz o
+// endereço completo, então o geocoder É chamado; este mock devolve falha e
+// `salvarPerfilAdmin` grava o par de coords NULL no 2º UPDATE, mantendo
+// `capturado.updates` determinístico.
 vi.mock("@/lib/utils/geocodificarEndereco", () => ({
   geocodificarEnderecoComMotivo: vi.fn(async () => ({
     coords: null,
@@ -246,12 +246,19 @@ describe("criarEscopoLoja — binding com client real (from de protótipo, this.
 // de `LOJA_HOSTIL` em qualquer filtro ou patch.
 const LOJA_HOSTIL = "99999999-9999-4999-8999-999999999999";
 
-// SEM endereco_cidade/endereco_estado: `montarConsultaGeocoding` devolve null e o
-// 2º UPDATE grava o par NULL sem tocar a rede (D3).
+// Endereço completo (obrigatório no schemaPerfil desde a 368/193, D12). A loja
+// fake não tem endereço gravado, então o endereço MUDA e o 2º UPDATE roda; o
+// geocoder mockado (sem rede) devolve `nao_encontrado` e o par gravado é NULL.
 const PAYLOAD_MIN = {
   nome: "Pizzaria Alvo",
   slug: "pizzaria-alvo",
   whatsapp: "5511999998888",
+  endereco_cep: "01310-100",
+  endereco_rua: "Avenida Paulista",
+  endereco_numero: "1000",
+  endereco_bairro: "Bela Vista",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
 };
 
 describe("salvarPerfilAdmin — binding por tenant da flag whatsapp_envio_automatico (124)", () => {

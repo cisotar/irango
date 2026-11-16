@@ -6,7 +6,11 @@ import {
   buscarLojaDoDono,
   type LojaCompleta,
 } from "@/lib/supabase/queries/lojas";
-import { decidirAssinatura } from "@/lib/utils/acessoPainel";
+import {
+  decidirAssinatura,
+  decidirPrimeirosPassos,
+} from "@/lib/utils/acessoPainel";
+import { ROTA_PRIMEIROS_PASSOS } from "@/lib/utils/primeirosPassos";
 
 // Dedup do I/O de loja no request (o layout pai também busca). `cache` fora de um
 // render de RSC apenas repassa a chamada (não lança) — comportamento seguro.
@@ -15,7 +19,8 @@ const buscarLojaCache = cache(buscarLojaDoDono);
 /**
  * Gate de assinatura POSICIONAL (issue 142). Server Component aninhado que
  * envolve APENAS as telas sob `(bloqueavel)/`. Não decide sessão/email/loja
- * (isso é do layout pai) nem renderiza chrome — só aplica `decidirAssinatura`.
+ * (isso é do layout pai) nem renderiza chrome — aplica `decidirPrimeirosPassos`
+ * (issue 368: loja nunca publicada → assistente) e depois `decidirAssinatura`.
  *
  * A isenção do paywall passa a ser estrutura de filesystem: `assinatura-bloqueada/`
  * e `configuracoes/assinatura/` ficam FORA deste grupo, logo nunca são gated —
@@ -43,6 +48,13 @@ export default async function BloqueavelLayout({
   // de chegar neste grupo). Postura fail-closed: nunca renderiza sem loja.
   if (loja === null) {
     redirect("/login?erro=sessao");
+  }
+
+  // Assistente de primeiros passos (issue 368, D4/DD14): loja que nunca foi ao
+  // ar vai para o assistente ANTES do paywall. O assistente vive FORA deste
+  // grupo (isenção posicional), então o redirect não cicla.
+  if (decidirPrimeirosPassos(loja) === "primeiros-passos") {
+    redirect(ROTA_PRIMEIROS_PASSOS);
   }
 
   if (decidirAssinatura(loja, new Date()) === "assinatura-bloqueada") {

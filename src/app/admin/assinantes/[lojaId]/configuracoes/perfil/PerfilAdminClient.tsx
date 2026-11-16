@@ -28,20 +28,20 @@ import {
  * gate de `ativo`, magic bytes/path do upload, escopo cross-loja) é das actions
  * admin no servidor. Os adapters de logo (`onSalvarLogo`/`onRemoverLogo`) FIXAM
  * `loja_id = lojaId` da URL — o client nunca é autoridade do escopo (issue 119).
- * `podePublicar` (nome + WhatsApp) é preview; o gate real é revalidado em
- * `publicarLojaAdmin`.
+ * `bloqueio` (texto D10 da 1ª pendência do gate único, issue 368; `null` = pode
+ * publicar) é preview; o gate real é revalidado em `publicarLojaAdmin`.
  */
 export function PerfilAdminClient({
   lojaId,
   inicial,
   publicado,
-  podePublicar,
+  bloqueio,
   logoUrlInicial,
 }: {
   lojaId: string;
   inicial: PerfilInicial;
   publicado: boolean;
-  podePublicar: boolean;
+  bloqueio: string | null;
   logoUrlInicial: string | null;
 }) {
   // O `UploadLogoLoja` (via `PerfilClient`) JÁ monta o FormData com o arquivo;
@@ -78,7 +78,7 @@ export function PerfilAdminClient({
     <PerfilClient
       inicial={inicial}
       publicado={publicado}
-      podePublicar={podePublicar}
+      podePublicar={bloqueio === null}
       logoUrlInicial={logoUrlInicial}
       onSalvar={(payload) => salvarPerfilAdmin(lojaId, payload)}
       onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
