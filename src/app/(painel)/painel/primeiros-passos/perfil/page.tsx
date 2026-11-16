@@ -1,9 +1,32 @@
 import type { ReactElement } from "react";
+import { PerfilClient } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient";
+import { perfilInicialDaLoja } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/perfilInicial";
+import { salvarPerfil } from "@/lib/actions/loja";
+import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
+import { enviarImagemGaleria, listarImagensGaleria } from "@/lib/actions/galeria";
 import { exigirAssistente } from "../guard";
+import { NavegacaoEtapas } from "../NavegacaoEtapas";
 
-// Página PROVISÓRIA da etapa "perfil" (issue 368, P6): só o guard e o título. A
-// tela real (reuso da tela do painel) entra no P7.
+/**
+ * Etapa "Perfil" do assistente (issue 368). Mesmo `PerfilClient` e mesmas
+ * actions do LOJISTA da page do painel; `topo={null}` explícito: publicar só
+ * existe na etapa "revisar" (D8, DD6).
+ */
 export default async function EtapaPerfilPage(): Promise<ReactElement> {
-  await exigirAssistente();
-  return <h1 className="font-heading text-xl font-semibold">Perfil</h1>;
+  const { loja } = await exigirAssistente();
+  return (
+    <>
+      <PerfilClient
+        inicial={perfilInicialDaLoja(loja)}
+        topo={null}
+        logoUrlInicial={loja.logo_url}
+        onSalvar={salvarPerfil}
+        onSalvarLogo={salvarLogoLoja}
+        onRemoverLogo={removerLogoLoja}
+        onListarGaleria={listarImagensGaleria}
+        onEnviarParaGaleria={enviarImagemGaleria}
+      />
+      <NavegacaoEtapas etapa="perfil" />
+    </>
+  );
 }

@@ -7,6 +7,7 @@ import {
   type PerfilInicial,
 } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient";
 import type { UploadLogoLojaProps } from "@/components/painel/UploadLogoLoja";
+import { CartaoPublicacao } from "@/components/painel/CartaoPublicacao";
 
 import { salvarPerfilAdmin } from "@/app/admin/assinantes/actions/admin-perfil";
 import { publicarLojaAdmin } from "@/app/admin/assinantes/actions/admin-publicar";
@@ -77,11 +78,18 @@ export function PerfilAdminClient({
   return (
     <PerfilClient
       inicial={inicial}
-      publicado={publicado}
-      podePublicar={bloqueio === null}
+      // Cartão de publicação (issue 368, DD6) com a action ADMIN fixada no
+      // `lojaId` da URL; o gate D7 é revalidado em `publicarLojaAdmin`.
+      topo={
+        <CartaoPublicacao
+          publicado={publicado}
+          bloqueio={bloqueio}
+          onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
+          destinoAposPublicar={null}
+        />
+      }
       logoUrlInicial={logoUrlInicial}
       onSalvar={(payload) => salvarPerfilAdmin(lojaId, payload)}
-      onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
       onSalvarLogo={onSalvarLogo}
       onRemoverLogo={onRemoverLogo}
       onListarGaleria={onListarGaleria}

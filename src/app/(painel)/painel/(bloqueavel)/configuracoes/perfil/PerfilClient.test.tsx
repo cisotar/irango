@@ -335,7 +335,7 @@ describe("PerfilClient — toggle do modal de promoções (issue 236, D6/RN-16)"
     const i = markup.indexOf('id="perfil-modal-promocoes"');
     expect(i).toBeGreaterThan(-1);
     // O root `role="switch"` vem ANTES do input oculto que carrega o id.
-    const inicio = markup.lastIndexOf("<button", i);
+    const inicio = markup.lastIndexOf("<", markup.lastIndexOf('role="switch"', i));
     return markup.slice(inicio, i + 200);
   }
 

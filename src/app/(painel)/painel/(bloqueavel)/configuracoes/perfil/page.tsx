@@ -4,11 +4,13 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buscarLojaDoDono } from "@/lib/supabase/queries/lojas";
 import { carregarProntidaoPublicacao } from "@/lib/supabase/queries/publicacao";
-import { podePublicarLoja } from "@/lib/utils/publicacao";
+import { mensagemPendencia, podePublicarLoja } from "@/lib/utils/publicacao";
 import { salvarPerfil, definirPublicacao } from "@/lib/actions/loja";
 import { salvarLogoLoja, removerLogoLoja } from "@/lib/actions/logo";
 import { enviarImagemGaleria, listarImagensGaleria } from "@/lib/actions/galeria";
+import { CartaoPublicacao } from "@/components/painel/CartaoPublicacao";
 import { PerfilClient } from "./PerfilClient";
+import { perfilInicialDaLoja } from "./perfilInicial";
 
 /**
  * Página de perfil da loja (issue 040). Server Component.
@@ -29,31 +31,25 @@ export default async function PerfilPage(): Promise<ReactElement> {
   // relê tudo do banco e decide.
   const prontidao = await carregarProntidaoPublicacao(supabase, loja);
 
+  const gate = podePublicarLoja(prontidao);
+
   return (
     <PerfilClient
-      inicial={{
-        nome: loja.nome,
-        slug: loja.slug,
-        telefone: loja.telefone,
-        whatsapp: loja.whatsapp,
-        whatsapp_envio_automatico: loja.whatsapp_envio_automatico,
-        modal_promocoes: loja.modal_promocoes,
-        endereco_cep: loja.endereco_cep,
-        endereco_rua: loja.endereco_rua,
-        endereco_numero: loja.endereco_numero,
-        endereco_bairro: loja.endereco_bairro,
-        endereco_cidade: loja.endereco_cidade,
-        endereco_estado: loja.endereco_estado,
-      }}
-      publicado={loja.ativo}
+      inicial={perfilInicialDaLoja(loja)}
       // Gate único (mesma regra do servidor em definirPublicacao), só preview.
-      podePublicar={podePublicarLoja(prontidao).ok}
+      topo={
+        <CartaoPublicacao
+          publicado={loja.ativo}
+          bloqueio={gate.ok ? null : mensagemPendencia(gate.pendencia)}
+          onDefinirPublicacao={definirPublicacao}
+          destinoAposPublicar={null}
+        />
+      }
       logoUrlInicial={loja.logo_url}
       // Actions do LOJISTA passadas explicitamente (issue 160): as props do
       // `PerfilClient` são obrigatórias, sem default — a via admin injeta as
       // variantes escopadas por `lojaId`.
       onSalvar={salvarPerfil}
-      onDefinirPublicacao={definirPublicacao}
       onSalvarLogo={salvarLogoLoja}
       onRemoverLogo={removerLogoLoja}
       onListarGaleria={listarImagensGaleria}

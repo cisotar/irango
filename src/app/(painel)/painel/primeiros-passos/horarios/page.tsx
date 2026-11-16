@@ -1,9 +1,20 @@
 import type { ReactElement } from "react";
+import HorariosPage from "@/app/(painel)/painel/(bloqueavel)/configuracoes/horarios/page";
 import { exigirAssistente } from "../guard";
+import { NavegacaoEtapas } from "../NavegacaoEtapas";
 
-// Página PROVISÓRIA da etapa "horarios" (issue 368, P6): só o guard e o título. A
-// tela real (reuso da tela do painel) entra no P7.
+/**
+ * Etapa "Horários" do assistente (issue 368, DD5): renderiza a page do painel como
+ * está — mesmo loader, mesmas Server Actions, nenhuma via de escrita própria.
+ * O gate de `(bloqueavel)/layout.tsx` não roda (layout é por rota, não por
+ * import), que é exatamente a isenção de D5.
+ */
 export default async function EtapaHorariosPage(): Promise<ReactElement> {
   await exigirAssistente();
-  return <h1 className="font-heading text-xl font-semibold">Horários</h1>;
+  return (
+    <>
+      <HorariosPage />
+      <NavegacaoEtapas etapa="horarios" />
+    </>
+  );
 }

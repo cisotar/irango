@@ -1,9 +1,20 @@
 import type { ReactElement } from "react";
+import PagamentosPage from "@/app/(painel)/painel/(bloqueavel)/configuracoes/pagamentos/page";
 import { exigirAssistente } from "../guard";
+import { NavegacaoEtapas } from "../NavegacaoEtapas";
 
-// Página PROVISÓRIA da etapa "pagamentos" (issue 368, P6): só o guard e o título. A
-// tela real (reuso da tela do painel) entra no P7.
+/**
+ * Etapa "Pagamentos" do assistente (issue 368, DD5): renderiza a page do painel como
+ * está — mesmo loader, mesmas Server Actions, nenhuma via de escrita própria.
+ * O gate de `(bloqueavel)/layout.tsx` não roda (layout é por rota, não por
+ * import), que é exatamente a isenção de D5.
+ */
 export default async function EtapaPagamentosPage(): Promise<ReactElement> {
   await exigirAssistente();
-  return <h1 className="font-heading text-xl font-semibold">Pagamentos</h1>;
+  return (
+    <>
+      <PagamentosPage />
+      <NavegacaoEtapas etapa="pagamentos" />
+    </>
+  );
 }

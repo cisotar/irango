@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 
 import { mensagemPendencia, podePublicarLoja } from "@/lib/utils/publicacao";
 import { carregarLojaAdminBase, carregarProntidaoAdmin } from "../../carga";
+import { perfilInicialDaLoja } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/perfilInicial";
 import { PerfilAdminClient } from "./PerfilAdminClient";
 
 /**
@@ -29,20 +30,7 @@ export default async function PerfilConfiguracaoAdminPage({
   return (
     <PerfilAdminClient
       lojaId={loja.id}
-      inicial={{
-        nome: loja.nome,
-        slug: loja.slug,
-        telefone: loja.telefone,
-        whatsapp: loja.whatsapp,
-        whatsapp_envio_automatico: loja.whatsapp_envio_automatico,
-        modal_promocoes: loja.modal_promocoes,
-        endereco_cep: loja.endereco_cep,
-        endereco_rua: loja.endereco_rua,
-        endereco_numero: loja.endereco_numero,
-        endereco_bairro: loja.endereco_bairro,
-        endereco_cidade: loja.endereco_cidade,
-        endereco_estado: loja.endereco_estado,
-      }}
+      inicial={perfilInicialDaLoja(loja)}
       publicado={loja.ativo}
       // Gate único (mesma regra do servidor em publicarLojaAdmin), só preview.
       bloqueio={bloqueio}
