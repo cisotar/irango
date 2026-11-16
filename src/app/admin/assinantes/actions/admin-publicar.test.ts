@@ -271,11 +271,12 @@ describe("publicarLojaAdmin — gate único de publicação (issue 368)", () => 
     expect(updateCalls).toHaveLength(0);
   });
 
-  it("loja-alvo sem par → recusa com ROTULO_LOCALIZAR_DE_NOVO", async () => {
+  it("loja-alvo sem par → recusa mandando salvar o perfil (o hub admin não tem o botão)", async () => {
     buscarLojaAdminPorId.mockResolvedValue({ ...LOJA_PRONTA, latitude: null, longitude: null });
     const r = await publicarLojaAdmin(LOJA_ID, true);
     expect(r.ok).toBe(false);
-    expect((r as { erro: string }).erro).toContain("Localizar meu endereço de novo");
+    expect((r as { erro: string }).erro).toContain("Salve o perfil de novo");
+    expect((r as { erro: string }).erro).not.toContain("Localizar meu endereço de novo");
     expect(updateCalls).toHaveLength(0);
   });
 

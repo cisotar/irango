@@ -1151,10 +1151,13 @@ describe("localizarEnderecoDeNovo — botão 'Localizar meu endereço de novo' (
     }
   });
 
-  it("compare-and-set grava 0 linhas → ok, sem erro", async () => {
+  it("compare-and-set grava 0 linhas → recusa com mensagem, sem sucesso falso", async () => {
     _updateCount = 0;
     const r = await localizarEnderecoDeNovo();
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({
+      ok: false,
+      erro: "O endereço mudou enquanto localizávamos. Toque de novo.",
+    });
     expect(updatePatch).toHaveBeenCalledTimes(1);
   });
 

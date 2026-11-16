@@ -62,7 +62,7 @@ export async function publicarLojaAdmin(
         await carregarProntidaoPublicacao(svc, alvo),
       );
       if (!prontidao.ok) {
-        return { ok: false, erro: mensagemPendencia(prontidao.pendencia) };
+        return { ok: false, erro: mensagemPendencia(prontidao.pendencia, "admin") };
       }
     }
 

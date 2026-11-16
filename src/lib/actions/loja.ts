@@ -283,7 +283,7 @@ export async function localizarEnderecoDeNovo(): Promise<ResultadoLocalizar> {
 
     // Compare-and-set (DD13): só grava se o par segue ausente e o endereço da
     // consulta (os 5 campos; o CEP não entra, issue 186) não mudou.
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from("lojas")
       .update(
         { latitude: geo.coords.latitude, longitude: geo.coords.longitude },
@@ -297,6 +297,9 @@ export async function localizarEnderecoDeNovo(): Promise<ResultadoLocalizar> {
       .eq("endereco_cidade", loja.endereco_cidade ?? "")
       .eq("endereco_estado", loja.endereco_estado ?? "");
     if (error) throw error;
+    if (count === 0) {
+      return { ok: false, erro: "O endereço mudou enquanto localizávamos. Toque de novo." };
+    }
 
     revalidarPainel();
     return { ok: true };

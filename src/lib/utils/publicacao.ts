@@ -128,15 +128,22 @@ export function mensagemEnderecoIncompleto(
   return `Preencha ${juntarComE(rotulos)} do endereço da loja antes de publicar.`;
 }
 
-/** Texto D10 de cada pendência. */
-export function mensagemPendencia(p: PendenciaPublicacao): string {
+/** (b) no hub admin, que não tem o botão: o caminho é salvar o perfil (regra 3 de `deveRegeocodificar`). */
+export const ERRO_SEM_LOCALIZACAO_ADMIN =
+  "Salve o perfil de novo para localizar o endereço no mapa e tente publicar em instantes.";
+
+/** Texto D10 de cada pendência. `admin` troca só o texto (b), que cita um botão do painel do lojista. */
+export function mensagemPendencia(
+  p: PendenciaPublicacao,
+  contexto: "lojista" | "admin" = "lojista",
+): string {
   switch (p.tipo) {
     case "perfil":
       return ERRO_PERFIL_INCOMPLETO;
     case "endereco":
       return mensagemEnderecoIncompleto(p.faltando);
     case "localizacao":
-      return ERRO_SEM_LOCALIZACAO;
+      return contexto === "admin" ? ERRO_SEM_LOCALIZACAO_ADMIN : ERRO_SEM_LOCALIZACAO;
     case "pagamento":
       return ERRO_SEM_PAGAMENTO;
     case "produto":

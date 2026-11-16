@@ -148,6 +148,15 @@ describe("mensagens do gate (D10)", () => {
     expect(msg.toLowerCase()).not.toMatch(/confira|corrija|errado/);
   });
 
+  it("contexto admin: (b) manda salvar o perfil, não cita o botão que o hub não tem", () => {
+    const msg = publicacao.mensagemPendencia({ tipo: "localizacao" }, "admin");
+    expect(msg).toBe(publicacao.ERRO_SEM_LOCALIZACAO_ADMIN);
+    expect(msg).toContain("Salve o perfil de novo");
+    expect(msg).not.toContain(p.ROTULO_LOCALIZAR_DE_NOVO);
+    expect(msg.toLowerCase()).not.toMatch(/confira|corrija|errado/);
+    expect(publicacao.mensagemPendencia({ tipo: "produto" }, "admin")).toBe(p.ERRO_SEM_PRODUTO);
+  });
+
   it("mensagens de perfil, produto e pagamento: uma cada", () => {
     expect(p.ERRO_PERFIL_INCOMPLETO).toBe("Complete nome e WhatsApp antes de publicar a loja.");
     expect(p.ERRO_SEM_PAGAMENTO).toBe("Cadastre ao menos uma forma de pagamento antes de publicar a loja.");

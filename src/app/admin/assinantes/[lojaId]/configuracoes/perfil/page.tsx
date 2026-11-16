@@ -25,7 +25,7 @@ export default async function PerfilConfiguracaoAdminPage({
     carregarProntidaoAdmin(lojaId),
   ]);
   const gate = podePublicarLoja(prontidao);
-  const bloqueio = gate.ok ? null : mensagemPendencia(gate.pendencia);
+  const bloqueio = gate.ok ? null : mensagemPendencia(gate.pendencia, "admin");
 
   return (
     <PerfilAdminClient
