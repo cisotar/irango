@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { User } from "@supabase/supabase-js";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
-import { decidirAcessoBase, decidirAssinatura } from "./acessoPainel";
+import { decidirAcessoBase, decidirAssinatura, decidirPrimeirosPassos } from "./acessoPainel";
 
 // ###########################################################################
 // SPLIT (issue 140/142 — spec desacoplar-authz-assinatura-route-group.md §Contratos)
@@ -233,5 +233,49 @@ describe("decidirAssinatura — fail-closed (D4 / RN-04)", () => {
     expect(decidirAssinatura(fazerLoja("trial", null), AGORA)).toBe(
       "assinatura-bloqueada",
     );
+  });
+});
+
+// ===========================================================================
+// decidirPrimeirosPassos — issue 368 (D1, D4). Pura; lê SÓ o marcador
+// `primeira_publicacao_em`. Nunca olha `ativo` nem assinatura.
+// ===========================================================================
+describe("decidirPrimeirosPassos", () => {
+  function lojaCom(campos: Record<string, unknown>): LojaCompleta {
+    return campos as unknown as LojaCompleta;
+  }
+
+  it("marcador null → 'primeiros-passos'", () => {
+    expect(decidirPrimeirosPassos(lojaCom({ primeira_publicacao_em: null }))).toBe("primeiros-passos");
+  });
+
+  it("marcador undefined (coluna ausente na row) → 'primeiros-passos'", () => {
+    expect(decidirPrimeirosPassos(lojaCom({}))).toBe("primeiros-passos");
+  });
+
+  it("marcador preenchido → 'concluido'", () => {
+    expect(decidirPrimeirosPassos(lojaCom({ primeira_publicacao_em: "2026-01-01T00:00:00Z" }))).toBe("concluido");
+  });
+
+  it("marcador preenchido e ativo=false → 'concluido' (D1)", () => {
+    expect(
+      decidirPrimeirosPassos(lojaCom({ primeira_publicacao_em: "2026-01-01T00:00:00Z", ativo: false })),
+    ).toBe("concluido");
+  });
+
+  it("ativo=true sem marcador → 'primeiros-passos' (nunca lê ativo)", () => {
+    expect(decidirPrimeirosPassos(lojaCom({ primeira_publicacao_em: null, ativo: true }))).toBe("primeiros-passos");
+  });
+
+  it("marcador preenchido e assinatura vencida → 'concluido' (não olha assinatura)", () => {
+    expect(
+      decidirPrimeirosPassos(
+        lojaCom({
+          primeira_publicacao_em: "2026-01-01T00:00:00Z",
+          assinatura_status: "trial",
+          assinatura_fim_periodo: PASSADO,
+        }),
+      ),
+    ).toBe("concluido");
   });
 });

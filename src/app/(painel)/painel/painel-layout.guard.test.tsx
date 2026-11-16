@@ -59,12 +59,37 @@ vi.mock("@/lib/supabase/queries/papeis", () => ({
 }));
 
 // Chrome do painel: sem relevância para o gate; evita puxar componentes de UI.
-vi.mock("@/components/painel/NavPainel", () => ({
+// Issue 368: identidades estáveis (vi.hoisted) para achar cada peça na árvore
+// devolvida pelo layout, sem renderizar.
+const chrome = vi.hoisted(() => ({
   SidebarPainel: () => null,
   TopbarPainel: () => null,
+  BotaoLogout: () => null,
+  ChromeAssistente: (p: { children?: unknown }) => p.children ?? null,
+  AvisoEnderecoLoja: () => null,
+  localizarEnderecoDeNovo: async () => ({ ok: true as const }),
+}));
+vi.mock("@/components/painel/NavPainel", () => ({
+  SidebarPainel: chrome.SidebarPainel,
+  TopbarPainel: chrome.TopbarPainel,
+  BotaoLogout: chrome.BotaoLogout,
+}));
+// Componentes e action novos da issue 368 (a fase GREEN cria os módulos).
+vi.mock("@/components/painel/ChromeAssistente", () => ({
+  ChromeAssistente: chrome.ChromeAssistente,
+  default: chrome.ChromeAssistente,
+}));
+vi.mock("@/components/painel/AvisoEnderecoLoja", () => ({
+  AvisoEnderecoLoja: chrome.AvisoEnderecoLoja,
+  default: chrome.AvisoEnderecoLoja,
+}));
+vi.mock("@/lib/actions/loja", () => ({
+  localizarEnderecoDeNovo: chrome.localizarEnderecoDeNovo,
 }));
 
-function fazerLoja(): LojaCompleta {
+// Issue 368: fixture parcial nasce JÁ PUBLICADA uma vez (marcador preenchido),
+// sobrescrevível pelos casos de chrome/aviso.
+function fazerLoja(extra: Record<string, unknown> = {}): LojaCompleta {
   return {
     nome: "Loja Teste",
     logo_url: null,
@@ -73,6 +98,8 @@ function fazerLoja(): LojaCompleta {
     timezone: "America/Sao_Paulo",
     assinatura_status: "ativa",
     assinatura_fim_periodo: null,
+    primeira_publicacao_em: "2026-01-01T00:00:00Z",
+    ...extra,
   } as unknown as LojaCompleta;
 }
 
@@ -164,5 +191,98 @@ describe("painel/layout — gate de papel (issue 332, RED)", () => {
 
     expect(buscarPapeisDoUsuario).toHaveBeenCalledWith(supabaseFake, USER_ID);
     expect(redirect).not.toHaveBeenCalled();
+  });
+});
+
+// ── Issue 368 (RED) — chrome por estado (D4) e aviso persistente (D15) ──────────
+const ENDERECO_COMPLETO = {
+  endereco_cep: "01310-100",
+  endereco_rua: "Avenida Paulista",
+  endereco_numero: "1000",
+  endereco_bairro: "Bela Vista",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
+};
+const COM_PAR = { latitude: -23.56, longitude: -46.65 };
+const SEM_PAR = { latitude: null, longitude: null };
+
+type No = { type?: unknown; props?: Record<string, unknown> };
+
+/** Todos os elementos React alcançáveis pela árvore devolvida (sem renderizar). */
+function elementos(no: unknown, acc: No[] = []): No[] {
+  if (Array.isArray(no)) {
+    for (const n of no) elementos(n, acc);
+    return acc;
+  }
+  if (no == null || typeof no !== "object") return acc;
+  const el = no as No;
+  acc.push(el);
+  if (el.props) elementos(el.props.children, acc);
+  return acc;
+}
+const doTipo = (arvore: unknown, tipo: unknown) => elementos(arvore).filter((e) => e.type === tipo);
+
+describe("painel/layout — chrome por estado e aviso de endereço (issue 368, RED)", () => {
+  beforeEach(() => {
+    buscarPapeisDoUsuario.mockResolvedValue(["lojista"]);
+  });
+
+  async function renderizarCom(extra: Record<string, unknown>) {
+    buscarLojaDoDono.mockResolvedValue(fazerLoja(extra));
+    const Layout = await importarLayout();
+    const arvore = await Layout({ children: CHILDREN });
+    expect(redirect).not.toHaveBeenCalled();
+    return arvore;
+  }
+
+  it("marcador nulo → ChromeAssistente, sem SidebarPainel/TopbarPainel", async () => {
+    const arvore = await renderizarCom({ primeira_publicacao_em: null });
+    expect(doTipo(arvore, chrome.ChromeAssistente)).toHaveLength(1);
+    expect(doTipo(arvore, chrome.SidebarPainel)).toHaveLength(0);
+    expect(doTipo(arvore, chrome.TopbarPainel)).toHaveLength(0);
+    const [ca] = doTipo(arvore, chrome.ChromeAssistente);
+    expect(ca.props?.nomeLoja).toBe("Loja Teste");
+  });
+
+  it("marcador preenchido → SidebarPainel + TopbarPainel", async () => {
+    const arvore = await renderizarCom({ ...ENDERECO_COMPLETO, ...COM_PAR });
+    expect(doTipo(arvore, chrome.SidebarPainel)).toHaveLength(1);
+    expect(doTipo(arvore, chrome.TopbarPainel)).toHaveLength(1);
+    expect(doTipo(arvore, chrome.ChromeAssistente)).toHaveLength(0);
+  });
+
+  it("publicada, endereço completo sem par → AvisoEnderecoLoja variante 'localizar-de-novo'", async () => {
+    const arvore = await renderizarCom({ ...ENDERECO_COMPLETO, ...SEM_PAR });
+    const avisos = doTipo(arvore, chrome.AvisoEnderecoLoja);
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0].props?.variante).toBe("localizar-de-novo");
+    expect(avisos[0].props?.onLocalizar).toBe(chrome.localizarEnderecoDeNovo);
+  });
+
+  it("publicada, endereço incompleto → variante 'completar-endereco'", async () => {
+    const arvore = await renderizarCom({ ...ENDERECO_COMPLETO, endereco_numero: null, ...COM_PAR });
+    const avisos = doTipo(arvore, chrome.AvisoEnderecoLoja);
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0].props?.variante).toBe("completar-endereco");
+    expect(avisos[0].props?.hrefPerfil).toBe("/painel/configuracoes/perfil");
+  });
+
+  it("publicada completa com par → sem aviso", async () => {
+    const arvore = await renderizarCom({ ...ENDERECO_COMPLETO, ...COM_PAR });
+    expect(doTipo(arvore, chrome.AvisoEnderecoLoja)).toHaveLength(0);
+  });
+
+  it("marcador nulo e sem endereço → sem aviso", async () => {
+    const arvore = await renderizarCom({ primeira_publicacao_em: null, ...SEM_PAR });
+    expect(doTipo(arvore, chrome.AvisoEnderecoLoja)).toHaveLength(0);
+  });
+
+  it("AvisoEnderecoLoja não recebe latitude nem longitude", async () => {
+    const arvore = await renderizarCom({ ...ENDERECO_COMPLETO, latitude: -23.56, longitude: null });
+    const avisos = doTipo(arvore, chrome.AvisoEnderecoLoja);
+    expect(avisos).toHaveLength(1);
+    const props = JSON.stringify(Object.keys(avisos[0].props ?? {}));
+    expect(props).not.toMatch(/latitude|longitude|-23\.56/);
+    expect(JSON.stringify(avisos[0].props ?? {})).not.toContain("-23.56");
   });
 });

@@ -505,7 +505,9 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
       endereco_rua: "Rua Augusta",
     });
 
-    expect(r).toEqual({ ok: true, geocodificado: false });
+    // Issue 368 (DD8): paridade com salvarPerfil — o motivo volta ao cliente,
+    // para a via admin nunca culpar o dado do lojista por falha nossa.
+    expect(r).toEqual({ ok: true, geocodificado: false, motivo: "transitorio" });
     // 2 chamadas, não 1: a correção da MÉDIA A (re-auditoria 180-B) deu ao
     // caminho admin o MESMO retry que `salvarPerfil` já tinha — a divergência
     // era o defeito. `transitorio` passa em segundos, então retentar antes de
@@ -543,7 +545,10 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
     expect(updates).toHaveLength(2);
   });
 
-  it("coord ÓRFÃ (loja com coords, endereço incompleto nos dois lados) → 2º UPDATE limpa o par (D3)", async () => {
+  it("coord ÓRFÃ (loja com coords, endereço incompleto no payload) → recusa na validação (D13), zero UPDATE", async () => {
+    // Issue 368/193 (D12): o endereço é obrigatório no schemaPerfil, do qual o
+    // admin deriva as chaves. Payload sem endereço não chega ao UPDATE nem ao
+    // geocoder; o par gravado da loja fica intacto.
     mockarLoja({ ...LOJA_SEM_ENDERECO, latitude: -23.55, longitude: -46.63 });
 
     const r = await salvarPerfilAdmin(LOJA_ID, {
@@ -552,10 +557,9 @@ describe("salvarPerfilAdmin — endereço inalterado não regeocodifica (180-A)"
       whatsapp: "5511999998888",
     });
 
-    expect(r).toEqual({ ok: true, geocodificado: false });
+    expect(r).toEqual({ ok: false, erro: "Dados inválidos. Confira os campos e tente novamente." });
     expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
-    expect(updates).toHaveLength(2);
-    expect(updates[1].patch).toEqual({ latitude: null, longitude: null });
+    expect(updates).toHaveLength(0);
   });
 });
 
@@ -618,5 +622,55 @@ describe("[re-auditoria 180-B / MÉDIA A] salvarPerfilAdmin: throttle nosso não
     await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
 
     expect(geocodificarEnderecoComMotivo).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// Issue 368/193 (RED) — endereço obrigatório no perfil (D12/D13) e paridade do
+// `motivo` de geocoding com `salvarPerfil` (DD8).
+// =============================================================================
+describe("salvarPerfilAdmin — endereço obrigatório e motivo (issue 368)", () => {
+  beforeEach(() => {
+    process.env.GEOCODE_RETRY_DELAY_MS = "0";
+  });
+
+  it("payload sem endereço → ERRO_VALIDACAO no parse (antes de verificarAdminSaaS e de qualquer I/O), geocoder não chamado, zero UPDATE", async () => {
+    const r = await salvarPerfilAdmin(LOJA_ID, {
+      nome: "Pizzaria do Zé",
+      slug: "pizzaria-do-ze",
+      whatsapp: "5511999998888",
+    });
+
+    expect(r).toEqual({ ok: false, erro: "Dados inválidos. Confira os campos e tente novamente." });
+    expect(verificarAdminSaaS).not.toHaveBeenCalled();
+    expect(createServiceClient).not.toHaveBeenCalled();
+    expect(slugExiste).not.toHaveBeenCalled();
+    expect(buscarLojaAdminPorId).not.toHaveBeenCalled();
+    expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+  });
+
+  it.each(["endereco_cep", "endereco_rua", "endereco_numero", "endereco_bairro", "endereco_cidade", "endereco_estado"])(
+    "payload sem %s → ERRO_VALIDACAO, zero UPDATE",
+    async (campo) => {
+      const payload: Record<string, unknown> = { ...PAYLOAD_BASE };
+      delete payload[campo];
+      const r = await salvarPerfilAdmin(LOJA_ID, payload);
+      expect(r).toEqual({ ok: false, erro: "Dados inválidos. Confira os campos e tente novamente." });
+      expect(updates).toHaveLength(0);
+      expect(geocodificarEnderecoComMotivo).not.toHaveBeenCalled();
+    },
+  );
+
+  it("geocoding falho devolve motivo (paridade com salvarPerfil)", async () => {
+    geocodificarEnderecoComMotivo.mockResolvedValue({ coords: null, motivo: "nao_encontrado" });
+    const r = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+    expect(r).toEqual({ ok: true, geocodificado: false, motivo: "nao_encontrado" });
+
+    geocodificarEnderecoComMotivo.mockReset();
+    geocodificarEnderecoComMotivo.mockResolvedValue({ coords: null, motivo: "indisponivel_config" });
+    updates.length = 0;
+    const r2 = await salvarPerfilAdmin(LOJA_ID, PAYLOAD_BASE);
+    expect(r2).toEqual({ ok: true, geocodificado: false, motivo: "indisponivel_config" });
   });
 });

@@ -46,6 +46,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // PerfilClient chama useRouter() no topo — SSR estático não tem App Router
@@ -140,21 +141,21 @@ function renderizar(
     inicial?: Partial<PerfilInicial>;
   } = {},
 ): string {
-  const { inicial, ...props } = extra;
+  const { inicial, topo = null, ...props } = extra as typeof extra & { topo?: ReactNode };
   // Todas as props de action são obrigatórias (issue 160); os casos que só
   // olham o MARKUP recebem stubs, os de fiação passam a referência que querem
-  // rastrear.
+  // rastrear. Issue 368 (DD6): o cartão de publicação saiu do PerfilClient —
+  // `publicado`/`podePublicar`/`onDefinirPublicacao` deram lugar ao slot
+  // obrigatório `topo` (a etapa perfil do assistente passa `null`).
   return renderToStaticMarkup(
     <PerfilClient
       inicial={{ ...INICIAL, ...inicial }}
-      publicado={false}
-      podePublicar
+      topo={topo}
       logoUrlInicial={null}
       onSalvar={vi.fn(async () => ({
         ok: true as const,
         geocodificado: false,
       }))}
-      onDefinirPublicacao={vi.fn(async () => ({ ok: true as const }))}
       {...acoesLogoLojista()}
       {...props}
     />,
@@ -355,5 +356,52 @@ describe("PerfilClient — toggle do modal de promoções (issue 236, D6/RN-16)"
     // A ajuda é anunciada junto do switch, e o id citado existe de fato.
     expect(markup).toContain('aria-describedby="perfil-modal-promocoes-ajuda"');
     expect(markup).toContain('id="perfil-modal-promocoes-ajuda"');
+  });
+});
+
+// ── Issue 368/193 (RED) — DD6 (slot `topo`) e DD7 (endereço `required`) ──────
+/** A tag `<input …>` que carrega o `id` (o IMaskInput também vira `<input>`). */
+function tagDoInput(markup: string, id: string): string {
+  const i = markup.indexOf(`id="${id}"`);
+  expect(i, `input #${id} não encontrado`).toBeGreaterThan(-1);
+  const inicio = markup.lastIndexOf("<input", i);
+  return markup.slice(inicio, markup.indexOf(">", i) + 1);
+}
+
+describe("PerfilClient — endereço obrigatório e slot topo (issue 368)", () => {
+  it("os 6 inputs de endereço saem com required", () => {
+    const markup = renderizar();
+    for (const id of [
+      "perfil-endereco-cep",
+      "perfil-endereco-rua",
+      "perfil-endereco-numero",
+      "perfil-endereco-bairro",
+      "perfil-endereco-cidade",
+      "perfil-endereco-estado",
+    ]) {
+      expect(tagDoInput(markup, id), id).toMatch(/\srequired(=""|\s|>|\/)/);
+    }
+  });
+
+  it("telefone e WhatsApp não saem com required", () => {
+    const markup = renderizar();
+    for (const id of ["perfil-telefone", "perfil-whatsapp"]) {
+      expect(tagDoInput(markup, id), id).not.toMatch(/\srequired(=""|\s|>|\/)/);
+    }
+  });
+
+  it("renderiza o topo recebido", () => {
+    const markup = renderizar({
+      topo: <section data-teste="topo-sentinela">Cartão de publicação injetado</section>,
+    } as Parameters<typeof renderizar>[0]);
+    expect(markup).toContain('data-teste="topo-sentinela"');
+    expect(markup).toContain("Cartão de publicação injetado");
+  });
+
+  it("topo=null → sem botão 'Publicar loja'", () => {
+    const markup = renderizar({ topo: null } as Parameters<typeof renderizar>[0]);
+    expect(markup).not.toContain("Publicar loja");
+    expect(markup).not.toContain("Despublicar");
+    expect(markup).not.toContain("nome e WhatsApp e salve");
   });
 });

@@ -61,10 +61,17 @@ vi.mock("@/lib/supabase/queries/lojas", () => ({
 // `decidirAssinatura` NÃO é mockada — fonte real (140, já verde). O RED/GREEN prova
 // a fiação loja→decisão→redirect, não a fórmula (que já tem teste unitário próprio).
 
-function fazerLoja(status: string, fim: string | null): LojaCompleta {
+// Issue 368: a fixture nasce JÁ PUBLICADA uma vez (marcador preenchido), para os
+// casos (1)–(4) seguirem provando só o paywall. Sobrescrevível para o assistente.
+function fazerLoja(
+  status: string,
+  fim: string | null,
+  primeiraPublicacaoEm: string | null = "2026-01-01T00:00:00Z",
+): LojaCompleta {
   return {
     assinatura_status: status,
     assinatura_fim_periodo: fim,
+    primeira_publicacao_em: primeiraPublicacaoEm,
   } as unknown as LojaCompleta;
 }
 
@@ -134,5 +141,46 @@ describe("(bloqueavel)/layout — gate de assinatura posicional (RED)", () => {
 
     await expect(Layout({ children: CHILDREN })).rejects.toThrow(NEXT_REDIRECT);
     expect(redirect).toHaveBeenCalledWith("/login?erro=sessao");
+  });
+});
+
+// ── Issue 368 (RED) — assistente de primeiros passos ANTES do paywall (D4, DD14) ──
+// `decidirPrimeirosPassos` também é real (não mockada): prova a fiação marcador →
+// redirect. Loja nunca publicada vai ao assistente, que fica FORA deste grupo.
+describe("(bloqueavel)/layout — assistente de primeiros passos (issue 368)", () => {
+  it("(5) marcador nulo → redirect('/painel/primeiros-passos') e REJEITA", async () => {
+    buscarLojaDoDono.mockResolvedValueOnce(fazerLoja("ativa", null, null));
+    const Layout = await importarLayout();
+
+    await expect(Layout({ children: CHILDREN })).rejects.toThrow(NEXT_REDIRECT);
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith("/painel/primeiros-passos");
+  });
+
+  it("(6) marcador nulo + 'suspensa' → '/painel/primeiros-passos' (assistente vence o paywall)", async () => {
+    buscarLojaDoDono.mockResolvedValueOnce(fazerLoja("suspensa", null, null));
+    const Layout = await importarLayout();
+
+    await expect(Layout({ children: CHILDREN })).rejects.toThrow(NEXT_REDIRECT);
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith("/painel/primeiros-passos");
+  });
+
+  it("(7) marcador preenchido + 'suspensa' → '/painel/assinatura-bloqueada'", async () => {
+    buscarLojaDoDono.mockResolvedValueOnce(fazerLoja("suspensa", null, "2026-01-01T00:00:00Z"));
+    const Layout = await importarLayout();
+
+    await expect(Layout({ children: CHILDREN })).rejects.toThrow(NEXT_REDIRECT);
+    expect(redirect).toHaveBeenCalledWith("/painel/assinatura-bloqueada");
+    expect(redirect).not.toHaveBeenCalledWith("/painel/primeiros-passos");
+  });
+
+  it("(8) marcador preenchido + 'ativa' → children cru", async () => {
+    buscarLojaDoDono.mockResolvedValueOnce(fazerLoja("ativa", null, "2026-01-01T00:00:00Z"));
+    const Layout = await importarLayout();
+
+    const out = await Layout({ children: CHILDREN });
+    expect(redirect).not.toHaveBeenCalled();
+    expect(contemSentinela(out)).toBe(true);
   });
 });

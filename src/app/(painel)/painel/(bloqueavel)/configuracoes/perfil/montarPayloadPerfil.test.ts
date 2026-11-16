@@ -99,7 +99,7 @@ describe("montarPayloadPerfil — normalização dos campos", () => {
     expect("telefone" in montar({ telefone: "" })).toBe(false);
   });
 
-  it("OMITE os campos de texto vazios (o schema os trata como opcionais e a action preserva o que está gravado)", () => {
+  it("OMITE os campos de texto vazios (omitidos; o schema decide se faltam)", () => {
     const payload = montar();
 
     for (const chave of [
@@ -153,12 +153,25 @@ describe("montarPayloadPerfil — contrato com o schemaPerfil do servidor", () =
     expect(parsed.data.endereco_estado).toBe("SP");
   });
 
-  it("payload mínimo (form em branco) também passa — o `.strict()` não vê chave extra", () => {
+  it("form em branco reprova no schemaPerfil (endereço obrigatório)", () => {
+    // Issue 368/193 (D12): os 6 campos de endereço são obrigatórios. O que
+    // reprova é SÓ a ausência deles — o `.strict()` segue sem ver chave extra.
     const parsed = schemaPerfil.safeParse(montar({ envioAutomatico: false }));
 
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(parsed.data.whatsapp_envio_automatico).toBe(false);
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    const caminhos = parsed.error.issues.map((i) => String(i.path[0])).sort();
+    expect(caminhos).toEqual(
+      [
+        "endereco_bairro",
+        "endereco_cep",
+        "endereco_cidade",
+        "endereco_estado",
+        "endereco_numero",
+        "endereco_rua",
+      ].sort(),
+    );
+    expect(parsed.error.issues.some((i) => i.code === "unrecognized_keys")).toBe(false);
   });
 });
 

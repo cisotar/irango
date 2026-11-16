@@ -92,3 +92,48 @@ describe("RN-03 guard estrutural — telas isentas nunca sob (bloqueavel)/", () 
     },
   );
 });
+
+// ── Issue 368 (D4) — assistente de primeiros passos POSICIONALMENTE fora do
+// paywall. `(bloqueavel)/layout.tsx` manda loja nunca publicada para
+// `/painel/primeiros-passos`; se o assistente caísse DENTRO do grupo, o mesmo
+// layout o redirecionaria para si próprio (ciclo).
+const PASTA_ASSISTENTE = "primeiros-passos";
+
+function arquivosDoAssistente(): string[] {
+  // Testes ficam fora da conta: o que importa é a rota (page/layout), e os
+  // arquivos de teste da pasta existem antes dela (fase RED).
+  return globSync(`**/${PASTA_ASSISTENTE}/**/*`, { cwd: painelRoot, nodir: true, ignore: ["**/*.test.*"] }).map(
+    (p) => p.split(sep).join("/"),
+  );
+}
+
+describe("issue 368 guard estrutural — primeiros-passos/ nunca sob (bloqueavel)/", () => {
+  it("'primeiros-passos/page.tsx' existe FORA de (bloqueavel)/", () => {
+    const fora = ocorrenciasDaLeaf(paginasDoPainel(), `${PASTA_ASSISTENTE}/page.tsx`).filter(
+      (p) => !sobGrupoBloqueavel(p),
+    );
+    expect(fora, `esperava painel/${PASTA_ASSISTENTE}/page.tsx fora de ${SEGMENTO_GRUPO}/`).not.toHaveLength(0);
+  });
+
+  it("nenhum arquivo sob primeiros-passos/ está em caminho com (bloqueavel)/", () => {
+    const arquivos = arquivosDoAssistente();
+    // Anti-vácuo: sem a pasta, o "nenhum dentro do grupo" seria verde à toa.
+    expect(arquivos.length, `pasta ${PASTA_ASSISTENTE}/ não existe em painel/`).toBeGreaterThan(0);
+    const dentro = arquivos.filter(sobGrupoBloqueavel);
+    expect(dentro, `CICLO: assistente sob ${SEGMENTO_GRUPO}/: ${JSON.stringify(dentro)}`).toHaveLength(0);
+  });
+
+  it("existe primeiros-passos/<etapa>/page.tsx para cada etapa de ETAPAS_ASSISTENTE", async () => {
+    // Import dinâmico: o módulo nasce na fase GREEN; os casos acima não dependem dele.
+    const { ETAPAS_ASSISTENTE } = (await import("@/lib/utils/primeirosPassos")) as {
+      ETAPAS_ASSISTENTE: ReadonlyArray<{ etapa: string }>;
+    };
+    expect(ETAPAS_ASSISTENTE.length).toBe(7);
+    const paginas = paginasDoPainel();
+    for (const { etapa } of ETAPAS_ASSISTENTE) {
+      const leaf = `${PASTA_ASSISTENTE}/${etapa}/page.tsx`;
+      const fora = ocorrenciasDaLeaf(paginas, leaf).filter((p) => !sobGrupoBloqueavel(p));
+      expect(fora, `faltando painel/${leaf} fora de ${SEGMENTO_GRUPO}/`).not.toHaveLength(0);
+    }
+  });
+});
