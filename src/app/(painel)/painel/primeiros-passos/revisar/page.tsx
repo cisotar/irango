@@ -19,11 +19,14 @@ import { exigirAssistente } from "../guard";
 
 type TipoPendencia = PendenciaPublicacao["tipo"];
 
-/** As 5 linhas fixas do checklist, na ordem do `## UX` da issue 368. */
-const LINHAS: readonly { tipo: TipoPendencia; titulo: string; rotuloLink: string }[] = [
+/**
+ * As 5 linhas fixas do checklist, na ordem do `## UX` da issue 368. A linha de
+ * localização não tem link: a ação dela é o botão D14.
+ */
+const LINHAS: readonly { tipo: TipoPendencia; titulo: string; rotuloLink?: string }[] = [
   { tipo: "perfil", titulo: "Nome e WhatsApp", rotuloLink: "Ir para Perfil" },
   { tipo: "endereco", titulo: "Endereço", rotuloLink: "Ir para Perfil" },
-  { tipo: "localizacao", titulo: "Localização no mapa", rotuloLink: "" },
+  { tipo: "localizacao", titulo: "Localização no mapa" },
   { tipo: "pagamento", titulo: "Forma de pagamento", rotuloLink: "Ir para Pagamentos" },
   { tipo: "produto", titulo: "Produto disponível", rotuloLink: "Ir para Produtos" },
 ];

@@ -101,7 +101,7 @@ const PASTA_ASSISTENTE = "primeiros-passos";
 
 function arquivosDoAssistente(): string[] {
   // Testes ficam fora da conta: o que importa é a rota (page/layout), e os
-  // arquivos de teste da pasta existem antes dela (fase RED).
+  // arquivos de teste da pasta podem existir antes dela.
   return globSync(`**/${PASTA_ASSISTENTE}/**/*`, { cwd: painelRoot, nodir: true, ignore: ["**/*.test.*"] }).map(
     (p) => p.split(sep).join("/"),
   );
@@ -124,7 +124,7 @@ describe("issue 368 guard estrutural — primeiros-passos/ nunca sob (bloqueavel
   });
 
   it("existe primeiros-passos/<etapa>/page.tsx para cada etapa de ETAPAS_ASSISTENTE", async () => {
-    // Import dinâmico: o módulo nasce na fase GREEN; os casos acima não dependem dele.
+    // Import dinâmico: os casos acima não dependem dele.
     const { ETAPAS_ASSISTENTE } = (await import("@/lib/utils/primeirosPassos")) as {
       ETAPAS_ASSISTENTE: ReadonlyArray<{ etapa: string }>;
     };

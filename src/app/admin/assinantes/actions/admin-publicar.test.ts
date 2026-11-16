@@ -244,7 +244,7 @@ describe("publicarLojaAdmin — gate de perfil mínimo (nome + WhatsApp)", () =>
   });
 });
 
-// ─────── Issue 368/193 (RED) — gate ÚNICO D7 também no admin, sem exceção ─────
+// ─────── Issue 368/193 — gate ÚNICO D7 também no admin, sem exceção ─────
 describe("publicarLojaAdmin — gate único de publicação (issue 368)", () => {
   it("loja-alvo sem produto e outra loja com produto sob o mesmo svc → recusa com 'produto', zero update", async () => {
     tabelas.produtos = [

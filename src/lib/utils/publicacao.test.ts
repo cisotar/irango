@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 
 import * as publicacao from "./publicacao";
+import type { EstadoProntidao } from "./publicacao";
 import { schemaPerfil } from "@/lib/validacoes/loja";
 import { montarConsultaGeocoding } from "@/lib/actions/patches-loja";
 
 /**
- * Issue 368 + 193 (fase RED) — gate ÚNICO de publicação (D7) e mensagens (D10).
+ * Issue 368 + 193 — gate ÚNICO de publicação (D7) e mensagens (D10).
  *
  * `podePublicarLoja(estado)` é PURA sobre um estado já carregado do banco
  * (`EstadoProntidao`); devolve `{ ok: true }` ou a 1ª pendência. As contagens
@@ -13,43 +14,20 @@ import { montarConsultaGeocoding } from "@/lib/actions/patches-loja";
  *
  * Os 4 casos da versão anterior (nome+WhatsApp) viraram linhas da matriz com a
  * mesma semântica: nome ausente/só espaços e WhatsApp ausente/vazio → recusa.
- *
- * Import como namespace: os símbolos novos ainda não existem (RED por símbolo),
- * e o namespace não derruba o arquivo inteiro na carga.
  */
 
-type Estado = {
-  nome: string | null;
-  whatsapp: string | null;
-  endereco_cep: string | null;
-  endereco_rua: string | null;
-  endereco_numero: string | null;
-  endereco_bairro: string | null;
-  endereco_cidade: string | null;
-  endereco_estado: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  produtosDisponiveis: number;
-  formasPagamento: number;
-};
+// O banco pode devolver `nome` nulo e o aviso D15 recebe recortes parciais da
+// loja: só a ENTRADA dessas três funções é alargada aqui; saídas e o resto do
+// módulo seguem com os tipos reais, então o tsc trava o contrato.
+type Estado = Omit<EstadoProntidao, "nome"> & { nome: string | null };
+type LojaAviso = Parameters<typeof publicacao.varianteAvisoEndereco>[0];
 
-type Pendencia = { tipo: string; faltando?: string[] };
-
-// Contrato fixado no plano técnico (assinaturas exatas).
-const p = publicacao as unknown as {
-  CAMPOS_ENDERECO_LOJA: readonly string[];
-  ROTULOS_CAMPOS_ENDERECO: Record<string, string>;
-  camposEnderecoFaltando: (l: Partial<Record<string, string | null>>) => string[];
-  pendenciasPublicacao: (e: Estado) => Pendencia[];
-  podePublicarLoja: (e: Estado) => { ok: true } | { ok: false; pendencia: Pendencia };
-  mensagemPendencia: (pd: Pendencia) => string;
-  mensagemEnderecoIncompleto: (f: readonly string[]) => string;
-  ROTULO_LOCALIZAR_DE_NOVO: string;
-  ERRO_PERFIL_INCOMPLETO: string;
-  ERRO_SEM_LOCALIZACAO: string;
-  ERRO_SEM_PAGAMENTO: string;
-  ERRO_SEM_PRODUTO: string;
-  varianteAvisoEndereco: (l: Record<string, unknown>) => "completar-endereco" | "localizar-de-novo" | null;
+const p = {
+  ...publicacao,
+  podePublicarLoja: (e: Estado) => publicacao.podePublicarLoja(e as EstadoProntidao),
+  pendenciasPublicacao: (e: Estado) => publicacao.pendenciasPublicacao(e as EstadoProntidao),
+  varianteAvisoEndereco: (l: Partial<LojaAviso> & { ativo?: boolean }) =>
+    publicacao.varianteAvisoEndereco(l as LojaAviso),
 };
 
 const ENDERECO = {

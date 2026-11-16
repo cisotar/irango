@@ -64,7 +64,7 @@ describe("[re-auditoria 180-B / MÉDIA A] avisoGeocodingPerfil não culpa o loji
   });
 });
 
-// ── Issue 368 (RED) — DD9: texto do botão "Localizar meu endereço de novo" ────
+// ── Issue 368 — DD9: texto do botão "Localizar meu endereço de novo" ────
 // O botão D14 não salva nada: os textos de `acao: "localizar"` não podem falar
 // em salvar nem afirmar que o endereço "foi salvo". Falha nossa nunca manda
 // conferir o endereço; dado do lojista (nao_encontrado/cep_inexistente) manda.

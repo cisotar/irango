@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 /**
- * Issue 368 (fase RED) — `CartaoPublicacao` (DD6): o cartão "Status da vitrine"
+ * Issue 368 — `CartaoPublicacao` (DD6): o cartão "Status da vitrine"
  * extraído do `PerfilClient`, reusado no perfil do painel, no perfil admin e na
  * etapa revisar do assistente. Props obrigatórias: `publicado`, `bloqueio`
  * (texto D10 da 1ª pendência; `null` = pode publicar), `onDefinirPublicacao`,
@@ -12,8 +12,8 @@ import { renderToStaticMarkup } from "react-dom/server";
  * O botão desabilitado é só UX: a autoridade é `definirPublicacao` /
  * `publicarLojaAdmin`, que relêem o banco. Despublicar nunca é bloqueado.
  *
- * Ambiente node, sem jsdom: asserção sobre o markup estático. Import dinâmico —
- * o componente nasce na fase GREEN.
+ * Ambiente node, sem jsdom: asserção sobre o markup estático. Import dinâmico,
+ * depois dos mocks.
  */
 
 vi.mock("next/navigation", () => ({
@@ -53,7 +53,7 @@ function tagDoBotao(markup: string, rotulo: string): string {
 
 const BLOQUEIO = "Cadastre ao menos um produto disponível antes de publicar a loja.";
 
-describe("CartaoPublicacao (issue 368, RED)", () => {
+describe("CartaoPublicacao (issue 368)", () => {
   it("rascunho + bloqueio → 'Publicar loja' desabilitado e texto do bloqueio visível", async () => {
     const markup = await renderizar({ publicado: false, bloqueio: BLOQUEIO });
     expect(tagDoBotao(markup, "Publicar loja")).toMatch(/\sdisabled(=""|\s|>)/);

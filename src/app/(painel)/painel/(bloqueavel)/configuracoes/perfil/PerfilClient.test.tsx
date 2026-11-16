@@ -359,7 +359,7 @@ describe("PerfilClient — toggle do modal de promoções (issue 236, D6/RN-16)"
   });
 });
 
-// ── Issue 368/193 (RED) — DD6 (slot `topo`) e DD7 (endereço `required`) ──────
+// ── Issue 368/193 — DD6 (slot `topo`) e DD7 (endereço `required`) ──────
 /** A tag `<input …>` que carrega o `id` (o IMaskInput também vira `<input>`). */
 function tagDoInput(markup: string, id: string): string {
   const i = markup.indexOf(`id="${id}"`);

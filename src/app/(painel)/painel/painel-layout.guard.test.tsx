@@ -74,7 +74,7 @@ vi.mock("@/components/painel/NavPainel", () => ({
   TopbarPainel: chrome.TopbarPainel,
   BotaoLogout: chrome.BotaoLogout,
 }));
-// Componentes e action novos da issue 368 (a fase GREEN cria os módulos).
+// Componentes e action da issue 368.
 vi.mock("@/components/painel/ChromeAssistente", () => ({
   ChromeAssistente: chrome.ChromeAssistente,
   default: chrome.ChromeAssistente,
@@ -194,7 +194,7 @@ describe("painel/layout — gate de papel (issue 332, RED)", () => {
   });
 });
 
-// ── Issue 368 (RED) — chrome por estado (D4) e aviso persistente (D15) ──────────
+// ── Issue 368 — chrome por estado (D4) e aviso persistente (D15) ──────────
 const ENDERECO_COMPLETO = {
   endereco_cep: "01310-100",
   endereco_rua: "Avenida Paulista",
@@ -222,7 +222,7 @@ function elementos(no: unknown, acc: No[] = []): No[] {
 }
 const doTipo = (arvore: unknown, tipo: unknown) => elementos(arvore).filter((e) => e.type === tipo);
 
-describe("painel/layout — chrome por estado e aviso de endereço (issue 368, RED)", () => {
+describe("painel/layout — chrome por estado e aviso de endereço (issue 368)", () => {
   beforeEach(() => {
     buscarPapeisDoUsuario.mockResolvedValue(["lojista"]);
   });

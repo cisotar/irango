@@ -55,6 +55,21 @@ const BASE_VITRINE = "https://irango.com.br/loja";
  * Converte o WhatsApp armazenado (`55DDXXXXXXXXX`) para o número nacional
  * exibido na máscara `(DD) XXXXX-XXXX` (sem o prefixo 55).
  */
+/** Rótulo de campo obrigatório: o `*` é visual; o `required` do input é o que conta. */
+function RotuloObrigatorio({
+  htmlFor,
+  children,
+}: {
+  htmlFor: string;
+  children: ReactNode;
+}) {
+  return (
+    <Label htmlFor={htmlFor}>
+      {children} <span aria-hidden="true">*</span>
+    </Label>
+  );
+}
+
 function whatsappArmazenadoParaExibicao(armazenado: string | null): string {
   if (!armazenado) return "";
   const d = apenasDigitos(armazenado);
@@ -470,9 +485,7 @@ export function PerfilClient({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="perfil-endereco-cep">
-                  CEP <span aria-hidden="true">*</span>
-                </Label>
+                <RotuloObrigatorio htmlFor="perfil-endereco-cep">CEP</RotuloObrigatorio>
                 <div className="flex items-center gap-2">
                   <IMaskInput
                     id="perfil-endereco-cep"
@@ -514,9 +527,7 @@ export function PerfilClient({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="perfil-endereco-rua">
-                  Rua <span aria-hidden="true">*</span>
-                </Label>
+                <RotuloObrigatorio htmlFor="perfil-endereco-rua">Rua</RotuloObrigatorio>
                 <Input
                   id="perfil-endereco-rua"
                   value={enderecoRua}
@@ -528,9 +539,7 @@ export function PerfilClient({
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[6rem_1fr]">
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-numero">
-                  Número <span aria-hidden="true">*</span>
-                </Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-numero">Número</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-numero"
                     ref={numeroRef}
@@ -541,9 +550,7 @@ export function PerfilClient({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-bairro">
-                  Bairro <span aria-hidden="true">*</span>
-                </Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-bairro">Bairro</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-bairro"
                     value={enderecoBairro}
@@ -555,9 +562,7 @@ export function PerfilClient({
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_5rem]">
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-cidade">
-                  Cidade <span aria-hidden="true">*</span>
-                </Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-cidade">Cidade</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-cidade"
                     value={enderecoCidade}
@@ -566,9 +571,7 @@ export function PerfilClient({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-estado">
-                  UF <span aria-hidden="true">*</span>
-                </Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-estado">UF</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-estado"
                     value={enderecoEstado}

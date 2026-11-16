@@ -3,15 +3,15 @@ import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 /**
- * Issue 368 (fase RED) — aviso persistente D15 no layout do painel, para loja
+ * Issue 368 — aviso persistente D15 no layout do painel, para loja
  * já publicada alguma vez sem endereço completo ou sem par:
  *   (a) 'completar-endereco' → link "Completar endereço" para `hrefPerfil`;
  *   (b) 'localizar-de-novo'  → `<BotaoLocalizarEndereco>` (Server Action D14).
  * A loja segue no ar; o componente nunca recebe latitude/longitude
  * (seguranca.md §19) e não chama geocoder (o botão chama a Server Action).
  *
- * Ambiente node, sem jsdom: asserção sobre o markup estático. Import dinâmico —
- * o componente nasce na fase GREEN.
+ * Ambiente node, sem jsdom: asserção sobre o markup estático. Import dinâmico,
+ * depois dos mocks.
  */
 
 vi.mock("next/navigation", () => ({
@@ -36,7 +36,7 @@ async function renderizar(variante: Props["variante"]): Promise<string> {
   );
 }
 
-describe("AvisoEnderecoLoja (issue 368, RED)", () => {
+describe("AvisoEnderecoLoja (issue 368)", () => {
   it("'completar-endereco' → link para hrefPerfil, sem botão de localizar", async () => {
     const markup = await renderizar("completar-endereco");
     expect(markup).toContain(`href="${HREF}"`);

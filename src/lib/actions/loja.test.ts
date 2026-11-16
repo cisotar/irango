@@ -897,7 +897,7 @@ describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () =
     expect(svcUpdatePatch).not.toHaveBeenCalled();
   });
 
-  // ── Issue 368/193 (RED) — gate D7 com mensagens D10 ──────────────────────────
+  // ── Issue 368/193 — gate D7 com mensagens D10 ──────────────────────────
   it("loja A sem produto e loja B ativa com produto visível ao mesmo client → recusa com 'produto', UPDATE não chamado", async () => {
     buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
     _tabelas.produtos = [produtoDe(LOJA_B), produtoDe(LOJA_B)];
@@ -1023,7 +1023,7 @@ describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () =
 // e sem par; grava SÓ { latitude, longitude } no client autenticado, com
 // compare-and-set (DD13): eq("id"), is("latitude", null) e os 5 campos da
 // consulta. Falha do geocoder → nada gravado, `motivo` devolvido.
-describe("localizarEnderecoDeNovo — botão 'Localizar meu endereço de novo' (issue 368, RED)", () => {
+describe("localizarEnderecoDeNovo — botão 'Localizar meu endereço de novo' (issue 368)", () => {
   const LOJA_SEM_PAR = {
     id: LOJA_ID,
     dono_id: USER_ID,

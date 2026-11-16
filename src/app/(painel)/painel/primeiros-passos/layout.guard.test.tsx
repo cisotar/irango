@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
 
 /**
- * Fase RED (issue 368, crítica) — guard do assistente de primeiros passos
+ * Issue 368 (crítica) — guard do assistente de primeiros passos
  * `src/app/(painel)/painel/primeiros-passos/layout.tsx` + `guard.ts`
  * (`exigirAssistente`).
  *
@@ -16,8 +16,8 @@ import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
  *
  * Padrão de `bloqueavel-layout.guard.test.tsx`: chama o default export async sem
  * renderizar; `redirect` mockado LANÇA NEXT_REDIRECT. `decidirPrimeirosPassos`
- * é real (fiação). Só o I/O é mockado. Import dinâmico: rejeita enquanto o
- * layout não existir (RED por ausência do alvo).
+ * é real (fiação). Só o I/O é mockado. O layout é importado dinamicamente,
+ * depois dos mocks.
  */
 
 const NEXT_REDIRECT = "NEXT_REDIRECT";
@@ -98,7 +98,7 @@ beforeEach(() => {
   buscarLojaDoDono.mockResolvedValue(fazerLoja());
 });
 
-describe("primeiros-passos/layout — guard do assistente (issue 368, RED)", () => {
+describe("primeiros-passos/layout — guard do assistente (issue 368)", () => {
   it("marcador nulo → renderiza children, sem redirect", async () => {
     const Layout = await importarLayout();
     const out = await Layout({ children: CHILDREN });

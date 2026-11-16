@@ -1,27 +1,28 @@
 import { describe, it, expect } from "vitest";
 
+import * as primeirosPassos from "./primeirosPassos";
+import type { PendenciaPublicacao } from "./publicacao";
+
 /**
- * Issue 368 (fase RED) — etapas e retomada do assistente (D6).
+ * Issue 368 — etapas e retomada do assistente (D6).
  *
  * Retomada = etapa de MENOR índice em ETAPAS_ASSISTENTE entre as etapas das
  * pendências do gate (`etapaDaPendencia`); sem pendência → "revisar".
  * perfil|endereco → "perfil"; localizacao → "revisar" (onde está o botão D14);
  * pagamento → "pagamentos"; produto → "produtos". Horários, entregas e
  * opcionais nunca são retomada (não entram no gate).
- *
- * Import dinâmico: o módulo nasce na fase GREEN; cada caso falha por ausência.
  */
 
-type Pendencia = { tipo: string; faltando?: string[] };
-type Mod = {
-  ROTA_PRIMEIROS_PASSOS: string;
-  ETAPAS_ASSISTENTE: ReadonlyArray<{ etapa: string; rotulo: string; podePular?: boolean }>;
-  rotaDaEtapa: (e: string) => string;
-  etapaDaPendencia: (p: Pendencia) => string;
-  etapaDeRetomada: (ps: readonly Pendencia[]) => string;
-  etapasComPendencia: (ps: readonly Pendencia[]) => ReadonlySet<string>;
-};
-const mod = async () => (await import("./primeirosPassos")) as unknown as Mod;
+// `as const` estreita cada etapa; o teste lê `podePular` em todas.
+const mod = async () => ({
+  ...primeirosPassos,
+  ETAPAS_ASSISTENTE: primeirosPassos.ETAPAS_ASSISTENTE as ReadonlyArray<{
+    etapa: primeirosPassos.EtapaAssistente;
+    rotulo: string;
+    podePular?: boolean;
+  }>,
+});
+type Pendencia = PendenciaPublicacao;
 
 const PERFIL: Pendencia = { tipo: "perfil" };
 const ENDERECO: Pendencia = { tipo: "endereco", faltando: ["endereco_cep"] };
@@ -29,7 +30,7 @@ const LOCALIZACAO: Pendencia = { tipo: "localizacao" };
 const PAGAMENTO: Pendencia = { tipo: "pagamento" };
 const PRODUTO: Pendencia = { tipo: "produto" };
 
-describe("primeirosPassos (issue 368, RED)", () => {
+describe("primeirosPassos (issue 368)", () => {
   it("ETAPAS_ASSISTENTE segue a ordem de D6", async () => {
     const { ETAPAS_ASSISTENTE, ROTA_PRIMEIROS_PASSOS } = await mod();
     expect(ROTA_PRIMEIROS_PASSOS).toBe("/painel/primeiros-passos");
@@ -81,7 +82,7 @@ describe("primeirosPassos (issue 368, RED)", () => {
     const m = await mod();
     const todas = [PERFIL, ENDERECO, LOCALIZACAO, PAGAMENTO, PRODUTO];
     const etapas = m.etapasComPendencia(todas);
-    for (const nunca of ["horarios", "entregas", "opcionais"]) {
+    for (const nunca of ["horarios", "entregas", "opcionais"] as const) {
       expect(etapas.has(nunca)).toBe(false);
     }
     expect([...etapas].sort()).toEqual(["pagamentos", "perfil", "produtos", "revisar"]);

@@ -626,7 +626,7 @@ describe("[re-auditoria 180-B / MÉDIA A] salvarPerfilAdmin: throttle nosso não
 });
 
 // =============================================================================
-// Issue 368/193 (RED) — endereço obrigatório no perfil (D12/D13) e paridade do
+// Issue 368/193 — endereço obrigatório no perfil (D12/D13) e paridade do
 // `motivo` de geocoding com `salvarPerfil` (DD8).
 // =============================================================================
 describe("salvarPerfilAdmin — endereço obrigatório e motivo (issue 368)", () => {

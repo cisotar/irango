@@ -11,7 +11,6 @@ import { decidirPrimeirosPassos } from "@/lib/utils/acessoPainel";
 import type { EstadoProntidao } from "@/lib/utils/publicacao";
 
 export type ContextoAssistente = {
-  supabase: Awaited<ReturnType<typeof createClient>>;
   loja: LojaCompleta;
   estado: EstadoProntidao;
 };
@@ -31,7 +30,7 @@ const lerAssistente = cache(async (): Promise<Leitura> => {
     const loja = await buscarLojaDoDono(supabase);
     if (!loja) return { tipo: "erro" };
     const estado = await carregarProntidaoPublicacao(supabase, loja);
-    return { tipo: "ok", supabase, loja, estado };
+    return { tipo: "ok", loja, estado };
   } catch (e) {
     console.error("[guardAssistente]", e);
     return { tipo: "erro" };
@@ -53,6 +52,6 @@ export async function exigirAssistente(): Promise<ContextoAssistente> {
   if (decidirPrimeirosPassos(leitura.loja) === "concluido") {
     redirect("/painel");
   }
-  const { supabase, loja, estado } = leitura;
-  return { supabase, loja, estado };
+  const { loja, estado } = leitura;
+  return { loja, estado };
 }

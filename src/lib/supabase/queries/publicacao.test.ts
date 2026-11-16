@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 /**
- * Issue 368 (fase RED) — `carregarProntidaoPublicacao(client, loja)`: única
+ * Issue 368 — `carregarProntidaoPublicacao(client, loja)`: única
  * fonte das contagens do gate D7 (DD2, DD3, DD4).
  *
  *   produtos:         select("id", { count: "exact", head: true })
@@ -13,8 +13,6 @@ import { describe, it, expect } from "vitest";
  * ao client autenticado, e o admin usa service_role (sem RLS). O fake abaixo é
  * um banco em memória que filtra por TODO `.eq` recebido — sem `eq("loja_id")`
  * explícito, as linhas da loja vizinha entram na contagem.
- *
- * Import dinâmico: o módulo nasce na fase GREEN; cada caso falha por ausência.
  */
 
 type Linha = Record<string, unknown>;
@@ -77,7 +75,7 @@ async function carregar(): Promise<Carregar> {
 
 const produto = (loja_id: string, extra: Linha = {}) => ({ loja_id, disponivel: true, oculto: false, ...extra });
 
-describe("carregarProntidaoPublicacao (issue 368, RED)", () => {
+describe("carregarProntidaoPublicacao (issue 368)", () => {
   it("produtos: eq('loja_id', loja.id), disponivel=true, oculto=false, count exact head", async () => {
     const { client, chamadas } = fakeClient({
       produtos: [

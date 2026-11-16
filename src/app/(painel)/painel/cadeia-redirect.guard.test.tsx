@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
 
 /**
- * Fase RED (issue 368, crítica) — ENUMERATIVO ANTI-CICLO das rotas do painel.
+ * Issue 368 (crítica) — ENUMERATIVO ANTI-CICLO das rotas do painel.
  *
  * Layout não lê pathname (classe CVE-2025-29927): o gate é posicional. Um
  * redirect para uma rota sob o MESMO layout que redirecionou vira ciclo. Este
@@ -145,7 +145,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
-describe("cadeia de redirect do painel (issue 368, RED)", () => {
+describe("cadeia de redirect do painel (issue 368)", () => {
   it.each(CASOS)(
     "marcador %s · %s · %s → cadeia de redirect termina em ≤2 saltos sem repetir rota",
     async (_rotulo, assinatura, rota, marcador) => {

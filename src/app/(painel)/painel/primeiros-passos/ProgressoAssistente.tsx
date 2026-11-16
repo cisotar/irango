@@ -43,7 +43,11 @@ export function ProgressoAssistente({
             Etapa {indiceAtual + 1} de {TOTAL}
             <span className="lg:hidden"> · {atual.rotulo}</span>
           </p>
-          <div aria-hidden className="grid grid-cols-7 gap-1">
+          <div
+            aria-hidden
+            className="grid gap-1"
+            style={{ gridTemplateColumns: `repeat(${TOTAL}, minmax(0, 1fr))` }}
+          >
             {ETAPAS_ASSISTENTE.map((e, i) => (
               <span
                 key={e.etapa}

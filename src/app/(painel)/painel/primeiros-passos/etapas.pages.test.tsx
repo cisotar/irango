@@ -78,7 +78,7 @@ const CASOS: { etapa: string; carregar: () => Promise<{ default: Pagina }>; tela
 
 beforeEach(() => {
   vi.clearAllMocks();
-  exigirAssistente.mockResolvedValue({ loja: LOJA, estado: {}, supabase: {} });
+  exigirAssistente.mockResolvedValue({ loja: LOJA, estado: {} });
 });
 
 describe.each(CASOS)("etapa $etapa", ({ etapa, carregar, tela: Esperada }) => {

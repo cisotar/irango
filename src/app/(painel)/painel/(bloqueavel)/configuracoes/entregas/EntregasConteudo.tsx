@@ -9,6 +9,7 @@ import {
   salvarModalidadesEntrega,
   salvarZonasEntrega,
 } from "@/lib/actions/entrega";
+import { temCoordenadas } from "@/lib/actions/patches-loja";
 import { modalidadesDaLoja } from "@/lib/utils/modalidadesEntrega";
 import { EntregasClient } from "./EntregasClient";
 
@@ -46,7 +47,7 @@ export async function EntregasConteudo({
       forma={forma}
       versao={versao}
       // Só o boolean: o par de coordenadas nunca vai ao client (seguranca.md §19).
-      temCoordenadas={loja.latitude != null && loja.longitude != null}
+      temCoordenadas={temCoordenadas(loja)}
       hrefPerfil={hrefPerfil}
       modalidades={modalidadesDaLoja(loja)}
       taxaForaZona={loja.taxa_entrega_fora_zona}

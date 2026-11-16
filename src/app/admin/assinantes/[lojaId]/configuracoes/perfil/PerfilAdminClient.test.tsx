@@ -46,7 +46,7 @@ const capturado = vi.hoisted(() => ({
   props: undefined as Record<string, unknown> | undefined,
 }));
 
-// Issue 368 (DD6): `CartaoPublicacao` (novo, GREEN cria) — identidade estável
+// Issue 368 (DD6): `CartaoPublicacao` — identidade estável
 // para reconhecer o elemento no slot `topo` sem renderizá-lo.
 const cartao = vi.hoisted(() => ({
   CartaoPublicacao: (_p: Record<string, unknown>) => null,
@@ -316,7 +316,7 @@ describe("PerfilAdminClient — fiação de onSalvar (issue 124)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Issue 368 (RED) — DD6: o cartão de publicação sai do PerfilClient e entra pelo
+// Issue 368 — DD6: o cartão de publicação sai do PerfilClient e entra pelo
 // slot `topo`; no admin, `onDefinirPublicacao` aponta para `publicarLojaAdmin`
 // com o `lojaId` da URL (o gate D7 é revalidado lá). DD7: os 6 `required`.
 

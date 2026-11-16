@@ -144,7 +144,7 @@ describe("(bloqueavel)/layout — gate de assinatura posicional (RED)", () => {
   });
 });
 
-// ── Issue 368 (RED) — assistente de primeiros passos ANTES do paywall (D4, DD14) ──
+// ── Issue 368 — assistente de primeiros passos ANTES do paywall (D4, DD14) ──
 // `decidirPrimeirosPassos` também é real (não mockada): prova a fiação marcador →
 // redirect. Loja nunca publicada vai ao assistente, que fica FORA deste grupo.
 describe("(bloqueavel)/layout — assistente de primeiros passos (issue 368)", () => {

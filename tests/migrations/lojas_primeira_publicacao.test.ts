@@ -3,7 +3,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import { createTestDb, type TestDb } from "../helpers/pglite";
 
 /**
- * Issue 368 (fase RED do TDD) — marcador `lojas.primeira_publicacao_em`.
+ * Issue 368 — marcador `lojas.primeira_publicacao_em`.
  *
  *   D1. Roteamento do painel usa "já publicada ao menos uma vez"
  *       (`primeira_publicacao_em IS NOT NULL`), nunca o `ativo` atual.

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
 
 /**
- * Fase RED (issue 368, crítica) — retomada do assistente (D6):
+ * Issue 368 (crítica) — retomada do assistente (D6):
  * `primeiros-passos/page.tsx` só redireciona para
  * `rotaDaEtapa(etapaDeRetomada(pendenciasPublicacao(estado)))`, depois do mesmo
  * guard do layout. Regras REAIS (publicacao.ts, primeirosPassos.ts); só o I/O é
@@ -21,8 +21,8 @@ import type { LojaCompleta } from "@/lib/supabase/queries/lojas";
  *
  * Padrão de `bloqueavel-layout.guard.test.tsx`: chama o default export async sem
  * renderizar; `redirect` mockado LANÇA NEXT_REDIRECT. `decidirPrimeirosPassos`
- * é real (fiação). Só o I/O é mockado. Import dinâmico: rejeita enquanto o
- * layout não existir (RED por ausência do alvo).
+ * é real (fiação). Só o I/O é mockado. O layout é importado dinamicamente,
+ * depois dos mocks.
  */
 
 const NEXT_REDIRECT = "NEXT_REDIRECT";
@@ -114,7 +114,7 @@ beforeEach(() => {
   contagens(0, 0);
 });
 
-describe("primeiros-passos/page — retomada na primeira etapa com pendência (issue 368, RED)", () => {
+describe("primeiros-passos/page — retomada na primeira etapa com pendência (issue 368)", () => {
   it("loja recém-criada → redirect '/painel/primeiros-passos/perfil'", async () => {
     buscarLojaDoDono.mockResolvedValue(fazerLoja());
     expect(await destinoDaPagina()).toBe("/painel/primeiros-passos/perfil");

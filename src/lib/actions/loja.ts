@@ -39,7 +39,7 @@ import {
   mensagemPendencia,
   podePublicarLoja,
 } from "@/lib/utils/publicacao";
-import { avisoGeocodingPerfil } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/avisoGeocoding";
+import { avisoGeocodingPerfil } from "@/lib/utils/avisoGeocoding";
 
 export type ResultadoSalvar = { ok: true } | { ok: false; erro: string };
 
@@ -83,6 +83,7 @@ const ERRO_GENERICO = "Não foi possível salvar. Tente novamente.";
 const ERRO_VALIDACAO = "Dados inválidos. Confira os campos e tente novamente.";
 const ERRO_SLUG_OCUPADO = "Este endereço (slug) já está em uso por outra loja.";
 const ERRO_SEM_LOJA = "Loja não encontrada.";
+const ERRO_RATE_LIMIT = "Muitas tentativas. Aguarde um instante.";
 
 /**
  * Atualiza o perfil/slug da loja do dono autenticado. Se o slug mudou, checa
@@ -91,7 +92,7 @@ const ERRO_SEM_LOJA = "Loja não encontrada.";
 export async function salvarPerfil(payload: unknown): Promise<ResultadoPerfil> {
   const ip = extrairIp(await headers());
   const rl = await verificarRateLimit("salvarPerfil", ip);
-  if (!rl.permitido) return { ok: false, erro: "Muitas tentativas. Aguarde um instante." };
+  if (!rl.permitido) return { ok: false, erro: ERRO_RATE_LIMIT };
 
   const parsed = schemaPerfil.safeParse(payload);
   if (!parsed.success) return { ok: false, erro: ERRO_VALIDACAO };
@@ -251,7 +252,7 @@ export async function localizarEnderecoDeNovo(): Promise<ResultadoLocalizar> {
     // Balde por LOJA (DD12): contém o custo do geocoder externo.
     const rl = await verificarRateLimit("localizarEndereco", loja.id);
     if (!rl.permitido) {
-      return { ok: false, erro: "Muitas tentativas. Aguarde um instante." };
+      return { ok: false, erro: ERRO_RATE_LIMIT };
     }
 
     const faltando = camposEnderecoFaltando(loja);
