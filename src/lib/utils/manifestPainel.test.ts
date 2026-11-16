@@ -39,6 +39,7 @@ function lojaFake(overrides: Partial<LojaCompleta>): LojaCompleta {
     billing_provider: null,
     provider_subscription_id: null,
     plano_id: null,
+    primeira_publicacao_em: null,
     id: "22222222-2222-2222-2222-222222222222",
     latitude: null,
     logo_url: null,
