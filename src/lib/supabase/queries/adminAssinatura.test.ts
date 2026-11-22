@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { aplicarStatusAdmin } from "./adminAssinatura";
+import { aplicarStatusAdmin, listarAssinantes } from "./adminAssinatura";
 
 /**
  * Fase RED (TDD) da issue 080 — query `aplicarStatusAdmin`.
@@ -88,5 +88,59 @@ describe("aplicarStatusAdmin — fase RED issue 080", () => {
     terminal = { error: null, count: 0 };
     const r = await aplicarStatusAdmin(makeClient(), LOJA_ID, "ativa", undefined);
     expect(r).toEqual({ linhasAfetadas: 0 });
+  });
+});
+
+/**
+ * E-mail do dono na tela admin de assinantes. Uma única linha corrompida em
+ * `auth.users` faz o GoTrue devolver 500 no `listUsers` INTEIRO (visto no cloud:
+ * AuthRetryableFetchError). O fail-soft não pode apagar o e-mail de todas as
+ * lojas por causa de um dono: cai para `getUserById` por dono e isola a falha.
+ */
+
+const LOJAS = [
+  { id: "l1", nome: "Saudável", dono_id: "d1", assinatura_status: "trial", assinatura_inicio: null, assinatura_fim_periodo: null, billing_provider: null, planos: null },
+  { id: "l2", nome: "Corrompida", dono_id: "d2", assinatura_status: "cortesia", assinatura_inicio: null, assinatura_fim_periodo: null, billing_provider: null, planos: null },
+  { id: "l3", nome: "Mesmo dono", dono_id: "d1", assinatura_status: "trial", assinatura_inicio: null, assinatura_fim_periodo: null, billing_provider: null, planos: null },
+];
+
+const EMAILS: Record<string, string> = { d1: "dono1@exemplo.test" };
+
+function makeClientAssinantes(listUsersFalha: boolean) {
+  const listUsers = vi.fn(async () =>
+    listUsersFalha
+      ? { data: { users: [] }, error: { name: "AuthRetryableFetchError", status: 500, message: "{}" } }
+      : { data: { users: [{ id: "d1", email: EMAILS.d1 }] }, error: null },
+  );
+  const getUserById = vi.fn(async (id: string) =>
+    EMAILS[id]
+      ? { data: { user: { id, email: EMAILS[id] } }, error: null }
+      : { data: { user: null }, error: { name: "AuthRetryableFetchError", status: 500, message: "{}" } },
+  );
+  const client = {
+    from: () => ({
+      select: () => ({ order: async () => ({ data: LOJAS, error: null }) }),
+    }),
+    auth: { admin: { listUsers, getUserById } },
+  } as unknown as Client;
+  return { client, listUsers, getUserById };
+}
+
+describe("listarAssinantes — e-mail do dono", () => {
+  it("caminho feliz: um listUsers, sem getUserById", async () => {
+    const { client, getUserById } = makeClientAssinantes(false);
+    const linhas = await listarAssinantes(client);
+    expect(linhas.map((l) => l.emailDono)).toEqual([EMAILS.d1, null, EMAILS.d1]);
+    expect(getUserById).not.toHaveBeenCalled();
+  });
+
+  it("listUsers falha: cai para getUserById por dono distinto e isola o dono corrompido", async () => {
+    const spyErro = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { client, getUserById } = makeClientAssinantes(true);
+    const linhas = await listarAssinantes(client);
+    expect(linhas.map((l) => l.emailDono)).toEqual([EMAILS.d1, null, EMAILS.d1]);
+    expect(getUserById).toHaveBeenCalledTimes(2);
+    expect(getUserById.mock.calls.map((c) => c[0]).sort()).toEqual(["d1", "d2"]);
+    spyErro.mockRestore();
   });
 });

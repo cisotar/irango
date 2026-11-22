@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { StatusAssinatura } from "@/lib/utils/assinatura";
+import { resolverEmailDoDono } from "./lojas";
 
 type Client = SupabaseClient<Database>;
 
@@ -71,8 +72,8 @@ export type AssinanteLinha = {
  * ÚNICA defesa: chame-o ANTES, no guard da rota.
  *
  * O e-mail do dono vive em `auth.users` (não em `lojas`) — buscado em lote pelo
- * Admin API (`auth.admin.listUsers`) e casado por `dono_id`. Se o lookup de
- * e-mail falhar, a linha aparece sem e-mail (não derruba a lista — auditoria > UX).
+ * Admin API (`auth.admin.listUsers`) e casado por `dono_id`. Se o lookup de um
+ * dono falhar, só aquela linha aparece sem e-mail (não derruba a lista).
  */
 export async function listarAssinantes(
   client: Client,
@@ -85,7 +86,10 @@ export async function listarAssinantes(
     .order("criado_em", { ascending: false });
   if (error) throw error;
 
-  const emailPorDono = await mapearEmailsDosDonos(client);
+  const emailPorDono = await mapearEmailsDosDonos(
+    client,
+    (data ?? []).map((loja) => loja.dono_id),
+  );
 
   return (data ?? []).map((loja) => {
     const plano = loja.planos as { nome: string } | { nome: string }[] | null;
@@ -103,29 +107,53 @@ export async function listarAssinantes(
   });
 }
 
-/** dono_id → email, via Admin API paginada. Fail-soft: erro → mapa vazio. */
+/**
+ * dono_id → email, via Admin API paginada. Uma única linha corrompida em
+ * `auth.users` faz o GoTrue devolver 500 no `listUsers` inteiro; nesse caso cai
+ * para `getUserById` por dono, e só o dono problemático fica sem e-mail.
+ */
 async function mapearEmailsDosDonos(
+  client: Client,
+  donoIds: string[],
+): Promise<Map<string, string>> {
+  try {
+    return await listarEmailsPaginado(client);
+  } catch (e) {
+    console.error("[listarAssinantes] listUsers falhou; buscando por dono", e);
+  }
+
+  const mapa = new Map<string, string>();
+  const ids = [...new Set(donoIds)];
+  const resultados = await Promise.allSettled(
+    ids.map((id) => resolverEmailDoDono(client, id)),
+  );
+  resultados.forEach((r, i) => {
+    if (r.status === "fulfilled" && r.value) mapa.set(ids[i], r.value);
+    else if (r.status === "rejected") {
+      console.error("[listarAssinantes] getUserById falhou", { donoId: ids[i] }, r.reason);
+    }
+  });
+  return mapa;
+}
+
+async function listarEmailsPaginado(
   client: Client,
 ): Promise<Map<string, string>> {
   const mapa = new Map<string, string>();
-  try {
-    let pagina = 1;
-    // perPage máx. do GoTrue. Loja-base é pequena; 2-3 páginas no pior caso.
-    const porPagina = 1000;
-    for (;;) {
-      const { data, error } = await client.auth.admin.listUsers({
-        page: pagina,
-        perPage: porPagina,
-      });
-      if (error) throw error;
-      for (const u of data.users) {
-        if (u.email) mapa.set(u.id, u.email);
-      }
-      if (data.users.length < porPagina) break;
-      pagina += 1;
+  let pagina = 1;
+  // perPage máx. do GoTrue. Loja-base é pequena; 2-3 páginas no pior caso.
+  const porPagina = 1000;
+  for (;;) {
+    const { data, error } = await client.auth.admin.listUsers({
+      page: pagina,
+      perPage: porPagina,
+    });
+    if (error) throw error;
+    for (const u of data.users) {
+      if (u.email) mapa.set(u.id, u.email);
     }
-  } catch (e) {
-    console.error("[listarAssinantes] lookup de e-mails falhou", e);
+    if (data.users.length < porPagina) break;
+    pagina += 1;
   }
   return mapa;
 }

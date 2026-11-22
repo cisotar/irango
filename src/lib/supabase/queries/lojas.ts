@@ -312,7 +312,7 @@ export async function buscarCoordsLoja(
  * Normaliza trim + lowercase nos DOIS lados do match (caixa/espaços não importam).
  * E-mail inexistente → `null`. NUNCA loga o e-mail cru (PII, scrubbing §21).
  *
- * Ao contrário de `mapearEmailsDosDonos` (fail-soft → mapa vazio), aqui o erro do
+ * Ao contrário de `mapearEmailsDosDonos` (fail-soft → linha sem e-mail), aqui o erro do
  * Admin API PROPAGA (seguranca.md §14) — quem chama precisa distinguir "não existe"
  * (null) de "lookup falhou" (throw).
  */
