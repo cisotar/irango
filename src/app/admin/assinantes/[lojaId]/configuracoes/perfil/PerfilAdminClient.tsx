@@ -7,6 +7,7 @@ import {
   type PerfilInicial,
 } from "@/app/(painel)/painel/(bloqueavel)/configuracoes/perfil/PerfilClient";
 import type { UploadLogoLojaProps } from "@/components/painel/UploadLogoLoja";
+import { CartaoPublicacao } from "@/components/painel/CartaoPublicacao";
 
 import { salvarPerfilAdmin } from "@/app/admin/assinantes/actions/admin-perfil";
 import { publicarLojaAdmin } from "@/app/admin/assinantes/actions/admin-publicar";
@@ -28,20 +29,20 @@ import {
  * gate de `ativo`, magic bytes/path do upload, escopo cross-loja) é das actions
  * admin no servidor. Os adapters de logo (`onSalvarLogo`/`onRemoverLogo`) FIXAM
  * `loja_id = lojaId` da URL — o client nunca é autoridade do escopo (issue 119).
- * `podePublicar` (nome + WhatsApp) é preview; o gate real é revalidado em
- * `publicarLojaAdmin`.
+ * `bloqueio` (texto D10 da 1ª pendência do gate único, issue 368; `null` = pode
+ * publicar) é preview; o gate real é revalidado em `publicarLojaAdmin`.
  */
 export function PerfilAdminClient({
   lojaId,
   inicial,
   publicado,
-  podePublicar,
+  bloqueio,
   logoUrlInicial,
 }: {
   lojaId: string;
   inicial: PerfilInicial;
   publicado: boolean;
-  podePublicar: boolean;
+  bloqueio: string | null;
   logoUrlInicial: string | null;
 }) {
   // O `UploadLogoLoja` (via `PerfilClient`) JÁ monta o FormData com o arquivo;
@@ -77,11 +78,18 @@ export function PerfilAdminClient({
   return (
     <PerfilClient
       inicial={inicial}
-      publicado={publicado}
-      podePublicar={podePublicar}
+      // Cartão de publicação (issue 368, DD6) com a action ADMIN fixada no
+      // `lojaId` da URL; o gate D7 é revalidado em `publicarLojaAdmin`.
+      topo={
+        <CartaoPublicacao
+          publicado={publicado}
+          bloqueio={bloqueio}
+          onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
+          destinoAposPublicar={null}
+        />
+      }
       logoUrlInicial={logoUrlInicial}
       onSalvar={(payload) => salvarPerfilAdmin(lojaId, payload)}
-      onDefinirPublicacao={(publicar) => publicarLojaAdmin(lojaId, publicar)}
       onSalvarLogo={onSalvarLogo}
       onRemoverLogo={onRemoverLogo}
       onListarGaleria={onListarGaleria}

@@ -7,7 +7,8 @@ import type { ReactElement } from "react";
  * fail-closed no loader (`carga.test.ts`). Aqui asseveramos que a page:
  *   - consome `carregarLojaAdminBase(lojaId)` (nunca `createServiceClient` inline);
  *   - renderiza `PerfilAdminClient` com `lojaId` + as props derivadas
- *     (`perfilInicial`, `publicado`, `podePublicar`, `logoUrlInicial`).
+ *     (`perfilInicial`, `publicado`, `bloqueio`, `logoUrlInicial`) — issue 368:
+ *     `bloqueio` = texto D10 da 1ª pendência de `carregarProntidaoAdmin`.
  *
  * Padrão espelha `pedidos/[id]/page.test.tsx`: invoca o default export async e
  * inspeciona o elemento retornado com o wrapper mockado como `() => null`, sem
@@ -34,8 +35,27 @@ const lojaFake = {
 };
 
 const carregarLojaAdminBase = vi.fn(async (_lojaId: string) => lojaFake);
+
+// Issue 368 (D7): o preview do gate no admin vem de um loader próprio (a page
+// admin não pode criar service_role), com as contagens de produto/pagamento.
+const ESTADO_PRONTO = {
+  nome: "Pizzaria Alvo",
+  whatsapp: "5511999999999" as string | null,
+  endereco_cep: "01310-100",
+  endereco_rua: "Avenida Paulista",
+  endereco_numero: "1000",
+  endereco_bairro: "Bela Vista",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
+  latitude: -23.56,
+  longitude: -46.65,
+  produtosDisponiveis: 2,
+  formasPagamento: 1,
+};
+const carregarProntidaoAdmin = vi.fn(async (_lojaId: string) => ESTADO_PRONTO);
 vi.mock("../../carga", () => ({
   carregarLojaAdminBase: (lojaId: string) => carregarLojaAdminBase(lojaId),
+  carregarProntidaoAdmin: (lojaId: string) => carregarProntidaoAdmin(lojaId),
 }));
 
 vi.mock("./PerfilAdminClient", () => ({
@@ -54,7 +74,7 @@ type Props = {
     whatsapp_envio_automatico: boolean;
   };
   publicado: boolean;
-  podePublicar: boolean;
+  bloqueio: string | null;
   logoUrlInicial: string | null;
 };
 
@@ -87,15 +107,28 @@ describe("page admin /configuracoes/perfil — fiação", () => {
     expect(el.props.inicial.slug).toBe("pizzaria-alvo");
   });
 
-  it("podePublicar=true com nome + whatsapp preenchidos", async () => {
+  it("bloqueio=null com loja pronta", async () => {
     const el = await renderizar();
-    expect(el.props.podePublicar).toBe(true);
+    expect(el.props.bloqueio).toBeNull();
   });
 
-  it("podePublicar=false quando falta whatsapp (preview do gate do servidor)", async () => {
+  it("bloqueio = ERRO_PERFIL_INCOMPLETO quando falta WhatsApp", async () => {
     carregarLojaAdminBase.mockResolvedValueOnce({ ...lojaFake, whatsapp: null });
+    carregarProntidaoAdmin.mockResolvedValueOnce({ ...ESTADO_PRONTO, whatsapp: null });
     const el = await renderizar();
-    expect(el.props.podePublicar).toBe(false);
+    expect(el.props.bloqueio).toBe("Complete nome e WhatsApp antes de publicar a loja.");
+  });
+
+  it("consome carregarProntidaoAdmin(lojaId)", async () => {
+    await renderizar();
+    expect(carregarProntidaoAdmin).toHaveBeenCalledTimes(1);
+    expect(carregarProntidaoAdmin).toHaveBeenCalledWith(LOJA_ID);
+  });
+
+  it("bloqueio reflete a pendência de produto (gate D7, não só nome + WhatsApp)", async () => {
+    carregarProntidaoAdmin.mockResolvedValueOnce({ ...ESTADO_PRONTO, produtosDisponiveis: 0 });
+    const el = await renderizar();
+    expect(el.props.bloqueio).toBe("Cadastre ao menos um produto disponível antes de publicar a loja.");
   });
 
   // Issue 123/124: paridade do toggle de envio automático via admin. A page

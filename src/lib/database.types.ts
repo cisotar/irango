@@ -719,6 +719,7 @@ export type Database = {
           modulo_impressao_termica: boolean
           nome: string
           plano_id: string | null
+          primeira_publicacao_em: string | null
           provider_subscription_id: string | null
           slug: string
           taxa_entrega_fora_zona: number | null
@@ -764,6 +765,7 @@ export type Database = {
           modulo_impressao_termica?: boolean
           nome: string
           plano_id?: string | null
+          primeira_publicacao_em?: string | null
           provider_subscription_id?: string | null
           slug: string
           taxa_entrega_fora_zona?: number | null
@@ -809,6 +811,7 @@ export type Database = {
           modulo_impressao_termica?: boolean
           nome?: string
           plano_id?: string | null
+          primeira_publicacao_em?: string | null
           provider_subscription_id?: string | null
           slug?: string
           taxa_entrega_fora_zona?: number | null
@@ -1968,6 +1971,7 @@ export type Database = {
           modulo_impressao_termica: boolean
           nome: string
           plano_id: string | null
+          primeira_publicacao_em: string | null
           provider_subscription_id: string | null
           slug: string
           taxa_entrega_fora_zona: number | null
@@ -2022,6 +2026,7 @@ export type Database = {
           modulo_impressao_termica: boolean
           nome: string
           plano_id: string | null
+          primeira_publicacao_em: string | null
           provider_subscription_id: string | null
           slug: string
           taxa_entrega_fora_zona: number | null

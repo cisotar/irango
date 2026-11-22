@@ -1,23 +1,19 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { IMaskInput } from "react-imask";
 import { Copy, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { schemaPerfil, sanitizarSlug } from "@/lib/validacoes/loja";
-import type {
-  salvarPerfil as salvarPerfilLojista,
-  definirPublicacao as definirPublicacaoLojista,
-} from "@/lib/actions/loja";
+import type { salvarPerfil as salvarPerfilLojista } from "@/lib/actions/loja";
 import { buscarCep } from "@/lib/utils/buscarCep";
 import {
   UploadLogoLoja,
@@ -59,6 +55,21 @@ const BASE_VITRINE = "https://irango.com.br/loja";
  * Converte o WhatsApp armazenado (`55DDXXXXXXXXX`) para o número nacional
  * exibido na máscara `(DD) XXXXX-XXXX` (sem o prefixo 55).
  */
+/** Rótulo de campo obrigatório: o `*` é visual; o `required` do input é o que conta. */
+function RotuloObrigatorio({
+  htmlFor,
+  children,
+}: {
+  htmlFor: string;
+  children: ReactNode;
+}) {
+  return (
+    <Label htmlFor={htmlFor}>
+      {children} <span aria-hidden="true">*</span>
+    </Label>
+  );
+}
+
 function whatsappArmazenadoParaExibicao(armazenado: string | null): string {
   if (!armazenado) return "";
   const d = apenasDigitos(armazenado);
@@ -77,24 +88,24 @@ const className =
  */
 export function PerfilClient({
   inicial,
-  publicado,
-  podePublicar,
+  topo,
   logoUrlInicial,
   onSalvar,
-  onDefinirPublicacao,
   onSalvarLogo,
   onRemoverLogo,
   onListarGaleria,
   onEnviarParaGaleria,
 }: {
   inicial: PerfilInicial;
-  publicado: boolean;
-  podePublicar: boolean;
+  /**
+   * Bloco entre o título e o form (issue 368, DD6). Obrigatório: o painel e o
+   * hub admin passam o `CartaoPublicacao` com a action de cada via; a etapa
+   * perfil do assistente passa `null` explícito (publicar só na revisão, D8).
+   */
+  topo: ReactNode;
   logoUrlInicial: string | null;
   /** Action de salvar perfil. Obrigatória: a page do painel passa a do lojista, a via admin a variante por `lojaId`. */
   onSalvar: typeof salvarPerfilLojista;
-  /** Action de publicar/despublicar. Obrigatória (issue 160). */
-  onDefinirPublicacao: typeof definirPublicacaoLojista;
   /** Action de salvar a logo. Obrigatória (issue 160). */
   onSalvarLogo: UploadLogoLojaProps["onSalvar"];
   /** Action de remover a logo. Obrigatória (issue 160). */
@@ -153,21 +164,6 @@ export function PerfilClient({
     null,
   );
   const [enviando, startEnvio] = useTransition();
-  const [publicando, startPublicacao] = useTransition();
-
-  // Alterna ativo via Server Action (service_role). O servidor revalida o perfil
-  // mínimo — aqui o botão fica desabilitado como gate de UX (paridade, não fonte).
-  function alternarPublicacao() {
-    startPublicacao(async () => {
-      const r = await onDefinirPublicacao(!publicado);
-      if (!r.ok) {
-        toast.error(r.erro);
-        return;
-      }
-      toast.success(publicado ? "Loja despublicada." : "Loja publicada!");
-      router.refresh();
-    });
-  }
 
   const urlVitrine = `${BASE_VITRINE}/${slug}`;
   const slugValido = schemaPerfil.shape.slug.safeParse(slug).success;
@@ -248,12 +244,14 @@ export function PerfilClient({
       toast.success("Perfil salvo!");
       if (!resultado.geocodificado) {
         // (008) Aviso acionável conforme o motivo (issue 007): transitório =
-        // re-salvar resolve; não-encontrado = corrigir o dado. Sem motivo
-        // (compat) mantém o texto antigo.
+        // re-salvar resolve; não-encontrado = corrigir o dado.
         // (180-A) O veículo passou de toast a MODAL: loja sem coordenada some da
         // busca por proximidade e desativa as zonas por raio — sério demais para
-        // um aviso que some sozinho. Os dois textos seguem os mesmos.
-        setAvisoGeocoding(resultado.motivo ?? "nao_encontrado");
+        // um aviso que some sozinho.
+        // (368, DD8) Sem motivo, nunca culpar o dado do lojista: cai na falha
+        // nossa ("transitorio"). Inalcançável pela via do lojista depois de D12;
+        // fica como defesa.
+        setAvisoGeocoding(resultado.motivo ?? "transitorio");
       }
       router.refresh();
     });
@@ -279,40 +277,7 @@ export function PerfilClient({
         Perfil da loja
       </h1>
 
-      {/* Publicação da vitrine: a loja nasce em rascunho (oculta). Publicar exige
-          nome + WhatsApp (gate validado no servidor por definirPublicacao). */}
-      <Card className="mb-4">
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-foreground">
-                Status da vitrine
-              </span>
-              {publicado ? (
-                <Badge variant="secondary">No ar</Badge>
-              ) : (
-                <Badge variant="outline">Rascunho</Badge>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {publicado
-                ? "Sua vitrine está visível e aceitando pedidos."
-                : podePublicar
-                  ? "Sua vitrine está oculta. Publique para receber pedidos."
-                  : "Preencha nome e WhatsApp e salve antes de publicar."}
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant={publicado ? "outline" : "default"}
-            disabled={publicando || (!publicado && !podePublicar)}
-            onClick={alternarPublicacao}
-          >
-            {publicando && <Loader2 className="mr-2 size-4 animate-spin" />}
-            {publicado ? "Despublicar" : "Publicar loja"}
-          </Button>
-        </CardContent>
-      </Card>
+      {topo}
 
       <Card>
         <CardContent className="p-6">
@@ -514,12 +479,13 @@ export function PerfilClient({
               <div className="space-y-1">
                 <p className="font-medium text-foreground">Endereço da loja</p>
                 <p className="text-xs text-muted-foreground">
-                  Usado para calcular zonas de entrega por raio.
+                  Obrigatório para publicar a loja. Usado para calcular as zonas
+                  de entrega por raio. Campos com * são obrigatórios.
                 </p>
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="perfil-endereco-cep">CEP</Label>
+                <RotuloObrigatorio htmlFor="perfil-endereco-cep">CEP</RotuloObrigatorio>
                 <div className="flex items-center gap-2">
                   <IMaskInput
                     id="perfil-endereco-cep"
@@ -528,6 +494,7 @@ export function PerfilClient({
                     onAccept={(value) => setEnderecoCep(value as string)}
                     placeholder="00000-000"
                     inputMode="numeric"
+                    required
                     aria-invalid={erroCep != null}
                     aria-describedby={
                       erroCep != null ? "perfil-endereco-cep-erro" : undefined
@@ -560,51 +527,56 @@ export function PerfilClient({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="perfil-endereco-rua">Logradouro</Label>
+                <RotuloObrigatorio htmlFor="perfil-endereco-rua">Rua</RotuloObrigatorio>
                 <Input
                   id="perfil-endereco-rua"
                   value={enderecoRua}
                   onChange={(e) => setEnderecoRua(e.target.value)}
                   placeholder="Rua, avenida…"
+                  required
                 />
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[6rem_1fr]">
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-numero">Número</Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-numero">Número</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-numero"
                     ref={numeroRef}
                     value={enderecoNumero}
                     inputMode="numeric"
                     onChange={(e) => setEnderecoNumero(e.target.value)}
+                    required
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-bairro">Bairro</Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-bairro">Bairro</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-bairro"
                     value={enderecoBairro}
                     onChange={(e) => setEnderecoBairro(e.target.value)}
+                    required
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_5rem]">
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-cidade">Cidade</Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-cidade">Cidade</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-cidade"
                     value={enderecoCidade}
                     onChange={(e) => setEnderecoCidade(e.target.value)}
+                    required
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="perfil-endereco-estado">UF</Label>
+                  <RotuloObrigatorio htmlFor="perfil-endereco-estado">UF</RotuloObrigatorio>
                   <Input
                     id="perfil-endereco-estado"
                     value={enderecoEstado}
                     maxLength={2}
+                    required
                     onChange={(e) =>
                       setEnderecoEstado(e.target.value.toUpperCase())
                     }

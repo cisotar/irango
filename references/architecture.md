@@ -1,6 +1,6 @@
 # Arquitetura — iRango
 
-**Versão:** 0.7.2 | **Atualizado:** 2026-11-01
+**Versão:** 0.8.0 | **Atualizado:** 2026-11-16
 
 > Guia técnico de referência. Leia antes de abrir qualquer PR. Documenta decisões tomadas e o porquê delas.
 
@@ -81,6 +81,7 @@ irango/
 │   │   │   └── painel/
 │   │   │       ├── layout.tsx            # guard de sessão/email/loja (decidirAcessoBase) + chrome
 │   │   │       ├── assinatura-bloqueada/ # paywall — FORA do route group (bloqueavel), nunca gated (anti-loop)
+│   │   │       ├── primeiros-passos/     # assistente de primeira publicação (issue 368) — FORA do (bloqueavel), isento por posição (anti-loop); layout.tsx + cada page chamam exigirAssistente() (guard.ts, fail-closed); etapas perfil/horarios/entregas/pagamentos/produtos/opcionais/revisar reusam as telas do painel
 │   │   │       ├── manifest.webmanifest/
 │   │   │       │   └── route.ts          # manifest PWA do painel (auth obrigatório; force-dynamic; Cache-Control: private, no-store)
 │   │   │       ├── configuracoes/
@@ -149,7 +150,8 @@ irango/
 │   │   │   └── queries/                  # funções de query reutilizáveis
 │   │   │       ├── lojas.ts
 │   │   │       ├── produtos.ts
-│   │   │       └── pedidos.ts
+│   │   │       ├── pedidos.ts
+│   │   │       └── publicacao.ts         # carregarProntidaoPublicacao(client, loja) → EstadoProntidao; fonte única das contagens (produto disponível, forma de pagamento) do gate de publicação, com eq("loja_id") explícito; usada por lojista (client da sessão) e admin (service_role)
 │   │   ├── vendas/                       # montagem do relatório, compartilhada por painel e admin: carregarRelatorioVendas / carregarRankingClientes (recebem o client e o loja_id; as pages só escolhem a via) + tipos.ts
 │   │   ├── validacoes/                   # schemas zod — reutilizados no form e na action
 │   │   │   ├── produto.ts
@@ -176,7 +178,9 @@ irango/
 │   │       ├── manifestPainel.ts         # montarManifestPainel(loja|null) → ManifestPainel; puro (sem I/O)
 │   │       ├── fotoSegura.ts             # fotoSegura(url?): string|null — fonte única da invariante anti-XSS §15 (só https vira src)
 │   │       ├── metricasPedidos.ts        # calcularMetricasDoDia(pedidos) + chaveDia(data); puro; extraído do Dashboard do lojista, reuso previsto pelo Dashboard admin (issues 122/138)
-│   │       ├── publicacao.ts             # podePublicarLoja(nome, whatsapp) + ERRO_PERFIL_INCOMPLETO; fonte única do gate "perfil mínimo pra publicar" — preview no cliente, gate autoritativo revalidado no servidor (lojista e admin) — ver seguranca.md §7 (issue 152)
+│   │       ├── publicacao.ts             # podePublicarLoja(estado) + pendenciasPublicacao + mensagens (ERRO_*); fonte única do gate de publicação (nome, WhatsApp, endereço completo, par latitude/longitude, ≥1 produto, ≥1 pagamento) — preview no cliente, gate autoritativo revalidado no servidor (lojista e admin) — ver seguranca.md §7 e §17 (issues 152, 368)
+│   │       ├── primeirosPassos.ts        # ETAPAS_ASSISTENTE, rotaDaEtapa, etapaDeRetomada(pendencias); puro; mapeia pendência do gate → etapa do assistente (issue 368)
+│   │       ├── avisoGeocoding.ts         # avisoGeocodingPerfil(motivo, acao) — texto por motivo de falha do geocoding, compartilhado por salvarPerfil e localizarEnderecoDeNovo (antes em perfil/, issue 368)
 │   │       ├── periodoVendas.ts          # período do relatório (presets, ciclo mensal por dia_inicio_ciclo, fuso da loja) → faixa [inicio, fim); puro
 │   │       ├── agregarVendas.ts          # agrega as linhas das funções SQL em totais/séries/ranking; puro
 │   │       ├── codigoDoErro.ts           # extrai o SQLSTATE de um erro do PostgREST (usado por clientesDaLoja e vendas)
@@ -239,7 +243,7 @@ Todo dado tem `loja_id`. RLS garante que lojista logado só acessa dados da pró
 - **Provider:** Supabase Auth (email/senha + Google OAuth)
 - **Sessão:** gerenciada por `@supabase/ssr` via cookies HttpOnly
 - **Middleware:** `middleware.ts` na raiz — refresha sessão em toda request
-- **Guard de painel:** dois layouts em camada, posicionais. `app/(painel)/painel/layout.tsx` decide sessão/papel/email/loja (`decidirAcessoBase`, com os papéis lidos de `papeis_usuario` por `buscarPapeisDoUsuario`) e monta o chrome; o route group aninhado `app/(painel)/painel/(bloqueavel)/layout.tsx` decide só a assinatura (`decidirAssinatura`) sobre as rotas que estão posicionalmente dentro dele. Telas isentas do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) ficam fora do grupo por estrutura de pastas — isenção não depende de header de rota (achado #3B do pentest 2026-07-08, ver `seguranca.md` §4)
+- **Guard de painel:** dois layouts em camada, posicionais. `app/(painel)/painel/layout.tsx` decide sessão/papel/email/loja (`decidirAcessoBase`, com os papéis lidos de `papeis_usuario` por `buscarPapeisDoUsuario`) e monta o chrome; o route group aninhado `app/(painel)/painel/(bloqueavel)/layout.tsx` decide primeiros passos (`decidirPrimeirosPassos`) e assinatura (`decidirAssinatura`) sobre as rotas que estão posicionalmente dentro dele. Telas isentas do paywall (`assinatura-bloqueada/`, `configuracoes/assinatura/`) ficam fora do grupo por estrutura de pastas — isenção não depende de header de rota (achado #3B do pentest 2026-07-08, ver `seguranca.md` §4)
 - **Guard da conta do cliente:** em `app/(cliente)/minha-conta/layout.tsx`, não no middleware. `exigirCliente(rota)` (`minha-conta/guard.ts`) é chamado pelo layout **e** por cada página (o layout não re-renderiza em navegação entre páginas irmãs), com uma leitura por requisição via `cache()`. Fail-closed, nesta ordem: sem sessão → `/conta/entrar?next=<rota>`; e-mail não confirmado → `signOut` + `/conta/entrar?erro=confirme`; sem papel `cliente` ou sem linha em `clientes` → `/conta/completar`; erro de leitura → `/conta/entrar?erro=sessao`. Papéis vêm sempre de `papeis_usuario` (RLS), nunca do JWT
 - **Vitrine pública:** sem auth — `app/(publica)` usa `supabase/server.ts` e não exige sessão. A página da loja lê só o booleano `sessaoClienteConfirmada()` (`src/lib/auth/clienteDaSessao.ts`) para escolher o conteúdo do menu da conta e o aviso do "Finalizar pedido"; nenhum dado pessoal desce ao HTML
 - **Guard admin do SaaS:** `verificarAdminSaaS()` (`src/lib/auth/admin.ts`) — fail-closed, compara `user.id` contra `SAAS_ADMIN_USER_ID` server-only. Usado em `admin/assinantes/layout.tsx` (guard de subárvore) e direto em `admin/page.tsx` (guard de page isolada, opção A — ver `seguranca.md` §7)
@@ -291,13 +295,15 @@ painel/layout.tsx → decidirAcessoBase(user, loja)
     → sem papel lojista → redirect pelo papel (admin → /admin, demais → /); nunca auto-cura
     → email não confirmado → redirect /confirmar-email
     → sem loja (lojista órfão) → auto-cura + redirect /painel
-    → ok → chrome (Sidebar/Topbar) + children
-(bloqueavel)/layout.tsx (aninhado, só sob esse route group) → decidirAssinatura(loja, agora)
-    → bloqueada → redirect /painel/assinatura-bloqueada
+    → ok → decidirPrimeirosPassos(loja): nunca publicada → chrome mínimo (ChromeAssistente); senão chrome (Sidebar/Topbar) + aviso de endereço + children
+(bloqueavel)/layout.tsx (aninhado, só sob esse route group)
+    → decidirPrimeirosPassos(loja) = "primeiros-passos" → redirect /painel/primeiros-passos   (ANTES do paywall)
+    → decidirAssinatura(loja, agora) bloqueada → redirect /painel/assinatura-bloqueada
     → ok → children (herda o chrome do layout pai)
+primeiros-passos/ (FORA do grupo) → exigirAssistente(): loja já publicada alguma vez → redirect /painel
 ```
 
-A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configuracoes/assinatura/` vivem fora de `(bloqueavel)/`, então nunca passam por `decidirAssinatura` (anti-loop). Detalhe da migração em `seguranca.md` §4.
+A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configuracoes/assinatura/` vivem fora de `(bloqueavel)/`, então nunca passam por `decidirAssinatura` (anti-loop). O mesmo vale para o assistente `primeiros-passos/`: fora do grupo, nunca passa pelo gate que redireciona para ele nem pelo paywall (D5). `decidirPrimeirosPassos` lê só `lojas.primeira_publicacao_em` (nunca `ativo`): despublicar não devolve ao assistente. Detalhe da migração em `seguranca.md` §4.
 
 ---
 
@@ -335,6 +341,14 @@ A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configur
 - O histórico de pedidos (`HistoricoPedidos`, 20 por página, "Carregar mais" via `?pagina=N`) usa `listarPedidosDoCliente` (`queries/pedidos.ts`, client da sessão + RLS) e link para a confirmação por token.
 
 > ⚠️ O preview no client é só estética. O valor autoritativo é sempre o do servidor. O cliente nunca define quanto paga — ver `references/seguranca.md` §10.
+
+### Cadastro → assistente → publicar (issue 368)
+
+1. Cadastro cria a loja com `ativo = false` e `primeira_publicacao_em` nulo (`FormNovaLoja`, `schemaNovaLojaAdmin` e o cadastro do lojista não mudam).
+2. Login cai em `/painel`; `decidirPrimeirosPassos` manda loja nunca publicada para `/painel/primeiros-passos`, que abre a primeira etapa com pendência (`etapaDeRetomada`). Etapas: perfil → horários → entregas → pagamentos → produtos → opcionais (pode pular) → revisar e publicar; navegação livre.
+3. Publicar (`definirPublicacao` do lojista, `publicarLojaAdmin` do admin) relê o estado do banco (`carregarProntidaoPublicacao`) e aplica `podePublicarLoja`; o trigger `lojas_marca_primeira_publicacao_trg` grava `primeira_publicacao_em` e a Server Action revalida o layout do painel (`revalidatePath("/painel", "layout")`), que passa a mostrar o chrome completo.
+4. `schemaPerfil` exige os 6 campos de endereço; `salvarPerfil` geocodifica e grava o par `latitude`/`longitude`. Falha de geocoding não bloqueia o save, mas o gate recusa publicar sem o par.
+5. Recuperação de coordenada: o botão "Localizar meu endereço de novo" (`BotaoLocalizarEndereco` → `localizarEnderecoDeNovo`, `lib/actions/loja.ts`) só age com endereço completo e par ausente, usa o balde de rate limit `localizarEndereco` por loja e grava só o par (compare-and-set). Aparece na revisão e no aviso persistente (`AvisoEnderecoLoja`) de loja já publicada que ficou sem endereço completo ou sem par; nada despublica a loja. No hub admin o admin recupera salvando o perfil.
 
 ### Cálculo de frete
 
@@ -483,4 +497,5 @@ const items = order.order_items
 | Relatório de vendas sem exportação CSV | fora da v1 (RN-V25); precisa de spec própria | issue 359 |
 | `salvarCicloVendas` sem rate limit | mesma classe de `salvarHorarios`/`salvarTema`; custo de UPDATE de 1 linha na própria loja, sem vazamento | issue 360 |
 | `vendas_itens_por_categoria` com custo de RLS em janela longa e teto de 1000 linhas do PostgREST | `INVOKER` reavalia a cadeia de RLS por linha (366 dias: ~1,9 s lojista vs ~0,26 s service_role em pglite); posse já provada antes pela trava do corpo | issue 361 (`performance/2026-10-07-relatorio-vendas.md`) |
+| PATCH direto em `lojas.ativo` pelo dono contorna o gate de publicação (débito 140) | **ABERTO.** `podePublicarLoja` (via `definirPublicacao`/`publicarLojaAdmin`) é a única fonte da regra de prontidão, mas quem tem o JWT do próprio dono pode dar PATCH em `ativo` pela API REST: publica sem o gate, preenche `primeira_publicacao_em` (o trigger grava em toda virada de `ativo`) e pula o assistente. Exige o JWT do dono sobre a própria loja (auto-dano, sem vazamento entre lojas). Fechar por trigger copiaria as 11 condições em SQL, criando segunda fonte; caminho de fechamento: função SQL única de prontidão, chamada pelo trigger e por `podePublicarLoja` (issue 368, D17) | issue própria a abrir |
 | Seis actions de cardápio aceitam `count` vazio como sucesso (`atualizarCardapio`, `ligarDesligarCardapio`, `removerCardapio`, no lojista e no admin) | **Deixado em aberto de propósito, sem risco de segurança.** Em termos simples: depois de gravar, a action pergunta ao banco "quantas linhas mudaram?" e só recusa se a resposta for 0 (id inexistente ou de outra loja — isso já protege o multitenant). Se a resposta vier em branco (`null`/`NaN`, ex.: proxy removendo o header `Content-Range`), a action diz "salvo" sem confirmação, e o lojista pode achar que desligou um cardápio que continua na vitrine. Em produção o PostgREST sempre devolve a contagem, então é raro, e nenhum dado de outra loja é lido ou escrito. `definirDiasDoVinculo*` já recusa em `count !== 1` (issue 283, commit `da3bd34`). Aplicar o mesmo às seis muda comportamento (`remover` pode afetar várias linhas, então `=== 1` nem sempre serve) e exige decisão de produto | issue 283 |

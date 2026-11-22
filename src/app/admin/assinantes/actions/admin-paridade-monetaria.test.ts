@@ -95,6 +95,11 @@ describe("241 — perfil: o admin usa a MESMA montarPatchPerfil, sem segunda all
       nome: "Pizzaria do Zé",
       slug: "pizzaria-do-ze",
       telefone: "1130000000",
+      // Issue 368/193 (D12): endereço completo é obrigatório no schemaPerfil.
+      endereco_cep: "01310-100",
+      endereco_rua: "Avenida Paulista",
+      endereco_numero: "1000",
+      endereco_bairro: "Bela Vista",
       endereco_cidade: "São Paulo",
       endereco_estado: "SP",
       whatsapp_envio_automatico: false,
@@ -114,7 +119,18 @@ describe("241 — perfil: o admin usa a MESMA montarPatchPerfil, sem segunda all
   });
 
   it("payload hostil: o patch admin continua igual ao da allowlist única", async () => {
-    const dados = { nome: "Pizzaria do Zé", slug: "pizzaria-do-ze", modal_promocoes: true };
+    // Issue 368/193 (D12): endereço completo é obrigatório no schemaPerfil.
+    const dados = {
+      nome: "Pizzaria do Zé",
+      slug: "pizzaria-do-ze",
+      endereco_cep: "01310-100",
+      endereco_rua: "Avenida Paulista",
+      endereco_numero: "1000",
+      endereco_bairro: "Bela Vista",
+      endereco_cidade: "São Paulo",
+      endereco_estado: "SP",
+      modal_promocoes: true,
+    };
 
     const r = await salvarPerfilAdmin(LOJA_ID, {
       ...dados,

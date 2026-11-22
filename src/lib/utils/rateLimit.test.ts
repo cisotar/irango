@@ -98,6 +98,7 @@ describe("LIMITES — chaves de rate limit por action", () => {
         "enviarImagemGaleria",
         "fretePreview",
         "listarImagensGaleria",
+        "localizarEndereco",
         "login",
         "loginCliente",
         "novaSenhaCliente",
@@ -125,6 +126,13 @@ describe("LIMITES — chaves de rate limit por action", () => {
     expect(limites.recorteImagem).toEqual({ limite: 20, janela: "1 m" });
     expect(limites.removerImagensGaleria).toEqual({ limite: 10, janela: "1 m" });
     expect(limites.listarImagensGaleria).toEqual({ limite: 30, janela: "1 m" });
+  });
+
+  // Issue 368 (D14, DD12): botão "Localizar meu endereço de novo" — balde por
+  // LOJA (identificador = loja.id); o custo real é o geocoder externo.
+  it("localizarEndereco = 5 por 1 m", () => {
+    const limites = LIMITES as Record<string, { limite: number; janela: string }>;
+    expect(limites.localizarEndereco).toEqual({ limite: 5, janela: "1 m" });
   });
 
   // Preferências do painel (issue 360): um balde por lojista para as quatro actions.

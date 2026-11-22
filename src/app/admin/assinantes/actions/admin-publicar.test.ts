@@ -56,14 +56,35 @@ type UpdateCall = { patch: Record<string, unknown>; eqCol: string; eqVal: unknow
 const updateCalls: UpdateCall[] = [];
 let updateError: unknown = null;
 
+// Issue 368 (D7): o gate conta produtos/formas sob o MESMO `svc` (sem RLS). O fake
+// ganha `select(cols, opts)` com `.eq` encadeado que conta linhas de `tabelas`
+// filtradas por TODO `.eq` recebido — sem `eq("loja_id")`, a loja vizinha conta.
+type Linha = Record<string, unknown>;
+const tabelas: Record<string, Linha[]> = {};
+const selectFiltros: Array<{ tabela: string; filtros: Array<[string, unknown]> }> = [];
 const clientServico = {
-  from: (_tabela: string) => ({
+  from: (tabela: string) => ({
     update: (patch: Record<string, unknown>) => ({
       eq: async (eqCol: string, eqVal: unknown) => {
         updateCalls.push({ patch, eqCol, eqVal });
         return { error: updateError };
       },
     }),
+    select: (_colunas: string, _opcoes?: unknown) => {
+      const registro = { tabela, filtros: [] as Array<[string, unknown]> };
+      selectFiltros.push(registro);
+      const chain = {
+        eq: (c: string, v: unknown) => {
+          registro.filtros.push([c, v]);
+          return chain;
+        },
+        then: (resolve: (r: unknown) => unknown, reject?: (e: unknown) => unknown) => {
+          const n = (tabelas[tabela] ?? []).filter((l) => registro.filtros.every(([c, v]) => l[c] === v)).length;
+          return Promise.resolve({ data: null, count: n, error: null }).then(resolve, reject);
+        },
+      };
+      return chain;
+    },
   }),
 };
 const createServiceClient = vi.fn(() => clientServico);
@@ -79,16 +100,25 @@ vi.mock("@/lib/actions/admin-loja", async (orig) => {
   return { ...real, registrarAcessoAdmin: vi.fn() };
 });
 
-// `buscarLojaAdminPorId`: usado pelo gate de perfil mínimo (nome + WhatsApp) ao
-// PUBLICAR. Default = loja COMPLETA (passa no gate). Preserva o resto do módulo
-// (admin-loja e outros consumidores reais dependem dele).
+// `buscarLojaAdminPorId`: usado pelo gate de publicação ao PUBLICAR. Default =
+// loja COMPLETA (passa no gate D7: perfil + endereço + par). Preserva o resto do
+// módulo (admin-loja e outros consumidores reais dependem dele).
+const OUTRA_LOJA = "22222222-2222-2222-2222-222222222222";
+const LOJA_PRONTA = {
+  id: LOJA_ID,
+  nome: "Loja Teste" as string | null,
+  whatsapp: "5511999999999" as string | null,
+  endereco_cep: "01310-100" as string | null,
+  endereco_rua: "Avenida Paulista" as string | null,
+  endereco_numero: "1000" as string | null,
+  endereco_bairro: "Bela Vista" as string | null,
+  endereco_cidade: "São Paulo" as string | null,
+  endereco_estado: "SP" as string | null,
+  latitude: -23.56 as number | null,
+  longitude: -46.65 as number | null,
+};
 const buscarLojaAdminPorId = vi.fn(
-  async (
-    ..._a: unknown[]
-  ): Promise<{ nome: string | null; whatsapp: string | null }> => ({
-    nome: "Loja Teste",
-    whatsapp: "5511999999999",
-  }),
+  async (..._a: unknown[]): Promise<Partial<typeof LOJA_PRONTA>> => ({ ...LOJA_PRONTA }),
 );
 vi.mock("@/lib/supabase/queries/lojas", async (orig) => {
   const real = (await orig()) as Record<string, unknown>;
@@ -104,11 +134,12 @@ beforeEach(() => {
   updateCalls.length = 0;
   updateError = null;
   verificarAdminSaaS.mockResolvedValue(undefined);
-  // Default: loja COMPLETA (passa no gate de perfil mínimo).
-  buscarLojaAdminPorId.mockResolvedValue({
-    nome: "Loja Teste",
-    whatsapp: "5511999999999",
-  });
+  // Default: loja COMPLETA (passa no gate D7).
+  buscarLojaAdminPorId.mockResolvedValue({ ...LOJA_PRONTA });
+  selectFiltros.length = 0;
+  // Issue 368: a loja-alvo tem 1 produto disponível e 1 forma de pagamento.
+  tabelas.produtos = [{ loja_id: LOJA_ID, disponivel: true, oculto: false }];
+  tabelas.formas_pagamento = [{ loja_id: LOJA_ID }];
 });
 
 // ─────────────── Caso 1: admin negado → exceção propaga, zero update ─────────
@@ -175,20 +206,22 @@ describe("publicarLojaAdmin — escopo na loja-alvo (RN-3)", () => {
 // ─────── Caso 5: gate de perfil mínimo revalidado no SERVIDOR (RN-8) ─────────
 describe("publicarLojaAdmin — gate de perfil mínimo (nome + WhatsApp)", () => {
   it("publicar=true com WhatsApp vazio → { ok:false } e ZERO update (gate barra no servidor)", async () => {
-    buscarLojaAdminPorId.mockResolvedValue({ nome: "Loja Teste", whatsapp: null });
+    buscarLojaAdminPorId.mockResolvedValue({ ...LOJA_PRONTA, nome: "Loja Teste", whatsapp: null });
 
     const r = await publicarLojaAdmin(LOJA_ID, true);
 
-    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    // Issue 368: afirma o fragmento de ERRO_PERFIL_INCOMPLETO, não só ok:false.
+    expect(r).toEqual({ ok: false, erro: expect.stringContaining("Complete nome e WhatsApp") });
     expect(updateCalls).toHaveLength(0);
   });
 
   it("publicar=true com nome só de espaços → { ok:false } e ZERO update", async () => {
-    buscarLojaAdminPorId.mockResolvedValue({ nome: "   ", whatsapp: "5511999999999" });
+    buscarLojaAdminPorId.mockResolvedValue({ ...LOJA_PRONTA, nome: "   ", whatsapp: "5511999999999" });
 
     const r = await publicarLojaAdmin(LOJA_ID, true);
 
-    expect(r).toEqual({ ok: false, erro: expect.any(String) });
+    // Issue 368: afirma o fragmento de ERRO_PERFIL_INCOMPLETO, não só ok:false.
+    expect(r).toEqual({ ok: false, erro: expect.stringContaining("Complete nome e WhatsApp") });
     expect(updateCalls).toHaveLength(0);
   });
 
@@ -208,5 +241,62 @@ describe("publicarLojaAdmin — gate de perfil mínimo (nome + WhatsApp)", () =>
     expect(r).toEqual({ ok: true });
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0].patch).toEqual({ ativo: true });
+  });
+});
+
+// ─────── Issue 368/193 — gate ÚNICO D7 também no admin, sem exceção ─────
+describe("publicarLojaAdmin — gate único de publicação (issue 368)", () => {
+  it("loja-alvo sem produto e outra loja com produto sob o mesmo svc → recusa com 'produto', zero update", async () => {
+    tabelas.produtos = [
+      { loja_id: OUTRA_LOJA, disponivel: true, oculto: false },
+      { loja_id: OUTRA_LOJA, disponivel: true, oculto: false },
+    ];
+    const r = await publicarLojaAdmin(LOJA_ID, true);
+    expect(r).toEqual({
+      ok: false,
+      erro: "Cadastre ao menos um produto disponível antes de publicar a loja.",
+    });
+    expect(updateCalls).toHaveLength(0);
+    const contagem = selectFiltros.find((x) => x.tabela === "produtos");
+    expect(contagem?.filtros).toContainEqual(["loja_id", LOJA_ID]);
+  });
+
+  it("loja-alvo sem forma de pagamento → recusa, zero update", async () => {
+    tabelas.formas_pagamento = [{ loja_id: OUTRA_LOJA }];
+    const r = await publicarLojaAdmin(LOJA_ID, true);
+    expect(r).toEqual({
+      ok: false,
+      erro: "Cadastre ao menos uma forma de pagamento antes de publicar a loja.",
+    });
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("loja-alvo sem par → recusa mandando salvar o perfil (o hub admin não tem o botão)", async () => {
+    buscarLojaAdminPorId.mockResolvedValue({ ...LOJA_PRONTA, latitude: null, longitude: null });
+    const r = await publicarLojaAdmin(LOJA_ID, true);
+    expect(r.ok).toBe(false);
+    expect((r as { erro: string }).erro).toContain("Salve o perfil de novo");
+    expect((r as { erro: string }).erro).not.toContain("Localizar meu endereço de novo");
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("loja-alvo com endereço incompleto → recusa listando os campos", async () => {
+    buscarLojaAdminPorId.mockResolvedValue({ ...LOJA_PRONTA, endereco_cep: null, endereco_numero: null });
+    const r = await publicarLojaAdmin(LOJA_ID, true);
+    expect(r).toEqual({
+      ok: false,
+      erro: "Preencha CEP e número do endereço da loja antes de publicar.",
+    });
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("nenhum parâmetro pula o gate: publicarLojaAdmin.length === 2", async () => {
+    expect(publicarLojaAdmin.length).toBe(2);
+    // E um 3º argumento (ex.: "forçar") não muda nada: loja sem produto segue recusada.
+    tabelas.produtos = [];
+    const forcar = publicarLojaAdmin as unknown as (...a: unknown[]) => Promise<{ ok: boolean }>;
+    const r = await forcar(LOJA_ID, true, true, { forcar: true });
+    expect(r.ok).toBe(false);
+    expect(updateCalls).toHaveLength(0);
   });
 });

@@ -39,6 +39,7 @@ const naoConfirmado = { ...confirmado, email_confirmed_at: null };
 const loja = {
   nome: "L", logo_url: null, slug: "l", horarios: {}, timezone: "America/Sao_Paulo",
   assinatura_status: "ativa", assinatura_fim_periodo: null,
+  primeira_publicacao_em: "2026-01-01T00:00:00Z", // issue 368: já publicada (chrome completo)
 } as unknown as LojaCompleta;
 const CHILDREN = { __tag: "c" } as unknown as ReactNode;
 

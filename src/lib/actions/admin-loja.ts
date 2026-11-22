@@ -74,6 +74,10 @@ const CAMPOS_LOJA_SOMENTE_SERVIDOR = [
   // RPC definir_forma_frete a grava, junto da versão otimista (e a legada
   // salvar_faixas_entrega, que marca raio_km). Patch admin nunca grava.
   "forma_frete",
+  // Marcador write-once da 1ª publicação (issue 368, D3): só o trigger
+  // lojas_marca_primeira_publicacao grava. Defesa em profundidade — o trigger
+  // já ignora o valor que o escritor manda, inclusive service_role.
+  "primeira_publicacao_em",
 ] as const satisfies readonly (keyof Tabelas["lojas"]["Update"])[];
 
 /** Strip em runtime: o `Omit` do tipo é derrotável por cast e `svc` é service_role

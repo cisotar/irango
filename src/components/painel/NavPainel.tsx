@@ -397,7 +397,8 @@ function ListaNav({
   );
 }
 
-function BotaoLogout() {
+// Exportado para o chrome mínimo do assistente (issue 368, `ChromeAssistente`).
+export function BotaoLogout({ className }: { className?: string } = {}) {
   const router = useRouter();
   const [saindo, setSaindo] = useState(false);
 
@@ -420,7 +421,10 @@ function BotaoLogout() {
       variant="ghost"
       onClick={sair}
       disabled={saindo}
-      className="w-full justify-start gap-3 px-3 py-2.5 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+      className={cn(
+        "w-full justify-start gap-3 px-3 py-2.5 text-sidebar-foreground/70 hover:text-sidebar-foreground",
+        className,
+      )}
     >
       <LogOut aria-hidden className="size-4 shrink-0" />
       Sair

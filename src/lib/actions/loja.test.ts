@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Issue 368 (D9, D14): espião de revalidatePath — o layout do painel precisa
+// re-renderizar depois de publicar e de localizar o endereço de novo.
+const revalidatePath = vi.fn();
+vi.mock("next/cache", () => ({
+  revalidatePath: (...a: unknown[]) => revalidatePath(...a),
+}));
+
 // next/headers não disponível fora de request scope em testes — mockar.
 vi.mock("next/headers", () => ({
   headers: () => Promise.resolve(new Headers({ "x-real-ip": "127.0.0.1" })),
@@ -87,27 +94,65 @@ const COLUNAS_PROIBIDAS = [
 
 // ── client AUTENTICADO (server) — UPDATE roda aqui (RLS lojas_update_proprio) ──
 // Captura a tabela e o patch passados ao .from(...).update(...).
-// `_eqErros`: fila de erros a injetar — cada `.eq()` consome um item (null = sem erro).
-// Após a fila esgotada, volta a retornar null. Resetado pelo beforeEach via
-// `_eqErros.length = 0`.
+// `_eqErros`: fila de erros a injetar — cada UPDATE (ao ser aguardado) consome um
+// item (null = sem erro). Após a fila esgotada, volta a retornar null. Resetado
+// pelo beforeEach via `_eqErros.length = 0`.
+// Issue 368: o UPDATE vira cadeia thenable (`.eq().is().eq()…`, compare-and-set
+// do D14) e devolve `count` (`_updateCount`); o client ganha `select(cols, opts)`
+// com `.eq` encadeado que CONTA linhas de `_tabelas` filtradas por TODO `.eq`
+// recebido — prova de escopo por loja_id sem mockar a query de contagem.
 const fromTabela = vi.fn();
 const updatePatch = vi.fn();
+const updateOpcoes = vi.fn();
 const updateEq = vi.fn();
+const updateIs = vi.fn();
 const _eqErros: Array<unknown> = [];
+let _updateCount = 1;
+type LinhaFake = Record<string, unknown>;
+const _tabelas: Record<string, LinhaFake[]> = {};
+const _selectErro: Record<string, unknown> = {};
+const selectChamadas = vi.fn();
 const authedClient = {
   from: (tabela: string) => {
     fromTabela(tabela);
     return {
-      update: (patch: Record<string, unknown>) => {
+      update: (patch: Record<string, unknown>, opcoes?: unknown) => {
         updatePatch(patch);
+        updateOpcoes(opcoes);
         // PostgREST exige WHERE (.eq) no UPDATE — a action encadeia .eq("id", …).
-        return {
+        const chain = {
           eq: (coluna: string, valor: unknown) => {
             updateEq(coluna, valor);
+            return chain;
+          },
+          is: (coluna: string, valor: unknown) => {
+            updateIs(coluna, valor);
+            return chain;
+          },
+          then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
             const err = _eqErros.length > 0 ? _eqErros.shift() : null;
-            return Promise.resolve({ error: err ?? null });
+            return Promise.resolve({ error: err ?? null, count: err ? null : _updateCount }).then(resolve, reject);
           },
         };
+        return chain;
+      },
+      select: (colunas: string, opcoes?: unknown) => {
+        const filtros: Array<[string, unknown]> = [];
+        selectChamadas(tabela, colunas, opcoes, filtros);
+        const chain = {
+          eq: (coluna: string, valor: unknown) => {
+            filtros.push([coluna, valor]);
+            return chain;
+          },
+          then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
+            if (_selectErro[tabela]) {
+              return Promise.resolve({ data: null, count: null, error: _selectErro[tabela] }).then(resolve, reject);
+            }
+            const linhas = (_tabelas[tabela] ?? []).filter((l) => filtros.every(([c, v]) => l[c] === v));
+            return Promise.resolve({ data: null, count: linhas.length, error: null }).then(resolve, reject);
+          },
+        };
+        return chain;
       },
     };
   },
@@ -156,18 +201,20 @@ import {
   salvarHorarios,
   salvarTema,
   definirPublicacao,
+  localizarEnderecoDeNovo,
 } from "./loja";
+import { montarConsultaGeocoding } from "./patches-loja";
 
-const PERFIL_OK = {
+// Issue 368/193 (D12): o perfil SEM endereço era o `PERFIL_OK` antigo. Agora
+// `schemaPerfil` exige os 6 campos, então ele só serve para provar a recusa.
+const PERFIL_SEM_ENDERECO = {
   nome: "Burguer do Zé",
   slug: "burguer-do-ze",
   telefone: "1133334444",
   whatsapp: "5511999998888",
 };
 
-// Perfil com endereço COMPLETO o bastante para geocodificar (cidade + UF, RN-2).
-const PERFIL_COM_ENDERECO = {
-  ...PERFIL_OK,
+const ENDERECO_OK = {
   endereco_cep: "01310-100",
   endereco_rua: "Av. Paulista",
   endereco_numero: "1000",
@@ -175,6 +222,25 @@ const PERFIL_COM_ENDERECO = {
   endereco_cidade: "São Paulo",
   endereco_estado: "SP",
 };
+
+// Perfil mínimo VÁLIDO = com endereço completo (D12).
+const PERFIL_OK = { ...PERFIL_SEM_ENDERECO, ...ENDERECO_OK };
+
+// Perfil com endereço COMPLETO o bastante para geocodificar (cidade + UF, RN-2).
+// Desde a 368 é o mesmo que PERFIL_OK (alias mantido para não reescrever os casos).
+const PERFIL_COM_ENDERECO = PERFIL_OK;
+
+// Mensagem de `ERRO_VALIDACAO` (loja.ts, não exportada).
+const ERRO_VALIDACAO = "Dados inválidos. Confira os campos e tente novamente.";
+const ERRO_GENERICO = "Não foi possível salvar. Tente novamente.";
+
+/** D13: payload sem endereço é recusado NA VALIDAÇÃO, antes de qualquer I/O. */
+function esperarRecusaNaValidacao(r: unknown) {
+  expect(r).toEqual({ ok: false, erro: ERRO_VALIDACAO });
+  expect(geocodificarComMotivo).not.toHaveBeenCalled();
+  expect(updatePatch).not.toHaveBeenCalled();
+  expect(svcUpdatePatch).not.toHaveBeenCalled();
+}
 
 const COORDS_SP = { latitude: -23.56, longitude: -46.65 };
 
@@ -195,6 +261,9 @@ beforeEach(() => {
   verificarRateLimit.mockReset().mockResolvedValue({ permitido: true });
   // Reseta a fila de erros injetados no eq do authedClient.
   _eqErros.length = 0;
+  _updateCount = 1;
+  for (const k of Object.keys(_tabelas)) delete _tabelas[k];
+  for (const k of Object.keys(_selectErro)) delete _selectErro[k];
   // Caminho feliz: já existe loja do dono, slug livre.
   buscarLojaDoDono.mockResolvedValue({
     id: LOJA_ID,
@@ -214,13 +283,12 @@ beforeEach(() => {
 
 // ───────────────────────────── salvarPerfil ──────────────────────────────────
 describe("salvarPerfil — caminho feliz", () => {
-  it("sucesso sem endereço: valida e faz UPDATE em lojas → { ok: true, geocodificado: false }", async () => {
-    // Sem cidade+UF não há o que geocodificar: o 2º UPDATE zera o par (NULL).
-    const r = await salvarPerfil(PERFIL_OK);
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(fromTabela).toHaveBeenCalledWith("lojas");
-    // PostgREST recusa UPDATE sem WHERE (21000): a action DEVE escopar por id.
-    expect(updateEq).toHaveBeenCalledWith("id", LOJA_ID);
+  it("sem endereço → recusa na validação (D13)", async () => {
+    // Issue 368/193 (D12): endereço completo é obrigatório no schemaPerfil. O
+    // payload sem endereço não chega ao geocoding (o modal "não localizamos"
+    // deixa de aparecer para quem nunca preencheu).
+    const r = await salvarPerfil(PERFIL_SEM_ENDERECO);
+    esperarRecusaNaValidacao(r);
   });
 
   it("UPDATE roda via client AUTENTICADO (RLS lojas_update_proprio escopa por dono), NÃO service_role", async () => {
@@ -285,15 +353,11 @@ describe("salvarPerfil — coords derivadas do servidor (RN-1/RN-2)", () => {
     expect(patchCoords).toEqual({ latitude: null, longitude: null });
   });
 
-  it("endereço incompleto (sem cidade/UF) e loja SEM coords → NÃO chama Nominatim; geocodificado:false", async () => {
-    // Só nome/slug: sem âncora geográfica mínima → não geocodifica (economiza a trava global).
-    // (180-A) A loja mockada também não tem coords gravadas: nada a limpar, então
-    // o 2º UPDATE é pulado — antes ele rodava incondicionalmente gravando o par NULL.
-    const r = await salvarPerfil(PERFIL_OK);
-
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    expect(updatePatch).toHaveBeenCalledTimes(1);
+  it("endereço incompleto (sem cidade/UF) e loja SEM coords → recusa na validação (D13), NÃO chama Nominatim", async () => {
+    // Issue 368/193 (D12): sem os 6 campos o schemaPerfil recusa antes de
+    // qualquer I/O — nem 1º UPDATE nem geocoding.
+    const r = await salvarPerfil({ ...PERFIL_SEM_ENDERECO, endereco_rua: "Rua X", endereco_numero: "1" });
+    esperarRecusaNaValidacao(r);
   });
 
   it("ATAQUE RN-1: payload com latitude/longitude → rejeitado por .strict() ANTES de qualquer I/O", async () => {
@@ -441,7 +505,7 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
     });
   });
 
-  it("loja com coords pela METADE (só latitude, sem endereço) + endereço segue incompleto → false NÃO pula: temCoordenadas já é false, mas deveRegeocodificar detecta 'nada a limpar' e pula o 2º UPDATE mesmo assim", async () => {
+  it("loja com coords pela METADE (só latitude, sem endereço) + endereço segue incompleto → recusa na validação (D13)", async () => {
     // Par corrompido (só latitude) é tratado por temCoordenadas como "sem
     // coords" — deveRegeocodificar não vê nada a limpar e pula o 2º UPDATE.
     // Prova que geocodificado também reflete a metade como "false" (não some
@@ -454,11 +518,9 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
       longitude: null,
     });
 
-    const r = await salvarPerfil(PERFIL_OK);
-
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    expect(updatePatch).toHaveBeenCalledTimes(1);
+    // Issue 368/193 (D12): endereço incompleto não passa do schemaPerfil.
+    const r = await salvarPerfil(PERFIL_SEM_ENDERECO);
+    esperarRecusaNaValidacao(r);
   });
 
   it("endereço IGUAL e loja com coords pela METADE (só longitude) → REPARA o par: meio par não posiciona nada", async () => {
@@ -478,7 +540,7 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
     expect(updatePatch).toHaveBeenCalledTimes(2);
   });
 
-  it("coord ÓRFÃ (loja com coords e endereço incompleto) → 2º UPDATE limpa o par (D3 preservada)", async () => {
+  it("coord ÓRFÃ (loja com coords e endereço incompleto) → recusa na validação (D13); o par gravado não é tocado", async () => {
     buscarLojaDoDono.mockResolvedValue({
       id: LOJA_ID,
       dono_id: USER_ID,
@@ -489,13 +551,9 @@ describe("salvarPerfil — endereço inalterado não regeocodifica (issue 180-A)
       longitude: COORDS_SP.longitude,
     });
 
-    const r = await salvarPerfil(PERFIL_OK);
-
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    // Consulta nula: não há o que consultar, mas o par órfão É limpo.
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    expect(updatePatch).toHaveBeenCalledTimes(2);
-    expect(updatePatch.mock.calls[1][0]).toEqual({ latitude: null, longitude: null });
+    // Issue 368/193 (D12): payload sem endereço é recusado antes de qualquer I/O.
+    const r = await salvarPerfil(PERFIL_SEM_ENDERECO);
+    esperarRecusaNaValidacao(r);
   });
 });
 
@@ -564,7 +622,9 @@ describe("salvarPerfil — slug e unicidade", () => {
   it("slug NÃO mudou (igual ao atual) → não precisa checar unicidade", async () => {
     buscarLojaDoDono.mockResolvedValue({ id: LOJA_ID, dono_id: USER_ID, slug: PERFIL_OK.slug });
     const r = await salvarPerfil(PERFIL_OK);
-    expect(r).toEqual({ ok: true, geocodificado: false });
+    // Issue 368 (D12): PERFIL_OK ganhou endereço completo, então o geocoding roda
+    // e `geocodificado` deixa de ser false — o que este caso prova é o slug.
+    expect(r).toMatchObject({ ok: true });
     expect(slugExiste).not.toHaveBeenCalled();
   });
 });
@@ -773,6 +833,13 @@ describe("salvarTema", () => {
 });
 
 // ─────────────────────────── definirPublicacao ───────────────────────────────
+// Issue 368/193 (D7): gate ÚNICO `podePublicarLoja` sobre o estado relido do
+// banco — nome + WhatsApp + 6 campos de endereço + par + ≥1 produto disponível +
+// ≥1 forma de pagamento. Contagens com `eq("loja_id")` explícito no client
+// autenticado (a RLS de leitura pública expõe produtos/formas de lojas ativas).
+const LOJA_B = "33333333-3333-3333-3333-333333333333";
+const produtoDe = (loja_id: string) => ({ loja_id, disponivel: true, oculto: false });
+
 describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () => {
   const LOJA_COMPLETA = {
     id: LOJA_ID,
@@ -780,7 +847,17 @@ describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () =
     slug: "burguer-do-ze",
     nome: "Burguer do Zé",
     whatsapp: "5511999998888",
+    // Issue 368: loja pronta para o gate D7 (endereço completo + par).
+    ...ENDERECO_OK,
+    latitude: COORDS_SP.latitude,
+    longitude: COORDS_SP.longitude,
   };
+
+  beforeEach(() => {
+    // Issue 368: 1 produto disponível + 1 forma de pagamento da PRÓPRIA loja.
+    _tabelas.produtos = [produtoDe(LOJA_ID)];
+    _tabelas.formas_pagamento = [{ loja_id: LOJA_ID }];
+  });
 
   it("publicar com perfil completo → { ok: true } e seta ativo=true via service_role", async () => {
     buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
@@ -819,6 +896,280 @@ describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () =
     expect(r.ok).toBe(false);
     expect(svcUpdatePatch).not.toHaveBeenCalled();
   });
+
+  // ── Issue 368/193 — gate D7 com mensagens D10 ──────────────────────────
+  it("loja A sem produto e loja B ativa com produto visível ao mesmo client → recusa com 'produto', UPDATE não chamado", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
+    _tabelas.produtos = [produtoDe(LOJA_B), produtoDe(LOJA_B)];
+    const r = await definirPublicacao(true);
+    expect(r).toEqual({
+      ok: false,
+      erro: "Cadastre ao menos um produto disponível antes de publicar a loja.",
+    });
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+    // A contagem passou pelo client autenticado com o filtro da loja A.
+    const produtos = selectChamadas.mock.calls.find(([t]) => t === "produtos");
+    expect(produtos?.[3]).toContainEqual(["loja_id", LOJA_ID]);
+  });
+
+  it("produto indisponível ou oculto da própria loja não conta → recusa com 'produto'", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
+    _tabelas.produtos = [
+      { loja_id: LOJA_ID, disponivel: false, oculto: false },
+      { loja_id: LOJA_ID, disponivel: true, oculto: true },
+    ];
+    const r = await definirPublicacao(true);
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).toContain("produto disponível");
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+  });
+
+  it("loja A sem forma e loja B com forma → recusa com 'forma de pagamento', UPDATE não chamado", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
+    _tabelas.formas_pagamento = [{ loja_id: LOJA_B }];
+    const r = await definirPublicacao(true);
+    expect(r).toEqual({
+      ok: false,
+      erro: "Cadastre ao menos uma forma de pagamento antes de publicar a loja.",
+    });
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+  });
+
+  it("endereço incompleto → recusa listando os campos, UPDATE não chamado", async () => {
+    buscarLojaDoDono.mockResolvedValue({ ...LOJA_COMPLETA, endereco_cep: null, endereco_numero: "  " });
+    const r = await definirPublicacao(true);
+    expect(r).toEqual({
+      ok: false,
+      erro: "Preencha CEP e número do endereço da loja antes de publicar.",
+    });
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+  });
+
+  it("endereço completo sem par → recusa com ROTULO_LOCALIZAR_DE_NOVO, geocoder não chamado, UPDATE não chamado", async () => {
+    buscarLojaDoDono.mockResolvedValue({ ...LOJA_COMPLETA, latitude: null, longitude: null });
+    const r = await definirPublicacao(true);
+    expect(r.ok).toBe(false);
+    const erro = (r as { erro: string }).erro;
+    expect(erro).toContain("Localizar meu endereço de novo");
+    expect(erro.toLowerCase()).not.toMatch(/confira|corrija|errado/);
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("republicar loja pausada passa pelo mesmo gate", async () => {
+    const pausada = { ...LOJA_COMPLETA, ativo: false, primeira_publicacao_em: "2026-01-01T00:00:00Z" };
+    buscarLojaDoDono.mockResolvedValue(pausada);
+    _tabelas.formas_pagamento = [];
+    const recusa = await definirPublicacao(true);
+    expect(recusa).toEqual({
+      ok: false,
+      erro: "Cadastre ao menos uma forma de pagamento antes de publicar a loja.",
+    });
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+
+    _tabelas.formas_pagamento = [{ loja_id: LOJA_ID }];
+    const ok = await definirPublicacao(true);
+    expect(ok).toEqual({ ok: true });
+    expect(svcUpdatePatch).toHaveBeenCalledWith({ ativo: true });
+  });
+
+  it("despublicar loja incompleta → ok, contagem não consultada", async () => {
+    buscarLojaDoDono.mockResolvedValue({
+      id: LOJA_ID,
+      dono_id: USER_ID,
+      slug: "x",
+      nome: "",
+      whatsapp: null,
+      latitude: null,
+      longitude: null,
+    });
+    _tabelas.produtos = [];
+    _tabelas.formas_pagamento = [];
+    const r = await definirPublicacao(false);
+    expect(r).toEqual({ ok: true });
+    expect(svcUpdatePatch).toHaveBeenCalledWith({ ativo: false });
+    expect(selectChamadas).not.toHaveBeenCalled();
+    // Prova de que o gate passou a contar ao publicar (não é vácuo).
+    buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
+    _tabelas.produtos = [produtoDe(LOJA_ID)];
+    _tabelas.formas_pagamento = [{ loja_id: LOJA_ID }];
+    await definirPublicacao(true);
+    expect(selectChamadas).toHaveBeenCalled();
+  });
+
+  it("contagem falha → erro genérico, UPDATE não chamado", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
+    _selectErro.produtos = { message: "relation produtos senha XYZ" };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await definirPublicacao(true);
+    spy.mockRestore();
+    expect(r).toEqual({ ok: false, erro: ERRO_GENERICO });
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+    // Prova de que a contagem foi de fato tentada (o erro não veio de outro ponto).
+    expect(selectChamadas).toHaveBeenCalled();
+  });
+
+  it("publicar ok → revalidatePath('/painel', 'layout')", async () => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_COMPLETA);
+    const r = await definirPublicacao(true);
+    expect(r).toEqual({ ok: true });
+    expect(revalidatePath).toHaveBeenCalledWith("/painel", "layout");
+  });
+});
+
+// ─────────────────────── localizarEnderecoDeNovo (D14) ────────────────────────
+// Server Action SEM argumento (nada vem do cliente). Só age com endereço completo
+// e sem par; grava SÓ { latitude, longitude } no client autenticado, com
+// compare-and-set (DD13): eq("id"), is("latitude", null) e os 5 campos da
+// consulta. Falha do geocoder → nada gravado, `motivo` devolvido.
+describe("localizarEnderecoDeNovo — botão 'Localizar meu endereço de novo' (issue 368)", () => {
+  const LOJA_SEM_PAR = {
+    id: LOJA_ID,
+    dono_id: USER_ID,
+    slug: "burguer-do-ze",
+    nome: "Burguer do Zé",
+    whatsapp: "5511999998888",
+    ativo: true,
+    ...ENDERECO_OK,
+    latitude: null,
+    longitude: null,
+  };
+
+  beforeEach(() => {
+    buscarLojaDoDono.mockResolvedValue(LOJA_SEM_PAR);
+    geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP });
+  });
+
+  it("rate limit negado → geocoder não chamado, nada gravado", async () => {
+    verificarRateLimit.mockResolvedValue({ permitido: false });
+    const r = await localizarEnderecoDeNovo();
+    expect(r).toEqual({ ok: false, erro: "Muitas tentativas. Aguarde um instante." });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("rate limit chaveado por 'localizarEndereco' e loja.id", async () => {
+    await localizarEnderecoDeNovo();
+    expect(verificarRateLimit).toHaveBeenCalledWith("localizarEndereco", LOJA_ID);
+  });
+
+  it("sem loja → ERRO_SEM_LOJA, geocoder não chamado", async () => {
+    buscarLojaDoDono.mockResolvedValue(null);
+    const r = await localizarEnderecoDeNovo();
+    expect(r).toEqual({ ok: false, erro: "Loja não encontrada." });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("loja com par → ok, geocoder não chamado, nada gravado", async () => {
+    buscarLojaDoDono.mockResolvedValue({ ...LOJA_SEM_PAR, ...COORDS_SP });
+    const r = await localizarEnderecoDeNovo();
+    expect(r).toEqual({ ok: true });
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).not.toHaveBeenCalled();
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+  });
+
+  it("endereço incompleto → recusa com a lista de campos, geocoder não chamado", async () => {
+    buscarLojaDoDono.mockResolvedValue({ ...LOJA_SEM_PAR, endereco_bairro: null });
+    const r = await localizarEnderecoDeNovo();
+    expect(r.ok).toBe(false);
+    expect((r as { erro: string }).erro).toMatch(/^Preencha .*bairro/);
+    expect((r as { erro: string }).erro).not.toMatch(/CEP|rua|número|cidade|UF/);
+    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("geocoder recebe montarConsultaGeocoding(loja) e loja.id", async () => {
+    await localizarEnderecoDeNovo();
+    expect(geocodificarComMotivo).toHaveBeenCalled();
+    expect(geocodificarComMotivo.mock.calls[0]).toEqual([montarConsultaGeocoding(LOJA_SEM_PAR), LOJA_ID]);
+  });
+
+  it("sucesso → update exatamente { latitude, longitude } no client autenticado, eq('id', loja.id), is('latitude', null) e os 5 campos da consulta", async () => {
+    const r = await localizarEnderecoDeNovo();
+    expect(r).toEqual({ ok: true });
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+    expect(updatePatch).toHaveBeenCalledWith({ latitude: COORDS_SP.latitude, longitude: COORDS_SP.longitude });
+    expect(fromTabela).toHaveBeenCalledWith("lojas");
+    expect(svcUpdatePatch).not.toHaveBeenCalled();
+    expect(updateEq).toHaveBeenCalledWith("id", LOJA_ID);
+    expect(updateIs).toHaveBeenCalledWith("latitude", null);
+    for (const campo of [
+      "endereco_rua",
+      "endereco_numero",
+      "endereco_bairro",
+      "endereco_cidade",
+      "endereco_estado",
+    ] as const) {
+      expect(updateEq).toHaveBeenCalledWith(campo, LOJA_SEM_PAR[campo]);
+    }
+  });
+
+  it("sucesso → revalidatePath('/painel', 'layout')", async () => {
+    await localizarEnderecoDeNovo();
+    expect(revalidatePath).toHaveBeenCalledWith("/painel", "layout");
+  });
+
+  it("falha transitorio → nada gravado, motivo 'transitorio', erro sem 'salvar' e sem 'confira'", async () => {
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" });
+    const r = await localizarEnderecoDeNovo();
+    expect(r).toMatchObject({ ok: false, motivo: "transitorio" });
+    const erro = (r as { erro: string }).erro;
+    expect(typeof erro).toBe("string");
+    expect(erro.toLowerCase()).not.toMatch(/salv|confira/);
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("falha nao_encontrado → motivo repassado, erro pede conferir o endereço", async () => {
+    geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "nao_encontrado" });
+    const r = await localizarEnderecoDeNovo();
+    expect(r).toMatchObject({ ok: false, motivo: "nao_encontrado" });
+    expect((r as { erro: string }).erro).toMatch(/confira/i);
+    expect(updatePatch).not.toHaveBeenCalled();
+  });
+
+  it("nenhuma chamada grava ativo nem par nulo", async () => {
+    const cenarios: Array<() => void> = [
+      () => geocodificarComMotivo.mockResolvedValue({ coords: COORDS_SP }),
+      () => geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "transitorio" }),
+      () => geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "nao_encontrado" }),
+      () => geocodificarComMotivo.mockResolvedValue({ coords: null, motivo: "esgotado_global" }),
+    ];
+    for (const preparar of cenarios) {
+      preparar();
+      await localizarEnderecoDeNovo();
+    }
+    // O cenário de sucesso tem de ter gravado (anti-vácuo).
+    expect(updatePatch).toHaveBeenCalled();
+    for (const [patch] of [...updatePatch.mock.calls, ...svcUpdatePatch.mock.calls]) {
+      const p = patch as Record<string, unknown>;
+      expect(p).not.toHaveProperty("ativo");
+      expect(p.latitude).not.toBeNull();
+      expect(p.longitude).not.toBeNull();
+    }
+  });
+
+  it("compare-and-set grava 0 linhas → recusa com mensagem, sem sucesso falso", async () => {
+    _updateCount = 0;
+    const r = await localizarEnderecoDeNovo();
+    expect(r).toEqual({
+      ok: false,
+      erro: "O endereço mudou enquanto localizávamos. Toque de novo.",
+    });
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("erro do UPDATE → erro genérico, sem detalhe", async () => {
+    _eqErros.push({ message: "column latitude does not exist" });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await localizarEnderecoDeNovo();
+    spy.mockRestore();
+    expect(r).toEqual({ ok: false, erro: ERRO_GENERICO });
+    expect(JSON.stringify(r)).not.toContain("column");
+    expect(updatePatch).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ──────────── montarConsultaGeocoding — bordas via salvarPerfil ───────────────
@@ -826,33 +1177,16 @@ describe("definirPublicacao — toggle de publicação da vitrine (ativo)", () =
 // direto em patches-loja.test.ts. Aqui cobrimos a INTEGRAÇÃO via salvarPerfil:
 // se o gate retorna null, geocodificarEndereco NÃO é chamado.
 describe("salvarPerfil — montarConsultaGeocoding bordas (gate de completude)", () => {
-  it("só cidade, sem UF → gate retorna null → Nominatim não chamado; par NULL gravado", async () => {
-    // Sem endereco_estado não há âncora geográfica mínima (RN-2).
-    const r = await salvarPerfil({
-      ...PERFIL_OK,
-      endereco_cidade: "São Paulo",
-      // endereco_estado ausente — schemaPerfil aceita (optional)
-    });
-
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    // (180-A) A loja mockada também está sem coords: nada a limpar → 2º UPDATE
-    // pulado. O par continua NULL no banco, que é o invariante que importa.
-    expect(updatePatch).toHaveBeenCalledTimes(1);
+  it("só cidade, sem UF → recusa na validação (D13); Nominatim não chamado", async () => {
+    // Issue 368/193 (D12): sem endereco_estado o schemaPerfil recusa.
+    const r = await salvarPerfil({ ...PERFIL_SEM_ENDERECO, endereco_cidade: "São Paulo" });
+    esperarRecusaNaValidacao(r);
   });
 
-  it("só UF, sem cidade → gate retorna null → Nominatim não chamado; par NULL gravado", async () => {
-    // Sem endereco_cidade a consulta não teria referência municipal válida.
-    const r = await salvarPerfil({
-      ...PERFIL_OK,
-      endereco_estado: "SP",
-      // endereco_cidade ausente
-    });
-
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
-    // (180-A) Loja sem coords gravadas: nada a limpar → 2º UPDATE pulado.
-    expect(updatePatch).toHaveBeenCalledTimes(1);
+  it("só UF, sem cidade → recusa na validação (D13); Nominatim não chamado", async () => {
+    // Issue 368/193 (D12): sem endereco_cidade o schemaPerfil recusa.
+    const r = await salvarPerfil({ ...PERFIL_SEM_ENDERECO, endereco_estado: "SP" });
+    esperarRecusaNaValidacao(r);
   });
 
   it("cidade + UF presentes → Nominatim chamado; consulta contém ambos", async () => {
@@ -912,7 +1246,7 @@ describe("salvarPerfil — falha no 2º UPDATE de coords", () => {
 
 // ────── coords antigas zeradas quando endereço volta a ser incompleto ─────────
 describe("salvarPerfil — zeragem de coords ao salvar endereço incompleto", () => {
-  it("endereço previamente completo agora salvo sem cidade → coords zeradas (par NULL), não fica lixo antigo", async () => {
+  it("endereço previamente completo agora salvo sem cidade → recusa na validação (D13); coords gravadas intactas", async () => {
     // Cenário: loja tinha coords; dono salva perfil sem cidade (sem âncora).
     // A action DEVE gravar { latitude: null, longitude: null } — não pular o 2º UPDATE.
     // (180-A) O mock explicita o par gravado: é ele que obriga o 2º UPDATE a
@@ -924,28 +1258,20 @@ describe("salvarPerfil — zeragem de coords ao salvar endereço incompleto", ()
       latitude: COORDS_SP.latitude,
       longitude: COORDS_SP.longitude,
     });
+    // Issue 368/193 (D12): sem cidade e sem UF o schemaPerfil recusa; nenhum
+    // UPDATE roda, então o par gravado não é tocado.
     const r = await salvarPerfil({
-      ...PERFIL_OK,
+      ...PERFIL_SEM_ENDERECO,
       endereco_rua: "Rua X",
       endereco_numero: "100",
-      // sem cidade e sem estado: gate retorna null
     });
-
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    // 2º UPDATE existe e zera o par (não pula).
-    expect(updatePatch).toHaveBeenCalledTimes(2);
-    const patchCoords = updatePatch.mock.calls[1][0] as Record<string, unknown>;
-    expect(patchCoords).toEqual({ latitude: null, longitude: null });
-    // Confirmação: geocoding não foi chamado.
-    expect(geocodificarComMotivo).not.toHaveBeenCalled();
+    esperarRecusaNaValidacao(r);
   });
 
-  it("endereço sem nenhum campo e loja sem coords → par segue NULL; 2º UPDATE pulado (180-A)", async () => {
-    // Perfil mínimo (nome + slug) sem nenhum campo de endereço.
-    const r = await salvarPerfil(PERFIL_OK);
-
-    expect(r).toEqual({ ok: true, geocodificado: false });
-    expect(updatePatch).toHaveBeenCalledTimes(1);
+  it("endereço sem nenhum campo e loja sem coords → recusa na validação (D13)", async () => {
+    // Perfil mínimo (nome + slug) sem nenhum campo de endereço: recusado (D12).
+    const r = await salvarPerfil(PERFIL_SEM_ENDERECO);
+    esperarRecusaNaValidacao(r);
   });
 });
 

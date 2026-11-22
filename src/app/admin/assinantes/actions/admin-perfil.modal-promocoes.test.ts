@@ -65,25 +65,31 @@ vi.mock("@/lib/supabase/service", () => ({
   createServiceClient: () => clientServico,
 }));
 
-// ── queries: slug livre; loja-alvo SEM endereço e SEM coords (não regeocodifica) ─
+// ── queries: slug livre; loja-alvo JÁ geocodificada com o MESMO endereço do
+// payload (não regeocodifica → 1 UPDATE só). Issue 368 (D12): o endereço passou
+// a ser obrigatório no schemaPerfil, então o payload leva os 6 campos; a loja
+// gravada com o mesmo endereço + par mantém o cenário "sem geocoding".
+const ENDERECO = {
+  endereco_cep: "01001-000",
+  endereco_rua: "Praça da Sé",
+  endereco_numero: "100",
+  endereco_bairro: "Sé",
+  endereco_cidade: "São Paulo",
+  endereco_estado: "SP",
+};
 const LOJA_SEM_ENDERECO = {
   id: LOJA_ID,
   slug: "pizzaria-do-ze",
-  endereco_cep: null,
-  endereco_rua: null,
-  endereco_numero: null,
-  endereco_bairro: null,
-  endereco_cidade: null,
-  endereco_estado: null,
-  latitude: null,
-  longitude: null,
+  ...ENDERECO,
+  latitude: -23.55,
+  longitude: -46.63,
 };
 vi.mock("@/lib/supabase/queries/lojas", () => ({
   slugExiste: vi.fn(async () => false),
   buscarLojaAdminPorId: vi.fn(async () => LOJA_SEM_ENDERECO),
 }));
 
-// ── geocoding: não deve ser chamado neste cenário (endereço ausente dos 2 lados) ─
+// ── geocoding: não deve ser chamado neste cenário (endereço igual dos 2 lados) ─
 const geocodificarLojaComRetry = vi.fn(async () => ({ coords: null, motivo: "nao_encontrado" }));
 vi.mock("@/lib/actions/geocodificarComRetry", () => ({
   geocodificarLojaComRetry: (...a: unknown[]) => geocodificarLojaComRetry(...(a as [])),
@@ -101,6 +107,7 @@ describe("salvarPerfilAdmin — modal_promocoes pela allowlist ÚNICA (issue 231
     const r = await salvarPerfilAdmin(LOJA_ID, {
       nome: "Pizzaria do Zé",
       slug: "pizzaria-do-ze",
+      ...ENDERECO,
       modal_promocoes: false,
     });
 
@@ -119,6 +126,7 @@ describe("salvarPerfilAdmin — modal_promocoes pela allowlist ÚNICA (issue 231
     const r = await salvarPerfilAdmin(LOJA_ID, {
       nome: "Pizzaria do Zé",
       slug: "pizzaria-do-ze",
+      ...ENDERECO,
       modal_promocoes: true,
     });
 
@@ -130,6 +138,7 @@ describe("salvarPerfilAdmin — modal_promocoes pela allowlist ÚNICA (issue 231
     const r = await salvarPerfilAdmin(LOJA_ID, {
       nome: "Pizzaria do Zé",
       slug: "pizzaria-do-ze",
+      ...ENDERECO,
     });
 
     expect(r.ok).toBe(true);
@@ -140,6 +149,7 @@ describe("salvarPerfilAdmin — modal_promocoes pela allowlist ÚNICA (issue 231
     const r = await salvarPerfilAdmin(LOJA_ID, {
       nome: "Pizzaria do Zé",
       slug: "pizzaria-do-ze",
+      ...ENDERECO,
       modal_promocoes: false,
       ativo: true,
       dono_id: "00000000-0000-0000-0000-000000000000",
