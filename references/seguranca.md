@@ -1424,7 +1424,7 @@ alter default privileges in schema public
 
 ### Resíduos conhecidos ainda abertos (pós-114) — não exploráveis, hardening pendente
 
-A auditoria dinâmica de 2026-07-02 (`plan/seguranca-auditoria-2026-07-02.md`, local, não versionado) deixou três itens mapeados, todos de baixa severidade e sem exploração conhecida hoje, mas que fecham a causa raiz por completo:
+A auditoria dinâmica de 2026-07-02 (relatório de 2026-07-02, privado, fora do repositório) deixou três itens mapeados, todos de baixa severidade e sem exploração conhecida hoje, mas que fecham a causa raiz por completo:
 
 1. ~~`ALTER DEFAULT PRIVILEGES` de SEQUENCES ainda concede `ALL` a `anon`/`authenticated`.~~ **Fechado** pela migration `20260708140000_revoke_grants_sequences.sql` (achado #4C do pentest, 2026-07-08): default privileges de SEQUENCES para `anon`/`authenticated` agora são `usage, select` (eram `all`, herdados do `GRANT ALL ON ALL SEQUENCES` da `20260614008500`; a `20260702150000`/issue 114 tinha fechado só TABLES). Continuava latente até aqui — o PostgREST não expõe sequences como recurso REST e o schema é 100% UUID — mas é anti-regressão para o dia em que uma tabela nova usar `serial`/`identity`. `service_role` não foi tocado (segue com o grant do webhook/BYPASSRLS). O default de FUNCTIONS (`EXECUTE` amplo) segue decisão deliberada — funções novas precisam ser chamáveis por padrão; a proteção real é revogar caso-a-caso o que retorna dado sensível (como se fez com `loja_por_email_dono`).
 
