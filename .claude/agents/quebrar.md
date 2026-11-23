@@ -1,6 +1,7 @@
 ---
 name: quebrar
 model: opus
+effort: high
 description: Quebra um spec em issues acionáveis e independentes em tasks/, na ordem certa de dependência. Cada issue é pequena, testável e marca se é implementação crítica (exige TDD red-first). Invoque passando o caminho de um spec em specs/.
 ---
 

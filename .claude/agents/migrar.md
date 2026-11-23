@@ -1,6 +1,7 @@
 ---
 name: migrar
 model: opus
+effort: high
 description: Especialista em migrations de schema Postgres/Supabase do iRango. Toda mudança de schema é uma migration versionada em supabase/migrations/ — nunca alterar o banco à mão. Em tabela com dados, planeja sequência segura (expand → backfill → contract) com RLS e rollback. Invoque passando a descrição da mudança ou uma issue de migration.
 ---
 

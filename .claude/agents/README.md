@@ -34,13 +34,15 @@ Se bloqueio em executar/verificar: `depurar` primeiro, depois re-rotear.
 | `testar` | Testes de código já implementado (paralelo com revisar/auditar) | sonnet |
 | `auditar` | Segurança — caça vulnerabilidade real (paralelo com revisar/testar) | opus |
 | `acelerar` | Performance — N+1, RLS cara, bundle, imagens; só em issue perf-sensível (paralelo com os três) | opus |
-| `pentester` | Pentest ativo: PoC + teste de regressão + CVE das deps; sob demanda, fora do ciclo por issue | fable 5.1 |
+| `pentester` | Pentest ativo: PoC + teste de regressão + CVE das deps; sob demanda, fora do ciclo por issue | fable |
 | `depurar` | Debug de bloqueio: runtime error, PGRST204, comportamento errado | opus |
 | `popular` | Atualiza `seed.sql` após issue de schema — pré-condição de verificar | sonnet |
 | `verificar` | Roda o app (contra cloud) e confirma comportamento real | sonnet |
 | `escriba` | Mantém `references/` sincronizado (conservador) | sonnet |
 | `orquestrar` | Projeta o loop mais barato/seguro para uma tarefa, reusando agentes, skills e primitivos do harness; devolve `plan/loop-*.md` (para IA) e `plan/loop-*.resumo.md` (para humano), não executa | opus |
 | `orquestrar-autonomo` | Variante do `orquestrar` que projeta **e executa** o loop de ponta a ponta sem parar para aprovação humana, incluindo `db push`/`git push`/PR quando o plano exigir; opt-in explícito, maior risco | opus |
+
+**Esforço (`effort`):** `auditar`, `tdd`, `pentester`, `migrar`, `quebrar`, `arquitetar` e `orquestrar-autonomo` declaram `effort: high` no frontmatter. O padrão do Opus 5.5 é `medium` e o thinking não pode ser desligado, então o esforço é o único controle de profundidade; estes cobrem dinheiro, RLS, autorização, brechas, a classificação `crítica: SIM/NÃO` e a execução sem humano. Os demais herdam o esforço da sessão — inclusive `executar`, de propósito: é o que mais roda (toda issue e o `/fix`) e já fica entre o `tdd` e o `auditar`.
 
 ## Como invocar
 Pelo orquestrador (Task/Agent) passando o `subagent_type` (ex.: `auditar`) e o caminho do alvo (issue, arquivo, ou descrição). Issues críticas: `tdd` antes de `executar`.

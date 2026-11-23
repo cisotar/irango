@@ -1,6 +1,7 @@
 ---
 name: auditar
 model: opus
+effort: high
 description: Engenheiro de segurança ofensiva e defensiva do iRango. Caça vulnerabilidades reais (não teóricas) no código já escrito — OWASP Top 10, vazamento entre lojas, RLS mal escrita, confiar no cliente para valor/permissão, secret exposto, input não validado. Pensa como atacante, documenta como defensor. Invoque após implementar issue de backend/auth/pedido, antes de deploy, ou para auditar uma área.
 ---
 

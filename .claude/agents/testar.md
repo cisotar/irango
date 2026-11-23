@@ -98,5 +98,9 @@ Proibido: `expect(true).toBe(true)`; só `toHaveBeenCalled` sem verificar efeito
 - [ ] RLS testada em ≥1 cenário cross-loja
 - [ ] Bordas cobertas
 
+## Verificação real antes de dar como pronto
+
+Ao validar uma mudança em código que pode ser executado, compilado ou tipado, rode uma checagem real que exercite a mudança: os testes (`npx vitest run <arquivo>`), `npx tsc --noEmit`, `npm run lint` ou `npm run build`, ou o próprio comando alterado. Checagem só de sintaxe, ou comando que nem chegou a iniciar, não conta. Se `node_modules` não existe, não instale: em algumas máquinas do projeto ele foi removido de propósito e os gates rodam em outro PC. Se existe mas está desatualizado em relação ao `package-lock.json`, `npm ci` é permitido. Se nenhuma checagem real puder rodar aqui, diga qual não rodou e por quê, e reporte a mudança como **não verificada** em vez de pronta.
+
 ## Saída
 Arquivos criados; total por tipo (unitário/Server Action/RLS/fluxo); cobertura dos casos críticos; bordas descobertas e por quê.

@@ -12,7 +12,7 @@ Você é o tech lead orquestrando o fluxo completo de desenvolvimento do iRango.
 
 **Branch:** todos os commits vão para a branch ativa no momento da execução. Nunca troque de branch durante o fluxo. Se não tiver certeza da branch atual, rode `git branch --show-current` antes de começar.
 
-## 🛑 REGRA DE OURO #1 — NÃO PULE ETAPAS
+## Regra #1 — não pule etapas
 
 Execute **todas as etapas em ordem**, sempre:
 
@@ -22,11 +22,13 @@ Execute **todas as etapas em ordem**, sempre:
 3. Para cada issue: planejar/arquitetar → **[RED-FIRST: teste falho]** → executar → revisar ‖ testar ‖ auditar [‖ acelerar, se perf-sensível] → [popular + deploy de migration, se schema] → verificar → escriba
 4. Verificação final + aviso de deploy
 
-**Não há "escopo trivial" que justifique pular quebrar, planejar, TDD, testar, auditar ou verificar.** Mesmo um fix de 1 linha passa por todas as etapas. A redundância é intencional — cada etapa cobre uma classe de erro diferente. Se considerar pular alguma etapa, pare e pergunte ao usuário antes.
+Não há "escopo trivial" que justifique pular quebrar, planejar, TDD, testar, auditar ou verificar. Mesmo um fix de 1 linha passa por todas as etapas, porque cada etapa cobre uma classe de erro diferente. Se considerar pular alguma, pare e pergunte ao usuário antes.
 
-## 🛑 REGRA DE OURO #2 — TDD RED-FIRST OBRIGATÓRIO
+Agrupar `tdd` e `auditar` por vetor de risco, para baratear um conjunto de issues sobre a mesma superfície, é decisão do `/orquestrar`: o plano dele declara o mapa issue→vetor e você aprova antes de rodar. O `/fluxo` roda sem pedir confirmação, então mantém `tdd` e `auditar` por issue.
 
-**Antes de escrever QUALQUER código de produção crítico, um teste FALHO deve ser escrito, rodado e a saída FAIL capturada.**
+## Regra #2 — TDD red-first em código crítico
+
+Antes de escrever código de produção crítico, um teste falho deve ser escrito, rodado e a saída FAIL capturada.
 
 Crítico no iRango = qualquer coisa que, se quebrada, deixe um cliente **pagar menos do que deve**, **vaze dado de outra loja**, ou **burle permissão**: cálculo de subtotal/frete/desconto/total, recálculo no servidor, validação de cupom, política RLS, token de pedido, regra de horário, validação de slug.
 
@@ -48,9 +50,9 @@ $ARGUMENTS
 
 ---
 
-## 🛑 PRINCÍPIO TRANSVERSAL — NÃO REINVENTAR A RODA
+## Princípio transversal — não reinventar a roda
 
-**Filtro mais importante deste fluxo. Aplicar ANTES de cada proposta de implementação.** Ordem de prioridade:
+Este é o filtro mais importante do fluxo: aplique-o antes de cada proposta de implementação. Ordem de prioridade:
 
 1. **Referências do projeto primeiro** — ler `references/architecture.md` (estrutura, padrões, convenções), `references/schema.md` (tabelas, RLS), `references/seguranca.md` (RLS, recálculo no servidor, secrets). Se a solução já está documentada, terminar ali.
 2. **Reusar > criar** — `grep -r` em `src/` por nome/padrão similar. Se já existe em `lib/utils/`, `lib/validacoes/`, `lib/supabase/queries/`, `components/`, hooks → REUSAR (importar, estender, parametrizar). **Nunca duplicar lógica de cálculo, validação ou query.**
@@ -136,7 +138,7 @@ Se sim, o escopo da issue **deve** incluir enforcement server-side. Nunca feche 
 
 Pattern: `auditar` reporta com severidade → se MÉDIA+, aplicar fix (Edit) imediatamente → rodar `npm run build` **e `npx vitest run`** (fix de segurança pode quebrar teste existente) → reauditar o fix antes de fechar.
 
-### 🛑 REALIDADE DE AMBIENTE — o dev local roda contra o Supabase CLOUD
+### Realidade de ambiente — o dev local roda contra o Supabase cloud
 
 `npm run dev` usa o `.env.local`, que aponta para o **Supabase cloud de produção**
 (`NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co`). **Não há Postgres local
@@ -162,8 +164,8 @@ estiver no cloud. O deploy de migration deixou de ser "passo final manual" — v
 3. **Testes verdes** — `npx vitest run` (suite inteira, não só afetada)
 4. **RLS validada** — quando houver mudança de política/tabela: teste negativo em pglite (anon, lojista A, lojista B) confirmando isolamento
 5. **Zero regressão** — contagem de testes passando ≥ baseline pré-issue
-5. **Migration no cloud** — `npx supabase migration list` mostra a nova migration com coluna **Remote preenchida** (zero migrations só-local). Ver passo 6c.
-6. **Tipos sincronizados** — após mudança de schema, regenerar `src/lib/database.types.ts` (NÃO `src/types/supabase.ts`, que está morto). Com cloud aplicado: `npx supabase gen types typescript > src/lib/database.types.ts`. Sem cloud/disco apertado: patch manual determinístico da coluna em Row/Insert/Update + qualquer RPC `setof <tabela>`.
+6. **Migration no cloud** — `npx supabase migration list` mostra a nova migration com coluna **Remote preenchida** (zero migrations só-local). Ver passo 6c.
+7. **Tipos sincronizados** — após mudança de schema, regenerar `src/lib/database.types.ts` (NÃO `src/types/supabase.ts`, que está morto). Com cloud aplicado: `npx supabase gen types typescript > src/lib/database.types.ts`. Sem cloud/disco apertado: patch manual determinístico da coluna em Row/Insert/Update + qualquer RPC `setof <tabela>`.
 
 ### Mudanças que exigem cuidado dedicado
 
@@ -174,8 +176,6 @@ estiver no cloud. O deploy de migration deixou de ser "passo final manual" — v
 ---
 
 ## Etapa 0 — Verificar escopo existente + aprender padrões
-
-Antes de especificar, reporte (nota informativa, não bloqueante — não pare o fluxo por isso) o modelo atual orquestrando a sessão. Se não for Fable 5 e a descrição sugerir issue arquitetural, cross-cutting ou long-horizon (múltiplas camadas, bloqueio recorrente, migração ampla), inclua uma linha do tipo: "Orquestrando em `<modelo>`. Fable 5 seria mais indicado para este escopo — troque com `/model fable` se desejar." Depois siga sem esperar resposta.
 
 Antes de especificar:
 
@@ -209,7 +209,7 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
 
 1. Aplique a **regra de roteamento — planejamento** (`migrar` / `arquitetar` / `planejar`). Passe o caminho `tasks/NNN-*.md` ao agente escolhido.
 2. Issue de UI: consulte `desenhar` para fixar padrão visual/acessibilidade antes de implementar.
-3. **🛑 RED-FIRST (só issue `crítica: SIM`):**
+3. **RED-FIRST (só issue `crítica: SIM`):**
    - Após o plano, **NÃO implementar ainda.**
    - Use o agente `tdd` para **escrever e rodar o teste FALHO** — sem código de produção.
    - Output FAIL **capturado e registrado** na issue. Sem evidência de RED, presume-se TDD pulado.
@@ -232,12 +232,12 @@ Para cada issue, na ordem do grafo de dependências (`schema/RLS → utils → S
      1. `npx supabase migration list` — a nova migration aparece como **só-local** (coluna Remote vazia)?
      2. Se o histórico estiver dessincronizado, `npx supabase migration repair --status applied <ids>` antes do push.
      3. **Pedir autorização ao usuário** para `npx supabase db push` (única ação outward — toca o banco de produção). Apresentar a migration e que é aditiva/segura. Aguardar o "sim".
-     4. Após o push: `npx supabase migration list` reconfirma Remote preenchido; regenerar `src/lib/database.types.ts` (gate 6 acima).
+     4. Após o push: `npx supabase migration list` reconfirma Remote preenchido; regenerar `src/lib/database.types.ts` (gate 7 acima).
      5. Só então avançar para `verificar`. Se o usuário recusar o push, **parar a issue** e registrar que `verificar` fica pendente até o deploy — não marcar a issue como verificada.
    - 6d. `verificar` — sobe o app (`npm run dev`, contra o cloud — não é Supabase local) e confirma o comportamento real (fluxo de pedido, isolamento entre lojas, guard do painel). Pré-condições: 6c concluído quando houver migration; 6b concluído para seed atualizado.
    - 6e. `escriba` — sempre. Se "nenhuma atualização necessária", seguir adiante.
 7. **Verificar critérios `[x]`:** se algum ficar `[ ]`, NÃO feche a issue — complete, ou registre débito explícito como nova issue.
-8. **Fechar a issue:** sem bloqueios pendentes:
+8. **Fechar a issue:** sem bloqueios pendentes, e nunca se `testar` ou `verificar` reportou **não verificado**. Nesse caso não tente verificar de novo na mesma máquina: registre o pendente na issue e siga para a próxima.
    - Se há issue `[NNN]` no GitHub: depois do push do commit que resolveu, `.claude/scripts/issue-github.sh fechar NNN <hash>` (recusa se o commit não está em `origin/main` ou se não há exatamente 1 issue aberta com esse número; comentário é fixo).
    - Delete o arquivo local: `rm tasks/NNN-*.md`
 9. **Retroalimentar o spec:** marque `[x]` os behaviors correspondentes no spec de origem em `specs/`. Se todos os behaviors do spec estiverem `[x]`, arquive/encerre o spec.
@@ -257,13 +257,13 @@ Quando todas as issues tiverem critérios `[x]`:
 4. **Suite completa verde:** `npx vitest run` (todos os testes). Os testes de RLS/migration rodam em pglite dentro da suíte (`tests/migrations/`) — não existe Supabase local.
 5. **Zero regressão:** contagem de testes passando ≥ baseline.
 6. **Tipos sincronizados:** confirmar `src/lib/database.types.ts` regenerado se o schema mudou (NÃO `src/types/supabase.ts`).
-6. **🛑 GATE DE MIGRATION NO CLOUD (bloqueante).** Rodar `npx supabase migration list` e confirmar **zero migrations só-local** (toda linha com Remote preenchido). Se alguma migration do fluxo ficou só-local:
+7. **🛑 GATE DE MIGRATION NO CLOUD (bloqueante).** Rodar `npx supabase migration list` e confirmar **zero migrations só-local** (toda linha com Remote preenchido). Se alguma migration do fluxo ficou só-local:
    - Normalmente já foi aplicada no passo 6c da Etapa 3. Se chegou aqui só-local, é porque o `verificar` da issue de schema foi pulado — **não feche o fluxo**. Pedir autorização e rodar `npx supabase db push` (com `migration repair` se desync) agora, depois regenerar os tipos.
    - Frontend não precisa de push manual aqui → Vercel faz CI/CD ao mergear em `main`.
    - **O fluxo não pode reportar "concluído" com migration só-local** — esse é exatamente o estado que gera `PGRST204` em runtime.
-7. Listar todos os commits criados durante o fluxo.
-8. Gerar relatório: total de issues; agentes usados por tipo; arquivos criados/modificados; **findings de auditoria por severidade e status (corrigida no mesmo ciclo / issue aberta)**; desvios registrados.
-9. **Aviso de merge:** informe que o fluxo terminou na branch `$(git branch --show-current)` e que o próximo passo é `/pr`, que reexecuta os gates e abre o PR para `main` com corpo padronizado (issues fechadas, migrations, findings). Não abra o PR automaticamente — se o usuário preferir fazer à mão, mostre o comando sugerido com título e descrição preenchidos:
+8. Listar todos os commits criados durante o fluxo.
+9. Gerar relatório: total de issues; agentes usados por tipo; arquivos criados/modificados; **findings de auditoria por severidade e status (corrigida no mesmo ciclo / issue aberta)**; desvios registrados.
+10. **Aviso de merge:** informe que o fluxo terminou na branch `$(git branch --show-current)` e que o próximo passo é `/pr`, que reexecuta os gates e abre o PR para `main` com corpo padronizado (issues fechadas, migrations, findings). Não abra o PR automaticamente — se o usuário preferir fazer à mão, mostre o comando sugerido com título e descrição preenchidos:
    ```bash
    gh pr create --title "..." --body "..."
    ```

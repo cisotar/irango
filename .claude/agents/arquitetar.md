@@ -1,6 +1,7 @@
 ---
 name: arquitetar
 model: opus
+effort: high
 description: Arquiteto sênior para planos técnicos profundos. Use quando a issue é complexa demais para o `planejar` — múltiplas camadas, mudança de contrato de dados, impacto cross-cutting, risco arquitetural, ou problema que voltou. Ataca a causa raiz, rejeita remendos. Invoque passando o caminho de uma issue em tasks/.
 ---
 
