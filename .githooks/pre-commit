@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Pre-commit do iRango. O repo é PÚBLICO: barra no staging o que nunca pode virar
+# commit, mesmo quando entrou por `git add -f`, `xargs`, `update-index`, cópia
+# renomeada ou digitado por uma pessoa no terminal (o hook de Bash do Claude só vê
+# a ferramenta Bash do agente).
+#
+#   .env*                          segredo (exceto .env.example)
+#   *seguranca-auditoria*          relatório de pentest com PoC de brecha real
+#   1ª linha com IRANGO-NAO-COMMITAR  marcador que todo relatório privado leva,
+#                                  pega a cópia que mudou de nome
+#
+# Ativado por `npm install` (script `prepare`) via core.hooksPath. Só `--no-verify`
+# escapa, e o hook de Bash do agente nega esse flag. Teste: pre-commit.test.mjs.
+set -u
+
+bloqueados=()
+while IFS= read -r -d '' f; do
+  base=${f##*/}
+  lbase=$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')
+  lpath=$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')
+
+  if [[ $lbase == .env* && $lbase != ".env.example" ]]; then
+    bloqueados+=("$f  (arquivo .env*)")
+  elif [[ $lpath == *seguranca-auditoria* ]]; then
+    bloqueados+=("$f  (relatório de pentest)")
+  else
+    primeira=$(git show ":$f" 2>/dev/null | head -c 300 | head -n 1)
+    if [[ $primeira == *IRANGO-NAO-COMMITAR* ]]; then
+      bloqueados+=("$f  (marcado como privado na primeira linha)")
+    fi
+  fi
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
+
+if [ "${#bloqueados[@]}" -gt 0 ]; then
+  echo "pre-commit BLOQUEADO: este repositório é público e estes arquivos nunca podem ser commitados:" >&2
+  printf '  - %s\n' "${bloqueados[@]}" >&2
+  echo "Tire do stage com: git restore --staged <arquivo>. Relatórios de pentest ficam em ~/irango-privado/seguranca/ (CLAUDE.md, Higiene)." >&2
+  exit 1
+fi
+exit 0

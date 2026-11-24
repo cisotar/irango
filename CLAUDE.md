@@ -74,7 +74,8 @@ Repo **público**: issue vive só em `tasks/`, nunca é criada no GitHub (achado
 
 ## Higiene
 
-- Nunca `git add -A`. Nunca commitar `.env*`. Nunca commitar `plan/seguranca-auditoria-*.md` (relatório de pentest: PoC de brecha real — fica só local, mesmo depois do fix; `.gitignore` já bloqueia, não force). Nenhum email, telefone, chave Pix ou CPF real em código, comentário ou seed.
+- Nunca `git add -A`. Nunca commitar `.env*`. Nunca commitar relatório de pentest (`seguranca-auditoria-*.md`: PoC de brecha real — mora fora do repo, mesmo depois do fix; não force). Nenhum email, telefone, chave Pix ou CPF real em código, comentário ou seed.
+- **Guardas automáticas** (não dependem de lembrar): `.claude/settings.json` liga `.claude/scripts/guard-bash.mjs`, que nega `git add` em massa ou com `-f`, `.env*`, relatório de pentest e `--no-verify`, e pede confirmação em `supabase db push|reset` e `migration up|repair`. `.githooks/pre-commit` (ativado pelo `npm install`, script `prepare`) barra `.env*` e relatório no staging. Testes: `node .claude/scripts/guard-bash.test.mjs` e `node .githooks/pre-commit.test.mjs`. Relatório de pentest mora em `~/irango-privado/seguranca/`, com `<!-- IRANGO-NAO-COMMITAR -->` na primeira linha, e nunca dentro do repo.
 - Erro interno não vaza pro cliente: mensagem genérica na UI, detalhe no log do servidor.
 - Commits na branch ativa; nunca trocar de branch no meio de um fluxo.
 - **Nem tudo precisa de PR.** Mudança de código vai por branch + PR (`/pr`). Higiene
