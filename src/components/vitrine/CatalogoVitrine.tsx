@@ -44,6 +44,8 @@ import type { SecaoVitrine } from "@/lib/utils/catalogoVitrine";
 const SEM_DESTAQUE: SecaoVitrine[] = [];
 
 type CatalogoVitrineProps = {
+  /** Loja da vitrine — escopa o carrinho (371). */
+  lojaId: string;
   /** As seções de CATEGORIA — a única lista que a busca enxerga. */
   categorias: SecaoVitrine[];
   /**
@@ -85,6 +87,7 @@ type CatalogoVitrineProps = {
  * recalculado no checkout (seguranca.md §10).
  */
 export function CatalogoVitrine({
+  lojaId,
   categorias,
   secoesDestaque = SEM_DESTAQUE,
   rotulosJanela,
@@ -244,6 +247,7 @@ export function CatalogoVitrine({
           <EstadoVazioBusca termo={termo} aoLimpar={limpar} />
         ) : (
           <SecaoCatalogo
+            lojaId={lojaId}
             secoes={secoes}
             opcionaisPorCategoria={opcionaisPorCategoria}
             ocultosPorProduto={ocultosPorProduto}

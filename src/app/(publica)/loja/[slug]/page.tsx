@@ -353,6 +353,7 @@ export default async function VitrinePage({ params }: PageProps) {
           </main>
         ) : (
           <CatalogoVitrine
+            lojaId={lojaId}
             categorias={categoriasComProdutos}
             opcionaisPorCategoria={opcionaisPorCategoria}
             ocultosPorProduto={ocultosPorProduto}

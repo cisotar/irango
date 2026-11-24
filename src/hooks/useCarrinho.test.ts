@@ -22,14 +22,15 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ItemCarrinho } from "@/types/dominio";
-import { linhaCarrinhoId, useCarrinho, type UseCarrinhoReturn } from "./useCarrinho";
+import { chaveCarrinho, linhaCarrinhoId, useCarrinho, type UseCarrinhoReturn } from "./useCarrinho";
 import { MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import { schemaPayloadPedido } from "@/lib/validacoes/pedido";
 
 // ── window/sessionStorage falsos ────────────────────────────────────────────
 // O módulo só consulta `typeof window` em tempo de CHAMADA (`emitir`/`lerStorage`),
 // nunca no topo além da hidratação inicial — instalar aqui basta.
-const CHAVE_STORAGE = "irango:carrinho";
+const LOJA = "99999999-9999-4999-8999-999999999999";
+const CHAVE_STORAGE = chaveCarrinho(LOJA);
 const mapa = new Map<string, string>();
 (globalThis as unknown as Record<string, unknown>).window = {
   sessionStorage: {
@@ -56,7 +57,7 @@ function api(): UseCarrinhoReturn {
   let capturada: UseCarrinhoReturn | undefined;
   function Sonda() {
     // eslint-disable-next-line react-hooks/globals -- captura de teste: render único, sem re-render (ver bloco acima)
-    capturada = useCarrinho();
+    capturada = useCarrinho(LOJA);
     return null;
   }
   renderToStaticMarkup(createElement(Sonda));

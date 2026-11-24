@@ -72,7 +72,7 @@ const CATEGORIAS: SecaoVitrine[] = [
 
 function renderizar() {
   return renderToStaticMarkup(
-    <CatalogoVitrine
+    <CatalogoVitrine lojaId="loja-teste"
       categorias={CATEGORIAS}
       secoesDestaque={DESTAQUE}
       rotulosJanela={{ inverno: "Até domingo" }}
@@ -109,7 +109,7 @@ describe("263 cenário 8 — 3 produtos, 5 cards, 3 seções, destaque primeiro"
 
   it("os dois cards da Lasanha dizem EXATAMENTE a mesma coisa", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo
+      <SecaoCatalogo lojaId="loja-teste"
         secoes={[...DESTAQUE, ...CATEGORIAS]}
         rotulosVigencia={{}}
         rotulosJanela={{ inverno: "Até domingo" }}
@@ -167,7 +167,7 @@ describe("263 cenário 8 — 3 produtos, 5 cards, 3 seções, destaque primeiro"
 
   it("sem cardápio aberto, nenhuma seção de destaque — e ninguém publica nada", () => {
     const html = renderToStaticMarkup(
-      <CatalogoVitrine categorias={CATEGORIAS} rotulosVigencia={{}} />,
+      <CatalogoVitrine lojaId="loja-teste" categorias={CATEGORIAS} rotulosVigencia={{}} />,
     );
 
     expect(html).not.toContain("Cardápio de Inverno");
@@ -260,7 +260,7 @@ describe("279 — dia sem item do cardápio: a seção não chega a existir", ()
     expect(secoesDestaque).toEqual([]);
 
     return renderToStaticMarkup(
-      <CatalogoVitrine
+      <CatalogoVitrine lojaId="loja-teste"
         categorias={[
           { id: "sopas", nome: "Sopas", tipo: "categoria", produtos },
         ]}

@@ -187,6 +187,8 @@ export default async function CheckoutPage({ params }: PageProps) {
     <>
     <TemaLojaStyle tema={loja.tema} />
     <CheckoutWizard
+      // key força o reset do estado do wizard se a loja mudar (371).
+      key={lojaId}
       lojaId={lojaId}
       lojaSlug={slug}
       lojaNome={loja.nome}

@@ -87,7 +87,7 @@ export function VitrineClient({
   clienteLogado,
 }: VitrineClientProps) {
   const [open, setOpen] = useState(false);
-  const { totalItens, subtotal } = useCarrinho();
+  const { totalItens, subtotal } = useCarrinho(lojaId);
   const router = useRouter();
 
   // Só conta como adição o que muda depois da hidratação: o carrinho nasce

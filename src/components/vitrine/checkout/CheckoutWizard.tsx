@@ -121,7 +121,7 @@ export function CheckoutWizard({
   mostrarEntrar = false,
   mostrarCompletarPerfil = false,
 }: CheckoutWizardProps) {
-  const { itens, incrementar, decrementar, remover } = useCarrinho();
+  const { itens, incrementar, decrementar, remover } = useCarrinho(lojaId);
   // Tailwind md = 768px. Escolhe UMA árvore (wizard mobile vs 2 colunas desktop)
   // — mesmo estado compartilhado, sem montar EtapaEntrega/frete duas vezes (006).
   const ehDesktop = useMediaQuery("(min-width: 768px)");
@@ -146,7 +146,7 @@ export function CheckoutWizard({
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const salvo = lerEstadoWizard();
+    const salvo = lerEstadoWizard(lojaId);
     // Restaura nome/telefone/cupom/pagamento da sessão, mas tipo de entrega e
     // endereço sempre começam em branco — cliente escolhe ativamente a cada pedido.
     const base: EstadoWizard = {
@@ -169,13 +169,13 @@ export function CheckoutWizard({
     }
     setEstado(base);
     setMontado(true);
-  }, [aceitaEntrega, aceitaRetirada, perfilCliente, enderecosCliente]);
+  }, [lojaId, aceitaEntrega, aceitaRetirada, perfilCliente, enderecosCliente]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Persiste o estado a cada mudança (após hidratar).
   useEffect(() => {
-    if (montado) salvarEstadoWizard(estado);
-  }, [estado, montado]);
+    if (montado) salvarEstadoWizard(lojaId, estado);
+  }, [lojaId, estado, montado]);
 
   // Subtotal preview a partir dos itens do carrinho, incluindo opcionais (087).
   // Reusa calcularSubtotal (082). UX — servidor recalcula tudo do banco (§10).

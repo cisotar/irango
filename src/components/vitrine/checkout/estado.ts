@@ -1,7 +1,7 @@
 // Estado do wizard de checkout (issues 076/077/078).
 //
-// Mantido em sessionStorage (mesmo padrão de useCarrinho — issue 027) para
-// sobreviver a refresh durante o fluxo. NUNCA guarda valor monetário: o
+// Mantido em sessionStorage, uma chave por loja (mesmo padrão de useCarrinho —
+// issues 027/371) para sobreviver a refresh durante o fluxo. NUNCA guarda valor monetário: o
 // servidor (criarPedido — 071) recalcula tudo do banco (seguranca.md §10).
 // Aqui ficam só intenções do cliente: tipo de entrega, endereço, cupom,
 // forma de pagamento, troco e identificação.
@@ -10,7 +10,22 @@ import type { EnderecoEntrega } from "@/components/vitrine/FormEndereco";
 import type { ItemCarrinho } from "@/types/dominio";
 import { canonizarObservacao } from "@/lib/utils/normalizarObservacao";
 
-export const CHAVE_WIZARD = "irango:checkout";
+const PREFIXO_CHAVE_WIZARD = "irango:checkout:";
+
+/** Chave global anterior à 371: removida (igualdade exata), nunca lida. */
+const CHAVE_WIZARD_LEGADA = "irango:checkout";
+if (typeof window !== "undefined") {
+  try {
+    window.sessionStorage.removeItem(CHAVE_WIZARD_LEGADA);
+  } catch {
+    // Storage indisponível — nada a limpar.
+  }
+}
+
+/** Chave do wizard POR LOJA (371) — só `lojaId` (uuid), nunca slug nem dado do cliente. */
+export function chaveWizard(lojaId: string): string {
+  return `${PREFIXO_CHAVE_WIZARD}${lojaId}`;
+}
 
 /** null = ainda não escolhido (estado inicial — nenhuma opção pré-selecionada). */
 export type TipoEntrega = "retirada" | "entrega" | null;
@@ -355,10 +370,10 @@ function montarEndereco(endereco: EnderecoEntrega) {
 }
 
 /** Lê o estado do wizard do sessionStorage de forma defensiva (SSR-safe). */
-export function lerEstadoWizard(): Partial<EstadoWizard> | null {
+export function lerEstadoWizard(lojaId: string): Partial<EstadoWizard> | null {
   if (typeof window === "undefined") return null;
   try {
-    const bruto = window.sessionStorage.getItem(CHAVE_WIZARD);
+    const bruto = window.sessionStorage.getItem(chaveWizard(lojaId));
     return bruto ? (JSON.parse(bruto) as Partial<EstadoWizard>) : null;
   } catch {
     return null;
@@ -366,10 +381,10 @@ export function lerEstadoWizard(): Partial<EstadoWizard> | null {
 }
 
 /** Persiste o estado do wizard no sessionStorage (degrada silenciosamente). */
-export function salvarEstadoWizard(estado: EstadoWizard): void {
+export function salvarEstadoWizard(lojaId: string, estado: EstadoWizard): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(CHAVE_WIZARD, JSON.stringify(estado));
+    window.sessionStorage.setItem(chaveWizard(lojaId), JSON.stringify(estado));
   } catch {
     // Storage indisponível (modo privado/cota) — segue em memória.
   }
