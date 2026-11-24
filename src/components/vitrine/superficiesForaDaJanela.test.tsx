@@ -211,7 +211,7 @@ describe("262 ItemProdutoLista — a mesma pílula, inline, na variante textual"
 describe("262 SecaoCatalogo — `rotulosVigencia` desce às duas variantes", () => {
   it("grid: a frase chega ao card", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo
+      <SecaoCatalogo lojaId="loja-teste"
         secoes={comoSecoes(categorias(true, [FORA_DA_JANELA]))}
         rotulosVigencia={ROTULOS}
       />,
@@ -221,7 +221,7 @@ describe("262 SecaoCatalogo — `rotulosVigencia` desce às duas variantes", () 
 
   it("lista textual: a frase chega à linha", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo
+      <SecaoCatalogo lojaId="loja-teste"
         secoes={comoSecoes(categorias(false, [FORA_DA_JANELA]))}
         rotulosVigencia={ROTULOS}
       />,
@@ -231,7 +231,7 @@ describe("262 SecaoCatalogo — `rotulosVigencia` desce às duas variantes", () 
 
   it("mapa VAZIO ⇒ 'Indisponível no momento' — degradação visível, nunca branco", () => {
     const html = renderToStaticMarkup(
-      <SecaoCatalogo
+      <SecaoCatalogo lojaId="loja-teste"
         secoes={comoSecoes(categorias(true, [FORA_DA_JANELA]))}
         rotulosVigencia={{}}
       />,

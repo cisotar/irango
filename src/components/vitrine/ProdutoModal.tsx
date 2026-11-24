@@ -61,6 +61,8 @@ export type ProdutoModalDados = ProdutoVitrine & {
 };
 
 type ProdutoModalProps = {
+  /** Loja da vitrine — escopa o carrinho lido para o teto de linhas (371). */
+  lojaId: string;
   produto: ProdutoModalDados | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -107,6 +109,7 @@ type ProdutoModalProps = {
  * autoritativo: o carrinho só carrega produtoId + quantidade até o checkout.
  */
 export function ProdutoModal({
+  lojaId,
   produto,
   open,
   onOpenChange,
@@ -115,7 +118,7 @@ export function ProdutoModal({
 }: ProdutoModalProps) {
   // Só o teto de linhas (172) é lido daqui — a adição em si continua subindo
   // pelo `onAdicionar`, que é quem chama `adicionar` no componente pai.
-  const { itens } = useCarrinho();
+  const { itens } = useCarrinho(lojaId);
   const [quantidade, setQuantidade] = useState(0);
   // Quantidade escolhida por opcional: opcionalId → qtd (0 = não escolhido).
   const [qtdOpcionais, setQtdOpcionais] = useState<Record<string, number>>({});

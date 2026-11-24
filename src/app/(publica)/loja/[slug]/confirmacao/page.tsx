@@ -155,6 +155,7 @@ export default async function ConfirmacaoPage({
           o par (pedidoId, token) — logo `token` é truthy aqui. */}
       <StatusPedidoLive
         pedidoId={ped.id}
+        lojaId={ped.loja_id}
         token={token!}
         statusInicial={ped.status as StatusPedido}
         tipoEntrega={ped.tipo_entrega}

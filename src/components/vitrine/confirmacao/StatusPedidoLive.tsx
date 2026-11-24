@@ -3,7 +3,7 @@
 // Issue 131 — CASCA client do bloco "Acompanhe seu pedido" na confirmação.
 //
 // Absorve o comportamento de limpeza do antigo `ConfirmacaoClient` (limpa o
-// carrinho do sessionStorage ao montar) E faz o polling do status via a Server
+// carrinho da loja — memória e sessionStorage — ao montar) E faz o polling do status via a Server
 // Action `consultarStatusPedido` (128), re-renderizando a `LinhaTempoStatus`
 // (130) e parando em estado terminal.
 //
@@ -33,6 +33,8 @@ import { consultarStatusPedido } from "@/lib/actions/consultarStatusPedido";
 import type { ResultadoStatusPedido } from "@/lib/actions/consultarStatusPedido";
 import { copyStatusConfirmacao } from "@/lib/utils/statusConfirmacaoUi";
 import { ehStatusTerminal, type StatusPedido } from "@/lib/utils/transicaoStatus";
+import { chaveCarrinho, limparCarrinho } from "@/hooks/useCarrinho";
+import { chaveWizard } from "@/components/vitrine/checkout/estado";
 import { LinhaTempoStatus } from "@/components/vitrine/confirmacao/LinhaTempoStatus";
 
 // ---------------------------------------------------------------------------
@@ -48,15 +50,17 @@ const TIMEOUT_REQUISICAO_MS = 5_000;
 // ---------------------------------------------------------------------------
 
 /**
- * Limpa o carrinho persistido após o pedido criado — best-effort. Chaves
- * espelham `useCarrinho.ts` ("irango:carrinho") e `Carrinho.tsx`
- * ("irango:checkout"). Em modo restrito (sessionStorage indisponível) o
- * `try/catch` mantém a limpeza best-effort, igual ao ConfirmacaoClient atual.
+ * Limpa o carrinho e o wizard persistidos DA LOJA do pedido (371) — best-effort.
+ * As chaves vêm de `chaveCarrinho`/`chaveWizard` (fonte única) e nunca tocam o
+ * carrinho de outra loja. Em modo restrito (sessionStorage indisponível) o
+ * `try/catch` mantém a limpeza best-effort.
  */
-export function limparCarrinhoSessionStorage(): void {
+export function limparCarrinhoSessionStorage(lojaId: string): void {
+  // Memória primeiro: zera o store do módulo (e o storage dessa loja).
+  limparCarrinho(lojaId);
   try {
-    window.sessionStorage.removeItem("irango:carrinho");
-    window.sessionStorage.removeItem("irango:checkout");
+    window.sessionStorage.removeItem(chaveCarrinho(lojaId));
+    window.sessionStorage.removeItem(chaveWizard(lojaId));
   } catch {
     // sessionStorage indisponível (modo restrito) — limpeza é best-effort.
   }
@@ -247,6 +251,8 @@ export function criarControladorPolling(
 
 interface StatusPedidoLiveProps {
   pedidoId: string;
+  /** Loja do pedido — escopa a limpeza do carrinho/wizard (371). */
+  lojaId: string;
   token: string;
   statusInicial: StatusPedido;
   tipoEntrega: string | null;
@@ -254,6 +260,7 @@ interface StatusPedidoLiveProps {
 
 export function StatusPedidoLive({
   pedidoId,
+  lojaId,
   token,
   statusInicial,
   tipoEntrega,
@@ -266,8 +273,8 @@ export function StatusPedidoLive({
 
   // Absorve o ConfirmacaoClient: limpa o carrinho ao montar.
   useEffect(() => {
-    limparCarrinhoSessionStorage();
-  }, []);
+    limparCarrinhoSessionStorage(lojaId);
+  }, [lojaId]);
 
   // Polling + visibilidade. Um único efeito monta o controlador, registra o
   // listener de `visibilitychange` e desmonta tudo no cleanup (timers + listener,

@@ -43,6 +43,8 @@ export type CategoriaComProdutos = {
 };
 
 type SecaoCatalogoProps = {
+  /** Loja da vitrine — escopa o carrinho (371). */
+  lojaId: string;
   /**
    * [263/D16] As seções do catálogo, na ordem de render: as de DESTAQUE
    * (cardápio aberto) primeiro, depois as de categoria. `SecaoVitrine` é
@@ -98,7 +100,7 @@ type SecaoCatalogoProps = {
  * `ItemProdutoLista` (exibir_imagens false) — escolha feita a partir do dado
  * já resolvido no servidor (specs/toggle-imagens-por-categoria.md, RN-3). É
  * client porque o clique de cada card/linha abre o `ProdutoModal` (estado de
- * UX no client) e a confirmação sobe para `useCarrinho().adicionar`.
+ * UX no client) e a confirmação sobe para `useCarrinho(lojaId).adicionar`.
  * Preço/subtotal são preview — o servidor recalcula valores no checkout
  * (seguranca.md §10).
  */
@@ -118,6 +120,7 @@ const CLASSES_GRADE =
   "grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6";
 
 export function SecaoCatalogo({
+  lojaId,
   secoes,
   opcionaisPorCategoria = {},
   ocultosPorProduto,
@@ -125,7 +128,7 @@ export function SecaoCatalogo({
   rotulosJanela = {},
   termo,
 }: SecaoCatalogoProps) {
-  const { adicionar } = useCarrinho();
+  const { adicionar } = useCarrinho(lojaId);
   // [289/D1] O "qual produto está em foco" mora num store de módulo, e não mais
   // em `useState` local: o `ModalPromocoes` é IRMÃO deste componente sob um
   // Server Component e precisa abrir ESTE modal — o único da vitrine, e o único
@@ -295,6 +298,7 @@ export function SecaoCatalogo({
       })}
 
       <ProdutoModal
+        lojaId={lojaId}
         key={produtoSelecionado?.id ?? "vazio"}
         produto={produtoSelecionado}
         open={modalAberto}

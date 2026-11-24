@@ -7,8 +7,17 @@ import { MAX_ITENS_PEDIDO } from "@/lib/constants/pedido";
 import { calcularSubtotal } from "@/lib/utils/calcularTotal";
 import { canonizarObservacao } from "@/lib/utils/normalizarObservacao";
 
-// Escopo por session (não por loja): o carrinho mantém uma loja por vez.
-const CHAVE_STORAGE = "irango:carrinho";
+// Escopo por sessão E por loja (371): um carrinho isolado por `lojaId` (uuid —
+// nunca slug, que é mutável, nem dado do cliente). Antes era uma chave global e
+// o sessionStorage copiado ao abrir aba por link fazia a loja B mostrar os
+// itens da loja A.
+const PREFIXO_CHAVE = "irango:carrinho:";
+/** Chave global anterior à 371: conteúdo descartado, nunca adotado (loja desconhecida). */
+const CHAVE_LEGADA = "irango:carrinho";
+
+export function chaveCarrinho(lojaId: string): string {
+  return `${PREFIXO_CHAVE}${lojaId}`;
+}
 
 /**
  * Assinatura estável de UMA linha do carrinho = produtoId + opcionais escolhidos
@@ -62,16 +71,17 @@ export type UseCarrinhoReturn = {
 };
 
 // ─────────────────────────── store de módulo ─────────────────────────────────
-// Estado ÚNICO compartilhado por todas as instâncias de useCarrinho (catálogo,
-// barra inferior, drawer, wizard). Sem isto, cada componente teria seu próprio
-// useState e a adição no catálogo não apareceria no carrinho sem refresh.
-// useSyncExternalStore garante re-render de todos os assinantes a cada mutação.
+// Um estado POR LOJA compartilhado por todas as instâncias de useCarrinho dessa
+// loja (catálogo, barra inferior, drawer, wizard). Sem isto, cada componente
+// teria seu próprio useState e a adição no catálogo não apareceria no carrinho
+// sem refresh. useSyncExternalStore garante re-render dos assinantes a cada
+// mutação.
 
-/** Lê o carrinho do sessionStorage de forma defensiva (SSR-safe). */
-function lerStorage(): ItemCarrinho[] {
+/** Lê o carrinho de UMA loja do sessionStorage de forma defensiva (SSR-safe). */
+function lerStorage(lojaId: string): ItemCarrinho[] {
   if (typeof window === "undefined") return [];
   try {
-    const bruto = window.sessionStorage.getItem(CHAVE_STORAGE);
+    const bruto = window.sessionStorage.getItem(chaveCarrinho(lojaId));
     if (!bruto) return [];
     const parsed = JSON.parse(bruto);
     return Array.isArray(parsed) ? (parsed as ItemCarrinho[]) : [];
@@ -80,17 +90,37 @@ function lerStorage(): ItemCarrinho[] {
   }
 }
 
-// Snapshot atual (referência estável até uma mutação substituí-la — requisito do
-// useSyncExternalStore: getSnapshot deve retornar o MESMO ref se nada mudou).
-let estado: ItemCarrinho[] = lerStorage();
+/** Remove a chave global legada — igualdade exata, nunca prefixo. Best-effort. */
+function descartarLegado(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(CHAVE_LEGADA);
+  } catch {
+    // Storage indisponível — nada a limpar.
+  }
+}
+descartarLegado();
+
+// Snapshot por loja (referência estável até uma mutação substituí-la — requisito
+// do useSyncExternalStore: getSnapshot deve retornar o MESMO ref se nada mudou).
+const estados = new Map<string, ItemCarrinho[]>();
 const ouvintes = new Set<() => void>();
 const VAZIO: ItemCarrinho[] = []; // snapshot estável no SSR
 
-function emitir(proximo: ItemCarrinho[]): void {
-  estado = proximo;
+function estadoDe(lojaId: string): ItemCarrinho[] {
+  let atual = estados.get(lojaId);
+  if (atual === undefined) {
+    atual = lerStorage(lojaId);
+    estados.set(lojaId, atual);
+  }
+  return atual;
+}
+
+function emitir(lojaId: string, proximo: ItemCarrinho[]): void {
+  estados.set(lojaId, proximo);
   if (typeof window !== "undefined") {
     try {
-      window.sessionStorage.setItem(CHAVE_STORAGE, JSON.stringify(estado));
+      window.sessionStorage.setItem(chaveCarrinho(lojaId), JSON.stringify(proximo));
     } catch {
       // Storage indisponível (modo privado/cota) — degrada para memória.
     }
@@ -98,28 +128,31 @@ function emitir(proximo: ItemCarrinho[]): void {
   ouvintes.forEach((fn) => fn());
 }
 
-function inscrever(ouvinte: () => void): () => void {
-  ouvintes.add(ouvinte);
-  // Sincroniza entre abas: outra aba grava no sessionStorage → reflete aqui.
-  const aoStorage = (e: StorageEvent) => {
-    if (e.key === CHAVE_STORAGE) {
-      estado = lerStorage();
-      ouvintes.forEach((fn) => fn());
-    }
-  };
-  if (typeof window !== "undefined") {
-    window.addEventListener("storage", aoStorage);
-  }
-  return () => {
-    ouvintes.delete(ouvinte);
+function inscrever(lojaId: string) {
+  return (ouvinte: () => void): (() => void) => {
+    ouvintes.add(ouvinte);
+    // Sincroniza entre abas: outra aba grava no sessionStorage → reflete aqui.
+    const aoStorage = (e: StorageEvent) => {
+      if (e.key === chaveCarrinho(lojaId)) {
+        estados.set(lojaId, lerStorage(lojaId));
+        ouvintes.forEach((fn) => fn());
+      }
+    };
     if (typeof window !== "undefined") {
-      window.removeEventListener("storage", aoStorage);
+      window.addEventListener("storage", aoStorage);
     }
+    return () => {
+      ouvintes.delete(ouvinte);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("storage", aoStorage);
+      }
+    };
   };
 }
 
 // Mutadores: operam sobre o estado de módulo e emitem (novo array sempre que muda).
 function adicionarItem(
+  lojaId: string,
   item: Omit<ItemCarrinho, "quantidade">,
   quantidade = 1,
 ): void {
@@ -137,11 +170,13 @@ function adicionarItem(
     normalizado.opcionais,
     normalizado.observacao,
   );
+  const estado = estadoDe(lojaId);
   const existe = estado.some(
     (i) => linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === chave,
   );
   if (existe) {
     emitir(
+      lojaId,
       estado.map((i) =>
         linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === chave
           ? { ...i, quantidade: i.quantidade + qtd }
@@ -156,13 +191,14 @@ function adicionarItem(
     // silêncio de propósito: quem chama (ProdutoModal) checa o teto ANTES pelo
     // `itens` do hook e avisa o cliente; esta é a trava de último recurso.
     if (estado.length >= MAX_ITENS_PEDIDO) return;
-    emitir([...estado, { ...normalizado, quantidade: qtd }]);
+    emitir(lojaId, [...estado, { ...normalizado, quantidade: qtd }]);
   }
 }
 
-function incrementarItem(id: string): void {
+function incrementarItem(lojaId: string, id: string): void {
   emitir(
-    estado.map((i) =>
+    lojaId,
+    estadoDe(lojaId).map((i) =>
       linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === id
         ? { ...i, quantidade: i.quantidade + 1 }
         : i,
@@ -170,9 +206,10 @@ function incrementarItem(id: string): void {
   );
 }
 
-function decrementarItem(id: string): void {
+function decrementarItem(lojaId: string, id: string): void {
   emitir(
-    estado
+    lojaId,
+    estadoDe(lojaId)
       .map((i) =>
         linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) === id
           ? { ...i, quantidade: i.quantidade - 1 }
@@ -182,16 +219,26 @@ function decrementarItem(id: string): void {
   );
 }
 
-function removerItem(id: string): void {
+function removerItem(lojaId: string, id: string): void {
   emitir(
-    estado.filter(
+    lojaId,
+    estadoDe(lojaId).filter(
       (i) => linhaCarrinhoId(i.produtoId, i.opcionais, i.observacao) !== id,
     ),
   );
 }
 
-function limparItens(): void {
-  emitir([]);
+function limparItens(lojaId: string): void {
+  emitir(lojaId, []);
+}
+
+/**
+ * Zera o carrinho de UMA loja — memória, storage e assinantes. Usada após o
+ * pedido criado: limpar só o storage deixaria o `Map` do módulo com os itens, e
+ * a navegação no cliente de volta à loja os traria de volta (e os regravaria).
+ */
+export function limparCarrinho(lojaId: string): void {
+  limparItens(lojaId);
 }
 
 /**
@@ -200,22 +247,23 @@ function limparItens(): void {
  * Os valores monetários (`subtotal`) são PREVIEW de UX — o servidor recalcula
  * tudo a partir do banco (seguranca.md §10).
  */
-export function useCarrinho(): UseCarrinhoReturn {
+export function useCarrinho(lojaId: string): UseCarrinhoReturn {
+  const assinar = useMemo(() => inscrever(lojaId), [lojaId]);
   const itens = useSyncExternalStore(
-    inscrever,
-    () => estado,
+    assinar,
+    () => estadoDe(lojaId),
     () => VAZIO, // getServerSnapshot — carrinho nasce vazio no SSR
   );
 
   const adicionar = useCallback(
     (item: Omit<ItemCarrinho, "quantidade">, quantidade = 1) =>
-      adicionarItem(item, quantidade),
-    [],
+      adicionarItem(lojaId, item, quantidade),
+    [lojaId],
   );
-  const incrementar = useCallback((id: string) => incrementarItem(id), []);
-  const decrementar = useCallback((id: string) => decrementarItem(id), []);
-  const remover = useCallback((id: string) => removerItem(id), []);
-  const limpar = useCallback(() => limparItens(), []);
+  const incrementar = useCallback((id: string) => incrementarItem(lojaId, id), [lojaId]);
+  const decrementar = useCallback((id: string) => decrementarItem(lojaId, id), [lojaId]);
+  const remover = useCallback((id: string) => removerItem(lojaId, id), [lojaId]);
+  const limpar = useCallback(() => limparItens(lojaId), [lojaId]);
 
   // Preview de UX — recalculado no render, nunca enviado ao servidor como valor.
   // Reusa calcularSubtotal (082/090): (preco × quantidade) + Σ opcional.preco×qtd

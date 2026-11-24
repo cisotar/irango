@@ -23,9 +23,9 @@ export type CarrinhoProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lojaSlug: string;
-  /** [237] Loja da vitrine — a gaveta revisa o carrinho no servidor para
-   *  exibir "Você economizou". Sem ela, a linha não existe. */
-  lojaId?: string | null;
+  /** Loja da vitrine — escopa o carrinho (371) e a revisão no servidor que
+   *  exibe "Você economizou" [237]. */
+  lojaId: string;
   /**
    * Chamado no "Finalizar pedido": `true` ⇒ a gaveta "Sua conta" abriu e a
    * navegação para `/pedido` é cancelada (a gaveta fecha do mesmo jeito).
@@ -37,19 +37,19 @@ export function Carrinho({
   open,
   onOpenChange,
   lojaSlug,
-  lojaId = null,
+  lojaId,
   pedirConta,
 }: CarrinhoProps) {
-  const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho();
+  const { itens, subtotal, incrementar, decrementar, remover } = useCarrinho(lojaId);
 
   // [237] `economiaProdutos` vem PRONTO do servidor — o carrinho guarda só o
   // preço efetivo (RN-12) e não tem como somar a economia sozinho. A revisão
   // só roda com a gaveta ABERTA e é deduplicada pela assinatura do carrinho
   // (o rate limit por IP é compartilhado com o cupom).
   const { revisao } = useRevisaoCarrinho({
-    lojaId: lojaId ?? "",
+    lojaId,
     itens,
-    ativo: open && lojaId != null,
+    ativo: open,
   });
   const economiaProdutos = revisao?.economiaProdutos ?? null;
 

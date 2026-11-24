@@ -63,14 +63,20 @@ function criarDeps(
 describe("limparCarrinhoSessionStorage", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("remove as duas chaves do sessionStorage", () => {
+  const LOJA_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const LOJA_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  it("R7 remove só as duas chaves da loja do pedido, nunca as de outra loja", () => {
     const removeItem = vi.fn();
     vi.stubGlobal("window", { sessionStorage: { removeItem } });
 
-    limparCarrinhoSessionStorage();
+    limparCarrinhoSessionStorage(LOJA_A);
 
-    expect(removeItem).toHaveBeenCalledWith("irango:carrinho");
-    expect(removeItem).toHaveBeenCalledWith("irango:checkout");
+    expect(removeItem).toHaveBeenCalledWith(`irango:carrinho:${LOJA_A}`);
+    expect(removeItem).toHaveBeenCalledWith(`irango:checkout:${LOJA_A}`);
+    expect(removeItem).toHaveBeenCalledTimes(2);
+    expect(removeItem).not.toHaveBeenCalledWith(`irango:carrinho:${LOJA_B}`);
+    expect(removeItem).not.toHaveBeenCalledWith(`irango:checkout:${LOJA_B}`);
   });
 
   it("engole erro de sessionStorage indisponível (modo restrito)", () => {
@@ -81,7 +87,7 @@ describe("limparCarrinhoSessionStorage", () => {
         },
       },
     });
-    expect(() => limparCarrinhoSessionStorage()).not.toThrow();
+    expect(() => limparCarrinhoSessionStorage("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).not.toThrow();
   });
 });
 
@@ -364,6 +370,7 @@ describe("StatusPedidoLive (shell)", () => {
   it("renderiza o Card com título de seção e a região da trilha", () => {
     const html = renderToStaticMarkup(
       <StatusPedidoLive
+        lojaId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         pedidoId={PEDIDO_ID}
         token={TOKEN}
         statusInicial="em_preparo"
@@ -381,6 +388,7 @@ describe("StatusPedidoLive (shell)", () => {
   it("no mount não mostra o aviso de erro de rede", () => {
     const html = renderToStaticMarkup(
       <StatusPedidoLive
+        lojaId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         pedidoId={PEDIDO_ID}
         token={TOKEN}
         statusInicial="pendente"

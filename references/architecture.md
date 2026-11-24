@@ -319,7 +319,7 @@ A isenção do paywall é **posicional** — `assinatura-bloqueada/` e `configur
 ### Cliente faz pedido
 
 1. Acessa `/loja/[slug]` → vitrine renderizada via SSR
-2. Adiciona ao carrinho (estado local — `useCarrinho`)
+2. Adiciona ao carrinho (estado local por loja — `useCarrinho(lojaId)`, chave `irango:carrinho:{lojaId}` em `sessionStorage`)
 3. Preenche endereço → ViaCEP autocomplete
 4. Vitrine mostra **preview** de frete/desconto/total (só estimativa de UX)
 5. Seleciona forma de pagamento (exibidas conforme config da loja)
