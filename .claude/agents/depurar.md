@@ -41,7 +41,7 @@ Antes de qualquer coisa, colete:
 
 **Erro de autenticação / sessão**
 - Cookie de sessão não propagado? → `createServerClient` com `cookies()` do `next/headers`?
-- Middleware não renovando sessão? → ver `references/architecture.md` §auth
+- Middleware não renovando sessão? → ver `references/architecture.md` §5
 
 ### 3. Isole antes de propor fix
 - Reproduza o erro com o mínimo de contexto

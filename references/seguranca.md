@@ -1,6 +1,6 @@
 # Segurança — iRango
 
-**Versão:** 0.11.3 | **Atualizado:** 2026-11-16
+**Versão:** 0.11.4 | **Atualizado:** 2026-11-23
 
 > Decisões de segurança, isolamento multitenant e RLS. Toda nova tabela deve ter política RLS antes de ir pra produção.
 
@@ -28,6 +28,7 @@
 18. [Supabase Storage — RLS](#18-supabase-storage--rls)
 19. [Views e security_invoker](#19-views-e-security_invoker)
 20. [LGPD](#20-lgpd)
+21. [Observabilidade — scrubbing de PII no Sentry](#21-observabilidade--scrubbing-de-pii-no-sentry)
 
 ---
 
@@ -610,6 +611,10 @@ fail-closed); (2) falha entre os dois requests deixa estado **reconciliável**, 
 tocados + cardápio ainda existente, removível numa segunda tentativa); (3) o backstop do trigger cobre a corrida
 residual (TOCTOU entre os dois requests) com uma mensagem acionável, não o erro cru do Postgres (`seguranca.md` §14).
 Faltando qualquer uma das três, volte para RPC `security definer` (T1–T7, acima) — não force a sequência.
+
+---
+
+## 3. Server vs Client
 
 | Operação | Onde roda | Por quê |
 |----------|-----------|---------|
