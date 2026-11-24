@@ -21,7 +21,7 @@ Nota de contexto para retomar em outra sessão. Seções 1–6 escritas antes da
 - Correção: **Reopen billing account** no console Google Cloud (conta de faturamento do projeto de geocoding). Frete voltou a calcular.
 - O que NÃO era: `NOMINATIM_USER_AGENT` (o código migrou de Nominatim para Google na issue 190; a env existe no Vercel mas não é mais o caminho), Upstash, restrição de API da chave (chave "Maps Platform API Key" restrita a Geocoding API, ok).
 - Pendências sugeridas:
-  - Criar alerta/orçamento de billing no Google Cloud e manter um cartão reserva, para não repetir.
+  - Criar alerta/orçamento de billing no Google Cloud (a criar pelo dono; comando na seção 10) e manter um cartão reserva (resolvido), para não repetir.
   - Atualizar a memória `frete-raio-geocode-ratelimit` (está desatualizada: descreve Nominatim e cache sem TTL; hoje é Google, TTL de 25 dias, cache v3). Adicionar o padrão de diagnóstico: `REQUEST_DENIED` nos logs Vercel = billing/chave, não código.
   - Opcional: distinguir `REQUEST_DENIED` de `transitorio` no código, com `console.error` já existente, para o lojista receber mensagem de configuração em vez de "tentando de novo".
 
@@ -61,7 +61,7 @@ Limpo na checagem: nenhum agente pede ao modelo para despejar raciocínio na sa�
 
 - Confirmar no outro PC: `npx supabase migration list` com Remote preenchido para `20260923060457`.
 - ~~Decidir por onde começar a seção 4~~ — executada; ver seções 7 e 8.
-- Memória do frete (seção 2) ainda não atualizada.
+- ~~Memória do frete (seção 2) ainda não atualizada~~ — criada em 2026-11-24; ver seção 10.
 
 ## 7. Executado depois do handoff (2026-11-23, mesma sessão) — tudo local, sem commit
 
@@ -91,3 +91,15 @@ Limpo na checagem: nenhum agente pede ao modelo para despejar raciocínio na sa�
 - Vazamento antigo reavaliado: `76b866b` (relatório de 2026-06-19) segue público; 6,8 KB, sem chave/e-mail/PoC nos padrões testados. Não reescrever histórico (decisão em aberto desde 2026-07-02, não recomendado).
 - Mudança toca `package.json` (código): vai por branch + PR. Gates (tsc, lint, test, build) não rodam nesta máquina (sem `node_modules`); dependem do CI ou do outro PC.
 
+## 10. Pendências em 2026-11-24
+
+- PR #200: CI verde ("Tipos, testes e build" e Vercel). Gates locais não rodados (sem `node_modules`; o Docker existe nesta máquina).
+- Memória `frete-raio-geocode-ratelimit` criada (não existia). Cartão reserva do Google Cloud: resolvido.
+- Ainda aberto: `npx supabase migration list` com Remote preenchido para `20260923060457`.
+- **Alerta de orçamento no Google Cloud: a criar pelo dono.** Esta máquina não tem `gcloud` nem login.
+  - Console: https://console.cloud.google.com/billing → conta do projeto de geocoding → Orçamentos e alertas → Criar orçamento. Escopo: só o projeto de geocoding (opcional: filtrar pela Geocoding API). Valor mensal baixo (ex.: R$ 50, ajustar ao uso). Limites 50%, 90% e 100%, por e-mail, para um endereço que o dono lê.
+  - CLI (após instalar o `gcloud` e rodar `gcloud auth login`; `ID` é o ID da conta de faturamento):
+    ```
+    gcloud billing budgets create --billing-account=ID --display-name="geocoding" --budget-amount=50BRL --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0
+    ```
+  - Depois de criado: remover a pendência da memória `frete-raio-geocode-ratelimit`.
