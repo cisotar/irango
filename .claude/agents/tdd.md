@@ -74,6 +74,7 @@ A mesma regra de valor vive no preview do carrinho (cliente) e no recálculo (Se
 ## Padrões do projeto
 - Runner: **Vitest** (`vitest.config.ts`), `environment: node`, sem jsdom — não há `@testing-library/react` no projeto
 - Componente com mecânica de browser: extraia a lógica para módulo neutro com o global (janela, timer) **injetado por parâmetro** e teste a função (`architecture.md` §8 — ex.: `criarControladorPolling`, `criarContagemAviso`)
+- Gesto real (toque, arrasto) que o módulo neutro não alcança: spec Playwright em `e2e/` (`npm run test:e2e`). Fica fora do CI, então não serve de RED para código crítico — dinheiro, RLS e autorização continuam em vitest/pglite
 - Arquivo: mesmo nome do módulo + `.test.ts(x)` **ao lado do módulo** (não existe `src/__tests__/`); teste de migration/RLS em `tests/migrations/`
 - Mocks só para I/O externo (Supabase, fetch). RLS → pglite (`tests/helpers/pglite.ts`), nunca mock (mock ≠ auth real)
 

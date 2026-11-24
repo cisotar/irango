@@ -1,7 +1,9 @@
 # Handoff — 2026-11-23: frete (billing Google) + revisão de agentes/skills para Opus 5.5
 
-Nota de contexto para retomar em outra sessão. Nada aqui foi commitado: este arquivo é local, em `plan/`.
-Seções 1–6 escritas antes das edições; o que mudou depois está nas seções 7 e 8.
+Nota de contexto para retomar em outra sessão. Seções 1–6 escritas antes das edições; o que mudou depois está nas seções 7 a 9.
+
+> **Estado em 2026-11-23:** tudo abaixo marcado "sem commit" já foi commitado — seções 7 e 8 em `f675cdd`,
+> seção 9 no PR #200 (`f1efefe`), este arquivo em `8a9faa2`. Sincronização posterior em `05734fe`.
 
 ## 1. O que foi feito nesta sessão
 

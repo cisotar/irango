@@ -20,6 +20,7 @@ npm run lint       # 2º passo do CI — 0 erros. O CI roda tsc → lint → tes
 npm test           # suíte inteira (vitest run); com pouca memória: npx vitest run --maxWorkers=2
 npm run build      # obrigatório antes de fechar: const exportada em 'use server' só quebra aqui
 npx vitest run <arquivo>
+npm run test:e2e   # Playwright em e2e/, fora do CI: precisa de .env.local + E2E_EMAIL/E2E_SENHA (sem elas, pula)
 npx supabase migration list   # coluna Remote vazia = migration só-local
 gh pr checks <n>   # nada está "pronto" com check do CI vermelho
 ```

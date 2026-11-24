@@ -83,6 +83,7 @@ Input vazio (`null`/`undefined`/`[]`/`''`); limite (1 item, lista grande); invá
 ## Padrões do projeto
 - **Vitest**, `environment: node`, sem jsdom e sem `@testing-library/react`; RLS em pglite
 - Mecânica de browser: módulo neutro com global injetado por parâmetro (`architecture.md` §8), nunca render de componente
+- Gesto real (toque, arrasto): spec Playwright em `e2e/` (`npm run test:e2e`), fora do CI e da suíte do vitest — se as credenciais `E2E_*` faltarem, o spec pula e isso é "não verificado", não verde
 - Arquivo: nome do módulo + `.test.ts(x)` **ao lado do módulo**; migration/RLS em `tests/migrations/`
 - Mocks só para I/O externo — nunca para a lógica sob teste
 

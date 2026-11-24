@@ -279,7 +279,9 @@ function analisarGit(args, out) {
     const remove = resto.some((a) => /^--(unset|unset-all|remove-section|replace-all)$/.test(a));
     // Ativar o hook do próprio repo (valor exato .githooks) é o que o `prepare` faz: permitido.
     const ativaHookDoRepo = k >= 0 && resto[k + 1] === ".githooks" && resto.length === k + 2 && !remove;
-    if (k >= 0 && !leitura && !ativaHookDoRepo) out.negar(MOTIVO.semHook);
+    // Chave sem valor e sem flag de remoção é leitura (`git config core.hooksPath`): conferir o hook é permitido.
+    const leituraSemFlag = k >= 0 && k === resto.length - 1 && !remove;
+    if (k >= 0 && !leitura && !leituraSemFlag && !ativaHookDoRepo) out.negar(MOTIVO.semHook);
   }
 }
 

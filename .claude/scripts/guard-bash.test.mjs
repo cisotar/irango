@@ -67,7 +67,7 @@ const casos = {
     "git add -- -A",
     // -n em outro subcomando e dentro de mensagem não é --no-verify
     "git add -n src/a.ts", "git commit -m \"usar -n e --no-verify é proibido\"", "git commit -m x -- src/a.ts",
-    "git config user.name x", "git config --get core.hooksPath", "git -c user.name=x commit -m x",
+    "git config user.name x", "git config --get core.hooksPath", "git config core.hooksPath", "git config --local core.hooksPath", "git -c user.name=x commit -m x",
     // ativar o hook do próprio repo é o que o `prepare` faz
     "git config core.hooksPath .githooks", "git config --local core.hooksPath .githooks",
     "echo 'git add -A'", "grep -n \"db push\" .claude/commands/fluxo.md", "git stash list",
