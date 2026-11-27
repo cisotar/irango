@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 
@@ -63,15 +64,9 @@ export default function Home() {
             </div>
 
             <div className="stage" id="palco" aria-hidden="true">
-              <Celular cls="p1" depth={14} cab="🥖 Padaria Estrela" grad="linear-gradient(135deg,#7a4a22,#332616)" abas={["Pães", "Doces", "Bebidas"]}
-                itens={[["#fbe3c4", "🥐", "Croissant", "Manteiga francesa", "R$ 8,50"], ["#f3d9b0", "🍞", "Pão de fermentação natural", "Fatiado", "R$ 18,00"], ["#fde8d4", "🥖", "Baguete", "Crocante", "R$ 9,00"]]}
-                barra={["Ver carrinho (2)", "R$ 26,50"]} />
-              <Celular cls="p2" depth={26} cab="🍔 Brasa Burger" grad="linear-gradient(135deg,#c0451f,#332616)" abas={["Combos", "Burgers", "Porções"]}
-                itens={[["#ffd9c2", "🍔", "Duplo Cheddar", "+ batata e refri", "R$ 34,90"], ["#ffe9b8", "🍟", "Batata rústica", "Porção grande", "R$ 19,00"], ["#e3f0d4", "🥤", "Refri 600ml", "Gelado", "R$ 7,00"]]}
-                barra={["Finalizar pedido", "R$ 60,90"]} />
-              <Celular cls="p3" depth={18} cab="🍰 Doce Vila" grad="linear-gradient(135deg,#d6567a,#332616)" abas={["Bolos", "Tortas", "Kits"]}
-                itens={[["#ffd6e2", "🎂", "Bolo no pote", "Ninho com morango", "R$ 12,00"], ["#f6e0c8", "🧁", "Cupcake", "Escolha a cobertura", "R$ 9,50"], ["#e8d9f5", "🍮", "Pudim", "Fatia", "R$ 11,00"]]}
-                barra={["Ver carrinho (1)", "R$ 12,00"]} />
+              <Celular cls="p1" depth={14} src="/landing/vitrine-laticinios.jpg" topo="#331d65" />
+              <Celular cls="p2" depth={26} src="/landing/vitrine-pao-do-ciso.jpg" topo="#503216" />
+              <Celular cls="p3" depth={18} src="/landing/vitrine-burguer.jpg" topo="#fd0041" />
               <div className="chip c1">🛒 Novo pedido!</div>
               <div className="chip c2">📲 Chegou no WhatsApp</div>
               <div className="chip c3">🎟️ Cupom aplicado</div>
@@ -223,28 +218,11 @@ export default function Home() {
   );
 }
 
-function Celular({ cls, depth, cab, grad, abas, itens, barra }: {
-  cls: string;
-  depth: number;
-  cab: string;
-  grad: string;
-  abas: string[];
-  itens: string[][];
-  barra: [string, string];
-}) {
+function Celular({ cls, depth, src, topo }: { cls: string; depth: number; src: string; topo: string }) {
   return (
     <div className={`phone ${cls}`} data-depth={depth}>
-      <div className="screen">
-        <div className="sc-head" style={{ background: grad }}>{cab}</div>
-        <div className="sc-tabs">{abas.map((a, i) => <span key={a} className={i === 0 ? "on" : undefined}>{a}</span>)}</div>
-        {itens.map(([bg, emo, nome, sub, preco]) => (
-          <div className="item" key={nome}>
-            <div className="ph" style={{ background: bg }}>{emo}</div>
-            <div><b>{nome}</b><small>{sub}</small><em>{preco}</em></div>
-            <div className="add">+</div>
-          </div>
-        ))}
-        <div className="bar"><span>{barra[0]}</span><span>{barra[1]}</span></div>
+      <div className="screen" style={{ background: topo }}>
+        <Image src={src} alt="" width={375} height={667} sizes="230px" priority={cls === "p2"} />
       </div>
     </div>
   );
