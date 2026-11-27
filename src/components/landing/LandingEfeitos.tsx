@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const PALAVRAS = ["em minutos", "sem comissão", "no WhatsApp", "para vender hoje"];
+const PALAVRAS = ["em minutos", "sem comissão", "no WhatsApp", "para vender"];
 
 /**
  * Efeitos da landing (header que escurece no scroll, palavra rotativa, reveal,
